@@ -88,6 +88,8 @@ export interface ChatColumnProps {
   sidebarExpanded?: boolean
   /** Открыть отдельную страницу настроек текущего разговора. */
   onOpenConversationSettings?: () => void
+  /** Открыть панель кода рабочей копии этого разговора (клик по бейджу workspace). */
+  onOpenGit?: () => void
   /** Фактический режим активного разговора для бейджа в шапке. */
   permissionMode?: PermissionMode
   /** Фактический managed workspace, вычисленный сервером. */
@@ -204,6 +206,7 @@ export function ChatColumn({
   onToggleSidebar,
   sidebarExpanded = true,
   onOpenConversationSettings,
+  onOpenGit,
   permissionMode = 'plan',
   workspace = null,
   storage = null,
@@ -534,16 +537,23 @@ export function ChatColumn({
           )
         })()}
         {workspace && (
-          <span
+          // Бейдж — вход в панель кода: «что модель наменяла» смотрят ровно отсюда.
+          // Без обработчика остаётся неинтерактивной подписью, как было.
+          <button
+            type="button"
             className={`mode-badge workspace-badge workspace-badge--${workspace.state}`}
             data-testid="workspace-badge"
-            aria-label={`Workspace: ${workspace.mode}; состояние: ${workspace.state}`}
-            title={[workspace.path, workspace.branch, workspace.baseSha, workspace.diagnostic].filter(Boolean).join('\n')}
+            aria-label={onOpenGit
+              ? `Открыть код рабочей копии: ${workspace.mode}; состояние: ${workspace.state}`
+              : `Workspace: ${workspace.mode}; состояние: ${workspace.state}`}
+            title={[onOpenGit ? 'Открыть код рабочей копии' : '', workspace.path, workspace.branch, workspace.baseSha, workspace.diagnostic].filter(Boolean).join('\n')}
+            disabled={!onOpenGit}
+            onClick={() => onOpenGit?.()}
           >
             {workspace.mode === 'shared_main' ? 'Общий main' : workspace.mode === 'chat_workspace' ? 'Workspace чата' : workspace.mode === 'task_workspace' ? 'Workspace задачи' : 'Legacy cwd'}
             {workspace.baseSha ? ` · ${workspace.baseSha.slice(0, 8)}` : ''}
             {workspace.state !== 'ready' ? ` · ${workspace.state}` : ''}
-          </span>
+          </button>
         )}
         <button
           className={`mode-badge mode-badge--${permissionMode}`}

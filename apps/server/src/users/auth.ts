@@ -146,9 +146,14 @@ export type ProjectPermission =
   | 'users:manage'
   | 'project:settings'
   | 'project:create'
+  /** Правка файлов, коммит и push в рабочей копии задачи или сессии (панель кода). */
+  | 'repository:write'
 
 const DEVELOPER_PERMISSIONS = new Set<ProjectPermission>([
-  'project:view', 'task:create', 'task:update', 'workflow:start', 'task:merge'
+  // `repository:write` есть у разработчика намеренно: закоммитить и отправить свою
+  // ветку — его обычная работа. Растянуть на это `task:merge` было бы неверно: тот
+  // отвечает за попадание в main, а панель кода в main не пушит вовсе.
+  'project:view', 'task:create', 'task:update', 'workflow:start', 'task:merge', 'repository:write'
 ])
 
 /**
@@ -189,6 +194,7 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   if (method === 'POST' && url === '/api/projects') return 'project:create'
   if (/^\/api\/projects\/[^/]+\/releases\/deploy$/.test(url)) return 'production:deploy'
   if (/^\/api\/projects\/[^/]+\/releases(?:\/|$)/.test(url)) return 'release:prepare'
+  if (/^\/api\/projects\/[^/]+\/git(?:\/|$)/.test(url)) return 'repository:write'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/retry$/.test(url)) return 'task:merge'
   if (/\/ci\/run(?:-on-machine)?$/.test(url) || /^\/api\/ci\/runs\/[^/]+\/(?:retry|retry-from-step|discard-and-retry)$/.test(url)) return 'workflow:start'
   if (method === 'POST' && /^\/api\/projects\/[^/]+\/tasks$/.test(url)) return 'task:create'
@@ -214,6 +220,7 @@ export function projectFeatureForRequest(method: string, url: string): ProjectFe
   if (!/^\/api\/projects\/[^/]+\//.test(url)) return null
   if (/^\/api\/projects\/[^/]+\/(?:releases|production)(?:\/|$)/.test(url)) return 'releases'
   if (/^\/api\/projects\/[^/]+\/(?:machines|default-machine)(?:\/|$)/.test(url)) return 'machines'
+  if (/^\/api\/projects\/[^/]+\/git(?:\/|$)/.test(url)) return 'git'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge(?:\/|$)/.test(url)) return 'git'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/qa(?:\/|$)/.test(url)) return 'qa'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/preview(?:\/|$)/.test(url)) return 'preview'
