@@ -437,7 +437,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return owner ? db.listConversations(owner, { includeCompleted: true }).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
   })
   registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
-  registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir) })
+  // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
+  registerMakeRoutes(app, {
+    db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
+    boardChanged: (projectId) => boardHub.emit(projectId)
+  })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
   registerKbMcp(app, {

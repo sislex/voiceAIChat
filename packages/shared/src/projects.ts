@@ -769,6 +769,74 @@ export interface TaskRunResult {
   finishedAt: number | null
 }
 
+/**
+ * Связь карточки с дизайном, собранным в Make: конкретная страница Make-проекта,
+ * привязанного к тому же проекту. Связь адресует **живой** проект, а не снимок:
+ * дизайн правится дальше, и карточка должна показывать текущее состояние экрана.
+ */
+export interface TaskDesignLink {
+  id: string
+  taskId: string
+  /** Разговор вида `make` — он же проект дизайна; привязан к проекту задачи. */
+  conversationId: string
+  /** Имя Make-проекта на момент выдачи: список связей не должен ждать загрузки чатов. */
+  conversationTitle: string
+  /** Владелец Make-проекта (логин): дизайн может быть заведён другим участником. */
+  conversationOwner: string | null
+  /** Файл-страница внутри проекта (`index.html`, `src/components/Card.jsx`); пусто — проект целиком. */
+  path: string
+  /** Подпись экрана; пусто — показываем путь. */
+  label: string
+  createdAt: number
+  /** Логин связавшего; null у legacy-строк. */
+  createdBy: string | null
+}
+
+/** Make-проект, доступный проекту как источник дизайна (выбор в карточке). */
+export interface ProjectDesignSource {
+  conversationId: string
+  title: string
+  owner: string | null
+  /** Свой проект пользователя; чужой доступен только на чтение. */
+  own: boolean
+  updatedAt: number
+}
+
+/** Карточка проекта для выбора в диалоге «Связать с задачей» панели Make. */
+export interface MakeLinkableTask {
+  taskId: string
+  projectId: string
+  taskKey: string
+  title: string
+  columnName: string | null
+}
+
+/** Задача проекта, ссылающаяся на страницу Make-проекта (обратная связь в панели Make). */
+export interface MakeTaskLink {
+  id: string
+  taskId: string
+  projectId: string
+  /** Ключ вида `PRJ-42` собирает сервер: панель Make не знает имени проекта. */
+  taskKey: string
+  taskTitle: string
+  columnName: string | null
+  path: string
+  label: string
+  createdAt: number
+}
+
+/**
+ * Строки блока «Дизайн» для промпта модели: где лежит макет и что открыть.
+ * Общие у хода чата и у CI-рана — иначе они разъедутся, как когда-то контекст проекта.
+ */
+export function designPromptLines(designs: TaskDesignLink[], previewUrl: (conversationId: string, path: string) => string): string[] {
+  return designs.map((design) => {
+    const where = design.path ? `страница ${design.path}` : 'проект целиком'
+    const name = design.label || design.conversationTitle
+    return `Дизайн: «${name}» — Make-проект ${design.conversationId}, ${where}; превью ${previewUrl(design.conversationId, design.path)}`
+  })
+}
+
 /** Задача канбан-доски. Статус задачи = её колонка (columnId). */
 export interface Task {
   id: string
@@ -845,6 +913,11 @@ export interface Task {
   taskPreparationStatus?: import('./qa').TaskPreparationStatus | null
   taskPreparationError?: string | null
   taskPreparationLog?: string | null
+  /**
+   * Связанные дизайны из Make. Заполняется в подробной карточке и в контексте
+   * CI-рана; в снапшоте доски и в ответах create/update — undefined.
+   */
+  designs?: TaskDesignLink[]
   /** Последний актуальный результат всех серверных этапов; отсутствие данных не является ошибкой. */
   latestRunResult?: TaskRunResult | null
 }

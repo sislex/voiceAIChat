@@ -10,7 +10,7 @@ const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
 import { REST, type SessionInfo, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
-import { deviceKey, findTrustedDevice, isNewDevice, localGeo, overLimit, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
+import { deviceKey, findTrustedDevice, isNewDevice, isTrusted, localGeo, overLimit, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
 import { createGeoResolver } from './geo.js'
 import type { SessionHub } from './sessionHub.js'
 import type { VoiceChatDb } from '../db/database.js'
@@ -36,6 +36,8 @@ export const DEVICE_COOKIE = 'vc_device'
 const DEVICE_COOKIE_MAX_AGE = 400 * 24 * 60 * 60
 /** Срок жизни сессии для ролей, которые заходят эпизодически. */
 const ROLE_SHORT_TTL_MS = 7 * 24 * 60 * 60_000
+/** Сколько устройств разрешено держать доверенными одновременно. */
+const TRUSTED_DEVICES_LIMIT = 5
 export const CSRF_HEADER = 'x-vc-csrf'
 function secureFlag(req: FastifyRequest): string {
   const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol)
@@ -433,17 +435,22 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const isNew = isNewDevice(known, { userAgent: ua, ip: req.ip })
     // Секрет устройства: из cookie, если браузер её уже носит, иначе новый.
     const deviceSecret = deviceSecretOf(req) ?? randomBytes(24).toString('base64url')
+    const key = deviceKey({ userAgent: ua, ip: req.ip })
     db.createSession(sid, name, {
       ip: req.ip,
       userAgent: ua,
       ttlMs: ttl,
-      deviceKey: deviceKey({ userAgent: ua, ip: req.ip }),
+      deviceKey: key,
       deviceSecret: hashDeviceSecret(deviceSecret),
       platform: platformOf(ua),
       clientVersion: clientVersionOf(req),
       geo: localGeo(req.ip),
       twoFactor
     })
+    // Имя устройства человек даёт один раз — новая сессия того же устройства
+    // подхватывает его, иначе после каждого перелогина список полон безымянных.
+    const inherited = db.deviceLabel(name, key)
+    if (inherited) db.updateSession(sid, { label: inherited })
     // Лимит одновременных сессий: превышение гасит самые давно неактивные, но
     // никогда — только что выданную. Ноль или отсутствие настройки — без лимита.
     const limit = Number(db.getAppConfig('sessions.maxPerUser')) || 0
@@ -868,6 +875,20 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     options.sessions?.emit(user.name, s.sid)
     return { ok: true }
   })
+  /** Снять доверие со всех своих устройств разом — «я не уверен ни в одном». */
+  app.post(REST.sessionUntrustAll, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const limited = sessionOpsBlocked(req, user.name)
+    if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
+    const affected = db.untrustAllSessions(user.name)
+    if (affected > 0) {
+      db.logSecurityEvent({ user: user.name, type: 'session_untrusted', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `снято доверие с устройств: ${affected}` })
+      options.sessions?.emit(user.name)
+    }
+    return { affected }
+  })
   // История устройства: что этот вход делал. Отвечает на вопрос «а точно ли это
   // я», когда подпись и место сами по себе ничего не проясняют.
   app.get<{ Params: { sid: string } }>(REST.sessionHistory(':sid').replace('%3Asid', ':sid'), async (req, reply) => {
@@ -878,7 +899,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     return { events: db.listSessionHistory(user.name, { sid: s.sid, userAgent: s.userAgent, ip: s.ip }) }
   })
   // Имя устройства и отметка «доверенное» — только для своей сессии.
-  app.patch<{ Params: { sid: string }; Body: { label?: string | null; trusted?: boolean } }>('/api/session/:sid', async (req, reply) => {
+  app.patch<{ Params: { sid: string }; Body: { label?: string | null; trusted?: boolean; scope?: 'session' | 'device' } }>('/api/session/:sid', async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
@@ -889,9 +910,14 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // видно, существует ли сессия с таким sid у кого-то другого.
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
     const patch: { label?: string | null; trusted?: boolean } = {}
+    let renamedDevice = 0
     if (req.body?.label !== undefined) {
       const label = typeof req.body.label === 'string' ? req.body.label.trim() : ''
       patch.label = label || null
+      // Имя относится к устройству, а не к вкладке: по умолчанию переименовываем
+      // все его живые сессии, чтобы список не показывал одно устройство дважды
+      // под разными именами.
+      if (req.body.scope !== 'session' && s.deviceKey) renamedDevice = db.renameDevice(user.name, s.deviceKey, patch.label)
     }
     if (typeof req.body?.trusted === 'boolean') patch.trusted = req.body.trusted
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'нечего менять' })
@@ -900,8 +926,17 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     if (patch.trusted === true && db.getUserTotpSecret(user.name) && !s.twoFactor) {
       return reply.code(409).send({ error: 'Сделать доверенным можно только устройство, вход с которого подтверждён кодом' })
     }
+    // Доверенных устройств не может быть сколько угодно: каждое — это дырка в
+    // втором факторе, и список из двадцати «своих» ноутбуков её обесценивает.
+    if (patch.trusted === true && !isTrusted(s)) {
+      const trustedNow = db.sessionStats(user.name).trusted
+      if (trustedNow >= TRUSTED_DEVICES_LIMIT) {
+        return reply.code(409).send({ error: `Доверенных устройств не может быть больше ${TRUSTED_DEVICES_LIMIT} — снимите доверие с ненужного` })
+      }
+    }
     db.updateSession(s.sid, patch)
     const ua = String(req.headers['user-agent'] ?? '')
+    void renamedDevice
     if (patch.label !== undefined) db.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято', sid: s.sid })
     if (patch.trusted !== undefined) db.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '', sid: s.sid })
     options.sessions?.emit(user.name)

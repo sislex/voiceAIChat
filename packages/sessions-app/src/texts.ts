@@ -66,6 +66,13 @@ export interface SessionsTexts {
   clearSelection: string
   copySummary: string
   endReason: (reason: string) => string
+  trustLeft: (left: string) => string
+  untrustAll: string
+  untrustAllConfirmTitle: string
+  untrustAllConfirmText: string
+  endedSearchLabel: string
+  showMore: (count: number) => string
+  renameScopeHint: string
   createdAt: (when: string) => string
   lastSeen: (when: string) => string
   expiresIn: (when: string) => string
@@ -155,6 +162,13 @@ export const DEFAULT_TEXTS: SessionsTexts = {
   historyEvent: (type) => HISTORY_LABELS[type] ?? type,
   moreHidden: (count) => `Показаны первые записи, ещё ${count} скрыто — уточните поиск`,
   expiringSoon: 'скоро истечёт',
+  trustLeft: (left) => `доверие ещё ${left}`,
+  untrustAll: 'Снять доверие со всех устройств',
+  untrustAllConfirmTitle: 'Снять доверие со всех устройств?',
+  untrustAllConfirmText: 'При следующем входе каждое устройство снова спросит код второго фактора.',
+  endedSearchLabel: 'Поиск среди завершённых',
+  showMore: (count) => `Показать ещё (${count})`,
+  renameScopeHint: 'Имя применится ко всем входам с этого устройства',
   orderLabel: 'Порядок',
   orderActivity: 'по активности',
   orderCreated: 'по времени входа',

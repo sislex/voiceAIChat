@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findTrustedDevice, isNewDevice, isOnline, isStale, isTrusted, overLimit, ttlFor } from './policy'
+import { findTrustedDevice, isNewDevice, isOnline, isStale, isTrusted, overLimit, trustLeftMs, ttlFor } from './policy'
 import { SESSION_SHORT_TTL_MS, SESSION_TTL_MS, type DeviceSession } from './types'
 
 const T0 = 1_700_000_000_000
@@ -99,3 +99,15 @@ describe('findTrustedDevice', () => {
     expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0, deviceSecret: 'secret-hash' })], {}, T0)).toBeNull()
   })
 })
+
+describe('trustLeftMs', () => {
+  it('считает остаток доверия и обнуляет его у обычных и просроченных', () => {
+    expect(trustLeftMs(make({ trustedAt: T0 }), T0)).toBe(30 * DAY)
+    expect(trustLeftMs(make({ trustedAt: T0 - 29 * DAY }), T0)).toBe(DAY)
+    expect(trustLeftMs(make({ trustedAt: T0 - 40 * DAY }), T0)).toBe(0)
+    expect(trustLeftMs(make(), T0)).toBe(0)
+    // Своя политика меняет и остаток.
+    expect(trustLeftMs(make({ trustedAt: T0 }), T0, { trustDays: 7 })).toBe(7 * DAY)
+  })
+})
+

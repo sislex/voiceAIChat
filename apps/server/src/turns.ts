@@ -16,6 +16,8 @@ import {
   parseTaskLaunchRequest,
   buildConversationPrompt,
   buildPrompt,
+  designPromptLines,
+  makeDesignPreviewUrl,
   clampModel,
   firstAllowedProvider,
   isProviderAllowed,
@@ -589,6 +591,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         const task = conv.projectId ? deps.db.getCiTask(userId, conv.projectId, conv.taskId) : null
         if (task?.description) lines.push(`Описание задачи: ${task.description}`)
         if (task?.acceptanceCriteria) lines.push(`Критерии приёмки: ${task.acceptanceCriteria}`)
+        // Дизайн из Make: макет — часть постановки, без ссылки модель его не найдёт.
+        if (task?.designs?.length) lines.push(...designPromptLines(task.designs, makeDesignPreviewUrl))
         basePrompt = `${basePrompt}\n\n## Контекст задачи\n${lines.join('\n')}`
       }
     }

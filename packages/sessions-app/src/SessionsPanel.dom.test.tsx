@@ -397,3 +397,51 @@ describe('SessionsPanel: цикл 4 — порядок, обновление, в
   })
 })
 
+describe('SessionsPanel: цикл 5 — доверие, срок доверия и завершённые порциями', () => {
+  it('в карточке видно, сколько осталось доверию', async () => {
+    const store = setup([makeSession({ sid: 'a', current: true, trustedAt: FIXTURE_NOW - 25 * 86_400_000 })])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    const card = await screen.findByTestId('session-a')
+    expect(within(card).getByText('доверие ещё 5 дней')).toBeInTheDocument()
+  })
+
+  it('«снять доверие со всех» спрашивает подтверждение и зовёт клиента', async () => {
+    const untrustAll = vi.fn(async () => undefined)
+    const store = setup(makeSessions(), { untrustAll })
+    await store.actions.load()
+    render(<SessionsBulkActions store={store} confirm={async () => true} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Снять доверие со всех устройств' }))
+    await waitFor(() => expect(untrustAll).toHaveBeenCalled())
+  })
+
+  it('без доверенных устройств кнопка снятия доверия не предлагается', async () => {
+    // Иначе интерфейс предлагает действие, которое заведомо ничего не изменит.
+    const store = setup([makeSession({ sid: 'a', current: true }), makeSession({ sid: 'b' })], { untrustAll: async () => undefined })
+    await store.actions.load()
+    render(<SessionsBulkActions store={store} />)
+    expect(screen.queryByRole('button', { name: 'Снять доверие со всех устройств' })).toBeNull()
+  })
+
+  it('завершённые ищутся и раскрываются кнопкой «показать ещё»', async () => {
+    const ended = Array.from({ length: 8 }, (_, i) => makeSession({ sid: `gone-${i}`, ended: true, endedAt: FIXTURE_NOW - 60_000 }))
+    const store = setup([makeSession({ sid: 'a', current: true })], { listEnded: async () => ended })
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    await userEvent.click(within(await screen.findByTestId('sessions-ended')).getByText('Недавно завершённые'))
+    await waitFor(() => expect(screen.getAllByTestId(/^ended-/)).toHaveLength(5))
+    await userEvent.click(screen.getByRole('button', { name: 'Показать ещё (3)' }))
+    await waitFor(() => expect(screen.getAllByTestId(/^ended-/)).toHaveLength(8))
+    await userEvent.type(screen.getByLabelText('Поиск среди завершённых'), 'нет-такого')
+    await waitFor(() => expect(screen.queryByTestId('ended-gone-0')).toBeNull())
+  })
+
+  it('подсказка про имя устройства появляется, когда сессий у него несколько', async () => {
+    const store = setup([
+      makeSession({ sid: 'a', deviceKey: 'same', current: true }),
+      makeSession({ sid: 'b', deviceKey: 'same' })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    await userEvent.click(within(await screen.findByTestId('session-a')).getByRole('button', { name: 'Переименовать' }))
+    expect(screen.getByText(/применится ко всем входам с этого устройства/)).toBeInTheDocument()
+  })
+})
+

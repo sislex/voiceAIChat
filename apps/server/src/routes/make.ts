@@ -22,6 +22,8 @@ export interface MakeRoutesDeps {
   workspaces: MakeWorkspaces
   hub: MakeHub
   library: MakeLibrary
+  /** Живая доска после связывания карточки с дизайном из панели Make. */
+  boardChanged?: (projectId: string) => void
   /** Ограничители импорта — подменяются в тестах. */
   importLimiter?: SlidingWindowLimiter
   importUrlLimiter?: SlidingWindowLimiter
@@ -171,6 +173,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (owner) {
       const role = await workspaces.shareRole(id, userId)
       if (role === 'editor' || (role === 'viewer' && level === 'viewer')) return true
+      // Make-проект, привязанный к проекту, читают все его участники: карточка
+      // задачи ссылается на дизайн, и он обязан открываться у всей команды.
+      if (level === 'viewer' && db.isMakeProjectViewer(userId, id)) return true
     }
     void reply.code(404).send({ error: 'conversation not found' })
     return false
@@ -342,6 +347,42 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.post<{ Params: { id: string }; Body: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } | undefined }>('/api/make/:id/publish', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password, allowComments: typeof req.body?.allowComments === 'boolean' ? req.body.allowComments : undefined }) } catch (error) { return sendError(reply, error) }
+  })
+
+  // --- Связи с задачами проекта (дизайн ↔ карточка) --------------------
+  // Обратное направление к `/api/projects/:id/tasks/:taskId/designs`: панель Make
+  // показывает, какие карточки ссылаются на открытую страницу, и связывает новую.
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/task-links', async (req, reply) => {
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
+    const path = typeof req.query.path === 'string' ? req.query.path : undefined
+    return db.makeTaskLinks(req.params.id, path)
+  })
+
+  app.get<{ Params: { id: string } }>('/api/make/:id/task-links/tasks', async (req, reply) => {
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
+    return db.makeLinkableTasks(uid(req), req.params.id)
+  })
+
+  app.post<{ Params: { id: string }; Body: { taskId?: string; path?: string; label?: string } }>('/api/make/:id/task-links', async (req, reply) => {
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
+    const projectId = db.makeConversationProject(req.params.id)
+    const taskId = req.body?.taskId
+    if (!taskId || !projectId) return reply.code(400).send({ error: 'Make-проект не привязан к проекту' })
+    try {
+      db.linkTaskDesign(uid(req), projectId, taskId, { conversationId: req.params.id, path: req.body?.path, label: req.body?.label })
+      deps.boardChanged?.(projectId)
+      return db.makeTaskLinks(req.params.id, typeof req.body?.path === 'string' ? req.body.path : undefined)
+    } catch (error) { return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) }) }
+  })
+
+  app.delete<{ Params: { id: string; linkId: string } }>('/api/make/:id/task-links/:linkId', async (req, reply) => {
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
+    const projectId = db.makeConversationProject(req.params.id)
+    const link = db.makeTaskLinks(req.params.id).find((l) => l.id === req.params.linkId)
+    if (!projectId || !link) return reply.code(404).send({ error: 'Связь не найдена' })
+    db.unlinkTaskDesign(uid(req), projectId, link.taskId, link.id)
+    deps.boardChanged?.(projectId)
+    return db.makeTaskLinks(req.params.id)
   })
 
   // Read-only ссылка внутри ChatAI (п.33): владелец создаёт/отзывает, любой вошедший читает по токену.
@@ -607,7 +648,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.route<{ Params: { id: string; '*': string } }>({
     method: ['POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/preview/make/:id/*',
     handler: async (req, reply) => {
-      if (!own(uid(req), req.params.id, reply)) return reply
+      if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
       const mock = await workspaces.resolveMock(req.params.id, req.params['*'] || '', req.method, false, req.body, req.headers.cookie)
       if (!mock) return reply.code(404).type('text/plain; charset=utf-8').send(`Мок не найден: mock/${req.params['*']}.${req.method}.json`)
       return sendMock(reply, mock)
@@ -751,7 +792,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string; '*': string } }>('/api/preview/make/:id/*', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    // Превью читают и те, кому проект открыт на чтение: связанный с карточкой дизайн смотрит вся команда.
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     await workspaces.ensure(req.params.id)
     const raw = req.params['*'] || 'index.html'
     // Превью снимка (roadmap-4 п.37): `__snapshot__/<id>/<файл>` — файлы версии, транспиляция с отдельным ключом кэша.
