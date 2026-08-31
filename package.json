@@ -37,8 +37,10 @@
     "test:storybook": "npm run build:storybook",
     "verify": "npm run typecheck && npm run test && npm run build && npm run build:storybook && npm run typecheck:desktop && npm run test:desktop && npm --prefix apps/desktop run build && npm run typecheck:agent-tray && npm run test:agent-tray",
     "gate": "npm run typecheck && npm run test && npm run -w @voicechat/web build && npm run build:storybook",
-  "//gate:fast": "Гейт шага разработки: только затронутые пакеты, related-тесты вместо полных наборов, адресные сборки. Перед коммитом/PR всё равно нужен полный npm run gate.",
-  "gate:fast": "node scripts/affected-check.mjs --fast --worktree",
+    "//gate:fast": "Гейт шага разработки: только затронутые пакеты, related-тесты вместо полных наборов, адресные сборки. Перед коммитом/PR всё равно нужен полный npm run gate.",
+    "gate:fast": "node scripts/affected-check.mjs --fast --worktree",
+  "//test:coverage": "Покрытие трёх пакетов, где живёт 76% тестов. Пороги-трещотка заданы в их vitest.config.ts и падают по коду возврата.",
+  "test:coverage": "npm run -w @voicechat/shared test -- --coverage && npm run -w @voicechat/server test -- --coverage && npm run -w @voicechat/ui test -- --coverage",
     "typecheck:desktop": "npm --prefix apps/desktop run typecheck",
     "test:desktop": "npm --prefix apps/desktop run test",
     "typecheck:agent-tray": "npm --prefix apps/agent-tray run typecheck",
@@ -59,5 +61,8 @@
     "browser-runner:stop": "bash scripts/browser-runner-local.sh down",
     "reader:probe": "tsx scripts/reader-probe.mjs",
     "qa-stage:check": "tsx scripts/qa-stage-check.mjs"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "2.1.9"
   }
 }
