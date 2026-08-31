@@ -10,13 +10,15 @@ import type { ProfileAccessDenial, ProfileCapabilities, ProfileProvider } from '
 import { accessSummary, isModelDenied, isProviderEnabled, setAllAccess, toggleAccess } from '../model'
 
 export interface AccessTabProps {
+  /** null — права ещё грузятся: «полный доступ» и «не загружено» выглядят одинаково. */
+  loading?: boolean
   providers: readonly ProfileProvider[]
   denied: readonly ProfileAccessDenial[]
   capabilities: ProfileCapabilities
   onChange: (denied: ProfileAccessDenial[]) => void
 }
 
-export function AccessTab({ providers, denied, capabilities, onChange }: AccessTabProps): JSX.Element {
+export function AccessTab({ loading = false, providers, denied, capabilities, onChange }: AccessTabProps): JSX.Element {
   const [query, setQuery] = useState('')
   const summary = accessSummary(denied, providers)
   const editable = capabilities.canEditAccess
@@ -27,7 +29,7 @@ export function AccessTab({ providers, denied, capabilities, onChange }: AccessT
       <div className="vcp-section-head">
         <div>
           <h3>Доступ к моделям</h3>
-          <p>{editable ? 'Пустые права означают полный доступ.' : 'Права выдаёт администратор — здесь они только видны.'}</p>
+          <p>{loading ? 'Загружаем права…' : editable ? 'Пустые права означают полный доступ.' : 'Права выдаёт администратор — здесь они только видны.'}</p>
         </div>
         <SearchField compact value={query} onChange={setQuery} label="Найти модель" testId="model-search" />
       </div>

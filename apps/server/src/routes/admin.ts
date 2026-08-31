@@ -354,7 +354,7 @@ export function registerAdminRoutes(
   }
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}, bulk = usersBulk()): AdminUserInfo => {
+  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}, bulk = usersBulk(), withAgents = true): AdminUserInfo => {
     const online = bulk.online
     // Версия и телеметрия нужны админке для «обновить до актуальной» (п.16) и для
     // строки «Онлайн · macOS 15.6»; у офлайн-машины ни того, ни другого нет —
@@ -367,12 +367,30 @@ export function registerAdminRoutes(
     const activity = bulk.activity.get(name)
     // Админу — все беседы пользователя: скрытие чатов завершённых задач это
     // фильтр сайдбара их владельца, а не свойство данных.
-    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null, llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt, agents, conversationCount: bulk.conversations.get(name) ?? 0, lastSeenAt: activity?.lastSeen ?? null, liveSessions: activity?.live ?? 0 }
+    return {
+      failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null,
+      mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null,
+      llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt,
+      // Список людей получает только счётчики: полный набор машин там нужен
+      // одной строке «0 из 2 онлайн», а стоит килобайты на каждого человека.
+      ...(withAgents ? { agents } : {}),
+      machinesTotal: agents.length,
+      machinesOnline: agents.filter((agent) => agent.online).length,
+      conversationCount: bulk.conversations.get(name) ?? 0,
+      lastSeenAt: activity?.lastSeen ?? null, liveSessions: activity?.live ?? 0
+    }
   }
 
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> => {
     const bulk = usersBulk()
-    return db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u, bulk))
+    return db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u, bulk, false))
+  })
+
+  /** Машины одного человека: их грузит карточка, когда её открыли. */
+  app.get<{ Params: { name: string } }>(REST.adminUserMachines(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    const user = db.getUser(req.params.name)
+    if (!user) return reply.code(404).send({ error: 'not found' })
+    return toInfo(user.name, user.role, user.blocked, user.createdAt, user).agents ?? []
   })
 
   // Метрики машин (п.5): агрегаты БД + живые online/версия/телеметрия реестра.

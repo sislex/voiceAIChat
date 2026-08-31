@@ -17,12 +17,15 @@ export interface QuickStatsProps {
 }
 
 export function QuickStats({ user, access, usage, budget, now }: QuickStatsProps): JSX.Element {
-  const online = user.machines.filter((machine) => machine.online).length
+  // Счётчики приходят со списком людей, сам список машин — позже: «0 из 0» до
+  // загрузки выглядел бы как «машин нет».
+  const online = user.machinesOnline ?? user.machines.filter((machine) => machine.online).length
+  const total = user.machinesTotal ?? user.machines.length
   return (
     <div className="vcp-quick" data-testid="profile-quick-stats">
       <StatCard compact label="Последняя активность" value={formatAgo(user.lastSeenAt, now)} hint={user.liveSessions ? `${user.liveSessions} живых сессий` : undefined} />
       <StatCard compact label="Доступ" value={`${access.allowed} из ${access.total} моделей`} />
-      <StatCard compact label="Машины" value={`${online} из ${user.machines.length} онлайн`} />
+      <StatCard compact label="Машины" value={`${online} из ${total} онлайн`} />
       <StatCard
         compact
         label="Расход за месяц"

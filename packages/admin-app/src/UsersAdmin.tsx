@@ -40,7 +40,7 @@ function AdminFrame({ variant, title, showTitle, onClose, children }: { variant:
     : (
       <section className="admin-page" aria-label={title} data-testid="users-overlay">
         <header className={showTitle ? 'admin-head' : 'admin-head admin-head--bare'}>
-          {showTitle ? <h2>{title}</h2> : <span />}
+          {showTitle ? <h1>{title}</h1> : <span />}
           <Button onClick={onClose}>Закрыть</Button>
         </header>
         {children}
@@ -78,6 +78,11 @@ export interface UsersAdminProps {
   usageLoading?: boolean
   /** Ошибка загрузки данных вкладки: тост исчезает, а карточка остаётся пустой. */
   tabError?: string | null
+  /** Ошибка последней попытки создать учётку — показывается в форме. */
+  createError?: string | null
+  /** Машины выбранного человека: список людей их не содержит. */
+  userMachines?: import('@shared/admin').AdminAgentInfo[] | null
+  onLoadUserMachines?: () => void
   conversations: Conversation[]
   messages: Message[]
   conversationId: string | null
@@ -156,6 +161,9 @@ export function UsersAdmin({
   usage,
   usageLoading = false,
   tabError = null,
+  createError = null,
+  userMachines = null,
+  onLoadUserMachines,
   conversations,
   messages,
   conversationId,
@@ -232,6 +240,7 @@ export function UsersAdmin({
     // журнал (двести) грузится только на своей вкладке.
     if (tab === 'history') onLoadSecurity?.(200)
     else if (tab === 'overview') onLoadSecurity?.(20)
+    if (tab === 'machines') onLoadUserMachines?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName, tab, period])
 
@@ -252,9 +261,12 @@ export function UsersAdmin({
             usageSummary={usageSummary}
             selected={selectedName}
             tab={tab}
+            {...(current.page === 'users' && current.list ? { list: current.list } : {})}
             usage={usage}
+            userMachines={userMachines}
             usageLoading={usageLoading}
             tabError={tabError}
+            createError={createError}
             onRetryTab={() => { if (tab === 'history') onLoadSecurity?.(200); else loadUsageFor(period) }}
             security={security}
             llmAccess={llmAccess}
@@ -268,7 +280,7 @@ export function UsersAdmin({
             period={period}
             onSelectPeriod={(next) => setPeriod(next)}
             onNavigate={navigate}
-            onSelect={(name) => { onSelect(name); navigate({ page: 'users', userName: name, tab }) }}
+            onSelect={(name) => { onSelect(name); navigate({ page: 'users', userName: name, tab, ...(current.page === 'users' && current.list ? { list: current.list } : {}) }) }}
             onCreate={onCreate}
             onUpdateRole={onUpdateRole}
             onSetBlocked={onSetBlocked}

@@ -24,6 +24,8 @@ export function ProfileHead({ user, capabilities, now, activeWindowMs, onChangeR
       <Avatar username={user.name} size={50} />
       <div className="vcp-head__main">
         <div className="vcp-head__name">
+          {/* h2 внутри страницы, где h1 — заголовок раздела: уровни идут подряд,
+              иначе скринридер сообщает о пропущенном уровне. */}
           <h2>{user.name}</h2>
           <Badge tone="accent">{user.role}</Badge>
           {user.blocked

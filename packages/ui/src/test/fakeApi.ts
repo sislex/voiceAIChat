@@ -788,6 +788,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return me ?? { name: ME, role: 'developer' as const, blocked: false, createdAt: 1, conversationCount: 0, agents: [], lastSeenAt: 1, liveSessions: 1 }
     },
     'me:security': async () => [{ id: 1, at: 1, user: ME, type: 'login' as const, ip: '127.0.0.1', userAgent: 'Test/1.0', details: '' }],
+    'admin:userMachines': async ({ name }) => adminUsers.find((user) => user.name === name)?.agents ?? [],
     'admin:llmAccess': async ({ name }) => [...(userLlmAccess.get(name) ?? [])],
     'admin:saveLlmAccess': async ({ name, access }) => { userLlmAccess.set(name, [...access]); return [...access] },
     'admin:createUser': async ({ name, role }) => {

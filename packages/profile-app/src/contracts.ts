@@ -33,7 +33,14 @@ export interface ProfileUser {
   llmLimitUsd?: number | null
   conversationCount: number
   mustChangePassword?: boolean
+  /**
+   * Машины человека. Список может быть ещё не загружен (его отдаёт отдельный
+   * запрос вкладки), поэтому счётчики приходят рядом: вкладка и быстрые факты
+   * показывают число машин, не дожидаясь самого списка.
+   */
   machines: ProfileMachine[]
+  machinesTotal?: number
+  machinesOnline?: number
 }
 
 /** Событие журнала безопасности в том виде, в котором его рисует лента. */

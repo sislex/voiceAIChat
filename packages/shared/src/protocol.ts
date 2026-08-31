@@ -312,6 +312,8 @@ export const REST = {
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
+  /** Машины одного человека: список людей их не отдаёт, карточка грузит по требованию. */
+  adminUserMachines: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/machines`,
   /** Журнал безопасности (auth-roadmap п.7): `?user=&limit=`. */
   adminSecurity: '/api/admin/security',
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */

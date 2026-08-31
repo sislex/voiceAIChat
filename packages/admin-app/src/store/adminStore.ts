@@ -34,9 +34,13 @@ export interface AdminState {
   adminUsersStatus: LoadStatus
   adminUsersError: string | null
   adminSelected: string | null
+  /** Машины выбранного человека: список людей их не содержит. */
+  adminUserMachines: import('@shared/admin').AdminAgentInfo[] | null
   adminUsage: UsageReport | null
   /** Ошибка загрузки данных вкладки карточки: тост исчезает, а вкладка остаётся пустой. */
   adminTabError: string | null
+  /** Ошибка последней попытки создать учётку: политика пароля, занятое имя. */
+  adminCreateError: string | null
   /** Отчёт в полёте: карточка показывает скелетон, а не пустоту и не вечную загрузку. */
   adminUsageLoading: boolean
   /** Сессии выбранного пользователя (auth-roadmap п.4); null — не загружены. */
@@ -93,6 +97,7 @@ export interface AdminActions {
   checkAdminLlmEngineHealth(id: string): Promise<void>
   /** Данные служебной страницы админки по её адресу. */
   openAdminPage(page: 'engines' | 'prices' | 'system'): Promise<void>
+  loadAdminUserMachines(): Promise<void>
   loadAdminUserLlmAccess(name?: string): Promise<void>
   saveAdminUserLlmAccess(access: UserLlmAccess[]): Promise<void>
   reset(): void
@@ -117,9 +122,11 @@ function initialState(): AdminState {
     adminUsersStatus: 'loading',
     adminUsersError: null,
     adminSelected: null,
+    adminUserMachines: null,
     adminUsage: null,
     adminUsageLoading: false,
     adminTabError: null,
+    adminCreateError: null,
     adminSecurity: null,
     adminInvites: null,
     adminSignup: null,
@@ -149,13 +156,19 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       // Раньше она запрашивалась без границ, то есть «за всё время», и цифра в
       // шапке не сходилась с расходом в карточке человека.
       const to = Date.now()
-      const [adminUsers, adminUsageSummary, adminMachineStats] = await Promise.all([
+      const from = monthStart(to)
+      // Сводка кэшируется по границам месяца: повторный вход в раздел за ту же
+      // сессию не заставляет сервер пересчитывать её заново.
+      const summaryKey = `\u0000summary:${from}`
+      const cachedSummary = loaded.has(summaryKey) ? getState().adminUsageSummary : null
+      const [adminUsers, adminUsageSummary] = await Promise.all([
         client.listUsers(),
-        client.usageSummary({ from: monthStart(to), to }),
-        // Метрики машин — необязательная часть сводки: их отказ не должен ронять список.
-        client.machineStats ? client.machineStats().catch(() => null) : Promise.resolve(null)
+        cachedSummary ?? client.usageSummary({ from, to })
       ])
-      setState({ adminUsers, adminUsageSummary, adminMachineStats, adminUsersStatus: 'ready', adminUsersError: null })
+      if (!cachedSummary) loaded.add(summaryKey)
+      // Метрики машин переехали на страницу «Система»: список людей знает
+      // только счётчики, которые приходят вместе с ним.
+      setState({ adminUsers, adminUsageSummary, adminUsersStatus: 'ready', adminUsersError: null })
     } catch (err) {
       setState({
         adminUsersStatus: 'error',
@@ -211,6 +224,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     setState({
       usersOpen: false,
       adminSelected: null,
+      adminUserMachines: null,
       adminUsage: null,
     adminSecurity: null,
     adminInvites: null,
@@ -274,6 +288,9 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     try {
       if (page === 'engines') await refreshAdminLlmEngines()
       if (page === 'prices') await refreshAdminModelPrices()
+      if (page === 'system' && client.machineStats) {
+        setState({ adminMachineStats: await client.machineStats().catch(() => null) })
+      }
       if (page === 'system' && client.makeStats) {
         // Метрики Make считают место на диске обходом каталога: в списке людей
         // такой ценой они не нужны никому.
@@ -281,6 +298,24 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       }
     } catch (err) {
       fail(err, () => void openAdminPage(page))
+    }
+  }
+
+  /** Машины человека — по требованию вкладки, а не вместе со списком людей. */
+  async function loadAdminUserMachines(): Promise<void> {
+    const name = getState().adminSelected
+    if (!name || !client.userMachines) return
+    const key = `${name}\u0000machines`
+    if (loaded.has(key)) return
+    const request = ++tabRequest
+    try {
+      const machines = await client.userMachines({ name })
+      if (request !== tabRequest || getState().adminSelected !== name) return
+      loaded.add(key)
+      setState({ adminUserMachines: machines })
+    } catch (err) {
+      setState({ adminTabError: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void loadAdminUserMachines())
     }
   }
 
@@ -440,10 +475,14 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       openAdminPage,
       closeUsers,
       async createUserAccount(name, password, role, mustChangePassword) {
+        setState({ adminCreateError: null })
         try {
           await client.createUser({ name, password, role, ...(mustChangePassword ? { mustChangePassword: true } : {}) })
           await refreshAdminUsers()
         } catch (err) {
+          // Причина отказа (политика пароля, занятое имя) нужна в самой форме:
+          // тост исчезнет раньше, чем человек успеет исправить пароль.
+          setState({ adminCreateError: err instanceof Error ? err.message : String(err) })
           fail(err)
         }
       },
@@ -540,6 +579,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
         }
       },
       checkAdminLlmEngineHealth,
+      loadAdminUserMachines,
       loadAdminUserLlmAccess,
       saveAdminUserLlmAccess,
       reset() {

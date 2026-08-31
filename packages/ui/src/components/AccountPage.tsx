@@ -80,7 +80,9 @@ export function toProfileUser(profile: UserProfileInfo): ProfileUser {
     llmLimitUsd: profile.llmLimitUsd ?? null,
     conversationCount: profile.conversationCount,
     ...(profile.mustChangePassword ? { mustChangePassword: true } : {}),
-    machines: profile.agents.map((agent) => ({
+    ...(profile.machinesTotal !== undefined ? { machinesTotal: profile.machinesTotal } : {}),
+    ...(profile.machinesOnline !== undefined ? { machinesOnline: profile.machinesOnline } : {}),
+    machines: (profile.agents ?? []).map((agent) => ({
       id: agent.id,
       name: agent.name,
       online: agent.online,

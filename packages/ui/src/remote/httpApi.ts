@@ -333,6 +333,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.adminUsers, { method: 'POST', body: JSON.stringify(b) }),
     'admin:updateUserRole': ({ name, role }) =>
       req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ role }) }),
+    'admin:userMachines': ({ name }) => req(REST.adminUserMachines(name)),
     'admin:setBlocked': async ({ name, blocked, reason }) => {
       await req(REST.adminUserBlock(name), { method: 'POST', body: JSON.stringify({ blocked, ...(reason ? { reason } : {}) }) })
     },

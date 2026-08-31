@@ -58,6 +58,8 @@ describe('adminStore', () => {
     expect(listLlmEngines).not.toHaveBeenCalled()
     expect(listModelPrices).not.toHaveBeenCalled()
     expect(makeStats).not.toHaveBeenCalled()
+    // Метрики машин тоже переехали на страницу «Система».
+    expect(client.machineStats).not.toHaveBeenCalled()
     // Сводка расхода — за текущий месяц, а не за всё время: та же цифра стоит в карточке.
     const range = usageSummary.mock.calls[0]?.[0]
     expect(range?.from).toBeLessThanOrEqual(Date.now())
@@ -67,6 +69,11 @@ describe('adminStore', () => {
     expect(listLlmEngines).toHaveBeenCalledTimes(1)
     await store.actions.openAdminPage('system')
     expect(makeStats).toHaveBeenCalledTimes(1)
+
+    // Повторный вход в раздел не пересчитывает сводку расхода за тот же месяц.
+    await store.actions.openUsers()
+    expect(listUsers).toHaveBeenCalledTimes(2)
+    expect(usageSummary).toHaveBeenCalledTimes(1)
     store.dispose()
   })
 })

@@ -30,6 +30,8 @@ export interface AdminClient {
   signupConfig?(): Promise<SignupConfig>
   setSignupConfig?(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<SignupConfig>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
+  /** Машины одного человека: карточка грузит их сама, список людей не содержит. */
+  userMachines?(input: { name: string }): Promise<import('@shared/admin').AdminAgentInfo[]>
   /** Причина уходит в журнал безопасности: через месяц «почему заблокирован» спросит другой администратор. */
   setUserBlocked(input: { name: string; blocked: boolean; reason?: string }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>
