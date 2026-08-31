@@ -1041,6 +1041,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }), [path, segments, routeSettings, routeReleases, routeTaskId, assistantTaskId, projects.boardView, projects.boardIncludeCompleted, commandsVersion])
   const assistantSurfaceRef = useRef(assistantSurface)
   useEffect(() => { assistantSurfaceRef.current = assistantSurface }, [assistantSurface])
+  // Пользователь ушёл на другой экран — сообщаем ассистенту: иначе весь его ход
+  // опирается на снимок, снятый в момент реплики. Шлём только смену адреса и
+  // раздела: состав кнопок он и так перечитывает через ui_state.
+  useEffect(() => {
+    if (!assistantConversationId || !routeProjectId) return
+    window.widgetUi?.surfaceChanged({ conversationId: assistantConversationId, projectId: routeProjectId, surface: assistantSurfaceRef.current })
+  }, [assistantConversationId, routeProjectId, path, assistantSurface.section, assistantSurface.openTaskId, assistantSurface.openTaskTab])
   // Действия канбан-ассистента в интерфейсе: сервер шлёт widget.action, эта
   // вкладка выполняет его и отвечает снимком экрана. Сам набор действий живёт в
   // lib/widgetUiActions.ts — здесь только мост и окно подтверждения.
@@ -1059,9 +1066,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           message: <><p>{request.note ?? 'Ассистент просит подтверждение.'}</p><pre className="widget-confirm-rows">{formatConfirmRows(request.rows)}</pre></>,
           confirmLabel: 'Применить'
         })
-      }).then((outcome) => bridge.result({ conversationId, requestId, ...outcome }))
+      }).then((outcome) => {
+        // Экран у пользователя меняется «сам»: без пометки это выглядит сбоем.
+        // Подтверждение и чтение состояния молчат — там пользователь и так в курсе.
+        if (outcome.ok && outcome.result.note) toast.info(`Ассистент: ${outcome.result.note}`)
+        bridge.result({ conversationId, requestId, ...outcome })
+      })
     })
-  }, [routeProjectId, navigate, confirm])
+  }, [routeProjectId, navigate, confirm, toast])
 
   const kanbanAssistantContext = useMemo<WidgetAssistantContext<KanbanAssistantSelection>>(() => {
     const project = projects.projects.find((item) => item.id === routeProjectId) ?? null
@@ -2540,6 +2552,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 api={api}
                 llmEngines={settingsState.llmEngines}
                 conversationId={assistantConversationId}
+                onOpenTask={(taskId) => navigate(`/projects/${routeProjectId}/task/${taskId}`)}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
                   if (command.type === 'navigate.project-settings') { navigate(`/projects/${command.projectId}/settings`); return }
