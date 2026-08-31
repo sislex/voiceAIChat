@@ -20,6 +20,8 @@ const api = (status: GitWorkspaceStatus, over: Partial<GitPaneApi> = {}): GitPan
   'projects:gitCreateBranch': async () => ({ status, createdLocal: true }),
   'projects:gitCommit': async () => ({ status: { ...status, changes: [] }, sha: 'd'.repeat(40), staged: 1 }),
   'projects:gitPush': async () => ({ status, branch: status.branch ?? 'CHAT-42', sha: 'd'.repeat(40) }),
+  'projects:gitPull': async () => ({ status, mode: 'rebase' as const, pulled: 2 }),
+  'projects:gitDiscard': async () => ({ status, reverted: 1, removed: 0 }),
   ...over
 }) as GitPaneApi
 
@@ -87,3 +89,18 @@ export const TruncatedChanges: Story = {
 export const ReadFailed: Story = {
   args: { api: api(makeGitStatus(), { 'projects:gitStatus': (async () => { throw new Error('Машина не в сети') }) as never }) }
 }
+
+/** Роль без `repository:write`: смотреть можно, кнопки записи объясняют отказ. */
+export const RoleWithoutWriteAccess: Story = {
+  args: {
+    api: api(makeGitStatus({
+      ref: makeGitWorkspace({ writable: false, readOnlyReason: 'Ваша роль не позволяет менять рабочую копию' })
+    }))
+  }
+}
+
+/** Ветка отстала от origin: появляется «Подтянуть», на грязном дереве — выключенная. */
+export const BehindOrigin: Story = { args: { api: api(makeGitStatus({ behind: 3, ahead: 1 })) } }
+
+/** Отстала и дерево чистое — подтянуть можно сразу. */
+export const BehindOriginClean: Story = { args: { api: api(makeGitStatus({ behind: 3, ahead: 0, changes: [] })) } }

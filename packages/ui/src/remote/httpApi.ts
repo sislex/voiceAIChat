@@ -500,6 +500,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectGitCommit(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:gitPush': ({ id, ...body }) =>
       req(REST.projectGitPush(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitPull': ({ id, ...body }) =>
+      req(REST.projectGitPull(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitDiscard': ({ id, ...body }) =>
+      req(REST.projectGitDiscard(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>

@@ -1245,6 +1245,15 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       gitState.status = { ...gitState.status, changes: [], ahead: gitState.status.ahead + 1 }
       return { status: gitState.status, sha: 'd'.repeat(40), staged }
     },
+    'projects:gitPull': async ({ mode }) => {
+      gitState.status = { ...gitState.status, behind: 0 }
+      return { status: gitState.status, mode: mode ?? 'rebase', pulled: 1 }
+    },
+    'projects:gitDiscard': async ({ paths, confirmText }) => {
+      if (confirmText !== (gitState.status.branch ?? '')) throw new Error('confirmation_mismatch: имя ветки не совпало')
+      gitState.status = { ...gitState.status, changes: gitState.status.changes.filter((change) => !paths.includes(change.path)) }
+      return { status: gitState.status, reverted: paths.length, removed: 0 }
+    },
     'projects:gitPush': async ({ branch }) => {
       const target = branch ?? gitState.status.branch ?? 'CHAT-42'
       gitState.pushed.push(target)

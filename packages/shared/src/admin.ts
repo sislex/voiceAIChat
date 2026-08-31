@@ -267,7 +267,9 @@ export interface InviteInfo { token: string; role: UserRole; createdBy: string; 
 export type SecurityGroup = 'all' | 'auth' | 'account' | 'machines'
 
 const SECURITY_AUTH = new Set(['login', 'login_failed', 'login_locked', 'login_2fa_failed', 'login_new_device', 'logout', 'logout_all', 'session_revoked', 'session_evicted', 'session_panic', 'session_trusted', 'session_untrusted', 'session_renamed'])
-const SECURITY_MACHINES = new Set(['agent_connected', 'agent_rejected', 'agent_token_rotated', 'agent_token_revoked'])
+// Правка файла, checkout, коммит и push из панели кода — тоже про машину:
+// они меняют рабочую копию на чужом хосте, и владелец машины вправе это видеть.
+const SECURITY_MACHINES = new Set(['agent_connected', 'agent_rejected', 'agent_token_rotated', 'agent_token_revoked', 'git_workspace_mutation'])
 
 /** К какой группе относится событие; всё, что не вход и не машины, — учётка. */
 export function securityGroup(type: string): Exclude<SecurityGroup, 'all'> {
@@ -289,7 +291,7 @@ export function filterSecurityGroup<T extends { type: string }>(events: T[], gro
 }
 
 /** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
-export type SecurityEventType = 'agent_connected' | 'agent_rejected' | 'agent_token_rotated' | 'agent_token_revoked' | 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'project_invited' | 'project_invite_accepted' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'session_renamed' | 'session_trusted' | 'session_untrusted' | 'session_evicted' | 'session_panic' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
+export type SecurityEventType = 'agent_connected' | 'agent_rejected' | 'agent_token_rotated' | 'agent_token_revoked' | 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'project_invited' | 'project_invite_accepted' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'session_renamed' | 'session_trusted' | 'session_untrusted' | 'session_evicted' | 'session_panic' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked' | 'git_workspace_mutation'
 export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }
 
 /** Метрики машины для админки и Prometheus (machines-roadmap п.5). */

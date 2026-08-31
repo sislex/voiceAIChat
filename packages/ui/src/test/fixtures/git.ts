@@ -26,6 +26,7 @@ export function makeGitWorkspace(over: Partial<GitWorkspaceRef> = {}): GitWorksp
     pushed: false,
     online: true,
     writable: true,
+    readOnlyReason: null,
     busy: null,
     released: false,
     ...over

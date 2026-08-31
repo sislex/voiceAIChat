@@ -202,6 +202,60 @@ export function pushScript(branch: string): GitScript {
 }
 
 /**
+ * Подтянуть изменения origin в текущую ветку. `rebase` по умолчанию: он оставляет
+ * линейную историю, которую потом сливает merge-ран. Конфликт — не «сломалось», а
+ * штатный ответ: скрипт откатывает начатое (`rebase --abort` / `merge --abort`) и
+ * выходит с кодом 65, чтобы человек увидел причину, а рабочая копия осталась целой.
+ */
+export function pullScript(branch: string, mode: 'rebase' | 'merge'): GitScript {
+  const combine = mode === 'rebase'
+    ? ['  git rebase "origin/$VC_GIT_BRANCH" || { git rebase --abort; exit 65; }']
+    : ['  git merge --no-edit "origin/$VC_GIT_BRANCH" || { git merge --abort; exit 65; }']
+  return {
+    env: { VC_GIT_BRANCH: branch },
+    script: [
+      'set -e',
+      mark('before'),
+      'git rev-parse HEAD',
+      mark('fetch'),
+      'git fetch --prune origin "$VC_GIT_BRANCH"',
+      mark('combine'),
+      'if git rev-parse --verify --quiet "refs/remotes/origin/$VC_GIT_BRANCH"; then',
+      ...combine,
+      'else',
+      `  printf '%s\\n' 'no-upstream'`,
+      'fi',
+      mark('after'),
+      'git rev-parse HEAD',
+      mark('done')
+    ].join('\n')
+  }
+}
+
+/**
+ * Отбросить правки в перечисленных путях. Единственная опасная по нашим меркам
+ * операция панели (`git clean` попадает в `DANGEROUS_COMMAND_PATTERNS`), поэтому она
+ * никогда не вызывается «попутно»: только явным действием с вводом имени ветки.
+ *
+ * Порядок важен: сначала `checkout --` возвращает отслеживаемые файлы, потом
+ * `clean -fd --` убирает неотслеживаемые. Обратный порядок удалил бы файл, который
+ * checkout мог восстановить.
+ */
+export function discardScript(paths: string[]): GitScript {
+  return {
+    env: { VC_GIT_PATHS: paths.join('\n') },
+    script: [
+      'set -e',
+      mark('revert'),
+      `printf '%s' "$VC_GIT_PATHS" | tr '\\n' '\\0' | xargs -0 git checkout -- || printf '%s\\n' 'checkout-skipped'`,
+      mark('clean'),
+      `printf '%s' "$VC_GIT_PATHS" | tr '\\n' '\\0' | xargs -0 git clean -fd --`,
+      mark('done')
+    ].join('\n')
+  }
+}
+
+/**
  * Окружение для любой git-команды панели.
  *
  * `GIT_TERMINAL_PROMPT=0` и `GIT_ASKPASS` — чтобы push без настроенного credential

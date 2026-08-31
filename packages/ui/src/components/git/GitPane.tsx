@@ -27,7 +27,7 @@ export type GitPaneApi = Pick<
   RendererApi,
   'projects:gitStatus' | 'projects:gitBranches' | 'projects:gitDiff' | 'projects:gitTree' | 'projects:gitFile'
   | 'projects:gitSaveFile' | 'projects:gitCheckout' | 'projects:gitCreateBranch'
-  | 'projects:gitCommit' | 'projects:gitPush'
+  | 'projects:gitCommit' | 'projects:gitPush' | 'projects:gitPull' | 'projects:gitDiscard'
 >
 
 export interface GitPaneProps {
@@ -57,6 +57,12 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  /**
+   * Черновики по пути. Раньше открытие другого файла молча перетирало правку: человек
+   * возвращался и находил исходный текст. Теперь несохранённое остаётся в памяти
+   * панели, помечается точкой в списке и восстанавливается при возврате к файлу.
+   */
+  const [drafts, setDrafts] = useState<Record<string, { draft: string; saved: string }>>({})
   const [draft, setDraft] = useState('')
   const [savedText, setSavedText] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,6 +70,9 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
   const [message, setMessage] = useState('')
   const [committing, setCommitting] = useState(false)
   const [pushing, setPushing] = useState(false)
+  const [pulling, setPulling] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
+  const [fetching, setFetching] = useState(false)
   // Каждый ответ обесценивает предыдущий: пока читался файл, человек мог выбрать другой.
   const requestRef = useRef(0)
 
@@ -102,8 +111,17 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
     }
   }, [api, projectId, workspaceId])
 
+  /** Отложить текущий черновик, прежде чем открыть другой файл. */
+  const keepDraft = useCallback((): void => {
+    setSelected((current) => {
+      if (current) setDrafts((prev) => ({ ...prev, [current]: { draft, saved: savedText } }))
+      return current
+    })
+  }, [draft, savedText])
+
   const openFile = useCallback(async (path: string): Promise<void> => {
     const ticket = ++requestRef.current
+    keepDraft()
     setSelected(path)
     setEditing(false)
     setDiff(null)
@@ -113,13 +131,17 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
       if (requestRef.current !== ticket) return
       setDiff(next)
       const text = next.modified?.content ?? ''
-      setDraft(text)
+      // Незакоммиченный черновик этого файла важнее только что прочитанного текста:
+      // человек его набрал и не сохранил.
+      const kept = drafts[path]
+      setDraft(kept && kept.saved === text ? kept.draft : text)
       setSavedText(text)
+      if (kept && kept.saved === text && kept.draft !== text) setEditing(true)
     } catch (error) {
       if (requestRef.current !== ticket) return
       setFileError(errorText(error))
     }
-  }, [api, projectId, workspaceId])
+  }, [api, projectId, workspaceId, keepDraft, drafts])
 
   /**
    * Файл из дерева: у него может не быть изменений, поэтому сравнение бессмысленно —
@@ -127,13 +149,15 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
    */
   const openFromTree = useCallback(async (path: string): Promise<void> => {
     const ticket = ++requestRef.current
+    keepDraft()
     setSelected(path)
     setDiff(null)
     setFileError(null)
     try {
       const file = await api['projects:gitFile']({ id: projectId, workspace: workspaceId, path })
       if (requestRef.current !== ticket) return
-      setDraft(file.content)
+      const kept = drafts[path]
+      setDraft(kept && kept.saved === file.content ? kept.draft : file.content)
       setSavedText(file.content)
       setEditing(true)
     } catch (error) {
@@ -145,7 +169,7 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
   const loadTreeDir = useCallback(async (dir: string) => {
     const listing = await api['projects:gitTree']({ id: projectId, workspace: workspaceId, dir })
     return listing.entries
-  }, [api, projectId, workspaceId])
+  }, [api, projectId, workspaceId, keepDraft, drafts])
 
   const ref = status?.ref ?? null
   const writable = Boolean(ref?.writable && !ref?.busy && !ref?.released)
@@ -154,6 +178,12 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
   const branchProtected = status?.branch ? isProtectedGitBranch(status.branch) : false
   const canCommit = writable && (picked.size > 0) && message.trim().length > 0
   const pickedList = useMemo(() => [...picked], [picked])
+  /** Файлы с несохранёнными правками: и отложенные черновики, и открытый сейчас. */
+  const dirtySet = useMemo(() => {
+    const set = new Set(Object.entries(drafts).filter(([, value]) => value.draft !== value.saved).map(([path]) => path))
+    if (selected && draft !== savedText) set.add(selected)
+    return set
+  }, [drafts, selected, draft, savedText])
 
   const save = async (): Promise<void> => {
     if (!selected) return
@@ -167,6 +197,7 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
     try {
       const result = await api['projects:gitSaveFile']({ id: projectId, workspace: workspaceId, path: selected, content: draft })
       setSavedText(result.file.content)
+      setDrafts((prev) => ({ ...prev, [selected]: { draft: result.file.content, saved: result.file.content } }))
       setStatus(result.status)
       toast.success('Файл сохранён')
     } catch (error) {
@@ -226,6 +257,69 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
       toast.error(`Коммит не создан: ${errorText(error)}`)
     } finally {
       setCommitting(false)
+    }
+  }
+
+  /** Подтянуть origin: без этого отказ push с non-fast-forward был тупиком. */
+  const pull = async (): Promise<void> => {
+    const ok = await confirm({
+      title: 'Подтянуть изменения из origin?',
+      message: `Ветка ${status?.branch ?? '—'} будет перебазирована на origin/${status?.branch ?? '—'}. Рабочая копия должна быть без незакоммиченных правок.`,
+      confirmLabel: 'Подтянуть'
+    })
+    if (!ok) return
+    setPulling(true)
+    try {
+      const result = await api['projects:gitPull']({ id: projectId, workspace: workspaceId, mode: 'rebase' })
+      setStatus(result.status)
+      toast.success(result.pulled > 0 ? `Подтянуто коммитов: ${result.pulled}` : 'Уже актуально')
+    } catch (error) {
+      toast.error(`Не удалось подтянуть: ${errorText(error)}`)
+    } finally {
+      setPulling(false)
+    }
+  }
+
+  /** Обновить данные origin, не открывая диалог ветки: иначе ↑/↓ нечем освежить. */
+  const fetchOrigin = async (): Promise<void> => {
+    setFetching(true)
+    try {
+      setBranches(await api['projects:gitBranches']({ id: projectId, workspace: workspaceId, refresh: true }))
+      await refresh()
+      toast.success('Данные origin обновлены')
+    } catch (error) {
+      toast.error(`Не удалось обновить: ${errorText(error)}`)
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  /**
+   * Отбросить правки — необратимо, поэтому подтверждение с вводом имени ветки
+   * (`requireText`), как у удаления колонки с задачами.
+   */
+  const discard = async (): Promise<void> => {
+    const expected = status?.branch ?? status?.head?.slice(0, 8) ?? ''
+    const ok = await confirm({
+      title: `Отбросить правки в ${pickedList.length} файлах?`,
+      message: 'Изменения будут потеряны безвозвратно: отслеживаемые файлы вернутся к HEAD, новые — удалятся с машины.',
+      variant: 'danger',
+      confirmLabel: 'Отбросить',
+      requireText: expected
+    })
+    if (!ok) return
+    setDiscarding(true)
+    try {
+      const result = await api['projects:gitDiscard']({ id: projectId, workspace: workspaceId, paths: pickedList, confirmText: expected })
+      setStatus(result.status)
+      setPicked(new Set())
+      setSelected(null)
+      setDiff(null)
+      toast.success(`Возвращено файлов: ${result.reverted}, удалено новых: ${result.removed}`)
+    } catch (error) {
+      toast.error(`Не удалось отбросить: ${errorText(error)}`)
+    } finally {
+      setDiscarding(false)
     }
   }
 
@@ -296,7 +390,19 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
         </div>
         <div className="gitpane-head-actions">
           <IconButton size="sm" title="Обновить состояние" aria-label="Обновить состояние рабочей копии" onClick={() => void refresh()}>⟳</IconButton>
-          <Button size="sm" disabled={!writable} onClick={() => { setBranchDialog(true); void loadBranches(false) }}>Ветка…</Button>
+          <Button size="sm" loading={fetching} onClick={() => void fetchOrigin()}>Обновить из origin</Button>
+          {status.behind > 0 && (
+            <Button
+              size="sm"
+              loading={pulling}
+              disabled={!writable || status.changes.length > 0}
+              title={status.changes.length > 0 ? 'Сначала закоммитьте или отбросьте изменения' : `Перебазировать на origin/${status.branch ?? ''}`}
+              onClick={() => void pull()}
+            >
+              Подтянуть ({status.behind})
+            </Button>
+          )}
+          <Button size="sm" disabled={!writable} title={writable ? undefined : ref?.readOnlyReason ?? undefined} onClick={() => { setBranchDialog(true); void loadBranches(false) }}>Ветка…</Button>
         </div>
       </header>
 
@@ -311,9 +417,7 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
 
       {ref && !ref.busy && !ref.writable && (
         <p className="gitpane-banner" role="status">
-          Рабочая копия доступна только для чтения: {ref.kind === 'merge-clone'
-            ? 'это merge-клон, им управляет merge-ран'
-            : 'запись запрещена политикой машины или режимом доступа проекта'}.
+          Рабочая копия доступна только для чтения: {ref.readOnlyReason ?? 'изменение запрещено'}.
         </p>
       )}
 
@@ -339,6 +443,7 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
                 selectedPath={selected}
                 checked={picked}
                 writable={writable}
+                dirtyPaths={dirtySet}
                 onSelect={(path) => void openFile(path)}
                 onToggle={(path, next) => setPicked((prev) => {
                   const copy = new Set(prev)
@@ -370,7 +475,7 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
           {selected && !fileError && (
             <>
               <div className="gitpane-main-head">
-                <strong className="gitpane-main-path">{selected}</strong>
+                <strong className="gitpane-main-path">{selected}{dirtyDraft ? ' ●' : ''}</strong>
                 <div className="sideswitch" role="tablist" aria-label="Вид файла">
                   <button type="button" role="tab" aria-selected={!editing} className={!editing ? 'on' : ''} onClick={() => setEditing(false)}>Изменения</button>
                   <button type="button" role="tab" aria-selected={editing} className={editing ? 'on' : ''} onClick={() => setEditing(true)}>Правка</button>
@@ -428,14 +533,35 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
         <div className="gitpane-foot-actions">
           <span className="gitpane-picked">{picked.size} выбрано</span>
           <Button size="sm" disabled={!writable || status.changes.length === 0} onClick={() => setPicked(new Set(status.changes.map((change) => change.path)))}>Выбрать все</Button>
-          <Button size="sm" variant="primary" loading={committing} disabled={!canCommit} onClick={() => void commit()}>Закоммитить</Button>
+          <Button
+            size="sm"
+            variant="danger"
+            loading={discarding}
+            disabled={!writable || picked.size === 0}
+            title={writable ? 'Вернуть выбранные файлы к HEAD, новые — удалить' : ref?.readOnlyReason ?? undefined}
+            onClick={() => void discard()}
+          >
+            Отбросить
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            loading={committing}
+            disabled={!canCommit}
+            title={!writable ? ref?.readOnlyReason ?? undefined : undefined}
+            onClick={() => void commit()}
+          >
+            Закоммитить
+          </Button>
           <Button
             size="sm"
             loading={pushing}
             disabled={!writable || !status.branch || branchProtected || status.ahead === 0}
-            title={branchProtected
-              ? 'В main, master и release/* панель не отправляет: это делают merge-ран и релизы'
-              : status.ahead === 0 ? 'Нет коммитов для отправки' : undefined}
+            title={!writable
+              ? ref?.readOnlyReason ?? undefined
+              : branchProtected
+                ? 'В main, master и release/* панель не отправляет: это делают merge-ран и релизы'
+                : status.ahead === 0 ? 'Нет коммитов для отправки' : undefined}
             onClick={() => void push()}
           >
             Отправить ветку
