@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { signToken } from '../users/accounts.js'
 import type { FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
+import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness } from './restHarness.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
@@ -16,7 +17,8 @@ const { inj, SECRET, U } = harness
 let app: FastifyInstance
 let db: VoiceChatDb
 let token: string
-beforeEach(() => { ({ app, db, token } = harness) })
+let agentRegistry: AgentRegistry
+beforeEach(() => { ({ app, db, token, agentRegistry } = harness) })
 
 
 describe('REST: conversations/messages/settings', () => {
@@ -756,6 +758,140 @@ describe('REST: conversations/messages/settings', () => {
     const saved = (await inj({ method: 'GET', url: '/api/settings' })).json()
     expect(saved.execTarget).toBeNull()
   })
+
+  it('предпросмотр промпта повторяет текст хода и слушается тумблеров', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Промпт' } })).json()
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, personalization: { ...settings.personalization, preferredName: 'Алексей', responseLanguage: 'ru', responseStyle: 'brief' } } })
+    const snap = async (): Promise<{
+      promptPreview: { blocks: Array<{ itemIds: string[]; text: string; chars: number; approxTokens: number }>; text: string; chars: number; approxTokens: number; omitted: string[] }
+      groups: Array<{ items: Array<{ id: string; size?: { chars: number; approxTokens: number } | null }> }>
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    const before = await snap()
+    // Карточка описывает предпочтения словами, а не печатает сырое поле («normal»).
+    const card = before.groups.flatMap((group) => group.items).find((entry) => entry.id === 'personalization') as unknown as { description: string }
+    expect(card.description).toContain('обращение «Алексей»')
+    expect(card.description).toContain('стиль кратко')
+    const personalization = before.promptPreview.blocks.find((block) => block.itemIds.includes('personalization'))
+    expect(personalization?.text).toContain('Обращение к пользователю: Алексей.')
+    expect(personalization?.text).toContain('Стиль ответа: кратко.')
+    expect(before.promptPreview.text).toContain('## Персонализация пользователя')
+    expect(before.promptPreview.chars).toBe(before.promptPreview.text.length)
+    expect(before.promptPreview.approxTokens).toBe(Math.ceil(before.promptPreview.text.length / 4))
+    expect(before.promptPreview.omitted.join(' ')).toContain('Правила платформы')
+    // Размер вклада виден и на самом пункте — иначе непонятно, кто занял место.
+    const item = before.groups.flatMap((group) => group.items).find((entry) => entry.id === 'personalization')
+    expect(item?.size).toEqual({ chars: personalization?.chars, approxTokens: personalization?.approxTokens })
+
+    // Выключенный пункт исчезает и из предпросмотра: панель обещает ровно то,
+    // что уйдёт модели, а не «что настроено».
+    const off = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: false } })
+    expect(off.statusCode).toBe(200)
+    const after = await snap()
+    expect(after.promptPreview.blocks.some((block) => block.itemIds.includes('personalization'))).toBe(false)
+    expect(after.promptPreview.text).not.toContain('Алексей')
+  })
+
+  it('история: размер при пересборке и правда про сессию движка (resume)', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'История' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: { role: 'user', text: 'Первый вопрос про сборку', time: '10:00' } })
+    const item = async (): Promise<{ description: string; explanation: string; size?: { chars: number; approxTokens: number } | null; details?: Record<string, unknown> }> => {
+      const snap = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return snap.groups.flatMap((g: { items: unknown[] }) => g.items).find((e: { id: string }) => e.id === 'conversation-history')
+    }
+
+    const withoutSession = await item()
+    expect(withoutSession.description).toMatch(/1 сообщений, ≈\d+ токенов/)
+    expect(withoutSession.explanation).toContain('пересобирается в промпт целиком')
+    expect(withoutSession.size?.chars).toBeGreaterThan(0)
+
+    // Живая сессия движка: история уже у модели, в промпт она не пересобирается.
+    db.setClaudeSession(U, created.id, 'claude:sess-1')
+    const withSession = await item()
+    expect(withSession.description).toContain('уже в сессии движка')
+    expect(withSession.explanation).toContain('resume')
+    expect(withSession.size ?? null).toBeNull()
+    expect(withSession.details?.['Сессия движка']).toBe('есть (resume)')
+
+    // Сессия другого движка чужой разговор не «продолжает»: у codex своя.
+    db.setClaudeSession(U, created.id, 'codex:sess-2')
+    expect((await item()).explanation).toContain('пересобирается в промпт целиком')
+  })
+
+  it('цепочка AGENTS.md читается с машины по просьбе: от общей к конкретной, без шума о ненайденных', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Цепочка' } })).json()
+
+    // Без рабочей директории читать негде — так и сказано, без похода на машину.
+    const noWorkdir = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/agents-chain` })).json()
+    expect(noWorkdir).toMatchObject({ files: [], unavailable: expect.stringContaining('Рабочая директория') })
+
+    // Директория есть, машины нет — вторая честная причина.
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, workdir: '/Users/me/work/project' } })
+    const noMachine = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/agents-chain` })).json()
+    expect(noMachine).toMatchObject({ workdir: '/Users/me/work/project', files: [], unavailable: expect.stringContaining('Машина недоступна') })
+
+    // С машиной: два файла из пяти каталогов цепочки, остальные просто нет.
+    // Файловые операции машины подменяем на инстансе реестра — своего сокета
+    // этому тесту не нужно, проверяется сборка цепочки, а не транспорт.
+    const machine = db.createAgent(U, 'Мак')
+    const remoteFiles = new Map<string, string>([
+      ['/Users/me/AGENTS.md', Buffer.from('# Общие правила').toString('base64')],
+      ['/Users/me/work/project/AGENTS.md', Buffer.from('# Правила проекта').toString('base64')]
+    ])
+    agentRegistry.isOnline = ((id: string) => id === machine.id) as typeof agentRegistry.isOnline
+    agentRegistry.fsRead = (async (_id: string, path: string) => {
+      const dataBase64 = remoteFiles.get(path)
+      if (!dataBase64) throw new Error('ENOENT not found')
+      return { root: '/', cwd: path, dataBase64 }
+    }) as typeof agentRegistry.fsRead
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: machine.id } })
+    const chain = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/agents-chain` })).json()
+    expect(chain.machineName).toBe('Мак')
+    expect(chain.files.map((f: { path: string }) => f.path)).toEqual([
+      '/Users/me/AGENTS.md', '/Users/me/work/project/AGENTS.md'
+    ])
+    expect(chain.files[0]).toMatchObject({ text: '# Общие правила', chars: '# Общие правила'.length })
+    expect(chain.unavailable).toBeUndefined()
+  })
+
+  it('снимок отдаёт факт прошлого хода и предупреждения о несогласованности', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Факт' } })).json()
+    const snap = async (): Promise<{
+      lastTurn: { prompt: string; chars: number; approxTokens: number; resumed: boolean; attachments: number; kbSections: string[]; model: string } | null
+      warnings: Array<{ itemId: string | null; level: string; text: string }>
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    // Ходов не было — факта нет, и выдумывать его снимок не должен.
+    expect((await snap()).lastTurn).toBeNull()
+
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {
+      role: 'ai', text: 'Готово', time: '10:00',
+      meta: { request: { provider: 'claude', model: 'opus', prompt: 'Системный блок\n\nВопрос', promptChars: 22, resumed: true, permissionMode: 'plan', attachments: ['/tmp/a.png'], kbContext: { confidence: 'high', sections: [{ title: 'Соглашения' }] } } }
+    } })
+    const withTurn = await snap()
+    expect(withTurn.lastTurn).toMatchObject({
+      model: 'opus', prompt: 'Системный блок\n\nВопрос', chars: 22, approxTokens: Math.ceil(22 / 4),
+      resumed: true, attachments: 1, kbSections: ['Соглашения']
+    })
+
+    // Выключенная база знаний при режиме «Авто» — расхождение, о котором надо знать.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    const warned = await snap()
+    expect(warned.warnings.some((w) => w.itemId === 'knowledge-mode' && w.text.includes('тумблер сильнее'))).toBe(true)
+
+    // Выключенная инструкция чата предупреждает и про исчезновение её блока в ответе.
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const consoleInstruction = settings.chatInstructions.find((entry: { kind?: string }) => entry.kind === 'console')
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-${encodeURIComponent(consoleInstruction.id)}`, payload: { enabled: false } })
+    const instructionWarn = (await snap()).warnings.find((w) => w.text.includes('Инструкций чата выключено'))
+    expect(instructionWarn).toMatchObject({ level: 'notice' })
+    // Проблемы идут раньше замечаний: сначала то, что почти наверняка не так.
+    const levels = (await snap()).warnings.map((w) => w.level)
+    expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
+  })
+
 })
 
 describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
