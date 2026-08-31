@@ -9,6 +9,7 @@ import { withBridges } from '../../test/storyBridges'
 import { makeBoard, makeCiSummary, makeDefaultColumns, makeMembers, makeTask } from './fixtures'
 import type { TaskImprovement } from '@shared/ci'
 import type { TaskTimeline } from '@shared/timeline'
+import type { TaskPreparationRun } from '@shared/qa'
 
 const columns = makeDefaultColumns()
 const dev = columns[2]
@@ -177,6 +178,17 @@ const timeline: TaskTimeline = {
   ]
 }
 
+/** Успешная попытка подготовки: сводка, шаги и Development Brief. */
+const preparationRun: TaskPreparationRun = {
+  id: 'prep-1', projectId: task.projectId, taskId: task.id, status: 'success', stage: 'brief_generation',
+  phase: 'brief_generation', attempt: 2, log: '$ git checkout -b task/CHAT-248\n✓ workspace ready\n✓ implementation plan saved',
+  events: [], questions: [], readiness: null, gateResults: [], gateReasons: [],
+  machineId: 'mac-01', machineName: 'MacBook', provider: 'codex', model: 'gpt-5',
+  durationMs: 258_000, canCancel: false, canRetry: true,
+  maxAttempts: 3, error: null, finishedAt: 259_000,
+  createdBy: 'admin', createdAt: 1, updatedAt: 1
+} as TaskPreparationRun
+
 const improvement = (over: Partial<TaskImprovement>): TaskImprovement => ({
   id: 'imp', taskId: task.id, projectId: task.projectId, runId: 'run-2', stepId: null,
   source: 'development', status: 'new', title: 'Улучшение', description: 'Подробности',
@@ -210,6 +222,55 @@ export const Improvements: Story = {
 
 /** Пустая лента улучшений — общий пустой экран, а не голый заголовок. */
 export const ImprovementsEmpty: Story = { play: openTab(/Улучшения/) }
+
+/** Подготовка к разработке: шапка попытки, сводка рана и его шаги. */
+export const Preparation: Story = {
+  args: {
+    task: makeTask({ ...task, taskPreparationRunId: 'prep-1', taskPreparationStatus: 'success' }),
+    loadPreparationRuns: async () => [preparationRun],
+    onRetryPreparation: async () => {},
+    onExportPreparation: async () => {}
+  },
+  play: openTab('Подготовка к разработке')
+}
+
+/** Подготовка, которая ждёт ответа: тон лозенги отличается от успеха и от ошибки. */
+export const PreparationWaiting: Story = {
+  args: {
+    task: makeTask({ ...task, taskPreparationRunId: 'prep-1', taskPreparationStatus: 'waiting_for_answer' }),
+    loadPreparationRuns: async () => [{ ...preparationRun, status: 'waiting_for_answer', phase: 'clarification', questions: [{ questionId: 'q1', attemptId: 'prep-1', text: 'Какой лимит попыток 3-DS считаем нормой?', material: true, status: 'open', answer: null, askedAt: 1, answeredAt: null, answeredBy: null }] }],
+    onAnswerPreparation: async () => {}
+  },
+  play: openTab('Подготовка к разработке')
+}
+
+/** Ход выполнения: шапка рана с лозенгой и Live, дальше работа модели и отчёт. */
+export const Progress: Story = { play: openTab('Ход выполнения') }
+
+/** Настройки выполнения: машина, модель и команды одной колонкой. */
+export const Settings: Story = { play: openTab('Настройки') }
+
+/** Ручное QA: превью и сценарии проверки. */
+export const ManualQa: Story = { play: openTab('Ручное QA') }
+
+/** Merge: ветка задачи и её слияние в main. */
+export const Merge: Story = {
+  args: { task: makeTask({ ...task, mergeSourceBranch: 'task/CHAT-248', activeMergeRunId: 'merge-1' }), onStartMerge: () => {} },
+  play: openTab('Merge')
+}
+
+/** Лента рана: технические события запуска с индикатором Live. */
+export const RunFeed: Story = { play: openTab('Лента рана') }
+
+/** Телефон: та же панель рана в одну колонку — сводка и шаги не разъезжаются. */
+export const PreparationPhone: Story = {
+  args: {
+    task: makeTask({ ...task, taskPreparationRunId: 'prep-1', taskPreparationStatus: 'success' }),
+    loadPreparationRuns: async () => [preparationRun]
+  },
+  parameters: PHONE,
+  play: openTab('Подготовка к разработке')
+}
 
 /**
  * Черновик новой задачи: карточка ничего не сохраняет до подтверждения, вкладок
