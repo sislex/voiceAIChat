@@ -19,8 +19,8 @@ const meta: Meta<typeof UsersAdmin> = {
     users: [
       { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 12, agents: [], lastSeenAt: NOW - 40_000, liveSessions: 2 },
       { name: 'alex', role: 'developer', blocked: false, createdAt: 2, conversationCount: 3, lastSeenAt: NOW - 3 * 60_000, liveSessions: 1, llmLimitUsd: 50, email: 'alex@voicechat.team', agents: [
-        { id: 'm1', name: 'MacBook Pro 16"', online: true, createdAt: 1, lastSeen: NOW, policy: { allow: [], deny: [] } as never, version: '2.7.4', telemetry: { os: { platform: 'darwin', release: '15.6' } } as never },
-        { id: 'm2', name: 'Mac mini CI', online: false, createdAt: 1, lastSeen: NOW - 2 * 86_400_000, policy: { allow: [], deny: [] } as never }
+        { id: 'm1', name: 'MacBook Pro 16"', online: true, createdAt: 1, lastSeen: NOW, version: '2.7.4', telemetry: { os: { platform: 'darwin', release: '15.6' } } as never },
+        { id: 'm2', name: 'Mac mini CI', online: false, createdAt: 1, lastSeen: NOW - 2 * 86_400_000 }
       ] },
       { name: 'nikita', role: 'tester', blocked: true, createdAt: 3, conversationCount: 0, agents: [], lastSeenAt: NOW - 12 * 86_400_000, liveSessions: 0 }
     ],

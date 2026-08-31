@@ -5,7 +5,7 @@
 // себе» — это тот же экран без административных кнопок, а не другой экран.
 
 import { useMemo, useState } from 'react'
-import { Button, StickyActionBar, Tabs } from '@voicechat/ui-kit'
+import { Button, ErrorState, Skeleton, StickyActionBar, Tabs } from '@voicechat/ui-kit'
 import type {
   ProfileAccessDenial,
   ProfileCallbacks,
@@ -41,6 +41,11 @@ export interface ProfilePanelProps extends ProfileCallbacks {
   period?: ProfilePeriod
   /** null — журнал ещё грузится; пустой массив — событий действительно нет. */
   events: readonly ProfileSecurityEvent[] | null
+  /** Расход ещё грузится: показываем скелетон вместо пустого экрана. */
+  usageLoading?: boolean
+  /** Ошибка загрузки данных вкладки — видна в самой вкладке, а не только тостом. */
+  error?: string | null
+  onRetry?: () => void
   conversations?: readonly ProfileConversation[]
   latestAgentVersion?: string
   updatingMachineId?: string | null
@@ -74,6 +79,9 @@ export function ProfilePanel({
   usage,
   period = 'month',
   events,
+  usageLoading = false,
+  error = null,
+  onRetry,
   conversations = [],
   latestAgentVersion,
   updatingMachineId = null,
@@ -138,7 +146,18 @@ export function ProfilePanel({
       />
 
       <div className="vcp-panel" id="profile-tabpanel" role="tabpanel" aria-label={TAB_LABEL[active]}>
-        {active === 'overview' && (
+        {error && (
+          <ErrorState
+            compact
+            message="Не удалось загрузить данные вкладки"
+            detail={error}
+            {...(onRetry ? { onRetry } : {})}
+          />
+        )}
+        {usageLoading && (active === 'overview' || active === 'usage') && (
+          <Skeleton variant="list" count={2} height={96} lines={3} testId="profile-usage-skeleton" />
+        )}
+        {!usageLoading && active === 'overview' && (
           <OverviewTab
             user={user}
             usage={usage}
@@ -167,7 +186,7 @@ export function ProfilePanel({
             {sessionsSlot}
           </>
         )}
-        {active === 'usage' && (
+        {!usageLoading && active === 'usage' && (
           <UsageTab usage={usage} period={period} {...(onSelectPeriod ? { onSelectPeriod } : {})} />
         )}
         {active === 'history' && (

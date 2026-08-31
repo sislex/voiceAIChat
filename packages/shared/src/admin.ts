@@ -4,6 +4,9 @@ import type { AgentInfo } from './agentProtocol'
 import type { UserRole } from './types'
 import type { LlmRunKind, LlmRunnerHealth } from './llm'
 
+/** Машина в карточке человека: всё, кроме политики команд. */
+export type AdminAgentInfo = Omit<AgentInfo, 'policy'>
+
 /**
  * Профиль одного человека: то, что он вправе знать о себе сам. Админский
  * `AdminUserInfo` — это он же плюс поля надзора, поэтому одна и та же карточка
@@ -22,8 +25,12 @@ export interface UserProfileInfo {
   lastLogin?: number | null
   llmLimitUsd?: number | null
   conversationCount: number
-  /** Машины-агенты пользователя с онлайн-статусом. */
-  agents: AgentInfo[]
+  /**
+   * Машины-агенты пользователя с онлайн-статусом. Политика команд из списка
+   * вырезана: она нужна разделу «Машины», а в списке людей это десятки
+   * килобайт на каждого, которые никто не читает.
+   */
+  agents: AdminAgentInfo[]
   /**
    * Последняя активность живой сессии и их число. «Последний вход» для этого не
    * годится: человек, вошедший неделю назад и работающий прямо сейчас, по нему

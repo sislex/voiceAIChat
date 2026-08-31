@@ -8,9 +8,10 @@ import type { AdminMachineStats, AdminMakeStats } from '@shared/admin'
 import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import { RoleCommandPolicyEditor } from '../RoleCommandPolicyEditor'
 import { EmptyState } from '@voicechat/ui-kit'
+import { formatBytes as mb } from '@shared/machineHealth'
 
-/** Байты человеку: КБ до мегабайта, дальше МБ с одним знаком. */
-function mb(n: number): string { return n < 1048576 ? `${Math.round(n / 1024)} КБ` : `${(n / 1048576).toFixed(1)} МБ` }
+// Байты человеку — общий форматер: он знает про гигабайты и терабайты, а
+// местный «всегда МБ» показывал свободное место на диске как «55798.6 МБ».
 
 export interface SystemPageProps {
   /** Массовое обновление агентов — состояние парка машин, а не свойство человека. */

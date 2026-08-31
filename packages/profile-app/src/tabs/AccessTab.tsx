@@ -5,7 +5,7 @@
 // «разрешено всё» совпадают.
 
 import { useState } from 'react'
-import { Button, SearchField, Switch } from '@voicechat/ui-kit'
+import { Button, SearchField, Switch, Toolbar } from '@voicechat/ui-kit'
 import type { ProfileAccessDenial, ProfileCapabilities, ProfileProvider } from '../contracts'
 import { accessSummary, isModelDenied, isProviderEnabled, setAllAccess, toggleAccess } from '../model'
 
@@ -32,15 +32,18 @@ export function AccessTab({ providers, denied, capabilities, onChange }: AccessT
         <SearchField compact value={query} onChange={setQuery} label="Найти модель" testId="model-search" />
       </div>
 
-      <div className="vcp-access__toolbar">
-        <span><b>{summary.allowed}</b> разрешено · <b>{summary.denied}</b> запрещено</span>
+      <Toolbar
+        live
+        className="vcp-access__toolbar"
+        summary={<><b>{summary.allowed}</b> разрешено · <b>{summary.denied}</b> запрещено</>}
+      >
         {editable && (
           <span className="vcp-access__bulk">
             <Button size="sm" variant="ghost" onClick={() => onChange(setAllAccess(providers, true))}>Разрешить всё</Button>
             <Button size="sm" variant="ghost" onClick={() => onChange(setAllAccess(providers, false))}>Запретить всё</Button>
           </span>
         )}
-      </div>
+      </Toolbar>
 
       {providers.map((provider) => {
         const enabled = isProviderEnabled(denied, provider.id)
@@ -60,6 +63,11 @@ export function AccessTab({ providers, denied, capabilities, onChange }: AccessT
                 onChange={(next) => onChange(toggleAccess(denied, provider.id, '*', next))}
               />
             </div>
+            {models.length === 0 && (
+              // Провайдер не исчезает целиком: иначе по запросу «opus» человек
+              // видит один блок и решает, что второго провайдера у него нет.
+              <p className="vcp-provider__empty">Ни одна модель не подходит под запрос</p>
+            )}
             {models.length > 0 && (
               <div className="vcp-provider__models">
                 {models.map((model) => (

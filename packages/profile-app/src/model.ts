@@ -170,3 +170,33 @@ export function securityEventsToCsv(events: readonly ProfileSecurityEvent[], for
 export function activeNowCount(users: ReadonlyArray<{ lastSeenAt?: number | null }>, now: number, windowMs: number): number {
   return users.filter((user) => user.lastSeenAt != null && now - user.lastSeenAt <= windowMs).length
 }
+
+/**
+ * Короткая подпись устройства из User-Agent: «Chrome 141 · macOS».
+ *
+ * Полная строка занимает в журнале две строки текста и ничего не сообщает: в ней
+ * важны браузер и система. Разбор нарочно грубый — точный парсер UA невозможен,
+ * а ошибиться здесь дешевле, чем показывать 120 символов служебного текста.
+ */
+export function shortUserAgent(userAgent: string): string {
+  if (!userAgent.trim()) return ''
+  const browser = /Edg\/(\d+)/.exec(userAgent) ? `Edge ${/Edg\/(\d+)/.exec(userAgent)![1]}`
+    : /OPR\/(\d+)/.exec(userAgent) ? `Opera ${/OPR\/(\d+)/.exec(userAgent)![1]}`
+    : /Firefox\/(\d+)/.exec(userAgent) ? `Firefox ${/Firefox\/(\d+)/.exec(userAgent)![1]}`
+    : /Chrome\/(\d+)/.exec(userAgent) ? `Chrome ${/Chrome\/(\d+)/.exec(userAgent)![1]}`
+    : /Version\/(\d+).*Safari/.exec(userAgent) ? `Safari ${/Version\/(\d+).*Safari/.exec(userAgent)![1]}`
+    : /agent\/([\d.]+)/.exec(userAgent) ? `Агент ${/agent\/([\d.]+)/.exec(userAgent)![1]}`
+    : ''
+  // iPhone проверяется раньше Mac: его строка содержит «like Mac OS X», и при
+  // обратном порядке телефон в журнале выглядел настольным компьютером.
+  const os = /Windows NT/.test(userAgent) ? 'Windows'
+    : /iPhone|iPad/.test(userAgent) ? 'iOS'
+    : /Android/.test(userAgent) ? 'Android'
+    : /Mac OS X|Macintosh/.test(userAgent) ? 'macOS'
+    : /Linux/.test(userAgent) ? 'Linux'
+    : ''
+  const parts = [browser, os].filter(Boolean)
+  // Ничего не распознали — показываем начало исходной строки, а не пустоту:
+  // «неизвестное устройство» в журнале безопасности хуже сырых символов.
+  return parts.length > 0 ? parts.join(' · ') : userAgent.slice(0, 40)
+}

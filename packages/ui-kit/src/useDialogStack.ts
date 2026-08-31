@@ -34,6 +34,11 @@ function notify(): void {
 // (отмена записи в useHotkeys слушает всплытие на window).
 function onKeyDown(event: KeyboardEvent): void {
   if (event.key !== 'Escape' && event.code !== 'Escape') return
+  // Первый Esc в непустом поле поиска очищает поле, а не закрывает окно: иначе
+  // человек, отфильтровавший список внутри модального окна, теряет всё окно
+  // вместо запроса. Второй Esc (поле уже пустое) закрывает как обычно.
+  const target = event.target as HTMLInputElement | null
+  if (target && target.tagName === 'INPUT' && target.type === 'search' && target.value !== '') return
   const handler = layers[layers.length - 1]?.escape.current
   // Верхнее окно не закрывается по Esc — пропускаем событие дальше (так живут
   // встроенные карточки тулов: у них Esc — обычный хоткей приложения).

@@ -154,7 +154,7 @@ describe('ProfilePanel — машины', () => {
 
   it('у офлайн-машины ОС не выдумывается', () => {
     setup({ tab: 'machines' })
-    expect(screen.getByTestId('machines-tab')).toHaveTextContent('ОС неизвестна (офлайн)')
+    expect(screen.getByTestId('machines-tab')).toHaveTextContent('неизвестна (офлайн)')
   })
 
   it('без права обновления кнопки нет', () => {

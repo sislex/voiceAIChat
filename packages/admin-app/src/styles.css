@@ -80,3 +80,12 @@
   .ua-row { width: 232px; }
   .ua-top h1 { font-size: 22px; }
 }
+
+@media (max-width: 480px) {
+  /* Две метрики в ряд на 390px дают по 170px на карточку: значение переносится
+     на вторую строку и перестаёт читаться как число. */
+  .ua-metrics { grid-template-columns: 1fr; }
+  .ua-list__filters { grid-template-columns: 1fr; }
+}
+
+.ua-list__more { margin: 0; padding: 0 12px 12px; }

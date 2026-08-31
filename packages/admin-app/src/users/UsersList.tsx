@@ -1,9 +1,10 @@
 // Левая колонка: поиск, фильтры, сортировка и строки людей.
 
-import { Avatar, Badge, Button, EmptyState, ErrorState, RefreshIndicator, SearchField, Skeleton } from '@voicechat/ui-kit'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Avatar, Badge, Button, EmptyState, ErrorState, RefreshIndicator, SearchField, Skeleton, Toolbar } from '@voicechat/ui-kit'
 import type { AdminUserInfo, UserUsageSummary } from '@shared/admin'
 import { formatAgo } from '@voicechat/profile-app'
-import { filterUsers, isActive, pluralUsers, type UsersFilter } from './usersModel'
+import { filterUsers, isActive, LIST_PAGE, pageUsers, pluralUsers, type UsersFilter } from './usersModel'
 import type { LoadStatus } from '../loadState'
 import { loadView } from '../loadState'
 
@@ -13,7 +14,8 @@ export interface UsersListProps {
   selected: string | null
   filter: UsersFilter
   onFilter: (filter: UsersFilter) => void
-  onSelect: (name: string) => void
+  /** Второй аргумент — выбор сделан с клавиатуры: тогда фокус уезжает в карточку. */
+  onSelect: (name: string, viaKeyboard?: boolean) => void
   status?: LoadStatus
   error?: string | null
   onRetry?: () => void
@@ -24,17 +26,32 @@ const ROLES = ['admin', 'developer', 'tester', 'observer']
 
 export function UsersList({ users, usageSummary, selected, filter, onFilter, onSelect, status = 'ready', error = null, onRetry, now }: UsersListProps): JSX.Element {
   const view = loadView(status, users.length > 0)
-  const visible = filterUsers(users, filter, now, usageSummary)
+  // Ввод отделён от фильтра: перебор сотен строк на каждую букву заметен уже на
+  // сотне учёток, а курсор в поле не должен ждать перерисовку списка.
+  const [query, setQuery] = useState(filter.query)
+  const [shown, setShown] = useState(LIST_PAGE)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => setQuery(filter.query), [filter.query])
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+  const onQuery = (next: string): void => {
+    setQuery(next)
+    if (timer.current) clearTimeout(timer.current)
+    // Пустой запрос применяется сразу: очистка поля должна возвращать список мгновенно.
+    timer.current = setTimeout(() => onFilter({ ...filter, query: next }), next === '' ? 0 : 200)
+  }
+
+  const found = useMemo(() => filterUsers(users, filter, now, usageSummary), [users, filter, now, usageSummary])
+  const { visible, rest } = pageUsers(found, shown)
   // «из N» показывается при любом сужении, включая поиск: иначе непонятно,
   // это весь список или его часть.
-  const narrowed = visible.length !== users.length
+  const narrowed = found.length !== users.length
 
   return (
     <nav className="ua-list" aria-label="Список пользователей">
       <div className="ua-list__head">
         <SearchField
-          value={filter.query}
-          onChange={(query) => onFilter({ ...filter, query })}
+          value={query}
+          onChange={onQuery}
           label="Имя пользователя"
           testId="users-search"
         />
@@ -50,8 +67,12 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
           <option value="blocked">Заблокированные</option>
         </select>
       </div>
-      <div className="ua-list__meta">
-        <span data-testid="users-count">{pluralUsers(visible.length)}{narrowed ? ` из ${users.length}` : ''}</span>
+      <Toolbar
+        bare
+        live
+        className="ua-list__meta"
+        summary={<span data-testid="users-count">{pluralUsers(found.length)}{narrowed ? ` из ${users.length}` : ''}</span>}
+      >
         <Button
           size="sm"
           variant="ghost"
@@ -60,7 +81,7 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
         >
           По активности {filter.descending ? '↓' : '↑'}
         </Button>
-      </div>
+      </Toolbar>
 
       {view.state === 'skeleton' && <Skeleton variant="list" count={4} height={52} lines={2} className="uadmin-skel" testId="user-skeleton" />}
       {view.state === 'error' && <ErrorState message="Не удалось загрузить пользователей" detail={error} {...(onRetry ? { onRetry } : {})} />}
@@ -68,7 +89,7 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
       {view.staleError && <ErrorState compact message="Список мог устареть: обновить не удалось" detail={error} {...(onRetry ? { onRetry } : {})} />}
       {view.refreshing && <RefreshIndicator label="Обновляем список…" />}
 
-      {view.state !== 'skeleton' && users.length > 0 && visible.length === 0 && (
+      {view.state !== 'skeleton' && users.length > 0 && found.length === 0 && (
         <EmptyState compact icon="⌕" title="Никто не найден" description="Смягчите фильтры или очистите поиск." />
       )}
 
@@ -79,6 +100,7 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
               type="button"
               className={user.name === selected ? 'ua-row ua-row--on' : 'ua-row'}
               onClick={() => onSelect(user.name)}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(user.name, true) } }}
               data-testid="user-item"
               aria-current={user.name === selected}
             >
@@ -100,6 +122,11 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
           </li>
         ))}
       </ul>
+      {rest > 0 && (
+        <p className="ua-list__more">
+          <Button size="sm" variant="ghost" onClick={() => setShown((value) => value + LIST_PAGE)}>Показать ещё {Math.min(rest, LIST_PAGE)}</Button>
+        </p>
+      )}
     </nav>
   )
 }

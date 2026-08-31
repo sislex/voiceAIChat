@@ -27,6 +27,9 @@ export function SearchField({ value, onChange, label, placeholder, compact = fal
         placeholder={placeholder ?? label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        // Esc очищает поле: в браузерном type="search" это делает нативная
+        // крестик-кнопка, но она скрыта ради единого вида, и привычка ломалась.
+        onKeyDown={(event) => { if (event.key === 'Escape' && value !== '') { event.preventDefault(); onChange('') } }}
         data-testid={testId}
       />
       {value !== '' && (

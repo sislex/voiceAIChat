@@ -5,7 +5,7 @@
 // подсказка под значением).
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Avatar, Badge, SearchField, Sparkline, StatCard, StickyActionBar, Switch, Tabs, Button } from '@voicechat/ui-kit'
+import { Avatar, Badge, DefinitionList, SearchField, Sparkline, StatCard, StickyActionBar, Switch, Tabs, Toolbar, Button } from '@voicechat/ui-kit'
 
 const meta: Meta = { title: 'UI/Primitives' }
 export default meta
@@ -112,6 +112,30 @@ export const SparklineChart: Story = {
         format={(value) => `$${value.toFixed(2)}`}
         points={[2.4, 6.1, 4.8, 9.2, 7.3, 12.6, 8.1, 5.4, 11.9, 6.6].map((value, index) => ({ label: `${index + 1} авг`, value }))}
       />
+    </div>
+  )
+}
+
+/** Те же примитивы в тёмной теме: бейджи и полосы проверяем глазами, а не на светлом. */
+export const Dark: Story = {
+  render: () => (
+    <div data-theme="dark" style={{ background: 'var(--bg)', color: 'var(--text)', padding: 16, display: 'grid', gap: 16 }}>
+      <div style={row}>
+        <Badge tone="accent">admin</Badge>
+        <Badge tone="success">активен</Badge>
+        <Badge tone="warning">2.7.4 → 2.8.1</Badge>
+        <Badge tone="danger">заблокирован</Badge>
+        <Badge>observer</Badge>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+        <StatCard label="Активны сейчас" value={9} hint="по живым сессиям" tone="positive" />
+        <StatCard label="Расход за месяц" value="$842.40" hint="78% лимитов" tone="warning" />
+      </div>
+      <Toolbar summary={<><b>12</b> разрешено · <b>2</b> запрещено</>}>
+        <Button size="sm" variant="ghost">Разрешить всё</Button>
+      </Toolbar>
+      <DefinitionList items={[{ label: 'ОС', value: 'macOS 15.6' }, { label: 'Версия агента', value: '2.8.1' }]} />
+      <Sparkline label="Расход по дням, USD" points={[3, 7, 5, 11, 8].map((value, index) => ({ label: `${index + 1} авг`, value }))} />
     </div>
   )
 }

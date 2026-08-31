@@ -359,10 +359,10 @@ export function registerAdminRoutes(
     // Версия и телеметрия нужны админке для «обновить до актуальной» (п.16) и для
     // строки «Онлайн · macOS 15.6»; у офлайн-машины ни того, ни другого нет —
     // телеметрия живёт в памяти реестра, пока агент подключён.
-    const agents = (bulk.agentsByUser.get(name) ?? []).map((a) => {
-      const isOnline = online.has(a.id)
-      const telemetry = isOnline ? registry.telemetryOf(a.id) : undefined
-      return { ...a, online: isOnline, ...(isOnline && registry.versionOf(a.id) ? { version: registry.versionOf(a.id) } : {}), ...(telemetry ? { telemetry } : {}) }
+    const agents = (bulk.agentsByUser.get(name) ?? []).map(({ policy: _policy, ...agent }) => {
+      const isOnline = online.has(agent.id)
+      const telemetry = isOnline ? registry.telemetryOf(agent.id) : undefined
+      return { ...agent, online: isOnline, ...(isOnline && registry.versionOf(agent.id) ? { version: registry.versionOf(agent.id) } : {}), ...(telemetry ? { telemetry } : {}) }
     })
     const activity = bulk.activity.get(name)
     // Админу — все беседы пользователя: скрытие чатов завершённых задач это

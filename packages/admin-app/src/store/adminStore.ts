@@ -35,6 +35,10 @@ export interface AdminState {
   adminUsersError: string | null
   adminSelected: string | null
   adminUsage: UsageReport | null
+  /** Ошибка загрузки данных вкладки карточки: тост исчезает, а вкладка остаётся пустой. */
+  adminTabError: string | null
+  /** Отчёт в полёте: карточка показывает скелетон, а не пустоту и не вечную загрузку. */
+  adminUsageLoading: boolean
   /** Сессии выбранного пользователя (auth-roadmap п.4); null — не загружены. */
   /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
   adminSecurity: SecurityEvent[] | null
@@ -69,7 +73,7 @@ export interface AdminActions {
   selectAdminUser(name: string): Promise<void>
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
   loadAdminSessions(): Promise<SessionInfo[]>
-  loadAdminSecurity(): Promise<void>
+  loadAdminSecurity(limit?: number): Promise<void>
   loadAdminInvites(): Promise<void>
   loadAdminSignup(): Promise<void>
   setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<void>
@@ -114,6 +118,8 @@ function initialState(): AdminState {
     adminUsersError: null,
     adminSelected: null,
     adminUsage: null,
+    adminUsageLoading: false,
+    adminTabError: null,
     adminSecurity: null,
     adminInvites: null,
     adminSignup: null,
@@ -220,6 +226,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
 
   async function selectAdminUser(name: string): Promise<void> {
     const request = ++selectionRequest
+    invalidateUserCache(name)
     setState({
       adminSelected: name,
       adminUsage: null,
@@ -286,6 +293,19 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     }
   }
 
+  /**
+   * Что уже загружено: ключ «человек + запрос». Возврат на вкладку не должен
+   * заново бить в сервер — данные там меняются не чаще, чем человек успевает
+   * переключиться туда-обратно. Кэш сбрасывается мутациями и сменой человека.
+   */
+  const loaded = new Set<string>()
+  /** Номер последнего запроса вкладки: побеждает он, а не тот, кто пришёл позже. */
+  let tabRequest = 0
+
+  function invalidateUserCache(name = getState().adminSelected ?? ''): void {
+    for (const key of [...loaded]) if (key.startsWith(`${name}\u0000`)) loaded.delete(key)
+  }
+
   async function loadAdminUsage(
     unit: UsageUnit,
     from?: number,
@@ -294,9 +314,19 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
   ): Promise<void> {
     const name = getState().adminSelected
     if (!name) return
+    const key = `${name}\u0000usage:${unit}:${from ?? ''}:${to ?? ''}:${conversationId ?? ''}`
+    if (loaded.has(key)) return
+    const request = ++tabRequest
+    setState({ adminUsageLoading: true, adminTabError: null })
     try {
-      setState({ adminUsage: await client.userUsage({ name, unit, from, to, conversationId }) })
+      const report = await client.userUsage({ name, unit, from, to, conversationId })
+      // Ответ на устаревший запрос выбрасываем: иначе быстрый щелчок по вкладкам
+      // оставляет на экране расход не того периода.
+      if (request !== tabRequest || getState().adminSelected !== name) return
+      loaded.add(key)
+      setState({ adminUsage: report, adminUsageLoading: false })
     } catch (err) {
+      setState({ adminUsageLoading: false, adminTabError: err instanceof Error ? err.message : String(err) })
       fail(err, () => void loadAdminUsage(unit, from, to, conversationId))
     }
   }
@@ -310,10 +340,26 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     return client.userSessions({ name })
   }
 
-  async function loadAdminSecurity(): Promise<void> {
+  /**
+   * Журнал: обзору хватает двадцати последних событий, самой «Истории» нужны
+   * все двести. Разные лимиты — разные ключи кэша, поэтому переход с обзора на
+   * историю догружает полный список, а обратный возврат уже ничего не грузит.
+   */
+  async function loadAdminSecurity(limit = 200): Promise<void> {
     const name = getState().adminSelected
     if (!name || !client.securityEvents) return
-    try { setState({ adminSecurity: await client.securityEvents({ user: name, limit: 200 }) }) } catch (err) { fail(err, () => void loadAdminSecurity()) }
+    const key = `${name}\u0000security:${limit}`
+    if (loaded.has(key)) return
+    const request = ++tabRequest
+    try {
+      const events = await client.securityEvents({ user: name, limit })
+      if (request !== tabRequest || getState().adminSelected !== name) return
+      loaded.add(key)
+      setState({ adminSecurity: events, adminTabError: null })
+    } catch (err) {
+      setState({ adminTabError: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void loadAdminSecurity(limit))
+    }
   }
 
   async function loadAdminSignup(): Promise<void> {
@@ -355,6 +401,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
   }
 
   async function saveAdminUserLlmAccess(access: UserLlmAccess[]): Promise<void> {
+    invalidateUserCache()
     const name = getState().adminSelected
     if (!name) return
     try {
@@ -375,6 +422,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
   }
 
   async function setUserBlocked(name: string, blocked: boolean, reason?: string): Promise<void> {
+    invalidateUserCache()
     try {
       await client.setUserBlocked({ name, blocked, ...(reason ? { reason } : {}) })
       await refreshAdminUsers()
@@ -401,6 +449,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       },
       async setUserLlmLimit(name, llmLimitUsd) {
         if (!client.setUserLlmLimit) return
+        invalidateUserCache(name)
         try { const u = await client.setUserLlmLimit({ name, llmLimitUsd }); setState({ adminUsers: getState().adminUsers.map((x) => (x.name === u.name ? u : x)) }) } catch (err) { fail(err, () => undefined) }
       },
       async issueResetCode(name) {
@@ -408,6 +457,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
         try { return await client.resetCode({ name }) } catch (err) { fail(err, () => undefined); return null }
       },
       async updateUserRole(name, role) {
+        invalidateUserCache(name)
         try {
           await client.updateUserRole({ name, role })
           await refreshAdminUsers()
