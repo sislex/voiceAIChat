@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildAdminRoute, parseAdminRoute } from './routes'
 
 describe('admin routes', () => {
-  it.each(['#/users', '#/users/alice', '#/users/alice/access', '#/users/alice/machines', '#/users/alice/usage', '#/users/alice/history', '#/users/engines', '#/users/prices'])(
+  it.each(['#/users', '#/users/alice', '#/users/alice/overview', '#/users/alice/access', '#/users/alice/machines', '#/users/alice/usage', '#/users/alice/history', '#/users/engines', '#/users/prices', '#/users/project-types', '#/users/system'])(
     'round trips %s',
     (hash) => {
       const route = parseAdminRoute(hash)

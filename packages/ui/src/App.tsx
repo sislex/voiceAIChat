@@ -98,7 +98,7 @@ import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } 
 import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from './consoleReaderDiagnostics'
 import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
-import { parseAdminRoute } from '@voicechat/admin-app'
+import { buildAdminRoute, parseAdminRoute } from '@voicechat/admin-app'
 import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioRecorder'
@@ -2395,6 +2395,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {utilitySeg === 'users' && admin.usersOpen && (
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
           variant="page"
+          route={adminRoute}
+          onNavigate={(route) => navigate(buildAdminRoute(route).replace(/^#/, ''))}
+          onExportCsv={(filename, csv) => saveTextFile(filename, csv)}
           users={admin.adminUsers}
           latestAgentVersion={AGENT_VERSION}
           onUpdateMachine={async (id) => { try { await window.api!['admin:updateMachine']({ id }); return null } catch (err) { return err instanceof Error ? err.message : String(err) } }}
@@ -2418,7 +2421,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onResetCode={(name) => adminActions.issueResetCode(name)}
           onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
-          onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
+          onSetBlocked={(name, blocked, reason) => void adminActions.setUserBlocked(name, blocked, reason)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
           sessionsClient={adminSessionsClient}

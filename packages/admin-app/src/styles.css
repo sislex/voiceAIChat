@@ -24,3 +24,48 @@
   .ptypes-review-field { flex: 0 0 auto; }
   .ptypes-review-actions .vc-btn { flex: 1 1 auto; min-height: 40px; }
 }
+
+/* Страница «Пользователи»: шапка, полоса метрик, список слева и карточка справа.
+   Раскладка макета; цвета — только токены, чтобы страница жила в обеих темах. */
+.ua { display: flex; flex-direction: column; min-height: 0; padding: 20px 24px 28px; gap: 14px; overflow: auto; }
+.ua-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ua-top h1 { margin: 0; font-size: 26px; letter-spacing: -0.03em; }
+.ua-top__eyebrow { margin: 0 0 4px; color: var(--text-dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; }
+.ua-top__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ua-back { margin: 0 0 8px; }
+
+.ua-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+
+.ua-grid { display: grid; grid-template-columns: 314px minmax(0, 1fr); min-height: 560px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); overflow: hidden; }
+.ua-list { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); background: var(--panel); }
+.ua-list__head { padding: 14px 12px 8px; }
+.ua-list__filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 12px 8px; }
+.ua-list__filters select { min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
+.ua-list__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 12px 8px; color: var(--text-dim); font-size: 11px; }
+.ua-list__items { flex: 1; margin: 0; padding: 0 8px 12px; list-style: none; overflow: auto; }
+.ua-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; margin: 2px 0; padding: 10px 8px; border: 1px solid transparent; border-radius: var(--radius-large); background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.ua-row:hover { background: var(--surface-hover); }
+.ua-row--on { border-color: var(--accent); background: var(--accent-soft); }
+.ua-row__info { min-width: 0; }
+.ua-row__info b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ua-row__info small { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--text-dim); font-size: 11px; }
+.ua-row__meta { display: grid; justify-items: end; gap: 4px; }
+.ua-detail { min-width: 0; overflow: auto; }
+.ua-invites { display: grid; gap: 8px; }
+
+@media (max-width: 1050px) {
+  .ua-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ua-grid { grid-template-columns: 260px minmax(0, 1fr); }
+}
+
+@media (max-width: 720px) {
+  .ua { padding: 14px 12px 24px; }
+  .ua-grid { display: block; }
+  /* Список превращается в горизонтальную ленту: на телефоне колонка в 260px
+     съедала бы весь экран, а карточка человека — главное на странице. */
+  .ua-list { border-right: 0; border-bottom: 1px solid var(--border); }
+  .ua-list__items { display: flex; gap: 8px; overflow-x: auto; padding: 0 12px 12px; }
+  .ua-list__items > li { flex: 0 0 auto; }
+  .ua-row { width: 232px; }
+  .ua-top h1 { font-size: 22px; }
+}

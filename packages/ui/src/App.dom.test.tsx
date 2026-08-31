@@ -964,7 +964,8 @@ describe('App — выход из аккаунта', () => {
     // пользователя: человек получал тост «Объект не найден» на ровном месте.
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/engines`)
     render(<App api={api} delays={SLOW} />)
-    await screen.findByText('Пользователи')
+    // У служебных страниц свой заголовок: реестр исполнителей — не список людей.
+    await screen.findByRole('heading', { name: 'LLM-исполнители' })
     await waitFor(() => expect(llmAccess).not.toHaveBeenCalled())
 
     // Настоящий логин по-прежнему открывает карточку пользователя.
