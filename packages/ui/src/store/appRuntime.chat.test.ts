@@ -37,6 +37,32 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().voice).toBe('idle')
   })
 
+  it('claude.done обновляет серверную стоимость нужного фонового разговора без reload', async () => {
+    const { store, api } = makeStore(['Первый', 'Второй'])
+    await store.actions.init()
+    const activeId = store.getState().activeId!
+    const background = store.getState().conversations.find((conversation) => conversation.id !== activeId)!
+    const order = store.getState().conversations.map((conversation) => conversation.id)
+    const serverConversation = api._state.conversations.find((conversation) => conversation.id === background.id)!
+    serverConversation.costStatus = 'known'
+    serverConversation.costUsd = 0.0001234
+
+    await store.actions.applyClaudeDone('Фоновый ответ', undefined, 'claude', {
+      id: 'server-ai',
+      conversationId: background.id,
+      role: 'ai',
+      text: 'Фоновый ответ',
+      time: '12:00',
+      createdAt: 2,
+      engine: 'claude'
+    }, background.id)
+
+    expect(store.getState().activeId).toBe(activeId)
+    expect(store.getState().conversations.map((conversation) => conversation.id)).toEqual(order)
+    expect(store.getState().conversations.find((conversation) => conversation.id === background.id))
+      .toMatchObject({ costStatus: 'known', costUsd: 0.0001234 })
+  })
+
   it('init с id из адреса открывает именно этот разговор, а не самый свежий', async () => {
     const { store, api } = makeStore(['Первый', 'Второй'])
     const list = await api['conversations:list']({})
