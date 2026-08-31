@@ -260,6 +260,14 @@ export async function registerRest(
     }
   })
 
+  // Автономия канбан-ассистента живёт на разговоре: у одного пользователя может
+  // быть «делай сам» в одном проекте и «спрашивай» в другом.
+  app.post<{ Params: { id: string }; Body: { autonomy?: string } }>('/api/conversations/:id/assistant-autonomy', async (req, reply) => {
+    const autonomy = req.body?.autonomy === 'confirm' ? 'confirm' : 'auto'
+    const updated = db.setConversationAutonomy(uid(req), req.params.id, autonomy)
+    return updated ?? reply.code(404).send({ error: 'not found' })
+  })
+
   app.post<{
     Body: { idempotencyKey?: string; title?: string; projectId?: string | null; message?: Omit<AddMessageArgs, 'conversationId'> }
   }>(REST.conversationDraft, async (req, reply) => {

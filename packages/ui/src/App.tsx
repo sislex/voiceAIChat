@@ -11,7 +11,7 @@ import { recommendedChatStoragePath, validateStorageRelativePath, type Board, ty
 import { AGENT_VERSION } from '@shared/version'
 import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import type { PreparationClarificationNotification } from '@shared/qa'
-import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
+import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetSurfaceSnapshot, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
@@ -89,7 +89,9 @@ import type { PipelineDelays } from './store/mockPipeline'
 import { useVoiceCues } from './lib/useVoiceCues'
 import { useHashRoute } from './lib/useHashRoute'
 import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
-import { useCommandSource } from './lib/useCommands'
+import { useCommandSource, useCommandsRevision } from './lib/useCommands'
+import { listCommands } from './lib/commands'
+import { formatConfirmRows, runWidgetUiAction } from './lib/widgetUiActions'
 import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics } from './webReaderDiagnostics'
 import { isChatDiagnosticsCommand, runChatDiagnostics } from './chatDiagnostics'
@@ -895,6 +897,48 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     (projects.projectDetail?.id === routeProjectId ? projects.projectDetail!.name : null) ??
     projects.projects.find((p) => p.id === routeProjectId)?.name ??
     'Проект'
+  const commandsVersion = useCommandsRevision()
+  // Снимок экрана для ассистента: адрес, раздел, открытая карточка и кнопки,
+  // которые можно нажать прямо сейчас. Без него ассистент рассуждает о доске,
+  // когда пользователь смотрит настройки или релизы.
+  const assistantSurface = useMemo<WidgetSurfaceSnapshot>(() => ({
+    route: path,
+    section: segments[2] === 'assistant' ? 'assistant' : routeSettings ? 'settings' : routeReleases ? 'releases' : 'board',
+    openTaskId: routeTaskId ?? assistantTaskId,
+    openTaskTab: segments[4] ?? null,
+    boardView: projects.boardView
+      ? { showCompleted: projects.boardIncludeCompleted, swimlaneBy: projects.boardView.swimlane, search: projects.boardView.search || null }
+      : null,
+    // listCommands() читает реестр палитры целиком: выключенные пункты нажать
+    // нельзя, поэтому ассистенту они не показываются.
+    commands: listCommands()
+      .filter((command) => command.enabled?.() !== false)
+      .map((command) => ({ id: command.id, title: command.title, section: command.section, ...(command.hint ? { hint: command.hint } : {}) }))
+  }), [path, segments, routeSettings, routeReleases, routeTaskId, assistantTaskId, projects.boardView, projects.boardIncludeCompleted, commandsVersion])
+  const assistantSurfaceRef = useRef(assistantSurface)
+  useEffect(() => { assistantSurfaceRef.current = assistantSurface }, [assistantSurface])
+  // Действия канбан-ассистента в интерфейсе: сервер шлёт widget.action, эта
+  // вкладка выполняет его и отвечает снимком экрана. Сам набор действий живёт в
+  // lib/widgetUiActions.ts — здесь только мост и окно подтверждения.
+  useEffect(() => {
+    const bridge = window.widgetUi
+    if (!bridge) return
+    return bridge.onAction(({ conversationId, projectId, requestId, action }) => {
+      void runWidgetUiAction(action, projectId, {
+        openProjectId: routeProjectId,
+        navigate,
+        surface: () => assistantSurfaceRef.current,
+        commands: listCommands,
+        settle: () => new Promise((resolve) => setTimeout(resolve, 60)),
+        confirm: (request) => confirm({
+          title: request.title,
+          message: <><p>{request.note ?? 'Ассистент просит подтверждение.'}</p><pre className="widget-confirm-rows">{formatConfirmRows(request.rows)}</pre></>,
+          confirmLabel: 'Применить'
+        })
+      }).then((outcome) => bridge.result({ conversationId, requestId, ...outcome }))
+    })
+  }, [routeProjectId, navigate, confirm])
+
   const kanbanAssistantContext = useMemo<WidgetAssistantContext<KanbanAssistantSelection>>(() => {
     const project = projects.projects.find((item) => item.id === routeProjectId) ?? null
     const board = projects.activeProjectId === routeProjectId ? projects.board : null
@@ -904,9 +948,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       widget: { kind: 'kanban', instanceId: routeProjectId ?? 'none', title: routeProjectName },
       project: project ? { id: project.id, name: project.name, description: project.description, technologies: project.technologies, skills: project.skills, typeChain: project.typeChain } : null,
       selection: board && routeProjectId ? { board: { projectId: routeProjectId, columns: board.columns, tasks: board.tasks, revision: String(Math.max(0, ...board.tasks.map((task) => task.updatedAt)) ) }, openTask, selectedField: assistantField } : null,
+      surface: assistantSurface,
       recentActions: widgetActions
     }
-  }, [projects.projects, projects.board, projects.activeProjectId, routeProjectId, routeProjectName, assistantTaskId, assistantField, widgetActions])
+  }, [projects.projects, projects.board, projects.activeProjectId, routeProjectId, routeProjectName, assistantTaskId, assistantField, widgetActions, assistantSurface])
   // Список загружен, а проекта из адреса в нём нет: удалён или нет доступа.
   const projectMissing =
     routeProjectId !== null && projects.projectsLoaded && !projects.projects.some((p) => p.id === routeProjectId)
@@ -2151,7 +2196,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onAssistantOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
           onOpenAssistantPage={() => navigate(`/projects/${routeProjectId}/assistant`) }
         >
-          {routeReleases ? (
+          {/* Ассистент — рамка всей страницы проекта, а не только доски: он
+              обязан видеть и настройки, и релизы, иначе «что сейчас открыто»
+              для него всегда «доска». */}
+          <WidgetAssistantFrame
+            open={assistantOpen || segments[2] === 'assistant'}
+            onOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
+            mode={segments[2] === 'assistant' ? 'page' : 'embedded'}
+            storageKey="voicechat.kanbanAssistantWidth"
+            assistantHeader={<ProjectAssistantChatSelector
+              projectId={routeProjectId!}
+              api={api}
+              selectedId={assistantConversationId}
+              onSelect={setAssistantConversationId}
+            />}
+            widget={routeReleases ? (
             projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} machines={projects.projectDetail!.machines} agents={operations.agents} agentsStatus={operations.agentsStatus} agentsError={operations.agentsError} defaultAgentId={projects.projectDetail!.defaultAgentId} releaseTimeouts={projects.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
@@ -2230,18 +2289,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               </div>
             )
           ) : (
-            <WidgetAssistantFrame
-              open={assistantOpen || segments[2] === 'assistant'}
-              onOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
-              mode={segments[2] === 'assistant' ? 'page' : 'embedded'}
-              storageKey="voicechat.kanbanAssistantWidth"
-              assistantHeader={<ProjectAssistantChatSelector
-                projectId={routeProjectId!}
-                api={api}
-                selectedId={assistantConversationId}
-                onSelect={setAssistantConversationId}
-              />}
-              widget={<ProjectBoard
+            <ProjectBoard
                 projectFeatures={projectFeatures}
               initialOpenTaskId={routeTaskId}
               initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
@@ -2293,8 +2341,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onAiAssistPromptsChange={(next) => applySettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
               onAssistantSelectionChange={handleAssistantSelectionChange}
-            />}
-              assistant={<KanbanAssistant
+            />
+            )}
+            assistant={<KanbanAssistant
                 projectId={routeProjectId!}
                 context={kanbanAssistantContext}
                 api={api}
@@ -2315,9 +2364,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                   if (columnId) await projectsActions.moveTask(command.taskId, columnId, null, null)
                   if (Object.keys(fields).length > 0) await projectsActions.updateTask(command.taskId, fields)
                 }}
-              />}
-            />
-          )}
+            />}
+          />
         </ProjectPage>
       )}
 
