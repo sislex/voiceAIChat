@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 170 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 185 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 60 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 958 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 959 коммит(ов) в areas после сверки: 1d660032 fix(kb): маркеры конфликта из слияния убраны, README перегенерирован … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 82 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 116 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 56 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
@@ -34,14 +34,14 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-31 | ⚠ 12 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 150 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-31 | ⚠ 11 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 8 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 11 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 53 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 112 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 3 коммит(ов) в areas после сверки: 2c62de0a perf(gate): гейт шага — инкрементальный typecheck, related-тесты, разрезка REST-набора … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 2c62de0a perf(gate): гейт шага — инкрементальный typecheck, related-тесты, разрезка REST-набора |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 65 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 13 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-31, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 466. Последние:
+Всего записей: 467. Последние:
 
 - [2026-08-31-macbook-air-user-sidebar-console-make.md](log/2026-08-31-macbook-air-user-sidebar-console-make.md) — sidebar-console-make
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation
