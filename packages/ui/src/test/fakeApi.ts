@@ -84,6 +84,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       ],
       viewerRole: 'developer',
       lastTurn: null,
+      turnSizes: [],
       changes: [...disabledContext].map((itemId, index) => ({ at: index * 1000, actor: 'test', itemId, enabled: false })),
       warnings: [],
       promptPreview: {
@@ -91,7 +92,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         text: disabledContext.has('personalization') ? '' : preview,
         chars: disabledContext.has('personalization') ? 0 : preview.length,
         approxTokens: disabledContext.has('personalization') ? 0 : Math.ceil(preview.length / 4),
-        omitted: ['Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.']
+        omitted: ['Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.'],
+        costUsd: null
       }
     }
   }
@@ -559,6 +561,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       workdir: '/Users/test/project',
       files: [{ path: '/Users/test/project/AGENTS.md', text: '# Правила проекта\nТесты в том же шаге.', chars: 44 }]
     }),
+    'conversations:copyContext': async ({ id }) => contextSnapshotFake(id),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)

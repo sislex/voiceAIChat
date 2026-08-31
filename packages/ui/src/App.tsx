@@ -2820,6 +2820,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <ConversationSettings
           conversation={activeConversation}
           agents={operations.agents}
+          // Список для «скопировать контекст из»: только чаты этого человека,
+          // текущий из него исключён — копировать в себя нечего.
+          otherConversations={chat.conversations.filter((entry) => entry.id !== activeConversation.id).slice(0, 30).map((entry) => ({ id: entry.id, title: entry.title }))}
           chatInstructions={settingsState.settings.chatInstructions}
           onSaveInstruction={async (id, text) => {
             // Текст инструкции — общая настройка: правим весь список, сохраняя

@@ -1,7 +1,7 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
-import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock } from '../prompt/contextBlocks.js'
+import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import {
   REST,
@@ -35,7 +35,7 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
-import type { AgentsChainFile, AgentsChainResult, ContextKbPreview, ContextLastTurn, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+import type { AgentsChainFile, AgentsChainResult, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
@@ -213,6 +213,23 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
     ] }
   ]
+  // Рост контекста: размеры промптов последних ходов. Отвечает на «почему стало
+  // дороже» — из meta.request, без досчёта.
+  const turnSizes: ContextTurnSize[] = [...messages]
+    .reverse()
+    .filter((message) => message.role === 'ai' && message.meta?.request)
+    .slice(0, 10)
+    .map((message) => {
+      const info = message.meta!.request!
+      return {
+        at: message.time,
+        model: info.model,
+        chars: info.promptChars,
+        approxTokens: approxTokens(info.promptChars),
+        resumed: info.resumed
+      }
+    })
+
   // Несогласованности: настройки формально верны, но вместе дают не то, чего
   // человек ждёт. Считает сервер, а не UI: правила про машину, БЗ и проект живут
   // здесь же, где считается снимок.
@@ -253,6 +270,9 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         resumed: request.resumed,
         ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
         attachments: request.attachments?.length ?? 0,
+        // Имена, а не только количество: «2 вложения» не отвечает на вопрос,
+        // какие именно файлы получила модель. Путь на диске не раскрываем.
+        attachmentNames: (request.attachments ?? []).map((path) => path.split('/').pop() ?? path),
         kbSections: (request.kbContext?.sections ?? []).map((section) => section.title)
       }
     : null
@@ -292,6 +312,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     summary: { provider, model, permissionMode: { value: permissionMode, ...permissionDisplay[permissionMode] }, kbMode: { value: kbMode, ...kbDisplay[kbMode] } },
     groups: withSizes,
     viewerRole: role,
+    turnSizes,
     lastTurn,
     changes: db.listConversationContextEvents(userId, conversationId, 20),
     warnings,
@@ -300,6 +321,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       text: previewText,
       chars: previewText.length,
       approxTokens: promptBlock([], '', previewText).approxTokens,
+      costUsd: promptCostUsd(provider, model, approxTokens(previewText.length), db.listModelPrices()),
       omitted: [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
         resumeId
@@ -482,6 +504,30 @@ export async function registerRest(
     const updated = db.setConversationContextEnabled(uid(req), req.params.id, req.params.itemId, req.body?.enabled !== false)
     if (!updated) return reply.code(404).send({ error: 'not found' })
     const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
+    return snapshot ?? reply.code(404).send({ error: 'not found' })
+  })
+
+  /**
+   * Скопировать выключения контекста из другого разговора. Оба разговора
+   * читаются через scope пользователя, поэтому чужой источник просто не
+   * найдётся. Копируются только выключаемые пункты: безопасность и информация
+   * тумблера не имеют, и «скопировать» их нечего.
+   */
+  app.post<{ Params: { id: string }; Body: { fromConversationId?: string } }>('/api/conversations/:id/context-copy', async (req, reply) => {
+    const userId = uid(req)
+    const target = db.getConversation(userId, req.params.id)
+    const source = req.body?.fromConversationId ? db.getConversation(userId, req.body.fromConversationId) : null
+    if (!target || !source) return reply.code(404).send({ error: 'not found' })
+    if (source.id === target.id) return reply.code(400).send({ error: 'Разговор-источник совпадает с текущим' })
+    const wanted = new Set((source.disabledContext ?? []).filter(isContextToggleable))
+    const current = new Set((target.disabledContext ?? []).filter(isContextToggleable))
+    for (const itemId of new Set([...wanted, ...current])) {
+      const shouldBeEnabled = !wanted.has(itemId)
+      const enabledNow = !current.has(itemId)
+      if (enabledNow === shouldBeEnabled) continue // уже как надо
+      db.setConversationContextEnabled(userId, target.id, itemId, shouldBeEnabled, userId)
+    }
+    const snapshot = contextSnapshot(db, userId, target.id, opts.isAgentOnline)
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
