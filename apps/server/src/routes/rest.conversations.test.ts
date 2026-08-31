@@ -892,6 +892,52 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('сравнение контекста двух разговоров показывает разницу и ничего не меняет', async () => {
+    const here = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Здесь' } })).json()
+    const there = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Там' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${here.id}/context/personalization`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${there.id}/context/knowledge-mode`, payload: { enabled: false } })
+    await inj({ method: 'PATCH', url: `/api/conversations/${there.id}`, payload: { execTarget: null, llmProvider: 'codex', llmModel: 'gpt-5.6-luna' } })
+
+    const diff = (await inj({ method: 'GET', url: `/api/conversations/${here.id}/context-diff/${there.id}` })).json()
+    expect(diff.otherTitle).toBe('Там')
+    expect(diff.onlyHere.map((entry: { itemId: string }) => entry.itemId)).toEqual(['personalization'])
+    expect(diff.onlyThere.map((entry: { itemId: string }) => entry.itemId)).toEqual(['knowledge-mode'])
+    expect(diff.settings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Движок', here: 'claude', there: 'codex' })
+    ]))
+
+    // Сравнение — только чтение: наборы обоих разговоров остались прежними.
+    const disabledOf = async (id: string): Promise<string[]> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${id}/context-snapshot` })).json()
+      return snapshot.groups.flatMap((group: { items: Array<{ id: string; enabled: boolean }> }) => group.items)
+        .filter((item: { enabled: boolean }) => !item.enabled).map((item: { id: string }) => item.id)
+    }
+    expect(await disabledOf(here.id)).toEqual(['personalization'])
+    expect(await disabledOf(there.id)).toEqual(['knowledge-mode'])
+
+    // Чужой или несуществующий разговор — 404.
+    expect((await inj({ method: 'GET', url: `/api/conversations/${here.id}/context-diff/нет-такого` })).statusCode).toBe(404)
+  })
+
+  it('выключенные инструменты приезжают списком, а группы знают свой размер', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Инструменты' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/mcp-kb-search`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/mcp-remote-bash`, payload: { enabled: false } })
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    // Ровно тот список, что уйдёт исполнителю: ответ на «что модель не сможет».
+    expect(snapshot.disallowedTools).toEqual(['mcp__kb__search', 'mcp__remote__bash'])
+    // Размер группы инструкций считается по блокам, а не суммой пунктов:
+    // склеенная подсказка принадлежит двум пунктам и удвоила бы сумму.
+    const instructions = snapshot.groups.find((group: { id: string }) => group.id === 'chat-instructions')
+    expect(instructions.size.chars).toBeGreaterThan(0)
+    const blocksChars = snapshot.promptPreview.blocks
+      .filter((block: { itemIds: string[] }) => block.itemIds.every((id) => id.startsWith('instruction-')))
+      .reduce((total: number, block: { chars: number }) => total + block.chars, 0)
+    expect(instructions.size.chars).toBe(blocksChars)
+  })
+
   it('дубликат текста инструкций замечен, а «где выключена» различает настройки и чат', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Инструкции' } })).json()
     const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()

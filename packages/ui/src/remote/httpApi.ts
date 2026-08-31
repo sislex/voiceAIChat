@@ -196,6 +196,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
         throw error
       }
     },
+    'conversations:contextDiff': async ({ id, otherId }) => {
+      try { return await req(REST.conversationContextDiff(id, otherId)) } catch (error) {
+        if (error instanceof Error && error.message.includes('404')) return null
+        throw error
+      }
+    },
     'conversations:listMachines': ({ id, projectId }) =>
       req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
     'conversations:search': ({ query, includeCompleted }) =>

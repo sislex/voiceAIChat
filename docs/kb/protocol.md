@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-31
-checked: b709ea19
+checked: 1051da92
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -81,7 +81,9 @@ URL руками. Параметризованные пути — функции
 место) и `GET /api/conversations/:id/agents-chain` (чтение цепочки AGENTS.md с
 машины по явной просьбе). Мосты: `conversations:contextSnapshot`,
 `conversations:setContextItem`, `conversations:contextKbPreview`,
-`conversations:agentsChain`, `conversations:copyContext`
+`conversations:agentsChain`, `conversations:contextDiff`
+(`GET …/context-diff/:otherId` — чем контекст отличается от другого разговора,
+только чтение), `conversations:copyContext`
 (`POST /api/conversations/:id/context-copy` — перенос выключений из другого
 разговора: источник передаётся телом, потому что это данные операции, а не
 адрес). Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
