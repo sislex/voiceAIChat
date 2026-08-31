@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { KB_CONTEXT_MODES, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
-import type { ChatInstruction, Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
+import type { ChatInstruction, ContextPreset, Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
 import type { ChatStorageView, MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
@@ -60,6 +60,11 @@ export interface ConversationSettingsProps {
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
   /** Другие разговоры — источник для копирования контекста в инспекторе. */
   otherConversations?: Array<{ id: string; title: string }>
+  /** Пресеты контекста пользователя и их сохранение (инспектор контекста). */
+  contextPresets?: ContextPreset[]
+  onSavePresets?: (presets: ContextPreset[]) => Promise<void>
+  /** Вложения текущего черновика — их снимок контекста не видит. */
+  draftAttachments?: Array<{ name: string; status?: string }>
   /** Инструкции чата из общих настроек — инспектор контекста правит их текст. */
   chatInstructions?: ChatInstruction[]
   /** Сохранить текст инструкции (общая настройка пользователя). */
@@ -82,7 +87,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, chatInstructions, onSaveInstruction, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, draftAttachments, chatInstructions, onSaveInstruction, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -341,6 +346,9 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           execTarget={execTarget}
           onToggleSkill={(name, selected) => setSkillNames((prev) => selected ? [...new Set([...prev, name])] : prev.filter((entry) => entry !== name))}
           {...(otherConversations ? { otherConversations } : {})}
+          {...(contextPresets ? { contextPresets } : {})}
+          {...(onSavePresets ? { onSavePresets } : {})}
+          {...(draftAttachments ? { draftAttachments } : {})}
           {...(chatInstructions ? { chatInstructions } : {})}
           {...(onSaveInstruction ? { onSaveInstruction } : {})}
           onQuickEdit={(patch) => {

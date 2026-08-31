@@ -3,9 +3,9 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { CONTEXT_LOCK_TEXT, skillNameForContextId } from '@shared/contextGating'
 import { instructionIdForContextId, instructionText } from '@shared/chatInstructions'
 import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
-import type { AgentsChainResult, ChatInstruction, ContextKbPreview, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
+import type { AgentsChainResult, ChatInstruction, ContextKbPreview, ContextPreset, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
 import type { ProjectSummary } from '@shared/projects'
-import { Button, useToast } from '@voicechat/ui-kit'
+import { Button, useConfirm, useToast } from '@voicechat/ui-kit'
 
 type UserStatus = 'Будет использовано' | 'Доступно при необходимости' | 'Не настроено' | 'Недоступно' | 'Определится после отправки' | 'Выключено вами'
 export interface ContextInspectorProps {
@@ -27,6 +27,11 @@ export interface ContextInspectorProps {
   onToggleSkill?: (name: string, selected: boolean) => void
   /** Другие разговоры пользователя — источник для копирования контекста. */
   otherConversations?: Array<{ id: string; title: string }>
+  /** Пресеты контекста пользователя: применить и сохранить текущий набор. */
+  contextPresets?: ContextPreset[]
+  onSavePresets?: (presets: ContextPreset[]) => Promise<void>
+  /** Вложения черновика: они уйдут с сообщением, но снимку не видны. */
+  draftAttachments?: Array<{ name: string; status?: string }>
   /** Инструкции чата из общих настроек — правятся здесь же, но действуют везде. */
   chatInstructions?: ChatInstruction[]
   /** Сохранить правку текста инструкции (общие настройки пользователя). */
@@ -90,6 +95,17 @@ function kbEmptyText(preview: ContextKbPreview): string {
     default: return 'Для такого сообщения подходящих разделов не нашлось — автоматический контекст не добавится.'
   }
 }
+/** Одна строка о контексте: движок, размер, стоимость и что выключено. */
+function summaryLine(value: ConversationContextSnapshot): string {
+  const disabled = value.groups.flatMap((group) => group.items).filter((item) => item.toggleable && !item.enabled)
+  const cost = value.promptPreview.costUsd === null ? '' : `, ≈$${value.promptPreview.costUsd.toFixed(4)} за ход`
+  return [
+    `Контекст ${value.conversationId}: ${value.summary.provider} · ${value.summary.model || 'модель из конфигурации CLI'}`,
+    `постоянная часть ≈${value.promptPreview.approxTokens} токенов в ${value.promptPreview.blocks.length} блок(ах)${cost}`,
+    `режим доступа: ${value.summary.permissionMode.displayName}; база знаний: ${value.summary.kbMode.displayName}`,
+    disabled.length ? `выключено: ${disabled.map((item) => item.title).join(', ')}` : 'выключенных источников нет'
+  ].join('; ')
+}
 function roleHint(role: UserRole): string {
   return role === 'admin'
     ? 'Вы администратор: видны все сведения снимка и доступны любые настройки разговора.'
@@ -98,6 +114,7 @@ function roleHint(role: UserRole): string {
 
 export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const toast = useToast()
+  const confirm = useConfirm()
   const [detailId, setDetailId] = useState<string | null>(() => detailIdFromHash(props.conversationId))
   useEffect(() => {
     const sync = (): void => setDetailId(detailIdFromHash(props.conversationId))
@@ -127,6 +144,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const [filter, setFilter] = useState<ItemFilter>('all')
   /** Порядок списка: по размеру вклада вместо порядка сборки промпта. */
   const [heavyFirst, setHeavyFirst] = useState(false)
+  /**
+   * Админ смотрит экран как обычный пользователь. Проверять политику «что видит
+   * developer» иначе можно только вторым аккаунтом, а вопрос возникает часто.
+   */
+  const [asDeveloper, setAsDeveloper] = useState(false)
+  /** Имя нового пресета: поле рядом с кнопкой, а не системный prompt. */
+  const [presetName, setPresetName] = useState('')
   /** Идут ли изменения тумблера/быстрой правки — на это время контролы блокируются. */
   const [busy, setBusy] = useState(false)
   /** Черновик сообщения и подбор базы знаний по нему (по кнопке, не на каждый ввод). */
@@ -292,6 +316,45 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     return lines.join('\n')
   }
 
+  /** Применить пресет: набор приводится к сохранённому, как при копировании. */
+  const applyPreset = async (presetId: string): Promise<void> => {
+    const preset = props.contextPresets?.find((entry) => entry.id === presetId)
+    if (!preset || !snapshot) return
+    const wanted = new Set(preset.disabled)
+    const toDisable = toggleable.filter((item) => wanted.has(item.id) && item.enabled)
+    const toEnable = toggleable.filter((item) => !wanted.has(item.id) && !item.enabled)
+    setBusy(true)
+    try {
+      if (toDisable.length) await toggleMany(toDisable, false)
+      if (toEnable.length) await toggleMany(toEnable, true)
+      setAnnounce(`Пресет «${preset.name}» применён.`)
+      toast.success(`Пресет «${preset.name}» применён`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Сохранить текущий набор выключений как пресет. Имя вводится в поле рядом:
+   * `window.prompt` в проекте запрещён — он не знает про тему и не кликается
+   * в тестах.
+   */
+  const savePreset = async (): Promise<void> => {
+    if (!props.onSavePresets || !snapshot || !presetName.trim()) return
+    const disabled = toggleable.filter((item) => !item.enabled).map((item) => item.id)
+    const next = [...(props.contextPresets ?? []), { id: `preset-${Date.now()}`, name: presetName.trim(), disabled }]
+    setBusy(true)
+    try {
+      await props.onSavePresets(next)
+      setPresetName('')
+      toast.success('Пресет сохранён')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** Полный сброс: все источники включены и переопределения сняты. */
   const resetAll = async (): Promise<void> => {
     if (disabledToggleable.length) await toggleMany(disabledToggleable, true)
@@ -305,6 +368,14 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
    * «сделать так же».
    */
   const copyFrom = async (fromConversationId: string): Promise<void> => {
+    // Перед переносом показываем, что изменится: «скопировать» перезаписывает
+    // набор целиком, и без подтверждения это слишком тихое действие.
+    const title = props.otherConversations?.find((entry) => entry.id === fromConversationId)?.title ?? 'выбранного разговора'
+    if (!(await confirm({
+      title: 'Скопировать контекст?',
+      message: `Набор выключенных источников станет таким же, как в «${title}». Текущие выключения этого разговора (${disabledToggleable.length}) будут заменены.`,
+      confirmLabel: 'Скопировать'
+    }))) return
     setBusy(true)
     try {
       const next = await window.api['conversations:copyContext']({ id: props.conversationId, fromConversationId })
@@ -470,7 +541,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const toggleable = allItems.filter((item) => item.toggleable)
   const enabledToggleable = toggleable.filter((item) => item.enabled)
   const disabledToggleable = toggleable.filter((item) => !item.enabled)
-  const isAdmin = snapshot.viewerRole === 'admin'
+  // Эффективная роль экрана: админ может смотреть как обычный пользователь.
+  const effectiveRole: UserRole = asDeveloper ? 'developer' : snapshot.viewerRole
+  const isAdmin = effectiveRole === 'admin'
   const preview = snapshot.promptPreview
 
   // `withToggle` — тумблер у пункта. В сводке «Не попадёт» его нет намеренно:
@@ -504,7 +577,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         Сервер добавит ≈{preview.approxTokens} токенов в {preview.blocks.length} блок(ах){snapshot.lastTurn ? `; в прошлый ход ушло ≈${snapshot.lastTurn.approxTokens}` : ''}.
         {' '}Выключено источников: {disabledToggleable.length} из {toggleable.length}.
       </p>
-      <p className="context-role" data-testid="context-role-hint">{roleHint(snapshot.viewerRole)}</p>
+      <p className="context-role" data-testid="context-role-hint">
+        {roleHint(effectiveRole)}
+        {snapshot.viewerRole === 'admin' && <label className="context-asrole">
+          <input type="checkbox" checked={asDeveloper} onChange={(event) => setAsDeveloper(event.target.checked)} />
+          <span>Смотреть как обычный пользователь</span>
+        </label>}
+      </p>
     </header>
     {/* Предупреждения считает сервер: настройки формально верны, но вместе дают
         не то, чего ждёт человек. Проблемы идут раньше замечаний. */}
@@ -571,6 +650,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           {/* Настройки могли измениться в другом окне или другим админом:
               снимок отражает момент открытия, и обновить его надо уметь. */}
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => setReload((value) => value + 1)}>Обновить снимок</Button>
+          {/* Одна строка для задачи или переписки: «что уходит и сколько это
+              стоит» без вложения файлов и без пересказа руками. */}
+          <Button size="sm" variant="ghost" onClick={() => void copy(summaryLine(snapshot), 'Сводка')}>Скопировать сводку</Button>
         </div>
       </div>
       {preview.text
@@ -585,6 +667,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
               })()
             : <pre className="context-prompt" data-testid="context-prompt-preview">{preview.text}</pre>)
         : <p className="context-empty">Своих блоков сервер не добавляет: в ход уйдут только история разговора и ваше сообщение.</p>}
+      {/* Вложения черновика знает только клиент: снимок описывает сохранённое
+          состояние, а файлы приложены к неотправленному сообщению. */}
+      {(props.draftAttachments?.length ?? 0) > 0 && <p className="context-note" data-testid="context-draft-attachments">
+        С сообщением уйдут вложения: {props.draftAttachments!.map((file) => `${file.name}${file.status && file.status !== 'ready' ? ` (${file.status})` : ''}`).join(', ')}.
+      </p>}
       <details className="context-omitted"><summary>Чего в этом тексте нет</summary><ul>{preview.omitted.map((line) => <li key={line}>{line}</li>)}</ul></details>
     </section>
     <section className="context-card" aria-labelledby="context-kb-title">
@@ -659,7 +746,8 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     </section>}
     <p className="context-announce" role="status" aria-live="polite" data-testid="context-announce">{announce}</p>
     <div className="context-filters" role="search">
-      <input type="search" value={query} placeholder="Поиск по источникам контекста" aria-label="Поиск по источникам контекста" onChange={(event) => setQuery(event.target.value)} />
+      <input type="search" value={query} placeholder="Поиск по источникам контекста (/)" aria-label="Поиск по источникам контекста" onChange={(event) => setQuery(event.target.value)} />
+      {query.trim() && <span className="context-found" data-testid="context-found">Найдено: {allItems.filter((item) => matchesQuery(item, query)).length}</span>}
       <div className="context-filter-tabs" role="group" aria-label="Фильтр источников">
         {([['all', 'Все'], ['included', 'Попадёт в ход'], ['excluded', 'Не попадёт'], ['touched', 'Изменённые']] as const).map(([id, label]) =>
           <Button key={id} size="sm" variant={filter === id ? 'primary' : 'ghost'} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</Button>)}
@@ -678,6 +766,23 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           <Button size="sm" variant="ghost" disabled={busy || enabledToggleable.length === 0} onClick={() => void toggleMany(enabledToggleable, false)}>Выключить необязательное ({enabledToggleable.length})</Button>
           {/* Настроить контекст один раз и переносить в другие чаты — обычная
               работа: раньше это означало щёлкать тумблеры заново по памяти. */}
+          {/* Пресеты: набор выключений под именем. Настроил «минимальный контекст»
+              один раз — применяешь к любому чату, а не щёлкаешь по памяти. */}
+          {props.onSavePresets && <label className="context-copyfrom">
+            <span>Пресет</span>
+            <select aria-label="Применить пресет контекста" disabled={busy} value="" onChange={(event) => { if (event.target.value) void applyPreset(event.target.value) }}>
+              <option value="">— выберите —</option>
+              {(props.contextPresets ?? []).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+            </select>
+            <input
+              type="text"
+              value={presetName}
+              placeholder="Имя пресета"
+              aria-label="Имя нового пресета контекста"
+              onChange={(event) => setPresetName(event.target.value)}
+            />
+            <Button size="sm" variant="ghost" disabled={busy || !presetName.trim()} onClick={() => void savePreset()}>Сохранить текущий</Button>
+          </label>}
           {(props.otherConversations?.length ?? 0) > 0 && <label className="context-copyfrom">
             <span>Скопировать из</span>
             <select aria-label="Скопировать контекст из разговора" disabled={busy} value="" onChange={(event) => { if (event.target.value) void copyFrom(event.target.value) }}>
