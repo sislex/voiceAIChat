@@ -3,7 +3,7 @@
 import { EmptyState, Sparkline, StatCard } from '@voicechat/ui-kit'
 import type { ProfilePeriod, ProfileUsage } from '../contracts'
 import { PERIOD_LABEL } from '../format'
-import { formatTokens, formatUsd, spendPoints } from '../model'
+import { formatTokens, formatUsd, spendPoints, spendTrend } from '../model'
 
 export interface UsageTabProps {
   usage: ProfileUsage | null
@@ -31,7 +31,18 @@ export function UsageTab({ usage, period, onSelectPeriod }: UsageTabProps): JSX.
       ) : (
         <>
           <div className="vcp-usage__metrics">
-            <StatCard label="Расход" value={formatUsd(usage.spendUsd, usage.spendIncomplete)} hint={usage.spendIncomplete ? 'часть ответов без известного тарифа' : undefined} tone={usage.spendIncomplete ? 'warning' : 'neutral'} />
+            <StatCard
+              label="Расход"
+              value={formatUsd(usage.spendUsd, usage.spendIncomplete)}
+              hint={(() => {
+                const trend = spendTrend(usage.spendUsd, usage.previousSpendUsd)
+                if (usage.spendIncomplete) return 'часть ответов без известного тарифа'
+                // Сравнение только когда прошлый период был ненулевым: рост с
+                // нуля процентом не выражается, и «+∞%» ничего не объясняет.
+                return trend ? `${trend.up ? '↑' : '↓'} ${Math.round(trend.share * 100)}% к прошлому периоду` : undefined
+              })()}
+              tone={usage.spendIncomplete ? 'warning' : 'neutral'}
+            />
             <StatCard label="Токены" value={formatTokens(usage.inputTokens + usage.outputTokens)} hint={`${formatTokens(usage.inputTokens)} вход · ${formatTokens(usage.outputTokens)} выход`} />
             {/* Доли «успешных» здесь быть не может: неудавшийся ход сообщения не
                 создаёт, поэтому знаменателя не существует. Показываем прерванные. */}

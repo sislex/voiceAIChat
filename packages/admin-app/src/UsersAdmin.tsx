@@ -105,7 +105,7 @@ export interface UsersAdminProps {
   sessionsClient?: SessionsClient
   /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
   security?: SecurityEvent[] | null
-  onLoadSecurity?: (limit?: number) => void
+  onLoadSecurity?: (limit?: number, group?: string) => void
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */
   invites?: InviteInfo[] | null
   onLoadInvites?: () => void
@@ -213,6 +213,7 @@ export function UsersAdmin({
   const [resetInfo, setResetInfo] = useState<{ name: string; code: string; expiresAt: number } | null>(null)
   const [inner, setInner] = useState<AdminRoute>({ page: 'users' })
   const [period, setPeriod] = useState<'month' | '7d' | '30d' | 'all'>('month')
+  const [securityGroup, setSecurityGroup] = useState<'all' | 'auth' | 'account' | 'machines'>('all')
   const current = route ?? inner
   const page = current.page
   const tab: ProfileTab = current.page === 'users' ? (current.tab ?? 'overview') : 'overview'
@@ -235,14 +236,17 @@ export function UsersAdmin({
 
   useEffect(() => {
     if (!selectedName) return
-    if (tab === 'usage' || tab === 'overview') loadUsageFor(period)
+    // У человека без единого разговора отчёт заведомо пуст: спрашивать сервер
+    // не о чем, а вкладка покажет то же честное пустое состояние.
+    const hasHistory = (users.find((user) => user.name === selectedName)?.conversationCount ?? 0) > 0
+    if (hasHistory && (tab === 'usage' || tab === 'overview')) loadUsageFor(period)
     // Обзору хватает двадцати последних событий: лента показывает пять. Полный
     // журнал (двести) грузится только на своей вкладке.
-    if (tab === 'history') onLoadSecurity?.(200)
+    if (tab === 'history') onLoadSecurity?.(200, securityGroup)
     else if (tab === 'overview') onLoadSecurity?.(20)
     if (tab === 'machines') onLoadUserMachines?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedName, tab, period])
+  }, [selectedName, tab, period, securityGroup, users])
 
   const currentUser = users.find((user) => user.name === selectedName) ?? null
 
@@ -267,7 +271,7 @@ export function UsersAdmin({
             usageLoading={usageLoading}
             tabError={tabError}
             createError={createError}
-            onRetryTab={() => { if (tab === 'history') onLoadSecurity?.(200); else loadUsageFor(period) }}
+            onRetryTab={() => { if (tab === 'history') onLoadSecurity?.(200, securityGroup); else loadUsageFor(period) }}
             security={security}
             llmAccess={llmAccess}
             currentUserName={currentUserName}
@@ -279,6 +283,8 @@ export function UsersAdmin({
             {...(onExportCsv ? { onExportCsv } : {})}
             period={period}
             onSelectPeriod={(next) => setPeriod(next)}
+            securityGroup={securityGroup}
+            onChangeSecurityGroup={setSecurityGroup}
             onNavigate={navigate}
             onSelect={(name) => { onSelect(name); navigate({ page: 'users', userName: name, tab, ...(current.page === 'users' && current.list ? { list: current.list } : {}) }) }}
             onCreate={onCreate}

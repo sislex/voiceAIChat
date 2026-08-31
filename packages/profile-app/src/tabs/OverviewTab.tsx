@@ -1,6 +1,6 @@
 // Обзор: последняя активность, на что уходят деньги и опасная зона.
 
-import { Badge, Button, EmptyState } from '@voicechat/ui-kit'
+import { Badge, Button, EmptyState, ProgressBar } from '@voicechat/ui-kit'
 import type { ProfileCapabilities, ProfileConversation, ProfileSecurityEvent, ProfileUsage, ProfileUser } from '../contracts'
 import { activityFeed, formatUsd, modelShares } from '../model'
 import { formatAgo } from '../format'
@@ -60,7 +60,12 @@ export function OverviewTab({ user, usage, events, conversations, capabilities, 
                       <span>{item.model}</span>
                       <b>{formatUsd(item.spendUsd, item.incomplete)}</b>
                     </span>
-                    <span className="vcp-bars__track"><i style={{ width: `${Math.round(item.share * 100)}%` }} /></span>
+                    <ProgressBar
+                      className="vcp-bars__track"
+                      value={item.share}
+                      label={`Доля расхода: ${item.model}`}
+                      valueText={formatUsd(item.spendUsd, item.incomplete)}
+                    />
                   </li>
                 ))}
               </ul>

@@ -39,18 +39,12 @@ export const SECURITY_LABEL: Record<string, string> = {
   user_unblocked: 'Разблокирован'
 }
 
-/** Группы фильтра журнала: вход, изменения учётки, машины. */
+/**
+ * Группы событий и признак тревожности живут в контракте (`@voicechat/shared`):
+ * по ним фильтрует и сервер, а две копии одного разбиения разошлись бы при
+ * первом же новом типе события. Здесь — только подписи для человека.
+ */
 export type SecurityGroup = 'all' | 'auth' | 'account' | 'machines'
-
-const AUTH = new Set(['login', 'login_failed', 'login_locked', 'login_2fa_failed', 'login_new_device', 'logout', 'logout_all', 'session_revoked', 'session_evicted', 'session_panic', 'session_trusted', 'session_untrusted', 'session_renamed'])
-const MACHINES = new Set(['agent_connected', 'agent_rejected', 'agent_token_rotated', 'agent_token_revoked'])
-
-/** К какой группе относится событие: остальное — изменения учётки. */
-export function securityGroup(type: string): Exclude<SecurityGroup, 'all'> {
-  if (AUTH.has(type)) return 'auth'
-  if (MACHINES.has(type)) return 'machines'
-  return 'account'
-}
 
 /** Подпись типа события; незнакомый тип показываем как есть, а не прячем. */
 export function securityLabel(type: string): string {
@@ -61,3 +55,4 @@ export function securityLabel(type: string): string {
 export function isAlarming(type: string): boolean {
   return /failed|locked|blocked|rejected|panic/.test(type)
 }
+

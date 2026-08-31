@@ -155,7 +155,8 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 /* Аватар: круг с инициалами. Фон — сгенерированный насыщенный цвет, подпись на
    нём всегда белая (контраст подобран в Avatar.tsx), поэтому цвет текста один
    для всех тем. */
-.vc-avatar{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border-radius:50%;color:#fff;font-weight:600;line-height:1}
+.vc-avatar{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border-radius:50%;color:#fff;font-weight:600;line-height:1;overflow:hidden}
+.vc-avatar__photo{width:100%;height:100%;object-fit:cover}
 
 /* Бейдж состояния. */
 .vc-badge{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:700;white-space:nowrap;background:var(--surface-hover);color:var(--text-dim)}
@@ -258,5 +259,12 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 @media (max-width: 1050px) { .vc-metrics { grid-template-columns:repeat(2,minmax(0,1fr)) } }
 @media (max-width: 480px) { .vc-metrics { grid-template-columns:1fr } .vc-pagehead h1 { font-size:22px } .vc-pagehead__actions .vc-btn { min-height:40px } }
+
+
+/* Полоса доли. */
+.vc-progress{display:block;height:7px;border-radius:9px;background:var(--surface-hover);overflow:hidden}
+.vc-progress i{display:block;height:100%;border-radius:9px;background:var(--accent)}
+.vc-progress--warning i{background:var(--warning)}
+.vc-progress--danger i{background:var(--danger)}
 
 @media(prefers-reduced-motion:reduce){.vc-btn__spinner,.vc-skel,.vc-refresh__spinner,.vc-dialog,.vc-dialog-overlay,.vc-toast{animation:none}.vc-actionbar,.vc-switch,.vc-switch__knob{transition:none}}

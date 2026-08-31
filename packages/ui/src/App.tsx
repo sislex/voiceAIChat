@@ -2440,7 +2440,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
           sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
-          onLoadSecurity={(limit) => void adminActions.loadAdminSecurity(limit)}
+          onLoadSecurity={(limit, group) => void adminActions.loadAdminSecurity(limit, group)}
           invites={admin.adminInvites}
           onLoadInvites={() => void adminActions.loadAdminInvites()}
           onCreateInvite={(input) => void adminActions.createAdminInvite(input)}

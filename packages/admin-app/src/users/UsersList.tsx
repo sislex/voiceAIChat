@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Avatar, Badge, Button, EmptyState, ErrorState, RefreshIndicator, SearchField, Skeleton, Toolbar } from '@voicechat/ui-kit'
 import type { AdminUserInfo, UserUsageSummary } from '@shared/admin'
 import { formatAgo } from '@voicechat/profile-app'
-import { filterUsers, isActive, LIST_PAGE, pageUsers, pluralUsers, type UsersFilter } from './usersModel'
+import { filterUsers, isActive, LIST_PAGE, pageUsers, pluralUsers, userSpend, type UsersFilter } from './usersModel'
+import { formatUsd } from '@voicechat/profile-app'
 import type { LoadStatus } from '../loadState'
 import { loadView } from '../loadState'
 
@@ -87,13 +88,25 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
         className="ua-list__meta"
         summary={<span data-testid="users-count">{pluralUsers(found.length)}{narrowed ? ` из ${users.length}` : ''}</span>}
       >
+        {/* Порядок виден и меняется мышью: раньше сортировка по расходу
+            существовала только в адресе, и о ней невозможно было узнать. */}
+        <select
+          aria-label="Порядок списка"
+          value={filter.sort}
+          onChange={(event) => onFilter({ ...filter, sort: event.target.value as UsersFilter['sort'] })}
+        >
+          <option value="activity">По активности</option>
+          <option value="name">По имени</option>
+          <option value="spend">По расходу</option>
+        </select>
         <Button
           size="sm"
           variant="ghost"
           onClick={() => onFilter({ ...filter, descending: !filter.descending })}
-          title="Порядок списка"
+          aria-label={filter.descending ? 'Порядок: по убыванию' : 'Порядок: по возрастанию'}
+          title={filter.descending ? 'Сначала большие значения' : 'Сначала малые значения'}
         >
-          По активности {filter.descending ? '↓' : '↑'}
+          {filter.descending ? '↓' : '↑'}
         </Button>
       </Toolbar>
 
@@ -145,6 +158,12 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
                   ? <Badge tone="danger">заблокирован</Badge>
                   : <Badge tone={user.role === 'admin' ? 'accent' : 'neutral'}>{user.role}</Badge>}
                 {user.mustChangePassword && <Badge tone="warning" title="Временный пароль — сменит при первом входе">врем. пароль</Badge>}
+                {/* Расход за месяц прямо в строке: иначе сортировка по расходу
+                    показывает порядок, но не сами суммы. Нулевой не рисуем —
+                    столбик «$0.00» у всех создаёт видимость данных там, где их нет. */}
+                {userSpend(user.name, usageSummary) > 0 && (
+                  <small title="Расход за текущий месяц">{formatUsd(userSpend(user.name, usageSummary))}</small>
+                )}
               </span>
             </button>
           </li>

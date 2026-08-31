@@ -13,7 +13,14 @@ export function UserMetrics({ metrics, periodLabel }: UserMetricsProps): JSX.Ele
   return (
     <MetricsRow label="Сводка" className="ua-metrics" testId="users-metrics">
       <StatCard label="Всего пользователей" value={metrics.total} hint={metrics.createdThisMonth > 0 ? `+${metrics.createdThisMonth} за месяц` : undefined} />
-      <StatCard label="Активны сейчас" value={metrics.activeNow} hint="по живым сессиям" tone={metrics.activeNow > 0 ? 'positive' : 'neutral'} />
+      <StatCard
+        label="Активны сейчас"
+        value={metrics.activeNow}
+        // Ноль без пояснения читается как поломка метрики: объясняем, что
+        // считается активностью и за какое окно.
+        hint={metrics.activeNow > 0 ? 'по живым сессиям' : 'никто не работал последние 5 минут'}
+        tone={metrics.activeNow > 0 ? 'positive' : 'neutral'}
+      />
       <StatCard
         label="Машины онлайн"
         value={`${metrics.machinesOnline} / ${metrics.machinesTotal}`}

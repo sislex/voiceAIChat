@@ -4,7 +4,28 @@ import { createAdminStore } from './adminStore'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
+  const promise = new Promise<T>((done) => { resolve = done 
+  it('отказ сводки расхода не оставляет администратора без списка людей', async () => {
+    const client = {
+      listUsers: vi.fn(async () => [{ name: 'bob', role: 'developer', blocked: false, createdAt: 1, conversationCount: 0, agents: [] }]),
+      usageSummary: vi.fn(async () => { throw new Error('HTTP 503') }),
+      listLlmEngines: vi.fn(async () => []),
+      listModelPrices: vi.fn(async () => []),
+      userUsage: vi.fn(async () => ({ unit: 'day', totals: {}, byBucket: [], byModel: [], byConversation: [] })),
+      userConversations: vi.fn(async () => []),
+      getUserLlmAccess: vi.fn(async () => [])
+    } as unknown as AdminClient
+    const store = createAdminStore({
+      client,
+      session: { currentUser: () => ({ name: 'root', role: 'admin' }), refreshSession: async () => ({ name: 'root', role: 'admin' }), refreshOwnLlmAccess: async () => {} }
+    })
+    await store.actions.openUsers()
+    expect(store.getState().adminUsers).toHaveLength(1)
+    expect(store.getState().adminUsersStatus).toBe('ready')
+    expect(store.getState().adminUsageSummary).toEqual([])
+    store.dispose()
+  })
+})
   return { promise, resolve }
 }
 

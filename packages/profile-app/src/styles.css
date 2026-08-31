@@ -102,6 +102,11 @@
   .vcp-head { padding: 16px 14px; }
   /* Тот же порог 40px: действия карточки, массовые кнопки доступа и выгрузка
      журнала стоят в плотных строках и по умолчанию ниже него. */
+  /* Действия человека на телефоне встают в строку под именем, а не пытаются
+     поместиться рядом с ним: втроём они сжимались до нечитаемых 60px. */
+  .vcp-head { align-items: flex-start; }
+  .vcp-head__actions { width: 100%; }
+  .vcp-head__actions .vc-btn { flex: 1 1 auto; }
   .vcp-head__actions .vc-btn,
   .vcp-section-head .vc-btn,
   .vcp-access__bulk .vc-btn,

@@ -9,7 +9,8 @@ const NOW = Date.now()
 
 const users: AdminUserInfo[] = [
   { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 2, agents: [], lastSeenAt: NOW - 30_000, liveSessions: 1 },
-  { name: 'bob', role: 'developer', blocked: false, createdAt: 2, conversationCount: 0, agents: [], lastSeenAt: NOW - 2 * 86_400_000, liveSessions: 0 }
+  // Разговоры у bob есть: без них отчёт расхода намеренно не запрашивается.
+  { name: 'bob', role: 'developer', blocked: false, createdAt: 2, conversationCount: 4, agents: [], lastSeenAt: NOW - 2 * 86_400_000, liveSessions: 0 }
 ]
 
 const engines: AdminLlmEngine[] = [
@@ -242,6 +243,29 @@ describe('UsersAdmin — расход', () => {
       const last = (p.onLoadUsage as ReturnType<typeof vi.fn>).mock.calls.at(-1)!
       expect(last[1]).toBeCloseTo(Date.now() - 7 * 86_400_000, -5)
     })
+  })
+})
+
+describe('UsersAdmin — расход и метрики согласованы', () => {
+  it('одна и та же сумма в метрике над списком и в строке человека', () => {
+    renderAdmin({
+      usageSummary: [{ name: 'bob', totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 58.2, messages: 5 }, byModel: [] }]
+    })
+    // Формула одна (`spendUsd`: большая из двух оценок), поэтому «$58.20»
+    // обязано совпасть в обоих местах — иначе цифры на экране спорят друг с другом.
+    expect(screen.getByTestId('users-metrics')).toHaveTextContent('$58.20')
+    const row = screen.getAllByTestId('user-item').find((item) => item.textContent?.includes('bob'))!
+    expect(row).toHaveTextContent('$58.20')
+  })
+
+  it('человеку без разговоров отчёт не запрашивается', async () => {
+    const p = renderAdmin({
+      users: [{ name: 'newbie', role: 'developer', blocked: false, createdAt: 1, conversationCount: 0, agents: [], lastSeenAt: null, liveSessions: 0 }],
+      selected: 'newbie',
+      route: { page: 'users', userName: 'newbie', tab: 'usage' }
+    })
+    await waitFor(() => expect(screen.getByTestId('usage-tab')).toBeInTheDocument())
+    expect(p.onLoadUsage).not.toHaveBeenCalled()
   })
 })
 

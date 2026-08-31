@@ -16,7 +16,7 @@ export interface AdminClient {
   userSessions?(input: { name: string }): Promise<SessionInfo[]>
   revokeSession?(input: { sid: string }): Promise<void>
   /** Журнал безопасности (auth-roadmap п.7). */
-  securityEvents?(input: { user?: string; limit?: number }): Promise<SecurityEvent[]>
+  securityEvents?(input: { user?: string; limit?: number; group?: string }): Promise<SecurityEvent[]>
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */
   listInvites?(): Promise<InviteInfo[]>
   createInvite?(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo>

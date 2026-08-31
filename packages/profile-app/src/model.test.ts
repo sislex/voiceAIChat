@@ -14,6 +14,7 @@ import {
   shortUserAgent,
   setAllAccess,
   spendPoints,
+  spendTrend,
   toggleAccess
 } from './model'
 import type { ProfileProvider, ProfileUsage } from './contracts'
@@ -185,5 +186,18 @@ describe('короткая подпись устройства', () => {
   it('нераспознанное показывает как есть, а не прячет', () => {
     expect(shortUserAgent('curl/8.4.0')).toBe('curl/8.4.0')
     expect(shortUserAgent('')).toBe('')
+  })
+})
+
+describe('сравнение расхода с прошлым периодом', () => {
+  it('доля со знаком, когда прошлый период был ненулевым', () => {
+    expect(spendTrend(110, 100)).toEqual({ share: 0.1, up: true })
+    expect(spendTrend(80, 100)).toEqual({ share: 0.2, up: false })
+  })
+
+  it('сравнивать не с чем — не сравниваем: рост с нуля процентом не выражается', () => {
+    expect(spendTrend(50, 0)).toBeNull()
+    expect(spendTrend(50, null)).toBeNull()
+    expect(spendTrend(50, undefined)).toBeNull()
   })
 })
