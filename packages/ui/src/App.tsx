@@ -50,7 +50,7 @@ import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
-import { Button, IconButton } from '@voicechat/ui-kit'
+import { Button, Dialog, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
 import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
@@ -205,6 +205,11 @@ const GitTargetPane = lazy(async () => {
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
 // в главном чанке они лежат мёртвым весом до первого открытия.
 import type { SettingsSection } from './components/SettingsModal'
+
+const ContextInspector = lazy(async () => {
+  const module = await import('./components/ContextInspector')
+  return { default: module.ContextInspector }
+})
 
 const SettingsModal = lazy(async () => {
   const module = await import('./components/SettingsModal')
@@ -417,6 +422,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
   /** С какого раздела открыть общие настройки (переход из инспектора контекста). */
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null)
+  /**
+   * Чужой разговор, контекст которого смотрит админ. Отдельным окном, а не
+   * активным чатом: разговор не его, и подменять им активный чат нельзя.
+   */
+  const [foreignContextId, setForeignContextId] = useState<string | null>(null)
   const [sessionsOpen, setSessionsOpen] = useState(() => window.location.hash === '#/security/sessions')
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(() => window.location.hash === '#/security/password')
@@ -2169,6 +2179,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           там молча не появлялись. Принудительная смена пароля — тем более. */}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
+      {/* Инспектор контекста чужого чата: снимок грузит сам компонент по id,
+          поэтому окну нужен только идентификатор. */}
+      {foreignContextId && (
+        <Suspense fallback={<div role="status">Загрузка инспектора контекста…</div>}>
+          <Dialog title="Контекст чужого разговора" size="lg" padded onClose={() => setForeignContextId(null)} testId="foreign-context-dialog">
+            <ContextInspector
+              conversationId={foreignContextId}
+              provider={settingsState.settings.llmProvider}
+              model={settingsState.settings.model}
+              permissionMode={settingsState.settings.permissionMode}
+              kbMode="auto"
+              workdir={null}
+              selectedSkillNames={[]}
+            />
+          </Dialog>
+        </Suspense>
+      )}
       {sessionsOpen && (
         <Suspense fallback={null}>
           <SessionsDialogHost
@@ -2675,6 +2702,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
       {utilitySeg === 'users' && admin.usersOpen && (
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
+          onOpenConversationContext={(id) => setForeignContextId(id)}
           variant="page"
           route={adminRoute}
           onNavigate={(route) => navigate(buildAdminRoute(route).replace(/^#/, ''))}

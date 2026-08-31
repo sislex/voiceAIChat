@@ -83,6 +83,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         { id: 'knowledge', order: 2, title: 'База знаний', description: 'Тест', items: [item('knowledge-mode', 'Автоматически')] }
       ],
       viewerRole: 'developer',
+      owner: 'test',
+      foreign: false,
       lastTurn: null,
       turnSizes: [],
       changes: [...disabledContext].map((itemId, index) => ({ at: index * 1000, actor: 'test', itemId, enabled: false })),
