@@ -322,6 +322,22 @@ describe('TaskModal — что грузится при открытии карт
     await waitFor(() => expect(calls().improvements).toBe(1))
   })
 
+  it('QA-этапы не опрашиваются у задачи, у которой не было ни одного рана', async () => {
+    // Три запроса (по одному на этап) уходили при каждом открытии любой задачи —
+    // даже в проекте без QA. Раны этапов создаёт сам этап, поэтому «рана не
+    // было» означает и «QA-ранов нет».
+    window.ci = createFakeCi()
+    const listStageRuns = vi.fn(async () => [])
+    window.qa = { listStageRuns } as unknown as typeof window.qa
+    const { unmount } = render(<TaskModal {...props()} />)
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true'))
+    expect(listStageRuns).not.toHaveBeenCalled()
+    unmount()
+
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    await waitFor(() => expect(listStageRuns).toHaveBeenCalledTimes(3))
+  })
+
   it('панель Component QA молчит и не заводит опрос, пока её вкладку не открыли', async () => {
     // У панели внутри `setInterval` на 2 секунды: раньше он запускался у любой
     // открытой карточки, стоявшей на QA-этапе, даже если вкладку не смотрели.
@@ -1548,5 +1564,20 @@ describe('TaskModal — вкладки по возможностям типа п
     // Активный ран обычно открывает «Ленту рана»; без CI такой вкладки нет.
     render(<TaskModal {...props({ projectFeatures: NO_PROJECT_FEATURES, ciSummary: mkSummary() })} />)
     expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
+describe('TaskModal — создание чата задачи', () => {
+  it('просит чат один раз на задачу, даже если родитель ререндерится с новым колбэком', async () => {
+    const calls: string[] = []
+    // Как в App.tsx: onEnsureChat — inline-стрелка, новая на каждый рендер.
+    const view = (): JSX.Element => <TaskModal {...props({ onEnsureChat: (taskId: string) => { calls.push(taskId) } })} />
+    const { rerender } = render(view())
+    expect(calls).toEqual(['t1'])
+
+    rerender(view())
+    rerender(view())
+
+    expect(calls).toEqual(['t1'])
   })
 })

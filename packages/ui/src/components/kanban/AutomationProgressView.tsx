@@ -1,4 +1,5 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useState, type JSX } from 'react'
+import { usePolling } from '../../lib/usePolling'
 import type { AutomationProgress } from '@shared/ci'
 import { fmtDuration } from '../ci/ciFormat'
 
@@ -30,11 +31,8 @@ function stepStatusText(status: AutomationProgress['steps'][number]['status']): 
 export function AutomationProgressView({ progress, compact = false, now = Date.now }: AutomationProgressViewProps): JSX.Element {
   const [tick, setTick] = useState(0)
   const active = progress.status === 'running' || progress.status === 'queued' || progress.status === 'waiting'
-  useEffect(() => {
-    if (!active || progress.startedAt == null) return
-    const timer = setInterval(() => setTick((value) => value + 1), 1000)
-    return () => clearInterval(timer)
-  }, [active, progress.startedAt])
+  // Секундные часы «прошло столько-то» тикают только на видимой вкладке.
+  usePolling(() => setTick((value) => value + 1), { enabled: active && progress.startedAt != null, intervalMs: 1000 })
   void tick
   const elapsed = progress.startedAt == null
     ? progress.elapsedMs

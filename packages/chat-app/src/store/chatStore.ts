@@ -145,6 +145,8 @@ export interface PendingSubmit {
   queueOnly: boolean
   text: string
   messageText: string
+  expectedQueuePosition: number | null
+  attachmentIds: string[]
   attachments: LocalAttachment[]
 }
 
@@ -1099,6 +1101,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       queueOnly,
       text,
       messageText: composeUserText(text, ready.flatMap((item) => item.upload ? [item.upload] : [])),
+      expectedQueuePosition: queueOnly && state.activeId
+        ? (state.queuedTurns[state.activeId]?.length ?? 0) + 1
+        : null,
+      attachmentIds: ready.flatMap((item) => item.upload ? [item.upload.id] : []),
       attachments: [...state.attachments]
     }
     const patch: Partial<ChatState> = { pendingSubmit }
@@ -1309,16 +1315,15 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     const pending = state.pendingSubmit
     if (pending?.queueOnly && pending.conversationId === conversationId) {
-      const optimistic = state.queuedTurns[conversationId]?.find((item) => item.id === pending.operationId)
       const confirmed = pending.messageId
         ? items.some((item) => item.messageId === pending.messageId)
-        : Boolean(optimistic && items.some((item) =>
-            item.text === optimistic.text &&
-            item.position === optimistic.position &&
-            item.attachments.length === optimistic.attachments.length &&
-            item.attachments.every((attachment, index) => attachment === optimistic.attachments[index])
-          ))
-      if (confirmed) patch.pendingSubmit = null
+        : items.some((item) =>
+            item.text === pending.messageText &&
+            item.position === pending.expectedQueuePosition &&
+            item.attachments.length === pending.attachmentIds.length &&
+            item.attachments.every((attachment, index) => attachment === pending.attachmentIds[index])
+          )
+      if (confirmed && getState().pendingSubmit?.operationId === pending.operationId) patch.pendingSubmit = null
     }
     if (conversationId === state.activeId) {
       const removedIds = new Set(removedMessageIds)
@@ -1364,7 +1369,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   function applyChatMessage(conversationId: string, message: Message): void {
     const pending = getState().pendingSubmit
     const sameConversation = pending?.conversationId === null || pending?.conversationId === conversationId
-    const confirmed = pending && !pending.queueOnly && sameConversation && message.role !== 'ai' &&
+    const confirmed = pending && !pending.queueOnly && sameConversation && message.role === 'u1' &&
       (pending.messageId ? pending.messageId === message.id : pending.messageText === message.text)
     if (confirmed) {
       clearPendingSubmit(pending.operationId)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePolling } from '../../lib/usePolling'
 import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
 import type { ProjectMachine } from '@shared/projects'
 import { isPreviewBusy, previewActions } from '@shared/preview'
@@ -65,17 +66,11 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       setSelectedAgentId(defaultAgentId && machines.some((machine) => machine.agentId === defaultAgentId) ? defaultAgentId : '')
     }
   }, [defaultAgentId, environment, machines])
-  useEffect(() => {
-    if (!environment || !isPreviewBusy(environment.state)) return
-    const timer = window.setInterval(() => void load(), 1500)
-    return () => window.clearInterval(timer)
-  }, [environment?.state, load])
-  useEffect(() => {
-    if (!launching && (!environment || !isPreviewBusy(environment.state))) return
-    setNow(Date.now())
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [launching, environment?.state])
+  // Опрос и часы встают вместе со вкладкой браузера: превью собирается минуты,
+  // и карточка, оставленная открытой в фоне, продолжала опрашивать сервер.
+  usePolling(() => void load(), { enabled: Boolean(environment && isPreviewBusy(environment.state)), intervalMs: 1500 })
+  const clockRunning = launching || Boolean(environment && isPreviewBusy(environment.state))
+  usePolling(() => setNow(Date.now()), { enabled: clockRunning, intervalMs: 1000 })
   if (!api) return null
   const state = environment?.state ?? 'not_created'
   const actions = previewActions(state)
