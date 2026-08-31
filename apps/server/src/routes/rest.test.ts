@@ -1097,6 +1097,37 @@ describe('REST: аутентификация', () => {
   })
 })
 
+describe('REST: свои данные (/api/me/*)', () => {
+  it('профиль отдаёт свои поля любой роли и не требует прав администратора', async () => {
+    db.createUser('bob', '', 'observer')
+    const bobTok = signToken({ name: 'bob', role: 'observer' }, SECRET)
+    const res = await app.inject({ method: 'GET', url: '/api/me/profile', headers: { authorization: `Bearer ${bobTok}` } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ name: 'bob', role: 'observer', blocked: false })
+    // Чужого имени в роуте нет физически — подставить некуда.
+    expect((await app.inject({ method: 'GET', url: '/api/admin/users', headers: { authorization: `Bearer ${bobTok}` } })).statusCode).toBe(403)
+  })
+
+  it('журнал безопасности показывает только свои события', async () => {
+    db.createUser('bob', '', 'developer')
+    db.createUser('kate', '', 'developer')
+    db.logSecurityEvent({ user: 'bob', type: 'login', ip: '10.0.0.1', details: 'своё' })
+    db.logSecurityEvent({ user: 'kate', type: 'login', ip: '10.0.0.2', details: 'чужое' })
+    const bobTok = signToken({ name: 'bob', role: 'developer' }, SECRET)
+    const res = await app.inject({ method: 'GET', url: '/api/me/security', headers: { authorization: `Bearer ${bobTok}` } })
+    expect(res.statusCode).toBe(200)
+    const events = res.json() as Array<{ user: string; details: string }>
+    expect(events.length).toBeGreaterThan(0)
+    expect(events.every((event) => event.user === 'bob')).toBe(true)
+    expect(events.some((event) => event.details === 'чужое')).toBe(false)
+  })
+
+  it('без сессии оба роута — 401', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/me/profile' })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'GET', url: '/api/me/security' })).statusCode).toBe(401)
+  })
+})
+
 describe('REST: админ-роуты (только admin)', () => {
   it('запуск деплоя доступен только admin и не принимает shell-параметры', async () => {
     db.createUser('user', '', 'developer')
@@ -1159,9 +1190,13 @@ describe('REST: админ-роуты (только admin)', () => {
     expect((await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'weak', password: '', role: 'developer' } })).statusCode).toBe(400)
     expect(created.json()).toMatchObject({ name: 'bob', role: 'developer', blocked: false })
 
-    await inj({ method: 'POST', url: '/api/admin/users/bob/block', payload: { blocked: true } })
+    await inj({ method: 'POST', url: '/api/admin/users/bob/block', payload: { blocked: true, reason: 'запрос службы безопасности' } })
     const blocked = (await inj({ method: 'GET', url: '/api/admin/users' })).json()
     expect(blocked.find((u: { name: string }) => u.name === 'bob').blocked).toBe(true)
+    // Причина видна в журнале, а не в lock_reason: та колонка хранит машинный повод авто-замка.
+    const events = (await inj({ method: 'GET', url: '/api/admin/security?user=bob' })).json().events as Array<{ type: string; details: string }>
+    expect(events.find((event) => event.type === 'user_blocked')?.details).toContain('запрос службы безопасности')
+    expect(blocked.find((u: { name: string }) => u.name === 'bob').lockReason).not.toBe('запрос службы безопасности')
 
     // usage-отчёт отдаётся (пустой).
     const usage = (await inj({ method: 'GET', url: '/api/admin/users/bob/usage?unit=day' })).json()

@@ -13,6 +13,9 @@ import type { StatusTone } from './StatusPill'
 /** Тон точки: у ленты он совпадает с тоном лозенги, поэтому тип общий. */
 const DOT_MODIFIER: Record<StatusTone, string> = {
   neutral: 'vc-feed-dot--muted',
+  // `accent` пришёл вместе с объединением лозенг: выделение читается так же,
+  // как «идёт работа», — точка одна и та же.
+  accent: 'vc-feed-dot--progress',
   running: 'vc-feed-dot--progress',
   success: 'vc-feed-dot--success',
   warning: 'vc-feed-dot--progress',

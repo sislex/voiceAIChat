@@ -240,6 +240,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'images:retouch': (body) => req(REST.imageRetouch, { method: 'POST', body: JSON.stringify(body) }),
     'settings:get': () => req(REST.settings),
     'llm:access': () => req(REST.meLlmAccess),
+    'me:profile': () => req(REST.meProfile),
+    'me:security': ({ limit }) => req(limit ? `${REST.meSecurity}?limit=${limit}` : REST.meSecurity),
     'llm:engines': () => req(REST.llmEngines),
     // Тело — патч; ответ сервера (вся запись) возвращается вызывающему.
     'settings:save': (patch) => req(REST.settings, { method: 'PUT', body: JSON.stringify(patch) }),
@@ -312,7 +314,15 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:setUserLlmLimit': ({ name, llmLimitUsd }) => req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ llmLimitUsd }) }),
     'admin:inviteCreate': (body) => req(REST.adminInvites, { method: 'POST', body: JSON.stringify(body) }),
     'admin:inviteDelete': ({ token }) => req(REST.adminInvite(token), { method: 'DELETE' }),
-    'admin:securityEvents': ({ user, limit }) => req(`${REST.adminSecurity}?${user ? `user=${encodeURIComponent(user)}&` : ''}${limit ? `limit=${limit}` : ''}`.replace(/[?&]$/, '')),
+    'admin:securityEvents': ({ user, limit, group }) => {
+      const q = new URLSearchParams()
+      if (user) q.set('user', user)
+      if (limit) q.set('limit', String(limit))
+      // 'all' в запрос не пишем: пустой параметр и так означает «без фильтра».
+      if (group && group !== 'all') q.set('group', group)
+      const text = q.toString()
+      return req(text ? `${REST.adminSecurity}?${text}` : REST.adminSecurity)
+    },
     'admin:usageSummary': (arg) => {
       const q = new URLSearchParams()
       if (arg?.from) q.set('from', String(arg.from))
@@ -331,8 +341,9 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.adminUsers, { method: 'POST', body: JSON.stringify(b) }),
     'admin:updateUserRole': ({ name, role }) =>
       req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ role }) }),
-    'admin:setBlocked': async ({ name, blocked }) => {
-      await req(REST.adminUserBlock(name), { method: 'POST', body: JSON.stringify({ blocked }) })
+    'admin:userMachines': ({ name }) => req(REST.adminUserMachines(name)),
+    'admin:setBlocked': async ({ name, blocked, reason }) => {
+      await req(REST.adminUserBlock(name), { method: 'POST', body: JSON.stringify({ blocked, ...(reason ? { reason } : {}) }) })
     },
     'admin:deleteUser': async ({ name }) => {
       await req(REST.adminUser(name), { method: 'DELETE' })

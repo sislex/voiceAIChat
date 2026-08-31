@@ -3,6 +3,8 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { UsersAdmin } from './UsersAdmin'
 
+const NOW = Date.now()
+
 const conversations = [
   { id: 'chat-1', title: 'Редизайн кабинета', createdAt: 1, updatedAt: 2, messageCount: 18, claudeSessionId: null, execTarget: null, workdir: '', skillNames: [], llmEngineId: null, llmProvider: 'codex' as const, llmModel: 'gpt-5.6-sol', permissionMode: null, kbContextMode: 'auto' as const, projectId: null, taskId: null, status: 'developing' as const, lastExecTarget: null },
   { id: 'chat-2', title: 'План релиза', createdAt: 1, updatedAt: 2, messageCount: 7, claudeSessionId: null, execTarget: null, workdir: '', skillNames: [], llmEngineId: null, llmProvider: 'claude' as const, llmModel: 'opus', permissionMode: null, kbContextMode: 'auto' as const, projectId: null, taskId: null, status: 'developing' as const, lastExecTarget: null }
@@ -15,10 +17,25 @@ const meta: Meta<typeof UsersAdmin> = {
   args: {
     variant: 'page',
     users: [
-      { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 12, agents: [] },
-      { name: 'alex', role: 'developer', blocked: false, createdAt: 2, conversationCount: 3, agents: [] }
+      { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 12, agents: [], lastSeenAt: NOW - 40_000, liveSessions: 2 },
+      { name: 'alex', role: 'developer', blocked: false, createdAt: 2, conversationCount: 3, lastSeenAt: NOW - 3 * 60_000, liveSessions: 1, llmLimitUsd: 50, email: 'alex@voicechat.team', agents: [
+        { id: 'm1', name: 'MacBook Pro 16"', online: true, createdAt: 1, lastSeen: NOW, version: '2.7.4', telemetry: { os: { platform: 'darwin', release: '15.6' } } as never },
+        { id: 'm2', name: 'Mac mini CI', online: false, createdAt: 1, lastSeen: NOW - 2 * 86_400_000 }
+      ] },
+      { name: 'nikita', role: 'tester', blocked: true, createdAt: 3, conversationCount: 0, agents: [], lastSeenAt: NOW - 12 * 86_400_000, liveSessions: 0 }
     ],
     selected: 'alex',
+    route: { page: 'users', userName: 'alex', tab: 'overview' },
+    latestAgentVersion: '2.8.1',
+    usageSummary: [
+      { name: 'admin', totals: { inputTokens: 400_000, outputTokens: 60_000, cacheReadTokens: 0, costUsd: 21.4, messages: 12 }, byModel: [] },
+      { name: 'alex', totals: { inputTokens: 1_840_000, outputTokens: 284_000, cacheReadTokens: 6_400_000, costUsd: 13.72, messages: 25 }, byModel: [] }
+    ],
+    security: [
+      { id: 3, at: NOW - 12 * 60_000, user: 'alex', type: 'login', ip: '89.125.68.35', userAgent: 'Chrome 141 · macOS', details: 'новое устройство' },
+      { id: 2, at: NOW - 60 * 60_000, user: 'alex', type: 'agent_connected', ip: '10.0.0.4', userAgent: 'agent/2.7.4', details: 'MacBook Pro 16"' },
+      { id: 1, at: NOW - 26 * 60 * 60_000, user: 'alex', type: 'password_changed', ip: '89.125.68.35', userAgent: 'Chrome 141 · macOS', details: '' }
+    ],
     currentUserName: 'admin',
     conversations,
     conversationId: null,
@@ -50,6 +67,120 @@ const meta: Meta<typeof UsersAdmin> = {
 export default meta
 type Story = StoryObj<typeof UsersAdmin>
 
+/** Список, метрики и карточка выбранного человека — главный экран раздела. */
 export const Overview: Story = {}
-export const EmptyUsage: Story = { args: { usage: null } }
-export const AccessMatrix: Story = { args: { selected: 'alex', llmAccess: [{ provider: 'codex', modelId: '*' }] } }
+
+/** Новый период без ответов модели: честное пустое состояние вместо нулей. */
+export const EmptyUsage: Story = { args: { usage: null, route: { page: 'users', userName: 'alex', tab: 'usage' } } }
+
+/** Матрица доступа: Codex закрыт целиком, Claude — по моделям. */
+export const AccessMatrix: Story = {
+  args: { route: { page: 'users', userName: 'alex', tab: 'access' }, llmAccess: [{ provider: 'codex', modelId: '*' }] }
+}
+
+/** Машины человека: устаревшая версия агента и офлайн-машина без известной ОС. */
+export const Machines: Story = { args: { route: { page: 'users', userName: 'alex', tab: 'machines' } } }
+
+/** Журнал безопасности с фильтром и выгрузкой. */
+export const History: Story = { args: { route: { page: 'users', userName: 'alex', tab: 'history' } } }
+
+/** Пустая установка: ни одного человека, кроме встроенного администратора. */
+export const Empty: Story = { args: { users: [], selected: null, route: { page: 'users' }, usageSummary: [] } }
+
+/** Расход с данными: полосы по моделям, прерванные ходы, сравнение с прошлым периодом. */
+export const UsageWithData: Story = {
+  args: {
+    route: { page: 'users', userName: 'alex', tab: 'usage' },
+    usage: {
+      unit: 'day',
+      conversationId: null,
+      totals: { inputTokens: 6_100_000, outputTokens: 2_300_000, cacheReadTokens: 810_000, costUsd: 184.2, costFromPrices: 171.4, messages: 1284, interrupted: 17 },
+      byModel: [
+        { model: 'claude-opus-4.1', inputTokens: 3_100_000, outputTokens: 1_200_000, cacheReadTokens: 0, costUsd: 96.4, messages: 640 },
+        { model: 'gpt-5.2-codex', inputTokens: 2_100_000, outputTokens: 800_000, cacheReadTokens: 0, costUsd: 58.2, messages: 420 },
+        { model: 'claude-sonnet-4', inputTokens: 900_000, outputTokens: 300_000, cacheReadTokens: 0, costUsd: 29.6, messages: 224 }
+      ],
+      byBucket: Array.from({ length: 12 }, (_, index) => ({
+        bucket: `2026-08-${String(index + 1).padStart(2, '0')}`,
+        inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, messages: 0,
+        costUsd: Number((4 + Math.sin(index) * 3 + index * 0.6).toFixed(2))
+      })),
+      byConversation: []
+    }
+  }
+}
+
+/** Много машин у одного человека: список карточек и версии агентов. */
+export const ManyMachines: Story = {
+  args: {
+    route: { page: 'users', userName: 'alex', tab: 'machines' },
+    userMachines: Array.from({ length: 9 }, (_, index) => ({
+      id: `m${index}`,
+      name: `Машина ${index + 1}`,
+      online: index % 3 !== 0,
+      createdAt: 1,
+      lastSeen: NOW - index * 3_600_000,
+      ...(index % 3 !== 0 ? { version: index % 2 === 0 ? '2.7.4' : '2.8.1' } : {}),
+      ...(index % 3 !== 0 ? { telemetry: { os: { platform: index % 2 === 0 ? 'darwin' : 'linux', release: '15.6' } } as never } : {})
+    }))
+  }
+}
+
+/** Сотни учёток: список показывает первую страницу и предлагает догрузить. */
+export const ManyUsers: Story = {
+  args: {
+    route: { page: 'users' },
+    selected: null,
+    users: Array.from({ length: 420 }, (_, index) => ({
+      name: `user-${String(index).padStart(3, '0')}`,
+      role: (['developer', 'tester', 'observer'] as const)[index % 3]!,
+      blocked: index % 37 === 0,
+      createdAt: 1,
+      conversationCount: index % 11,
+      machinesTotal: index % 3,
+      machinesOnline: index % 2,
+      lastSeenAt: NOW - index * 60_000,
+      liveSessions: index % 2
+    }))
+  }
+}
+
+/** Длинные имя и почта: шапка карточки переносит их, а не выдавливает кнопки. */
+export const LongNames: Story = {
+  args: {
+    selected: 'константин-александрович-разумовский-тестировщик',
+    route: { page: 'users', userName: 'константин-александрович-разумовский-тестировщик', tab: 'overview' },
+    users: [{
+      name: 'константин-александрович-разумовский-тестировщик',
+      role: 'tester' as const,
+      blocked: false,
+      createdAt: 1,
+      email: 'konstantin.alexandrovich.razumovsky@very-long-corporate-domain.example',
+      conversationCount: 3,
+      machinesTotal: 0,
+      machinesOnline: 0,
+      lastSeenAt: NOW - 120_000,
+      liveSessions: 1
+    }]
+  }
+}
+
+/** Ошибка загрузки вкладки: видна внутри карточки, а не только в исчезнувшем тосте. */
+export const TabError: Story = {
+  args: { route: { page: 'users', userName: 'alex', tab: 'usage' }, usage: null, tabError: 'HTTP 503: сервис отчётов недоступен' }
+}
+
+/** Тёмная тема страницы целиком. */
+export const Dark: Story = {
+  decorators: [(Story) => (
+    <div data-theme="dark" style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh' }}>
+      <Story />
+    </div>
+  )]
+}
+
+/** Телефон 390×844: список превращается в ленту, карточка занимает экран. */
+export const Mobile: Story = {
+  args: { route: { page: 'users', userName: 'alex', tab: 'overview' } },
+  parameters: { viewport: { defaultViewport: 'mobile2' } }
+}

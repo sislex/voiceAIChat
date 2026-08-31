@@ -3,6 +3,11 @@
 
 import type { KanbanColumn, TaskPriority, WorkItemType } from '@shared/projects'
 
+// Аватар, инициалы и цвет по логину переехали в @voicechat/ui-kit: их просит и
+// список пользователей, и карточка профиля, а копия неизбежно разошлась бы с
+// оригиналом подбором контраста.
+export { Avatar, avatarColor, avatarContrast, initials } from '@voicechat/ui-kit'
+
 export const TYPE_LABEL: Record<WorkItemType, string> = { epic: 'Эпик', story: 'История', task: 'Задача' }
 export const PRIORITY_LABEL: Record<TaskPriority, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', urgent: 'Срочный' }
 
@@ -28,55 +33,11 @@ export function columnRegionLabel(col: Pick<KanbanColumn, 'name' | 'hidden'>, vi
   return `Колонка «${col.name}», ${count}${col.hidden ? ', скрыта' : ''}`
 }
 
+/** Стабильный хеш строки — основа палитры эпиков. */
 function hash(s: string): number {
   let h = 0
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
   return Math.abs(h)
-}
-
-/** Инициалы для аватара (до двух букв логина). */
-export function initials(username: string): string {
-  const parts = username.split(/[._\-\s]+/).filter(Boolean)
-  const two = parts.length > 1 ? parts[0][0] + parts[1][0] : username.slice(0, 2)
-  return two.toUpperCase()
-}
-
-/** Стабильный цвет аватара по логину. */
-/** Относительная яркость канала sRGB по WCAG 2.1. */
-function channel(value: number): number {
-  return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
-}
-
-/** HSL → относительная яркость. Насыщенность и тон — в долях, светлота в %. */
-function hslLuminance(hue: number, saturation: number, lightness: number): number {
-  const s = saturation / 100
-  const l = lightness / 100
-  const c = (1 - Math.abs(2 * l - 1)) * s
-  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1))
-  const m = l - c / 2
-  const [r, g, b] = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x]
-    : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x]
-  return 0.2126 * channel(r + m) + 0.7152 * channel(g + m) + 0.0722 * channel(b + m)
-}
-
-/** Контраст фона аватара с белой подписью на нём. */
-export function avatarContrast(hue: number, lightness: number): number {
-  return 1.05 / (hslLuminance(hue, AVATAR_SATURATION, lightness) + 0.05)
-}
-
-const AVATAR_SATURATION = 55
-
-/**
- * Цвет аватара по логину. Светлота подбирается под тон, а не берётся общей:
- * при фиксированных 42% зелёные и жёлтые тона давали с белой подписью всего
- * 3.06:1 при норме AA 4.5:1 — axe ловил это на реальной доске.
- */
-export function avatarColor(username: string): string {
-  const hue = hash(username) % 360
-  for (let lightness = 42; lightness > 12; lightness -= 1) {
-    if (avatarContrast(hue, lightness) >= 4.5) return `hsl(${hue}, ${AVATAR_SATURATION}%, ${lightness}%)`
-  }
-  return `hsl(${hue}, ${AVATAR_SATURATION}%, 12%)`
 }
 
 // Палитра меток эпиков Jira.
@@ -141,15 +102,3 @@ export function PriorityIcon({ priority }: { priority: TaskPriority }): JSX.Elem
   )
 }
 
-/** Аватар исполнителя: цветной круг с инициалами. */
-export function Avatar({ username, size = 24 }: { username: string; size?: number }): JSX.Element {
-  return (
-    <span
-      className="javatar"
-      title={username}
-      style={{ width: size, height: size, background: avatarColor(username), fontSize: Math.round(size * 0.42) }}
-    >
-      {initials(username)}
-    </span>
-  )
-}

@@ -25,9 +25,10 @@ import {
   type StatusTone
 } from '@voicechat/ui-kit'
 
-const TONES: StatusTone[] = ['neutral', 'running', 'success', 'warning', 'danger']
+const TONES: StatusTone[] = ['neutral', 'accent', 'running', 'success', 'warning', 'danger']
 const TONE_LABEL: Record<StatusTone, string> = {
   neutral: 'Не запускалось',
+  accent: 'Выделено',
   running: 'Выполняется',
   success: 'Успешно',
   warning: 'Требует внимания',
