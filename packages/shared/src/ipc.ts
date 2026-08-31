@@ -222,6 +222,8 @@ export interface IpcInvokeMap {
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
   'conversations:contextSnapshot': { arg: { id: string }; result: import('./types').ConversationContextSnapshot | null }
   'conversations:setContextItem': { arg: { id: string; itemId: string; enabled: boolean }; result: import('./types').ConversationContextSnapshot | null }
+  /** Скопировать выключения контекста из другого разговора этого пользователя. */
+  'conversations:copyContext': { arg: { id: string; fromConversationId: string }; result: import('./types').ConversationContextSnapshot | null }
   /** Прочитать цепочку AGENTS.md с машины разговора (инспектор контекста). */
   'conversations:agentsChain': { arg: { id: string }; result: import('./types').AgentsChainResult | null }
   /** Что подберёт база знаний для этого черновика (инспектор контекста). */
@@ -1218,6 +1220,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:setContextItem',
   'conversations:contextKbPreview',
   'conversations:agentsChain',
+  'conversations:copyContext',
   'conversations:listMachines',
   'conversations:search',
   'messages:search',

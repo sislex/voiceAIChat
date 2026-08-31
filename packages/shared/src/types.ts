@@ -1064,7 +1064,15 @@ export interface ConversationContextSnapshot {
     approxTokens: number
     /** Чего в предпросмотре принципиально нет (динамика хода, закрытые тексты CLI). */
     omitted: string[]
+    /**
+     * Оценка стоимости постоянной части в USD за один ход (только входные
+     * токены). `null` — прайса для модели нет: досчитывать выдуманной ценой
+     * нельзя, «—» честнее.
+     */
+    costUsd: number | null
   }
+  /** Размеры промпта последних ходов, новые сверху: виден рост контекста. */
+  turnSizes: ContextTurnSize[]
 }
 
 /**
@@ -1132,6 +1140,18 @@ export interface ContextLastTurn {
   attachments: number
   /** Разделы БЗ, добавленные тем ходом (пусто — автоконтекста не было). */
   kbSections: string[]
+  /** Имена приложенных файлов — «2 вложения» не отвечает на вопрос «какие». */
+  attachmentNames: string[]
+}
+
+/** Размер промпта одного состоявшегося хода — для истории роста контекста. */
+export interface ContextTurnSize {
+  at: string
+  model: string
+  chars: number
+  approxTokens: number
+  /** Ход продолжал сессию движка: история в этом промпте не пересобиралась. */
+  resumed: boolean
 }
 
 /**
