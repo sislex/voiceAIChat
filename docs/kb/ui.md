@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-31
-checked: 05bdf39c
+checked: 56acc0d4
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -1270,6 +1270,23 @@ viewport. На десктопе тест может сразу обращать�
 
 Тесты: `lib/fuzzy.test.ts`, `lib/hotkeys.test.ts`, `lib/commands.test.ts`, `lib/appCommands.test.ts`, `lib/useHotkeys.test.tsx`, `components/CommandPalette.dom.test.tsx`, `components/HotkeysCheatSheet.dom.test.tsx`, `App.commands.dom.test.tsx` (клавиши в собранном приложении) плюс проверки реестра в `KanbanBoard.dom.test.tsx` и `RunFeed.dom.test.tsx`. Сториз — `CommandPalette.stories.tsx` (в том числе `HugeList` на 600 бесед) и `HotkeysCheatSheet.stories.tsx`.
 
+## Ленивые чанки главного бандла
+
+`App.tsx` держит четыре экрана вне главного чанка через `React.lazy`:
+`SessionsDialogHost` (окно сессий тянет весь модуль устройств), `UsersAdmin`
+(`@voicechat/admin-app`), **`MakePane`** (две тысячи строк с редактором,
+историей снимков и комментариями — нужен только в Make-режиме чата) и
+**`SettingsModal`** (семь разделов, открывается из меню аккаунта). Вынос двух
+последних убрал из `index-` 185 КБ (1 336 → 1 151 КБ, −14%).
+
+Практическое следствие для тестов: окно, ушедшее в ленивый чанк, появляется не в
+том же такте — `getByRole('dialog')` сразу после клика падает, нужен
+`findByRole`. Так сломались два теста открытия настроек в `App.dom.test.tsx`.
+
+`axe-core` (575 КБ) в главный чанк не попадает и без `lazy`: он подключается
+`await import('axe-core/axe.min.js?raw')` в `lib/makeA11y.ts` и грузится только
+по кнопке «Проверить доступность» в панели Make.
+
 ## Библиотека универсальных примитивов @voicechat/ui-kit
 
 `packages/ui-kit` — отдельный workspace-пакет `@voicechat/ui-kit` (`private`, `type: module`, версия 0.1.0). Он плоский: все примитивы лежат прямо в `src/`, без подкаталогов, единственный публичный вход — `src/index.ts`, единственный стиль — `src/styles.css`. Поле `exports` в `package.json` содержит ровно две записи (`"."` и `"./styles.css"`), поэтому внутренние пути потребителю не видны — импорт `@voicechat/ui-kit/src/Dialog` не разрешится. Из index экспортируются `Button`/`IconButton`, `Dialog` + `useDialogStack` (`DIALOG_Z_BASE`, `DIALOG_Z_STEP`, `dialogStackDepth`), `ConfirmDialog` + `ConfirmProvider`/`useConfirm`, `ToastProvider`/`useToast` (`TOAST_DURATION_MS`, `TOAST_VISIBLE_MAX`), `UiProviders`, `Skeleton`/`RefreshIndicator`, `EmptyState`, `ErrorState` и их типы. `mediaQuery.ts` (`MOBILE_QUERY`, `useMediaQuery`) переехал в пакет, но остаётся внутренним — в index его нет; у `packages/ui` свой `lib/mediaQuery.ts` с тем же содержимым.
@@ -1308,6 +1325,14 @@ viewport. На десктопе тест может сразу обращать�
 - Классы `.vc-feed-*` **переехали** из `app.css` в `packages/ui-kit/src/styles.css`
   вместе с `FeedItem`. Сторож `packages/ui/src/styles/taskCardStyles.test.ts` теперь
   читает оба файла — иначе переезд класса читался бы как его пропажа.
+
+К ним добавились `QaScore` (счёт «N/M прошли» с полосой), `ResultTable`
+(«проверка | результат», на телефоне строка разворачивается в две строки —
+заголовки колонок уходят в `vc-sr-only`), `GateList` (проверки гейта: `ul`, а не
+`ol`, потому что они равноправны) и `BranchFlow` («ветка → ветка»; направление
+проговорено словом, стрелка `aria-hidden` — читалка произносит её как «больше»).
+Тон QA-статусов в семантику лозенги переводит `components/qa/qaTone.ts`: у QA
+свои `passed`/`blocked`/`stale`, и раньше каждая панель писала свой тернарник.
 
 Сториз — `packages/ui/src/components/ui/RunPanels.stories.tsx` (`UI/Run panels`).
 

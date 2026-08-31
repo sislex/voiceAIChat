@@ -5,6 +5,13 @@ import type { CiTaskMachine } from '@shared/ci'
 import { Button, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '../../lib/loadState'
 import { MERGE_STATUS_LABEL, MergeRunFeed, mergeStatusTone } from './MergeRunFeed'
+import { StatusPill, type StatusTone } from '@voicechat/ui-kit'
+
+/** Тон merge-статуса в семантику лозенги: `ok`/`err`/`warn`/`run` — местные имена. */
+function mergePillTone(status: string): StatusTone {
+  const tone = mergeStatusTone(status)
+  return tone === 'ok' ? 'success' : tone === 'err' ? 'danger' : tone === 'warn' ? 'warning' : 'running'
+}
 
 /** Вкладка merge задачи: запуск с выбором машины, живая лента выбранной
  *  попытки, история попыток и копии репозиториев задачи по машинам. */
@@ -192,7 +199,7 @@ export function MergePanel(props: {
             {runs.map((run) => (
               <li key={run.id}>
                 <button type="button" className={`merge-history-item${run.id === activeRunId ? ' merge-history-item--active' : ''}`} onClick={() => setSelectedRunId(run.id)}>
-                  <span className={`merge-badge merge-badge--${mergeStatusTone(run.status)}`}>{MERGE_STATUS_LABEL[run.status] ?? run.status}</span>
+                  <StatusPill tone={mergePillTone(run.status)} testId={`merge-history-status-${run.id}`}>{MERGE_STATUS_LABEL[run.status] ?? run.status}</StatusPill>
                   <span>{formatDateTime(run.createdAt)}</span>
                   <span title={run.agentId}>{run.machineName ?? run.agentId}</span>
                 </button>
