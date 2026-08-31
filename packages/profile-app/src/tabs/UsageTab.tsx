@@ -1,6 +1,6 @@
 // Использование: сколько потрачено, сколько токенов и как расход шёл по дням.
 
-import { EmptyState, Sparkline, StatCard } from '@voicechat/ui-kit'
+import { EmptyState, MetricGrid, Sparkline } from '@voicechat/ui-kit'
 import type { ProfilePeriod, ProfileUsage } from '../contracts'
 import { PERIOD_LABEL } from '../format'
 import { formatTokens, formatUsd, spendPoints, spendTrend } from '../model'
@@ -30,24 +30,37 @@ export function UsageTab({ usage, period, onSelectPeriod }: UsageTabProps): JSX.
         <EmptyState icon="📊" title="Данных за период нет" description="Появятся после первого ответа модели." />
       ) : (
         <>
-          <div className="vcp-usage__metrics">
-            <StatCard
-              label="Расход"
-              value={formatUsd(usage.spendUsd, usage.spendIncomplete)}
-              hint={(() => {
-                const trend = spendTrend(usage.spendUsd, usage.previousSpendUsd)
-                if (usage.spendIncomplete) return 'часть ответов без известного тарифа'
-                // Сравнение только когда прошлый период был ненулевым: рост с
-                // нуля процентом не выражается, и «+∞%» ничего не объясняет.
-                return trend ? `${trend.up ? '↑' : '↓'} ${Math.round(trend.share * 100)}% к прошлому периоду` : undefined
-              })()}
-              tone={usage.spendIncomplete ? 'warning' : 'neutral'}
-            />
-            <StatCard label="Токены" value={formatTokens(usage.inputTokens + usage.outputTokens)} hint={`${formatTokens(usage.inputTokens)} вход · ${formatTokens(usage.outputTokens)} выход`} />
-            {/* Доли «успешных» здесь быть не может: неудавшийся ход сообщения не
-                создаёт, поэтому знаменателя не существует. Показываем прерванные. */}
-            <StatCard label="Ответы модели" value={usage.messages} hint={usage.interrupted ? `${usage.interrupted} прервано` : undefined} />
-          </div>
+          <MetricGrid
+            columns={3}
+            ariaLabel="Итоги периода"
+            className="vcp-usage__metrics"
+            items={[
+              {
+                label: 'Расход',
+                value: formatUsd(usage.spendUsd, usage.spendIncomplete),
+                ...(usage.spendIncomplete
+                  ? { hint: 'часть ответов без известного тарифа', tone: 'warning' as const }
+                  : (() => {
+                      const trend = spendTrend(usage.spendUsd, usage.previousSpendUsd)
+                      // Сравнение только когда прошлый период был ненулевым:
+                      // рост с нуля процентом не выражается.
+                      return trend ? { hint: `${trend.up ? '↑' : '↓'} ${Math.round(trend.share * 100)}% к прошлому периоду` } : {}
+                    })())
+              },
+              {
+                label: 'Токены',
+                value: formatTokens(usage.inputTokens + usage.outputTokens),
+                hint: `${formatTokens(usage.inputTokens)} вход · ${formatTokens(usage.outputTokens)} выход`
+              },
+              {
+                // Доли «успешных» здесь быть не может: неудавшийся ход сообщения
+                // не создаёт, поэтому знаменателя не существует.
+                label: 'Ответы модели',
+                value: usage.messages,
+                ...(usage.interrupted ? { hint: `${usage.interrupted} прервано` } : {})
+              }
+            ]}
+          />
 
           <article className="vcp-card">
             <div className="vcp-card__title">

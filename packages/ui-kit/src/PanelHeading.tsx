@@ -17,9 +17,10 @@ export interface PanelHeadingProps {
   actions?: ReactNode
   /**
    * Уровень заголовка. По умолчанию 3: панель живёт внутри окна, чей заголовок —
-   * h2, и h2 здесь ломал бы порядок уровней.
+   * h2, и h2 здесь ломал бы порядок уровней. Уровень 1 — для шапки целой
+   * страницы (раздел «Пользователи», «Мой аккаунт»).
    */
-  level?: 2 | 3 | 4
+  level?: 1 | 2 | 3 | 4
   /** id заголовка — чтобы панель могла сослаться на него `aria-labelledby`. */
   titleId?: string
   className?: string
@@ -36,9 +37,9 @@ export function PanelHeading({
   className,
   testId = 'panel-heading'
 }: PanelHeadingProps): JSX.Element {
-  const Heading = `h${level}` as 'h2' | 'h3' | 'h4'
+  const Heading = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4'
   return (
-    <div className={['vc-panel-head', className].filter(Boolean).join(' ')} data-testid={testId}>
+    <div className={['vc-panel-head', level === 1 && 'vc-panel-head--page', className].filter(Boolean).join(' ')} data-testid={testId}>
       <div className="vc-panel-head__text">
         {kicker != null && <span className="vc-panel-head__kicker">{kicker}</span>}
         <Heading className="vc-panel-head__title" {...(titleId ? { id: titleId } : {})}>{title}</Heading>

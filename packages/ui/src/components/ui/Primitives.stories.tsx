@@ -5,7 +5,7 @@
 // подсказка под значением).
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { Avatar, Badge, DefinitionList, SearchField, Sparkline, StatCard, StickyActionBar, Switch, Tabs, Toolbar, Button } from '@voicechat/ui-kit'
+import { Avatar, Badge, MetricGrid, SearchField, Sparkline, StickyActionBar, Switch, Tabs, Toolbar, Button } from '@voicechat/ui-kit'
 
 const meta: Meta = { title: 'UI/Primitives' }
 export default meta
@@ -40,12 +40,16 @@ export const Badges: Story = {
 /** Полоса метрик: подпись, число, пояснение с тональностью. */
 export const Stats: Story = {
   render: () => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-      <StatCard label="Всего пользователей" value={24} hint="+3 за месяц" />
-      <StatCard label="Активны сейчас" value={9} hint="по живым сессиям" tone="positive" />
-      <StatCard label="Машины онлайн" value="17 / 31" hint="55% парка" />
-      <StatCard label="Расход за месяц" value="$842.40" hint="78% лимитов" tone="warning" />
-    </div>
+    <MetricGrid
+      columns={4}
+      ariaLabel="Сводка"
+      items={[
+        { label: 'Всего пользователей', value: 24, hint: '+3 за месяц' },
+        { label: 'Активны сейчас', value: 9, hint: 'по живым сессиям', tone: 'positive' },
+        { label: 'Машины онлайн', value: '17 / 31', hint: '55% парка' },
+        { label: 'Расход за месяц', value: '$842.40', hint: '78% лимитов', tone: 'warning' }
+      ]}
+    />
   )
 }
 
@@ -127,14 +131,18 @@ export const Dark: Story = {
         <Badge tone="danger">заблокирован</Badge>
         <Badge>observer</Badge>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-        <StatCard label="Активны сейчас" value={9} hint="по живым сессиям" tone="positive" />
-        <StatCard label="Расход за месяц" value="$842.40" hint="78% лимитов" tone="warning" />
-      </div>
+      <MetricGrid
+        columns={2}
+        ariaLabel="Сводка в тёмной теме"
+        items={[
+          { label: 'Активны сейчас', value: 9, hint: 'по живым сессиям', tone: 'positive' },
+          { label: 'Расход за месяц', value: '$842.40', hint: '78% лимитов', tone: 'warning' }
+        ]}
+      />
       <Toolbar summary={<><b>12</b> разрешено · <b>2</b> запрещено</>}>
         <Button size="sm" variant="ghost">Разрешить всё</Button>
       </Toolbar>
-      <DefinitionList items={[{ label: 'ОС', value: 'macOS 15.6' }, { label: 'Версия агента', value: '2.8.1' }]} />
+      <MetricGrid compact columns={2} ariaLabel="Свойства машины" items={[{ label: 'ОС', value: 'macOS 15.6' }, { label: 'Версия агента', value: '2.8.1' }]} />
       <Sparkline label="Расход по дням, USD" points={[3, 7, 5, 11, 8].map((value, index) => ({ label: `${index + 1} авг`, value }))} />
     </div>
   )

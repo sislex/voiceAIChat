@@ -3,14 +3,13 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Avatar, avatarContrast, initials } from './Avatar'
 import { Badge } from './Badge'
-import { StatCard } from './StatCard'
 import { Tabs } from './Tabs'
 import { SearchField } from './SearchField'
 import { Switch } from './Switch'
 import { StickyActionBar } from './StickyActionBar'
 import { Sparkline, sparklinePaths } from './Sparkline'
 import { Toolbar } from './Toolbar'
-import { DefinitionList } from './DefinitionList'
+import { MetricGrid } from './MetricGrid'
 
 describe('Avatar', () => {
   it('инициалы — до двух букв, разделители логина учитываются', () => {
@@ -45,20 +44,33 @@ describe('Avatar', () => {
 describe('Badge', () => {
   it('тон задаёт класс, а не цвет в разметке', () => {
     render(<Badge tone="danger" testId="b">заблокирован</Badge>)
-    expect(screen.getByTestId('b')).toHaveClass('vc-badge--danger')
+    expect(screen.getByTestId('b')).toHaveClass('vc-pill--danger')
+    expect(screen.getByTestId('b')).toHaveAttribute('data-tone', 'danger')
     expect(screen.getByTestId('b').getAttribute('style')).toBeNull()
   })
 })
 
-describe('StatCard', () => {
+describe('MetricGrid', () => {
   it('без подсказки вторая строка не рисуется', () => {
-    const { container } = render(<StatCard label="Всего" value={24} />)
-    expect(container.querySelector('.vc-stat__hint')).toBeNull()
+    const { container } = render(<MetricGrid items={[{ label: 'Всего', value: 24 }]} />)
+    expect(container.querySelector('.vc-metric__hint')).toBeNull()
   })
 
-  it('тон подсказки виден классом', () => {
-    const { container } = render(<StatCard label="Расход" value="$842" hint="78% бюджета" tone="warning" />)
-    expect(container.querySelector('.vc-stat__hint')).toHaveClass('vc-stat__hint--warning')
+  it('тон подсказки виден классом, а не цветом в разметке', () => {
+    const { container } = render(<MetricGrid items={[{ label: 'Расход', value: '$842', hint: '78% бюджета', tone: 'warning' }]} />)
+    expect(container.querySelector('.vc-metric__hint')).toHaveClass('vc-metric__hint--warning')
+  })
+
+  it('подпись и значение связаны как dt/dd, а не идут двумя строками текста', () => {
+    render(<MetricGrid testId="mg" items={[{ label: 'Машины', value: '3 из 5' }]} />)
+    const grid = screen.getByTestId('mg')
+    expect(grid.querySelectorAll('dt')[0]).toHaveTextContent('Машины')
+    expect(grid.querySelectorAll('dd')[0]).toHaveTextContent('3 из 5')
+  })
+
+  it('группа чисел названа для скринридера', () => {
+    render(<MetricGrid ariaLabel="Сводка" items={[{ label: 'Всего', value: 1 }]} />)
+    expect(screen.getByLabelText('Сводка')).toBeInTheDocument()
   })
 })
 
@@ -193,19 +205,5 @@ describe('Toolbar', () => {
   it('без действий правая часть не рисуется', () => {
     const { container } = render(<Toolbar summary="12 разрешено" />)
     expect(container.querySelector('.vc-toolbar__actions')).toBeNull()
-  })
-})
-
-describe('DefinitionList', () => {
-  it('пары связаны как dt/dd, а не слиты в строку текста', () => {
-    render(<DefinitionList testId="dl" items={[{ label: 'ОС', value: 'macOS 15.6' }, { label: 'Версия', value: '2.8.1' }]} />)
-    const list = screen.getByTestId('dl')
-    expect(list.querySelectorAll('dt')).toHaveLength(2)
-    expect(list.querySelectorAll('dd')[0]).toHaveTextContent('macOS 15.6')
-  })
-
-  it('пустое значение скрывается по требованию, а не показывается пустотой', () => {
-    render(<DefinitionList testId="dl" items={[{ label: 'ОС', value: '', hideWhenEmpty: true }, { label: 'Версия', value: '2.8.1' }]} />)
-    expect(screen.getByTestId('dl').querySelectorAll('dt')).toHaveLength(1)
   })
 })

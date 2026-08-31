@@ -17,7 +17,8 @@
 .vcp-head__role select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; }
 .vcp-head__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-.vcp-quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 24px 12px; }
+/* Сетку «быстрых фактов» задаёт MetricGrid; здесь только отступы карточки. */
+.vcp-quick { margin: 0 24px 12px; }
 
 .vcp-panel { padding: 18px 24px 24px; min-width: 0; }
 
@@ -69,7 +70,7 @@
 .vcp-dot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--text-dim); }
 .vcp-dot--on { background: var(--success); }
 
-.vcp-usage__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.vcp-usage__metrics { margin-bottom: 12px; }
 .vcp-usage .vcp-card { margin-bottom: 12px; }
 .vcp-table { width: 100%; border-collapse: collapse; }
 .vcp-table th, .vcp-table td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; font-size: 12px; }
@@ -92,7 +93,6 @@
 .vcp-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
 @media (max-width: 1050px) {
-  .vcp-quick { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vcp-overview__grid { grid-template-columns: 1fr; }
   .vcp-provider__models { grid-template-columns: 1fr; }
   .vcp-provider__models label { border-right: 0; border-bottom: 1px solid var(--border); }
@@ -113,9 +113,8 @@
   .vcp-history__filters .vc-btn,
   .vcp-card__title .vc-btn,
   .vcp-danger .vc-btn { min-height: 40px; }
-  .vcp-quick { grid-template-columns: 1fr; margin: 0 14px 8px; }
+  .vcp-quick { margin: 0 14px 8px; }
   .vcp-panel { padding: 16px 14px; }
-  .vcp-usage__metrics { grid-template-columns: 1fr; }
   .vcp-machine { grid-template-columns: 40px minmax(0, 1fr) auto; }
   /* Кнопка обновления уезжает на свою строку, иначе на 390px она сжимается
      до нечитаемой ширины и не попадает под палец. */
