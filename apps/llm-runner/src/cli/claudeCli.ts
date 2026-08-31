@@ -10,7 +10,9 @@ import {
   parseStreamJsonActivity,
   parseStreamJsonLine,
   previewToolHint,
-  MAKE_ASSISTANT_HINT
+  MAKE_ASSISTANT_HINT,
+  KANBAN_ASSISTANT_HINT,
+  KANBAN_TOOLS
 } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
@@ -179,6 +181,12 @@ export function claudeArgs(req: LlmRequest): string[] {
     mcpServers.make = { type: 'http', url: req.makeMcpUrl }
     allowed.push('mcp__make__make_list_files', 'mcp__make__make_read_file', 'mcp__make__make_write_file', 'mcp__make__make_delete_file', 'mcp__make__make_rename_file', 'mcp__make__make_check')
     systemHints.push(MAKE_ASSISTANT_HINT)
+  }
+  if (req.kanbanMcpUrl) {
+    // Канбан: доска, карточки, настройки, машины и раны проекта разговора.
+    mcpServers.kanban = { type: 'http', url: req.kanbanMcpUrl }
+    allowed.push(...KANBAN_TOOLS.map((tool) => `mcp__kanban__${tool}`))
+    systemHints.push(KANBAN_ASSISTANT_HINT)
   }
   // Выключенные пользователем MCP-инструменты: запрещаем и убираем из allow-list.
   if (req.disallowedTools?.length) disallowed.push(...req.disallowedTools)

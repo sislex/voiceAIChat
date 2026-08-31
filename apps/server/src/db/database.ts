@@ -3,6 +3,7 @@ import { parseProjectCommandPolicy, parseRoleCommandPolicies, EMPTY_AUTOMATED_QA
 import { DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@voicechat/shared'
 import type { AutomatedQaMode, AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
 import { isPreviewAction } from '@voicechat/shared'
+import type { Orchestration, OrchestrationItem, OrchestrationItemInput, OrchestrationItemStatus, OrchestrationStatus } from '@voicechat/shared'
 
 /** Сценарий приходит из настроек проекта, то есть извне: отбрасываем шаги с
  *  неизвестным действием, иначе раннер упадёт на середине прогона. */
@@ -362,6 +363,7 @@ interface ConversationRow {
   preview_url: string | null
   task_id: string | null
   assistant_kind: string | null
+  assistant_autonomy: string | null
   status: string | null
   last_exec_target?: string | null
 }
@@ -1030,6 +1032,9 @@ export class VoiceChatDb {
     }
     if (!convCols.some((c) => c.name === 'project_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN project_id TEXT`)
+    }
+    if (!convCols.some((c) => c.name === 'assistant_autonomy')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN assistant_autonomy TEXT`)
     }
     if (!convCols.some((c) => c.name === 'preview_url')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN preview_url TEXT`)
@@ -3698,6 +3703,8 @@ export class VoiceChatDb {
       disabledContext: parseJsonValue<string[]>(row.disabled_context_json, []).filter((item): item is string => typeof item === 'string'),
       projectId: row.project_id ?? null,
       assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' || row.assistant_kind === 'make' ? row.assistant_kind : null,
+      // Дефолт — полная автономия: ассистент задуман действующим, а не советующим.
+      assistantAutonomy: row.assistant_autonomy === 'confirm' ? 'confirm' : 'auto',
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
@@ -4914,6 +4921,137 @@ export class VoiceChatDb {
    * машина остаётся null: это динамическое наследование персонального default
    * текущего пользователя. Навыки наследуются от проекта. Гейт — членство.
    */
+  // --- Оркестрация канбан-ассистента ---------------------------------
+  // План живёт в БД, потому что ожидание merge переживает и вкладку, и рестарт.
+
+  createOrchestration(
+    owner: string,
+    projectId: string,
+    conversationId: string | null,
+    title: string,
+    items: OrchestrationItemInput[]
+  ): Orchestration | null {
+    if (!this.isProjectMember(owner, projectId)) return null
+    const id = this.newId()
+    const ts = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT INTO assistant_orchestrations (id, project_id, conversation_id, owner, title, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'running', ?, ?)`
+      ).run(id, projectId, conversationId, owner, title, ts, ts)
+      const insert = this.db.prepare(
+        `INSERT INTO assistant_orchestration_items (id, orchestration_id, position, kind, title, task_id, depends_on_json, payload_json, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+      )
+      items.forEach((item, index) => {
+        insert.run(this.newId(), id, index, item.kind, item.title, item.taskId ?? null, JSON.stringify(item.dependsOn ?? []), JSON.stringify(item.payload ?? {}))
+      })
+    })()
+    return this.getOrchestration(owner, id)
+  }
+
+  getOrchestration(owner: string, id: string): Orchestration | null {
+    const row = this.db.prepare(`SELECT * FROM assistant_orchestrations WHERE id = ? AND owner = ?`).get(id, owner) as Record<string, string | number | null> | undefined
+    return row ? this.orchestrationOf(row) : null
+  }
+
+  /** Для менеджера: план без проверки владельца (владелец берётся из строки). */
+  getOrchestrationById(id: string): Orchestration | null {
+    const row = this.db.prepare(`SELECT * FROM assistant_orchestrations WHERE id = ?`).get(id) as Record<string, string | number | null> | undefined
+    return row ? this.orchestrationOf(row) : null
+  }
+
+  listOrchestrations(owner: string, projectId: string, limit = 20): Orchestration[] {
+    const rows = this.db.prepare(
+      `SELECT * FROM assistant_orchestrations WHERE owner = ? AND project_id = ? ORDER BY created_at DESC LIMIT ?`
+    ).all(owner, projectId, limit) as Array<Record<string, string | number | null>>
+    return rows.map((row) => this.orchestrationOf(row))
+  }
+
+  /** Незавершённые планы — их менеджер подхватывает после рестарта сервера. */
+  listActiveOrchestrations(): Orchestration[] {
+    const rows = this.db.prepare(`SELECT * FROM assistant_orchestrations WHERE status = 'running'`).all() as Array<Record<string, string | number | null>>
+    return rows.map((row) => this.orchestrationOf(row))
+  }
+
+  updateOrchestrationStatus(id: string, status: OrchestrationStatus, error?: string | null): void {
+    this.db.prepare(`UPDATE assistant_orchestrations SET status = ?, error = ?, updated_at = ? WHERE id = ?`)
+      .run(status, error ?? null, this.now(), id)
+  }
+
+  updateOrchestrationItem(
+    itemId: string,
+    patch: { status?: OrchestrationItemStatus; taskId?: string | null; runId?: string | null; error?: string | null }
+  ): void {
+    const set: string[] = []
+    const values: unknown[] = []
+    if (patch.status !== undefined) {
+      set.push('status = ?')
+      values.push(patch.status)
+      if (patch.status === 'running') { set.push('started_at = ?'); values.push(this.now()) }
+      if (patch.status === 'done' || patch.status === 'failed' || patch.status === 'cancelled') { set.push('finished_at = ?'); values.push(this.now()) }
+    }
+    if (patch.taskId !== undefined) { set.push('task_id = ?'); values.push(patch.taskId) }
+    if (patch.runId !== undefined) { set.push('run_id = ?'); values.push(patch.runId) }
+    if (patch.error !== undefined) { set.push('error = ?'); values.push(patch.error) }
+    if (!set.length) return
+    values.push(itemId)
+    this.db.prepare(`UPDATE assistant_orchestration_items SET ${set.join(', ')} WHERE id = ?`).run(...values)
+    const owner = this.db.prepare(`SELECT orchestration_id FROM assistant_orchestration_items WHERE id = ?`).get(itemId) as { orchestration_id: string } | undefined
+    if (owner) this.db.prepare(`UPDATE assistant_orchestrations SET updated_at = ? WHERE id = ?`).run(this.now(), owner.orchestration_id)
+  }
+
+  cancelOrchestration(owner: string, id: string): Orchestration | null {
+    const plan = this.getOrchestration(owner, id)
+    if (!plan) return null
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE assistant_orchestration_items SET status = 'cancelled', finished_at = ? WHERE orchestration_id = ? AND status IN ('pending', 'running')`)
+        .run(this.now(), id)
+      this.updateOrchestrationStatus(id, 'cancelled')
+    })()
+    return this.getOrchestration(owner, id)
+  }
+
+  private orchestrationOf(row: Record<string, string | number | null>): Orchestration {
+    const id = String(row.id)
+    const items = (this.db.prepare(
+      `SELECT * FROM assistant_orchestration_items WHERE orchestration_id = ? ORDER BY position`
+    ).all(id) as Array<Record<string, string | number | null>>).map((item): OrchestrationItem => ({
+      id: String(item.id),
+      position: Number(item.position),
+      kind: String(item.kind) as OrchestrationItem['kind'],
+      title: String(item.title),
+      taskId: item.task_id ? String(item.task_id) : null,
+      dependsOn: parseJsonValue<number[]>(typeof item.depends_on_json === 'string' ? item.depends_on_json : '[]', []).filter((value): value is number => typeof value === 'number'),
+      payload: parseJsonValue<Record<string, unknown>>(typeof item.payload_json === 'string' ? item.payload_json : '{}', {}),
+      status: String(item.status) as OrchestrationItem['status'],
+      runId: item.run_id ? String(item.run_id) : null,
+      error: item.error ? String(item.error) : null,
+      startedAt: item.started_at === null ? null : Number(item.started_at),
+      finishedAt: item.finished_at === null ? null : Number(item.finished_at)
+    }))
+    return {
+      id,
+      projectId: String(row.project_id),
+      conversationId: row.conversation_id ? String(row.conversation_id) : null,
+      owner: String(row.owner),
+      title: String(row.title),
+      status: String(row.status) as Orchestration['status'],
+      error: row.error ? String(row.error) : null,
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+      items
+    }
+  }
+
+  /** Режим применения мутаций канбан-ассистентом; тумблер «Автопилот» в шапке. */
+  setConversationAutonomy(userId: string, convId: string, autonomy: 'auto' | 'confirm'): Conversation | null {
+    const conversation = this.getConversation(userId, convId)
+    if (!conversation) return null
+    this.db.prepare(`UPDATE conversations SET assistant_autonomy = ? WHERE id = ? AND user_id = ?`).run(autonomy, convId, userId)
+    return this.getConversation(userId, convId)
+  }
+
   setConversationProject(userId: string, convId: string, projectId: string | null): Conversation | null {
     const current = this.getConversation(userId, convId)
     if (!current) return null
