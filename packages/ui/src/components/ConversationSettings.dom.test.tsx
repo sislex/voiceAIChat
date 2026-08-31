@@ -19,7 +19,12 @@ const PREVIEW_TEXT = 'Обращение к пользователю: Тест.'
  * безопасность и выключаемая персонализация) и предпросмотр промпта, который
  * пустеет вместе с выключенным пунктом — ровно как на сервере.
  */
-function contextSnapshot(options: { personalizationEnabled?: boolean; viewerRole?: 'admin' | 'developer' }) {
+function contextSnapshot(options: {
+  personalizationEnabled?: boolean
+  viewerRole?: 'admin' | 'developer'
+  lastTurn?: false
+  warnings?: Array<{ itemId: string | null; level: 'notice' | 'problem'; text: string }>
+}) {
   const on = options.personalizationEnabled ?? true
   const size = { chars: PREVIEW_TEXT.length, approxTokens: Math.ceil(PREVIEW_TEXT.length / 4) }
   const base = (id: string, title: string) => ({
@@ -35,6 +40,12 @@ function contextSnapshot(options: { personalizationEnabled?: boolean; viewerRole
       { ...base('personalization', 'Предпочтения ответа'), enabled: on, includedInNextTurn: on, size }
     ] }],
     viewerRole: options.viewerRole ?? 'admin',
+    lastTurn: options.lastTurn === false ? null : {
+      at: '12:41', provider: 'claude' as const, model: 'opus',
+      prompt: 'Системный блок\n\nПользователь: почему падает гейт?',
+      chars: 48, approxTokens: 12, resumed: true, attachments: 1, kbSections: ['Соглашения']
+    },
+    warnings: options.warnings ?? [],
     promptPreview: on
       ? { blocks: [{ itemIds: ['personalization'], title: 'Персонализация', text: PREVIEW_TEXT, ...size }], text: PREVIEW_TEXT, ...size, omitted: ['Правила платформы и приложения добавляет CLI движка.'] }
       : { blocks: [], text: '', chars: 0, approxTokens: 0, omitted: ['Правила платформы и приложения добавляет CLI движка.'] }
@@ -277,6 +288,8 @@ describe('ConversationSettings', () => {
         { id: 'skills', order: 3, title: 'Навыки', description: '', items: [item('skill-review', 'Review', true, true, false)] }
       ],
       viewerRole: 'admin' as const,
+      lastTurn: null,
+      warnings: [],
       promptPreview: emptyPreview
     }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
@@ -307,6 +320,8 @@ describe('ConversationSettings', () => {
       summary: { provider: 'codex' as const, model: '', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'off' as const, displayName: 'Отключено', explanation: 'Тест' } },
       groups: [{ id: 'conversation', order: 1, title: 'Настройки', description: '', items: [{ id: 'machine', title: 'Машина', type: 'Настройка', source: 'Разговор', scope: 'offline', priority: '1', description: '10e', explanation: 'Машина отключена от сети.', configured: true, available: false, includedInNextTurn: false, toggleable: false, enabled: true, lockReason: 'info' as const }] }],
       viewerRole: 'admin' as const,
+      lastTurn: null,
+      warnings: [],
       promptPreview: emptyPreview
     }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
@@ -318,7 +333,7 @@ describe('ConversationSettings', () => {
   })
 
   it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {
-    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, promptPreview: emptyPreview }) } as never
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, lastTurn: null, warnings: [], promptPreview: emptyPreview }) } as never
     window.location.hash = '#/chat/c1/context/disappeared'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
@@ -499,6 +514,43 @@ describe('ConversationSettings', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Прочитать с машины' }))
     expect(await screen.findByTestId('context-agents-unavailable')).toHaveTextContent('Машина недоступна')
+  })
+
+  it('показывает факт прошлого хода: что действительно ушло модели', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    const meta = await screen.findByTestId('context-lastturn-meta')
+    expect(meta).toHaveTextContent('≈12 токенов')
+    expect(meta).toHaveTextContent('продолжение сессии движка')
+    expect(meta).toHaveTextContent('вложений: 1')
+    expect(meta).toHaveTextContent('Соглашения')
+    // Текст под раскрытием: это факт, а не прогноз, и он бывает большим.
+    fireEvent.click(screen.getByText('Показать отправленный текст'))
+    expect(screen.getByTestId('context-lastturn-prompt')).toHaveTextContent('почему падает гейт')
+  })
+
+  it('без прошлого хода карточки факта нет, а предупреждения сервера видны и ведут к источнику', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        lastTurn: false,
+        warnings: [
+          { itemId: 'personalization', level: 'problem', text: 'Персонализация выключена, хотя предпочтения заданы.' },
+          { itemId: null, level: 'notice', text: 'Инструкций чата выключено для этого разговора: 1.' }
+        ]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const warnings = await screen.findByTestId('context-warnings')
+    expect(warnings).toHaveTextContent('Персонализация выключена')
+    expect(warnings).toHaveTextContent('Инструкций чата выключено')
+    expect(screen.queryByTestId('context-lastturn-meta')).not.toBeInTheDocument()
+
+    // Предупреждение с источником ведёт прямо в его карточку.
+    fireEvent.click(within(warnings).getByRole('button', { name: 'Открыть источник' }))
+    expect(await screen.findByRole('heading', { name: 'Предпочтения ответа' })).toBeInTheDocument()
   })
 
 })

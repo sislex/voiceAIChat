@@ -71,6 +71,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         { id: 'knowledge', order: 2, title: 'База знаний', description: 'Тест', items: [item('knowledge-mode', 'Автоматически')] }
       ],
       viewerRole: 'developer',
+      lastTurn: null,
+      warnings: [],
       promptPreview: {
         blocks: disabledContext.has('personalization') ? [] : [{ itemIds: ['personalization'], title: 'Персонализация пользователя', text: preview, chars: preview.length, approxTokens: Math.ceil(preview.length / 4) }],
         text: disabledContext.has('personalization') ? '' : preview,

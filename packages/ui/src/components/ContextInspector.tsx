@@ -200,6 +200,41 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     }
   }
 
+  /**
+   * Человекочитаемый отчёт снимка. JSON годится для разбора, но в переписке и
+   * в задаче читают текст: что уйдёт, что выключено и почему.
+   */
+  const markdownReport = (value: ConversationContextSnapshot): string => {
+    const lines: string[] = [
+      `# Контекст разговора ${value.conversationId}`,
+      '',
+      `Снимок: ${new Date(value.generatedAt).toLocaleString('ru-RU')} · роль: ${value.viewerRole}`,
+      `Движок: ${value.summary.provider} · ${value.summary.model || 'модель из конфигурации CLI'}`,
+      `Режим доступа: ${value.summary.permissionMode.displayName} · база знаний: ${value.summary.kbMode.displayName}`,
+      ''
+    ]
+    if (value.warnings.length) {
+      lines.push('## Предупреждения', '')
+      for (const warning of value.warnings) lines.push(`- ${warning.level === 'problem' ? '❗' : '•'} ${warning.text}`)
+      lines.push('')
+    }
+    lines.push(`## Блоки промпта (${value.promptPreview.blocks.length}, ≈${value.promptPreview.approxTokens} токенов)`, '')
+    for (const block of value.promptPreview.blocks) {
+      lines.push(`### ${block.title} (≈${block.approxTokens} токенов)`, '', '```', block.text, '```', '')
+    }
+    lines.push('## Источники', '')
+    for (const group of value.groups) {
+      lines.push(`### ${group.title}`, '')
+      for (const entry of group.items) {
+        lines.push(`- ${entry.enabled ? '[x]' : '[ ]'} **${entry.title}** — ${userStatus(entry)}; ${reasonFor(entry)}`)
+      }
+      lines.push('')
+    }
+    lines.push('## Чего в предпросмотре нет', '')
+    for (const line of value.promptPreview.omitted) lines.push(`- ${line}`)
+    return lines.join('\n')
+  }
+
   /** Скачать снимок файлом: в поддержку удобнее приложить файл, а не буфер. */
   const download = (name: string, text: string, type: string): void => {
     const url = URL.createObjectURL(new Blob([text], { type }))
@@ -310,6 +345,21 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       <p>Здесь собраны эффективные настройки запуска и сведения, которые помогут ИИ ответить. Итог динамических источников определится после отправки текста.</p>
       <p className="context-role" data-testid="context-role-hint">{roleHint(snapshot.viewerRole)}</p>
     </header>
+    {/* Предупреждения считает сервер: настройки формально верны, но вместе дают
+        не то, чего ждёт человек. Проблемы идут раньше замечаний. */}
+    {snapshot.warnings.length > 0 && <aside className={`context-warnings context-warnings--${snapshot.warnings[0]?.level ?? 'notice'}`} role={snapshot.warnings.some((entry) => entry.level === 'problem') ? 'alert' : 'status'} data-testid="context-warnings">
+      <b>Стоит проверить</b>
+      <ul>{snapshot.warnings.map((warning) => <li key={warning.text}>
+        <span aria-hidden="true">{warning.level === 'problem' ? '❗' : '•'}</span> {warning.text}
+        {warning.itemId && byId(warning.itemId) && <Button size="sm" variant="ghost" onClick={() => openDetail(warning.itemId!)}>Открыть источник</Button>}
+      </li>)}</ul>
+    </aside>}
+    <nav className="context-toc" aria-label="Разделы контекста">
+      {/* Страница длинная: без переходов до «Итогового текста» и списка источников
+          приходится прокручивать мимо всего остального. */}
+      {[['context-launch-title', 'Запуск'], ['context-prompt-title', 'Итоговый текст'], ['context-kb-title', 'База знаний'], ['context-agents-title', 'AGENTS.md'], ['context-knowledge-title', 'Источники'], ...(snapshot.lastTurn ? [['context-lastturn-title', 'Прошлый ход'] as const] : [])].map(([id, label]) =>
+        <Button key={id} size="sm" variant="ghost" onClick={() => document.getElementById(id)?.scrollIntoView({ block: 'start' })}>{label}</Button>)}
+    </nav>
     {machineProblem && <aside className="context-problem" role="alert"><div><b>Машина недоступна</b><p>{machine?.explanation || 'Настроенная машина сейчас недоступна.'}</p></div>{props.onOpenSettings && <Button size="sm" onClick={props.onOpenSettings}>Перейти к настройкам разговора</Button>}</aside>}
     <section className="context-card" aria-labelledby="context-launch-title">
       <h3 id="context-launch-title">Как будет запущен ответ</h3>
@@ -351,6 +401,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           <Button size="sm" disabled={!preview.text} onClick={() => void copy(preview.text, 'Текст')}>Скопировать текст</Button>
           <Button size="sm" variant="ghost" onClick={() => void copy(JSON.stringify(snapshot, null, 2), 'Снимок')}>Скопировать JSON снимка</Button>
           <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.json`, JSON.stringify(snapshot, null, 2), 'application/json')}>Скачать снимок</Button>
+          <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.md`, markdownReport(snapshot), 'text/markdown')}>Скачать отчёт (Markdown)</Button>
         </div>
       </div>
       {preview.text
@@ -397,6 +448,19 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
               </details>)}
             </div>)}
     </section>
+    {snapshot.lastTurn && <section className="context-card" aria-labelledby="context-lastturn-title">
+      <h3 id="context-lastturn-title">Что ушло в прошлый ход</h3>
+      {/* Снимок — прогноз на следующее сообщение. Здесь факт: ровно тот текст,
+          который сервер отправил модели, из `meta.request` сохранённого ответа. */}
+      <p className="context-note" data-testid="context-lastturn-meta">
+        {snapshot.lastTurn.at} · {snapshot.lastTurn.provider} · {snapshot.lastTurn.model || 'модель из конфигурации CLI'} · ≈{snapshot.lastTurn.approxTokens} токенов, {snapshot.lastTurn.chars} символов
+        {snapshot.lastTurn.resumed ? ' · продолжение сессии движка (история не пересобиралась)' : ' · история пересобиралась целиком'}
+        {snapshot.lastTurn.attachments > 0 ? ` · вложений: ${snapshot.lastTurn.attachments}` : ''}
+        {snapshot.lastTurn.kbSections.length ? ` · база знаний: ${snapshot.lastTurn.kbSections.join(', ')}` : ' · без автоконтекста базы знаний'}
+      </p>
+      <details className="context-omitted"><summary>Показать отправленный текст</summary><pre className="context-prompt" data-testid="context-lastturn-prompt">{snapshot.lastTurn.prompt}</pre></details>
+      <div className="context-actions"><Button size="sm" onClick={() => void copy(snapshot.lastTurn!.prompt, 'Текст')}>Скопировать отправленное</Button></div>
+    </section>}
     <div className="context-filters" role="search">
       <input type="search" value={query} placeholder="Поиск по источникам контекста" aria-label="Поиск по источникам контекста" onChange={(event) => setQuery(event.target.value)} />
       <div className="context-filter-tabs" role="group" aria-label="Фильтр источников">

@@ -3808,6 +3808,11 @@ button.conscmd:hover {
 .context-quickedit small { color: var(--muted); font-size: 12px; }
 .context-detail .context-note { margin: 0 20px 8px; color: var(--muted); font-size: 12px; }
 .context-prompt { margin: 0 20px 16px; padding: 14px; max-height: 320px; overflow: auto; border-radius: 10px; background: var(--surface-hover); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.context-warnings { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--line,#ddd); border-radius: 12px; background: color-mix(in srgb,var(--accent) 8%,transparent); }
+.context-warnings--problem { background: color-mix(in srgb,var(--danger) 10%,transparent); }
+.context-warnings ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; }
+.context-warnings li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.context-toc { display: flex; flex-wrap: wrap; gap: 6px; }
 .context-cardhead { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--line,#eee); }
 .context-cardhead > h3 { margin: 0; padding: 0; border: 0; }
 .context-kbdraft { display: grid; gap: 10px; padding: 16px 20px; }
