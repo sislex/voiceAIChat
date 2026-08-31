@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 173 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 189 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 67 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 971 коммит(ов) в areas после сверки: ba3ccc37 fix(server): убрать воскресший rest.test.ts, перенести дописанные тесты … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 973 коммит(ов) в areas после сверки: 1417e7bf Merge remote-tracking branch 'origin/main' into work2 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 87 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 123 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 59 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 3 коммит(ов) в areas после сверки: 2c62de0a perf(gate): гейт шага — инкрементальный typecheck, related-тесты, разрезка REST-набора … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 68 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 7 коммит(ов) в areas после сверки: d98d7863 Merge remote-tracking branch 'origin/main' into work2 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 9 коммит(ов) в areas после сверки: 1417e7bf Merge remote-tracking branch 'origin/main' into work2 … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-31, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
