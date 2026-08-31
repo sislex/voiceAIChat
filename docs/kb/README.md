@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 160 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 175 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 44 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 943 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 944 коммит(ов) в areas после сверки: ab380af7 docs(kb): update after merge 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 69 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 101 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 47 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
