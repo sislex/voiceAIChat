@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { CONTEXT_LOCK_TEXT } from '@shared/contextGating'
 import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
-import type { ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
+import type { AgentsChainResult, ContextKbPreview, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
 import type { ProjectSummary } from '@shared/projects'
 import { Button, useToast } from '@voicechat/ui-kit'
 
@@ -21,7 +21,7 @@ export interface ContextInspectorProps {
   /** Текущая машина разговора — быстрая правка сохраняет её без изменений. */
   execTarget?: string | null
   /** Быстрая правка применена: у окна настроек свой черновик, его надо обновить. */
-  onQuickEdit?: (value: { kbContextMode?: KbContextMode; permissionMode?: PermissionMode | null }) => void
+  onQuickEdit?: (value: { kbContextMode?: KbContextMode; permissionMode?: PermissionMode | null; llmProvider?: LlmProvider | null; llmModel?: string | null }) => void
 }
 
 const dynamicIds = new Set(['current-message', 'knowledge-mode'])
@@ -66,6 +66,21 @@ function matchesQuery(item: ContextSnapshotItem, query: string): boolean {
   const needle = query.trim().toLowerCase()
   return [item.title, item.description, item.id, item.type, item.explanation].some((field) => field.toLowerCase().includes(needle))
 }
+/**
+ * Почему автоконтекста не будет. Причину считает подборщик (`emptyReason`), и
+ * они разные по смыслу: «ничего не нашлось» и «нашлось, но уверенность низкая» —
+ * это разные ответы на вопрос «а почему модель не получит документы».
+ */
+function kbEmptyText(preview: ContextKbPreview): string {
+  if (preview.mode !== 'auto') return 'Режим базы знаний — не «Авто»: автоматический контекст не добавляется, но модель может искать сама инструментами.'
+  switch (preview.emptyReason) {
+    case 'kb-unavailable': return 'База знаний сейчас недоступна — автоматический контекст не добавится.'
+    case 'empty-query': return 'Введите черновик сообщения: подбор считается по его тексту.'
+    case 'low-confidence': return 'Подходящие разделы нашлись, но уверенность подбора низкая — автоматически они не добавятся. Модель сможет запросить их инструментами базы знаний.'
+    case 'budget': return 'Найденные разделы не поместились в бюджет автоконтекста — они не добавятся.'
+    default: return 'Для такого сообщения подходящих разделов не нашлось — автоматический контекст не добавится.'
+  }
+}
 function roleHint(role: UserRole): string {
   return role === 'admin'
     ? 'Вы администратор: видны все сведения снимка и доступны любые настройки разговора.'
@@ -87,6 +102,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const [filter, setFilter] = useState<ItemFilter>('all')
   /** Идут ли изменения тумблера/быстрой правки — на это время контролы блокируются. */
   const [busy, setBusy] = useState(false)
+  /** Черновик сообщения и подбор базы знаний по нему (по кнопке, не на каждый ввод). */
+  const [draft, setDraft] = useState('')
+  const [kbPreview, setKbPreview] = useState<ContextKbPreview | null>(null)
+  const [kbBusy, setKbBusy] = useState(false)
+  /** Цепочка AGENTS.md: читается только по явной просьбе — файл на чужой машине. */
+  const [chain, setChain] = useState<AgentsChainResult | null>(null)
+  const [chainBusy, setChainBusy] = useState(false)
   useEffect(() => {
     let alive = true
     setSnapshot(null); setSnapshotError(null)
@@ -123,7 +145,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
 
   // Быстрая правка настроек разговора прямо из инспектора: человек уже видит,
   // что уйдёт модели, и логично менять это здесь, а не уходя на другую вкладку.
-  const quickSave = async (patch: { kbContextMode?: KbContextMode; permissionMode?: PermissionMode | null }): Promise<void> => {
+  const quickSave = async (patch: { kbContextMode?: KbContextMode; permissionMode?: PermissionMode | null; llmProvider?: LlmProvider | null; llmModel?: string | null }): Promise<void> => {
     setBusy(true)
     try {
       await window.api['conversations:setExecTarget']({ id: props.conversationId, execTarget: props.execTarget ?? null, ...patch })
@@ -135,6 +157,57 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     } finally {
       setBusy(false)
     }
+  }
+
+  // Подбор БЗ считается по кнопке: запрос идёт в индекс и может быть небыстрым,
+  // а на каждый набранный символ он был бы и бесполезен, и дорог.
+  const previewKb = async (): Promise<void> => {
+    setKbBusy(true)
+    try {
+      setKbPreview(await window.api['conversations:contextKbPreview']({ id: props.conversationId, draft }))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setKbBusy(false)
+    }
+  }
+
+  // Массовое переключение: по одному пункту за раз (сервер отдаёт свежий снимок
+  // на каждый вызов), последний ответ и становится состоянием экрана.
+  const toggleMany = async (items: ContextSnapshotItem[], enabled: boolean): Promise<void> => {
+    setBusy(true)
+    try {
+      let last: ConversationContextSnapshot | null = null
+      for (const item of items) {
+        last = await window.api['conversations:setContextItem']({ id: props.conversationId, itemId: item.id, enabled })
+      }
+      if (last) setSnapshot(last)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const readAgentsChain = async (): Promise<void> => {
+    setChainBusy(true)
+    try {
+      setChain(await window.api['conversations:agentsChain']({ id: props.conversationId }))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setChainBusy(false)
+    }
+  }
+
+  /** Скачать снимок файлом: в поддержку удобнее приложить файл, а не буфер. */
+  const download = (name: string, text: string, type: string): void => {
+    const url = URL.createObjectURL(new Blob([text], { type }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   const copy = async (text: string, what: string): Promise<void> => {
@@ -198,6 +271,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     { label: 'Рабочая папка', value: workdir?.scope || workdir?.description || 'Не настроена', source: workdir?.source },
     { label: 'Режим доступа', value: snapshot.summary.permissionMode.displayName, source: permission?.source }
   ]
+  // Что именно переопределено — из `inheritance` снимка, а не из догадки UI.
+  const overridden = allItems
+    .filter((item) => item.inheritance?.overriddenFrom && (item.id !== 'permission-mode' || snapshot.viewerRole === 'admin'))
+    .map((item) => item.title)
+  const toggleable = allItems.filter((item) => item.toggleable)
+  const enabledToggleable = toggleable.filter((item) => item.enabled)
+  const disabledToggleable = toggleable.filter((item) => !item.enabled)
   const isAdmin = snapshot.viewerRole === 'admin'
   const preview = snapshot.promptPreview
 
@@ -235,6 +315,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       <h3 id="context-launch-title">Как будет запущен ответ</h3>
       <dl className="context-launch-grid">{launchValues.map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}</dd><small>Источник: {sourceLabel(entry.source ?? 'Серверный снимок')}</small></div>)}</dl>
       {workdir?.configured && !workdir.available && <p className="context-note">{workdir.explanation}</p>}
+      {/* Сброс переопределений: строка «Источник: Переопределение чата» говорит,
+          что значение своё, но вернуть наследование было можно только через
+          другую вкладку. Режим доступа — безопасность, его сбрасывает админ. */}
+      {overridden.length > 0 && <div className="context-reset">
+        <p>Этот разговор переопределяет: {overridden.join(', ')}.</p>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void quickSave({
+          llmProvider: null, llmModel: null, ...(isAdmin ? { permissionMode: null } : {})
+        })}>Вернуть наследование</Button>
+      </div>}
       <div className="context-quickedit">
         <label>
           <span>База знаний</span>
@@ -261,12 +350,52 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         <div className="context-actions">
           <Button size="sm" disabled={!preview.text} onClick={() => void copy(preview.text, 'Текст')}>Скопировать текст</Button>
           <Button size="sm" variant="ghost" onClick={() => void copy(JSON.stringify(snapshot, null, 2), 'Снимок')}>Скопировать JSON снимка</Button>
+          <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.json`, JSON.stringify(snapshot, null, 2), 'application/json')}>Скачать снимок</Button>
         </div>
       </div>
       {preview.text
         ? <pre className="context-prompt" data-testid="context-prompt-preview">{preview.text}</pre>
         : <p className="context-empty">Своих блоков сервер не добавляет: в ход уйдут только история разговора и ваше сообщение.</p>}
       <details className="context-omitted"><summary>Чего в этом тексте нет</summary><ul>{preview.omitted.map((line) => <li key={line}>{line}</li>)}</ul></details>
+    </section>
+    <section className="context-card" aria-labelledby="context-kb-title">
+      <h3 id="context-kb-title">Что добавит база знаний</h3>
+      <div className="context-kbdraft">
+        <label>
+          <span>Черновик сообщения</span>
+          <textarea value={draft} rows={3} placeholder="Вставьте или напишите то, что собираетесь спросить" onChange={(event) => setDraft(event.target.value)} />
+          <small>Подбор зависит от текста сообщения, поэтому в снимке его нет: проверьте черновиком, не отправляя.</small>
+        </label>
+        <div className="context-actions">
+          <Button size="sm" disabled={kbBusy || !draft.trim()} loading={kbBusy} onClick={() => void previewKb()}>Показать подбор</Button>
+        </div>
+      </div>
+      {kbPreview && (kbPreview.text
+        ? <div data-testid="context-kb-result">
+            <p className="context-note">Уверенность: {kbPreview.confidence ?? '—'} · ≈{kbPreview.approxTokens} токенов · разделов: {kbPreview.sections.length}</p>
+            <ul className="context-kbsections">{kbPreview.sections.map((section) => <li key={`${section.documentId}#${section.anchor ?? ''}`}>{section.title} <small>{section.documentId}{section.anchor ? `#${section.anchor}` : ''} · {section.chars} символов</small></li>)}</ul>
+            <pre className="context-prompt">{kbPreview.text}</pre>
+            <div className="context-actions"><Button size="sm" onClick={() => void copy(kbPreview.text, 'Текст')}>Скопировать текст</Button></div>
+          </div>
+        : <p className="context-empty" data-testid="context-kb-empty">{kbEmptyText(kbPreview)}</p>)}
+    </section>
+    <section className="context-card" aria-labelledby="context-agents-title">
+      <div className="context-cardhead">
+        <h3 id="context-agents-title">Цепочка AGENTS.md</h3>
+        <Button size="sm" disabled={chainBusy} loading={chainBusy} onClick={() => void readAgentsChain()}>Прочитать с машины</Button>
+      </div>
+      <p className="context-note">Файлы читает исполнитель в рабочей директории, поэтому снимок их не раскрывает. Прочитать можно здесь — по вашей просьбе, с машины разговора.</p>
+      {chain && (chain.unavailable
+        ? <p className="context-empty" data-testid="context-agents-unavailable">{chain.unavailable}</p>
+        : chain.files.length === 0
+          ? <p className="context-empty" data-testid="context-agents-empty">В {chain.workdir} и выше файлов AGENTS.md нет — модель их не получит.</p>
+          : <div data-testid="context-agents-result">
+              <p className="context-note">Машина: {chain.machineName ?? '—'} · директория: {chain.workdir} · файлов: {chain.files.length} (от общей к конкретной)</p>
+              {chain.files.map((file) => <details key={file.path} className="context-agentfile">
+                <summary>{file.path} <small>{file.error ? file.error : `${file.chars} символов`}</small></summary>
+                {file.text !== null && <pre className="context-prompt">{file.text}</pre>}
+              </details>)}
+            </div>)}
     </section>
     <div className="context-filters" role="search">
       <input type="search" value={query} placeholder="Поиск по источникам контекста" aria-label="Поиск по источникам контекста" onChange={(event) => setQuery(event.target.value)} />
@@ -276,7 +405,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       </div>
     </div>
     <section className="context-card" aria-labelledby="context-knowledge-title">
-      <h3 id="context-knowledge-title">Что ИИ будет знать</h3>
+      <div className="context-cardhead">
+        <h3 id="context-knowledge-title">Что ИИ будет знать</h3>
+        {/* Массовые действия: выключать десяток пунктов по одному — работа, а не
+            выбор. «Всё необязательное» не трогает пункты с замком: их и нельзя. */}
+        <div className="context-actions">
+          <Button size="sm" variant="ghost" disabled={busy || disabledToggleable.length === 0} onClick={() => void toggleMany(disabledToggleable, true)}>Включить всё ({disabledToggleable.length})</Button>
+          <Button size="sm" variant="ghost" disabled={busy || enabledToggleable.length === 0} onClick={() => void toggleMany(enabledToggleable, false)}>Выключить необязательное ({enabledToggleable.length})</Button>
+        </div>
+      </div>
       {itemList(knowledgeItems, 'Под фильтр и поиск ничего не подошло.')}
     </section>
     {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(instructionItems, 'Под фильтр и поиск ничего не подошло.')}</details>}

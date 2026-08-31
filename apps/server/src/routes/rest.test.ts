@@ -1423,6 +1423,69 @@ describe('REST: conversations/messages/settings', () => {
     expect(after.promptPreview.text).not.toContain('Алексей')
   })
 
+  it('история: размер при пересборке и правда про сессию движка (resume)', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'История' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: { role: 'user', text: 'Первый вопрос про сборку', time: '10:00' } })
+    const item = async (): Promise<{ description: string; explanation: string; size?: { chars: number; approxTokens: number } | null; details?: Record<string, unknown> }> => {
+      const snap = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return snap.groups.flatMap((g: { items: unknown[] }) => g.items).find((e: { id: string }) => e.id === 'conversation-history')
+    }
+
+    const withoutSession = await item()
+    expect(withoutSession.description).toMatch(/1 сообщений, ≈\d+ токенов/)
+    expect(withoutSession.explanation).toContain('пересобирается в промпт целиком')
+    expect(withoutSession.size?.chars).toBeGreaterThan(0)
+
+    // Живая сессия движка: история уже у модели, в промпт она не пересобирается.
+    db.setClaudeSession(U, created.id, 'claude:sess-1')
+    const withSession = await item()
+    expect(withSession.description).toContain('уже в сессии движка')
+    expect(withSession.explanation).toContain('resume')
+    expect(withSession.size ?? null).toBeNull()
+    expect(withSession.details?.['Сессия движка']).toBe('есть (resume)')
+
+    // Сессия другого движка чужой разговор не «продолжает»: у codex своя.
+    db.setClaudeSession(U, created.id, 'codex:sess-2')
+    expect((await item()).explanation).toContain('пересобирается в промпт целиком')
+  })
+
+  it('цепочка AGENTS.md читается с машины по просьбе: от общей к конкретной, без шума о ненайденных', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Цепочка' } })).json()
+
+    // Без рабочей директории читать негде — так и сказано, без похода на машину.
+    const noWorkdir = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/agents-chain` })).json()
+    expect(noWorkdir).toMatchObject({ files: [], unavailable: expect.stringContaining('Рабочая директория') })
+
+    // Директория есть, машины нет — вторая честная причина.
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, workdir: '/Users/me/work/project' } })
+    const noMachine = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/agents-chain` })).json()
+    expect(noMachine).toMatchObject({ workdir: '/Users/me/work/project', files: [], unavailable: expect.stringContaining('Машина недоступна') })
+
+    // С машиной: два файла из пяти каталогов цепочки, остальные просто нет.
+    // Файловые операции машины подменяем на инстансе реестра — своего сокета
+    // этому тесту не нужно, проверяется сборка цепочки, а не транспорт.
+    const machine = db.createAgent(U, 'Мак')
+    const remoteFiles = new Map<string, string>([
+      ['/Users/me/AGENTS.md', Buffer.from('# Общие правила').toString('base64')],
+      ['/Users/me/work/project/AGENTS.md', Buffer.from('# Правила проекта').toString('base64')]
+    ])
+    agentRegistry.isOnline = ((id: string) => id === machine.id) as typeof agentRegistry.isOnline
+    agentRegistry.fsRead = (async (_id: string, path: string) => {
+      const dataBase64 = remoteFiles.get(path)
+      if (!dataBase64) throw new Error('ENOENT not found')
+      return { root: '/', cwd: path, dataBase64 }
+    }) as typeof agentRegistry.fsRead
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: machine.id } })
+    const chain = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/agents-chain` })).json()
+    expect(chain.machineName).toBe('Мак')
+    expect(chain.files.map((f: { path: string }) => f.path)).toEqual([
+      '/Users/me/AGENTS.md', '/Users/me/work/project/AGENTS.md'
+    ])
+    expect(chain.files[0]).toMatchObject({ text: '# Общие правила', chars: '# Общие правила'.length })
+    expect(chain.unavailable).toBeUndefined()
+  })
+
   it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
     const conv = db.createConversation(U, 'Проект', 'make')
     const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }

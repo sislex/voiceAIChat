@@ -15,6 +15,7 @@ import {
   stripDisabledInstructionBlocks,
   parseTaskLaunchRequest,
   buildConversationPrompt,
+  resumeSessionIdFor,
   buildPrompt,
   designPromptLines,
   makeDesignPreviewUrl,
@@ -281,18 +282,8 @@ export interface TurnManager {
   flushInterrupted(): void
 }
 
-/**
- * Разбирает сохранённый resume-id с префиксом провайдера ("claude:abc"/"codex:xyz").
- * Возвращает id только если он принадлежит текущему провайдеру; иначе null
- * (смена движка → свежий ход без чужого resume). Терпит старые id без префикса
- * (считаем их claude).
- */
-function resumeIdFor(stored: string | null, provider: 'claude' | 'codex'): string | null {
-  if (!stored) return null
-  const m = /^(claude|codex):(.*)$/s.exec(stored)
-  if (!m) return provider === 'claude' ? stored : null
-  return m[1] === provider ? m[2] : null
-}
+// Разбор сохранённого resume-id живёт в `@voicechat/shared` (`resumeSessionIdFor`):
+// снимок контекста показывает по нему, пересобирается ли история.
 
 /** Краткое описание политики машины для системного промпта Claude. */
 function policySummary(p: AgentPolicy, selectedSkills?: string[]): string {
@@ -489,7 +480,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const engineNotice = notices.join('\n')
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
-    const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
+    const sessionId = resumeSessionIdFor(conv?.claudeSessionId ?? null, provider)
     // Режим прав: переопределение разговора приоритетнее общих настроек.
     let permissionMode = conv?.permissionMode ?? settings.permissionMode
     // Большая переделка Make (п.20): ход идёт в режиме «План» (файлы только на чтение), модель отвечает

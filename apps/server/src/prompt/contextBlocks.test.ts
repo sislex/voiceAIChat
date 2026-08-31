@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 import type { ChatInstruction, UserPersonalization } from '@voicechat/shared'
 import { effectiveChatInstructions } from '@voicechat/shared'
-import { ageFromBirth, buildContextBlocks, personalizationLines, personalizationPromptBlock, projectContextBlock } from './contextBlocks.js'
+import { agentsChainDirs, ageFromBirth, buildContextBlocks, personalizationLines, personalizationPromptBlock, projectContextBlock } from './contextBlocks.js'
 
 const empty: UserPersonalization = DEFAULT_SETTINGS.personalization
 
@@ -70,6 +70,16 @@ describe('contextBlocks — блоки промпта общие у хода и 
     const split = buildContextBlocks({ personalization: empty, instructions: edited, project: null, projectId: null, now: new Date() })
     expect(split.every((block) => block.itemIds.length === 1)).toBe(true)
     expect(split.find((block) => block.itemIds[0] === 'instruction-console')?.text).toBe('Свой текст про терминал.')
+  })
+
+  it('каталоги AGENTS.md идут от корня к рабочей директории', () => {
+    // Порядок важен: CLI применяет цепочку «от общей к конкретной», и панель
+    // обязана показывать её в том же порядке, иначе читается наоборот.
+    expect(agentsChainDirs('/Users/alex/work/project')).toEqual([
+      '/', '/Users', '/Users/alex', '/Users/alex/work', '/Users/alex/work/project'
+    ])
+    // Хвостовой слэш не создаёт лишнего уровня.
+    expect(agentsChainDirs('/srv/app/')).toEqual(['/', '/srv', '/srv/app'])
   })
 
   it('выключенная в этом чате инструкция в блоки не попадает', () => {

@@ -174,6 +174,18 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
         throw error
       }
     },
+    'conversations:contextKbPreview': async ({ id, draft }) => {
+      try { return await req(REST.conversationContextKbPreview(id), { method: 'POST', body: JSON.stringify({ draft }) }) } catch (error) {
+        if (error instanceof Error && error.message.includes('404')) return null
+        throw error
+      }
+    },
+    'conversations:agentsChain': async ({ id }) => {
+      try { return await req(REST.conversationAgentsChain(id)) } catch (error) {
+        if (error instanceof Error && error.message.includes('404')) return null
+        throw error
+      }
+    },
     'conversations:listMachines': ({ id, projectId }) =>
       req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
     'conversations:search': ({ query, includeCompleted }) =>
