@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -56,7 +57,13 @@ export function setupRestHarness() {
     let id = 0
     let clock = 1000
     harness.db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-    harness.dataDir = join(tmpdir(), `vc-rest-test-${Date.now()}-${id}`)
+    // Каталог данных берётся у ОС, а не собирается из `Date.now()` и счётчика.
+    // Пока весь REST-набор жил в одном файле, тесты шли последовательно и
+    // самодельное имя почти не сталкивалось. После разрезки на пять файлов они
+    // идут в разных воркерах, счётчик в каждом начинается с нуля — и два теста
+    // в одну миллисекунду получали один каталог. Ловилось это как «Публикация
+    // не найдена или снята» в make-тесте: один тест сносил данные другого.
+    harness.dataDir = mkdtempSync(join(tmpdir(), 'vc-rest-test-'))
     triggerDeploy.mockReset()
     harness.agentRegistry = new AgentRegistry()
     triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
@@ -87,6 +94,7 @@ export function setupRestHarness() {
   afterEach(async () => {
     await harness.app.close()
     harness.db.close()
+    rmSync(harness.dataDir, { recursive: true, force: true })
   })
 
   return harness

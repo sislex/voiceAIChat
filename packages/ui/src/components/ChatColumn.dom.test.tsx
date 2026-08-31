@@ -590,6 +590,18 @@ describe('ChatColumn — режим работы', () => {
     expect(onOpen).toHaveBeenCalledOnce()
   })
 
+  it('бейдж «контекст изменён» появляется только при выключенных источниках и ведёт на вкладку', async () => {
+    const onOpenContext = vi.fn()
+    renderCol({ disabledContextCount: 0, onOpenContextSettings: onOpenContext })
+    expect(screen.queryByTestId('context-badge')).not.toBeInTheDocument()
+
+    renderCol({ disabledContextCount: 2, onOpenContextSettings: onOpenContext })
+    const badge = screen.getAllByTestId('context-badge').at(-1)!
+    expect(badge).toHaveTextContent('Контекст изменён · 2')
+    await userEvent.click(badge)
+    expect(onOpenContext).toHaveBeenCalledOnce()
+  })
+
   it('после планового ответа предлагает выполнить план', async () => {
     const onExecutePlan = vi.fn()
     renderCol({ messages: planMessages, onExecutePlan })

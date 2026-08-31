@@ -31,6 +31,10 @@ import type {
   WhisperModelInfo, SessionInfo, LoginChallenge, UserRole } from './types'
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
+import type {
+  GitBranchList, GitCheckoutResult, GitCommitResult, GitFileContent, GitFileDiff,
+  GitPushResult, GitSaveFileResult, GitTreeListing, GitWorkspaceRef, GitWorkspaceStatus
+} from './gitWorkspace'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
   AdminLlmEngine,
@@ -218,6 +222,10 @@ export interface IpcInvokeMap {
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
   'conversations:contextSnapshot': { arg: { id: string }; result: import('./types').ConversationContextSnapshot | null }
   'conversations:setContextItem': { arg: { id: string; itemId: string; enabled: boolean }; result: import('./types').ConversationContextSnapshot | null }
+  /** Прочитать цепочку AGENTS.md с машины разговора (инспектор контекста). */
+  'conversations:agentsChain': { arg: { id: string }; result: import('./types').AgentsChainResult | null }
+  /** Что подберёт база знаний для этого черновика (инспектор контекста). */
+  'conversations:contextKbPreview': { arg: { id: string; draft: string }; result: import('./types').ContextKbPreview | null }
   /** Доступные текущему пользователю машины в контексте разговора/проекта. */
   'conversations:listMachines': { arg: { id: string; projectId?: string | null }; result: import('./agentProtocol').AgentInfo[] }
   /**
@@ -519,6 +527,20 @@ export interface IpcInvokeMap {
   'projects:verifyGitAccess': { arg: { id: string; agentId: string; repositoryUrl: string; refspec: string }; result: GitAccessResult }
   'projects:deleteGitAccess': { arg: { id: string; agentId: string; repositoryUrl: string }; result: GitAccessResult }
   'projects:gitAccessDiagnostics': { arg: { id: string; agentId: string; repositoryUrl: string }; result: GitAccessResult & { diagnostics?: GitAccessDiagnostics } }
+  // --- Git в рабочей копии задачи/сессии ---
+  // `workspace` — id рабочей копии (`GitWorkspaceRef.id`), а не путь: путь и машину
+  // знает только сервер.
+  'projects:gitWorkspaces': { arg: { id: string }; result: GitWorkspaceRef[] }
+  'projects:gitStatus': { arg: { id: string; workspace: string }; result: GitWorkspaceStatus }
+  'projects:gitBranches': { arg: { id: string; workspace: string; refresh?: boolean }; result: GitBranchList }
+  'projects:gitTree': { arg: { id: string; workspace: string; dir: string; ref?: string }; result: GitTreeListing }
+  'projects:gitFile': { arg: { id: string; workspace: string; path: string; ref?: string }; result: GitFileContent }
+  'projects:gitDiff': { arg: { id: string; workspace: string; path: string; base?: string }; result: GitFileDiff }
+  'projects:gitSaveFile': { arg: { id: string; workspace: string; path: string; content: string }; result: GitSaveFileResult }
+  'projects:gitCheckout': { arg: { id: string; workspace: string; branch: string; confirmDirty?: boolean }; result: GitCheckoutResult }
+  'projects:gitCreateBranch': { arg: { id: string; workspace: string; name: string; from?: string }; result: GitCheckoutResult }
+  'projects:gitCommit': { arg: { id: string; workspace: string; message: string; paths?: string[]; all?: boolean }; result: GitCommitResult }
+  'projects:gitPush': { arg: { id: string; workspace: string; branch?: string }; result: GitPushResult }
   /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /**
@@ -947,6 +969,13 @@ export interface RendererSessionBridge {
   resetPasswordByEmail?(input: { token: string; password: string }): Promise<{ ok: true } | { error: string }>
   changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
   /** Открытая регистрация с подтверждением email (web). */
+  /**
+   * Держится ли сессия на cookie (web). `false` после успешного входа означает,
+   * что браузер не сохранил `Set-Cookie` — тогда сессия живёт только в памяти
+   * страницы и умрёт от перезагрузки, о чём интерфейс обязан предупредить.
+   * В desktop мост метод не реализует: там сессии нет вовсе.
+   */
+  hasCookieSession?(): boolean
   signupEnabled?(): Promise<boolean>
   signup?(input: { name: string; email: string; password: string }): Promise<{ ok: true; mailSent: boolean } | { error: string }>
   signupResend?(email: string): Promise<void>
@@ -1187,6 +1216,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:get',
   'conversations:contextSnapshot',
   'conversations:setContextItem',
+  'conversations:contextKbPreview',
+  'conversations:agentsChain',
   'conversations:listMachines',
   'conversations:search',
   'messages:search',
@@ -1314,6 +1345,17 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:verifyGitAccess',
   'projects:deleteGitAccess',
   'projects:gitAccessDiagnostics',
+  'projects:gitWorkspaces',
+  'projects:gitStatus',
+  'projects:gitBranches',
+  'projects:gitTree',
+  'projects:gitFile',
+  'projects:gitDiff',
+  'projects:gitSaveFile',
+  'projects:gitCheckout',
+  'projects:gitCreateBranch',
+  'projects:gitCommit',
+  'projects:gitPush',
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',

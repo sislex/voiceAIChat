@@ -30,14 +30,23 @@ export function dropLegacyToken(): void {
   try { localStorage.removeItem(TOKEN_KEY) } catch { /* приватный режим */ }
 }
 
-/** CSRF-токен из cookie `vc_csrf`; его наличие означает, что cookie-сессия есть. */
+/**
+ * CSRF-токен из cookie; его наличие означает, что cookie-сессия есть.
+ *
+ * Имён два, потому что сервер разводит их по схеме: по https — `__Secure-vc_csrf`,
+ * по http — `vc_csrf` (причина — в `apps/server/src/users/auth.ts`: cookie
+ * различаются по хосту, и `Secure`-версия иначе затеняет обычную). Защищённое
+ * имя приоритетнее: если в браузере лежат оба, актуально то, что поставил https.
+ */
 export function getCsrf(): string | null {
   if (typeof document === 'undefined') return null
+  let plain: string | null = null
   for (const part of document.cookie.split(';')) {
     const [k, ...rest] = part.trim().split('=')
-    if (k === 'vc_csrf') return decodeURIComponent(rest.join('='))
+    if (k === '__Secure-vc_csrf') return decodeURIComponent(rest.join('='))
+    if (k === 'vc_csrf') plain = decodeURIComponent(rest.join('='))
   }
-  return null
+  return plain
 }
 
 /** Есть чем авторизоваться: Bearer в памяти/localStorage или cookie-сессия. */
