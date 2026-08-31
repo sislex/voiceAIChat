@@ -1,6 +1,16 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
+
+// `findBy*`/`waitFor` по умолчанию ждут 1 секунду, а половина экранов приложения
+// грузится лениво (`Suspense` + dynamic import). На полном прогоне пакета — а
+// тем более в release-gate, где параллельно идут другие наборы, — чанк успевает
+// не всегда: тест видел fallback «Загрузка настроек проекта…» и падал на
+// `findByTestId('project-settings')`, хотя изолированно проходил за 900 мс.
+// Это ожидание загрузки, а не ожидание починки: пять секунд не маскируют
+// сломанный экран (он не появится и за минуту), но убирают класс флейков,
+// зависящих от загрузки машины. `testTimeout` теста остаётся 20 с.
+configure({ asyncUtilTimeout: 5000 })
 
 // jsdom не реализует matchMedia. Дефолт — «десктоп»: ни одно условие не совпадает.
 // Мобильные кейсы подставляют свой matchMedia в самом тесте (см. TaskModal.dom.test).
