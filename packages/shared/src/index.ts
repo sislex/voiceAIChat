@@ -73,6 +73,8 @@ export * from './preview'
 export * from './webRecorder'
 export * from './browserId'
 export * from './widgetAssistant'
+export * from './kanbanSimilarity'
+export * from './orchestration'
 
 export * from './kb'
 export * from './kbGaps'

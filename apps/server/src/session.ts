@@ -3,7 +3,7 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, Board, PreviewActionResult, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem } from '@voicechat/shared'
+import type { AgentInfo, Board, PreviewActionResult, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem, WidgetUiActionResult } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -86,6 +86,14 @@ export interface SessionDeps {
   }
   /** Make: кадры make.changed своего пользователя (файлы проекта изменились). */
   make?: { subscribe(userId: string, sink: (m: ServerMessage) => void): () => void }
+  /**
+   * Действия канбан-ассистента в интерфейсе (mcp__kanban__ui_*): подписка
+   * доставляет клиенту кадры widget.action, resolve принимает widget.result.
+   */
+  widgetUi?: {
+    subscribe(userId: string, sink: (m: ServerMessage) => void): () => void
+    resolve(userId: string, requestId: string, outcome: { ok: boolean; result?: WidgetUiActionResult; error?: string }, conversationId?: string): void
+  }
 }
 
 /** Минимальный релей PTY для сессии (реализует AgentRegistry). */
@@ -115,6 +123,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubKbUsage: (() => void) | null = null
   let unsubPreview: (() => void) | null = null
   let unsubMake: (() => void) | null = null
+  let unsubWidgetUi: (() => void) | null = null
   let unsubAuthStatus: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
@@ -159,6 +168,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
       }
       if (deps.make) {
         unsubMake = deps.make.subscribe(deps.user.name, (m) => ctx.send(m))
+      }
+      if (deps.widgetUi) {
+        unsubWidgetUi = deps.widgetUi.subscribe(deps.user.name, (m) => ctx.send(m))
       }
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
@@ -364,6 +376,14 @@ export function createSession(deps: SessionDeps): WsHandlers {
         }
         case 'ci.unsubscribe':
           break
+        case 'widget.result':
+          // Ответ на действие ассистента в UI: релей сам сверит пользователя.
+          deps.widgetUi?.resolve(deps.user.name, msg.requestId, {
+            ok: msg.ok === true,
+            ...(msg.result !== undefined ? { result: msg.result } : {}),
+            ...(typeof msg.error === 'string' ? { error: msg.error } : {})
+          }, msg.conversationId)
+          break
         case 'preview.result':
           // Ответ на действие превью: relay сам сверит пользователя и requestId.
           deps.preview?.resolve(deps.user.name, msg.requestId, {
@@ -408,6 +428,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubKbUsage = null
       unsubPreview?.()
       unsubMake?.()
+      unsubWidgetUi?.()
+      unsubWidgetUi = null
       unsubMake = null
       unsubAuthStatus?.()
       unsubPreview = null

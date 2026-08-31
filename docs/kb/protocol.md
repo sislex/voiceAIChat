@@ -1,7 +1,11 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-31
+<<<<<<< HEAD
 checked: d6d687b8
+=======
+checked: 8b916927
+>>>>>>> origin/main
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -420,6 +424,24 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 мосты `make:snapshotDiff/restoreFile/import/importUrl`. Сообщение iframe → панель: `vc-make.console`. Константы `MAKE_TRANSPILED_EXTENSIONS`, `MAKE_STORIES_PAGE`, `MAKE_REACT_IMPORT_MAP`.
 
 **Сессии (auth-roadmap п.4).** `REST.sessionList` (`GET /api/session/list` → `{ sessions: SessionInfo[] }`, у текущей `current: true`), `REST.sessionLogoutAll` (`POST`), `REST.sessionRevoke(sid)` (`DELETE /api/session/:sid`), админские `REST.adminSessions(user)` и `REST.adminSessionRevoke(sid)`; IPC `admin:userSessions`, `admin:revokeSession`; мост `RendererSessionBridge.sessions/logoutAll/revokeSession` (опциональные — в desktop их нет).
+
+## Канбан-ассистент: `widget.action` / `widget.result` и `assistant.orchestration`
+
+Сервер → клиент `widget.action { conversationId, projectId, requestId, action }`
+— действие ассистента в интерфейсе (`WidgetUiAction`: `read-state`, `navigate`,
+`run-command`, `open-task`, `close-task`, `confirm`). Кадр уходит всем клиентам
+пользователя; выполняет его тот, у кого открыт проект разговора, остальные
+отвечают отказом. Клиент → сервер `widget.result { conversationId, requestId,
+ok, result?, error? }`, где `result.surface` — снимок экрана после действия, а
+`result.confirmed` — ответ на запрос подтверждения. Мост — `window.widgetUi`
+(`RendererWidgetUiBridge`, только web).
+
+Сервер → клиент `assistant.orchestration { plan }` — прогресс плана работ
+ассистента. REST: `GET /api/projects/:id/orchestrations` (список планов),
+`POST /api/orchestrations/:planId/cancel` (остановить),
+`POST /api/conversations/:id/assistant-autonomy` (тумблер «Автопилот»); мосты —
+`orchestrations:list`, `orchestrations:cancel`, `kanbanAssistant:setAutonomy`.
+Детали — [features/kanban-assistant.md](features/kanban-assistant.md).
 
 ## Кадр `project.membership`
 

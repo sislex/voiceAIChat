@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-08-27
-checked: 7c7ca737
+updated: 2026-08-31
+checked: 8b916927
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -281,6 +281,23 @@ Usage нормализуется в `TurnUsage` и рассылается как
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
 
 **Make без машины у не-admin (roadmap-3 п.2).** Раньше `turns.ts` форсил `plan` для любого пользователя без машины, а нативный plan-режим CLI глушит MCP — Make не мог писать файлы. Теперь для Make-разговора с провайдером Claude ход идёт в `default` с `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …) — остаются только MCP-инструменты, make MCP без `ro=1`. Для Codex `--sandbox read-only` блокирует HTTP-MCP, поэтому там по-прежнему план (ограничение Codex CLI, не наше).
+
+## Канбан: инструменты `mcp__kanban__*`
+
+У разговора `assistantKind: 'kanban'` ход получает `kanbanMcpUrl` (`turns.ts`:
+база `KANBAN_MCP_PATH` + `conv` + `turn`; в режиме «План» — `&ro=1`). Раннеры
+подключают MCP-сервер `kanban` (`claudeCli.ts` — allow-list из `KANBAN_TOOLS`
+с префиксом `mcp__kanban__`, `codexCli.ts` — `mcp_servers.kanban.url`), текст
+поведения один на оба движка: `KANBAN_ASSISTANT_HINT` в `@voicechat/shared/llm`.
+Он велит начинать с `kanban_context` (что открыто у пользователя), менять доску
+инструментами, а не советом «нажмите там-то», проверять дубликаты перед
+созданием задачи, смотреть `machines_load` перед запуском работы и вести серии
+задач планом (`orchestration_*`).
+
+Пока `deps.kanbanMcpBaseUrl` пуст, `turns.ts` оставляет прежний режим
+предложений (`{text, commands}` c `propose.*`) — иначе ассистент вообще не смог
+бы ничего сделать. Полное описание инструментов, автономии, моста в интерфейс и
+оркестрации — [features/kanban-assistant.md](features/kanban-assistant.md).
 
 ## Старт хода: `claude.start`
 
