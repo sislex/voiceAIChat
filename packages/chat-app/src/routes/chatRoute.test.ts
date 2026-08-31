@@ -45,4 +45,15 @@ describe('chat routes', () => {
       expect(parseChatRoute(buildChatRoute(route))).toEqual(route)
     }
   })
+  it('адрес вкладки контекста разбирается и собирается: раньше ссылка вела в обычный чат', () => {
+    // `/chat/:id/context` (и с хвостовым слэшем) — сама вкладка «Контекст и
+    // инструкции». До этого такой адрес не разбирался вовсе: скопированная
+    // ссылка «на вкладку» открывала чат, а не экран, о котором шла речь.
+    expect(parseChatRoute('/chat/c1/context')).toEqual({ kind: 'context-tab', conversationId: 'c1' })
+    expect(parseChatRoute('/chat/c1/context/')).toEqual({ kind: 'context-tab', conversationId: 'c1' })
+    expect(parseChatRoute('#/chat/c1/context')).toEqual({ kind: 'context-tab', conversationId: 'c1' })
+    expect(buildChatRoute({ kind: 'context-tab', conversationId: 'c1' })).toBe('/chat/c1/context')
+    // Конкретный источник по-прежнему свой вид маршрута.
+    expect(parseChatRoute('/chat/c1/context/personalization')).toEqual({ kind: 'context-item', conversationId: 'c1', itemId: 'personalization' })
+  })
 })

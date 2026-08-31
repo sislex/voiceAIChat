@@ -50,7 +50,7 @@ import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
-import { Button, IconButton } from '@voicechat/ui-kit'
+import { Button, Dialog, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
 import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
@@ -204,6 +204,13 @@ const GitTargetPane = lazy(async () => {
 
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
 // в главном чанке они лежат мёртвым весом до первого открытия.
+import type { SettingsSection } from './components/SettingsModal'
+
+const ContextInspector = lazy(async () => {
+  const module = await import('./components/ContextInspector')
+  return { default: module.ContextInspector }
+})
+
 const SettingsModal = lazy(async () => {
   const module = await import('./components/SettingsModal')
   return { default: module.SettingsModal }
@@ -282,7 +289,7 @@ export default function App(props: AppProps = {}): JSX.Element {
 /** Чат из адреса на момент монтирования: его bootstrap откроет первым. */
 function initialChatIdFromPath(path: string, segments: string[]): string | null {
   const chatRoute = parseChatRoute(path)
-  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item') return chatRoute.conversationId
+  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') return chatRoute.conversationId
   if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader' || segments[0] === 'make') {
     return segments[1] ?? null
   }
@@ -360,7 +367,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
   const chatRoute = parseChatRoute(path)
-  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' ? chatRoute.conversationId : routeTaskChatId
+  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab' ? chatRoute.conversationId : routeTaskChatId
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
@@ -413,6 +420,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     routeProjectSummary?.typeChain?.features ??
     ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
+  /** С какого раздела открыть общие настройки (переход из инспектора контекста). */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null)
+  /**
+   * Чужой разговор, контекст которого смотрит админ. Отдельным окном, а не
+   * активным чатом: разговор не его, и подменять им активный чат нельзя.
+   */
+  const [foreignContextId, setForeignContextId] = useState<string | null>(null)
   const [sessionsOpen, setSessionsOpen] = useState(() => window.location.hash === '#/security/sessions')
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(() => window.location.hash === '#/security/password')
@@ -866,9 +880,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [compactChat, sidebarOpen])
-  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(chatRoute?.kind === 'context-item')
+  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab')
   useEffect(() => {
-    if (chatRoute?.kind === 'context-item') setConversationSettingsOpen(true)
+    if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') setConversationSettingsOpen(true)
   }, [chatRoute?.kind])
   const [createChatOpen, setCreateChatOpen] = useState(false)
   const [createChatTitle, setCreateChatTitle] = useState('Новый разговор')
@@ -2165,6 +2179,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           там молча не появлялись. Принудительная смена пароля — тем более. */}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
+      {/* Инспектор контекста чужого чата: снимок грузит сам компонент по id,
+          поэтому окну нужен только идентификатор. */}
+      {foreignContextId && (
+        <Suspense fallback={<div role="status">Загрузка инспектора контекста…</div>}>
+          <Dialog title="Контекст чужого разговора" size="lg" padded onClose={() => setForeignContextId(null)} testId="foreign-context-dialog">
+            <ContextInspector
+              conversationId={foreignContextId}
+              provider={settingsState.settings.llmProvider}
+              model={settingsState.settings.model}
+              permissionMode={settingsState.settings.permissionMode}
+              kbMode="auto"
+              workdir={null}
+              selectedSkillNames={[]}
+            />
+          </Dialog>
+        </Suspense>
+      )}
       {sessionsOpen && (
         <Suspense fallback={null}>
           <SessionsDialogHost
@@ -2198,7 +2229,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         // выбирает маршрут `#/chat/:id/context/`, поэтому достаточно адреса.
         disabledContextCount={activeConversation?.disabledContext?.length ?? 0}
         onOpenContextSettings={() => {
-          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context/`
+          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context`
           setConversationSettingsOpen(true)
           void projectsActions.refreshProjects()
         }}
@@ -2671,6 +2702,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
       {utilitySeg === 'users' && admin.usersOpen && (
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
+          onOpenConversationContext={(id) => setForeignContextId(id)}
           variant="page"
           route={adminRoute}
           onNavigate={(route) => navigate(buildAdminRoute(route).replace(/^#/, ''))}
@@ -2823,7 +2855,35 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           // Список для «скопировать контекст из»: только чаты этого человека,
           // текущий из него исключён — копировать в себя нечего.
           otherConversations={chat.conversations.filter((entry) => entry.id !== activeConversation.id).slice(0, 30).map((entry) => ({ id: entry.id, title: entry.title }))}
+          contextPresets={settingsState.settings.contextPresets}
+          onSavePresets={async (presets) => { await settingsActions.updateSettings({ contextPresets: presets }) }}
+          defaultPresetId={settingsState.settings.defaultContextPresetId}
+          onSetDefaultPreset={async (presetId) => { await settingsActions.updateSettings({ defaultContextPresetId: presetId }) }}
+          // Вложения черновика знает только клиент: они приложены к сообщению,
+          // которое ещё не отправлено, и в серверный снимок попасть не могут.
+          draftAttachments={chat.attachments.map((entry) => ({ name: entry.upload?.name ?? entry.file.name, status: entry.status }))}
           chatInstructions={settingsState.settings.chatInstructions}
+          onCopyContextTo={async (targetId, fromId) => {
+            // Тот же серверный путь, что у «скопировать из»: состояние приводится
+            // к образцу, а не пересчитывается на клиенте для каждого чата.
+            await window.api['conversations:copyContext']({ id: targetId, fromConversationId: fromId })
+          }}
+          onOpenInstructionSettings={() => {
+            // Открываем общие настройки сразу на «Инструкциях»: иначе человек,
+            // пришедший из карточки инструкции, ищет раздел глазами.
+            setConversationSettingsOpen(false)
+            setSettingsSection('instructions')
+            shellActions.openSettings()
+          }}
+          onAddInstruction={async (title, text) => {
+            // Своя инструкция без `kind`: стандартного ответного блока у неё нет,
+            // это просто текст, который уходит модели каждым ходом.
+            await settingsActions.updateSettings({
+              chatInstructions: [...settingsState.settings.chatInstructions, {
+                id: `own-${Date.now()}`, title, description: 'Текст пользователя.', enabled: true, text
+              }]
+            })
+          }}
           onSaveInstruction={async (id, text) => {
             // Текст инструкции — общая настройка: правим весь список, сохраняя
             // порядок и остальные поля. Инспектор об этом предупреждает.
@@ -2862,7 +2922,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           }}
           onClose={() => {
             setConversationSettingsOpen(false)
-            if (chatRoute?.kind === 'context-item') navigate(`/chat/${activeConversation.id}`)
+            if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') navigate(`/chat/${activeConversation.id}`)
           }}
         />
       )}
@@ -2960,6 +3020,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
       {shell.settingsOpen && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
+          {...(settingsSection ? { initialSection: settingsSection } : {})}
           projectTypes={projects.projectTypes}
           projectTypesStatus={projects.projectTypesStatus}
           projectTypesError={projects.projectTypesError}

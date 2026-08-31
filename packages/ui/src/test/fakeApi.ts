@@ -83,9 +83,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         { id: 'knowledge', order: 2, title: 'База знаний', description: 'Тест', items: [item('knowledge-mode', 'Автоматически')] }
       ],
       viewerRole: 'developer',
+      owner: 'test',
+      foreign: false,
       lastTurn: null,
       turnSizes: [],
       changes: [...disabledContext].map((itemId, index) => ({ at: index * 1000, actor: 'test', itemId, enabled: false })),
+      disallowedTools: [],
+      cliMcpServers: [],
       warnings: [],
       promptPreview: {
         blocks: disabledContext.has('personalization') ? [] : [{ itemIds: ['personalization'], title: 'Персонализация пользователя', text: preview, chars: preview.length, approxTokens: Math.ceil(preview.length / 4) }],
@@ -562,6 +566,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       files: [{ path: '/Users/test/project/AGENTS.md', text: '# Правила проекта\nТесты в том же шаге.', chars: 44 }]
     }),
     'conversations:copyContext': async ({ id }) => contextSnapshotFake(id),
+    'conversations:contextDiff': async ({ otherId }) => ({
+      otherId,
+      otherTitle: 'Другой разговор',
+      onlyThere: [{ itemId: 'knowledge-mode', title: 'Автоматически' }],
+      onlyHere: [],
+      settings: [{ label: 'Модель', here: 'default', there: 'opus' }]
+    }),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)

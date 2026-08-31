@@ -474,4 +474,16 @@ describe('UsersAdmin — доступность', () => {
     renderAdmin({ route: { page: 'engines' } })
     await expectNoViolations()
   })
+  it('у разговора пользователя есть вход в инспектор контекста', async () => {
+    // Снимок чужого чата админу отдаёт сервер, но попасть в этот экран из
+    // своего чата нельзя: разговор не в его списке. Кнопка — единственный вход.
+    const onOpenConversationContext = vi.fn()
+    renderUser('bob', 'history', {
+      onOpenConversationContext,
+      conversations: [{ id: 'conv-1', title: 'Сборка падает', createdAt: 1, updatedAt: 2, messageCount: 3 } as never]
+    })
+    const section = await screen.findByTestId('user-history-section')
+    await userEvent.click(within(section).getByRole('button', { name: 'Контекст' }))
+    expect(onOpenConversationContext).toHaveBeenCalledWith('conv-1')
+  })
 })

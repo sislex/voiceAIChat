@@ -23,7 +23,9 @@ describe('MakeTaskLinksDialog — «Задачи проекта» в панел�
     render(<MakeTaskLinksDialog conversationId={makeId} currentPath="pay.html" api={api} onClose={() => {}} />)
     expect(await screen.findByTestId('make-task-links-empty')).toBeInTheDocument()
     // Страница подставлена из открытого файла — связывают обычно то, что видно.
-    expect(screen.getByLabelText('Страница дизайна')).toHaveValue('pay.html')
+    // Ждём поле, а не берём его сразу: форма и пустое состояние появляются
+    // разными рендерами, и на полном прогоне гейта порядок иногда обратный.
+    expect(await screen.findByLabelText('Страница дизайна')).toHaveValue('pay.html')
 
     await userEvent.click(screen.getByRole('button', { name: 'Связать с задачей' }))
 

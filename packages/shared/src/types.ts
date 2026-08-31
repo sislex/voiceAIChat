@@ -980,6 +980,18 @@ export interface Settings {
   chatInstructions: ChatInstruction[]
   /** Письма о входе с нового сочетания IP и User-Agent. */
   loginNewDeviceEmails: boolean
+  /**
+   * Пресеты контекста: именованные наборы выключенных источников. Настроил один
+   * раз («минимальный контекст», «без базы знаний») — применяешь к любому чату,
+   * вместо того чтобы щёлкать тумблеры по памяти.
+   */
+  contextPresets: ContextPreset[]
+  /**
+   * Пресет, который применяется к **новым** разговорам. Настроил «минимальный
+   * контекст» один раз — и он действует сразу, а не после того как человек
+   * вспомнит про кнопку. null — новые чаты начинают с полным контекстом.
+   */
+  defaultContextPresetId: string | null
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -1024,6 +1036,11 @@ export interface ContextSnapshotGroup {
   title: string
   description: string
   items: ContextSnapshotItem[]
+  /**
+   * Вклад группы в постоянную часть промпта. Ответ на «какая часть настроек
+   * съедает место»: у пункта размер уже есть, но складывать их глазами — работа.
+   */
+  size?: { chars: number; approxTokens: number } | null
 }
 
 export interface ConversationContextSnapshot {
@@ -1044,10 +1061,30 @@ export interface ConversationContextSnapshot {
    * Решает сервер: UI не выводит права из роли самостоятельно.
    */
   viewerRole: UserRole
+  /**
+   * Владелец разговора. Совпадает со смотрящим в обычном случае; отличается,
+   * когда админ открыл чужой чат — тогда это нужно показать прямо, иначе легко
+   * решить, что правишь свой контекст.
+   */
+  owner: string
+  /** Смотрящий — не владелец (админский просмотр чужого разговора). */
+  foreign: boolean
   /** Что ушло в прошлый ход; null — ходов ещё не было. */
   lastTurn: ContextLastTurn | null
   /** Журнал изменений контекста этого разговора, новые сверху. */
   changes: ContextChangeEvent[]
+  /**
+   * Инструменты, которые уйдут в `--disallowedTools`: человек выключил их
+   * тумблером, и модель не сможет их вызвать. Прямой ответ на «что она НЕ
+   * сможет» — по списку доступных возможностей этого не увидеть.
+   */
+  disallowedTools: string[]
+  /**
+   * MCP-серверы профиля CLI, как их печатает сам движок. Каталог возможностей в
+   * группах — это то, что подключает приложение; здесь — что видит CLI. Пусто —
+   * список получить не удалось (движок не установлен или не ответил).
+   */
+  cliMcpServers: Array<{ name: string; detail: string; status: string }>
   /** Несогласованности конфигурации (порядок: problem раньше notice). */
   warnings: ContextWarning[]
   /**
@@ -1152,6 +1189,8 @@ export interface ContextTurnSize {
   approxTokens: number
   /** Ход продолжал сессию движка: история в этом промпте не пересобиралась. */
   resumed: boolean
+  /** Оценка стоимости входных токенов этого хода; null — прайса для модели нет. */
+  costUsd: number | null
 }
 
 /**
@@ -1165,6 +1204,30 @@ export interface ContextWarning {
   /** `notice` — стоит знать, `problem` — почти наверняка не то, что нужно. */
   level: 'notice' | 'problem'
   text: string
+}
+
+/**
+ * Чем контекст двух разговоров отличается. Отвечает на вопрос «почему там
+ * работает, а здесь нет» до того, как человек что-то перезапишет копированием.
+ */
+export interface ContextDiff {
+  /** Разговор-образец: id и название. */
+  otherId: string
+  otherTitle: string
+  /** Выключено там, включено здесь (id пунктов с заголовками). */
+  onlyThere: Array<{ itemId: string; title: string }>
+  /** Выключено здесь, включено там. */
+  onlyHere: Array<{ itemId: string; title: string }>
+  /** Настройки, которые различаются: движок, модель, режимы. */
+  settings: Array<{ label: string; here: string; there: string }>
+}
+
+/** Именованный набор выключенных источников контекста. */
+export interface ContextPreset {
+  id: string
+  name: string
+  /** id выключенных пунктов; остальные считаются включёнными. */
+  disabled: string[]
 }
 
 /** Запись журнала контекста: кто, когда и какой источник включил или выключил. */
@@ -1240,7 +1303,9 @@ export const DEFAULT_SETTINGS: Settings = {
   generatedFilesTtlDays: 30,
   personalization: DEFAULT_PERSONALIZATION,
   chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item })),
-  loginNewDeviceEmails: true
+  loginNewDeviceEmails: true,
+  contextPresets: [],
+  defaultContextPresetId: null
 }
 
 /**
@@ -1271,7 +1336,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
   oneOf('aiAssistProvider', ['claude', 'codex'] as const)
   for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails'] as const) bool(key)
   for (const key of ['voice', 'codexModel', 'aiAssistModel'] as const) text(key)
-  for (const key of ['micDeviceId', 'workdir', 'execTarget', 'llmEngineId', 'defaultAgentId'] as const) nullableText(key)
+  for (const key of ['micDeviceId', 'workdir', 'execTarget', 'llmEngineId', 'defaultAgentId', 'defaultContextPresetId'] as const) nullableText(key)
   if (Number.isInteger(input.generatedFilesTtlDays)) patch.generatedFilesTtlDays = input.generatedFilesTtlDays
   if (Array.isArray(input.aiAssistPrompts)) {
     patch.aiAssistPrompts = (input.aiAssistPrompts as unknown[])
@@ -1279,6 +1344,18 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
       .map((item) => ({ ...item, title: String(item.title ?? ''), text: String(item.text ?? ''), enabled: item.enabled !== false }))
   }
   if (input.chatInstructions !== undefined) patch.chatInstructions = normalizeChatInstructions(input.chatInstructions)
+  // Пресеты контекста: имя и список id. Приводим к контракту здесь, иначе мусор
+  // осядет в записи настроек навсегда (она мержится, а не заменяется).
+  if (Array.isArray(input.contextPresets)) {
+    patch.contextPresets = (input.contextPresets as unknown[])
+      .filter((item): item is ContextPreset => typeof item === 'object' && item !== null && typeof (item as ContextPreset).id === 'string')
+      .map((item) => ({
+        id: item.id,
+        name: String(item.name ?? '').trim().slice(0, 60) || 'Без названия',
+        disabled: Array.isArray(item.disabled) ? item.disabled.filter((entry): entry is string => typeof entry === 'string') : []
+      }))
+      .slice(0, 20)
+  }
   if (typeof input.personalization === 'object' && input.personalization !== null) patch.personalization = input.personalization
   return patch as Partial<Settings>
 }

@@ -1592,7 +1592,19 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`
       )
       .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames))
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    // Дефолтный пресет контекста: применяется сразу при создании, иначе
+    // «минимальный контекст» действует только после того, как человек вспомнит
+    // про кнопку. Пункты безопасности пресет не трогает — их фильтрует запись.
+    const settings = this.getSettings(userId)
+    const preset = settings.defaultContextPresetId
+      ? settings.contextPresets.find((entry) => entry.id === settings.defaultContextPresetId)
+      : undefined
+    const disabledContext = preset ? preset.disabled.filter(isContextToggleable) : []
+    if (disabledContext.length) {
+      this.db.prepare(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`)
+        .run(JSON.stringify(disabledContext), id, userId)
+    }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**

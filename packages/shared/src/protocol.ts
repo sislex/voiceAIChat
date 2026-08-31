@@ -239,6 +239,9 @@ export const REST = {
    * адреса, а данные операции, и в URL ему не место.
    */
   conversationContextCopy: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-copy`,
+  /** Чем контекст этого разговора отличается от другого (без изменений). */
+  conversationContextDiff: (id: string, otherId: string) =>
+    `/api/conversations/${encodeURIComponent(id)}/context-diff/${encodeURIComponent(otherId)}`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
