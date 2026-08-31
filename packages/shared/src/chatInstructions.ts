@@ -55,24 +55,35 @@ export function effectiveChatInstructions(list: readonly ChatInstruction[], disa
 }
 
 /**
+ * Подсказки с их источниками: у склейки консоль+проводник один текст на две
+ * инструкции, поэтому источник — список id, а не один. Инспектор контекста по
+ * этому списку показывает, какой именно текст стоит за пунктом: раньше он
+ * привязывал блок по индексу и на склейке не находил ничего.
+ */
+export function chatInstructionHintEntries(effective: readonly ChatInstruction[]): Array<{ text: string; instructionIds: string[] }> {
+  const standardTool = (kind: ToolSpec['kind']): boolean =>
+    effective.some((item) => item.kind === kind && !item.text?.trim())
+  const mergeTool = standardTool('console') && standardTool('explorer')
+  const merged = effective.filter((item) => item.kind === 'console' || item.kind === 'explorer').map((item) => item.id)
+  const out: Array<{ text: string; instructionIds: string[] }> = []
+  let toolEmitted = false
+  for (const item of effective) {
+    if (mergeTool && (item.kind === 'console' || item.kind === 'explorer')) {
+      if (!toolEmitted) { out.push({ text: toolHint(['console', 'explorer']), instructionIds: merged }); toolEmitted = true }
+      continue
+    }
+    const text = instructionText(item)
+    if (text) out.push({ text, instructionIds: [item.id] })
+  }
+  return out
+}
+
+/**
  * Тексты подсказок в порядке списка. Стандартные консоль и проводник без правок
  * склеиваются в одну tool-подсказку (как было изначально) — модели так яснее.
  */
 export function chatInstructionHints(effective: readonly ChatInstruction[]): string[] {
-  const standardTool = (kind: ToolSpec['kind']): boolean =>
-    effective.some((item) => item.kind === kind && !item.text?.trim())
-  const mergeTool = standardTool('console') && standardTool('explorer')
-  const out: string[] = []
-  let toolEmitted = false
-  for (const item of effective) {
-    if (mergeTool && (item.kind === 'console' || item.kind === 'explorer')) {
-      if (!toolEmitted) { out.push(toolHint(['console', 'explorer'])); toolEmitted = true }
-      continue
-    }
-    const text = instructionText(item)
-    if (text) out.push(text)
-  }
-  return out
+  return chatInstructionHintEntries(effective).map((entry) => entry.text)
 }
 
 /** Дописывает к непустому промпту эффективные инструкции (пустой промпт не трогает). */

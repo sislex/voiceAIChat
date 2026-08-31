@@ -1,7 +1,7 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
-import { projectPromptLines } from '../projects/promptContext.js'
+import { ageFromBirth, buildContextBlocks, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import {
   REST,
@@ -20,8 +20,10 @@ import {
   type UserProfileInfo,
   type SecurityEvent,
   type AgentInfo,
+  effectiveChatInstructions,
   instructionContextId,
   instructionText,
+  contextLockReason,
   isContextToggleable,
   sanitizeSettingsPatch
 } from '@voicechat/shared'
@@ -49,10 +51,13 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
   // не считается включённым в следующий ход (includedInNextTurn=false).
   const disabled = new Set(conversation.disabledContext ?? [])
-  const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled'>): ContextSnapshotItem => {
+  const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled' | 'lockReason'>): ContextSnapshotItem => {
     const toggleable = isContextToggleable(value.id)
     const enabled = toggleable ? !disabled.has(value.id) : true
-    return { ...value, toggleable, enabled, includedInNextTurn: value.includedInNextTurn && enabled }
+    // Причина замка приходит с сервера словом, а не выводится в UI по id:
+    // правила гейтинга живут в одном месте (`contextGating.ts`).
+    const lockReason = toggleable ? null : contextLockReason(value.id)
+    return { ...value, toggleable, enabled, lockReason, includedInNextTurn: value.includedInNextTurn && enabled }
   }
   const settings = db.getSettings(userId)
   const role = db.getUser(userId)?.role ?? 'developer'
@@ -84,27 +89,28 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // Полная детализация для drill-in: те же данные и тот же текст, что реально
   // уходят в промпт (см. turns.ts) — чтобы «провалиться» и увидеть всё.
   const p = settings.personalization
-  const styleLabel: Record<string, string> = { brief: 'кратко', detailed: 'подробно', 'step-by-step': 'пошагово', normal: 'обычно' }
-  const toneLabel: Record<string, string> = { friendly: 'дружелюбный', business: 'деловой', plain: 'простой, без сложных терминов', neutral: 'нейтральный' }
-  const personalizationLines = [
-    p.preferredName ? `Обращение к пользователю: ${p.preferredName}.` : '',
-    p.responseLanguage ? `Обычный язык ответа: ${p.responseLanguage}; явная просьба в текущем сообщении имеет приоритет.` : '',
-    p.responseStyle !== 'normal' ? `Стиль ответа: ${styleLabel[p.responseStyle] ?? p.responseStyle}.` : '',
-    p.tone !== 'neutral' ? `Тон общения: ${toneLabel[p.tone] ?? p.tone}.` : '',
-    p.birthYear ? `Возраст пользователя учитывается (год рождения ${p.birthYear}).` : ''
-  ].filter(Boolean)
+  const now = new Date()
+  const labels = personalizationLabels(p)
+  const personalizationText = personalizationPromptBlock(p, now)
   const personalizationDetails: Record<string, string | number | boolean | string[] | null> = {
     'Обращение': p.preferredName || '—',
     'Язык ответа': p.responseLanguage || '—',
-    'Стиль': styleLabel[p.responseStyle] ?? p.responseStyle,
-    'Тон': toneLabel[p.tone] ?? p.tone,
-    'Дата рождения': p.birthYear ? `${String(p.birthDay ?? 1).padStart(2, '0')}.${String(p.birthMonth ?? 1).padStart(2, '0')}.${p.birthYear}` : '—',
-    'Текст в промпте': personalizationLines.length ? personalizationLines.join('\n') : '(персонализация пуста — в промпт ничего не добавляется)'
+    'Стиль': labels.style,
+    'Тон': labels.tone,
+    'Возраст в промпте': ageFromBirth(p, now) === null ? '—' : `${ageFromBirth(p, now)} лет`,
+    'Текст в промпте': personalizationText ?? '(персонализация пуста — в промпт ничего не добавляется)'
   }
   // Тот же билдер, что у хода модели: иначе панель показывает не то, что ушло.
-  const promptLines = project
-    ? projectPromptLines(project)
-    : conversation.projectId ? [`ID проекта: ${conversation.projectId}`, 'Проект больше недоступен этому пользователю.'] : []
+  // Сводка персонализации для карточки: перечисляем заданное, а не поле подряд.
+  const personalizationSummary = [
+    p.preferredName ? `обращение «${p.preferredName}»` : '',
+    p.responseLanguage ? `язык ${p.responseLanguage}` : '',
+    p.responseStyle !== 'normal' ? `стиль ${labels.style}` : '',
+    p.tone !== 'neutral' ? `тон ${labels.tone}` : '',
+    ageFromBirth(p, now) === null ? '' : 'учитывается возраст'
+  ].filter(Boolean).join(', ') || 'Предпочтения не заданы — в промпт ничего не добавляется.'
+
+  const projectText = projectContextBlock(project, conversation.projectId ?? null)
   const projectDetails: Record<string, string | number | boolean | string[] | null> = project
     ? {
         'ID проекта': project.id,
@@ -113,7 +119,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         'Навыки/области': project.skills.join(', ') || '—',
         'Описание': project.description || '—',
         'Тип проекта': project.typeChain?.label || '—',
-        'Текст в промпте': `## Контекст проекта «${project.name}»\n${promptLines.join('\n')}`
+        'Текст в промпте': projectText ?? '—'
       }
     : { 'Проект': 'Не выбран — проектный контекст в промпт не добавляется.' }
   // Конфиг/описание каждого MCP-инструмента для drill-in.
@@ -130,7 +136,9 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Закрытые тексты представлены безопасными метаданными.', items: [
       contextItem({ id: 'platform-instructions', type: 'Системная инструкция', source: 'Платформа', scope: 'Все ходы', priority: '1 · системный', title: 'Правила платформы', description: 'Безопасность, конфиденциальность и границы действий.', explanation: 'Применяются всегда; полный текст закрыт.', configured: true, available: true, includedInNextTurn: true }),
       contextItem({ id: 'application-instructions', type: 'Инструкция приложения', source: 'VoiceChat', scope: 'Текущий разговор', priority: '2 · приложение', title: 'Правила VoiceChat', description: 'Маршрутизация инструментов, машин и БЗ.', explanation: 'Сервер добавляет их к каждому ходу.', configured: true, available: true, includedInNextTurn: true }),
-      contextItem({ id: 'personalization', type: 'Персонализация', source: 'Настройки пользователя', scope: 'Ответы пользователю', priority: '3 · пользователь', title: 'Предпочтения ответа', description: settings.personalization.responseLanguage || settings.personalization.responseStyle, explanation: 'Учитываются при сборке прикладных инструкций.', configured: Object.values(settings.personalization).some(Boolean), available: true, includedInNextTurn: Object.values(settings.personalization).some(Boolean), details: personalizationDetails })
+      // Описание — человеческая сводка, а не сырое значение поля: раньше здесь
+      // стояло `responseLanguage || responseStyle`, и в карточке было просто «normal».
+      contextItem({ id: 'personalization', type: 'Персонализация', source: 'Настройки пользователя', scope: 'Ответы пользователю', priority: '3 · пользователь', title: 'Предпочтения ответа', description: personalizationSummary, explanation: 'Учитываются при сборке прикладных инструкций.', configured: Object.values(settings.personalization).some(Boolean), available: true, includedInNextTurn: Object.values(settings.personalization).some(Boolean), details: personalizationDetails })
     ] },
     { id: 'chat-instructions', order: 2, title: 'Инструкции чата', description: 'Подсказки из «Настройки → Инструкции»; здесь их можно выключить только для этого разговора.', items: settings.chatInstructions.map((item) => contextItem({
       id: instructionContextId(item.id), type: item.kind ? 'Встроенная инструкция' : 'Своя инструкция', source: 'Настройки пользователя', scope: 'Каждый ход', priority: '3 · инструкция чата',
@@ -145,9 +153,21 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       contextItem({ id: 'agents-chain', type: 'AGENTS.md', source: 'Рабочая директория', scope: workdir ?? 'Не определена', priority: '6 · от общей к конкретной', title: 'Цепочка AGENTS.md', description: workdir ? 'Фактическую цепочку разрешает исполнитель в рабочей директории.' : 'Без директории цепочка не определяется.', explanation: workdir && machineAvailable ? 'Текст скрыт: снимок не раскрывает файл без отдельного подтверждённого чтения.' : 'Директория или машина недоступна.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir && machineAvailable), details: { hiddenReason: 'Содержимое не читалось сервером инспектора.' } })
     ] },
     { id: 'conversation', order: 4, title: 'Настройки разговора', description: 'Эффективные значения с учётом наследования.', items: [
-      contextItem({ id: 'llm', type: 'Настройка разговора', source: llmSource, scope: 'Следующий ход', priority: '7 · конфигурация', title: 'Модель и провайдер', description: `${provider} · ${model || 'модель из конфигурации CLI'}`, explanation: llmExplanation, configured: true, available: true, includedInNextTurn: true }),
+      contextItem({ id: 'llm', type: 'Настройка разговора', source: llmSource, scope: 'Следующий ход', priority: '7 · конфигурация', title: 'Модель и провайдер', description: `${provider} · ${model || 'модель из конфигурации CLI'}`, explanation: llmExplanation, configured: true, available: true, includedInNextTurn: true, inheritance: {
+        effective: `${provider} · ${model || 'модель из конфигурации CLI'}`,
+        // «Источник» отвечает откуда взято; наследование — что переопределено и
+        // чем было бы без переопределения. Без второго не понять, что даст сброс.
+        ...(conversation.llmProvider
+          ? { overriddenFrom: `${projectLlm?.provider ?? settings.llmProvider} · ${projectLlm?.model ?? ((settings.llmProvider === 'codex' ? settings.codexModel : settings.model) || 'модель из конфигурации CLI')}` }
+          : { inheritedFrom: projectLlm ? 'настройки проекта' : 'общие настройки пользователя' })
+      } }),
       contextItem({ id: 'machine', type: 'Настройка разговора', source: resolution?.source === 'explicit' ? 'Разговор' : 'Резолвер сервера', scope: agent?.name ?? resolution?.agentId ?? 'Сервер', priority: '7 · конфигурация', title: 'Машина выполнения', description: agent?.name ?? 'Доступной машины нет', explanation: resolution?.error ? `Недоступна: ${resolution.error}.` : `Источник: ${resolution?.source ?? 'none'}.`, configured: conversation.execTarget !== null, available: machineAvailable, includedInNextTurn: machineAvailable }),
-      contextItem({ id: 'permission-mode', type: 'Режим разрешений', source: conversation.permissionMode ? 'Разговор' : 'Эффективная политика сервера', scope: 'Инструменты и изменения', priority: '7 · конфигурация', title: permissionDisplay[permissionMode].displayName, description: permissionDisplay[permissionMode].explanation, explanation: permissionMode === 'plan' && conversation.permissionMode !== 'plan' ? 'Сервер безопасно форсировал режим.' : 'Выбранное или унаследованное значение.', configured: true, available: true, includedInNextTurn: true, details: { value: permissionMode } })
+      contextItem({ id: 'permission-mode', type: 'Режим разрешений', source: conversation.permissionMode ? 'Разговор' : 'Эффективная политика сервера', scope: 'Инструменты и изменения', priority: '7 · конфигурация', title: permissionDisplay[permissionMode].displayName, description: permissionDisplay[permissionMode].explanation, explanation: permissionMode === 'plan' && conversation.permissionMode !== 'plan' ? 'Сервер безопасно форсировал режим.' : 'Выбранное или унаследованное значение.', configured: true, available: true, includedInNextTurn: true, inheritance: {
+        effective: permissionDisplay[permissionMode].displayName,
+        ...(conversation.permissionMode && conversation.permissionMode !== permissionMode
+          ? { overriddenFrom: `${permissionDisplay[conversation.permissionMode].displayName} — сервер снизил режим` }
+          : conversation.permissionMode ? {} : { inheritedFrom: `общие настройки: ${permissionDisplay[settings.permissionMode].displayName}` })
+      }, details: { value: permissionMode } })
     ] },
     { id: 'skills', order: 5, title: 'Навыки', description: 'Выбор отделён от доступности и активации.', items: (agent?.policy.skills ?? []).map((skill) => contextItem({ id: `skill-${encodeURIComponent(skill.name)}`, type: 'Навык', source: 'Политика машины', scope: agent?.name ?? 'Машина', priority: '8 · навык', title: skill.name, description: skill.description || 'Инструкция навыка', explanation: selectedSkills.has(skill.name) ? 'Выбран; активация определяется текстом сообщения при отправке.' : 'Доступен, но не выбран.', configured: selectedSkills.has(skill.name), available: machineAvailable, includedInNextTurn: false, details: { activationReason: 'Текущее сообщение ещё не отправлено.' } })) },
     { id: 'capabilities', order: 6, title: 'MCP, приложения и плагины', description: 'Активный каталог вычислен сервером для текущего окружения.', items: [
@@ -162,7 +182,43 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
     ] }
   ]
-  return { schemaVersion: 1, conversationId, generatedAt: new Date().toISOString(), freshnessWarning: 'Снимок отражает сохранённую конфигурацию на момент формирования. До отправки следующего сообщения настройки, доступность машин и контекст могут измениться.', summary: { provider, model, permissionMode: { value: permissionMode, ...permissionDisplay[permissionMode] }, kbMode: { value: kbMode, ...kbDisplay[kbMode] } }, groups }
+  // Предпросмотр «что именно уйдёт»: тот же билдер, что у хода модели, поэтому
+  // выключенный пункт исчезает и здесь. История и автоконтекст БЗ в него не
+  // входят — им нужен текст ещё не отправленного сообщения.
+  const previewBlocks = buildContextBlocks({
+    personalization: disabled.has('personalization') ? { ...p, preferredName: '', responseLanguage: '', responseStyle: 'normal', tone: 'neutral', birthYear: null, birthMonth: null, birthDay: null } : p,
+    instructions: effectiveChatInstructions(settings.chatInstructions, disabled),
+    project: disabled.has('project-binding') ? null : project,
+    projectId: disabled.has('project-binding') ? null : conversation.projectId ?? null,
+    now
+  })
+  const previewText = previewBlocks.map((block) => block.text).join('\n\n')
+  // Размер вклада: у пункта, за которым стоит блок промпта, — размер его блока.
+  // Склеенная подсказка одна на два пункта: размер получают оба — вопрос «что
+  // именно занимает место» задают про пункт, а итог берётся из предпросмотра.
+  const sizeByItem = new Map(previewBlocks.flatMap((block) => block.itemIds.map((id) => [id, { chars: block.chars, approxTokens: block.approxTokens }] as const)))
+  const withSizes = groups.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, size: sizeByItem.get(item.id) ?? null })) }))
+  return {
+    schemaVersion: 1,
+    conversationId,
+    generatedAt: now.toISOString(),
+    freshnessWarning: 'Снимок отражает сохранённую конфигурацию на момент формирования. До отправки следующего сообщения настройки, доступность машин и контекст могут измениться.',
+    summary: { provider, model, permissionMode: { value: permissionMode, ...permissionDisplay[permissionMode] }, kbMode: { value: kbMode, ...kbDisplay[kbMode] } },
+    groups: withSizes,
+    viewerRole: role,
+    promptPreview: {
+      blocks: previewBlocks,
+      text: previewText,
+      chars: previewText.length,
+      approxTokens: promptBlock([], '', previewText).approxTokens,
+      omitted: [
+        'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
+        'История разговора и текущее сообщение: собираются в момент отправки.',
+        kbMode === 'off' ? 'Автоконтекст базы знаний: режим выключен.' : 'Автоконтекст базы знаний: документы подбираются по тексту отправляемого сообщения.',
+        'AGENTS.md: файл читает исполнитель в рабочей директории машины.'
+      ]
+    }
+  }
 }
 import type { AuthStatusState } from '../auth/statusState.js'
 import { listProjects, listSessions, readTranscript, readUsage } from '../cc/ccSessions.js'

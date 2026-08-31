@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
+import { KB_CONTEXT_MODES, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
@@ -332,6 +332,13 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           project={projects.find((project) => project.id === projectId)}
           selectedSkillNames={skillNames}
           onOpenSettings={() => selectTab('general')}
+          execTarget={execTarget}
+          onQuickEdit={(patch) => {
+            // Быстрая правка уже сохранена на сервере; черновик окна обязан
+            // догнать её, иначе кнопка «Сохранить» вернёт старое значение.
+            if (patch.kbContextMode) setKbContextMode(patch.kbContextMode)
+            if (patch.permissionMode !== undefined) setPermissionMode(patch.permissionMode ?? '')
+          }}
         />}
         {webReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Web Reader">
           <div className="convsettings-sectionhead"><div><h2>Web Reader</h2><p>Проверяет cookie, proxy, загрузку, DOM-мост, события, навигацию, очередь и requestId на внутренней странице. Полный перечень и результаты появятся в чате.</p></div><Button onClick={webReaderDiagnostics.onRun} disabled={webReaderDiagnostics.running}>{webReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
@@ -426,9 +433,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как модель получает сведения об устройстве voiceAIChat. Политика проекта — искать в базе знаний до чтения кода.</p></div>{onOpenKbUsage && <Button variant="secondary" onClick={onOpenKbUsage}>Использование базы знаний</Button>}</div>
           <label className="convsettings-field"><span>Контекст KB</span>
             <select aria-label="Контекст базы знаний" value={kbContextMode} onChange={(e) => setKbContextMode(e.target.value as KbContextMode)}>
-              <option value="auto">Авто-контекст + инструменты модели</option>
-              <option value="manual">По запросу модели (только инструменты)</option>
-              <option value="off">Не использовать</option>
+              {KB_CONTEXT_MODES.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
             </select>
           </label>
           <p className="convsettings-muted" data-testid="conv-kb-hint">
