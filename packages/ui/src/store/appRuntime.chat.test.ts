@@ -174,6 +174,56 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().messages.filter((message) => message.id === firstPersisted.id)).toHaveLength(1)
   })
 
+  it('не подтверждает раннюю отправку сообщением модели с тем же текстом', async () => {
+    const { store, api } = makeStore(['Чат'])
+    await store.actions.init()
+    let persistedReady!: () => void
+    const ready = new Promise<void>((resolve) => { persistedReady = resolve })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const original = api['messages:add']
+    vi.spyOn(api, 'messages:add').mockImplementation(async (args) => {
+      const persisted = await original(args)
+      persistedReady()
+      await gate
+      return persisted
+    })
+
+    store.actions.setDraft('Одинаковый текст')
+    const sending = store.actions.submitText()
+    await ready
+    const conversationId = store.getState().activeId!
+    store.actions.applyChatMessage(conversationId, {
+      id: 'ai-early',
+      conversationId,
+      role: 'ai',
+      text: 'Одинаковый текст',
+      time: '12:00',
+      createdAt: Date.UTC(2026, 7, 31, 12)
+    })
+    expect(store.getState().pendingSubmit).not.toBeNull()
+
+    release()
+    await sending
+  })
+
+  it('ошибка старой отправки не перезаписывает новый черновик и очищает pending', async () => {
+    const { store, api } = makeStore(['Чат'])
+    await store.actions.init()
+    let reject!: (error: Error) => void
+    const gate = new Promise<Message>((_resolve, rejectPromise) => { reject = rejectPromise })
+    vi.spyOn(api, 'messages:add').mockImplementation(() => gate)
+
+    store.actions.setDraft('Исходный текст')
+    const sending = store.actions.submitText()
+    store.actions.setDraft('Новый текст')
+    reject(new Error('save failed'))
+
+    await expect(sending).rejects.toThrow('save failed')
+    expect(store.getState().pendingSubmit).toBeNull()
+    expect(store.getState().draft).toBe('Новый текст')
+  })
+
   it('во время активного ответа синхронно показывает реплику только в оптимистичной очереди', async () => {
     const { store } = makeStore()
     await store.actions.init()
@@ -243,6 +293,50 @@ describe('voiceStore — интеграция стора с api-моком и м
     await expect(sending).resolves.toBe(true)
     await expect(next).resolves.toBe(true)
     expect(store.getState().queuedTurns[first.conversationId]?.map((item) => item.text)).toEqual(['Второй', 'Третий'])
+  })
+
+  it('при раннем подтверждении очереди учитывает порядок attachment id', async () => {
+    const { store, api } = makeStore(['Чат'])
+    await store.actions.init()
+    store.actions.applyClaudeToken('Активный ответ', store.getState().activeId!)
+
+    const file = (name: string) => ({
+      name,
+      arrayBuffer: async () => new Uint8Array([1]).buffer
+    }) as unknown as File
+    await store.actions.addAttachment(file('a.txt'))
+    await store.actions.addAttachment(file('b.txt'))
+
+    const original = api['messages:add']
+    let persistedReady!: () => void
+    const ready = new Promise<void>((resolve) => { persistedReady = resolve })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    vi.spyOn(api, 'messages:add').mockImplementation(async (args) => {
+      const persisted = await original(args)
+      persistedReady()
+      await gate
+      return persisted
+    })
+
+    store.actions.setDraft('С вложениями')
+    const sending = store.actions.submitText()
+    await ready
+    const conversationId = store.getState().activeId!
+    const optimistic = store.getState().queuedTurns[conversationId]![0]!
+    expect(store.getState().pendingSubmit?.messageId).toBeNull()
+    expect(optimistic.attachments).toHaveLength(2)
+
+    const reversed = { ...optimistic, id: 'server-wrong', attachments: [...optimistic.attachments].reverse() }
+    store.actions.applyClaudeQueue(conversationId, [reversed], false)
+    expect(store.getState().pendingSubmit).not.toBeNull()
+
+    const confirmed = { ...optimistic, id: 'server-right', messageId: 'server-message' }
+    store.actions.applyClaudeQueue(conversationId, [confirmed], false)
+    expect(store.getState().pendingSubmit).toBeNull()
+
+    release()
+    await sending
   })
 
   it('после каждого подтверждения принимает следующую реплику и сохраняет FIFO', async () => {
