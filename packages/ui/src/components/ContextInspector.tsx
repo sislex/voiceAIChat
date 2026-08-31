@@ -3,7 +3,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { CONTEXT_LOCK_TEXT, skillNameForContextId } from '@shared/contextGating'
 import { instructionIdForContextId, instructionText } from '@shared/chatInstructions'
 import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
-import type { AgentsChainResult, ChatInstruction, ContextKbPreview, ContextPreset, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
+import type { AgentsChainResult, ChatInstruction, ContextDiff, ContextKbPreview, ContextPreset, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
 import type { ProjectSummary } from '@shared/projects'
 import { Button, useConfirm, useToast } from '@voicechat/ui-kit'
 
@@ -172,6 +172,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   /** Черновик новой инструкции чата: название и текст. */
   const [newInstructionTitle, setNewInstructionTitle] = useState('')
   const [newInstructionText, setNewInstructionText] = useState('')
+  /** Результат сравнения с другим разговором; null — не сравнивали. */
+  const [diff, setDiff] = useState<ContextDiff | null>(null)
+  /** Какой пресет переименовывают и новое имя. */
+  const [renamingPreset, setRenamingPreset] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   /** Идут ли изменения тумблера/быстрой правки — на это время контролы блокируются. */
   const [busy, setBusy] = useState(false)
   /** Черновик сообщения и подбор базы знаний по нему (по кнопке, не на каждый ввод). */
@@ -406,6 +411,24 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     }
   }
 
+  /**
+   * Переименовать пресет. Раньше «ошибся в названии» означало удалить и
+   * сохранить заново — вместе с потерей набора, если чат уже изменился.
+   */
+  const renamePreset = async (presetId: string): Promise<void> => {
+    if (!props.onSavePresets || !renameValue.trim()) return
+    setBusy(true)
+    try {
+      await props.onSavePresets((props.contextPresets ?? []).map((entry) => entry.id === presetId ? { ...entry, name: renameValue.trim() } : entry))
+      setRenamingPreset(null)
+      toast.success('Пресет переименован')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** Удалить пресет: список у человека свой, и чистить его он должен сам. */
   const deletePreset = async (presetId: string): Promise<void> => {
     if (!props.onSavePresets) return
@@ -437,6 +460,24 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       setNewInstructionText('')
       setReload((value) => value + 1)
       toast.success('Инструкция добавлена')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Сравнить контекст с другим разговором. Только чтение: ничего не меняет. */
+  const compareWith = async (otherId: string): Promise<void> => {
+    setBusy(true)
+    try {
+      const result = await window.api['conversations:contextDiff']({ id: props.conversationId, otherId })
+      if (!result) {
+        toast.error('Разговор больше недоступен')
+        return
+      }
+      setDiff(result)
+      setAnnounce(`Сравнение с «${result.otherTitle}»: различий в источниках ${result.onlyHere.length + result.onlyThere.length}, в настройках ${result.settings.length}.`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -639,6 +680,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const disabledToggleable = toggleable.filter((item) => !item.enabled)
   // Эффективная роль экрана: админ может смотреть как обычный пользователь.
   const effectiveRole: UserRole = asDeveloper ? 'developer' : snapshot.viewerRole
+  /** Подпись размера группы: сколько места занимают её блоки в промпте. */
+  const groupSize = (groupId: string): string => {
+    const size = snapshotGroups.find((group) => group.id === groupId)?.size
+    return size ? ` · ≈${size.approxTokens} токенов` : ''
+  }
   const isAdmin = effectiveRole === 'admin'
   const preview = snapshot.promptPreview
 
@@ -773,6 +819,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       {(props.draftAttachments?.length ?? 0) > 0 && <p className="context-note" data-testid="context-draft-attachments">
         С сообщением уйдут вложения: {props.draftAttachments!.map((file) => `${file.name}${file.status && file.status !== 'ready' ? ` (${file.status})` : ''}`).join(', ')}.
       </p>}
+      {/* Что модель НЕ сможет вызвать: по списку доступных возможностей этого
+          не увидеть, а вопрос «почему она не читает файлы» задают именно так. */}
+      {snapshot.disallowedTools.length > 0 && <p className="context-note" data-testid="context-disallowed">
+        Инструменты выключены и не будут доступны модели: {snapshot.disallowedTools.join(', ')}.
+      </p>}
       <details className="context-omitted"><summary>Чего в этом тексте нет</summary><ul>{preview.omitted.map((line) => <li key={line}>{line}</li>)}</ul></details>
     </section>
     <section className="context-card" aria-labelledby="context-kb-title">
@@ -847,7 +898,20 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     </section>}
     <p className="context-announce" role="status" aria-live="polite" data-testid="context-announce">{announce}</p>
     <div className="context-filters" role="search">
-      <input type="search" value={query} placeholder="Поиск по источникам контекста (/)" aria-label="Поиск по источникам контекста" onChange={(event) => setQuery(event.target.value)} />
+      <input
+        type="search"
+        value={query}
+        placeholder="Поиск по источникам контекста (/)"
+        aria-label="Поиск по источникам контекста"
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          // Esc чистит строку, а не закрывает окно настроек: пока фокус в
+          // поиске, человек правит запрос, а не собирается уходить.
+          if (event.key !== 'Escape' || !query) return
+          event.stopPropagation()
+          setQuery('')
+        }}
+      />
       {query.trim() && <span className="context-found" data-testid="context-found">Найдено: {allItems.filter((item) => matchesQuery(item, query)).length}</span>}
       <div className="context-filter-tabs" role="group" aria-label="Фильтр источников">
         {([['all', 'Все'], ['included', 'Попадёт в ход'], ['excluded', 'Не попадёт'], ['touched', 'Изменённые']] as const).map(([id, label]) =>
@@ -891,6 +955,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
               <input type="file" accept="application/json,.json" aria-label="Импортировать пресеты контекста из файла" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importPresets(file); event.target.value = '' }} />
             </label>
           </label>}
+          {/* Сравнение — до копирования: вопрос «почему там работает, а здесь
+              нет» задают раньше, чем готовы перезаписать свой набор. */}
+          {(props.otherConversations?.length ?? 0) > 0 && <label className="context-copyfrom">
+            <span>Сравнить с</span>
+            <select aria-label="Сравнить контекст с разговором" disabled={busy} value="" onChange={(event) => { if (event.target.value) void compareWith(event.target.value) }}>
+              <option value="">— выберите —</option>
+              {props.otherConversations!.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}
+            </select>
+          </label>}
           {(props.otherConversations?.length ?? 0) > 0 && <label className="context-copyfrom">
             <span>Скопировать из</span>
             <select aria-label="Скопировать контекст из разговора" disabled={busy} value="" onChange={(event) => { if (event.target.value) void copyFrom(event.target.value) }}>
@@ -920,15 +993,44 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         </div>
       </div>
     </section>}
-    {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
+    {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора{groupSize('chat-instructions')}</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
     <details className="context-section" data-testid="context-excluded"><summary><span><b>Не попадёт в следующий ход</b><small>Выключенное вами, ненастроенное и недоступное — с причиной</small></span><span className="context-count">{excludedItems.length}</span></summary>{itemList(excludedItems, 'Всё найденное попадёт в следующий ход.', false)}</details>
     <details className="context-section"><summary><span><b>Дополнительные возможности</b><small>Навыки, MCP, приложения, плагины, машины и AGENTS.md</small></span><span className="context-count">{additionalItems.length}</span></summary>{itemList(ordered(additionalItems), 'Дополнительные возможности не обнаружены.')}</details>
+    {diff && <section className="context-card" aria-labelledby="context-diff-title" data-testid="context-diff">
+      <div className="context-cardhead">
+        <h3 id="context-diff-title">Отличия от «{diff.otherTitle}»</h3>
+        <Button size="sm" variant="ghost" onClick={() => setDiff(null)}>Закрыть сравнение</Button>
+      </div>
+      {diff.onlyHere.length === 0 && diff.onlyThere.length === 0 && diff.settings.length === 0
+        ? <p className="context-empty">Контекст совпадает: те же источники и те же настройки запуска.</p>
+        : <ul className="context-changelog">
+            {diff.settings.map((entry) => <li key={entry.label}><b>{entry.label}</b>: здесь «{entry.here}», там «{entry.there}»</li>)}
+            {/* Текст одной строкой: `<b>` внутри фразы разрывал её на узлы, и
+                между «здесь» и двоеточием появлялся лишний пробел. */}
+            {diff.onlyHere.map((entry) => <li key={`here-${entry.itemId}`}><b>Выключено только здесь:</b> {entry.title}</li>)}
+            {diff.onlyThere.map((entry) => <li key={`there-${entry.itemId}`}><b>Выключено только там:</b> {entry.title}</li>)}
+          </ul>}
+    </section>}
     {(props.contextPresets?.length ?? 0) > 0 && <details className="context-section" data-testid="context-presets">
       <summary><span><b>Пресеты контекста</b><small>Наборы выключений: применить, экспортировать или удалить</small></span><span className="context-count">{props.contextPresets!.length}</span></summary>
       <ul className="context-changelog">{props.contextPresets!.map((preset) => <li key={preset.id}>
-        <b>{preset.name}</b> · выключено источников: {preset.disabled.length}
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void applyPreset(preset.id)}>Применить</Button>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void deletePreset(preset.id)}>Удалить</Button>
+        {renamingPreset === preset.id
+          ? <>
+              <input
+                type="text"
+                value={renameValue}
+                aria-label={`Новое название пресета «${preset.name}»`}
+                onChange={(event) => setRenameValue(event.target.value)}
+              />
+              <Button size="sm" disabled={busy || !renameValue.trim()} onClick={() => void renamePreset(preset.id)}>Сохранить</Button>
+              <Button size="sm" variant="ghost" onClick={() => setRenamingPreset(null)}>Отмена</Button>
+            </>
+          : <>
+              <b>{preset.name}</b> · выключено источников: {preset.disabled.length}
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void applyPreset(preset.id)}>Применить</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setRenamingPreset(preset.id); setRenameValue(preset.name) }}>Переименовать</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void deletePreset(preset.id)}>Удалить</Button>
+            </>}
       </li>)}</ul>
     </details>}
     {snapshot.changes.length > 0 && <details className="context-section" data-testid="context-changes"><summary><span><b>Журнал изменений контекста</b><small>Кто и когда выключал или возвращал источники этого разговора</small></span><span className="context-count">{snapshot.changes.length}</span></summary>
