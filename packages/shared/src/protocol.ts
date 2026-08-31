@@ -233,6 +233,12 @@ export const REST = {
   conversationContextKbPreview: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-kb-preview`,
   /** Прочитать цепочку AGENTS.md рабочей директории разговора (по явной просьбе). */
   conversationAgentsChain: (id: string) => `/api/conversations/${encodeURIComponent(id)}/agents-chain`,
+  /**
+   * Скопировать набор выключенных источников контекста из другого разговора.
+   * POST с телом `{ fromConversationId }`: разговор-источник — не параметр
+   * адреса, а данные операции, и в URL ему не место.
+   */
+  conversationContextCopy: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-copy`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,

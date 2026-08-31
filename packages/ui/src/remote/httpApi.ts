@@ -190,6 +190,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
         throw error
       }
     },
+    'conversations:copyContext': async ({ id, fromConversationId }) => {
+      try { return await req(REST.conversationContextCopy(id), { method: 'POST', body: JSON.stringify({ fromConversationId }) }) } catch (error) {
+        if (error instanceof Error && error.message.includes('404')) return null
+        throw error
+      }
+    },
     'conversations:listMachines': ({ id, projectId }) =>
       req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
     'conversations:search': ({ query, includeCompleted }) =>

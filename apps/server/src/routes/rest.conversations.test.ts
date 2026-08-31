@@ -892,6 +892,48 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('копирование контекста переносит выключения другого разговора и не пускает чужой', async () => {
+    const source = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Образец' } })).json()
+    const target = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Цель' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${source.id}/context/personalization`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${source.id}/context/knowledge-mode`, payload: { enabled: false } })
+    // В цели заранее выключено другое — копирование приводит набор к образцу,
+    // а не просто добавляет: иначе «скопировать» означало бы «объединить».
+    await inj({ method: 'POST', url: `/api/conversations/${target.id}/context/mcp-kb-search`, payload: { enabled: false } })
+
+    const copied = await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: source.id } })
+    expect(copied.statusCode).toBe(200)
+    const disabled = (copied.json().groups as Array<{ items: Array<{ id: string; enabled: boolean }> }>)
+      .flatMap((group) => group.items).filter((item) => !item.enabled).map((item) => item.id).sort()
+    expect(disabled).toEqual(['knowledge-mode', 'personalization'])
+
+    // Журнал видит обе стороны операции: и выключения, и возврат.
+    const changes = copied.json().changes as Array<{ itemId: string; enabled: boolean }>
+    expect(changes.some((entry) => entry.itemId === 'mcp-kb-search' && entry.enabled)).toBe(true)
+
+    // Сам себе источником быть не может, чужой разговор — 404.
+    expect((await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: target.id } })).statusCode).toBe(400)
+    expect((await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: 'нет-такого' } })).statusCode).toBe(404)
+  })
+
+  it('снимок отдаёт имена вложений, историю размеров и оценку стоимости', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Размеры' } })).json()
+    const turn = (chars: number, model: string, at: string) => inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {
+      role: 'ai', text: 'Готово', time: at,
+      meta: { request: { provider: 'claude', model, prompt: 'x'.repeat(chars), promptChars: chars, resumed: false, attachments: ['/tmp/uploads/схема.png'] } }
+    } })
+    await turn(400, 'sonnet', '10:00')
+    await turn(1200, 'sonnet', '10:05')
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    // Имена, а не только количество.
+    expect(snapshot.lastTurn.attachmentNames).toEqual(['схема.png'])
+    // История новыми сверху: виден рост промпта.
+    expect(snapshot.turnSizes.map((entry: { chars: number }) => entry.chars)).toEqual([1200, 400])
+    expect(snapshot.turnSizes[0]).toMatchObject({ model: 'sonnet', approxTokens: 300, resumed: false })
+    // Стоимость постоянной части: у известной модели число, а не выдумка.
+    expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
+  })
 })
 
 describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
