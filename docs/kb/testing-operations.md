@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-31
-checked: 35df463a
+checked: d98d7863
 areas:
   - package.json
   - scripts
