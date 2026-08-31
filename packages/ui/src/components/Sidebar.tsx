@@ -46,6 +46,15 @@ function formatMeta(c: Conversation, now: number): string {
   return `${day} · ${n} ${word}`
 }
 
+export function formatConversationCostUsd(value: number): string {
+  const formatted = new Intl.NumberFormat('en-US', {
+    maximumSignificantDigits: 4,
+    maximumFractionDigits: 8,
+    useGrouping: false
+  }).format(value)
+  return String.fromCharCode(36) + formatted
+}
+
 function pluralMessages(n: number): string {
   const mod10 = n % 10
   const mod100 = n % 100
@@ -490,17 +499,27 @@ export function Sidebar({
                      aria-selected здесь не годится — он допустим только внутри
                      listbox/grid, а в строке живут свои кнопки и селект статуса,
                      то есть option'ом она быть не может. */}
-                  <button
-                    type="button"
-                    className="ctitle"
-                    aria-current={c.id === activeId ? 'true' : undefined}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onPick(c.id)
-                    }}
-                  >
-                    {c.title}
-                  </button>
+                  <div className="ctitle-row">
+                    <button
+                      type="button"
+                      className="ctitle"
+                      aria-current={c.id === activeId ? 'true' : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onPick(c.id)
+                      }}
+                    >
+                      {c.title}
+                    </button>
+                    {c.costStatus === 'known' && typeof c.costUsd === 'number' && (
+                      <span className="ccost" title="Стоимость сохранённых ответов">
+                        {formatConversationCostUsd(c.costUsd)}
+                      </span>
+                    )}
+                    {c.costStatus === 'partial' && (
+                      <span className="ccost ccost--incomplete" title="Стоимость известна не для всех ответов" aria-label="Неполная стоимость">—</span>
+                    )}
+                  </div>
                   {badge && (
                     <p className="ctask">
                       <TypeIcon type={badge.type} />
