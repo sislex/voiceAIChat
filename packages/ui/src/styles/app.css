@@ -4976,7 +4976,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   transition: max-height 160ms ease, opacity 120ms ease;
   pointer-events: none;
 }
-.side-controls--open { max-height: 160px; opacity: 1; pointer-events: auto; }
+.side-controls--open {
+  position: relative;
+  z-index: 1;
+  max-height: 160px;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
 .side-resize {
   position: absolute;
   z-index: 50;
