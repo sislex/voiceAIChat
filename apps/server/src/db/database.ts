@@ -2464,15 +2464,6 @@ export class VoiceChatDb {
 
   // ---- Settings ---------------------------------------------------------
 
-  /** Настройки LLM, которые связанный чат задачи наследует от своего владельца. */
-  private taskChatLlmDefaults(userId: string, settings = this.getSettings(userId)): { engineId: string | null; provider: LlmProvider; model: string } {
-    const role = this.getUser(userId)?.role ?? 'developer'
-    const provider = settings.llmProvider
-    const model = provider === 'codex' ? settings.codexModel : settings.model
-    const engineId = this.resolveLlmEngine(settings.llmEngineId, provider, role).engine?.id ?? null
-    return { engineId, provider, model }
-  }
-
   /**
    * Читает настройки и **фиксирует** дефолты полей, которых в записи ещё не
    * было. Без этого «поле появилось в релизе» и «человек выбрал такое
@@ -4861,11 +4852,6 @@ export class VoiceChatDb {
     return /^(?:[A-Za-z]:[\\\\/]|\\\\\\\\)/.test(rootPath) ? 'win32' : 'linux'
   }
 
-  private recommendedProjectAssignments(storage: MachineStorage, projectId: string): ProjectMachineDirectoryAssignments {
-    const paths = recommendedProjectMachineDirectories(storage.rootPath, projectId, this.projectStoragePlatform(storage.rootPath))
-    return Object.fromEntries(Object.entries(paths).map(([kind, path]) => [kind, { path, override: false }])) as ProjectMachineDirectoryAssignments
-  }
-
   configureProjectMachineStorage(
     userId: string,
     projectId: string,
@@ -7085,10 +7071,6 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE ci_workspaces SET state = 'released', released_by_step_id = ? WHERE id = ?`).run(releasedByStepId, workspaceId)
   }
 
-  setCiWorkspaceSize(workspaceId: string, sizeBytes: number): void {
-    this.db.prepare(`UPDATE ci_workspaces SET size_bytes = ? WHERE id = ?`).run(sizeBytes, workspaceId)
-  }
-
   /** Отчёт по занятому месту: активные + осиротевшие (задача закрыта/удалена). */
   listCiWorkspaceReport(userId: string, projectId?: string): CiWorkspaceReportItem[] {
     const rows = (projectId
@@ -9102,12 +9084,6 @@ export class VoiceChatDb {
     this.db.prepare(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`).run(this.newId(),projectId,taskId,action,actor,JSON.stringify(payload),this.now())
   }
 
-  releaseDoneWorkspaces(projectId:string,taskIds:string[]):void {
-    if(!taskIds.length)return
-    const placeholders=taskIds.map(()=>'?').join(',')
-    this.db.prepare(`UPDATE ci_workspaces SET state='released' WHERE project_id=? AND state='active' AND task_id IN (${placeholders})`).run(projectId,...taskIds)
-  }
-
   createProjectRelease(userId: string, projectId: string, input: { branch: string; version: string; sha: string; status?: ProjectRelease['status']; models?: Partial<Record<ReleaseStepKind, string>>; previousReleaseId?: string | null; agentId?: string; checkoutPath?: string; limits?: ReleaseTimeouts }): ProjectRelease {
     if (!this.isProjectOwner(userId, projectId)) throw new Error('release permission required')
     const previous = input.previousReleaseId ? this.releaseRow(input.previousReleaseId) : null
@@ -9316,14 +9292,6 @@ interface CiCommandRow {
   description: string; workdir: string; timeout_sec: number | null; env_json: string
   allow_failure: number; is_cleanup: number; available_to_model: number; is_test: number; builtin: string | null; version: number
   created_by: string; created_at: number; updated_at: number; deleted_at: number | null
-}
-/**
- * Шаг «закоммитить работу в ветку задачи» — по назначению, а не по подписи в
- * конкретном проекте (справочник команд это данные). Перед ним встаёт
- * актуализация базы знаний: её правки должны уехать тем же коммитом.
- */
-function isCommitStepLike(name: string, script: string): boolean {
-  return /коммит|commit/i.test(name) || /git\s+commit/i.test(script)
 }
 function isMergeToBaseStepLike(name: string, script: string): boolean {
   return /влить.*(ветк|прод)|merge.*(main|base)/i.test(name)
