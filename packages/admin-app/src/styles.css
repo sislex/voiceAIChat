@@ -1,6 +1,8 @@
 @import '@voicechat/ui-kit/styles.css';
 .admin-page,.admin-frame{display:flex;min-width:0;min-height:0;flex-direction:column;height:100%;background:var(--bg);color:var(--text)}
 .admin-head,.uadmin-head,.uusage-heading,.uadmin-actions{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+/* Рамка без собственного заголовка: страница рисует его сама, здесь — только выход. */
+.admin-head--bare{padding-bottom:0;border:0}
 .ccobs-body{display:grid;grid-template-columns:minmax(14rem,20rem) minmax(0,1fr);min-height:0;flex:1}
 .cc-col{min-width:0;overflow:auto;padding:1rem}.cc-projects{border-right:1px solid var(--line)}
 .cc-item{display:block;width:100%;padding:.65rem;border:0;border-radius:.5rem;background:transparent;color:inherit;text-align:left}.cc-item:hover,.cc-item.on{background:var(--surface-hover)}
@@ -60,6 +62,15 @@
 
 @media (max-width: 720px) {
   .ua { padding: 14px 12px 24px; }
+  /* Порог попадания пальцем: кнопки шапки и порядка списка живут в плотных
+     строках и по умолчанию имеют высоту 25px — вдвое ниже порога, который
+     сторожит scripts/mobile-shots.mts. */
+  .ua-top__actions .vc-btn,
+  .ua-list__meta .vc-btn,
+  .ua-invites .vc-btn,
+  .fleet-actions .vc-btn,
+  .uadmin-limit .vc-btn,
+  .admin-head .vc-btn { min-height: 40px; }
   .ua-grid { display: block; }
   /* Список превращается в горизонтальную ленту: на телефоне колонка в 260px
      съедала бы весь экран, а карточка человека — главное на странице. */

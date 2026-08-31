@@ -36,7 +36,7 @@ describe('adminStore', () => {
 
   it('открытие раздела грузит только список людей, служебные страницы — по заходу', async () => {
     const listUsers = vi.fn(async () => [])
-    const usageSummary = vi.fn(async () => [])
+    const usageSummary = vi.fn(async (_range?: { from?: number; to?: number }) => [])
     const listLlmEngines = vi.fn(async () => [])
     const listModelPrices = vi.fn(async () => [])
     const makeStats = vi.fn(async () => ({ projects: 0, bytes: 0, filesBytes: 0, snapshotsBytes: 0, shotsBytes: 0, published: 0, shared: 0, views: 0, limitBytes: 0, userLimitBytes: 0, byUser: [], top: [] }))
@@ -59,8 +59,9 @@ describe('adminStore', () => {
     expect(listModelPrices).not.toHaveBeenCalled()
     expect(makeStats).not.toHaveBeenCalled()
     // Сводка расхода — за текущий месяц, а не за всё время: та же цифра стоит в карточке.
-    expect(usageSummary.mock.calls[0][0].from).toBeLessThanOrEqual(Date.now())
-    expect(usageSummary.mock.calls[0][0].from).toBeGreaterThan(Date.now() - 32 * 86_400_000)
+    const range = usageSummary.mock.calls[0]?.[0]
+    expect(range?.from).toBeLessThanOrEqual(Date.now())
+    expect(range?.from).toBeGreaterThan(Date.now() - 32 * 86_400_000)
 
     await store.actions.openAdminPage('engines')
     expect(listLlmEngines).toHaveBeenCalledTimes(1)

@@ -29,10 +29,23 @@ import { ModelPricesPage } from './pages/ModelPricesPage'
 import { ProjectTypesPage } from './pages/ProjectTypesPage'
 import { SystemPage } from './pages/SystemPage'
 
-function AdminFrame({ variant, title, onClose, children }: { variant: 'modal' | 'page'; title: string; onClose: () => void; children: ReactNode }): JSX.Element {
+/**
+ * Рамка раздела. На странице свой заголовок рисует сама страница — у списка
+ * людей он с надзаголовком и кнопками, и второй такой же в шапке рамки читался
+ * как повтор.
+ */
+function AdminFrame({ variant, title, showTitle, onClose, children }: { variant: 'modal' | 'page'; title: string; showTitle: boolean; onClose: () => void; children: ReactNode }): JSX.Element {
   return variant === 'modal'
     ? <Dialog title={title} size="full" onClose={onClose} testId="users-overlay"><div className="admin-frame">{children}</div></Dialog>
-    : <section className="admin-page" aria-label={title} data-testid="users-overlay"><header className="admin-head"><h2>{title}</h2><Button onClick={onClose}>Закрыть</Button></header>{children}</section>
+    : (
+      <section className="admin-page" aria-label={title} data-testid="users-overlay">
+        <header className={showTitle ? 'admin-head' : 'admin-head admin-head--bare'}>
+          {showTitle ? <h2>{title}</h2> : <span />}
+          <Button onClick={onClose}>Закрыть</Button>
+        </header>
+        {children}
+      </section>
+    )
 }
 
 export interface UsersAdminProps {
@@ -216,7 +229,7 @@ export function UsersAdmin({
   const currentUser = users.find((user) => user.name === selectedName) ?? null
 
   return (
-    <AdminFrame variant={variant} title={PAGE_TITLE[page]} onClose={onClose}>
+    <AdminFrame variant={variant} title={PAGE_TITLE[page]} showTitle={page !== 'users'} onClose={onClose}>
       {page !== 'users' && (
         <p className="ua-back">
           <Button size="sm" variant="ghost" onClick={() => navigate({ page: 'users' })}>← К пользователям</Button>
@@ -304,9 +317,6 @@ export function UsersAdmin({
               )
             } : {})}
           />
-          {isAdmin && latestAgentVersion && onUpdateMachine && (
-            <AgentFleetUpdate users={users} latestVersion={latestAgentVersion} onUpdate={onUpdateMachine} onRefresh={onRetry} />
-          )}
         </>
       )}
 
@@ -334,6 +344,9 @@ export function UsersAdmin({
 
       {page === 'system' && isAdmin && (
         <SystemPage
+          fleetSlot={isAdmin && latestAgentVersion && onUpdateMachine
+            ? <AgentFleetUpdate users={users} latestVersion={latestAgentVersion} onUpdate={onUpdateMachine} onRefresh={onRetry} />
+            : null}
           machineStats={machineStats}
           makeStats={makeStats}
           roleCommandPolicies={roleCommandPolicies}

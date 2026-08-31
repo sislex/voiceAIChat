@@ -13,17 +13,20 @@ import { EmptyState } from '@voicechat/ui-kit'
 function mb(n: number): string { return n < 1048576 ? `${Math.round(n / 1024)} КБ` : `${(n / 1048576).toFixed(1)} МБ` }
 
 export interface SystemPageProps {
+  /** Массовое обновление агентов — состояние парка машин, а не свойство человека. */
+  fleetSlot?: React.ReactNode
   machineStats?: AdminMachineStats | null
   makeStats?: AdminMakeStats | null
   roleCommandPolicies?: RoleCommandPolicies | null
   onSaveRoleCommandPolicies?: (roles: RoleCommandPolicies) => Promise<void>
 }
 
-export function SystemPage({ machineStats = null, makeStats = null, roleCommandPolicies = null, onSaveRoleCommandPolicies }: SystemPageProps): JSX.Element {
-  const empty = !machineStats?.machines.length && !makeStats && !roleCommandPolicies
+export function SystemPage({ fleetSlot, machineStats = null, makeStats = null, roleCommandPolicies = null, onSaveRoleCommandPolicies }: SystemPageProps): JSX.Element {
+  const empty = !fleetSlot && !machineStats?.machines.length && !makeStats && !roleCommandPolicies
   return (
     <div data-testid="system-page">
       {empty && <EmptyState icon="⚙" title="Метрик пока нет" description="Появятся, когда подключатся машины или заработают проекты Make." />}
+      {fleetSlot}
       {machineStats && machineStats.machines.length > 0 && (
         <section className="uadmin-sec" data-testid="machine-stats">
           <div className="uusage-heading"><div><h3 className="uadmin-h">Машины</h3><p className="uusage-note">В сети {machineStats.totals.online} из {machineStats.totals.machines} · команд за 24 ч: {machineStats.totals.commands24h} · с ошибкой: {machineStats.totals.errors24h} · Prometheus: <code>/api/admin/machines/metrics</code></p></div></div>
