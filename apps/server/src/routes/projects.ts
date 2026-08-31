@@ -92,7 +92,9 @@ export function registerProjectRoutes(
    * только задачей на доске: записал сценарий — и жди следующего рана, чтобы
    * узнать, работает ли он вообще.
    */
-  checkAutomatedQa?: (userId: string, projectId: string, scenarioIndex?: number) => Promise<AutomatedQaCheckResult[]>
+  checkAutomatedQa?: (userId: string, projectId: string, scenarioIndex?: number) => Promise<AutomatedQaCheckResult[]>,
+  /** Оркестратор планов ассистента: отмена должна ещё и снять его таймер. */
+  orchestration?: { cancel(owner: string, planId: string): import('@voicechat/shared').Orchestration | null }
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
@@ -965,6 +967,17 @@ export function registerProjectRoutes(
   app.get<{ Params: { id: string } }>(
     '/api/projects/:id/design-sources',
     async (req, reply) => db.projectDesignSources(uid(req), req.params.id) ?? nf(reply)
+  )
+
+  // --- Планы канбан-ассистента ----------------------------------------
+  // Панель прогресса читает их через REST, а живые изменения приходят кадром
+  // assistant.orchestration — как у CI-ранов.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/orchestrations', async (req, reply) =>
+    db.getProject(uid(req), req.params.id) ? db.listOrchestrations(uid(req), req.params.id) : nf(reply)
+  )
+
+  app.post<{ Params: { planId: string } }>('/api/orchestrations/:planId/cancel', async (req, reply) =>
+    (orchestration?.cancel(uid(req), req.params.planId) ?? db.cancelOrchestration(uid(req), req.params.planId)) ?? nf(reply)
   )
 
   // --- Универсальный инструментальный шлюз виджетов --------------------
