@@ -52,11 +52,21 @@ import { createMailer, type Mailer } from './users/mailer.js'
 import type { GeoResolver } from '@voicechat/sessions-core'
 import { SessionHub } from './users/sessionHub.js'
 
-/** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
+/**
+ * Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5).
+ * Имён два: по https cookie называется `__Secure-vc_session` (см. разведение
+ * имён по схеме в `users/auth.ts`), по http — `vc_session`. Защищённое имя
+ * приоритетнее: если в браузере лежат оба, актуально то, что поставил https.
+ */
 function cookieToken(header: string | undefined): string | undefined {
   if (!header) return undefined
-  for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === 'vc_session') return rest.join('=') }
-  return undefined
+  let plain: string | undefined
+  for (const item of header.split(';')) {
+    const [k, ...rest] = item.trim().split('=')
+    if (k === '__Secure-vc_session') return rest.join('=')
+    if (k === 'vc_session') plain = rest.join('=')
+  }
+  return plain
 }
 import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
