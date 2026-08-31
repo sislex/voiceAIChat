@@ -97,8 +97,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
     'conversations:list': ({ includeCompleted }) =>
       req(`${REST.conversations}${includeCompleted ? '?includeCompleted=1' : ''}`),
-    'conversations:create': ({ title, assistantKind }) =>
-      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, assistantKind }) }),
+    'conversations:create': ({ title, projectId, assistantKind }) =>
+      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, projectId, assistantKind }) }),
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
     'make:taskLinks': ({ conversationId, path }) =>
       req(path === undefined ? REST.makeTaskLinks(conversationId) : `${REST.makeTaskLinks(conversationId)}?path=${encodeURIComponent(path)}`),

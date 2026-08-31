@@ -1568,16 +1568,19 @@ export class VoiceChatDb {
     return row?.user_id ?? null
   }
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null, projectId: string | null = null): Conversation {
+    const project = projectId ? this.getProject(userId, projectId) : null
+    if (projectId && (!project || assistantKind === 'playwright-reader')) throw new Error('project not found')
+    const skillNames = project?.skills ?? []
     const id = this.newId()
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind)
-         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names)
+         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, assistantKind)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+      .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames))
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**

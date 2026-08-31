@@ -810,12 +810,17 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [chatRoute?.kind])
   const [createChatOpen, setCreateChatOpen] = useState(false)
   const [createChatTitle, setCreateChatTitle] = useState('Новый разговор')
+  const [createChatProjectId, setCreateChatProjectId] = useState('')
   const [createChatMachineId, setCreateChatMachineId] = useState('')
   const [createChatStorages, setCreateChatStorages] = useState<MachineStorage[]>([])
   const [createChatStorageId, setCreateChatStorageId] = useState('')
   const [createChatPath, setCreateChatPath] = useState('')
   const [createChatError, setCreateChatError] = useState<string | null>(null)
   const [createChatSaving, setCreateChatSaving] = useState(false)
+  useEffect(() => {
+    if (!createChatOpen) return
+    void projectsActions.refreshProjects().catch(() => {})
+  }, [createChatOpen, projectsActions])
   useEffect(() => {
     if (!createChatOpen) return
     const effective = operations.agents.find((agent) => agent.isEffective && agent.online)
@@ -834,9 +839,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }).catch((error) => { if (alive) setCreateChatError(error instanceof Error ? error.message : String(error)) })
     return () => { alive = false }
   }, [api, createChatOpen, createChatMachineId])
-  const createChatProjectId = chat.sidebarProjectIds.length === 1 && chat.sidebarProjectKnownIds.length > 1
-    ? chat.sidebarProjectIds[0]
-    : undefined
   const submitCreateChat = async (): Promise<void> => {
     if (!createChatTitle.trim()) { setCreateChatError('Введите название разговора.'); return }
     if (createChatPath.trim()) {
@@ -844,11 +846,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
     setCreateChatSaving(true); setCreateChatError(null)
     try {
-      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId: createChatProjectId })
+      const projectId = createChatProjectId || null
+      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId })
       if (createChatMachineId && createChatStorageId) {
         const relativePath = createChatPath.trim() || recommendedChatStoragePath(
-          createChatProjectId
-            ? { kind: 'project', projectId: createChatProjectId, conversationId: id }
+          projectId
+            ? { kind: 'project', projectId, conversationId: id }
             : { kind: 'chat', conversationId: id }
         )
         await api['conversations:setStorage']({ id, machineId: createChatMachineId, storageId: createChatStorageId, relativePath })
@@ -1818,6 +1821,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <main className="convsettings-body">
           <section className="convsettings-card">
             <label className="convsettings-field"><span>Название разговора</span><input autoFocus value={createChatTitle} onChange={(event) => setCreateChatTitle(event.target.value)} /></label>
+            <label className="convsettings-field"><span>Проект</span><select aria-label="Проект" value={createChatProjectId} disabled={projects.projectsStatus === 'loading' && !projects.projectsLoaded} onChange={(event) => { setCreateChatProjectId(event.target.value); setCreateChatPath('') }}>
+              <option value="">Без проекта</option>
+              {projects.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select></label>
+            {(projects.projectsStatus === 'idle' || (projects.projectsStatus === 'loading' && !projects.projectsLoaded)) && <p className="convsettings-muted" role="status">Загрузка проектов…</p>}
+            {projects.projectsStatus === 'ready' && projects.projects.length === 0 && <p className="convsettings-muted" role="status">Нет доступных проектов. Разговор можно создать без проекта.</p>}
+            {projects.projectsStatus === 'error' && <p className="convsettings-error" role="alert">Не удалось загрузить проекты{projects.projectsError ? `: ${projects.projectsError}` : '.'} <button type="button" className="vc-btn vc-btn--secondary" onClick={() => void projectsActions.refreshProjects().catch(() => {})}>Повторить</button></p>}
           </section>
           <section className="convsettings-card" aria-labelledby="create-chat-files-title">
             <div className="convsettings-sectionhead"><div><h2 id="create-chat-files-title">Файлы чата</h2><p>Вложения будут храниться на выбранной машине независимо от рабочего Git-каталога.</p></div></div>
@@ -1869,6 +1879,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onNew={() => {
           setCreateChatError(null)
           setCreateChatTitle('Новый разговор')
+          setCreateChatProjectId('')
           setCreateChatPath('')
           setCreateChatOpen(true)
         }}
