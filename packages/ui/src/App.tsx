@@ -16,7 +16,6 @@ import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
 import type { PreviewActionOutcome, ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
-import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { parseUserAgent } from '@voicechat/sessions-core'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
@@ -37,9 +36,8 @@ import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
-import { ProjectSettings } from './components/ProjectSettings'
 import { PersonalizationPage } from './components/SettingsPage'
-import { TaskModal, type TaskUpdateFields } from './components/kanban/TaskModal'
+import type { TaskUpdateFields } from './components/kanban/TaskModal'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant, ProjectAssistantChatSelector } from './components/KanbanAssistant'
@@ -92,7 +90,9 @@ import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } 
 import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from './consoleReaderDiagnostics'
 import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
-import { buildAdminRoute, parseAdminRoute } from '@voicechat/admin-app'
+// Маршрут админки — из shared: импорт из самого пакета возвращал всю админку
+// (и профиль) в главный чанк, сводя её ленивый чанк на нет.
+import { buildAdminRoute, parseAdminRoute } from '@shared/adminRoute'
 import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioRecorder'
@@ -123,6 +123,23 @@ const UsersAdmin = lazy(async () => {
 const AccountPage = lazy(async () => {
   const module = await import('./components/AccountPage')
   return { default: module.AccountPage }
+})
+
+// Карточка задачи (85 КБ исходника со всеми панелями) нужна хосту ровно в одном
+// месте — черновик задачи, предложенной моделью в чате. Статический импорт
+// возвращал её в главный чанк мимо ленивого раздела «Проекты».
+const TaskModal = lazy(async () => {
+  const module = await import('./components/kanban/TaskModal')
+  return { default: module.TaskModal }
+})
+// Настройки проекта и панель Playwright-сессии — тоже свои маршруты.
+const ProjectSettings = lazy(async () => {
+  const module = await import('./components/ProjectSettings')
+  return { default: module.ProjectSettings }
+})
+const BrowserSessionPane = lazy(async () => {
+  const module = await import('./components/BrowserSessionPane')
+  return { default: module.BrowserSessionPane }
 })
 
 // Поверхность Reader нужна только беседе-ридеру, парк машин и утилиты (консоль,
@@ -2133,7 +2150,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       </div>
       {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
-      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
+      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:
         // затирать чужие тесты записью одного — не то, чего ждёт человек.
         onSaveScenario: async (scenario) => {
@@ -2143,7 +2160,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           })
         },
         ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
-      } : {})} />}
+      } : {})} /></Suspense>}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
@@ -2191,7 +2208,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} machines={projects.projectDetail!.machines} agents={operations.agents} agentsStatus={operations.agentsStatus} agentsError={operations.agentsError} defaultAgentId={projects.projectDetail!.defaultAgentId} releaseTimeouts={projects.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
-              <ProjectSettings
+              <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings
                 detail={projects.projectDetail!}
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
@@ -2259,7 +2276,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                   'projects:get': api['projects:get']
                 }}
                 onManagedProductionConfirmed={() => projectsActions.selectProject(routeProjectId)}
-              />
+              /></Suspense>
             ) : (
               <div className="proj-page-state" aria-busy="true">
                 <Skeleton variant="list" count={4} item="block" height={64} gap={12} />
@@ -2545,7 +2562,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
 
       {taskProposal && inChat && routeChatId === chat.activeId && (
-        <TaskModal
+        <Suspense fallback={<div role="status">Загрузка карточки задачи…</div>}><TaskModal
           draft
           task={taskProposal.task}
           board={taskProposal.board}
@@ -2580,7 +2597,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             <Button variant="primary" onClick={() => void chooseTaskLaunch('preparation')} loading={taskLaunchPending} disabled={taskLaunchPending || !taskProposal.task.title.trim()}>Создать в подготовке к разработке</Button>
             <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending} disabled={taskLaunchPending}>Работать в текущем чате</Button>
           </>}
-        />
+        /></Suspense>
       )}
 
       {conversationSettingsOpen && activeConversation && (
