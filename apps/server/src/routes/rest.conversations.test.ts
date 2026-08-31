@@ -892,6 +892,36 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('дубликат текста инструкций замечен, а «где выключена» различает настройки и чат', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Инструкции' } })).json()
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const own = { id: 'own-1', title: 'Своя первая', description: '', enabled: true, text: 'Отвечай по-русски.' }
+    const twin = { id: 'own-2', title: 'Своя вторая', description: '', enabled: true, text: 'Отвечай по-русски.' }
+    const off = { id: 'own-3', title: 'Выключенная в настройках', description: '', enabled: false, text: 'Не должна попасть.' }
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, chatInstructions: [...settings.chatInstructions, own, twin, off] } })
+
+    const snap = async (): Promise<{
+      warnings: Array<{ text: string }>
+      groups: Array<{ items: Array<{ id: string; details?: Record<string, unknown> }> }>
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    const withTwins = await snap()
+    expect(withTwins.warnings.some((entry) => entry.text.includes('Своя первая, Своя вторая'))).toBe(true)
+
+    const detailsOf = (snapshot: Awaited<ReturnType<typeof snap>>, id: string): Record<string, unknown> =>
+      snapshot.groups.flatMap((group) => group.items).find((item) => item.id === id)!.details!
+    // Выключенная в общих настройках и выключенная тумблером — разные ответы.
+    expect(detailsOf(withTwins, 'instruction-own-3')['Где выключена']).toBe('в общих настройках (во всех чатах)')
+    expect(detailsOf(withTwins, 'instruction-own-1')['Где выключена']).toBe('—')
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-own-1`, payload: { enabled: false } })
+    expect(detailsOf(await snap(), 'instruction-own-1')['Где выключена']).toBe('только в этом разговоре')
+
+    // Порядок и размер — рядом с текстом: их спрашивают, когда промпт распух.
+    const details = detailsOf(await snap(), 'instruction-own-2')
+    expect(String(details['Порядок в промпте'])).toMatch(/^\d+ из \d+$/)
+    expect(details['Символов в тексте']).toBe('Отвечай по-русски.'.length)
+  })
+
   it('пустой контекст предупреждает, а история ходов несёт стоимость', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Пусто' } })).json()
     const snap = async (): Promise<{
