@@ -852,4 +852,46 @@ describe('ConversationSettings', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('пресет применяется к выбранным разговорам и подтверждает список', async () => {
+    const setContextItem = vi.fn().mockResolvedValue(contextSnapshot({ personalizationEnabled: false }))
+    const onCopyContextTo = vi.fn().mockResolvedValue(undefined)
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:setContextItem': setContextItem } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
+      otherConversations={[{ id: 'c2', title: 'Рабочий чат' }, { id: 'c3', title: 'Черновики' }]}
+      onCopyContextTo={onCopyContextTo}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const presets = await screen.findByTestId('context-presets')
+    fireEvent.click(within(presets).getByText('Пресеты контекста'))
+    // Пока чаты не отмечены, «к выбранным» нечего делать.
+    expect(within(presets).getByRole('button', { name: 'Применить к выбранным (0)' })).toBeDisabled()
+
+    fireEvent.click(within(presets).getByRole('checkbox', { name: 'Применять к разговору «Черновики»' }))
+    fireEvent.click(within(presets).getByRole('button', { name: 'Применить к выбранным (1)' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Применить пресет к выбранным?' })
+    expect(dialog).toHaveTextContent('Черновики')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Применить' }))
+
+    // Сначала текущий чат приводится к пресету, потом его набор копируется дальше.
+    await waitFor(() => expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'personalization', enabled: false }))
+    await waitFor(() => expect(onCopyContextTo).toHaveBeenCalledWith('c3', 'c1'))
+    expect(onCopyContextTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('из карточки инструкции можно уйти в общие настройки', async () => {
+    const onOpenInstructionSettings = vi.fn()
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      chatInstructions={[]} onSaveInstruction={vi.fn()} onAddInstruction={vi.fn()} onOpenInstructionSettings={onOpenInstructionSettings}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть общие настройки инструкций' }))
+    expect(onOpenInstructionSettings).toHaveBeenCalledOnce()
+  })
+
 })
