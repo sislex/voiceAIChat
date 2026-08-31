@@ -5,7 +5,7 @@
 // активных ходов с накопленным частичным текстом (claude.active).
 
 import { readFileSync } from 'node:fs'
-import { projectPromptLines } from './projects/promptContext.js'
+import { personalizationPromptBlock, projectContextBlock } from './prompt/contextBlocks.js'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
@@ -15,6 +15,7 @@ import {
   stripDisabledInstructionBlocks,
   parseTaskLaunchRequest,
   buildConversationPrompt,
+  resumeSessionIdFor,
   buildPrompt,
   designPromptLines,
   makeDesignPreviewUrl,
@@ -285,18 +286,8 @@ export interface TurnManager {
   flushInterrupted(): void
 }
 
-/**
- * Разбирает сохранённый resume-id с префиксом провайдера ("claude:abc"/"codex:xyz").
- * Возвращает id только если он принадлежит текущему провайдеру; иначе null
- * (смена движка → свежий ход без чужого resume). Терпит старые id без префикса
- * (считаем их claude).
- */
-function resumeIdFor(stored: string | null, provider: 'claude' | 'codex'): string | null {
-  if (!stored) return null
-  const m = /^(claude|codex):(.*)$/s.exec(stored)
-  if (!m) return provider === 'claude' ? stored : null
-  return m[1] === provider ? m[2] : null
-}
+// Разбор сохранённого resume-id живёт в `@voicechat/shared` (`resumeSessionIdFor`):
+// снимок контекста показывает по нему, пересобирается ли история.
 
 /** Краткое описание политики машины для системного промпта Claude. */
 function policySummary(p: AgentPolicy, selectedSkills?: string[]): string {
@@ -493,7 +484,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const engineNotice = notices.join('\n')
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
-    const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
+    const sessionId = resumeSessionIdFor(conv?.claudeSessionId ?? null, provider)
     // Режим прав: переопределение разговора приоритетнее общих настроек.
     let permissionMode = conv?.permissionMode ?? settings.permissionMode
     // Большая переделка Make (п.20): ход идёт в режиме «План» (файлы только на чтение), модель отвечает
@@ -573,10 +564,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // к какому проекту относится разговор.
     const projectContext = conv?.projectId ? deps.db.getProject(userId, conv.projectId) : null
     if (conv?.projectId && !disabledContext.has('project-binding')) {
-      const lines = projectContext
-        ? projectPromptLines(projectContext)
-        : [`ID проекта: ${conv.projectId}`, 'Проект больше недоступен этому пользователю.']
-      basePrompt = `${basePrompt}\n\n## Контекст проекта «${projectContext?.name ?? 'неизвестный проект'}»\n${lines.join('\n')}`
+      // Тот же блок, что показывает инспектор контекста (`prompt/contextBlocks.ts`).
+      const block = projectContextBlock(projectContext, conv.projectId)
+      if (block) basePrompt = `${basePrompt}\n\n${block}`
     }
     // Контекст задачи, к которой привязан чат: иерархия, этап воркфлоу, папка и
     // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
@@ -612,15 +602,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ? `${basePrompt}\n\n## Режим канбан-ассистента\nТы работаешь инструментами mcp__kanban__*: kanban_context (что открыто у пользователя прямо сейчас), kanban_board, kanban_task_get, kanban_search_tasks, project_info, project_api_get. Снимок ниже — стартовое состояние экрана на момент реплики; если сомневаешься, что он актуален, перечитай инструментом.\n${JSON.stringify(req.assistantContext)}`
         : `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
-    const personalization = settings.personalization
-    const personalizationLines = [
-      personalization.preferredName ? `Обращение к пользователю: ${personalization.preferredName}.` : '',
-      personalization.responseLanguage ? `Обычный язык ответа: ${personalization.responseLanguage}; явная просьба в текущем сообщении имеет приоритет.` : '',
-      personalization.responseStyle !== 'normal' ? `Стиль ответа: ${{ brief: 'кратко', detailed: 'подробно', 'step-by-step': 'пошагово', normal: 'обычно' }[personalization.responseStyle]}.` : '',
-      personalization.tone !== 'neutral' ? `Тон общения: ${{ friendly: 'дружелюбный', business: 'деловой', plain: 'простой, без сложных терминов', neutral: 'нейтральный' }[personalization.tone]}.` : '',
-      personalization.birthYear ? `Возраст пользователя: ${Math.max(0, new Date().getUTCFullYear() - personalization.birthYear - ((personalization.birthMonth ?? 1) > new Date().getUTCMonth() + 1 || ((personalization.birthMonth ?? 1) === new Date().getUTCMonth() + 1 && (personalization.birthDay ?? 1) > new Date().getUTCDate()) ? 1 : 0))} лет; адаптируй сложность только когда это уместно.` : ''
-    ].filter(Boolean)
-    if (personalizationLines.length && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
+    // Блок персонализации строит `prompt/contextBlocks.ts` — тот же код, что и
+    // предпросмотр в инспекторе контекста: иначе панель обещает не то, что уйдёт.
+    const personalizationBlock = personalizationPromptBlock(settings.personalization, new Date())
+    if (personalizationBlock && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n${personalizationBlock}`
     // Инструкции чата (терминал/проводник, вопросы, картинки, task-launch, свои) —
     // включённые в настройках и не выключенные в инспекторе этого разговора.
     // У «Консоли с ассистентом» терминал уже открыт справа: подсказка «вставь

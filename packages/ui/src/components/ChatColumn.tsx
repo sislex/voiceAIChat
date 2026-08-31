@@ -92,6 +92,10 @@ export interface ChatColumnProps {
   onOpenGit?: () => void
   /** Фактический режим активного разговора для бейджа в шапке. */
   permissionMode?: PermissionMode
+  /** Сколько источников контекста выключено в этом разговоре (бейдж в шапке). */
+  disabledContextCount?: number
+  /** Открыть настройки сразу на вкладке «Контекст и инструкции». */
+  onOpenContextSettings?: () => void
   /** Фактический managed workspace, вычисленный сервером. */
   workspace?: WorkspaceView | null
   /** Каталог результатов чата (привязка к хранилищу машины) — чип в шапке. */
@@ -208,6 +212,8 @@ export function ChatColumn({
   onOpenConversationSettings,
   onOpenGit,
   permissionMode = 'plan',
+  disabledContextCount = 0,
+  onOpenContextSettings,
   workspace = null,
   storage = null,
   onRunSkill,
@@ -564,6 +570,20 @@ export function ChatColumn({
         >
           {modeLabel(permissionMode)}
         </button>
+        {/* Выключенные источники контекста меняют то, что получает модель, но
+            узнать об этом можно было только зайдя в настройки. Бейдж делает факт
+            видимым там же, где режим доступа, и ведёт на нужную вкладку. */}
+        {disabledContextCount > 0 && (
+          <button
+            className="mode-badge mode-badge--context"
+            data-testid="context-badge"
+            onClick={onOpenContextSettings ?? onOpenConversationSettings}
+            disabled={!(onOpenContextSettings ?? onOpenConversationSettings)}
+            title="Часть источников контекста выключена для этого разговора — открыть «Контекст и инструкции»"
+          >
+            Контекст изменён · {disabledContextCount}
+          </button>
+        )}
         {onOpenConversationSettings && (
           <button className="convsettings-open" aria-label="Настройки разговора" title="Настройки разговора" onClick={onOpenConversationSettings}>⚙</button>
         )}

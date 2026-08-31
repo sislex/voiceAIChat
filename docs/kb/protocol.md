@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-31
-checked: 65522e30
+checked: 4b23a49f
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -72,6 +72,16 @@ URL руками. Параметризованные пути — функции
 пользователей и реестр LLM-исполнителей (`/api/admin/llm-engines`,
 `/api/admin/llm-engines/:id`, `/api/admin/llm-engines/:id/health`), помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
 переформулировки черновика; канал `prompt:suggest`). `GET REST.usage` (`/api/usage`) выдаёт отчёт расхода только владельцу Bearer-сессии: `unit`, `from`, `to`, `conversationId`; мост — `usage:report`. Полный список — константа `REST`.
+
+Контекст разговора («что получит ИИ»): `GET /api/conversations/:id/context-snapshot`
+(снимок сохранённого состояния), `POST /api/conversations/:id/context/:itemId`
+(тумблер пункта; безопасность выключить нельзя — 400),
+`POST /api/conversations/:id/context-kb-preview` (что подберёт база знаний для
+черновика; **POST**, потому что черновик — текст пользователя и в URL ему не
+место) и `GET /api/conversations/:id/agents-chain` (чтение цепочки AGENTS.md с
+машины по явной просьбе). Мосты: `conversations:contextSnapshot`,
+`conversations:setContextItem`, `conversations:contextKbPreview`,
+`conversations:agentsChain`. Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.
