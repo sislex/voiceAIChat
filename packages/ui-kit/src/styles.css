@@ -295,6 +295,21 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-branch-flow__arrow { color:var(--accent);font-weight:800 }
 .vc-branch-flow__note { margin:var(--space-150) 0 0;color:var(--text-dim);font-size:11px }
 
+.vc-attempts { display:grid;gap:var(--space-100);min-width:0 }
+.vc-attempts__title { margin:0;font-size:12px;font-weight:600;color:var(--text-dim) }
+.vc-attempts__count { padding:1px 6px;border-radius:10px;background:var(--surface-hover);font-size:11px }
+.vc-attempts__list { list-style:none;margin:0;padding:0;display:grid;gap:2px }
+.vc-attempts__item { min-width:0 }
+.vc-attempts__row { display:flex;align-items:center;gap:var(--space-100);width:100%;min-width:0;padding:7px 8px;border:0;border-radius:var(--radius-medium);background:none;color:inherit;font:inherit;font-size:12px;text-align:left }
+.vc-attempts__list button.vc-attempts__row { cursor:pointer }
+.vc-attempts__list button.vc-attempts__row:hover { background:var(--surface-hover) }
+.vc-attempts__row--current { background:var(--accent-soft);color:var(--accent) }
+.vc-attempts__list button.vc-attempts__row:focus-visible { outline:2px solid var(--accent);outline-offset:-2px }
+.vc-attempts__num { flex:none;font-weight:700;font-variant-numeric:tabular-nums }
+.vc-attempts__status { flex:0 1 auto;min-width:0;overflow-wrap:anywhere }
+.vc-attempts__note { flex:0 1 auto;min-width:0;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+.vc-attempts__at { flex:none;margin-left:auto;color:var(--text-dim);font-size:11px }
+
 /* Телефон: колонка вместо ряда и палец вместо курсора. */
 @media (max-width: 640px) {
   .vc-metrics { grid-template-columns:1fr }
@@ -314,5 +329,8 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
   .vc-results__result { margin-top:4px }
   .vc-gate { grid-template-columns:28px minmax(0,1fr) }
   .vc-gate__verdict { grid-column:2 }
+  /* Строка попытки на 390px не влезала в одну строку: время уезжало под номер. */
+  .vc-attempts__row { flex-wrap:wrap;min-height:44px }
+  .vc-attempts__at { margin-left:0;flex-basis:100% }
 }
 @media (prefers-reduced-motion: reduce) { .vc-feed-caret, .vc-track__fill { transition:none } }

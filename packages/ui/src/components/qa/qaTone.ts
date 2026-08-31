@@ -4,7 +4,7 @@
 // таблицы говорят семантическими тонами. Таблица одна на все QA-панели: до неё
 // каждая писала свой тернарник, и «заблокирован» у одной был красным, у другой —
 // серым.
-import type { ComponentQaScenarioStatus, QaStepStatus } from '@shared/qa'
+import type { ComponentQaScenarioStatus, QaStageRunStatus, QaStepStatus } from '@shared/qa'
 import type { StatusTone } from '@voicechat/ui-kit'
 
 /** Статус рана этапа: Component QA и интеграционные тесты делят его набор. */
@@ -58,6 +58,24 @@ export function qaScenarioTone(status: ComponentQaScenarioStatus): StatusTone {
       return 'success'
     case 'failed':
     case 'blocked':
+      return 'danger'
+    default:
+      return 'neutral'
+  }
+}
+
+/** Статус общего рана этапа (`qa_stage_runs`): свой набор с `gate_failed`. */
+export function stageRunTone(status: QaStageRunStatus): StatusTone {
+  switch (status) {
+    case 'running':
+    case 'queued':
+      return 'running'
+    case 'awaiting_input':
+      return 'warning'
+    case 'success':
+      return 'success'
+    case 'gate_failed':
+    case 'failed':
       return 'danger'
     default:
       return 'neutral'

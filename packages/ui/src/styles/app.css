@@ -4619,9 +4619,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Колонки «Общего» — внутри своей панели вкладки. `hidden` пришлось прописать
    отдельно: у элемента с `display: flex` атрибут сам по себе ничего не скрывает. */
 /* Обёртка панелей вкладок: панели лежат в ней, а колонка свойств — её сосед,
-   поэтому статус и исполнитель видны на любой вкладке. Обёртка — флексбокс с
-   переносом, потому что каждая панель занимает всю строку (`flex: 1 1 100%`). */
-.jmodal-panels { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: stretch; min-width: 0; min-height: 0; }
+   поэтому статус и исполнитель видны на любой вкладке.
+   `flex-wrap` здесь **нельзя**: панель объявлена `flex: 1 1 100%`, и с переносом
+   каждая уходит на свою строку, а высота строки считается по содержимому —
+   `overflow: auto` панели становится нечего ограничивать, и вкладка перестаёт
+   скроллиться по вертикали (её содержимое просто обрезает `.jmodal`).
+   Без переноса единственная видимая панель растягивается по высоте обёртки
+   (`align-items: stretch`) и скроллится сама. */
+.jmodal-panels { display: flex; flex: 1 1 auto; align-items: stretch; min-width: 0; min-height: 0; }
 .jmodal-general { display: flex; flex: 1 1 100%; gap: 24px; min-width: 0; min-height: 0; align-items: stretch; }
 .jmodal-general[hidden] { display: none; }
 .jmodal { display: flex; gap: 24px; padding: 16px 20px; align-items: stretch; }
@@ -6670,8 +6675,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .component-qa-commands { margin: 0; }
 .component-qa-artifacts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12px; }
 .component-qa-actions, .qa-stage-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.qa-stage-answer { display: grid; gap: 8px; }
+.qa-stage-answer label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; }
+.qa-stage-answer textarea { width: 100%; min-height: 80px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 @media (max-width: 720px) {
   .component-qa-actions .vc-btn, .qa-stage-actions .vc-btn { flex: 1 1 100%; min-height: 44px; }
+  /* Действия этапа стоят в шапке панели: на телефоне они уходят под заголовок
+     и растягиваются, иначе три кнопки сжимаются в нечитаемые огрызки. */
+  .qa-stage-run .vc-panel-head__actions { flex: 1 1 100%; }
+  .qa-stage-run .vc-panel-head__actions .vc-btn { flex: 1 1 auto; min-height: 44px; }
+  .qa-stage-answer textarea { font-size: 16px; }
+  .qa-stage-answer .vc-btn { width: 100%; min-height: 44px; }
 }
 
 /* ---- Общий язык лент карточки задачи ----

@@ -69,12 +69,25 @@ describe('стили открытой карточки задачи', () => {
     'vc-score', 'vc-score__value', 'vc-score__bar', 'vc-results', 'vc-results__caption',
     'vc-results__result', 'vc-results__detail', 'vc-gates', 'vc-gate', 'vc-gate__mark',
     'vc-gate__verdict', 'vc-branch-flow', 'vc-branch-flow__branch', 'vc-branch-flow__note',
+    'qa-stage-run', 'qa-stage-answer',
+    'vc-attempts', 'vc-attempts__title', 'vc-attempts__list', 'vc-attempts__row',
+    'vc-attempts__row--current', 'vc-attempts__num', 'vc-attempts__status', 'vc-attempts__at',
     'merge-chip', 'merge-badge',
     // Карточка на доске и шапка колонки.
     'jcard-epic', 'jcard-epic-dot', 'jcard-flag', 'jcard-due', 'jcard-pts',
     'jcard-stage-actions', 'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
+  })
+
+  it('обёртка панелей не переносит строки — иначе вкладка не скроллится', () => {
+    // Панель объявлена `flex: 1 1 100%`. С `flex-wrap: wrap` каждая уходит на
+    // свою строку, высота строки считается по содержимому, и `overflow: auto`
+    // панели ограничивать нечего: вертикального скролла во вкладке нет, а
+    // содержимое обрезает `.jmodal`. Это ловилось только глазами.
+    expect(rule('.jmodal-panels')).not.toMatch(/flex-wrap/)
+    expect(rule('.jmodal-panels')).toMatch(/min-height:\s*0/)
+    expect(rule('.jmodal-panels')).toMatch(/align-items:\s*stretch/)
   })
 
   it('панель вкладки занимает всю ширину карточки', () => {
