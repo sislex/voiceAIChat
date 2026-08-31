@@ -1158,6 +1158,39 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('считает итог хода вместе с историей и цену на других моделях', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Итог' } })).json()
+    // Пара сообщений: история — то, что пересобирается в промпт без resume.
+    for (const text of ['Первый вопрос про гейт', 'Ответ модели про гейт']) {
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: { role: text.startsWith('Первый') ? 'user' : 'ai', text, time: '10:00' } })
+    }
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const preview = snapshot.promptPreview
+    // Итог = постоянная часть + история; история отдельно видна в том же поле.
+    expect(preview.turnTotal.resumed).toBe(false)
+    expect(preview.turnTotal.historyChars).toBeGreaterThan(0)
+    expect(preview.turnTotal.chars).toBe(preview.chars + preview.turnTotal.historyChars)
+    // Цена других моделей — только там, где прайс известен; своя модель в список
+    // не попадает.
+    expect(Array.isArray(preview.costByModel)).toBe(true)
+    expect(preview.costByModel.every((entry: { model: string; costUsd: number }) => entry.model !== snapshot.summary.model && entry.costUsd > 0)).toBe(true)
+  })
+
+  it('предупреждает, когда история занимает больше, чем все настройки', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Длинная история' } })).json()
+    const historyWarning = async (): Promise<boolean> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return (snapshot.warnings as Array<{ text: string }>).some((entry) => entry.text.includes('История разговора занимает'))
+    }
+    expect(await historyWarning()).toBe(false)
+
+    // Пять длинных сообщений: история перевешивает постоянную часть.
+    for (let index = 0; index < 5; index += 1) {
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: { role: 'user', text: 'с'.repeat(2000), time: '10:00' } })
+    }
+    expect(await historyWarning()).toBe(true)
+  })
+
   it('предупреждает, когда постоянная часть выросла против прошлых ходов', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Рост' } })).json()
     const turn = (chars: number, at: string) => inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {

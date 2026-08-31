@@ -97,7 +97,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         chars: disabledContext.has('personalization') ? 0 : preview.length,
         approxTokens: disabledContext.has('personalization') ? 0 : Math.ceil(preview.length / 4),
         omitted: ['Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.'],
-        costUsd: null
+        costUsd: null, turnTotal: { chars: 0, approxTokens: 0, historyChars: 0, historyApproxTokens: 0, resumed: false }, costByModel: []
       }
     }
   }

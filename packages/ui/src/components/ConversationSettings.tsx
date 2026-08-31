@@ -328,8 +328,24 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const forcedPlan = role !== 'admin' && (!execTarget || execTarget === 'none')
   const effectiveMode: PermissionMode = forcedPlan ? 'plan' : permissionMode || settings.permissionMode
 
+  /**
+   * Esc внутри окна настроек. Стек окон обрабатывает клавишу в фазе перехвата
+   * и глушит её, поэтому «назад из карточки источника» нельзя сделать своим
+   * слушателем в инспекторе — он до события не доходит. Карточка источника
+   * живёт в адресе (`#/chat/:id/context/:itemId`), и здесь достаточно вернуть
+   * адрес на шаг назад: инспектор подхватит это через `hashchange`.
+   */
+  const escapeFromSettings = (): void => {
+    const prefix = `#/chat/${encodeURIComponent(conversation.id)}/context/`
+    if (window.location.hash.startsWith(prefix)) {
+      window.location.hash = `/chat/${encodeURIComponent(conversation.id)}/context`
+      return
+    }
+    onClose()
+  }
+
   return (
-    <PopupFrame title="Настройки разговора" onClose={onClose} testId="conversation-settings-overlay" panelClassName="convsettings">
+    <PopupFrame title="Настройки разговора" onClose={onClose} onEscape={escapeFromSettings} testId="conversation-settings-overlay" panelClassName="convsettings">
       <header className="convsettings-head">
         <IconButton className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</IconButton>
         <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>

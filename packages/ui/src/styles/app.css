@@ -3803,6 +3803,10 @@ button.conscmd:hover {
 .context-heavy { margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-small); background: var(--surface-hover); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 /* Массовые действия по выбранной группе стоят в одном ряду с общими. */
 .context-group-bulk { display: inline-flex; gap: var(--space-1); flex-wrap: wrap; }
+/* Блок предпросмотра с шапкой: заголовок, размер и «скопировать блок». */
+.context-block { margin-bottom: var(--space-2); }
+.context-block .context-actions { align-items: baseline; gap: var(--space-2); }
+.context-block .context-prompt { margin-top: 0; }
 /* Подсветка найденного в тексте промпта: подложка из токена выделения. */
 .context-prompt mark { background: var(--accent); color: var(--accent-fg); border-radius: 2px; }
 .context-announce:empty { display: none; }
