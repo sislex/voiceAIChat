@@ -47,6 +47,15 @@ import type { KnowledgeBaseService } from '../kb/types.js'
  * 4000 — это уже «кто-то дописал слишком много», а не штатная работа.
  */
 const CONTEXT_PREVIEW_TOKENS_NOTICE = 4000
+/**
+ * Во сколько раз постоянная часть должна превысить средний размер прошлых
+ * ходов, чтобы это стоило назвать ростом. Полтора — рост, который человек уже
+ * замечает по счёту и по «модель забыла начало»; меньше — обычные колебания
+ * от длины сообщения.
+ */
+const CONTEXT_GROWTH_RATIO_NOTICE = 1.5
+/** Меньше трёх ходов — среднее не среднее, а случайная величина. */
+const CONTEXT_GROWTH_MIN_TURNS = 3
 
 const permissionDisplay: Record<PermissionMode, { displayName: string; explanation: string }> = {
   plan: { displayName: 'Только планирование', explanation: 'Изменение данных отключено.' },
@@ -393,6 +402,21 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       text: `Свои блоки промпта занимают ≈${approxTokens(previewText.length)} токенов — это много для постоянной части каждого хода. Выключите ненужные источники или сократите инструкции чата.`
     })
     warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+  }
+  // Рост: абсолютный порог молчит, пока контекст не станет большим, а «стало
+  // вдвое больше, чем в прошлые ходы» — это про сегодняшнюю правку, и заметить
+  // её надо сразу. Сравниваем с фактическими размерами ходов из истории.
+  if (turnSizes.length >= CONTEXT_GROWTH_MIN_TURNS) {
+    const average = turnSizes.reduce((total, turn) => total + turn.approxTokens, 0) / turnSizes.length
+    const current = approxTokens(previewText.length)
+    if (average > 0 && current > average * CONTEXT_GROWTH_RATIO_NOTICE) {
+      warnings.push({
+        itemId: null,
+        level: 'notice',
+        text: `Постоянная часть выросла: ≈${current} токенов против ≈${Math.round(average)} в среднем за последние ${turnSizes.length} ход(ов). Проверьте, что добавилось — журнал изменений ниже.`
+      })
+      warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+    }
   }
   // Размер вклада: у пункта, за которым стоит блок промпта, — размер его блока.
   // Склеенная подсказка одна на два пункта: размер получают оба — вопрос «что
