@@ -29,6 +29,8 @@ function contextSnapshot(options: {
   turnSizes?: Array<{ at: string; model: string; chars: number; approxTokens: number; resumed: boolean; costUsd: number | null }>
   disallowedTools?: string[]
   cliMcpServers?: Array<{ name: string; detail: string; status: string }>
+  owner?: string
+  foreign?: boolean
 }): ConversationContextSnapshot {
   const on = options.personalizationEnabled ?? true
   const size = { chars: PREVIEW_TEXT.length, approxTokens: Math.ceil(PREVIEW_TEXT.length / 4) }
@@ -45,6 +47,8 @@ function contextSnapshot(options: {
       { ...base('personalization', 'Предпочтения ответа'), enabled: on, includedInNextTurn: on, size }
     ] }],
     viewerRole: options.viewerRole ?? 'admin',
+    owner: options.owner ?? 'admin',
+    foreign: options.foreign ?? false,
     lastTurn: options.lastTurn === false ? null : {
       at: '12:41', provider: 'claude' as const, model: 'opus',
       prompt: 'Системный блок\n\nПользователь: почему падает гейт?',
@@ -297,6 +301,8 @@ describe('ConversationSettings', () => {
         { id: 'skills', order: 3, title: 'Навыки', description: '', items: [item('skill-review', 'Review', true, true, false)] }
       ],
       viewerRole: 'admin' as const,
+      owner: 'admin',
+      foreign: false,
       lastTurn: null,
       turnSizes: [],
       changes: [],
@@ -333,6 +339,8 @@ describe('ConversationSettings', () => {
       summary: { provider: 'codex' as const, model: '', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'off' as const, displayName: 'Отключено', explanation: 'Тест' } },
       groups: [{ id: 'conversation', order: 1, title: 'Настройки', description: '', items: [{ id: 'machine', title: 'Машина', type: 'Настройка', source: 'Разговор', scope: 'offline', priority: '1', description: '10e', explanation: 'Машина отключена от сети.', configured: true, available: false, includedInNextTurn: false, toggleable: false, enabled: true, lockReason: 'info' as const }] }],
       viewerRole: 'admin' as const,
+      owner: 'admin',
+      foreign: false,
       lastTurn: null,
       turnSizes: [],
       changes: [],
@@ -350,7 +358,7 @@ describe('ConversationSettings', () => {
   })
 
   it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {
-    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, lastTurn: null, turnSizes: [], changes: [], disallowedTools: [], cliMcpServers: [], warnings: [], promptPreview: emptyPreview }) } as never
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, owner: 'admin', foreign: false, lastTurn: null, turnSizes: [], changes: [], disallowedTools: [], cliMcpServers: [], warnings: [], promptPreview: emptyPreview }) } as never
     window.location.hash = '#/chat/c1/context/disappeared'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
@@ -931,6 +939,33 @@ describe('ConversationSettings', () => {
     // MCP-серверы движка — в технических сведениях: это то, что видит CLI.
     fireEvent.click(screen.getByText('Технические сведения'))
     expect(screen.getByTestId('context-cli-mcp')).toHaveTextContent('remote — connected')
+  })
+
+  it('чужой разговор помечен, инструменты машины выключаются вместе', async () => {
+    const setContextItem = vi.fn().mockResolvedValue(contextSnapshot({ owner: 'marina', foreign: true }))
+    const snapshot = contextSnapshot({ owner: 'marina', foreign: true })
+    // Добавляем два включённых инструмента машины: их выключают одной кнопкой.
+    snapshot.groups.push({
+      id: 'capabilities', order: 4, title: 'MCP, приложения и плагины', description: '', items: (['bash', 'read'] as const).map((name) => ({
+        id: `mcp-remote-${name}`, title: `remote:${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: 'Машина',
+        priority: 'Возможность', description: 'Инструмент машины', explanation: 'Подключается для машины.',
+        configured: true, available: true, includedInNextTurn: true, toggleable: true, enabled: true, lockReason: null
+      }))
+    })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(snapshot), 'conversations:setContextItem': setContextItem } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // Без пометки легко решить, что правишь свой контекст.
+    const foreign = await screen.findByTestId('context-foreign')
+    expect(foreign).toHaveTextContent('разговор пользователя')
+    expect(foreign).toHaveTextContent('marina')
+    expect(foreign).toHaveTextContent('в журнале останется ваш логин')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Выключить инструменты машины (2)' }))
+    await waitFor(() => expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'mcp-remote-bash', enabled: false }))
+    expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'mcp-remote-read', enabled: false })
   })
 
 })

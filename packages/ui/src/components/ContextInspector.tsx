@@ -718,6 +718,8 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     .filter((item) => item.inheritance?.overriddenFrom && (item.id !== 'permission-mode' || snapshot.viewerRole === 'admin'))
     .map((item) => item.title)
   const toggleable = allItems.filter((item) => item.toggleable)
+  /** Включённые инструменты удалённой машины: их выключают одним действием. */
+  const machineTools = toggleable.filter((item) => item.id.startsWith('mcp-remote-') && item.enabled)
   const enabledToggleable = toggleable.filter((item) => item.enabled)
   const disabledToggleable = toggleable.filter((item) => !item.enabled)
   // Эффективная роль экрана: админ может смотреть как обычный пользователь.
@@ -761,6 +763,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         Сервер добавит ≈{preview.approxTokens} токенов в {preview.blocks.length} блок(ах){snapshot.lastTurn ? `; в прошлый ход ушло ≈${snapshot.lastTurn.approxTokens}` : ''}.
         {' '}Выключено источников: {disabledToggleable.length} из {toggleable.length}.
       </p>
+      {/* Чужой чат: без явной пометки легко решить, что правишь свой контекст. */}
+      {snapshot.foreign && <p className="context-foreign" role="status" data-testid="context-foreign">
+        Это разговор пользователя <b>{snapshot.owner}</b>. Изменения попадут в его чат, и в журнале останется ваш логин.
+      </p>}
       <p className="context-role" data-testid="context-role-hint">
         {roleHint(effectiveRole)}
         {snapshot.viewerRole === 'admin' && <label className="context-asrole">
@@ -988,6 +994,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         <div className="context-actions">
           <Button size="sm" variant="ghost" disabled={busy || disabledToggleable.length === 0} onClick={() => void toggleMany(disabledToggleable, true)}>Включить всё ({disabledToggleable.length})</Button>
           <Button size="sm" variant="ghost" disabled={busy || enabledToggleable.length === 0} onClick={() => void toggleMany(enabledToggleable, false)}>Выключить необязательное ({enabledToggleable.length})</Button>
+          {/* Частый случай «пусть ничего не трогает на машине»: инструменты
+              выключаются вместе, а не поштучно из каталога возможностей. */}
+          {machineTools.length > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void toggleMany(machineTools, false)}>Выключить инструменты машины ({machineTools.length})</Button>}
           {/* Настроить контекст один раз и переносить в другие чаты — обычная
               работа: раньше это означало щёлкать тумблеры заново по памяти. */}
           {/* Пресеты: набор выключений под именем. Настроил «минимальный контекст»
