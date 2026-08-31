@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
@@ -61,32 +61,65 @@ describe('ChatColumn — кнопка озвучки ответа', () => {
   })
 })
 
-describe('ChatColumn — копирование ответа', () => {
-  it('кнопка копирования есть у AI-ответа и копирует его текст', async () => {
+describe('ChatColumn — копирование сообщений', () => {
+  it('кнопка ответа сохраняет доступное имя и копирует полный исходный текст', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
     renderCol()
-    const btn = screen.getAllByLabelText('Копировать сообщение')[1]!
-    await userEvent.click(btn)
+
+    const button = screen.getByRole('button', { name: 'Копировать ответ' })
+    expect(button).toHaveAttribute('title', 'Копировать ответ')
+    await userEvent.click(button)
     expect(writeText).toHaveBeenCalledWith('Ответ **жирный**')
   })
 
-  it('копирует полный исходный текст сообщений обеих ролей и подтверждает выбранное', async () => {
+  it('кнопка вопроса копирует ровно m.text без preview-контекста', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
-    renderCol()
+    const text = '  Первая строка\nВторая строка  '
+    const previewElement = { tag: 'section', id: 'hero', classes: [], dataAttributes: {}, selector: '#hero', ancestors: ['body'], rect: { x: 0, y: 0, top: 0, right: 1, bottom: 1, left: 0, width: 1, height: 1 }, pageUrl: 'https://example.test', viewport: { width: 320, height: 640 }, outerHTML: '<section>Не копировать</section>', text: 'Не копировать', styles: { font: '', color: '', backgroundColor: '', margin: '', padding: '', border: '', width: '', height: '', position: '', display: '', flex: '', flexDirection: '', flexWrap: '', alignItems: '', justifyContent: '', gap: '', grid: '', gridTemplateColumns: '', gridTemplateRows: '', gridArea: '' } }
+    renderCol({ messages: [makeUserMessage({ id: 'u-copy', text, meta: { previewElement } })] })
 
-    const buttons = screen.getAllByLabelText('Копировать сообщение')
-    expect(buttons).toHaveLength(2)
-    await userEvent.click(buttons[0]!)
-    expect(writeText).toHaveBeenLastCalledWith(messages[0]!.text)
-    expect(buttons[0]).toHaveTextContent('✓')
-    expect(buttons[1]).toHaveTextContent('⧉')
+    const button = screen.getByRole('button', { name: 'Копировать вопрос' })
+    expect(button).toHaveAttribute('title', 'Копировать вопрос')
+    await userEvent.click(button)
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith(text)
+  })
 
-    await userEvent.click(buttons[1]!)
-    expect(writeText).toHaveBeenLastCalledWith(messages[1]!.text)
-    expect(buttons[0]).toHaveTextContent('⧉')
-    expect(buttons[1]).toHaveTextContent('✓')
+  it('подтверждение привязано к выбранному сообщению и сбрасывается через 1500 мс', async () => {
+    vi.useFakeTimers()
+    try {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.assign(navigator, { clipboard: { writeText } })
+      renderCol({ messages: [makeUserMessage({ id: 'u1', text: 'Первый' }), makeUserMessage({ id: 'u2', text: 'Второй' })] })
+      const buttons = screen.getAllByRole('button', { name: 'Копировать вопрос' })
+
+      fireEvent.click(buttons[0]!)
+      await act(async () => {})
+      expect(buttons[0]).toHaveTextContent('✓')
+      expect(buttons[1]).toHaveTextContent('⧉')
+
+      act(() => vi.advanceTimersByTime(1500))
+      expect(buttons[0]).toHaveTextContent('⧉')
+      expect(buttons[1]).toHaveTextContent('⧉')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('нативная кнопка вопроса фокусируется и активируется с клавиатуры', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    renderCol({ messages: [makeUserMessage({ id: 'u-keyboard', text: 'С клавиатуры' })] })
+
+    const button = screen.getByRole('button', { name: 'Копировать вопрос' })
+    button.focus()
+    expect(button).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    expect(writeText).toHaveBeenLastCalledWith('С клавиатуры')
+    await userEvent.keyboard(' ')
+    expect(writeText).toHaveBeenCalledTimes(2)
   })
 
   it('не показывает ложное подтверждение при отказе Clipboard API и fallback', async () => {
@@ -95,7 +128,7 @@ describe('ChatColumn — копирование ответа', () => {
     Object.assign(document, { execCommand })
     renderCol()
 
-    const button = screen.getAllByLabelText('Копировать сообщение')[0]!
+    const button = screen.getByRole('button', { name: 'Копировать вопрос' })
     await userEvent.click(button)
     expect(execCommand).toHaveBeenCalledWith('copy')
     expect(button).toHaveTextContent('⧉')
@@ -276,7 +309,7 @@ describe('ChatColumn — простой/подробный вид ответа',
     const msg = makeAiMessage({ id: 'ai-head', engine: 'claude', meta: { model: 'opus', durationMs: 5000, costUsd: 0.1234, activity: [] } })
     renderCol({ messages: [msg] })
     // Копировать — в шапке ответа.
-    expect(screen.getByLabelText('Копировать сообщение')).toBeInTheDocument()
+    expect(screen.getByLabelText('Копировать ответ')).toBeInTheDocument()
     // Движок с моделью: title и скрытый спан модели.
     const engine = document.querySelector('.msg-engine') as HTMLElement
     expect(engine.getAttribute('title')).toContain('opus')

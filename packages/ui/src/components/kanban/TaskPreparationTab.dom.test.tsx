@@ -3,7 +3,7 @@
 // изменившийся ран (loadRun), без перезапроса всего тяжёлого списка (loadRuns).
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { TaskPreparationRun } from '@shared/qa'
 import { TaskPreparationTab } from './TaskPreparationTab'
@@ -84,5 +84,40 @@ describe('TaskPreparationTab — форма запуска', () => {
     await userEvent.click(within(error).getByRole('button', { name: 'Повторить' }))
     await waitFor(() => expect(loadRuns).toHaveBeenCalledTimes(2))
     expect(await screen.findByTestId('task-preparation-empty-state')).toBeInTheDocument()
+  })
+})
+
+describe('TaskPreparationTab — устойчивость к ререндерам родителя', () => {
+  it('ререндер родителя с новыми функциями-пропсами не перезапрашивает список', async () => {
+    stubBoard()
+    const calls = { runs: 0 }
+    // Как в App.tsx: колбэки — inline-стрелки, то есть новые на каждый рендер.
+    const view = (): JSX.Element => (
+      <TaskPreparationTab
+        projectId="p1"
+        taskId="t1"
+        loadRuns={async () => { calls.runs += 1; return [run()] }}
+        loadRun={async (id: string) => run({ id })}
+      />
+    )
+    const { rerender } = render(view())
+    await waitFor(() => expect(calls.runs).toBe(1))
+
+    rerender(view())
+    rerender(view())
+    // Даём эффектам и их промисам отработать: баг проявляется именно здесь.
+    await act(async () => { await Promise.resolve() })
+
+    expect(calls.runs).toBe(1)
+  })
+
+  it('смена задачи по-прежнему перезагружает список', async () => {
+    stubBoard()
+    const loadRuns = vi.fn(async () => [run()])
+    const { rerender } = render(<TaskPreparationTab projectId="p1" taskId="t1" loadRuns={loadRuns} loadRun={async (id) => run({ id })} />)
+    await waitFor(() => expect(loadRuns).toHaveBeenCalledTimes(1))
+
+    rerender(<TaskPreparationTab projectId="p1" taskId="t2" loadRuns={loadRuns} loadRun={async (id) => run({ id })} />)
+    await waitFor(() => expect(loadRuns).toHaveBeenCalledTimes(2))
   })
 })
