@@ -7,6 +7,7 @@
 // восстановление сводится к тому, чтобы снова начать тикать активные планы.
 
 import {
+  orchestrationItemMaxAttempts,
   orchestrationItemReady,
   orchestrationStatusOf,
   type Orchestration,
@@ -15,7 +16,12 @@ import {
 import type { VoiceChatDb } from '../db/database.js'
 import type { KanbanRunLaunchers } from '../mcp/kanbanMcp.js'
 
-export const ORCHESTRATION_TICK_MS = 15_000
+/**
+ * Страховочный интервал. Основной способ узнать о завершении рана — события
+ * доски и CI (`notify` снаружи), опрос остаётся на случай, если событие
+ * потерялось: без него зависший план молчал бы вечно.
+ */
+export const ORCHESTRATION_TICK_MS = 60_000
 
 export interface OrchestrationManagerDeps {
   db: VoiceChatDb
@@ -23,10 +29,14 @@ export interface OrchestrationManagerDeps {
   boardChanged?: (projectId: string) => void
   /** Прогресс плана для открытых клиентов владельца. */
   publish?: (plan: Orchestration) => void
+  /** Отчёт о завершении плана в чат, из которого его запустили. */
+  report?: (plan: Orchestration, text: string) => void
   tickMs?: number
 }
 
 export interface OrchestrationManager {
+  /** Событие снаружи (доска, CI, merge): прогнать все живые планы. */
+  notify(): void
   /**
    * Начать вести план (создан только что или подхвачен после рестарта).
    * Возвращает первый проход: вызывающий может сразу показать его результат.
@@ -123,10 +133,36 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
         db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
         return
       }
+      if (item.kind === 'run_preview') {
+        // Окружение поднимается синхронно: у него нет отдельного рана, за
+        // которым можно следить, — успех операции и есть завершение шага.
+        const payload = item.payload as { operation?: 'start' | 'rebuild' | 'stop' | 'seed' | 'reset' | 'health_check'; scenario?: string; agentId?: string }
+        if (!runner.previewOperate) { fail('Тестовые окружения недоступны'); return }
+        await runner.previewOperate(plan.owner, plan.projectId, taskId, payload.operation ?? 'start', {
+          ...(payload.scenario ? { scenario: payload.scenario } : {}),
+          ...(payload.agentId ? { agentId: payload.agentId } : {})
+        })
+        db.updateOrchestrationItem(item.id, { status: 'done', taskId })
+        return
+      }
       const payload = item.payload as { agentId?: string }
       const run = await runner.startMerge(plan.owner, plan.projectId, taskId, payload.agentId ?? null)
       db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
     } catch (error) { fail(error instanceof Error ? error.message : String(error)) }
+  }
+
+  /**
+   * Падение шага: либо перезапуск (если автор плана заказал `retries`), либо
+   * окончательный провал. Перезапуск возвращает шаг в `pending`, и следующий
+   * проход стартует его заново — вся остальная механика не меняется.
+   */
+  const failOrRetry = (item: OrchestrationItem, error: string): void => {
+    const limit = orchestrationItemMaxAttempts(item)
+    if (item.attempts < limit) {
+      deps.db.updateOrchestrationItem(item.id, { status: 'pending', runId: null, attempts: item.attempts + 1, error: `Попытка ${item.attempts + 1} из ${limit + 1}: ${error}` })
+      return
+    }
+    deps.db.updateOrchestrationItem(item.id, { status: 'failed', error })
   }
 
   /** Завершился ли запущенный шагом ран; ищем по его id среди ранов задачи. */
@@ -138,7 +174,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
       if (!run) return
       if (run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
       else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'timeout') {
-        db.updateOrchestrationItem(item.id, { status: 'failed', error: run.error ?? `Ран завершился со статусом ${run.status}` })
+        failOrRetry(item, run.error ?? `Ран завершился со статусом ${run.status}`)
       }
       return
     }
@@ -147,7 +183,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
       if (!run) return
       if (run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
       else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'timeout') {
-        db.updateOrchestrationItem(item.id, { status: 'failed', error: run.error ?? `Merge завершился со статусом ${run.status}` })
+        failOrRetry(item, run.error ?? `Merge завершился со статусом ${run.status}`)
       }
       return
     }
@@ -157,7 +193,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
     if (!run) return
     if (run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
     else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'gate_failed' || run.status === 'interrupted') {
-      db.updateOrchestrationItem(item.id, { status: 'failed', error: `Этап ${stage} завершился со статусом ${run.status}` })
+      failOrRetry(item, `Этап ${stage} завершился со статусом ${run.status}`)
     }
   }
 
@@ -188,6 +224,16 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
         const failed = updated.items.find((item) => item.status === 'failed')
         deps.db.updateOrchestrationStatus(planId, status, failed?.error ?? null)
         stop(planId)
+        // Панель прогресса показывает только идущие планы, поэтому итог плана
+        // уходит в тот чат, откуда его запустили: иначе пользователь узнаёт о
+        // падении, только вернувшись на страницу.
+        const final = deps.db.getOrchestrationById(planId)!
+        const done = final.items.filter((item) => item.status === 'done').length
+        deps.report?.(final, status === 'done'
+          ? `План «${final.title}» выполнен: ${done} из ${final.items.length} шагов.`
+          : status === 'cancelled'
+            ? `План «${final.title}» остановлен на шаге ${done + 1} из ${final.items.length}.`
+            : `План «${final.title}» остановлен: шаг «${failed?.title ?? '—'}» не прошёл (${failed?.error ?? 'без причины'}). Выполнено ${done} из ${final.items.length}.`)
       }
       deps.publish?.(deps.db.getOrchestrationById(planId)!)
     } finally {
@@ -207,6 +253,9 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
   return {
     track,
     tick,
+    // Событие снаружи дешевле опроса: план продолжается сразу после того, как
+    // завершился его ран, а не через интервал таймера.
+    notify: () => { for (const planId of [...timers.keys()]) void tick(planId) },
     cancel: (owner, planId) => {
       const cancelled = deps.db.cancelOrchestration(owner, planId)
       stop(planId)

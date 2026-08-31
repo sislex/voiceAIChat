@@ -887,6 +887,8 @@ export interface RendererWidgetUiBridge {
   /** Прогресс плана работ ассистента (кадр assistant.orchestration). */
   onOrchestration(cb: (plan: import('./orchestration').Orchestration) => void): () => void
   result(m: { conversationId: string; requestId: string; ok: boolean; result?: import('./widgetAssistant').WidgetUiActionResult; error?: string }): void
+  /** Сообщить серверу, что экран сменился (кадр widget.surface). */
+  surfaceChanged(m: { conversationId: string; projectId: string; surface: import('./widgetAssistant').WidgetSurfaceSnapshot }): void
 }
 
 /**

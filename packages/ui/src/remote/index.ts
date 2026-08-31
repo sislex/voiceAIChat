@@ -161,6 +161,7 @@ export function makeWidgetUiBridge(ws: WsClient): RendererWidgetUiBridge {
     onAction: (cb) =>
       ws.on('widget.action', (m) => cb({ conversationId: m.conversationId, projectId: m.projectId, requestId: m.requestId, action: m.action })),
     onOrchestration: (cb) => ws.on('assistant.orchestration', (m) => cb(m.plan)),
+    surfaceChanged: (m) => ws.send({ t: 'widget.surface', conversationId: m.conversationId, projectId: m.projectId, surface: m.surface }),
     result: (m) =>
       ws.send({
         t: 'widget.result',

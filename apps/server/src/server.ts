@@ -25,6 +25,7 @@ import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
 import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
+import { releaseCiTarget, releaseProductionTarget } from './releases/targets.js'
 import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
@@ -1753,6 +1754,20 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     cancelCi: (userId, runId) => ciRunManager.cancel(userId, runId),
     previewOperate: (userId, projectId, taskId, operation, options) =>
       featurePreviews.operate(userId, projectId, taskId, operation, options),
+    startPreparation: (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId),
+    createReleaseBranch: async (userId, projectId, branch, baseBranch) => {
+      const target = releaseCiTarget(db, releaseManager, userId, projectId)
+      return releaseManager.createBranch(userId, target, branch, baseBranch ?? target.baseBranch)
+    },
+    deployRelease: async (userId, projectId, branch) => {
+      const production = releaseProductionTarget(db, managedEnvironments, userId, projectId)
+      if (!production) throw new Error('Production-машина, checkout, deploy-команда или health-check не настроены')
+      if (production.mode === 'managed') {
+        const check = await managedEnvironments.preflight(userId, projectId, 'production')
+        if (!check.ok) throw new Error('Managed production не готов к выкладке')
+      }
+      return releaseManager.start(userId, releaseCiTarget(db, releaseManager, userId, projectId), production, branch)
+    },
     startMerge: async (userId, projectId, taskId, agentId) => {
       // Та же проверка готовности, что и у кнопки «Влить» в карточке.
       const workspace = db.findLatestPushedCiWorkspace(projectId, taskId)
@@ -1792,9 +1807,21 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     db,
     runs: () => kanbanRunLaunchers,
     boardChanged: (projectId) => boardHub.emit(projectId),
-    publish: (plan) => ciRunManager.publish({ t: 'assistant.orchestration', plan }, plan.owner)
+    publish: (plan) => ciRunManager.publish({ t: 'assistant.orchestration', plan }, plan.owner),
+    // Итог плана попадает в тот же чат ассистента обычным сообщением: панель
+    // прогресса показывает только идущие планы, а результат нужен и потом.
+    // Кадра «в разговоре появилось сообщение» в протоколе нет, и заводить его
+    // ради одного отчёта незачем: панель ассистента перечитывает ленту сама,
+    // когда план приходит в терминальном статусе кадром assistant.orchestration.
+    report: (plan, text) => {
+      if (!plan.conversationId) return
+      db.addMessage(plan.owner, plan.conversationId, 'ai', text, new Date().toTimeString().slice(0, 5))
+    }
   })
   orchestrationManager.restore()
+  // Планы двигаются по событиям, а не по таймеру: доска меняется после каждого
+  // шага CI, merge и QA, и этого достаточно, чтобы продолжить следующий шаг.
+  boardHub.onChange(() => orchestrationManager.notify())
   app.addHook('onClose', async () => orchestrationManager.dispose())
 
   // Восстанавливаем process-local очередь. Уже начатые раны закрываются как
@@ -1887,7 +1914,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       make: { subscribe: (userId, sink) => makeHub.subscribe(userId, sink) },
       widgetUi: {
         subscribe: (userId, sink) => widgetUiRelay.subscribe(userId, sink),
-        resolve: (userId, requestId, outcome, conversationId) => widgetUiRelay.resolve(userId, requestId, outcome, conversationId)
+        resolve: (userId, requestId, outcome, conversationId) => widgetUiRelay.resolve(userId, requestId, outcome, conversationId),
+        // Снимок принимаем только от владельца разговора: чужой кадр не должен
+        // подменять ассистенту представление о чужом экране.
+        surfaceChanged: (userId, conversationId, surface) => {
+          if (db.conversationOwner(conversationId) === userId) widgetContexts.updateSurface(conversationId, surface)
+        }
       }
     })
 

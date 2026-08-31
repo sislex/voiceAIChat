@@ -6418,6 +6418,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .kanban-assistant-plan li[data-status='failed'] { color: var(--danger); }
 .kanban-assistant-plan li em { font-style: normal; color: var(--danger); }
 .kanban-assistant-plan-status { width: 12px; text-align: center; }
+.kanban-assistant-plan-open { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; }
+.kanban-assistant-plan-attempts { color: var(--text-dim); font-size: 11px; }
+.kanban-assistant-plan[data-status='done'] > header strong { color: var(--text-dim); }
+.kanban-assistant-plan[data-status='failed'] > header span { color: var(--danger); }
 .kanban-assistant-autonomy { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); font-size: 12px; }
 .kanban-assistant-autonomy-hint { color: var(--text-dim); font-size: 11px; }
 .widget-confirm-rows { margin: 6px 0 0; padding: 8px; border-radius: var(--radius-medium); background: var(--surface-hover); font-size: 12px; white-space: pre-wrap; }

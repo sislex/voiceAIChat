@@ -624,6 +624,11 @@ export type ClientMessage =
    * нажатия, а не догадывалась о нём.
    */
   | { t: 'widget.result'; conversationId: string; requestId: string; ok: boolean; result?: WidgetUiActionResult; error?: string }
+  /**
+   * Пользователь сменил экран во время хода ассистента. Без этого кадра модель
+   * весь ход считает, что открыт тот раздел, что был на момент реплики.
+   */
+  | { t: 'widget.surface'; conversationId: string; projectId: string; surface: import('./widgetAssistant').WidgetSurfaceSnapshot }
 
 /** server → client. */
 export type ServerMessage =
@@ -757,7 +762,8 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'ci.subscribe',
   'ci.unsubscribe',
   'preview.result',
-  'widget.result'
+  'widget.result',
+  'widget.surface'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
