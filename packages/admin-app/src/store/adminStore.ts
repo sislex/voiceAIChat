@@ -15,6 +15,7 @@ import type {
   UsageUnit,
   UserUsageSummary, AdminMakeStats, AdminMachineStats, SecurityEvent, InviteInfo, SignupConfig } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
+import { monthStart } from '@shared/admin'
 
 export const EMPTY_LLM_ACCESS: readonly UserLlmAccess[] = Object.freeze([])
 import type { Conversation, Message, UserRole, SessionInfo } from '@shared/types'
@@ -86,6 +87,8 @@ export interface AdminActions {
   updateAdminLlmEngine(id: string, patch: AdminLlmEngineInput): Promise<void>
   deleteAdminLlmEngine(id: string): Promise<void>
   checkAdminLlmEngineHealth(id: string): Promise<void>
+  /** Данные служебной страницы админки по её адресу. */
+  openAdminPage(page: 'engines' | 'prices' | 'system'): Promise<void>
   loadAdminUserLlmAccess(name?: string): Promise<void>
   saveAdminUserLlmAccess(access: UserLlmAccess[]): Promise<void>
   reset(): void
@@ -136,14 +139,17 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
   async function refreshAdminUsers(): Promise<void> {
     setState({ adminUsersStatus: 'loading', adminUsersError: null })
     try {
-      const [adminUsers, adminUsageSummary, adminMakeStats, adminMachineStats] = await Promise.all([
+      // Сводка расхода — за текущий месяц: столько показывает метрика над списком.
+      // Раньше она запрашивалась без границ, то есть «за всё время», и цифра в
+      // шапке не сходилась с расходом в карточке человека.
+      const to = Date.now()
+      const [adminUsers, adminUsageSummary, adminMachineStats] = await Promise.all([
         client.listUsers(),
-        client.usageSummary(),
-        // Метрики Make и машин — необязательная часть дашборда: их отказ не должен ронять список пользователей.
-        client.makeStats ? client.makeStats().catch(() => null) : Promise.resolve(null),
+        client.usageSummary({ from: monthStart(to), to }),
+        // Метрики машин — необязательная часть сводки: их отказ не должен ронять список.
         client.machineStats ? client.machineStats().catch(() => null) : Promise.resolve(null)
       ])
-      setState({ adminUsers, adminUsageSummary, adminMakeStats, adminMachineStats, adminUsersStatus: 'ready', adminUsersError: null })
+      setState({ adminUsers, adminUsageSummary, adminMachineStats, adminUsersStatus: 'ready', adminUsersError: null })
     } catch (err) {
       setState({
         adminUsersStatus: 'error',
@@ -226,8 +232,11 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       adminUserLlmAccess: []
     })
     try {
+      // Расход берётся сразу за текущий месяц: именно эта цифра стоит в карточке
+      // и в метрике над списком, и запрашивать «за всё время» ради неё незачем.
+      const to = Date.now()
       const [usage, conversations, access] = await Promise.all([
-        client.userUsage({ name, unit: 'day' }),
+        client.userUsage({ name, unit: 'day', from: monthStart(to), to }),
         client.userConversations({ name }),
         client.getUserLlmAccess({ name })
       ])
@@ -238,12 +247,33 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     }
   }
 
+  /**
+   * Открытие раздела грузит только список людей. Реестр исполнителей и таблица
+   * цен живут на своих страницах и туда же переехали их запросы: раньше вход в
+   * «Пользователей» стоил шести запросов, из которых четыре никому на этом
+   * экране не были нужны.
+   */
   async function openUsers(): Promise<void> {
     setState({ usersOpen: true })
     try {
-      await Promise.all([refreshAdminUsers(), refreshAdminLlmEngines(), refreshAdminModelPrices()])
+      await refreshAdminUsers()
     } catch (err) {
       fail(err, () => void openUsers())
+    }
+  }
+
+  /** Данные служебной страницы: грузятся при заходе на неё, а не заранее. */
+  async function openAdminPage(page: 'engines' | 'prices' | 'system'): Promise<void> {
+    try {
+      if (page === 'engines') await refreshAdminLlmEngines()
+      if (page === 'prices') await refreshAdminModelPrices()
+      if (page === 'system' && client.makeStats) {
+        // Метрики Make считают место на диске обходом каталога: в списке людей
+        // такой ценой они не нужны никому.
+        setState({ adminMakeStats: await client.makeStats().catch(() => null) })
+      }
+    } catch (err) {
+      fail(err, () => void openAdminPage(page))
     }
   }
 
@@ -359,6 +389,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     dispose: core.dispose,
     actions: {
       openUsers,
+      openAdminPage,
       closeUsers,
       async createUserAccount(name, password, role, mustChangePassword) {
         try {
