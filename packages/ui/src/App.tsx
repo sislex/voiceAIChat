@@ -834,6 +834,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }).catch((error) => { if (alive) setCreateChatError(error instanceof Error ? error.message : String(error)) })
     return () => { alive = false }
   }, [api, createChatOpen, createChatMachineId])
+  const createChatProjectId = chat.sidebarProjectIds.length === 1 && chat.sidebarProjectKnownIds.length > 1
+    ? chat.sidebarProjectIds[0]
+    : undefined
   const submitCreateChat = async (): Promise<void> => {
     if (!createChatTitle.trim()) { setCreateChatError('Введите название разговора.'); return }
     if (createChatPath.trim()) {
@@ -841,11 +844,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
     setCreateChatSaving(true); setCreateChatError(null)
     try {
-      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId: chat.sidebarProjectId })
+      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId: createChatProjectId })
       if (createChatMachineId && createChatStorageId) {
         const relativePath = createChatPath.trim() || recommendedChatStoragePath(
-          chat.sidebarProjectId
-            ? { kind: 'project', projectId: chat.sidebarProjectId, conversationId: id }
+          createChatProjectId
+            ? { kind: 'project', projectId: createChatProjectId, conversationId: id }
             : { kind: 'chat', conversationId: id }
         )
         await api['conversations:setStorage']({ id, machineId: createChatMachineId, storageId: createChatStorageId, relativePath })
@@ -1154,6 +1157,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     else if (projects.projectsOpen) projectsActions.closeProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects])
+  useEffect(() => {
+    if (!authed || !projects.projectsLoaded) return
+    void chatActions.syncSidebarProjects(projects.projects.map((project) => project.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, projects.projectsLoaded, projects.projects])
   useEffect(() => {
     if (!authed || !inProjects) return
     if (routeProjectId) { if (projects.activeProjectId !== routeProjectId) void projectsActions.openBoard(routeProjectId) }
@@ -1823,8 +1831,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             </select></label>
             {createChatStorageId ? <>
               <p className="convsettings-muted">Основное хранилище: {createChatStorages.find((item) => item.primary)?.rootPath ?? 'не назначено'}</p>
-              <label className="convsettings-field"><span>Относительный каталог</span><input aria-label="Относительный каталог файлов чата" value={createChatPath} placeholder={chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>'} onChange={(event) => setCreateChatPath(event.target.value)} /></label>
-              <p className="convsettings-muted">Итоговый каталог: {(createChatStorages.find((item) => item.id === createChatStorageId)?.rootPath ?? '')}/{createChatPath.trim() || (chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>')}</p>
+              <label className="convsettings-field"><span>Относительный каталог</span><input aria-label="Относительный каталог файлов чата" value={createChatPath} placeholder={createChatProjectId ? `projects/${createChatProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>'} onChange={(event) => setCreateChatPath(event.target.value)} /></label>
+              <p className="convsettings-muted">Итоговый каталог: {(createChatStorages.find((item) => item.id === createChatStorageId)?.rootPath ?? '')}/{createChatPath.trim() || (createChatProjectId ? `projects/${createChatProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>')}</p>
             </> : <p className="convsettings-muted" role="alert">Временный режим хранит вложения в <b>.voicechat_uploads</b>. Он предназначен для совместимости; старые файлы автоматически не переносятся. <button type="button" className="vc-btn vc-btn--secondary" onClick={() => { setCreateChatOpen(false); navigate('/machines') }}>Настроить хранилище машины</button></p>}
             {createChatStorages.length > 0 && !createChatStorages.some((item) => item.status === 'ready') && <p className="convsettings-muted" role="status">У машины нет готового хранилища. Проверьте его в разделе машины.</p>}
           </section>
@@ -1888,8 +1896,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         showDoneTaskChats={chat.showDoneTaskChats}
         onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
         projects={projects.projects}
-        selectedProjectId={chat.sidebarProjectId}
-        onSelectProject={(id) => void chatActions.setSidebarProject(id)}
+        selectedProjectIds={chat.sidebarProjectIds}
+        onToggleProject={(id) => void chatActions.toggleSidebarProject(id)}
+        onSetAllProjects={(selected) => void chatActions.setAllSidebarProjects(selected)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
