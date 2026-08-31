@@ -6458,6 +6458,20 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .kanban-assistant { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .kanban-assistant-context { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
 .kanban-assistant-context span { padding: 2px 7px; border-radius: 99px; background: var(--accent-soft); font-size: 11px; }
+.kanban-assistant-plan { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); font-size: 12px; }
+.kanban-assistant-plan > header { display: flex; align-items: center; gap: 8px; }
+.kanban-assistant-plan > header strong { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kanban-assistant-plan > header span { color: var(--text-dim); }
+.kanban-assistant-plan > header button { border: 0; background: transparent; color: var(--text-dim); cursor: pointer; }
+.kanban-assistant-plan ol { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.kanban-assistant-plan li { display: flex; gap: 6px; align-items: baseline; color: var(--text-dim); }
+.kanban-assistant-plan li[data-status='running'], .kanban-assistant-plan li[data-status='done'] { color: var(--text); }
+.kanban-assistant-plan li[data-status='failed'] { color: var(--danger); }
+.kanban-assistant-plan li em { font-style: normal; color: var(--danger); }
+.kanban-assistant-plan-status { width: 12px; text-align: center; }
+.kanban-assistant-autonomy { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); font-size: 12px; }
+.kanban-assistant-autonomy-hint { color: var(--text-dim); font-size: 11px; }
+.widget-confirm-rows { margin: 6px 0 0; padding: 8px; border-radius: var(--radius-medium); background: var(--surface-hover); font-size: 12px; white-space: pre-wrap; }
 .kanban-assistant-messages { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
 .kanban-assistant-message { max-width: 92%; padding: 8px 10px; border-radius: 9px; background: var(--panel); white-space: pre-wrap; }
 .kanban-assistant-message--user { margin-left: auto; background: var(--accent-soft); }

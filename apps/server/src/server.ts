@@ -65,6 +65,10 @@ import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { registerMakeMcp, MAKE_MCP_PATH } from './mcp/makeMcp.js'
+import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './mcp/kanbanMcp.js'
+import { WidgetContextStore } from './mcp/widgetContext.js'
+import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
+import { createOrchestrationManager } from './orchestration/runManager.js'
 import { registerMakeRoutes } from './routes/make.js'
 import { MakeLibrary } from './make/library.js'
 import { MakeWorkspaces } from './make/workspace.js'
@@ -449,6 +453,21 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return owner ? db.listConversations(owner, { includeCompleted: true }).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
   })
   registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
+  // Канбан (mcp__kanban__*): доска, карточки, настройки, машины и раны проекта
+  // того разговора, в котором идёт ход. Снимок «что открыто» кладёт сюда turns.ts.
+  const widgetContexts = new WidgetContextStore()
+  const widgetUiRelay = new WidgetUiRelay()
+  registerKanbanMcp(app, {
+    db,
+    agents: agentRegistry,
+    contexts: widgetContexts,
+    ui: widgetUiRelay,
+    boardChanged: (projectId) => boardHub.emit(projectId),
+    orchestration: () => orchestrationManager,
+    // Менеджеры ранов создаются ниже по файлу, поэтому читаются лениво — в
+    // момент вызова инструмента они уже есть.
+    runs: () => kanbanRunLaunchers
+  }, mcpSecret)
   // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
   registerMakeRoutes(app, {
     db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
@@ -605,6 +624,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const previewMcpBaseUrl = buildPublicMcpUrl(opts.config, PREVIEW_MCP_PATH, mcpSecret)
   const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
   const makeMcpBaseUrl = buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
+  const kanbanMcpBaseUrl = buildPublicMcpUrl(opts.config, KANBAN_MCP_PATH, mcpSecret)
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
   // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
@@ -1067,6 +1087,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,
+    kanbanMcpBaseUrl,
+    widgetContexts,
     makeHub,
     makeContext: (id) => makeWorkspaces.promptContext(id),
     previewTool: previewToolBroker,
@@ -1675,7 +1697,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           runner: automatedQaScenarioRunner,
           budgetMs: CHECK_BUDGET_MS
         })
-      : undefined)
+      : undefined,
+    { cancel: (owner, planId) => orchestrationManager.cancel(owner, planId) })
   mergeRunManager.reconcile()
   const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): void => {
     const run = stage === 'component_qa' ? db.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? db.getIntegrationTestRun(userId, runId) : db.getQaStageRun(userId, runId)
@@ -1725,6 +1748,58 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     })
   }
   registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id),automatedQaScreenshotDir)
+
+  // Запуск работ ассистентом и оркестратором идёт теми же путями, что кнопки в
+  // UI: очередь, изоляция директорий и проверки готовности живут в менеджерах.
+  const kanbanRunLaunchers: KanbanRunLaunchers = {
+    startCi: (userId, projectId, taskId, options) =>
+      ciRunManager.start(userId, projectId, taskId, { launch: options.launch, ...(options.agentId ? { agentId: options.agentId } : {}) }),
+    cancelCi: (userId, runId) => ciRunManager.cancel(userId, runId),
+    previewOperate: (userId, projectId, taskId, operation, options) =>
+      featurePreviews.operate(userId, projectId, taskId, operation, options),
+    startMerge: async (userId, projectId, taskId, agentId) => {
+      // Та же проверка готовности, что и у кнопки «Влить» в карточке.
+      const workspace = db.findLatestPushedCiWorkspace(projectId, taskId)
+      const targetAgentId = agentId ?? workspace?.agentId
+      if (targetAgentId) {
+        const readiness = await mergeRunManager.checkReadiness(userId, projectId, taskId, targetAgentId)
+        if (!readiness.ready) throw new Error(readiness.message)
+      }
+      const run = db.startMergeRun(userId, projectId, taskId, agentId)
+      mergeRunManager.start(run)
+      boardHub.emit(projectId)
+      return run
+    },
+    startQa: async (userId, projectId, taskId, stage) => {
+      if (stage === 'component_qa') {
+        const run = db.startComponentQaRun(userId, projectId, taskId)
+        if (run.status === 'queued') componentQaRunner.launch(run.id, userId)
+        boardHub.emit(projectId)
+        return run
+      }
+      if (stage === 'integration_tests') {
+        const run = db.startIntegrationTestRun(userId, projectId, taskId)
+        if (run.status === 'queued') integrationTestRunner.launch(run.id, userId)
+        boardHub.emit(projectId)
+        return run
+      }
+      const run = db.startQaStageRun(userId, projectId, taskId, 'automated_qa')
+      if (run.status === 'queued' || run.status === 'running') automatedQaRunner.launch(run.id, userId)
+      boardHub.emit(projectId)
+      return run
+    }
+  }
+
+  // Планы канбан-ассистента: тот же приём, что у CI-ранов — незавершённые
+  // подхватываются после рестарта, потому что ожидание merge длиннее процесса.
+  const orchestrationManager = createOrchestrationManager({
+    db,
+    runs: () => kanbanRunLaunchers,
+    boardChanged: (projectId) => boardHub.emit(projectId),
+    publish: (plan) => ciRunManager.publish({ t: 'assistant.orchestration', plan }, plan.owner)
+  })
+  orchestrationManager.restore()
+  app.addHook('onClose', async () => orchestrationManager.dispose())
 
   // Восстанавливаем process-local очередь. Уже начатые раны закрываются как
   // interrupted, а не начавшиеся снова занимают очередь нового менеджера.
@@ -1813,7 +1888,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
         resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
       },
-      make: { subscribe: (userId, sink) => makeHub.subscribe(userId, sink) }
+      make: { subscribe: (userId, sink) => makeHub.subscribe(userId, sink) },
+      widgetUi: {
+        subscribe: (userId, sink) => widgetUiRelay.subscribe(userId, sink),
+        resolve: (userId, requestId, outcome, conversationId) => widgetUiRelay.resolve(userId, requestId, outcome, conversationId)
+      }
     })
 
   await app.register(async (scoped) => {

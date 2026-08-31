@@ -25,12 +25,21 @@ export function useCommandSource(source: CommandSource): void {
 }
 
 /**
+ * Версия состава реестра. Нужна тем, кто не собирает список сам, а только
+ * пересчитывает свой снимок доступных команд (контекст канбан-ассистента).
+ */
+export function useCommandsRevision(): number {
+  const [revision, setRevision] = useState(commandsRevision)
+  useEffect(() => subscribeCommands(() => setRevision(commandsRevision())), [])
+  return revision
+}
+
+/**
  * Состав реестра для палитры и шпаргалки. Пересобирается при открытии окна и
  * когда экран пришёл или ушёл; на каждое нажатие клавиши — нет (данные за время
  * набора запроса не меняются, а сборка списка из сотен бесед не бесплатна).
  */
 export function useCommandRegistry(active: boolean): Command[] {
-  const [revision, setRevision] = useState(commandsRevision)
-  useEffect(() => subscribeCommands(() => setRevision(commandsRevision())), [])
+  const revision = useCommandsRevision()
   return useMemo(() => (active ? listCommands() : []), [active, revision])
 }

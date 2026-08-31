@@ -20,6 +20,7 @@ import type { AgentInfo, MachineCommandEvent, MachineStatusEvent } from './agent
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
+import type { WidgetUiAction, WidgetUiActionResult } from './widgetAssistant'
 import type { LoginStatusMap } from './auth'
 
 // --- Общие ---------------------------------------------------------------
@@ -624,6 +625,12 @@ export type ClientMessage =
    * `requestId` — из запроса; `result` уходит модели сериализованным JSON.
    */
   | { t: 'preview.result'; conversationId?: string; registrationId?: string; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }
+  /**
+   * Ответ клиента на widget.action: результат действия канбан-ассистента в UI.
+   * `result.surface` — снимок экрана после действия, чтобы модель видела итог
+   * нажатия, а не догадывалась о нём.
+   */
+  | { t: 'widget.result'; conversationId: string; requestId: string; ok: boolean; result?: WidgetUiActionResult; error?: string }
 
 /** server → client. */
 export type ServerMessage =
@@ -712,6 +719,14 @@ export type ServerMessage =
    * остальные отвечают preview.result с ok:false — сервер ждёт первый успех.
    */
   | { t: 'preview.action'; conversationId: string; requestId: string; action: PreviewAction }
+  /**
+   * Действие канбан-ассистента в интерфейсе пользователя: открыть ссылку,
+   * нажать команду палитры, открыть карточку. Выполняет только клиент с
+   * открытым проектом этого разговора; остальные отвечают ok:false.
+   */
+  | { t: 'widget.action'; conversationId: string; projectId: string; requestId: string; action: WidgetUiAction }
+  /** Прогресс плана работ канбан-ассистента: шаги, статусы, ошибка. */
+  | { t: 'assistant.orchestration'; plan: import('./orchestration').Orchestration }
   /** Reader: действие изменило/прочитало живую страницу — панель синхронизирует кадр и ленту. */
   | { t: 'reader.changed'; conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction }
   /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
@@ -748,7 +763,8 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'board.unsubscribe',
   'ci.subscribe',
   'ci.unsubscribe',
-  'preview.result'
+  'preview.result',
+  'widget.result'
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
@@ -800,6 +816,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'chat.message',
   'kb.usage',
   'preview.action',
+  'widget.action',
+  'assistant.orchestration',
   'reader.changed',
   'make.changed',
   'make.presence'

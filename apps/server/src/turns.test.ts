@@ -83,6 +83,59 @@ describe('turns: канбан-ассистент', () => {
     expect(db.listMessages(U, conv.id)[0]?.text).toBe('Что делать?')
     db.close()
   })
+
+  it('подключает инструменты канбана и приватному чату ассистента, и обычному чату проекта из его панели', async () => {
+    const db = freshDb()
+    const project = db.createProject(U, { name: 'Board' })
+    const contexts: Array<{ conversationId: string; turnId: string }> = []
+    const context = { version: 1 as const, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: null, selection: null, recentActions: [] }
+    const run = async (conversationId: string): Promise<void> => {
+      const rec = recorder()
+      const turns = createTurnManager({
+        db,
+        claude: rec.client,
+        kanbanMcpBaseUrl: 'http://127.0.0.1:8787/mcp/kanban?k=secret',
+        widgetContexts: { remember: (id, turnId) => { contexts.push({ conversationId: id, turnId }) } }
+      })
+      await new Promise<void>((resolve) => {
+        const off = turns.subscribe((message) => { if (message.t === 'claude.done') { off(); resolve() } })
+        void turns.start({ userId: U, conversationId, segments: [{ speakerId: 1, text: 'Что на доске?' }], assistantContext: context })
+      })
+      expect(rec.last()?.kanbanMcpUrl).toContain(`conv=${conversationId}`)
+    }
+
+    const assistantChat = db.ensureKanbanAssistantConversation(U, project.id)!
+    await run(assistantChat.id)
+
+    // Обычный чат проекта, выбранный в селекторе панели: его признак — сам факт
+    // присланного assistantContext, других отличий от чата сайдбара у него нет.
+    const projectChat = db.createConversation(U, 'Обычный чат')
+    db.setConversationProject(U, projectChat.id, project.id)
+    await run(projectChat.id)
+
+    expect(contexts.map((entry) => entry.conversationId)).toEqual([assistantChat.id, projectChat.id])
+    db.close()
+  })
+
+  it('без базы MCP канбан-ход остаётся в режиме предложений', async () => {
+    const db = freshDb()
+    const project = db.createProject(U, { name: 'Board' })
+    const conv = db.ensureKanbanAssistantConversation(U, project.id)!
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done') { off(); resolve() } })
+      void turns.start({
+        userId: U,
+        conversationId: conv.id,
+        segments: [{ speakerId: 1, text: 'Что на доске?' }],
+        assistantContext: { version: 1, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: null, selection: null, recentActions: [] }
+      })
+    })
+    expect(rec.last()?.kanbanMcpUrl).toBeUndefined()
+    expect(rec.last()?.prompt).toContain('propose.task-update')
+    db.close()
+  })
 })
 
 describe('turns: claude.start', () => {

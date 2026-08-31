@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   preview_url       TEXT,
   task_id           TEXT,
   assistant_kind    TEXT,
+  -- Режим применения мутаций канбан-ассистентом: auto (сразу) или confirm.
+  assistant_autonomy TEXT,
   status            TEXT NOT NULL DEFAULT 'developing'
 );
 
@@ -1683,6 +1685,44 @@ CREATE INDEX IF NOT EXISTS idx_qa_audit_task ON qa_audit(task_id, created_at);
 
 -- Версионные релизы: release фиксирует выбранную origin/release/* ревизию,
 -- steps дают ленту обязательных ворот, events — неизменяемый аудит повторов.
+-- ======================= Оркестрация ассистента =======================
+-- План работ, который канбан-ассистент ведёт сам: создать задачи, запустить
+-- разработку, дождаться merge и продолжить. Хранится в БД, а не в памяти хода,
+-- потому что ожидание merge длиннее любого ответа модели и обязано пережить
+-- перезагрузку страницы и рестарт сервера.
+CREATE TABLE IF NOT EXISTS assistant_orchestrations (
+  id              TEXT PRIMARY KEY,
+  project_id      TEXT NOT NULL,
+  conversation_id TEXT,
+  owner           TEXT NOT NULL,
+  title           TEXT NOT NULL,
+  status          TEXT NOT NULL,
+  error           TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_orchestrations_project ON assistant_orchestrations(project_id, status);
+
+CREATE TABLE IF NOT EXISTS assistant_orchestration_items (
+  id               TEXT PRIMARY KEY,
+  orchestration_id TEXT NOT NULL,
+  position         INTEGER NOT NULL,
+  kind             TEXT NOT NULL,
+  title            TEXT NOT NULL,
+  task_id          TEXT,
+  depends_on_json  TEXT NOT NULL DEFAULT '[]',
+  payload_json     TEXT NOT NULL DEFAULT '{}',
+  status           TEXT NOT NULL,
+  run_id           TEXT,
+  result_json      TEXT,
+  error            TEXT,
+  started_at       INTEGER,
+  finished_at      INTEGER,
+  FOREIGN KEY (orchestration_id) REFERENCES assistant_orchestrations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_orchestration_items_run ON assistant_orchestration_items(orchestration_id, position);
+
 CREATE TABLE IF NOT EXISTS project_releases (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, version TEXT NOT NULL, branch TEXT NOT NULL,
   commit_sha TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', triggered_by TEXT NOT NULL,

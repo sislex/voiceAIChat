@@ -359,6 +359,11 @@ export interface Conversation {
   projectId?: string | null
   /** Служебный приватный чат виджета; его строковое имя становится лейблом источника в селекторах. */
   assistantKind?: AssistantKind | null
+  /**
+   * Режим применения мутаций канбан-ассистентом: `auto` — сразу, `confirm` —
+   * через подтверждение пользователя. Дефолт `auto`.
+   */
+  assistantAutonomy?: import('./widgetAssistant').WidgetAssistantAutonomy
   /** URL веб-превью только этого разговора; null — наследовать у проекта. */
   previewUrl?: string | null
   /** URL проекта для превью; сервер отдаёт рядом, чтобы чат не зависел от загрузки списка проектов. */
