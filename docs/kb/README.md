@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 177 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 193 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 71 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 982 коммит(ов) в areas после сверки: 3833225d Merge remote-tracking branch 'origin/main' into work2 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 983 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 91 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 127 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 63 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
@@ -37,8 +37,8 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 12 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 23 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 62 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 117 коммит(ов) в areas после сверки: ae842bcc Merge remote-tracking branch 'origin/main' into work3 … |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 3 коммит(ов) в areas после сверки: 2c62de0a perf(gate): гейт шага — инкрементальный typecheck, related-тесты, разрезка REST-набора … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 118 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 70 коммит(ов) в areas после сверки: ae842bcc Merge remote-tracking branch 'origin/main' into work3 … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 11 коммит(ов) в areas после сверки: 3833225d Merge remote-tracking branch 'origin/main' into work2 … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 476. Последние:
+Всего записей: 477. Последние:
 
 - [2026-08-31-macbook-air-user-sidebar-console-make.md](log/2026-08-31-macbook-air-user-sidebar-console-make.md) — sidebar-console-make
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation

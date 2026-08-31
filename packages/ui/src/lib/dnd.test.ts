@@ -1,3 +1,6 @@
+// Окружение jsdom вопреки имени файла (без `.dom.`): компоненты здесь не
+// рендерятся, но геометрия и pointer-события переноса.
+// @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   DRAG_HOLD_MS,
