@@ -925,6 +925,13 @@ export interface RendererSessionBridge {
   resetPasswordByEmail?(input: { token: string; password: string }): Promise<{ ok: true } | { error: string }>
   changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
   /** Открытая регистрация с подтверждением email (web). */
+  /**
+   * Держится ли сессия на cookie (web). `false` после успешного входа означает,
+   * что браузер не сохранил `Set-Cookie` — тогда сессия живёт только в памяти
+   * страницы и умрёт от перезагрузки, о чём интерфейс обязан предупредить.
+   * В desktop мост метод не реализует: там сессии нет вовсе.
+   */
+  hasCookieSession?(): boolean
   signupEnabled?(): Promise<boolean>
   signup?(input: { name: string; email: string; password: string }): Promise<{ ok: true; mailSent: boolean } | { error: string }>
   signupResend?(email: string): Promise<void>

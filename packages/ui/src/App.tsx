@@ -362,6 +362,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
   }, [session.currentUser]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Вход состоялся, а cookie-сессии нет — значит браузер отбросил `Set-Cookie`, и
+  // страница держится только на токене в памяти: любая перезагрузка вернёт экран
+  // входа. Молчать здесь нельзя — со стороны это выглядит как поломка сессии
+  // (инцидент 31.08.2026: `Secure`-cookie с https затеняла http-версию адреса).
+  useEffect(() => {
+    if (!session.currentUser || !window.session?.hasCookieSession) return
+    if (window.session.hasCookieSession()) return
+    // duration: 0 — до крестика: сообщение объясняет, что делать руками, и
+    // исчезнувшая за четыре секунды подсказка тут бесполезна.
+    toast.error(
+      'Вход не сохранён в cookie: после перезагрузки страницы придётся войти заново. '
+      + 'Обычно так бывает, когда тот же адрес открывали по https — очистите cookie сайта в браузере или работайте по одному адресу.',
+      { duration: 0 }
+    )
+  }, [session.currentUser?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
   useEffect(() => {
     const name = session.currentUser?.name

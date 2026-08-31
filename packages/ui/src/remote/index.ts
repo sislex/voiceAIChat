@@ -287,6 +287,9 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       return { ok: true }
     },
+    // Признак cookie-сессии для предупреждения о «входе, который не переживёт F5»:
+    // читаемая CSRF-cookie есть ровно тогда, когда браузер принял пару cookie.
+    hasCookieSession: () => Boolean(getCsrf()),
     signupEnabled: async () => { try { const r = await fetch(httpBase + REST.sessionSignup); return r.ok ? Boolean(((await r.json()) as { enabled?: boolean }).enabled) : false } catch { return false } },
     signup: async ({ name, email, password }) => {
       const r = await fetch(httpBase + REST.sessionSignup, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, email, password }) })
