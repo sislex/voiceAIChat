@@ -66,6 +66,8 @@ export interface MachineUtilityHeaderProps {
   kind: UtilityKind
   /** Подпись консольной кнопки: живой «Терминал» или однострочная «Консоль». */
   consoleLabel?: string
+  /** Есть ли у этой машины рабочая копия, к которой относится панель кода. */
+  gitAvailable?: boolean
   /** Папка, которая переедет в другую утилиту (cwd проводника или терминала). */
   dir?: string
   /** Переключить утилиту, сохранив машину и папку. Нет — переключателя нет. */
@@ -81,6 +83,7 @@ export function MachineUtilityHeader({
   onAgentChange,
   kind,
   consoleLabel = 'Терминал',
+  gitAvailable = false,
   dir,
   onSwitch,
   onOpenMachines
@@ -157,6 +160,18 @@ export function MachineUtilityHeader({
           >
             📁 Проводник
           </Button>
+          {/* Панель кода — про рабочую копию задачи или разговора, а не про
+              произвольную папку, поэтому кнопка появляется только когда цель известна. */}
+          {gitAvailable && (
+            <Button
+              size="sm"
+              aria-pressed={kind === 'git'}
+              title={kind === 'git' ? 'Открыто сейчас: панель кода' : 'Открыть панель кода рабочей копии'}
+              onClick={() => kind !== 'git' && onSwitch('git')}
+            >
+              ⎇ Код
+            </Button>
+          )}
         </span>
       )}
 

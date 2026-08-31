@@ -205,7 +205,7 @@ describe('REST: conversations/messages/settings', () => {
     const conv = db.createConversation(U, 'Чат')
     const groupOf = (json: { groups: Array<{ id: string; items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean; toggleable: boolean; details?: Record<string, unknown> }> }> }) => json.groups.find((g) => g.id === 'chat-instructions')!
     const first = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
-    expect(first.items.map((item) => item.id)).toEqual(['instruction-console', 'instruction-explorer', 'instruction-questions', 'instruction-image', 'instruction-taskLaunch'])
+    expect(first.items.map((item) => item.id)).toEqual(['instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-questions', 'instruction-image', 'instruction-taskLaunch'])
     const consoleItem = first.items.find((item) => item.id === 'instruction-console')!
     expect(consoleItem).toMatchObject({ toggleable: true, enabled: true, includedInNextTurn: true })
     expect(String(consoleItem.details?.['Текст'])).toContain('```tool')
