@@ -272,6 +272,21 @@ CREATE TABLE IF NOT EXISTS machine_events (
 );
 CREATE INDEX IF NOT EXISTS idx_machine_events_machine ON machine_events(machine_id, id DESC);
 
+-- Журнал контекста разговора: кто и когда выключил или вернул источник.
+-- Нужен, чтобы отвечать на вопрос «почему этот чат ведёт себя иначе» — по
+-- одному текущему набору disabled_context_json этого не понять.
+CREATE TABLE IF NOT EXISTS conversation_context_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  conversation_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  -- Кто изменил: обычно владелец разговора, но админ правит и чужие чаты.
+  actor TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  enabled INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_context_events_conversation ON conversation_context_events(conversation_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS security_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   at INTEGER NOT NULL,
