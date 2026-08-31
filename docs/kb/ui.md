@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-31
-checked: 03c4c588
+checked: e32c45c1
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -377,6 +377,24 @@ Playwright Reader записывает шаги сценария селекто�
 админа, — сужают его только записи `llmAccess`. Раньше фильтр был по роли, и
 `ConversationSettings.dom.test.tsx` с `SettingsModal.dom.test.tsx` продолжали
 требовать старое поведение.
+
+**Колбэк-пропс из `App` нельзя ставить в зависимости загружающего эффекта.**
+`App.tsx` передаёт загрузчики и действия inline-стрелками (`loadPreparationRuns`,
+`loadFullTask`, `onEnsureChat` …), то есть новыми на каждый свой рендер, а
+ререндерит его любое обновление сторов и WS-кадр. Пока такие пропсы стояли в
+зависимостях, открытая карточка задачи слала запросы потоком: в проде это видно
+как повторяющиеся `GET …/tasks/:taskId/preparation/runs` (`TaskPreparationTab`),
+рядом с ними шли `GET …/tasks/:taskId` (`KanbanBoard.loadFullTask`, плюс мигание
+описания от `setFullTask(null)`) и `POST …/tasks/:taskId/chat`
+(`TaskModal.onEnsureChat` — `task.chatId` приезжает только со следующим снапшотом
+доски, поэтому условие «чата ещё нет» оставалось верным). Лечится на стороне
+компонента, а не вызывающего: колбэк живёт в ref (`loadRunsRef.current = props.loadRuns`),
+эффект зависит только от данных (`projectId`/`taskId`/`openTaskId`), а
+одноразовое действие помнит, для какой задачи уже выполнено. Мемоизация в `App`
+эту защиту не заменяет: любой другой хост передаст пропс так же. Проверяется
+тестами «ререндер родителя с новыми функциями-пропсами не перезапрашивает …» в
+`TaskPreparationTab.dom.test.tsx`, `KanbanBoard.dom.test.tsx` и
+`TaskModal.dom.test.tsx`.
 
 **Пустой список прав по умолчанию — модульная константа, а не литерал в
 параметрах.** `llmAccess = []` в деструктуризации пропсов создаёт новый массив на

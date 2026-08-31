@@ -1033,3 +1033,29 @@ describe('KanbanBoard — фильтры на телефоне', () => {
     expect(within(shell.querySelector('summary')!).getByText('1')).toBeInTheDocument()
   })
 })
+
+describe('KanbanBoard — догрузка полной карточки', () => {
+  it('ререндер с новой функцией loadFullTask не перезапрашивает задачу', async () => {
+    const calls: string[] = []
+    const view = (): JSX.Element => (
+      // Как в App.tsx: колбэк — inline-стрелка, новая на каждый рендер родителя.
+      <KanbanBoard
+        projectName="P1" board={board} loading={false} members={[]}
+        openTaskId="t1"
+        loadFullTask={async (taskId) => { calls.push(taskId); return task({ id: taskId, description: 'Полное описание' }) }}
+        onCreateColumn={vi.fn()} onUpdateColumn={vi.fn()} onSetColumnHidden={vi.fn()} onReorderColumns={vi.fn()}
+        onDeleteColumn={vi.fn()} onCreateTask={vi.fn()} onUpdateTask={vi.fn()} onMoveTask={vi.fn()} onDeleteTask={vi.fn()}
+      />
+    )
+    const { rerender } = render(view())
+    await waitFor(() => expect(calls).toEqual(['t1']))
+
+    rerender(view())
+    rerender(view())
+    await act(async () => { await Promise.resolve() })
+
+    expect(calls).toEqual(['t1'])
+    // Описание не пропадает от повторных загрузок — карточка не мигает.
+    expect(screen.getByTestId('task-desc-view')).toHaveTextContent('Полное описание')
+  })
+})
