@@ -30,6 +30,9 @@ export interface ContextInspectorProps {
   /** Пресеты контекста пользователя: применить и сохранить текущий набор. */
   contextPresets?: ContextPreset[]
   onSavePresets?: (presets: ContextPreset[]) => Promise<void>
+  /** Пресет, применяемый к новым разговорам (общая настройка пользователя). */
+  defaultPresetId?: string | null
+  onSetDefaultPreset?: (presetId: string | null) => Promise<void>
   /** Вложения черновика: они уйдут с сообщением, но снимку не видны. */
   draftAttachments?: Array<{ name: string; status?: string }>
   /** Инструкции чата из общих настроек — правятся здесь же, но действуют везде. */
@@ -186,6 +189,14 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   /** Какой пресет переименовывают и новое имя. */
   const [renamingPreset, setRenamingPreset] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  /**
+   * Явное разрешение править чужой разговор. Снимок админ видит сразу, а вот
+   * тумблеры до этой галочки заблокированы: чужой контекст не должен меняться
+   * случайным кликом.
+   */
+  const [allowForeignEdit, setAllowForeignEdit] = useState(false)
+  /** Фильтр журнала по автору изменений; пусто — все. */
+  const [logActor, setLogActor] = useState('')
   /** Разговоры, к которым применяем пресет «к выбранным». */
   const [bulkTargets, setBulkTargets] = useState<string[]>([])
   /** Идут ли изменения тумблера/быстрой правки — на это время контролы блокируются. */
@@ -580,6 +591,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
 
   if (snapshotError) return <section className="context-inspector context-error" role="alert"><h2>Не удалось загрузить сведения</h2><p>{snapshotError}</p><Button size="sm" onClick={() => setReload((value) => value + 1)}>Повторить</Button></section>
   if (!snapshot) return <section className="context-inspector context-loading" aria-busy="true"><h2>Формируем сведения для следующего сообщения…</h2><p>Проверяем настройки и доступность окружения.</p></section>
+  // Правка запрещена, пока чужой чат не разблокирован явно: одно условие на все
+  // контролы, вместо проверки `foreign` в каждом обработчике. Объявлено до
+  // ветки detail — она рендерится раньше основного списка.
+  const locked = snapshot.foreign && !allowForeignEdit
   if (detailId && !detail) return <section className="context-detail"><Button size="sm" onClick={closeDetail}>← Ко всем источникам</Button><h2>Источник не найден</h2><p>Он мог стать недоступен после обновления конфигурации.</p></section>
   if (detail) {
     const block = snapshot.promptPreview.blocks.find((entry) => entry.itemIds.includes(detail.id))
@@ -617,7 +632,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         <Button size="sm" variant="ghost" onClick={() => void copy(`${window.location.origin}${window.location.pathname}#/chat/${encodeURIComponent(props.conversationId)}/context/${encodeURIComponent(detail.id)}`, 'Ссылка')}>Скопировать ссылку</Button>
       </header>
       {detail.toggleable
-        ? <label className="context-detail-toggle"><input type="checkbox" checked={detail.enabled} disabled={busy} onChange={(event) => void toggleItem(detail, event.target.checked)} /><span>Учитывать в этом разговоре</span></label>
+        ? <label className="context-detail-toggle"><input type="checkbox" checked={detail.enabled} disabled={busy || locked} onChange={(event) => void toggleItem(detail, event.target.checked)} /><span>Учитывать в этом разговоре</span></label>
         : <p className="context-note" data-testid="context-lock-note">🔒 {CONTEXT_LOCK_TEXT[detail.lockReason ?? 'info']}</p>}
       {/* История именно этого источника: общий журнал внизу отвечает «что тут
           было», а человек в карточке спрашивает «что было с ним». */}
@@ -644,7 +659,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           и отправлял человека на другую вкладку менять то, что он уже видит. */}
       {skillName && props.onToggleSkill && <div className="context-detail-toggle">
         <label>
-          <input type="checkbox" checked={props.selectedSkillNames.includes(skillName)} disabled={busy} onChange={(event) => props.onToggleSkill!(skillName, event.target.checked)} />
+          <input type="checkbox" checked={props.selectedSkillNames.includes(skillName)} disabled={busy || locked} onChange={(event) => props.onToggleSkill!(skillName, event.target.checked)} />
           <span>Выбрать навык для этого разговора</span>
         </label>
         <small>Выбор не равен активации: навык применяется, когда сообщение к нему подходит.</small>
@@ -667,7 +682,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
             </small>
           </label>
           <div className="context-actions">
-            <Button size="sm" disabled={busy || draftText === baseText || !draftText.trim()} onClick={() => void saveInstruction()}>Сохранить текст</Button>
+            <Button size="sm" disabled={busy || locked || draftText === baseText || !draftText.trim()} onClick={() => void saveInstruction()}>Сохранить текст</Button>
             <Button size="sm" variant="ghost" disabled={draftText === baseText} onClick={() => setInstructionDraft(null)}>Вернуть как было</Button>
           </div>
         </div>
@@ -740,7 +755,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       ? <span className="context-lock" aria-hidden="true">·</span>
       : item.toggleable
         ? <label className="context-toggle" title={`Учитывать «${item.title}» в этом разговоре`}>
-            <input type="checkbox" checked={item.enabled} disabled={busy} aria-label={`Учитывать «${item.title}» в этом разговоре`} onChange={(event) => void toggleItem(item, event.target.checked)} />
+            <input type="checkbox" checked={item.enabled} disabled={busy || locked} aria-label={`Учитывать «${item.title}» в этом разговоре`} onChange={(event) => void toggleItem(item, event.target.checked)} />
           </label>
         : <span className="context-lock" role="img" aria-label={CONTEXT_LOCK_TEXT[item.lockReason ?? 'info']} title={CONTEXT_LOCK_TEXT[item.lockReason ?? 'info']}>🔒</span>}
     <button type="button" className="context-item-open" onClick={() => openDetail(item.id)}>
@@ -764,9 +779,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         {' '}Выключено источников: {disabledToggleable.length} из {toggleable.length}.
       </p>
       {/* Чужой чат: без явной пометки легко решить, что правишь свой контекст. */}
-      {snapshot.foreign && <p className="context-foreign" role="status" data-testid="context-foreign">
-        Это разговор пользователя <b>{snapshot.owner}</b>. Изменения попадут в его чат, и в журнале останется ваш логин.
-      </p>}
+      {snapshot.foreign && <div className="context-foreign" role="status" data-testid="context-foreign">
+        <p>Это разговор пользователя <b>{snapshot.owner}</b>. Изменения попадут в его чат, и в журнале останется ваш логин.</p>
+        {/* По умолчанию чужой чат только читается: случайный клик по тумблеру
+            меняет работу другого человека, а не свою. */}
+        <label>
+          <input type="checkbox" checked={allowForeignEdit} onChange={(event) => setAllowForeignEdit(event.target.checked)} />
+          <span>Разрешить изменения в этом разговоре</span>
+        </label>
+      </div>}
       <p className="context-role" data-testid="context-role-hint">
         {roleHint(effectiveRole)}
         {snapshot.viewerRole === 'admin' && <label className="context-asrole">
@@ -801,18 +822,18 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       {(overridden.length > 0 || disabledToggleable.length > 0) && <div className="context-reset">
         <p>{overridden.length > 0 ? `Этот разговор переопределяет: ${overridden.join(', ')}.` : `Выключено источников: ${disabledToggleable.length}.`}</p>
         <div className="context-actions">
-          {overridden.length > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void quickSave({
+          {overridden.length > 0 && <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => void quickSave({
             llmProvider: null, llmModel: null, ...(isAdmin ? { permissionMode: null } : {})
           })}>Вернуть наследование</Button>}
           {/* Полный сброс: одно действие вместо «включить всё» + «вернуть
               наследование» по очереди — так чат возвращается к состоянию нового. */}
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void resetAll()}>Сбросить контекст к обычному</Button>
+          <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => void resetAll()}>Сбросить контекст к обычному</Button>
         </div>
       </div>}
       <div className="context-quickedit">
         <label>
           <span>База знаний</span>
-          <select aria-label="База знаний" value={snapshot.summary.kbMode.value} disabled={busy} onChange={(event) => void quickSave({ kbContextMode: event.target.value as KbContextMode })}>
+          <select aria-label="База знаний" value={snapshot.summary.kbMode.value} disabled={busy || locked} onChange={(event) => void quickSave({ kbContextMode: event.target.value as KbContextMode })}>
             {KB_CONTEXT_MODES.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
           </select>
           <small>{snapshot.summary.kbMode.explanation}</small>
@@ -820,7 +841,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         <label>
           <span>Режим доступа</span>
           {isAdmin
-            ? <select aria-label="Режим доступа" value={snapshot.summary.permissionMode.value} disabled={busy} onChange={(event) => void quickSave({ permissionMode: event.target.value as PermissionMode })}>
+            ? <select aria-label="Режим доступа" value={snapshot.summary.permissionMode.value} disabled={busy || locked} onChange={(event) => void quickSave({ permissionMode: event.target.value as PermissionMode })}>
                 {PERMISSION_MODES.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
               </select>
             : <output data-testid="context-permission-readonly">{snapshot.summary.permissionMode.displayName}</output>}
@@ -839,7 +860,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.md`, markdownReport(snapshot), 'text/markdown')}>Скачать отчёт (Markdown)</Button>
           {/* Настройки могли измениться в другом окне или другим админом:
               снимок отражает момент открытия, и обновить его надо уметь. */}
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setReload((value) => value + 1)}>Обновить снимок</Button>
+          <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => setReload((value) => value + 1)}>Обновить снимок</Button>
           {/* Одна строка для задачи или переписки: «что уходит и сколько это
               стоит» без вложения файлов и без пересказа руками. */}
           <Button size="sm" variant="ghost" onClick={() => void copy(summaryLine(snapshot), 'Сводка')}>Скопировать сводку</Button>
@@ -992,18 +1013,18 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         {/* Массовые действия: выключать десяток пунктов по одному — работа, а не
             выбор. «Всё необязательное» не трогает пункты с замком: их и нельзя. */}
         <div className="context-actions">
-          <Button size="sm" variant="ghost" disabled={busy || disabledToggleable.length === 0} onClick={() => void toggleMany(disabledToggleable, true)}>Включить всё ({disabledToggleable.length})</Button>
-          <Button size="sm" variant="ghost" disabled={busy || enabledToggleable.length === 0} onClick={() => void toggleMany(enabledToggleable, false)}>Выключить необязательное ({enabledToggleable.length})</Button>
+          <Button size="sm" variant="ghost" disabled={busy || locked || disabledToggleable.length === 0} onClick={() => void toggleMany(disabledToggleable, true)}>Включить всё ({disabledToggleable.length})</Button>
+          <Button size="sm" variant="ghost" disabled={busy || locked || enabledToggleable.length === 0} onClick={() => void toggleMany(enabledToggleable, false)}>Выключить необязательное ({enabledToggleable.length})</Button>
           {/* Частый случай «пусть ничего не трогает на машине»: инструменты
               выключаются вместе, а не поштучно из каталога возможностей. */}
-          {machineTools.length > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void toggleMany(machineTools, false)}>Выключить инструменты машины ({machineTools.length})</Button>}
+          {machineTools.length > 0 && <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => void toggleMany(machineTools, false)}>Выключить инструменты машины ({machineTools.length})</Button>}
           {/* Настроить контекст один раз и переносить в другие чаты — обычная
               работа: раньше это означало щёлкать тумблеры заново по памяти. */}
           {/* Пресеты: набор выключений под именем. Настроил «минимальный контекст»
               один раз — применяешь к любому чату, а не щёлкаешь по памяти. */}
           {props.onSavePresets && <label className="context-copyfrom">
             <span>Пресет</span>
-            <select aria-label="Применить пресет контекста" disabled={busy} value="" onChange={(event) => { if (event.target.value) void applyPreset(event.target.value) }}>
+            <select aria-label="Применить пресет контекста" disabled={busy || locked} value="" onChange={(event) => { if (event.target.value) void applyPreset(event.target.value) }}>
               <option value="">— выберите —</option>
               {(props.contextPresets ?? []).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
             </select>
@@ -1014,10 +1035,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
               aria-label="Имя нового пресета контекста"
               onChange={(event) => setPresetName(event.target.value)}
             />
-            <Button size="sm" variant="ghost" disabled={busy || !presetName.trim()} onClick={() => void savePreset()}>Сохранить текущий</Button>
+            <Button size="sm" variant="ghost" disabled={busy || locked || !presetName.trim()} onClick={() => void savePreset()}>Сохранить текущий</Button>
             {/* Управление и перенос между инсталляциями: пресет — это данные
                 пользователя, и увезти их файлом должно быть можно. */}
-            {(props.contextPresets?.length ?? 0) > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => download('context-presets.json', JSON.stringify(props.contextPresets ?? [], null, 2), 'application/json')}>Экспорт</Button>}
+            {(props.contextPresets?.length ?? 0) > 0 && <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => download('context-presets.json', JSON.stringify(props.contextPresets ?? [], null, 2), 'application/json')}>Экспорт</Button>}
             <label className="context-import">
               <span>Импорт</span>
               <input type="file" accept="application/json,.json" aria-label="Импортировать пресеты контекста из файла" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importPresets(file); event.target.value = '' }} />
@@ -1027,14 +1048,14 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
               нет» задают раньше, чем готовы перезаписать свой набор. */}
           {(props.otherConversations?.length ?? 0) > 0 && <label className="context-copyfrom">
             <span>Сравнить с</span>
-            <select aria-label="Сравнить контекст с разговором" disabled={busy} value="" onChange={(event) => { if (event.target.value) void compareWith(event.target.value) }}>
+            <select aria-label="Сравнить контекст с разговором" disabled={busy || locked} value="" onChange={(event) => { if (event.target.value) void compareWith(event.target.value) }}>
               <option value="">— выберите —</option>
               {props.otherConversations!.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}
             </select>
           </label>}
           {(props.otherConversations?.length ?? 0) > 0 && <label className="context-copyfrom">
             <span>Скопировать из</span>
-            <select aria-label="Скопировать контекст из разговора" disabled={busy} value="" onChange={(event) => { if (event.target.value) void copyFrom(event.target.value) }}>
+            <select aria-label="Скопировать контекст из разговора" disabled={busy || locked} value="" onChange={(event) => { if (event.target.value) void copyFrom(event.target.value) }}>
               <option value="">— выберите разговор —</option>
               {props.otherConversations!.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}
             </select>
@@ -1063,7 +1084,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           <small>{newInstructionText.length} символов, ≈{Math.ceil(newInstructionText.length / 4)} токенов в каждом ходе</small>
         </label>
         <div className="context-actions">
-          <Button size="sm" disabled={busy || !newInstructionTitle.trim() || !newInstructionText.trim()} onClick={() => void addInstruction()}>Добавить инструкцию</Button>
+          <Button size="sm" disabled={busy || locked || !newInstructionTitle.trim() || !newInstructionText.trim()} onClick={() => void addInstruction()}>Добавить инструкцию</Button>
         </div>
       </div>
     </section>}
@@ -1087,6 +1108,16 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     </section>}
     {(props.contextPresets?.length ?? 0) > 0 && <details className="context-section" data-testid="context-presets">
       <summary><span><b>Пресеты контекста</b><small>Наборы выключений: применить, экспортировать или удалить</small></span><span className="context-count">{props.contextPresets!.length}</span></summary>
+      {props.onSetDefaultPreset && <div className="context-bulk">
+        <label>
+          <span>Применять к новым разговорам</span>
+          <select aria-label="Пресет по умолчанию для новых разговоров" value={props.defaultPresetId ?? ''} onChange={(event) => void props.onSetDefaultPreset!(event.target.value || null)}>
+            <option value="">— не применять —</option>
+            {props.contextPresets!.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+          </select>
+        </label>
+        <small>Новый чат сразу начнётся с этим набором: иначе «минимальный контекст» действует только после того, как про него вспомнят.</small>
+      </div>}
       <ul className="context-changelog">{props.contextPresets!.map((preset) => <li key={preset.id}>
         {renamingPreset === preset.id
           ? <>
@@ -1096,17 +1127,17 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
                 aria-label={`Новое название пресета «${preset.name}»`}
                 onChange={(event) => setRenameValue(event.target.value)}
               />
-              <Button size="sm" disabled={busy || !renameValue.trim()} onClick={() => void renamePreset(preset.id)}>Сохранить</Button>
+              <Button size="sm" disabled={busy || locked || !renameValue.trim()} onClick={() => void renamePreset(preset.id)}>Сохранить</Button>
               <Button size="sm" variant="ghost" onClick={() => setRenamingPreset(null)}>Отмена</Button>
             </>
           : <>
               <b>{preset.name}</b> · выключено источников: {preset.disabled.length}
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void applyPreset(preset.id)}>Применить</Button>
+              <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => void applyPreset(preset.id)}>Применить</Button>
               {/* Один пресет обычно нужен нескольким чатам сразу: «к выбранным»
                   избавляет от обхода разговоров по одному. */}
-              {props.onCopyContextTo && <Button size="sm" variant="ghost" disabled={busy || bulkTargets.length === 0} onClick={() => void applyPresetToTargets(preset.id)}>Применить к выбранным ({bulkTargets.length})</Button>}
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setRenamingPreset(preset.id); setRenameValue(preset.name) }}>Переименовать</Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void deletePreset(preset.id)}>Удалить</Button>
+              {props.onCopyContextTo && <Button size="sm" variant="ghost" disabled={busy || locked || bulkTargets.length === 0} onClick={() => void applyPresetToTargets(preset.id)}>Применить к выбранным ({bulkTargets.length})</Button>}
+              <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => { setRenamingPreset(preset.id); setRenameValue(preset.name) }}>Переименовать</Button>
+              <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => void deletePreset(preset.id)}>Удалить</Button>
             </>}
       </li>)}</ul>
       {(props.otherConversations?.length ?? 0) > 0 && props.onCopyContextTo && <div className="context-bulk" data-testid="context-bulk-targets">
@@ -1123,8 +1154,22 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       </div>}
     </details>}
     {snapshot.changes.length > 0 && <details className="context-section" data-testid="context-changes"><summary><span><b>Журнал изменений контекста</b><small>Кто и когда выключал или возвращал источники этого разговора</small></span><span className="context-count">{snapshot.changes.length}</span></summary>
-      <ul className="context-changelog">{snapshot.changes.map((event) => <li key={`${event.at}-${event.itemId}-${String(event.enabled)}`}>
-        <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}: {byId(event.itemId)?.title ?? event.itemId}
+      {/* Фильтр по автору: в чужом чате (или после админской правки) первый
+          вопрос — «что менял именно этот человек». */}
+      {new Set(snapshot.changes.map((event) => event.actor)).size > 1 && <div className="context-bulk">
+        <label>
+          <span>Кто менял</span>
+          <select aria-label="Фильтр журнала по автору" value={logActor} onChange={(event) => setLogActor(event.target.value)}>
+            <option value="">все</option>
+            {[...new Set(snapshot.changes.map((event) => event.actor))].map((actor) => <option key={actor} value={actor}>{actor}</option>)}
+          </select>
+        </label>
+      </div>}
+      <ul className="context-changelog">{snapshot.changes.filter((event) => !logActor || event.actor === logActor).map((event) => <li key={`${event.at}-${event.itemId}-${String(event.enabled)}`}>
+        <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}:{' '}
+        {byId(event.itemId)
+          ? <Button size="sm" variant="ghost" onClick={() => openDetail(event.itemId)}>{byId(event.itemId)!.title}</Button>
+          : event.itemId}
       </li>)}</ul>
     </details>}
     <details className="context-section"><summary><span><b>Технические сведения</b><small>Диагностика снимка и исходные признаки</small></span><span className="context-count">{allItems.length}</span></summary><div className="context-technical">{snapshot.cliMcpServers.length > 0 && <dl data-testid="context-cli-mcp"><div><dt>MCP-серверы движка</dt><dd>{snapshot.cliMcpServers.map((server) => `${server.name} — ${server.status}`).join('; ')}</dd></div></dl>}<dl><div><dt>Время снимка</dt><dd>{new Date(snapshot.generatedAt).toLocaleString('ru-RU')}</dd></div><div><dt>Версия схемы</dt><dd>{snapshot.schemaVersion}</dd></div><div><dt>Роль смотрящего</dt><dd>{snapshot.viewerRole}</dd></div><div><dt>Актуальность</dt><dd>{snapshot.freshnessWarning}</dd></div></dl>{snapshotGroups.map((group) => <section key={group.id}><h4>{group.title}</h4><div className="context-tech-items">{group.items.map((item) => <button type="button" key={item.id} onClick={() => openDetail(item.id)}><b>{item.title}</b><small>ID: {item.id} · configured: {state(item.configured)} · available: {state(item.available)} · includedInNextTurn: {state(item.includedInNextTurn)} · enabled: {state(item.enabled)}</small></button>)}</div></section>)}</div></details>

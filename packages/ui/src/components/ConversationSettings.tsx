@@ -63,6 +63,9 @@ export interface ConversationSettingsProps {
   /** Пресеты контекста пользователя и их сохранение (инспектор контекста). */
   contextPresets?: ContextPreset[]
   onSavePresets?: (presets: ContextPreset[]) => Promise<void>
+  /** Пресет для новых разговоров и его изменение (общая настройка). */
+  defaultPresetId?: string | null
+  onSetDefaultPreset?: (presetId: string | null) => Promise<void>
   /** Вложения текущего черновика — их снимок контекста не видит. */
   draftAttachments?: Array<{ name: string; status?: string }>
   /** Инструкции чата из общих настроек — инспектор контекста правит их текст. */
@@ -93,7 +96,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -354,6 +357,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           {...(otherConversations ? { otherConversations } : {})}
           {...(contextPresets ? { contextPresets } : {})}
           {...(onSavePresets ? { onSavePresets } : {})}
+          {...(defaultPresetId !== undefined ? { defaultPresetId } : {})}
+          {...(onSetDefaultPreset ? { onSetDefaultPreset } : {})}
           {...(draftAttachments ? { draftAttachments } : {})}
           {...(chatInstructions ? { chatInstructions } : {})}
           {...(onSaveInstruction ? { onSaveInstruction } : {})}
