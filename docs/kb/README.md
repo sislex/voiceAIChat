@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 160 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 175 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 46 коммит(ов) в areas после сверки: 68e6d2ef Merge task d69041e6-6009-4f27-ada1-6901f6fcaa09 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 944 коммит(ов) в areas после сверки: ab380af7 docs(kb): update after merge 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 945 коммит(ов) в areas после сверки: c4371a88 docs(kb): update after merge d69041e6-6009-4f27-ada1-6901f6fcaa09 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 71 коммит(ов) в areas после сверки: 68e6d2ef Merge task d69041e6-6009-4f27-ada1-6901f6fcaa09 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 103 коммит(ов) в areas после сверки: 68e6d2ef Merge task d69041e6-6009-4f27-ada1-6901f6fcaa09 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 47 коммит(ов) в areas после сверки: 4cbb8094 Merge task 79636a0e-4c26-4ab8-ae57-c944a7da5d73 … |
@@ -60,7 +60,7 @@
 
 ## Журнал сессий
 
-Всего записей: 459. Последние:
+Всего записей: 460. Последние:
 
 - [2026-08-31-macbook-air-user-sidebar-console-make.md](log/2026-08-31-macbook-air-user-sidebar-console-make.md) — sidebar-console-make
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation
