@@ -1486,6 +1486,42 @@ describe('REST: conversations/messages/settings', () => {
     expect(chain.unavailable).toBeUndefined()
   })
 
+  it('снимок отдаёт факт прошлого хода и предупреждения о несогласованности', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Факт' } })).json()
+    const snap = async (): Promise<{
+      lastTurn: { prompt: string; chars: number; approxTokens: number; resumed: boolean; attachments: number; kbSections: string[]; model: string } | null
+      warnings: Array<{ itemId: string | null; level: string; text: string }>
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    // Ходов не было — факта нет, и выдумывать его снимок не должен.
+    expect((await snap()).lastTurn).toBeNull()
+
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {
+      role: 'ai', text: 'Готово', time: '10:00',
+      meta: { request: { provider: 'claude', model: 'opus', prompt: 'Системный блок\n\nВопрос', promptChars: 22, resumed: true, permissionMode: 'plan', attachments: ['/tmp/a.png'], kbContext: { confidence: 'high', sections: [{ title: 'Соглашения' }] } } }
+    } })
+    const withTurn = await snap()
+    expect(withTurn.lastTurn).toMatchObject({
+      model: 'opus', prompt: 'Системный блок\n\nВопрос', chars: 22, approxTokens: Math.ceil(22 / 4),
+      resumed: true, attachments: 1, kbSections: ['Соглашения']
+    })
+
+    // Выключенная база знаний при режиме «Авто» — расхождение, о котором надо знать.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    const warned = await snap()
+    expect(warned.warnings.some((w) => w.itemId === 'knowledge-mode' && w.text.includes('тумблер сильнее'))).toBe(true)
+
+    // Выключенная инструкция чата предупреждает и про исчезновение её блока в ответе.
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const consoleInstruction = settings.chatInstructions.find((entry: { kind?: string }) => entry.kind === 'console')
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-${encodeURIComponent(consoleInstruction.id)}`, payload: { enabled: false } })
+    const instructionWarn = (await snap()).warnings.find((w) => w.text.includes('Инструкций чата выключено'))
+    expect(instructionWarn).toMatchObject({ level: 'notice' })
+    // Проблемы идут раньше замечаний: сначала то, что почти наверняка не так.
+    const levels = (await snap()).warnings.map((w) => w.level)
+    expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
+  })
+
   it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
     const conv = db.createConversation(U, 'Проект', 'make')
     const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }

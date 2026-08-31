@@ -35,7 +35,7 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
-import type { AgentsChainFile, AgentsChainResult, ContextKbPreview, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+import type { AgentsChainFile, AgentsChainResult, ContextKbPreview, ContextLastTurn, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
@@ -206,6 +206,50 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
     ] }
   ]
+  // Несогласованности: настройки формально верны, но вместе дают не то, чего
+  // человек ждёт. Считает сервер, а не UI: правила про машину, БЗ и проект живут
+  // здесь же, где считается снимок.
+  const warnings: ContextWarning[] = []
+  if (conversation.projectId && disabled.has('project-binding')) {
+    warnings.push({ itemId: 'project-binding', level: 'problem', text: `Чат привязан к проекту${project ? ` «${project.name}»` : ''}, но проектный контекст выключен: модель не узнает о проекте.` })
+  }
+  if (conversation.projectId && !project) {
+    warnings.push({ itemId: 'project-binding', level: 'problem', text: 'Проект чата недоступен: он удалён или доступ к нему потерян.' })
+  }
+  if (machineAvailable === false && conversation.execTarget && conversation.execTarget !== 'none') {
+    warnings.push({ itemId: 'machine', level: 'problem', text: 'Выбранная машина недоступна: команды и файловые инструменты в ход не попадут.' })
+  }
+  if (disabled.has('knowledge-mode') && conversation.kbContextMode !== 'off') {
+    warnings.push({ itemId: 'knowledge-mode', level: 'notice', text: 'База знаний выключена тумблером инспектора, хотя в настройках разговора режим другой: тумблер сильнее.' })
+  }
+  const disabledInstructions = settings.chatInstructions.filter((entry) => entry.enabled && disabled.has(instructionContextId(entry.id)))
+  if (disabledInstructions.length) {
+    warnings.push({ itemId: null, level: 'notice', text: `Инструкций чата выключено для этого разговора: ${disabledInstructions.length}. Их ответные блоки (терминал, вопросы, картинки) в ответе тоже не появятся.` })
+  }
+  if (permissionMode === 'plan' && conversation.permissionMode && conversation.permissionMode !== 'plan') {
+    warnings.push({ itemId: 'permission-mode', level: 'notice', text: 'Сервер понизил режим до «Только планирование»: без доступной машины изменения выполнять негде.' })
+  }
+  warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+
+  // Факт последнего хода: `meta.request` сохранённого ответа. Ничего не
+  // досчитываем — это ответ на вопрос «что было отправлено», а не прогноз.
+  const lastRequest = [...messages].reverse().find((message) => message.role === 'ai' && message.meta?.request)
+  const request = lastRequest?.meta?.request
+  const lastTurn: ContextLastTurn | null = request
+    ? {
+        at: lastRequest!.time,
+        provider: request.provider,
+        model: request.model,
+        prompt: request.prompt,
+        chars: request.promptChars,
+        approxTokens: approxTokens(request.promptChars),
+        resumed: request.resumed,
+        ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}),
+        attachments: request.attachments?.length ?? 0,
+        kbSections: (request.kbContext?.sections ?? []).map((section) => section.title)
+      }
+    : null
+
   // Предпросмотр «что именно уйдёт»: тот же билдер, что у хода модели, поэтому
   // выключенный пункт исчезает и здесь. История и автоконтекст БЗ в него не
   // входят — им нужен текст ещё не отправленного сообщения.
@@ -231,6 +275,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     summary: { provider, model, permissionMode: { value: permissionMode, ...permissionDisplay[permissionMode] }, kbMode: { value: kbMode, ...kbDisplay[kbMode] } },
     groups: withSizes,
     viewerRole: role,
+    lastTurn,
+    warnings,
     promptPreview: {
       blocks: previewBlocks,
       text: previewText,

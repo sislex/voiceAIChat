@@ -71,6 +71,22 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       ] }
     ],
     viewerRole: options.viewerRole ?? 'admin',
+    lastTurn: {
+      at: '12:41',
+      provider: 'claude',
+      model: 'opus',
+      prompt: `${PERSONALIZATION}\n\n${INSTRUCTION}\n\nПользователь: почему падает гейт?`,
+      chars: 420,
+      approxTokens: 105,
+      resumed: true,
+      permissionMode: 'acceptEdits',
+      attachments: 1,
+      kbSections: ['Соглашения / Гейт']
+    },
+    warnings: [
+      { itemId: 'machine', level: 'problem', text: 'Выбранная машина недоступна: команды и файловые инструменты в ход не попадут.' },
+      { itemId: null, level: 'notice', text: 'Инструкций чата выключено для этого разговора: 1.' }
+    ],
     promptPreview: {
       blocks: [
         ...(on ? [{ itemIds: ['personalization'], title: 'Персонализация пользователя', text: PERSONALIZATION, ...size(PERSONALIZATION) }] : []),
