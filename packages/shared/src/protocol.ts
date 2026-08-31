@@ -471,8 +471,8 @@ export const REST = {
   // Все ручки принимают `workspace=<id>` (см. `GitWorkspaceRef.id`): путь на машине
   // клиент не присылает никогда — его резолвит сервер по своим таблицам.
   projectGitWorkspaces: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/workspaces`,
-  projectGitStatus: (id: string, workspace: string) =>
-    `/api/projects/${encodeURIComponent(id)}/git/status?workspace=${encodeURIComponent(workspace)}`,
+  projectGitStatus: (id: string, workspace: string, changesLimit?: number) =>
+    `/api/projects/${encodeURIComponent(id)}/git/status?workspace=${encodeURIComponent(workspace)}${changesLimit ? `&changesLimit=${changesLimit}` : ''}`,
   projectGitBranches: (id: string, workspace: string, refresh?: boolean) =>
     `/api/projects/${encodeURIComponent(id)}/git/branches?workspace=${encodeURIComponent(workspace)}${refresh ? '&refresh=1' : ''}`,
   projectGitTree: (id: string, workspace: string, dir: string, ref?: string) =>

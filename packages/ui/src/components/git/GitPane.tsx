@@ -70,6 +70,8 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
   const [fileLog, setFileLog] = useState<{ path: string; commits: GitCommitInfo[] } | null>(null)
   const [staging, setStaging] = useState(false)
   const [treePaths, setTreePaths] = useState<string[]>([])
+  /** Сколько изменений просим у сервера: список бывает длиннее лимита по умолчанию. */
+  const [changesLimit, setChangesLimit] = useState<number | undefined>(undefined)
   const [selected, setSelected] = useState<string | null>(null)
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -96,7 +98,9 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
   const refresh = useCallback(async (): Promise<void> => {
     setLoad((prev) => ({ status: 'loading', error: prev.error }))
     try {
-      const next = await api['projects:gitStatus']({ id: projectId, workspace: workspaceId })
+      const next = await api['projects:gitStatus']({
+        id: projectId, workspace: workspaceId, ...(changesLimit ? { changesLimit } : {})
+      })
       setStatus(next)
       setLoad({ status: 'ready', error: null })
       // Список выбранных файлов подрезаем под то, что реально изменено: после коммита
@@ -509,7 +513,12 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
             </span>
           )}
           <span className="gitpane-machine">{ref?.machineName ?? ref?.agentId}</span>
-          <span className="gitpane-count">{status.changes.length} изменений{status.changesTruncated ? ' (показаны первые)' : ''}</span>
+          <span className="gitpane-count">{status.changes.length} изменений</span>
+          {status.changesTruncated && (
+            <Button size="sm" variant="ghost" onClick={() => setChangesLimit((prev) => (prev ?? 500) * 4)}>
+              Показать больше
+            </Button>
+          )}
           {view.refreshing && <RefreshIndicator label="Обновляем состояние…" />}
         </div>
         <div className="gitpane-head-actions">

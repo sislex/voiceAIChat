@@ -169,3 +169,24 @@ export const Conflict: Story = {
     await userEvent.click(await canvas.findByRole('tab', { name: 'Конфликт' }))
   }
 }
+
+/** Телефон: одна колонка, редактор деградирует до textarea (PHONE_EDITOR_QUERY). */
+export const Mobile: Story = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } }
+}
+
+/** Список изменений обрезан сервером — есть чем его продолжить. */
+export const TruncatedWithMore: Story = {
+  args: {
+    api: api(makeGitStatus({
+      changesTruncated: true,
+      changes: Array.from({ length: 8 }, (_, index) => ({
+        path: `packages/ui/src/components/file-${index}.tsx`,
+        oldPath: null,
+        state: 'modified' as const,
+        staged: false,
+        worktree: true
+      }))
+    }))
+  }
+}

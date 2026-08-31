@@ -88,8 +88,13 @@ export function looksBinary(text: string): boolean {
   return text.includes('\u0000') || text.includes('\uFFFD')
 }
 
+/**
+ * Сколько держим блокировку каталога. Длиннее самой долгой операции (push/fetch с
+ * сетью), но конечно: упавший процесс не должен запирать рабочую копию навсегда.
+ */
+const LOCK_TTL_MS = 6 * 60_000
+
 export class GitWorkspaceService {
-  private readonly locks = new Set<string>()
 
   constructor(private readonly deps: GitWorkspaceDeps) {}
 
@@ -161,7 +166,7 @@ export class GitWorkspaceService {
   }
 
   /** Состояние рабочей копии. Проблема — не исключение: панели нужно её нарисовать. */
-  async status(userId: string, projectId: string, workspaceId: string): Promise<GitWorkspaceStatus> {
+  async status(userId: string, projectId: string, workspaceId: string, changesLimit: number = GIT_MAX_CHANGES): Promise<GitWorkspaceStatus> {
     let ref: GitWorkspaceRef
     try {
       ref = this.resolve(userId, projectId, workspaceId, { write: false })
@@ -180,7 +185,9 @@ export class GitWorkspaceService {
     }
     const head = /^[0-9a-f]{7,40}$/.exec(lastLine(sections.head ?? ''))?.[0] ?? null
     const porcelain = decodeBase64Section(sections.status_b64)
-    const parsed = parseGitStatusPorcelain(porcelain, GIT_MAX_CHANGES)
+    // Лимит — параметр, а не константа: список из тысячи файлов бывает у первого
+    // рана в свежем репозитории, и «показаны первые 500» должно иметь продолжение.
+    const parsed = parseGitStatusPorcelain(porcelain, Math.max(1, Math.min(changesLimit, GIT_MAX_CHANGES * 8)))
     const upstreamRaw = lastLine(sections.upstream ?? '')
     const upstream = upstreamRaw && !/^fatal|^error|no upstream/i.test(upstreamRaw) ? upstreamRaw : parsed.head.upstream
     const track = parseAheadBehind(sections.track ?? '')
@@ -596,9 +603,17 @@ export class GitWorkspaceService {
     if (verdict && !verdict.allowed) {
       throw new GitError(403, 'command_denied', `Запрещено политикой команд: ${verdict.reason ?? 'нет доступа'}`)
     }
-    const key = `${ref.agentId}::${ref.path}`
-    if (this.locks.has(key)) throw new GitError(409, 'git_busy', 'Другая операция в этой рабочей копии ещё выполняется')
-    this.locks.add(key)
+    // Блокировка живёт в БД, а не в памяти процесса: панель открывают в двух вкладках,
+    // а сервер может перезапуститься посреди push — тогда два git-процесса встретятся
+    // в одном каталоге на index.lock, и вторая операция упадёт непонятной ошибкой.
+    const holder = `${userId}:${process.pid}:${this.now()}`
+    const lock = this.deps.db.acquireGitWorkspaceLock(ref.agentId, ref.path, holder, script.script.slice(0, 40), LOCK_TTL_MS)
+    if (!lock) {
+      const busy = this.deps.db.gitWorkspaceLockHolder(ref.agentId, ref.path)
+      throw new GitError(409, 'git_busy', busy
+        ? `В этой рабочей копии уже идёт операция (${busy.holder.split(':')[0]}) — дождитесь её окончания`
+        : 'Другая операция в этой рабочей копии ещё выполняется')
+    }
     try {
       const result = await this.deps.runtime.exec(ref.agentId, command, timeoutMs, undefined, { source: 'console', userId })
       if (result.timedOut) throw new GitError(409, 'git_timeout', 'Команда git не завершилась за отведённое время')
@@ -607,7 +622,7 @@ export class GitWorkspaceService {
       if (error instanceof GitError) throw error
       throw new GitError(409, 'machine_error', error instanceof Error ? error.message : String(error))
     } finally {
-      this.locks.delete(key)
+      this.deps.db.releaseGitWorkspaceLock(ref.agentId, ref.path, holder)
     }
   }
 
