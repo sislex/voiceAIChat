@@ -15,7 +15,7 @@ import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantComma
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
-import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
+import type { PreviewActionOutcome, ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { parseUserAgent } from '@voicechat/sessions-core'
@@ -39,14 +39,10 @@ import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
 import { ProjectSettings } from './components/ProjectSettings'
 import { PersonalizationPage } from './components/SettingsPage'
-import { ProjectBoard } from './components/ProjectBoard'
 import { TaskModal, type TaskUpdateFields } from './components/kanban/TaskModal'
-import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant, ProjectAssistantChatSelector } from './components/KanbanAssistant'
-import { MachineStatus } from './components/MachineStatus'
-import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
 import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
@@ -59,7 +55,6 @@ import { Skeleton } from '@voicechat/ui-kit'
 import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
-import { KnowledgeBase } from './components/KnowledgeBase'
 import { NotificationContainer } from './components/ClarificationNotification'
 import { KbUsagePanel } from './components/kb/KbUsagePanel'
 import { CommandPalette } from './components/CommandPalette'
@@ -128,6 +123,47 @@ const UsersAdmin = lazy(async () => {
 const AccountPage = lazy(async () => {
   const module = await import('./components/AccountPage')
   return { default: module.AccountPage }
+})
+
+// Поверхность Reader нужна только беседе-ридеру, парк машин и утилиты (консоль,
+// терминал, проводник) — только разделу машин, база знаний — своей странице.
+// В главном чанке всё это лежало мёртвым весом у пользователя, который просто
+// разговаривает с моделью.
+const WebReaderFrame = lazy(async () => {
+  const module = await import('@voicechat/web-reader-app')
+  return { default: module.WebReaderFrame }
+})
+const MachineStatus = lazy(async () => {
+  const module = await import('./components/MachineStatus')
+  return { default: module.MachineStatus }
+})
+const MachineUtility = lazy(async () => {
+  const module = await import('./components/MachineUtility')
+  return { default: module.MachineUtility }
+})
+const KnowledgeBase = lazy(async () => {
+  const module = await import('./components/KnowledgeBase')
+  return { default: module.KnowledgeBase }
+})
+
+// Раздел «Проекты» — самая тяжёлая часть интерфейса: доска (сотня килобайт
+// исходника), карточка задачи и все её панели ранов, QA и merge. Пользователь
+// чата её не открывает вовсе, поэтому она живёт в своём чанке.
+const ProjectPage = lazy(async () => {
+  const module = await import('./components/ProjectPage')
+  return { default: module.ProjectPage }
+})
+const ProjectsEmptyPage = lazy(async () => {
+  const module = await import('./components/ProjectPage')
+  return { default: module.ProjectsEmptyPage }
+})
+const ProjectNotFoundPage = lazy(async () => {
+  const module = await import('./components/ProjectPage')
+  return { default: module.ProjectNotFoundPage }
+})
+const ProjectBoard = lazy(async () => {
+  const module = await import('./components/ProjectBoard')
+  return { default: module.ProjectBoard }
 })
 
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
@@ -2120,19 +2156,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         </Suspense>
       )}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
-      {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
+      {inReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
 
       {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}
-      {inProjects && !routeProjectId && firstProjectId === null && <ProjectsEmptyPage invitationCount={projects.myInvitations.length} />}
+      {inProjects && !routeProjectId && firstProjectId === null && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectsEmptyPage invitationCount={projects.myInvitations.length} /></Suspense>}
 
-      {inProjects && routeProjectId && projectMissing && <ProjectNotFoundPage />}
+      {inProjects && routeProjectId && projectMissing && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectNotFoundPage /></Suspense>}
 
       {/* Одна страница проекта на все три маршрута: шапка с именем и вкладками
           общая, меняется только содержимое. */}
       {inProjects && !inTaskChat && routeProjectId && !projectMissing && (
-        <ProjectPage
+        <Suspense fallback={<div className="pboard-loading" role="status">Загрузка доски…</div>}><ProjectPage
           projectName={routeProjectName}
           features={projectFeatures}
           {...(() => {
@@ -2318,11 +2354,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               />}
             />
           )}
-        </ProjectPage>
+        </ProjectPage></Suspense>
       )}
 
       {utilitySeg === 'kb' && (
-        <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+        <Suspense fallback={<div role="status">Загрузка базы знаний…</div>}>
+          <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+        </Suspense>
       )}
 
       {utilitySeg === 'account' && session.currentUser && (
@@ -2385,7 +2423,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       })()}
 
       {utilitySeg === 'machines' && operations.machinesOpen && (
-        <MachineStatus
+        <Suspense fallback={<div role="status">Загрузка парка машин…</div>}><MachineStatus
           variant="page"
           agents={operations.agents}
           status={operations.agentsStatus}
@@ -2409,7 +2447,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           defaultAgentId={settingsState.settings.defaultAgentId}
           onSetDefault={(id) => applySettings({ defaultAgentId: id })}
           onClose={() => navigate('/')}
-        />
+        /></Suspense>
       )}
 
       {utilitySeg === 'make-shared' && segments[1] && window.api && (
@@ -2595,7 +2633,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
 
       {operations.utility && machineOps && (
-        <MachineUtility
+        <Suspense fallback={<div role="status">Загрузка утилиты машины…</div>}><MachineUtility
           tool={{
             kind: operations.utility.kind,
             ...(operations.utility.agentId ? { agentId: operations.utility.agentId } : {}),
@@ -2619,7 +2657,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               : undefined
           }
           onClose={operationsActions.closeUtility}
-        />
+        /></Suspense>
       )}
 
       {shell.kbUsageOpen && chat.activeId && (
