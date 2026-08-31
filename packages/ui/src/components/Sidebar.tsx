@@ -47,8 +47,12 @@ function formatMeta(c: Conversation, now: number): string {
 }
 
 export function formatConversationCostUsd(value: number): string {
-  const digits = value >= 0.01 ? 2 : value >= 0.001 ? 3 : value >= 0.0001 ? 4 : 6
-  return String.fromCharCode(36) + value.toFixed(digits)
+  const formatted = new Intl.NumberFormat('en-US', {
+    maximumSignificantDigits: 4,
+    maximumFractionDigits: 8,
+    useGrouping: false
+  }).format(value)
+  return String.fromCharCode(36) + formatted
 }
 
 function pluralMessages(n: number): string {
