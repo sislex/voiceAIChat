@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-08-30
-checked: 4202b92b
+updated: 2026-08-31
+checked: f1341d77
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -35,13 +35,15 @@ areas:
 `vitest run` в каждом воркспейсе. Файлы — рядом с исходником: `*.test.ts` для
 логики, `*.dom.test.tsx` для компонентов (jsdom + Testing Library, setup —
 `packages/ui/src/test/setup.ts`, фейковые мосты — `src/test/fakeApi.ts`). Сейчас в
-репозитории ~108 тестовых файлов; тест пишется в том же шаге, что и код.
+репозитории ~465 тестовых файлов, из них 76% в трёх пакетах: `packages/ui` (149),
+`apps/server` (130), `packages/shared` (78). Тест пишется в том же шаге, что и код.
 
 Что принято покрывать: чистые функции (`shared`) — таблицей случаев; сервер —
 через `fastify.inject()` и ws-клиент с моками движков; UI — поведением
 («клик → вызван мост → изменился экран»), не снапшотами.
 
 ```bash
+npm run gate:fast                      # гейт шага: затронутое + related-тесты
 npm run -w @voicechat/ui test          # один пакет
 npm run -w @voicechat/server test
 npm run test:desktop                   # desktop — свой node_modules
@@ -51,6 +53,17 @@ npm run test                           # все воркспейсы
 Полный гейт репозитория — `npm run verify`: typecheck + test всех воркспейсов,
 сборка, плюс desktop и agent-tray (у них свой `node_modules`). Перед пушем удобнее
 гонять его, чем собирать команды руками.
+
+## Инкрементальный typecheck
+
+Во всех tsconfig, по которым идёт `typecheck`, включён `"incremental": true`. Файл
+`tsconfig.tsbuildinfo` ложится рядом с конфигом и покрыт `.gitignore` (`*.tsbuildinfo`).
+Выигрыш крупный и почти бесплатный: `packages/ui` — 10,2 с на холодном кеше против
+1,4 с на тёплом, весь `npm run typecheck` — 47 с против 14 с. Ошибки кеш не прячет:
+правка файла с ошибкой типа даёт красный прогон за 3 с.
+
+Новый пакет тоже заводится с `incremental` — иначе он один держит гейт на десятки
+секунд.
 
 ## Гейт шага
 
@@ -96,3 +109,8 @@ npm run typecheck 2>&1 | grep -E "error TS" | head -3; echo "typecheck ok"
 `&&`. Одна команда, падает по коду возврата, собирать её из кусков не нужно.
 `npm run verify` тяжелее (десктоп и трей) и нужен перед релизом, а не на каждом
 шаге.
+
+Внутри шага разработки полный гейт слишком дорог (~3,5 мин), поэтому есть
+**`npm run gate:fast`** — тот же `affected-check`, но с базой диффа `HEAD` и
+`vitest related` вместо полных пакетных наборов. Он тоже падает по коду возврата,
+но узкий по построению и не заменяет `npm run gate` перед коммитом и PR.

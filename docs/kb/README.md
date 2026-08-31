@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 183 коммит(ов) в areas после сверки: e8c62b55 perf(ui): главный чанк 775 КБ — минус карточка задачи, настройки проекта и админка … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 180 коммит(ов) в areas после сверки: 6b2e1b3a feat(admin,profile,ui-kit): круг 3 — журнал фильтрует сервер, расход виден в списке … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 8 коммит(ов) в areas после сверки: f5d2941e feat(profile-app): переносимая карточка человека — одна на админку и «Мой аккаунт» … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-31 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-31 | ⚠ 9 коммит(ов) в areas после сверки: 6b2e1b3a feat(admin,profile,ui-kit): круг 3 — журнал фильтрует сервер, расход виден в списке … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 22 коммит(ов) в areas после сверки: 6b2e1b3a feat(admin,profile,ui-kit): круг 3 — журнал фильтрует сервер, расход виден в списке … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 109 коммит(ов) в areas после сверки: e8c62b55 perf(ui): главный чанк 775 КБ — минус карточка задачи, настройки проекта и админка … |
@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 157 коммит(ов) в areas после сверки: 1bd631b4 fix(gate): бюджет входного чанка считался вместе с ленивыми; минус лишние запросы карточки … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 172 коммит(ов) в areas после сверки: 8b916927 Merge remote-tracking branch 'origin/main' into work3 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 42 коммит(ов) в areas после сверки: e8c62b55 perf(ui): главный чанк 775 КБ — минус карточка задачи, настройки проекта и админка … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 938 коммит(ов) в areas после сверки: e8c62b55 perf(ui): главный чанк 775 КБ — минус карточка задачи, настройки проекта и админка … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 942 коммит(ов) в areas после сверки: f1341d77 Merge remote-tracking branch 'origin/main' into work2 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 66 коммит(ов) в areas после сверки: 8b916927 Merge remote-tracking branch 'origin/main' into work3 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 99 коммит(ов) в areas после сверки: e8c62b55 perf(ui): главный чанк 775 КБ — минус карточка задачи, настройки проекта и админка … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 44 коммит(ов) в areas после сверки: ba8ba24e feat(admin,ui-kit): круг 2 — выборка в адресе, лёгкий список, клавиатура … |
@@ -38,9 +38,9 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 41 коммит(ов) в areas после сверки: e8c62b55 perf(ui): главный чанк 775 КБ — минус карточка задачи, настройки проекта и админка … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 105 коммит(ов) в areas после сверки: 2f049498 Merge remote-tracking branch 'origin/main' into work1 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 1bd631b4 fix(gate): бюджет входного чанка считался вместе с ленивыми; минус лишние запросы карточки |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 58 коммит(ов) в areas после сверки: 2f049498 Merge remote-tracking branch 'origin/main' into work1 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: e8c62b55 perf(ui): главный чанк 775 КБ — минус карточка задачи, настройки проекта и админка |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 3 коммит(ов) в areas после сверки: f1341d77 Merge remote-tracking branch 'origin/main' into work2 … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-31, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -60,7 +60,7 @@
 
 ## Журнал сессий
 
-Всего записей: 458. Последние:
+Всего записей: 459. Последние:
 
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation
 - [2026-08-31-macbook-air-user-copy-question.md](log/2026-08-31-macbook-air-user-copy-question.md) — copy-question
