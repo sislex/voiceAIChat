@@ -2823,6 +2823,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           // Список для «скопировать контекст из»: только чаты этого человека,
           // текущий из него исключён — копировать в себя нечего.
           otherConversations={chat.conversations.filter((entry) => entry.id !== activeConversation.id).slice(0, 30).map((entry) => ({ id: entry.id, title: entry.title }))}
+          contextPresets={settingsState.settings.contextPresets}
+          onSavePresets={async (presets) => { await settingsActions.updateSettings({ contextPresets: presets }) }}
+          // Вложения черновика знает только клиент: они приложены к сообщению,
+          // которое ещё не отправлено, и в серверный снимок попасть не могут.
+          draftAttachments={chat.attachments.map((entry) => ({ name: entry.upload?.name ?? entry.file.name, status: entry.status }))}
           chatInstructions={settingsState.settings.chatInstructions}
           onSaveInstruction={async (id, text) => {
             // Текст инструкции — общая настройка: правим весь список, сохраняя
