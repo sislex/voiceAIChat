@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-31
-checked: 1bca2e06
+checked: 14747e24
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -362,6 +362,12 @@ Escape; нажатие внутри контейнера не закрывает
 задачи каскадят и от колонки). Технологии/навыки — JSON-массивы в колонке (как
 `conversations.skill_names`). Порядок колонок и задач — дробный ранг (`position REAL`,
 шаг 1024) с ренормализацией при схлопывании; см. методы в `database.ts`.
+
+### Проект при создании обычного разговора
+
+`POST /api/conversations` принимает необязательный `projectId` и передаёт его в `VoiceChatDb.createConversation` (`apps/server/src/routes/rest.ts`, `apps/server/src/db/database.ts`). Непустой идентификатор разрешён только для проекта, доступного текущему пользователю: проверка выполняется до `INSERT`, а недоступный или несуществующий проект возвращает 404, поэтому строка разговора не появляется. Создание без проекта остаётся допустимым и сохраняет `conversations.project_id` как `NULL`.
+
+Успешное создание атомарно записывает `project_id` вместе со снимком `skill_names` из проекта и возвращает `Conversation` с тем же `projectId`. Это прямой путь создания обычного разговора; отдельные ограничения специализированных assistant kinds остаются в `VoiceChatDb.createConversation`.
 
 Доступ — по членству, а не по единственному владельцу: гейты
 `isProjectMember` / единый публичный серверный
