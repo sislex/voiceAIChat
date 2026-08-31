@@ -392,6 +392,7 @@
   flex: 1;
 }
 .sideproject {
+  position: relative;
   padding: 0 14px 10px 14px;
 }
 .projectselect {
@@ -408,6 +409,45 @@
 .projectselect:focus {
   outline: none;
   border-color: #b9b6a8;
+}
+.projectfilter-menu {
+  position: absolute;
+  z-index: 20;
+  left: 14px;
+  right: 14px;
+  top: calc(100% - 8px);
+  display: grid;
+  gap: 4px;
+  max-height: min(320px, 55dvh);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+}
+.projectfilter-all {
+  font: inherit;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.projectfilter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.projectfilter-empty {
+  margin: 4px;
+  color: var(--muted);
+  font-size: 13px;
 }
 .sidesearch {
   padding: 0 14px 10px 14px;

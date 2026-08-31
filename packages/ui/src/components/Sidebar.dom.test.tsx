@@ -191,34 +191,46 @@ describe('Sidebar — инструменты в меню по клику на п
 describe('Sidebar — фильтр проектов чатов', () => {
   const projects = [
     { id: 'p1', name: 'Альфа', role: 'owner' },
-    { id: 'p2', name: 'Бета', role: 'member' }
+    { id: 'p2', name: 'Бета', role: 'member' },
+    { id: 'p3', name: 'Гамма', role: 'member' }
   ] as never[]
 
-  it('по умолчанию показывает «Все», проекты и «Без проекта»', () => {
-    setup({ projects, onSelectProject: vi.fn() })
+  it('показывает полный выбор, массовую кнопку и независимые доступные чекбоксы', async () => {
+    const onToggleProject = vi.fn()
+    const onSetAllProjects = vi.fn()
+    setup({ projects, selectedProjectIds: ['p1', 'p2', 'p3'], onToggleProject, onSetAllProjects })
     fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
-    const select = screen.getByRole('combobox', { name: 'Проект' })
-    expect(select).toHaveValue('__all__')
-    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Все', 'Альфа', 'Бета', 'Без проекта'
-    ])
+    const control = screen.getByRole('button', { name: 'Фильтр проектов: Все чаты' })
+    await userEvent.click(control)
+    expect(screen.getByRole('button', { name: 'Снять все' })).toBeInTheDocument()
+    const alpha = screen.getByRole('checkbox', { name: 'Альфа' })
+    expect(alpha).toBeChecked()
+    await userEvent.click(alpha)
+    expect(onToggleProject).toHaveBeenCalledWith('p1')
+    expect(screen.getByRole('menu', { name: 'Проекты для фильтра' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Снять все' }))
+    expect(onSetAllProjects).toHaveBeenCalledWith(false)
   })
 
-  it('доступен без проектов и сообщает каждый из трёх режимов', async () => {
-    const onSelectProject = vi.fn()
-    const first = setup({ projects: [], onSelectProject })
+  it.each([
+    [['p1', 'p2'], 'Фильтр проектов: Выбрано проектов: 2'],
+    [['p1'], 'Фильтр проектов: Альфа'],
+    [[], 'Фильтр проектов: Ничего не выбрано']
+  ])('различает частичный, одиночный и пустой режим %#', (selectedProjectIds, label) => {
+    setup({ projects, selectedProjectIds })
     fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
-    const select = screen.getByRole('combobox', { name: 'Проект' })
-    expect(within(select).getAllByRole('option')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+  })
 
-    await userEvent.selectOptions(select, '__none__')
-    await userEvent.selectOptions(select, '__all__')
-    first.unmount()
-    setup({ projects, selectedProjectId: 'p1', onSelectProject })
+  it('закрывается по Escape, а без проектов сообщает об их отсутствии', async () => {
+    setup({ projects: [], selectedProjectIds: [] })
     fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Проект' }), 'p2')
-
-    expect(onSelectProject.mock.calls.map(([value]) => value)).toEqual([null, undefined, 'p2'])
+    const control = screen.getByRole('button', { name: 'Фильтр проектов: Все чаты' })
+    control.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByText('Проектов пока нет')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('menu', { name: 'Проекты для фильтра' })).not.toBeInTheDocument()
   })
 })
 
