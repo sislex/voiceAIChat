@@ -1,36 +1,94 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { availableParallelism, tmpdir } from 'node:os'
+import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+/**
+ * Пакеты гейта в порядке запуска и явный граф зависимостей: `dependsOn` — на кого
+ * пакет опирается, потребители выводятся обратным замыканием (`consumersOf`).
+ *
+ * Граф именно явный, а не выведенный из `package.json`: часть связей живёт только
+ * в алиасах. `apps/web` импортирует `@voicechat/ui` через `paths` в tsconfig и
+ * alias в `vite.config.ts`, а в зависимостях его нет вовсе — вывод по манифестам
+ * потерял бы эту связь и пропустил бы поломку web от правки UI.
+ *
+ * Рассинхронизацию с репозиторием ловят тесты: один требует, чтобы в списке был
+ * каждый воркспейс, другой — чтобы каждая зависимость из `package.json` попала
+ * в `dependsOn`. Забытый пакет раньше означал молчаливый полный гейт на любой
+ * правке фронта, потому что путь не распознавался.
+ */
 export const PACKAGES = [
-  { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared' },
-  { id: 'sessions-core', path: 'packages/sessions-core', workspace: '@voicechat/sessions-core' },
-  { id: 'sessions-app', path: 'packages/sessions-app', workspace: '@voicechat/sessions-app' },
-  { id: 'server', path: 'apps/server', workspace: '@voicechat/server' },
-  { id: 'runner', path: 'apps/llm-runner', workspace: '@voicechat/llm-runner' },
-  { id: 'tts-runner', path: 'apps/tts-runner', workspace: '@voicechat/tts-runner' },
-  { id: 'agent', path: 'apps/agent', workspace: '@voicechat/agent' },
-  { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui' },
-  { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app' },
-  { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app' },
-  { id: 'web', path: 'apps/web', workspace: '@voicechat/web' },
-  { id: 'web-recorder', path: 'apps/web-recorder', workspace: '@voicechat/web-recorder' },
-  { id: 'desktop', path: 'apps/desktop', prefix: 'apps/desktop' },
-  { id: 'agent-tray', path: 'apps/agent-tray', prefix: 'apps/agent-tray' }
+  { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared', dependsOn: ['sessions-core'] },
+  { id: 'sessions-core', path: 'packages/sessions-core', workspace: '@voicechat/sessions-core', dependsOn: [] },
+  { id: 'ui-kit', path: 'packages/ui-kit', workspace: '@voicechat/ui-kit', dependsOn: [] },
+  { id: 'app-shell', path: 'packages/app-shell', workspace: '@voicechat/app-shell', dependsOn: [] },
+  { id: 'sessions-app', path: 'packages/sessions-app', workspace: '@voicechat/sessions-app', dependsOn: ['sessions-core', 'ui-kit'] },
+  { id: 'profile-app', path: 'packages/profile-app', workspace: '@voicechat/profile-app', dependsOn: ['sessions-app', 'ui-kit'] },
+  { id: 'chat-app', path: 'packages/chat-app', workspace: '@voicechat/chat-app', dependsOn: ['shared', 'ui-kit'] },
+  { id: 'projects-app', path: 'packages/projects-app', workspace: '@voicechat/projects-app', dependsOn: ['shared', 'ui-kit'] },
+  { id: 'operations-app', path: 'packages/operations-app', workspace: '@voicechat/operations-app', dependsOn: ['shared', 'ui-kit'] },
+  { id: 'admin-app', path: 'packages/admin-app', workspace: '@voicechat/admin-app', dependsOn: ['profile-app', 'sessions-app', 'shared', 'ui-kit'] },
+  { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app', dependsOn: ['chat-app', 'shared', 'ui-kit'] },
+  { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app', dependsOn: ['chat-app', 'shared', 'ui-kit'] },
+  { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui', dependsOn: ['admin-app', 'app-shell', 'chat-app', 'operations-app', 'playwright-reader', 'projects-app', 'sessions-app', 'sessions-core', 'shared', 'ui-kit', 'web-reader'] },
+  { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['runner', 'sessions-core', 'shared'] },
+  { id: 'runner', path: 'apps/llm-runner', workspace: '@voicechat/llm-runner', dependsOn: ['shared'] },
+  { id: 'tts-runner', path: 'apps/tts-runner', workspace: '@voicechat/tts-runner', dependsOn: ['shared'] },
+  { id: 'stt-runner', path: 'apps/stt-runner', workspace: '@voicechat/stt-runner', dependsOn: ['shared'] },
+  { id: 'automation-runner', path: 'apps/automation-runner', workspace: '@voicechat/automation-runner', dependsOn: ['shared'] },
+  { id: 'browser-runner', path: 'apps/browser-runner', workspace: '@voicechat/browser-runner', dependsOn: ['shared'] },
+  { id: 'agent', path: 'apps/agent', workspace: '@voicechat/agent', dependsOn: ['shared'] },
+  // `ui` тут не из package.json, а из tsconfig `paths` и alias в vite.config.ts.
+  { id: 'web', path: 'apps/web', workspace: '@voicechat/web', dependsOn: ['chat-app', 'shared', 'ui'] },
+  { id: 'web-recorder', path: 'apps/web-recorder', workspace: '@voicechat/web-recorder', dependsOn: ['shared', 'ui'] },
+  // Вне npm-workspaces: свой node_modules с Electron, поэтому запуск через --prefix.
+  // `manualGate` — их не втягивает замыкание потребителей: корневой `npm install`
+  // их не ставит, и на машине без локального install гейт падал бы на чужой правке
+  // UI. Свои гейты у них отдельные (`typecheck:desktop`, `test:desktop` в verify).
+  { id: 'desktop', path: 'apps/desktop', prefix: 'apps/desktop', dependsOn: ['shared', 'ui', 'web'], manualGate: true },
+  { id: 'agent-tray', path: 'apps/agent-tray', prefix: 'apps/agent-tray', dependsOn: ['shared'], manualGate: true }
 ]
 
-// Это явная карта зависимостей: shared — контракт всех workspace-потребителей.
-const sharedConsumers = ['server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder']
-// Ядро модуля сессий переносимо и ни от кого не зависит, но его правки видны
-// всем, кто им пользуется: серверу (хранилище и политики) и UI (разбор устройств).
-const sessionsCoreConsumers = ['sessions-app', 'server', 'ui', 'web']
-// UI-модуль сессий подключают хост-приложение и админка внутри него.
-const sessionsAppConsumers = ['ui', 'web']
 const workspacePackages = PACKAGES.filter((pkg) => pkg.workspace)
+const byId = new Map(PACKAGES.map((pkg) => [pkg.id, pkg]))
+
+/** Транзитивное замыкание «кто ломается, если правишь этот пакет». */
+export function consumersOf(id) {
+  const affected = new Set()
+  const queue = [id]
+  while (queue.length) {
+    const current = queue.shift()
+    for (const pkg of PACKAGES) {
+      if (pkg.manualGate || !pkg.dependsOn.includes(current) || affected.has(pkg.id)) continue
+      affected.add(pkg.id)
+      queue.push(pkg.id)
+    }
+  }
+  return affected
+}
+
+/** Транзитивное замыкание «на кого этот пакет опирается» — источники его related-файлов. */
+export function dependenciesOf(id) {
+  const seen = new Set()
+  const queue = [id]
+  while (queue.length) {
+    const current = queue.shift()
+    for (const dependency of byId.get(current)?.dependsOn ?? []) {
+      if (seen.has(dependency)) continue
+      seen.add(dependency)
+      queue.push(dependency)
+    }
+  }
+  return seen
+}
+
 const fullGate = (reason) => ({ full: true, reason, packages: workspacePackages })
-const harmlessPaths = [/^docs\//, /^generated\/kb\//, /^(README|LICENSE)(\.md)?$/]
+const harmlessPaths = [/^docs\//, /^generated\/kb\//, /^plans\//, /^artifacts\//, /^(README|LICENSE)(\.md)?$/]
+// У этих путей свой гейт, к пакетным тестам они не относятся: e2e гоняют скрипты
+// `e2e:*`, базовую линию бандла — `frontend:static`, настройки агентов вообще
+// не код продукта. Раньше любой из них молча включал полный гейт репозитория.
+const ownGatePaths = [/^e2e\//, /^frontend-quality\//, /^\.claude\//, /^\.vscode\//, /^\.idea\//]
 const rootFiles = new Set([
   'package.json', 'package-lock.json', '.npmrc', '.nvmrc',
   'tsconfig.json', 'vitest.config.ts', 'vite.config.ts', 'docker-compose.yml', 'Dockerfile'
@@ -52,14 +110,23 @@ export function selectAffected(files) {
       continue
     }
     if (harmlessPaths.some((pattern) => pattern.test(file))) continue
+    if (ownGatePaths.some((pattern) => pattern.test(file))) continue
     return fullGate(`нераспознанный критичный путь: ${file}`)
   }
 
-  if (affected.has('shared')) for (const consumer of sharedConsumers) affected.add(consumer)
-  if (affected.has('sessions-core')) for (const consumer of sessionsCoreConsumers) affected.add(consumer)
-  if (affected.has('sessions-app')) for (const consumer of sessionsAppConsumers) affected.add(consumer)
-  if (affected.has('ui')) affected.add('web-recorder')
+  for (const id of [...affected]) for (const consumer of consumersOf(id)) affected.add(consumer)
   return { full: false, reason: null, packages: PACKAGES.filter((pkg) => affected.has(pkg.id)) }
+}
+
+/**
+ * Сколько воркеров дать одному пакету. Замеры на 8 CPU: `packages/ui` — 42 с при
+ * дефолте, 40 с при 4 воркерах, 61 с при 12. То есть перепрописка вредна, а
+ * `--maxWorkers=1` (так было раньше при `--jobs 2`) стоил 108 с вместо 42 с.
+ * Поэтому пул делится между параллельными пакетами, а не сажается на единицу.
+ */
+export function workersPerJob(jobs, parallelism = availableParallelism()) {
+  if (!Number.isInteger(jobs) || jobs <= 1) return undefined
+  return Math.max(1, Math.floor(parallelism / jobs))
 }
 
 function run(command, args) {
@@ -206,6 +273,35 @@ export function fastCheckForPackage(pkg, files) {
   return { pkg, files: packageFiles, reason: null }
 }
 
+/**
+ * План гейта шага для одного пакета. Отличие от `fastCheckForPackage`: пакет,
+ * которого задело по графу зависимостей, тоже проверяется через related — Vitest
+ * видит исходники соседнего пакета как обычные файлы модульного графа (проверено:
+ * из `packages/ui` related на `../ui-kit/src/Button.tsx` находит 85 файлов из 149).
+ * Раньше такой пакет получал полный набор, и правка одного компонента тянула за
+ * собой 42-секундный прогон всего `ui`.
+ *
+ * Полный набор остаётся там, где статический граф не доказателен:
+ * — правки самого `shared` и всё, что задето через `shared`: контракт WS/REST
+ *   ходит строковыми литералами через границы процессов, импортом это не видно;
+ * — конфиг, схема БД, миграция в любом пакете-источнике.
+ */
+export function fastPlanForPackage(pkg, files) {
+  const sources = new Set([pkg.id, ...dependenciesOf(pkg.id)])
+  const relevant = PACKAGES
+    .filter((source) => sources.has(source.id))
+    .flatMap((source) => files.filter((file) => file.startsWith(`${source.path}/`)))
+
+  if (!relevant.length) return { pkg, files: [], reason: 'изменений в этом пакете и его зависимостях нет' }
+  if (sources.has('shared') && relevant.some((file) => file.startsWith('packages/shared/'))) {
+    return { pkg, files: [], reason: 'shared-контракт' }
+  }
+  const unsafe = relevant.find((file) => fastUnsafeFile.test(file) || migrationPath.test(file))
+  if (unsafe) return { pkg, files: [], reason: `конфиг, схема или миграция: ${unsafe}` }
+
+  return { pkg, files: relevant.map((file) => relative(pkg.path, file)), reason: null }
+}
+
 function compactOutput(output) {
   return output.trim().split('\n').slice(-16).join('\n')
 }
@@ -338,8 +434,8 @@ export async function runFastChecks(checks, { jobs = 2, start = startRelatedTest
   // Пропущенный related не означает успех: пакет всё равно войдёт в полный гейт.
   if (!runnable.length) return
 
-  const limit = Number.isInteger(jobs) && jobs > 0 ? Math.min(jobs, 2) : 2
-  const maxWorkers = limit > 1 && runnable.length > 1 ? 1 : undefined
+  const limit = Number.isInteger(jobs) && jobs > 0 ? jobs : 2
+  const maxWorkers = runnable.length > 1 ? workersPerJob(limit) : undefined
   const pending = [...runnable]
   const active = new Set()
   let firstError
@@ -369,10 +465,10 @@ export async function runFastChecks(checks, { jobs = 2, start = startRelatedTest
 
 // Один пакет проходит typecheck перед собственными тестами; два пакета могут идти
 // одновременно. После ошибки новые задания не выдаются, а живые процессы гасятся.
-export async function runPackageGates(packages, { jobs = 2, start = startPackageCommand } = {}) {
+export async function runPackageGates(packages, { jobs = 2, start = startPackageCommand, scripts = ['typecheck', 'test'] } = {}) {
   const totals = { total: 0, passed: 0, failed: 0 }
-  const limit = Number.isInteger(jobs) && jobs > 0 ? Math.min(jobs, 2) : 2
-  const maxWorkers = limit > 1 && packages.length > 1 ? 1 : undefined
+  const limit = Number.isInteger(jobs) && jobs > 0 ? jobs : 2
+  const maxWorkers = packages.length > 1 ? workersPerJob(limit) : undefined
   const pending = [...packages]
   const active = new Set()
   let firstError
@@ -386,7 +482,7 @@ export async function runPackageGates(packages, { jobs = 2, start = startPackage
       const pkg = pending.shift()
       const startedAt = Date.now()
       let completed = true
-      for (const script of ['typecheck', 'test']) {
+      for (const script of scripts) {
         if (firstError) {
           completed = false
           break
@@ -421,29 +517,77 @@ export async function runPackageGates(packages, { jobs = 2, start = startPackage
   }
 
   await Promise.all(Array.from({ length: Math.min(limit, packages.length) }, worker))
-  console.log(`[tests] total: ${totals.total}; passed: ${totals.passed}; failed: ${totals.failed}`)
+  // Этап только с typecheck не печатает нулевую тестовую сводку: в fast-гейте
+  // «0 passed» рядом с зелёным related читалось как «тесты не запускались».
+  if (scripts.includes('test')) console.log(`[tests] total: ${totals.total}; passed: ${totals.passed}; failed: ${totals.failed}`)
   if (firstError) throw firstError
 }
 
-function parseJobs(argv) {
-  const index = argv.indexOf('--jobs')
-  if (index === -1) return 2
-  const value = Number(argv[index + 1])
-  if (!Number.isInteger(value) || value < 1) throw new Error('--jobs должен быть положительным целым числом')
-  return value
+export function parseOptions(argv) {
+  const jobsIndex = argv.indexOf('--jobs')
+  let jobs = 2
+  if (jobsIndex !== -1) {
+    const value = Number(argv[jobsIndex + 1])
+    if (!Number.isInteger(value) || value < 1) throw new Error('--jobs должен быть положительным целым числом')
+    jobs = value
+  }
+  // `--worktree` — гейт шага разработки: база диффа HEAD, а не origin/main. В
+  // worktree отставшая origin/main даёт дифф на сотни файлов, и узкий гейт
+  // молча превращался в полный.
+  const worktree = argv.includes('--worktree')
+  const baseIndex = argv.indexOf('--base')
+  if (baseIndex !== -1 && worktree) throw new Error('--base и --worktree взаимно исключают друг друга')
+  const explicitBase = baseIndex === -1 ? null : argv[baseIndex + 1]
+  if (baseIndex !== -1 && (!explicitBase || explicitBase.startsWith('--'))) {
+    throw new Error('--base требует git-ref')
+  }
+  const base = explicitBase ?? (worktree ? 'HEAD' : `origin/${process.env.BASE_BRANCH || 'main'}`)
+  return { jobs, base, fast: argv.includes('--fast') }
+}
+
+/**
+ * Нужны ли сборки фронта. В полном гейте — те же условия, что раньше. В `--fast`
+ * гейте шага сборки адресные: web-сборка (16 с) только на правках самого клиента
+ * и его конфигурации, витрина (30 с) — только на правках сториз и .storybook,
+ * иначе 46 с сборок съедали бы весь смысл узкого гейта. Сломанные импорты ловит
+ * typecheck, сломанные сториз — stories.a11y.dom.test.tsx через related.
+ */
+export function buildGates(files, { fast }) {
+  if (!fast) {
+    const frontend = files.some((file) => /^(?:packages\/(?:ui|ui-kit|app-shell|chat-app|projects-app|operations-app|admin-app)|apps\/(?:web|desktop)|frontend-quality\/)/.test(file))
+    return frontend ? ['frontend:build-gates'] : []
+  }
+  const gates = []
+  if (files.some((file) => /^apps\/web\//.test(file))) gates.push('build:web')
+  if (files.some((file) => /\.stories\.tsx$/.test(file) || /^packages\/ui\/\.storybook\//.test(file))) gates.push('build:storybook')
+  return gates
+}
+
+const BUILD_GATE_COMMANDS = {
+  'frontend:build-gates': ['run', 'frontend:build-gates'],
+  'build:web': ['run', '-w', '@voicechat/web', 'build'],
+  'build:storybook': ['run', 'build:storybook']
 }
 
 async function main() {
-  const baseBranch = process.env.BASE_BRANCH || 'main'
-  const baseRef = `origin/${baseBranch}`
-  const diff = changedFiles(baseRef)
+  const options = parseOptions(process.argv.slice(2))
+  const diff = changedFiles(options.base)
   const decision = 'error' in diff
-    ? fullGate(`не удалось получить diff от ${baseRef}: ${diff.error}`)
+    ? fullGate(`не удалось получить diff от ${options.base}: ${diff.error}`)
     : selectAffected(diff)
 
-  console.log(`[affected-check] base ref: ${baseRef}`)
+  console.log(`[affected-check] mode: ${options.fast ? 'fast (гейт шага)' : 'full (гейт перед коммитом)'}`)
+  console.log(`[affected-check] base ref: ${options.base}`)
   console.log(`[affected-check] changed files: ${'error' in diff ? '(diff unavailable)' : diff.length ? diff.join(', ') : '(none)'}`)
   console.log(`[affected-check] selected packages: ${decision.packages.length ? decision.packages.map((pkg) => pkg.id).join(', ') : '(none)'}`)
+
+  const runBuildGates = (files) => {
+    for (const gate of buildGates(files, options)) {
+      console.log(`[affected-check] build gate: ${gate}`)
+      run('npm', BUILD_GATE_COMMANDS[gate])
+    }
+  }
+
   if (decision.full) {
     console.log(`[affected-check] full fallback: ${decision.reason}`)
     console.log('[affected-check] fast stage: skipped (full fallback)')
@@ -453,26 +597,48 @@ async function main() {
     console.log('[affected-check] full gate: npm run typecheck && npm test')
     run('npm', ['run', 'typecheck'])
     run('npm', ['test'])
-    if (!('error' in diff) && diff.some((file) => /^(?:packages\/(?:ui|ui-kit|app-shell|chat-app|projects-app|operations-app|admin-app)|apps\/(?:web|desktop)|frontend-quality\/)/.test(file))) {
-      console.log('[affected-check] frontend build gates: npm run frontend:build-gates')
-      run('npm', ['run', 'frontend:build-gates'])
-    }
+    if (!('error' in diff)) runBuildGates(diff)
     console.log(`[affected-check] full stage: completed in ${Date.now() - fullStartedAt}ms`)
     return
   }
-  if (!decision.packages.length) return
-
-  const jobs = parseJobs(process.argv.slice(2))
-  console.log(`[affected-check] jobs: ${jobs}`)
-  const fastStartedAt = Date.now()
-  await runFastChecks(decision.packages.map((pkg) => fastCheckForPackage(pkg, diff)), { jobs })
-  console.log(`[affected-check] fast stage: completed in ${Date.now() - fastStartedAt}ms`)
-  const fullStartedAt = Date.now()
-  await runPackageGates(decision.packages, { jobs })
-  if (decision.packages.some((pkg) => pkg.id === 'ui' || pkg.id === 'web' || pkg.id === 'desktop')) {
-    console.log('[affected-check] frontend build gates: npm run frontend:build-gates')
-    run('npm', ['run', 'frontend:build-gates'])
+  if (!decision.packages.length) {
+    // Пустой выбор — не то же самое, что зелёный гейт. Чаще всего это правки
+    // только в docs/ или уже сделанный коммит: дифф от HEAD пуст, и молчаливый
+    // ноль читался бы как «всё проверено».
+    console.log(`[affected-check] nothing to check: в диффе от ${options.base} нет кода пакетов`)
+    if (!('error' in diff) && !diff.length) {
+      console.log('[affected-check] дифф пуст — если правки уже в коммите, задай базу: --base origin/main')
+    }
+    return
   }
+
+  const jobs = options.jobs
+  console.log(`[affected-check] jobs: ${jobs}; workers per job: ${workersPerJob(jobs) ?? 'default'}`)
+  const checks = decision.packages.map((pkg) => options.fast ? fastPlanForPackage(pkg, diff) : fastCheckForPackage(pkg, diff))
+  const fastStartedAt = Date.now()
+  await runFastChecks(checks, { jobs })
+  console.log(`[affected-check] fast stage: completed in ${Date.now() - fastStartedAt}ms`)
+
+  // В fast-режиме полный набор пакета гоняется только там, где related не
+  // доказателен: shared-контракт, конфиг, схема, миграция, а также пакеты, чьих
+  // собственных файлов в диффе нет (их задело по графу зависимостей).
+  const fullPackages = options.fast
+    ? checks.filter((check) => !check.files.length).map((check) => check.pkg)
+    : decision.packages
+  const typecheckOnly = options.fast
+    ? checks.filter((check) => check.files.length).map((check) => check.pkg)
+    : []
+
+  const fullStartedAt = Date.now()
+  if (typecheckOnly.length) {
+    console.log(`[affected-check] typecheck only: ${typecheckOnly.map((pkg) => pkg.id).join(', ')}`)
+    await runPackageGates(typecheckOnly, { jobs, scripts: ['typecheck'] })
+  }
+  if (fullPackages.length) {
+    console.log(`[affected-check] full package gate: ${fullPackages.map((pkg) => pkg.id).join(', ')}`)
+    await runPackageGates(fullPackages, { jobs })
+  }
+  runBuildGates(diff)
   console.log(`[affected-check] full stage: completed in ${Date.now() - fullStartedAt}ms`)
 }
 

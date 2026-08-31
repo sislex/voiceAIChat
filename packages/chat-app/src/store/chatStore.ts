@@ -145,6 +145,8 @@ export interface PendingSubmit {
   queueOnly: boolean
   text: string
   messageText: string
+  expectedQueuePosition: number | null
+  attachmentIds: string[]
   attachments: LocalAttachment[]
 }
 
@@ -193,7 +195,11 @@ export interface ChatState {
   activeTargets: Record<string, TurnTarget>
   /** То же для активного разговора; null — ход не идёт или сервер ещё не сообщил. */
   liveTarget: TurnTarget | null
-  /** Область сайдбара: undefined — «Все», null — «Без проекта», строка — проект. */
+  /** Выбранные и актуальные проекты проектного мультифильтра. */
+  sidebarProjectIds: string[]
+  sidebarProjectKnownIds: string[]
+  sidebarProjectsInitialized: boolean
+  /** @deprecated Совместимость старых интеграций; новый UI использует sidebarProjectIds. */
   sidebarProjectId: SidebarProjectFilter
   showDoneTaskChats: boolean
   /** Открытый чат, скрытый из отфильтрованного списка (чат завершённой задачи). */
@@ -240,6 +246,11 @@ export interface ChatActions {
   loadMoreMessageSearch(): Promise<void>
   focusMessage(messageId: string): void
   clearMessageHighlight(): void
+  setSidebarProjectIds(projectIds: string[]): Promise<void>
+  toggleSidebarProject(projectId: string): Promise<void>
+  setAllSidebarProjects(selected: boolean): Promise<void>
+  syncSidebarProjects(projectIds: string[]): Promise<void>
+  /** @deprecated Использовать действия мультивыбора. */
   setSidebarProject(projectId: SidebarProjectFilter): Promise<void>
   setShowDoneTaskChats(show: boolean): Promise<void>
   exportConversation(format: 'md' | 'json'): void
@@ -325,7 +336,7 @@ export interface ChatDeps {
   delays?: Partial<PipelineDelays>
 }
 
-function initialState(sidebarProjectId: SidebarProjectFilter, showDoneTaskChats: boolean): ChatState {
+function initialState(selection: { selectedIds: string[]; knownIds: string[]; initialized: boolean }, showDoneTaskChats: boolean): ChatState {
   return {
     conversations: [],
     readerConversations: [],
@@ -358,7 +369,10 @@ function initialState(sidebarProjectId: SidebarProjectFilter, showDoneTaskChats:
     activeUsage: {},
     activeTargets: {},
     liveTarget: null,
-    sidebarProjectId,
+    sidebarProjectIds: selection.selectedIds,
+    sidebarProjectKnownIds: selection.knownIds,
+    sidebarProjectsInitialized: selection.initialized,
+    sidebarProjectId: selection.initialized && selection.selectedIds.length === 1 ? selection.selectedIds[0] : undefined,
     showDoneTaskChats,
     pinnedConversation: null,
     taskChatContext: null,
@@ -377,17 +391,29 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   const now = deps.now ?? Date.now
   const delays: PipelineDelays = { ...DEFAULT_DELAYS, ...deps.delays }
   const savedSidebarProject = deps.prefs.get(SIDEBAR_PROJECT_KEY)
-  const initialSidebarProject = savedSidebarProject === SIDEBAR_NO_PROJECT_VALUE
-    ? null
-    : savedSidebarProject ?? undefined
+  const initialSelection = (() => {
+    if (savedSidebarProject == null) return { selectedIds: [], knownIds: [], initialized: false }
+    try {
+      const value = JSON.parse(savedSidebarProject) as Partial<import('../contracts.js').SidebarProjectSelection>
+      if (value.version === 1 && Array.isArray(value.selectedIds) && Array.isArray(value.knownIds)
+        && value.selectedIds.every((id) => typeof id === 'string') && value.knownIds.every((id) => typeof id === 'string')) {
+        return { selectedIds: [...new Set(value.selectedIds)], knownIds: [...new Set(value.knownIds)], initialized: true }
+      }
+    } catch { /* legacy plain project id or damaged JSON */ }
+    if (savedSidebarProject !== SIDEBAR_NO_PROJECT_VALUE && !savedSidebarProject.startsWith('{')) {
+      return { selectedIds: [savedSidebarProject], knownIds: [savedSidebarProject, '__legacy__'], initialized: true }
+    }
+    return { selectedIds: [], knownIds: [], initialized: false }
+  })()
   const core = createStoreCore<ChatState>(
-    initialState(initialSidebarProject, deps.prefs.get(DONE_TASK_CHATS_KEY) === '1')
+    initialState(initialSelection, deps.prefs.get(DONE_TASK_CHATS_KEY) === '1')
   )
   const { getState, setState } = core
   const fail = deps.fail ?? (() => {})
   const setError = deps.setError ?? (() => {})
 
   let conversationsRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let conversationsSeq = 0
   let searchTimer: ReturnType<typeof setTimeout> | null = null
   let searchSeq = 0
   /**
@@ -452,20 +478,31 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     if (conv) setState({ pinnedConversation: conv })
   }
 
-  function keepPinned(list: Conversation[], filter: SidebarProjectFilter, query: string): Conversation[] {
+  function sidebarSelection(): { selected: Set<string>; full: boolean } {
+    const state = getState()
+    const selected = new Set(state.sidebarProjectIds)
+    return { selected, full: !state.sidebarProjectsInitialized || selected.size === state.sidebarProjectKnownIds.length }
+  }
+
+  function keepPinned(list: Conversation[], query: string): Conversation[] {
     const pinned = getState().pinnedConversation
-    if (!pinned || pinned.id !== getState().activeId) return list
-    if (query || (filter !== undefined && (pinned.projectId ?? null) !== filter)) return list
+    if (!pinned || pinned.id !== getState().activeId || query) return list
+    const { selected, full } = sidebarSelection()
+    if (!full && (!pinned.projectId || !selected.has(pinned.projectId))) return list
     return withConversation(list, pinned)
   }
 
-  function filterBySidebarProject(all: Conversation[], filter: SidebarProjectFilter): Conversation[] {
-    return filter === undefined ? all : all.filter((conversation) => (conversation.projectId ?? null) === filter)
+  function filterBySidebarProjects<T extends { projectId?: string | null }>(all: T[]): T[] {
+    const { selected, full } = sidebarSelection()
+    if (full) return all
+    if (selected.size === 0) return []
+    return all.filter((item) => item.projectId != null && selected.has(item.projectId))
   }
 
   async function refreshConversations(
     { keepActiveListed = false }: { keepActiveListed?: boolean } = {}
   ): Promise<void> {
+    const seq = ++conversationsSeq
     const q = getState().searchQuery.trim()
     setState({ conversationsStatus: 'loading', conversationsError: null })
     try {
@@ -473,7 +510,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       const all = q
         ? await client['conversations:search']({ query: q, includeCompleted })
         : await client['conversations:list']({ includeCompleted })
-      if (core.disposed()) return
+      if (core.disposed() || seq !== conversationsSeq) return
       if (keepActiveListed) {
         const activeId = getState().activeId
         const activeHidden = activeId != null && !q && !all.some((c) => c.id === activeId)
@@ -484,8 +521,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           else pinActiveIfHidden(all, q)
         }
       }
-      const projectFilter = getState().sidebarProjectId
-      const conversations = keepPinned(filterBySidebarProject(all, projectFilter), projectFilter, q)
+      const conversations = keepPinned(filterBySidebarProjects(all), q)
       setState({
         conversations,
         conversationsStatus: 'ready',
@@ -571,12 +607,11 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     try {
       const res = await client['messages:search']({
         query,
-        projectId: getState().sidebarProjectId,
         limit: MESSAGE_SEARCH_PAGE
       })
       if (seq !== searchSeq || core.disposed()) return // ответ на устаревший запрос
       setState({
-        messageSearch: { query, status: 'ready', hits: res.hits, nextCursor: res.nextCursor, loadingMore: false, error: null }
+        messageSearch: { query, status: 'ready', hits: filterBySidebarProjects(res.hits), nextCursor: res.nextCursor, loadingMore: false, error: null }
       })
     } catch (err) {
       if (seq !== searchSeq || core.disposed()) return
@@ -632,7 +667,6 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     const result = await client['conversations:createDraft']({
       idempotencyKey: pendingDraftKey,
       title: titleFromText(titleSeed),
-      projectId: getState().sidebarProjectId,
       message: firstMessage
     })
     pendingDraftKey = null
@@ -861,10 +895,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   async function createConversation(input: { title: string; projectId?: string | null }): Promise<string> {
     await newConversation()
-    let conversation = await client['conversations:create']({ title: input.title.trim() || 'Новый разговор' })
-    if (input.projectId) {
-      conversation = await client['conversations:setProject']({ id: conversation.id, projectId: input.projectId })
-    }
+    const conversation = await client['conversations:create']({
+      title: input.title.trim() || 'Новый разговор',
+      projectId: input.projectId ?? null
+    })
     setState({
       activeId: conversation.id,
       conversations: withConversation(getState().conversations, conversation),
@@ -881,14 +915,12 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     voice.resetForChatSwitch() // ход прежнего разговора доиграет на сервере
     setState({ ...chatSwitchReset(), loadingMessages: true })
     let opened: Conversation | null = null
-    let known = true
     try {
       const res = await client['conversations:get']({ id })
       // Пока ответ летел, выбрали другой чат — этот ответ отбрасываем молча.
       if (token !== selectToken || core.disposed()) return false
       if (res) {
         opened = res.conversation
-        known = getState().conversations.some((c) => c.id === res.conversation.id)
         setState({ activeId: res.conversation.id, messages: res.messages })
         restoreStreamIfActive()
       }
@@ -899,8 +931,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       setError('Разговор не найден: возможно, он удалён.')
       return false
     }
-    // Чата нет в списке сайдбара (ссылка на чат другого проекта) — переключаем фильтр.
-    if (!known) await setSidebarProject(opened.projectId ?? null)
+    // Прямая ссылка не меняет пользовательский мультифильтр; чат временно закрепляется.
     const listed = getState().conversations.some((c) => c.id === opened.id)
     setState({
       pinnedConversation: listed ? null : opened,
@@ -928,11 +959,41 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
   }
 
-  async function setSidebarProject(projectId: SidebarProjectFilter): Promise<void> {
-    if (projectId === undefined) deps.prefs.remove(SIDEBAR_PROJECT_KEY)
-    else deps.prefs.set(SIDEBAR_PROJECT_KEY, projectId ?? SIDEBAR_NO_PROJECT_VALUE)
-    setState({ sidebarProjectId: projectId })
-    // Поиск по сообщениям тоже сужен проектом — перезапрашиваем.
+  function persistSidebarProjects(selectedIds: string[], knownIds: string[]): void {
+    deps.prefs.set(SIDEBAR_PROJECT_KEY, JSON.stringify({ version: 1, selectedIds, knownIds }))
+  }
+
+  async function setSidebarProjectIds(projectIds: string[]): Promise<void> {
+    const known = new Set(getState().sidebarProjectKnownIds)
+    const selectedIds = [...new Set(projectIds)].filter((id) => known.has(id))
+    persistSidebarProjects(selectedIds, getState().sidebarProjectKnownIds)
+    setState({
+      sidebarProjectIds: selectedIds,
+      sidebarProjectsInitialized: true,
+      sidebarProjectId: selectedIds.length === 0 ? null : selectedIds.length === 1 ? selectedIds[0] : undefined
+    })
+    if (getState().searchScope === 'messages') scheduleMessageSearch()
+    await refreshConversations()
+  }
+
+  async function syncSidebarProjects(projectIds: string[]): Promise<void> {
+    const currentIds = [...new Set(projectIds)]
+    const state = getState()
+    const previousKnown = new Set(state.sidebarProjectKnownIds)
+    const previousSelected = new Set(state.sidebarProjectIds)
+    const legacyMatches = currentIds.filter((id) => previousSelected.has(id))
+    const selectedIds = state.sidebarProjectsInitialized
+      ? previousKnown.has('__legacy__')
+        ? (legacyMatches.length > 0 ? legacyMatches : currentIds)
+        : currentIds.filter((id) => previousSelected.has(id) || !previousKnown.has(id))
+      : currentIds
+    persistSidebarProjects(selectedIds, currentIds)
+    setState({
+      sidebarProjectIds: selectedIds,
+      sidebarProjectKnownIds: currentIds,
+      sidebarProjectsInitialized: true,
+      sidebarProjectId: selectedIds.length === currentIds.length ? undefined : selectedIds.length === 0 ? null : selectedIds.length === 1 ? selectedIds[0] : undefined
+    })
     if (getState().searchScope === 'messages') scheduleMessageSearch()
     await refreshConversations()
   }
@@ -1099,6 +1160,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       queueOnly,
       text,
       messageText: composeUserText(text, ready.flatMap((item) => item.upload ? [item.upload] : [])),
+      expectedQueuePosition: queueOnly && state.activeId
+        ? (state.queuedTurns[state.activeId]?.length ?? 0) + 1
+        : null,
+      attachmentIds: ready.flatMap((item) => item.upload ? [item.upload.id] : []),
       attachments: [...state.attachments]
     }
     const patch: Partial<ChatState> = { pendingSubmit }
@@ -1309,16 +1374,15 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     const pending = state.pendingSubmit
     if (pending?.queueOnly && pending.conversationId === conversationId) {
-      const optimistic = state.queuedTurns[conversationId]?.find((item) => item.id === pending.operationId)
       const confirmed = pending.messageId
         ? items.some((item) => item.messageId === pending.messageId)
-        : Boolean(optimistic && items.some((item) =>
-            item.text === optimistic.text &&
-            item.position === optimistic.position &&
-            item.attachments.length === optimistic.attachments.length &&
-            item.attachments.every((attachment, index) => attachment === optimistic.attachments[index])
-          ))
-      if (confirmed) patch.pendingSubmit = null
+        : items.some((item) =>
+            item.text === pending.messageText &&
+            item.position === pending.expectedQueuePosition &&
+            item.attachments.length === pending.attachmentIds.length &&
+            item.attachments.every((attachment, index) => attachment === pending.attachmentIds[index])
+          )
+      if (confirmed && getState().pendingSubmit?.operationId === pending.operationId) patch.pendingSubmit = null
     }
     if (conversationId === state.activeId) {
       const removedIds = new Set(removedMessageIds)
@@ -1364,7 +1428,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   function applyChatMessage(conversationId: string, message: Message): void {
     const pending = getState().pendingSubmit
     const sameConversation = pending?.conversationId === null || pending?.conversationId === conversationId
-    const confirmed = pending && !pending.queueOnly && sameConversation && message.role !== 'ai' &&
+    const confirmed = pending && !pending.queueOnly && sameConversation && message.role === 'u1' &&
       (pending.messageId ? pending.messageId === message.id : pending.messageText === message.text)
     if (confirmed) {
       clearPendingSubmit(pending.operationId)
@@ -1440,9 +1504,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
         try {
           const conversations = await client['conversations:list']({ includeCompleted: getState().showDoneTaskChats })
-          const projectFilter = getState().sidebarProjectId
           setState({
-            conversations: filterBySidebarProject(conversations, projectFilter),
+            conversations: filterBySidebarProjects(conversations),
             readerConversations: conversations.filter(isReaderConversation),
             playwrightReaderConversations: conversations.filter(isPlaywrightReaderConversation),
             consoleReaderConversations: conversations.filter(isConsoleReaderConversation),
@@ -1563,7 +1626,6 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         try {
           const res = await client['messages:search']({
             query,
-            projectId: getState().sidebarProjectId,
             limit: MESSAGE_SEARCH_PAGE,
             cursor
           })
@@ -1571,7 +1633,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           setState({
             messageSearch: {
               ...getState().messageSearch,
-              hits: [...getState().messageSearch.hits, ...res.hits],
+              hits: [...getState().messageSearch.hits, ...filterBySidebarProjects(res.hits)],
               nextCursor: res.nextCursor,
               loadingMore: false
             }
@@ -1594,7 +1656,27 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       clearMessageHighlight() {
         if (getState().highlightMessageId) setState({ highlightMessageId: null })
       },
-      setSidebarProject,
+      setSidebarProjectIds,
+      async toggleSidebarProject(projectId) {
+        const selected = new Set(getState().sidebarProjectIds)
+        if (selected.has(projectId)) selected.delete(projectId)
+        else selected.add(projectId)
+        await setSidebarProjectIds([...selected])
+      },
+      async setAllSidebarProjects(selected) {
+        await setSidebarProjectIds(selected ? getState().sidebarProjectKnownIds : [])
+      },
+      syncSidebarProjects,
+      async setSidebarProject(projectId) {
+        if (projectId === undefined) await setSidebarProjectIds(getState().sidebarProjectKnownIds)
+        else if (projectId === null) await setSidebarProjectIds([])
+        else {
+          if (!getState().sidebarProjectKnownIds.includes(projectId)) {
+            setState({ sidebarProjectKnownIds: [...getState().sidebarProjectKnownIds, projectId] })
+          }
+          await setSidebarProjectIds([projectId])
+        }
+      },
       async setShowDoneTaskChats(show) {
         if (getState().showDoneTaskChats === show) return
         if (show) deps.prefs.set(DONE_TASK_CHATS_KEY, '1')
@@ -1904,7 +1986,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         selectToken++
         searchSeq++
         pendingDraftKey = null
-        core.resetState(initialState(getState().sidebarProjectId, getState().showDoneTaskChats))
+        core.resetState(initialState({ selectedIds: getState().sidebarProjectIds, knownIds: getState().sidebarProjectKnownIds, initialized: getState().sidebarProjectsInitialized }, getState().showDoneTaskChats))
       }
     }
   }

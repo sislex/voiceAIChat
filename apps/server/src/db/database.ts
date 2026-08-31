@@ -1573,16 +1573,19 @@ export class VoiceChatDb {
     return row?.user_id ?? null
   }
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null, projectId: string | null = null): Conversation {
+    const project = projectId ? this.getProject(userId, projectId) : null
+    if (projectId && (!project || assistantKind === 'playwright-reader')) throw new Error('project not found')
+    const skillNames = project?.skills ?? []
     const id = this.newId()
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind)
-         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names)
+         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, assistantKind)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
+      .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames))
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -1676,7 +1679,8 @@ export class VoiceChatDb {
          ORDER BY c.updated_at DESC`
       )
       .all(userId, opts?.includeCompleted ? 1 : 0) as Array<ConversationRow & { message_count: number }>
-    return rows.map((r) => this.mapConversation(r, r.message_count))
+    const costs = this.conversationCosts(rows)
+    return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
   }
 
   getConversation(userId: string, id: string): Conversation | null {
@@ -1730,7 +1734,8 @@ export class VoiceChatDb {
          ORDER BY c.updated_at DESC`
       )
       .all(userId, opts?.includeCompleted ? 1 : 0, like, like) as Array<ConversationRow & { message_count: number }>
-    return rows.map((r) => this.mapConversation(r, r.message_count))
+    const costs = this.conversationCosts(rows)
+    return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
   }
 
   renameConversation(userId: string, id: string, title: string): void {
@@ -3672,7 +3677,61 @@ export class VoiceChatDb {
     return this.db.prepare('DELETE FROM conversation_workspaces WHERE conversation_id = ?').run(conversationId).changes > 0
   }
 
-  private mapConversation(row: ConversationRow, messageCount: number): Conversation {
+  private conversationCosts(rows: ConversationRow[]): Map<string, Pick<Conversation, 'costUsd' | 'costStatus'>> {
+    const unknown = (): Pick<Conversation, 'costUsd' | 'costStatus'> => ({ costUsd: null, costStatus: 'unknown' })
+    const costs = new Map(rows.map((row) => [row.id, unknown()]))
+    if (rows.length === 0) return costs
+    try {
+      const ids = rows.map((row) => row.id)
+      const placeholders = ids.map(() => '?').join(',')
+      const results = this.db.prepare(`SELECT
+        m.conversation_id AS conversation_id,
+        COUNT(*) AS ai_count,
+        SUM(CASE WHEN json_valid(m.meta)
+          AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
+          AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
+          AND (json_type(m.meta, '$.cacheReadTokens') IS NULL OR json_type(m.meta, '$.cacheReadTokens') IN ('integer', 'real'))
+          AND (json_type(m.meta, '$.cacheCreationTokens') IS NULL OR json_type(m.meta, '$.cacheCreationTokens') IN ('integer', 'real'))
+          AND mp.model IS NOT NULL THEN 1 ELSE 0 END) AS known_count,
+        SUM(CASE WHEN json_valid(m.meta)
+          AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
+          AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
+          AND (json_type(m.meta, '$.cacheReadTokens') IS NULL OR json_type(m.meta, '$.cacheReadTokens') IN ('integer', 'real'))
+          AND (json_type(m.meta, '$.cacheCreationTokens') IS NULL OR json_type(m.meta, '$.cacheCreationTokens') IN ('integer', 'real'))
+          AND mp.model IS NOT NULL THEN (
+            MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
+            COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
+            COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
+            COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+          ) / 1000000.0 END) AS cost_usd
+        FROM messages m
+        JOIN conversations c ON c.id = m.conversation_id
+        LEFT JOIN model_prices mp
+          ON mp.provider = m.engine
+         AND mp.model = COALESCE(CASE WHEN json_valid(m.meta) THEN json_extract(m.meta,'$.model') END, c.llm_model)
+        WHERE m.conversation_id IN (${placeholders}) AND m.role = 'ai'
+        GROUP BY m.conversation_id`).all(...ids) as Array<{
+          conversation_id: string; ai_count: number; known_count: number | null; cost_usd: number | null
+        }>
+      for (const result of results) {
+        const knownCount = result.known_count ?? 0
+        const costStatus = result.ai_count === 0 || knownCount === 0
+          ? 'unknown'
+          : knownCount === result.ai_count ? 'known' : 'partial'
+        costs.set(result.conversation_id, { costUsd: costStatus === 'known' ? (result.cost_usd ?? 0) : null, costStatus })
+      }
+    } catch {
+      // Историческое повреждение meta или ошибка расчёта не ломают список бесед.
+    }
+    return costs
+  }
+
+  private conversationCost(row: ConversationRow): Pick<Conversation, 'costUsd' | 'costStatus'> {
+    return this.conversationCosts([row]).get(row.id)!
+  }
+
+  private mapConversation(row: ConversationRow, messageCount: number, prefetchedCost?: Pick<Conversation, 'costUsd' | 'costStatus'>): Conversation {
+    const cost = prefetchedCost ?? this.conversationCost(row)
     return {
       id: row.id,
       title: row.title,
@@ -3709,6 +3768,7 @@ export class VoiceChatDb {
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
       status: normStatus(row.status),
+      ...cost,
       lastExecTarget: row.last_exec_target ?? null
     }
   }

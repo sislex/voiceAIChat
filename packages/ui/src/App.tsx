@@ -15,8 +15,7 @@ import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantComma
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
-import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
-import { BrowserSessionPane } from './components/BrowserSessionPane'
+import type { PreviewActionOutcome, ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { parseUserAgent } from '@voicechat/sessions-core'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
@@ -37,16 +36,11 @@ import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
-import { ProjectSettings } from './components/ProjectSettings'
 import { PersonalizationPage } from './components/SettingsPage'
-import { ProjectBoard } from './components/ProjectBoard'
-import { TaskModal, type TaskUpdateFields } from './components/kanban/TaskModal'
-import { ProjectPage, ProjectsEmptyPage, ProjectNotFoundPage } from './components/ProjectPage'
+import type { TaskUpdateFields } from './components/kanban/TaskModal'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant, ProjectAssistantChatSelector } from './components/KanbanAssistant'
-import { MachineStatus } from './components/MachineStatus'
-import { MachineUtility } from './components/MachineUtility'
 import { CiCommands } from './components/ci/CiCommands'
 import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
@@ -59,7 +53,6 @@ import { Skeleton } from '@voicechat/ui-kit'
 import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
-import { KnowledgeBase } from './components/KnowledgeBase'
 import { NotificationContainer } from './components/ClarificationNotification'
 import { KbUsagePanel } from './components/kb/KbUsagePanel'
 import { CommandPalette } from './components/CommandPalette'
@@ -99,7 +92,9 @@ import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } 
 import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from './consoleReaderDiagnostics'
 import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
-import { buildAdminRoute, parseAdminRoute } from '@voicechat/admin-app'
+// Маршрут админки — из shared: импорт из самого пакета возвращал всю админку
+// (и профиль) в главный чанк, сводя её ленивый чанк на нет.
+import { buildAdminRoute, parseAdminRoute } from '@shared/adminRoute'
 import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioRecorder'
@@ -130,6 +125,64 @@ const UsersAdmin = lazy(async () => {
 const AccountPage = lazy(async () => {
   const module = await import('./components/AccountPage')
   return { default: module.AccountPage }
+})
+
+// Карточка задачи (85 КБ исходника со всеми панелями) нужна хосту ровно в одном
+// месте — черновик задачи, предложенной моделью в чате. Статический импорт
+// возвращал её в главный чанк мимо ленивого раздела «Проекты».
+const TaskModal = lazy(async () => {
+  const module = await import('./components/kanban/TaskModal')
+  return { default: module.TaskModal }
+})
+// Настройки проекта и панель Playwright-сессии — тоже свои маршруты.
+const ProjectSettings = lazy(async () => {
+  const module = await import('./components/ProjectSettings')
+  return { default: module.ProjectSettings }
+})
+const BrowserSessionPane = lazy(async () => {
+  const module = await import('./components/BrowserSessionPane')
+  return { default: module.BrowserSessionPane }
+})
+
+// Поверхность Reader нужна только беседе-ридеру, парк машин и утилиты (консоль,
+// терминал, проводник) — только разделу машин, база знаний — своей странице.
+// В главном чанке всё это лежало мёртвым весом у пользователя, который просто
+// разговаривает с моделью.
+const WebReaderFrame = lazy(async () => {
+  const module = await import('@voicechat/web-reader-app')
+  return { default: module.WebReaderFrame }
+})
+const MachineStatus = lazy(async () => {
+  const module = await import('./components/MachineStatus')
+  return { default: module.MachineStatus }
+})
+const MachineUtility = lazy(async () => {
+  const module = await import('./components/MachineUtility')
+  return { default: module.MachineUtility }
+})
+const KnowledgeBase = lazy(async () => {
+  const module = await import('./components/KnowledgeBase')
+  return { default: module.KnowledgeBase }
+})
+
+// Раздел «Проекты» — самая тяжёлая часть интерфейса: доска (сотня килобайт
+// исходника), карточка задачи и все её панели ранов, QA и merge. Пользователь
+// чата её не открывает вовсе, поэтому она живёт в своём чанке.
+const ProjectPage = lazy(async () => {
+  const module = await import('./components/ProjectPage')
+  return { default: module.ProjectPage }
+})
+const ProjectsEmptyPage = lazy(async () => {
+  const module = await import('./components/ProjectPage')
+  return { default: module.ProjectsEmptyPage }
+})
+const ProjectNotFoundPage = lazy(async () => {
+  const module = await import('./components/ProjectPage')
+  return { default: module.ProjectNotFoundPage }
+})
+const ProjectBoard = lazy(async () => {
+  const module = await import('./components/ProjectBoard')
+  return { default: module.ProjectBoard }
 })
 
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
@@ -300,6 +353,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routeMakeChatId = inMake ? (segments[1] ?? null) : null
   // Любой полноэкранный split-режим «чат | панель справа».
   const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake
+  // Console и Make сохраняют полноэкранную рабочую область, но используют общий
+  // Sidebar. Reader-режимы по-прежнему изолированы от оболочки навигации.
+  const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
+  const sidebarAvailable = !inSplit || splitSidebarMode !== null
   const inTaskChat = routeTaskChatId !== null
   const inChat = (!inProjects && !onUtilityPage && !inSplit) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
@@ -726,6 +783,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // забытая открытой панель закрывала собой открытую страницу или карточку
   // (напр. переход «Открыть задачу» из шапки связанного чата).
   useEffect(() => { setSidebarOpen(false) }, [path, setSidebarOpen])
+  // При каждом входе в Console/Make рабочая область начинается с полной ширины,
+  // независимо от сохранённого desktop-предпочтения обычного чата. Переход между
+  // разговорами того же режима не должен повторно закрывать desktop Sidebar.
+  const previousSplitSidebarMode = useRef<string | null>(null)
+  const sidebarCollapsedBeforeSplit = useRef<boolean | null>(null)
+  useEffect(() => {
+    const previous = previousSplitSidebarMode.current
+    if (splitSidebarMode && previous !== splitSidebarMode) {
+      if (previous === null) sidebarCollapsedBeforeSplit.current = collapsed
+      setSidebarOpen(false)
+      shellActions.setSidebarCollapsed(true)
+    } else if (!splitSidebarMode && previous !== null) {
+      const restore = sidebarCollapsedBeforeSplit.current
+      sidebarCollapsedBeforeSplit.current = null
+      if (restore !== null) shellActions.setSidebarCollapsed(restore)
+    }
+    previousSplitSidebarMode.current = splitSidebarMode
+  }, [collapsed, setSidebarOpen, shellActions, splitSidebarMode])
   const sidebarExpanded = compactChat ? sidebarOpen : !collapsed
   const focusSidebarToggle = (): void => {
     document.querySelector<HTMLButtonElement>('.sidebar-toggle')?.focus()
@@ -754,12 +829,17 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [chatRoute?.kind])
   const [createChatOpen, setCreateChatOpen] = useState(false)
   const [createChatTitle, setCreateChatTitle] = useState('Новый разговор')
+  const [createChatProjectId, setCreateChatProjectId] = useState('')
   const [createChatMachineId, setCreateChatMachineId] = useState('')
   const [createChatStorages, setCreateChatStorages] = useState<MachineStorage[]>([])
   const [createChatStorageId, setCreateChatStorageId] = useState('')
   const [createChatPath, setCreateChatPath] = useState('')
   const [createChatError, setCreateChatError] = useState<string | null>(null)
   const [createChatSaving, setCreateChatSaving] = useState(false)
+  useEffect(() => {
+    if (!createChatOpen) return
+    void projectsActions.refreshProjects().catch(() => {})
+  }, [createChatOpen, projectsActions])
   useEffect(() => {
     if (!createChatOpen) return
     const effective = operations.agents.find((agent) => agent.isEffective && agent.online)
@@ -785,11 +865,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
     setCreateChatSaving(true); setCreateChatError(null)
     try {
-      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId: chat.sidebarProjectId })
+      const projectId = createChatProjectId || null
+      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId })
       if (createChatMachineId && createChatStorageId) {
         const relativePath = createChatPath.trim() || recommendedChatStoragePath(
-          chat.sidebarProjectId
-            ? { kind: 'project', projectId: chat.sidebarProjectId, conversationId: id }
+          projectId
+            ? { kind: 'project', projectId, conversationId: id }
             : { kind: 'chat', conversationId: id }
         )
         await api['conversations:setStorage']({ id, machineId: createChatMachineId, storageId: createChatStorageId, relativePath })
@@ -1141,6 +1222,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     else if (projects.projectsOpen) projectsActions.closeProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects])
+  useEffect(() => {
+    if (!authed || !projects.projectsLoaded) return
+    void chatActions.syncSidebarProjects(projects.projects.map((project) => project.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, projects.projectsLoaded, projects.projects])
   useEffect(() => {
     if (!authed || !inProjects) return
     if (routeProjectId) { if (projects.activeProjectId !== routeProjectId) void projectsActions.openBoard(routeProjectId) }
@@ -1791,12 +1877,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           </footer>
         )
       })()}
-      {!inSplit && <>
+      {sidebarAvailable && <>
       {createChatOpen && <PopupFrame title="Создание разговора" onClose={() => setCreateChatOpen(false)} testId="create-conversation-overlay" panelClassName="convsettings">
         <header className="convsettings-head"><div><h1>Новый разговор</h1><p>Настройте разговор и его файловое хранилище</p></div></header>
         <main className="convsettings-body">
           <section className="convsettings-card">
             <label className="convsettings-field"><span>Название разговора</span><input autoFocus value={createChatTitle} onChange={(event) => setCreateChatTitle(event.target.value)} /></label>
+            <label className="convsettings-field"><span>Проект</span><select aria-label="Проект" value={createChatProjectId} disabled={projects.projectsStatus === 'loading' && !projects.projectsLoaded} onChange={(event) => { setCreateChatProjectId(event.target.value); setCreateChatPath('') }}>
+              <option value="">Без проекта</option>
+              {projects.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select></label>
+            {(projects.projectsStatus === 'idle' || (projects.projectsStatus === 'loading' && !projects.projectsLoaded)) && <p className="convsettings-muted" role="status">Загрузка проектов…</p>}
+            {projects.projectsStatus === 'ready' && projects.projects.length === 0 && <p className="convsettings-muted" role="status">Нет доступных проектов. Разговор можно создать без проекта.</p>}
+            {projects.projectsStatus === 'error' && <p className="convsettings-error" role="alert">Не удалось загрузить проекты{projects.projectsError ? `: ${projects.projectsError}` : '.'} <button type="button" className="vc-btn vc-btn--secondary" onClick={() => void projectsActions.refreshProjects().catch(() => {})}>Повторить</button></p>}
           </section>
           <section className="convsettings-card" aria-labelledby="create-chat-files-title">
             <div className="convsettings-sectionhead"><div><h2 id="create-chat-files-title">Файлы чата</h2><p>Вложения будут храниться на выбранной машине независимо от рабочего Git-каталога.</p></div></div>
@@ -1810,8 +1903,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             </select></label>
             {createChatStorageId ? <>
               <p className="convsettings-muted">Основное хранилище: {createChatStorages.find((item) => item.primary)?.rootPath ?? 'не назначено'}</p>
-              <label className="convsettings-field"><span>Относительный каталог</span><input aria-label="Относительный каталог файлов чата" value={createChatPath} placeholder={chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>'} onChange={(event) => setCreateChatPath(event.target.value)} /></label>
-              <p className="convsettings-muted">Итоговый каталог: {(createChatStorages.find((item) => item.id === createChatStorageId)?.rootPath ?? '')}/{createChatPath.trim() || (chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>')}</p>
+              <label className="convsettings-field"><span>Относительный каталог</span><input aria-label="Относительный каталог файлов чата" value={createChatPath} placeholder={createChatProjectId ? `projects/${createChatProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>'} onChange={(event) => setCreateChatPath(event.target.value)} /></label>
+              <p className="convsettings-muted">Итоговый каталог: {(createChatStorages.find((item) => item.id === createChatStorageId)?.rootPath ?? '')}/{createChatPath.trim() || (createChatProjectId ? `projects/${createChatProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>')}</p>
             </> : <p className="convsettings-muted" role="alert">Временный режим хранит вложения в <b>.voicechat_uploads</b>. Он предназначен для совместимости; старые файлы автоматически не переносятся. <button type="button" className="vc-btn vc-btn--secondary" onClick={() => { setCreateChatOpen(false); navigate('/machines') }}>Настроить хранилище машины</button></p>}
             {createChatStorages.length > 0 && !createChatStorages.some((item) => item.status === 'ready') && <p className="convsettings-muted" role="status">У машины нет готового хранилища. Проверьте его в разделе машины.</p>}
           </section>
@@ -1848,6 +1941,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onNew={() => {
           setCreateChatError(null)
           setCreateChatTitle('Новый разговор')
+          setCreateChatProjectId('')
           setCreateChatPath('')
           setCreateChatOpen(true)
         }}
@@ -1875,8 +1969,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         showDoneTaskChats={chat.showDoneTaskChats}
         onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
         projects={projects.projects}
-        selectedProjectId={chat.sidebarProjectId}
-        onSelectProject={(id) => void chatActions.setSidebarProject(id)}
+        selectedProjectIds={chat.sidebarProjectIds}
+        onToggleProject={(id) => void chatActions.toggleSidebarProject(id)}
+        onSetAllProjects={(selected) => void chatActions.setAllSidebarProjects(selected)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
@@ -2003,7 +2098,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inMake && <header className="web-recorder-selector make-selector"><strong>Make</strong><label><span className="vc-sr-only">Проект Make</span><select aria-label="Проект Make" value={makeActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/make/${event.target.value}`) }}>{!makeActiveListed && <option value="" disabled>Проект не выбран</option>}{chat.makeConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createMakeChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
-        onToggleSidebar={inSplit ? undefined : toggleSidebar}
+        onToggleSidebar={sidebarAvailable ? toggleSidebar : undefined}
         sidebarExpanded={sidebarExpanded}
         title={activeTitle}
         onRenameTitle={(t) => {
@@ -2142,7 +2237,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       </div>
       {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
-      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
+      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:
         // затирать чужие тесты записью одного — не то, чего ждёт человек.
         onSaveScenario: async (scenario) => {
@@ -2152,7 +2247,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           })
         },
         ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
-      } : {})} />}
+      } : {})} /></Suspense>}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
@@ -2165,19 +2260,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         </Suspense>
       )}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
-      {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
+      {inReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
 
       {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}
-      {inProjects && !routeProjectId && firstProjectId === null && <ProjectsEmptyPage invitationCount={projects.myInvitations.length} />}
+      {inProjects && !routeProjectId && firstProjectId === null && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectsEmptyPage invitationCount={projects.myInvitations.length} /></Suspense>}
 
-      {inProjects && routeProjectId && projectMissing && <ProjectNotFoundPage />}
+      {inProjects && routeProjectId && projectMissing && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectNotFoundPage /></Suspense>}
 
       {/* Одна страница проекта на все три маршрута: шапка с именем и вкладками
           общая, меняется только содержимое. */}
       {inProjects && !inTaskChat && routeProjectId && !projectMissing && (
-        <ProjectPage
+        <Suspense fallback={<div className="pboard-loading" role="status">Загрузка доски…</div>}><ProjectPage
           projectName={routeProjectName}
           features={projectFeatures}
           {...(() => {
@@ -2214,7 +2309,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} machines={projects.projectDetail!.machines} agents={operations.agents} agentsStatus={operations.agentsStatus} agentsError={operations.agentsError} defaultAgentId={projects.projectDetail!.defaultAgentId} releaseTimeouts={projects.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
-              <ProjectSettings
+              <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings
                 detail={projects.projectDetail!}
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
@@ -2282,7 +2377,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                   'projects:get': api['projects:get']
                 }}
                 onManagedProductionConfirmed={() => projectsActions.selectProject(routeProjectId)}
-              />
+              /></Suspense>
             ) : (
               <div className="proj-page-state" aria-busy="true">
                 <Skeleton variant="list" count={4} item="block" height={64} gap={12} />
@@ -2366,11 +2461,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 }}
             />}
           />
-        </ProjectPage>
+        </ProjectPage></Suspense>
       )}
 
       {utilitySeg === 'kb' && (
-        <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+        <Suspense fallback={<div role="status">Загрузка базы знаний…</div>}>
+          <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+        </Suspense>
       )}
 
       {utilitySeg === 'account' && session.currentUser && (
@@ -2433,7 +2530,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       })()}
 
       {utilitySeg === 'machines' && operations.machinesOpen && (
-        <MachineStatus
+        <Suspense fallback={<div role="status">Загрузка парка машин…</div>}><MachineStatus
           variant="page"
           agents={operations.agents}
           status={operations.agentsStatus}
@@ -2457,7 +2554,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           defaultAgentId={settingsState.settings.defaultAgentId}
           onSetDefault={(id) => applySettings({ defaultAgentId: id })}
           onClose={() => navigate('/')}
-        />
+        /></Suspense>
       )}
 
       {utilitySeg === 'make-shared' && segments[1] && window.api && (
@@ -2555,7 +2652,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
 
       {taskProposal && inChat && routeChatId === chat.activeId && (
-        <TaskModal
+        <Suspense fallback={<div role="status">Загрузка карточки задачи…</div>}><TaskModal
           draft
           task={taskProposal.task}
           board={taskProposal.board}
@@ -2590,7 +2687,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             <Button variant="primary" onClick={() => void chooseTaskLaunch('preparation')} loading={taskLaunchPending} disabled={taskLaunchPending || !taskProposal.task.title.trim()}>Создать в подготовке к разработке</Button>
             <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending} disabled={taskLaunchPending}>Работать в текущем чате</Button>
           </>}
-        />
+        /></Suspense>
       )}
 
       {conversationSettingsOpen && activeConversation && (
@@ -2643,7 +2740,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
 
       {operations.utility && machineOps && (
-        <MachineUtility
+        <Suspense fallback={<div role="status">Загрузка утилиты машины…</div>}><MachineUtility
           tool={{
             kind: operations.utility.kind,
             ...(operations.utility.agentId ? { agentId: operations.utility.agentId } : {}),
@@ -2667,7 +2764,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               : undefined
           }
           onClose={operationsActions.closeUtility}
-        />
+        /></Suspense>
       )}
 
       {shell.kbUsageOpen && chat.activeId && (

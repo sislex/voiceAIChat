@@ -269,7 +269,7 @@ describe('voiceStore — проекты и доска', () => {
   })
 
 
-  it('ссылка на чат другого проекта переключает фильтр сайдбара', async () => {
+  it('ссылка на чат другого проекта не меняет фильтр сайдбара', async () => {
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P1' })
     const p1 = store.getState().projectDetail!.id
@@ -285,7 +285,7 @@ describe('voiceStore — проекты и доска', () => {
 
     expect(ok).toBe(true)
     expect(store.getState().activeId).toBe(inP1)
-    expect(store.getState().sidebarProjectId).toBe(p1)
+    expect(store.getState().sidebarProjectIds).toEqual([])
     expect(store.getState().conversations.some((c) => c.id === inP1)).toBe(true)
   })
 
@@ -436,81 +436,53 @@ describe('voiceStore — связка проекта с чатом', () => {
   })
 })
 
-describe('voiceStore — выбор проекта в сайдбаре', () => {
-  it('по умолчанию показывает все чаты, затем переключается между проектом, «Без проекта» и «Все»', async () => {
+describe('voiceStore — мультивыбор проектов в сайдбаре', () => {
+  it('полный, частичный и пустой выбор фильтруют чаты, включая чат без проекта только полностью', async () => {
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P' })
     const pid = store.getState().projectDetail!.id
-    store.actions.setDraft('Проектный')
-    await store.actions.submitText()
-    store.actions.cancelRequest()
-    const inProj = store.getState().activeId!
-    await store.actions.setConversationProject(inProj, pid)
-    await store.actions.newConversation()
+    await store.actions.syncSidebarProjects([pid, 'p2'])
     store.actions.setDraft('Без проекта')
     await store.actions.submitText()
-    store.actions.cancelRequest()
-    const noProj = store.getState().activeId!
-
-    expect(store.getState().sidebarProjectId).toBeUndefined()
-    expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj, inProj])
-
-    await store.actions.setSidebarProject(pid)
-    expect(store.getState().sidebarProjectId).toBe(pid)
-    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProj])
-
-    await store.actions.setSidebarProject(null)
-    expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj])
-    expect(localStorage.getItem('vc.sidebar.project')).toBe('__none__')
-
-    await store.actions.setSidebarProject(undefined)
-    expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj, inProj])
-    expect(localStorage.getItem('vc.sidebar.project')).toBeNull()
-  })
-
-  it('фильтр применяется к поиску по названиям, а «Все» не отбрасывает результаты', async () => {
-    const { store } = makeStore()
-    await store.actions.createProject({ name: 'P' })
-    const pid = store.getState().projectDetail!.id
-    store.actions.setDraft('Общий заголовок')
-    await store.actions.submitText()
-    const withoutProject = store.getState().activeId!
+    const noProject = store.getState().activeId!
+    await store.actions.setConversationProject(noProject, pid)
     await store.actions.newConversation()
-    store.actions.setDraft('Общий проектный заголовок')
+    store.actions.setDraft('Непривязанный')
     await store.actions.submitText()
-    const inProject = store.getState().activeId!
-    await store.actions.setConversationProject(inProject, pid)
+    const unassigned = store.getState().activeId!
 
-    await store.actions.setSearchQuery('Общий')
-    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProject, withoutProject])
-    await store.actions.setSidebarProject(pid)
-    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProject])
-    await store.actions.setSidebarProject(undefined)
-    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProject, withoutProject])
+    expect(store.getState().conversations.map((item) => item.id)).toEqual([unassigned, noProject])
+    await store.actions.setSidebarProjectIds([pid])
+    expect(store.getState().conversations.map((item) => item.id)).toEqual([noProject])
+    await store.actions.setSidebarProjectIds([])
+    expect(store.getState().conversations).toEqual([])
   })
 
-  it('проектный черновик сохраняется в проекте только при первой отправке', async () => {
-    const { store, api } = makeStore()
-    await store.actions.createProject({ name: 'P' })
-    const pid = store.getState().projectDetail!.id
-    const spy = vi.spyOn(api, 'conversations:createDraft')
-    await store.actions.setSidebarProject(pid)
-    await store.actions.newConversation()
-    expect(api._state.conversations).toHaveLength(0)
-    store.actions.setDraft('Первая реплика')
-    await store.actions.submitText()
-    const cid = store.getState().activeId!
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ projectId: pid }))
-    expect(store.getState().conversations.find((c) => c.id === cid)!.projectId).toBe(pid)
-  })
-
-  it('последний выбранный проект восстанавливается из localStorage', async () => {
+  it('восстанавливает пустой выбор и нормализует удалённые и новые проекты', async () => {
     const { store } = makeStore()
-    await store.actions.createProject({ name: 'P' })
-    const pid = store.getState().projectDetail!.id
-    await store.actions.setSidebarProject(pid)
+    await store.actions.syncSidebarProjects(['p1', 'p2'])
+    await store.actions.setSidebarProjectIds(['p1'])
     const store2 = createTestStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
-    expect(store2.getState().sidebarProjectId).toBe(pid)
+    await store2.actions.syncSidebarProjects(['p1', 'p3'])
+    expect(store2.getState().sidebarProjectIds).toEqual(['p1', 'p3'])
+    expect(store2.getState().sidebarProjectKnownIds).toEqual(['p1', 'p3'])
+
+    await store2.actions.setSidebarProjectIds([])
+    const store3 = createTestStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
+    await store3.actions.syncSidebarProjects(['p1', 'p3'])
+    expect(store3.getState().sidebarProjectIds).toEqual([])
+  })
+
+  it('повреждённое значение сбрасывает в полный режим, legacy id мигрирует', async () => {
+    localStorage.setItem('vc.sidebar.project', '{broken')
+    const damaged = createTestStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
+    await damaged.actions.syncSidebarProjects(['p1', 'p2'])
+    expect(damaged.getState().sidebarProjectIds).toEqual(['p1', 'p2'])
+
+    localStorage.setItem('vc.sidebar.project', 'p1')
+    const legacy = createTestStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
+    await legacy.actions.syncSidebarProjects(['p1', 'p2'])
+    expect(legacy.getState().sidebarProjectIds).toEqual(['p1'])
   })
 })
 

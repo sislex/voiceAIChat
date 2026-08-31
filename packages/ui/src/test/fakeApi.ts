@@ -439,8 +439,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },
     'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); for (const [k, v] of Object.entries(MAKE_SCAFFOLD)) files.set(k, v); return makeState(conversationId) },
-    'conversations:create': async ({ title, assistantKind } = {}) => {
-      const conv = { ...makeConversation(title ?? 'Новый разговор'), ...(assistantKind ? { assistantKind } : {}) }
+    'conversations:create': async ({ title, projectId, assistantKind } = {}) => {
+      if (projectId && !projects.some((item) => item.id === projectId)) throw new Error('project not found')
+      const conv = { ...makeConversation(title ?? 'Новый разговор'), projectId: projectId ?? null, ...(assistantKind ? { assistantKind } : {}) }
       conversations.push(conv)
       return conv
     },
