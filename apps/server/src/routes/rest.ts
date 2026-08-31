@@ -28,7 +28,9 @@ import {
   contextLockReason,
   isContextToggleable,
   toolNameForContextId,
-  sanitizeSettingsPatch
+  sanitizeSettingsPatch,
+  CLAUDE_MODELS,
+  CODEX_MODELS
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
@@ -54,6 +56,12 @@ const CONTEXT_PREVIEW_TOKENS_NOTICE = 4000
  * от длины сообщения.
  */
 const CONTEXT_GROWTH_RATIO_NOTICE = 1.5
+/**
+ * С какого размера историю стоит называть главным потребителем контекста.
+ * Ниже тысячи токенов совет «начните новый разговор» бессмыслен: там ещё
+ * ничего не мешает.
+ */
+const CONTEXT_HISTORY_TOKENS_NOTICE = 1000
 /** Меньше трёх ходов — среднее не среднее, а случайная величина. */
 const CONTEXT_GROWTH_MIN_TURNS = 3
 
@@ -403,6 +411,16 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     })
     warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
   }
+  // История больше половины хода: выключать источники в таком чате бессмысленно
+  // — место занимают сообщения, а не настройки, и совет должен быть другим.
+  if (!resumeId && historyText.length > previewText.length && approxTokens(historyText.length) > CONTEXT_HISTORY_TOKENS_NOTICE) {
+    warnings.push({
+      itemId: 'conversation-history',
+      level: 'notice',
+      text: `История разговора занимает ≈${approxTokens(historyText.length)} токенов — больше, чем все настройки вместе (≈${approxTokens(previewText.length)}). Выключение источников тут почти ничего не изменит: помогает новый разговор или продолжение сессии движка.`
+    })
+    warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+  }
   // Рост: абсолютный порог молчит, пока контекст не станет большим, а «стало
   // вдвое больше, чем в прошлые ходы» — это про сегодняшнюю правку, и заметить
   // её надо сразу. Сравниваем с фактическими размерами ходов из истории.
@@ -455,6 +473,21 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       chars: previewText.length,
       approxTokens: promptBlock([], '', previewText).approxTokens,
       costUsd: promptCostUsd(provider, model, approxTokens(previewText.length), prices),
+      // Итог хода: постоянная часть плюс история. При живой сессии движка
+      // история заново не уходит — тогда итог равен постоянной части.
+      turnTotal: {
+        chars: previewText.length + (resumeId ? 0 : historyText.length),
+        approxTokens: approxTokens(previewText.length + (resumeId ? 0 : historyText.length)),
+        historyChars: resumeId ? 0 : historyText.length,
+        historyApproxTokens: resumeId ? 0 : approxTokens(historyText.length),
+        resumed: Boolean(resumeId)
+      },
+      // Те же токены по прайсу других моделей движка: вопрос «а если перейти
+      // на модель попроще» задают, глядя ровно на эту цифру.
+      costByModel: (provider === 'claude' ? CLAUDE_MODELS.map((entry) => entry.id) : CODEX_MODELS.map((entry) => entry.id))
+        .filter((candidate) => candidate !== model)
+        .map((candidate) => ({ model: candidate, costUsd: promptCostUsd(provider, candidate, approxTokens(previewText.length + (resumeId ? 0 : historyText.length)), prices) }))
+        .filter((entry): entry is { model: string; costUsd: number } => entry.costUsd !== null),
       omitted: [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
         resumeId
