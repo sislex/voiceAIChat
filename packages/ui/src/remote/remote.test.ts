@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
+import { getCsrf } from './session'
 import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
 
 class FakeWebSocket {
@@ -351,6 +352,32 @@ describe('desktop legacy migration', () => {
     await migrateDesktopLegacy('http://srv:8787', 'secret')
     expect(fetchMock).toHaveBeenCalledWith('http://srv:8787/api/migrations/desktop', expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ authorization: 'Bearer secret' }) }))
     expect(markLegacyMigrated).toHaveBeenCalledOnce()
+  })
+})
+
+describe('cookie-сессия: имена по схеме', () => {
+  // Значение cookie подменяем геттером, а не записью: jsdom (как и браузер)
+  // запрещает выставлять имя с префиксом `__Secure-` с незащищённого origin —
+  // ровно то свойство, ради которого префикс и выбран. Проверяем разбор.
+  const withCookie = <T,>(value: string, fn: () => T): T => {
+    const spy = vi.spyOn(document, 'cookie', 'get').mockReturnValue(value)
+    try { return fn() } finally { spy.mockRestore() }
+  }
+
+  it('getCsrf читает и обычное имя, и __Secure-; при обеих cookie приоритет у защищённой (инцидент 31.08.2026)', () => {
+    expect(withCookie('', () => getCsrf())).toBeNull()
+    expect(withCookie('vc_csrf=обычный', () => getCsrf())).toBe('обычный')
+    expect(withCookie('__Secure-vc_csrf=защищённый', () => getCsrf())).toBe('защищённый')
+    // Обе разом — состояние адреса, который открывали и по http, и по https.
+    expect(withCookie('vc_csrf=обычный; __Secure-vc_csrf=защищённый', () => getCsrf())).toBe('защищённый')
+    expect(withCookie('__Secure-vc_csrf=защищённый; vc_csrf=обычный', () => getCsrf())).toBe('защищённый')
+  })
+
+  it('мост сообщает интерфейсу, есть ли cookie-сессия: без cookie вход держится только в памяти страницы', () => {
+    const ws = { reconnect: vi.fn(), send: vi.fn() } as unknown as WsClient
+    const bridge = makeSessionBridge('', ws)
+    expect(withCookie('_ga=чужая-аналитика', () => bridge.hasCookieSession!())).toBe(false)
+    expect(withCookie('__Secure-vc_csrf=есть', () => bridge.hasCookieSession!())).toBe(true)
   })
 })
 

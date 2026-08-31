@@ -21,14 +21,30 @@ function renderPage(section: ProjectSection = 'board'): { onSectionChange: (s: P
 const tabs = (): HTMLElement => screen.getByRole('tablist', { name: 'Разделы проекта' })
 
 describe('ProjectPage — общая шапка страницы проекта', () => {
-  it('в шапке имя проекта и три вкладки; активная помечена aria-selected', () => {
+  it('в шапке имя проекта и вкладки разделов; активная помечена aria-selected', () => {
     renderPage('board')
     expect(screen.getByRole('heading', { name: 'Голос Чат' })).toBeInTheDocument()
     const items = within(tabs()).getAllByRole('tab')
-    expect(items.map((t) => t.textContent)).toEqual(['Канбан', 'Релизы', 'Настройки'])
+    expect(items.map((t) => t.textContent)).toEqual(['Канбан', 'Код', 'Релизы', 'Настройки'])
     expect(items[0]).toHaveAttribute('aria-selected', 'true')
     expect(items[1]).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByText('содержимое раздела')).toBeInTheDocument()
+  })
+
+  // Возможности задаёт тип проекта: без git-репозитория раздел «Код» бессмысленен,
+  // и сервер такие запросы всё равно отклоняет (409 feature_unavailable).
+  it('вкладки «Код» и «Релизы» скрыты, если тип проекта их выключил', () => {
+    render(
+      <ProjectPage
+        projectName="Голос Чат"
+        section="board"
+        features={{ git: false, machines: true, ci: true, qa: true, releases: false, preview: true }}
+        onSectionChange={vi.fn()}
+      >
+        <p>содержимое раздела</p>
+      </ProjectPage>
+    )
+    expect(within(tabs()).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Канбан', 'Настройки'])
   })
 
   // Страница проекта закрывается навигацией, а не крестиком: иначе Esc над
@@ -49,8 +65,9 @@ describe('ProjectPage — общая шапка страницы проекта'
   it('активная вкладка отмечена в разметке при входе в настройки', () => {
     renderPage('settings')
     const items = within(tabs()).getAllByRole('tab')
-    expect(items[2]).toHaveAttribute('aria-selected', 'true')
-    expect(items[2]?.className).toContain('on')
+    const settings = items[items.length - 1]
+    expect(settings).toHaveAttribute('aria-selected', 'true')
+    expect(settings?.className).toContain('on')
   })
 
   // Обещание роли tablist: раздел переключается стрелками, а не только мышью.
@@ -58,7 +75,8 @@ describe('ProjectPage — общая шапка страницы проекта'
     const { onSectionChange } = renderPage('board')
     within(tabs()).getByRole('tab', { name: 'Канбан' }).focus()
     await userEvent.keyboard('{ArrowRight}')
-    expect(onSectionChange).toHaveBeenLastCalledWith('releases')
+    // Порядок вкладок: Канбан → Код → Релизы → Настройки.
+    expect(onSectionChange).toHaveBeenLastCalledWith('code')
   })
 
   it('стрелка влево из настроек возвращает на канбан', async () => {

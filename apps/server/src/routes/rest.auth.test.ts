@@ -104,6 +104,40 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('cookie-сессия: по https имена с префиксом __Secure-, старая пара гасится, чтение принимает оба имени (инцидент 31.08.2026)', async () => {
+    db.createUser('scheme', 'scheme-pass-2026', 'developer')
+    const https = { 'x-forwarded-proto': 'https' }
+    const login = await app.inject({ method: 'POST', url: '/api/session/login', headers: https, payload: { name: 'scheme', password: 'scheme-pass-2026' } })
+    const setCookies = ([] as string[]).concat(login.headers['set-cookie'] as string[])
+    const session = setCookies.find((c) => c.startsWith('__Secure-vc_session='))!
+    const csrfCookie = setCookies.find((c) => c.startsWith('__Secure-vc_csrf='))!
+    // Префикс имеет силу только вместе с флагом Secure — без него браузер cookie отвергнет.
+    expect(session).toContain('Secure'); expect(session).toContain('HttpOnly')
+    expect(csrfCookie).toContain('Secure')
+    expect(setCookies.find((c) => c.startsWith('__Secure-vc_preview_session='))).toContain('Secure')
+    expect(setCookies.find((c) => c.startsWith('__Secure-vc_device='))).toBeTruthy()
+    // Обычная пара имён гасится: иначе оставшаяся Secure-cookie со старым именем
+    // навсегда затенила бы http-версию адреса, и вход по http не сохранялся бы.
+    expect(setCookies.find((c) => c.startsWith('vc_session=;'))).toContain('Max-Age=0')
+    expect(setCookies.find((c) => c.startsWith('vc_csrf=;'))).toContain('Max-Age=0')
+    const csrf = login.json().csrf as string
+    const secureCookie = `${session.split(';')[0]}; ${csrfCookie.split(';')[0]}`
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { ...https, cookie: secureCookie } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { ...https, cookie: secureCookie, 'x-vc-csrf': csrf }, payload: { title: 'x' } })).statusCode).not.toBe(403)
+    // Мусорная cookie старого имени рядом с защищённой не мешает: приоритет у __Secure-.
+    const mixed = `vc_session=протухший-токен; vc_csrf=протухший-csrf; ${secureCookie}`
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { ...https, cookie: mixed } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { ...https, cookie: mixed, 'x-vc-csrf': csrf }, payload: { title: 'x' } })).statusCode).not.toBe(403)
+    // По http имена остаются обычными, и гашения старой пары НЕТ — иначе вход по
+    // http удалял бы cookie, которую сам же только что поставил.
+    const plain = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'scheme', password: 'scheme-pass-2026' } })
+    const plainCookies = ([] as string[]).concat(plain.headers['set-cookie'] as string[])
+    expect(plainCookies.find((c) => c.startsWith('vc_session='))).not.toContain('Secure')
+    expect(plainCookies.some((c) => c.startsWith('__Secure-'))).toBe(false)
+    expect(plainCookies.filter((c) => c.startsWith('vc_session=;'))).toHaveLength(0)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
   it('сессия запоминает устройство: ключ, платформу, версию клиента, локальную сеть и активность', async () => {
     db.createUser('meta', 'meta-pass-2026-ok', 'developer')
     const chrome = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'

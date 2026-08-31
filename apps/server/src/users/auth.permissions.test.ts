@@ -13,6 +13,12 @@ describe('матрица проектных полномочий', () => {
     expect(hasProjectPermission('tester', 'task:create')).toBe(false)
     expect(hasProjectPermission('developer', 'task:create')).toBe(true)
     expect(hasProjectPermission('admin', 'production:deploy')).toBe(true)
+    // Закоммитить и отправить свою ветку — обычная работа разработчика; тестировщик
+    // и наблюдатель рабочую копию только смотрят.
+    expect(hasProjectPermission('developer', 'repository:write')).toBe(true)
+    expect(hasProjectPermission('tester', 'repository:write')).toBe(false)
+    expect(hasProjectPermission('observer', 'repository:write')).toBe(false)
+    expect(hasProjectPermission('admin', 'repository:write')).toBe(true)
   })
 
   it('POST /api/projects классифицируется как создание, а не как настройки', () => {
@@ -29,6 +35,14 @@ describe('матрица проектных полномочий', () => {
       ['POST', '/api/projects/p1/tasks', 'task:create'],
       ['PATCH', '/api/projects/p1/tasks/t1', 'task:update'],
       ['POST', '/api/projects/p1/tasks/t1/merge', 'task:merge'],
+      // Панель кода: правка файла, коммит и push — право `repository:write`
+      // (есть у developer), чтение состояния рабочей копии — без права.
+      ['POST', '/api/projects/p1/git/file', 'repository:write'],
+      ['POST', '/api/projects/p1/git/checkout', 'repository:write'],
+      ['POST', '/api/projects/p1/git/commit', 'repository:write'],
+      ['POST', '/api/projects/p1/git/push', 'repository:write'],
+      ['GET', '/api/projects/p1/git/status', null],
+      ['GET', '/api/projects/p1/git/workspaces', null],
       ['POST', '/api/projects/p1/tasks/t1/ci/run', 'workflow:start'],
       ['POST', '/api/admin/users', 'users:manage'],
       // Свои данные не админские: человек вправе знать о себе то же, что знает о нём админ.
@@ -65,6 +79,8 @@ describe('карта URL → возможность проекта', () => {
       ['/api/projects/p1/machines', 'machines'],
       ['/api/projects/p1/machines/a1/share', 'machines'],
       ['/api/projects/p1/default-machine', 'machines'],
+      ['/api/projects/p1/git/status', 'git'],
+      ['/api/projects/p1/git/commit', 'git'],
       ['/api/projects/p1/tasks/t1/merge', 'git'],
       ['/api/projects/p1/tasks/t1/merge/runs', 'git'],
       ['/api/projects/p1/tasks/t1/qa', 'qa'],

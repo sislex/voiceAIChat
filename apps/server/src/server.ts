@@ -48,15 +48,27 @@ import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.
 import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
 import { createAgentWatchdog } from './agents/watchdog.js'
 import { createCommandGate } from './agents/commandGate.js'
+import { GitWorkspaceService } from './git/workspaceService.js'
+import { registerProjectGitRoutes } from './routes/projectGit.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 import type { GeoResolver } from '@voicechat/sessions-core'
 import { SessionHub } from './users/sessionHub.js'
 
-/** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
+/**
+ * Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5).
+ * Имён два: по https cookie называется `__Secure-vc_session` (см. разведение
+ * имён по схеме в `users/auth.ts`), по http — `vc_session`. Защищённое имя
+ * приоритетнее: если в браузере лежат оба, актуально то, что поставил https.
+ */
 function cookieToken(header: string | undefined): string | undefined {
   if (!header) return undefined
-  for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === 'vc_session') return rest.join('=') }
-  return undefined
+  let plain: string | undefined
+  for (const item of header.split(';')) {
+    const [k, ...rest] = item.trim().split('=')
+    if (k === '__Secure-vc_session') return rest.join('=')
+    if (k === 'vc_session') plain = rest.join('=')
+  }
+  return plain
 }
 import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
@@ -1629,6 +1641,22 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
   registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId))
+
+  // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
+  // всё через тот же exec/fs машины-агента, что у CI и проводника.
+  registerProjectGitRoutes(app, new GitWorkspaceService({
+    db,
+    runtime: {
+      exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
+      fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
+      fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      policyOf: (agentId) => agentRegistry.policyOf(agentId),
+      platformOf: (agentId) => agentRegistry.platformOf(agentId),
+      nameOf: (agentId) => agentRegistry.nameOf(agentId)
+    },
+    gate: commandGate
+  }))
   const featurePreviews = new FeaturePreviewManager({
     db,
     executor: ciExecutor,
