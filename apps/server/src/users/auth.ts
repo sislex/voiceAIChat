@@ -39,25 +39,75 @@ const ROLE_SHORT_TTL_MS = 7 * 24 * 60 * 60_000
 /** Сколько устройств разрешено держать доверенными одновременно. */
 const TRUSTED_DEVICES_LIMIT = 5
 export const CSRF_HEADER = 'x-vc-csrf'
+/**
+ * Префикс защищённого имени cookie — и это не косметика.
+ *
+ * Браузер различает cookie по ХОСТУ, а не по схеме и порту: один и тот же прод
+ * виден и как `https://<ip>` (через Caddy), и как `http://<ip>:8787` (порт
+ * сервера напрямую). Cookie, выставленная по https, получает флаг `Secure`, а
+ * незащищённый origin по правилу «Leave Secure Cookies Alone» (RFC 6265bis
+ * §5.4) не может ни прочитать её, ни перезаписать одноимённую. Инцидент
+ * 31.08.2026: после входа по https вход по http перестал сохраняться совсем —
+ * `Set-Cookie` браузер молча отбрасывал, Bearer жил только в памяти страницы, и
+ * ЛЮБАЯ перезагрузка возвращала экран входа. Снаружи это выглядело как «сессия
+ * не работает», хотя сервер и клиент были исправны.
+ *
+ * Префикс `__Secure-` браузер запрещает выставлять с незащищённого origin,
+ * поэтому имена двух схем гарантированно разные и затенять друг друга не могут.
+ */
+const SECURE_COOKIE_PREFIX = '__Secure-'
+function isHttps(req: FastifyRequest): boolean {
+  return String(req.headers['x-forwarded-proto'] ?? req.protocol) === 'https'
+}
 function secureFlag(req: FastifyRequest): string {
-  const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol)
-  return proto === 'https' ? '; Secure' : ''
+  return isHttps(req) ? '; Secure' : ''
+}
+/** Имя cookie для схемы запроса: по https — с префиксом `__Secure-`, по http — обычное. */
+function cookieNameFor(req: FastifyRequest, base: string): string {
+  return isHttps(req) ? SECURE_COOKIE_PREFIX + base : base
+}
+/**
+ * Значение cookie по базовому имени: сначала защищённое имя, потом обычное.
+ * Читаем оба, чтобы схема не зависела от того, какой origin выставил cookie
+ * последним, и чтобы правка не разлогинила всех, кто уже вошёл по старому имени.
+ */
+function readCookie(req: FastifyRequest, base: string): string | undefined {
+  return cookieOf(req, SECURE_COOKIE_PREFIX + base) ?? cookieOf(req, base)
 }
 /** `maxAgeSec: null` — сессионная cookie без Max-Age (живёт до закрытия браузера). */
 export function sessionCookies(req: FastifyRequest, token: string, csrf: string, maxAgeSec: number | null): string[] {
   const age = maxAgeSec === null ? '' : `; Max-Age=${maxAgeSec}`
   return [
-    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict${age}${secureFlag(req)}`,
-    `${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict${age}${secureFlag(req)}`
+    `${cookieNameFor(req, SESSION_COOKIE)}=${token}; Path=/; HttpOnly; SameSite=Strict${age}${secureFlag(req)}`,
+    `${cookieNameFor(req, CSRF_COOKIE)}=${csrf}; Path=/; SameSite=Strict${age}${secureFlag(req)}`
+  ]
+}
+/**
+ * Разовое лечение старой пары имён при входе по https: у тех, кто успел войти до
+ * разведения имён, в браузере лежит `Secure`-cookie с ОБЫЧНЫМ именем, и она
+ * затеняет http-версию навсегда — сам http её удалить не может. Защищённый
+ * origin может, поэтому один вход по https чинит адрес без ручной чистки cookie.
+ */
+export function clearLegacySessionCookies(req: FastifyRequest): string[] {
+  if (!isHttps(req)) return []
+  return [
+    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`,
+    `${CSRF_COOKIE}=; Path=/; SameSite=Strict; Max-Age=0`
   ]
 }
 /** Cookie секрета устройства: SameSite=Lax, чтобы переживать переходы по ссылкам из писем. */
 export function deviceCookie(req: FastifyRequest, secret: string): string {
-  return `${DEVICE_COOKIE}=${secret}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${secureFlag(req)}`
+  return `${cookieNameFor(req, DEVICE_COOKIE)}=${secret}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${secureFlag(req)}`
 }
 
 export function clearSessionCookies(req: FastifyRequest): string[] {
-  return [`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag(req)}`, `${CSRF_COOKIE}=; Path=/; SameSite=Strict; Max-Age=0${secureFlag(req)}`]
+  // Гасим и защищённое имя, и обычное: после смены схемы в браузере может лежать
+  // любое из двух, а выход обязан завершать сессию, а не половину её признаков.
+  return [
+    `${cookieNameFor(req, SESSION_COOKIE)}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag(req)}`,
+    `${cookieNameFor(req, CSRF_COOKIE)}=; Path=/; SameSite=Strict; Max-Age=0${secureFlag(req)}`,
+    ...clearLegacySessionCookies(req)
+  ]
 }
 function cookieOf(req: FastifyRequest, name: string): string | undefined {
   const header = req.headers.cookie
@@ -66,8 +116,10 @@ function cookieOf(req: FastifyRequest, name: string): string | undefined {
   return undefined
 }
 
-function previewCookie(token: string, maxAge?: number): string {
-  return `${PREVIEW_SESSION_COOKIE}=${token}; Path=${PREVIEW_COOKIE_PATH}; HttpOnly; SameSite=Strict${maxAge === undefined ? '' : `; Max-Age=${maxAge}`}`
+function previewCookie(req: FastifyRequest, token: string, maxAge?: number): string {
+  // `__Secure-` требует флага Secure — на https он и так уместен: iframe превью
+  // живёт на том же защищённом origin.
+  return `${cookieNameFor(req, PREVIEW_SESSION_COOKIE)}=${token}; Path=${PREVIEW_COOKIE_PATH}; HttpOnly; SameSite=Strict${maxAge === undefined ? '' : `; Max-Age=${maxAge}`}${secureFlag(req)}`
 }
 
 declare module 'fastify' {
@@ -94,9 +146,14 @@ export type ProjectPermission =
   | 'users:manage'
   | 'project:settings'
   | 'project:create'
+  /** Правка файлов, коммит и push в рабочей копии задачи или сессии (панель кода). */
+  | 'repository:write'
 
 const DEVELOPER_PERMISSIONS = new Set<ProjectPermission>([
-  'project:view', 'task:create', 'task:update', 'workflow:start', 'task:merge'
+  // `repository:write` есть у разработчика намеренно: закоммитить и отправить свою
+  // ветку — его обычная работа. Растянуть на это `task:merge` было бы неверно: тот
+  // отвечает за попадание в main, а панель кода в main не пушит вовсе.
+  'project:view', 'task:create', 'task:update', 'workflow:start', 'task:merge', 'repository:write'
 ])
 
 /**
@@ -137,6 +194,7 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   if (method === 'POST' && url === '/api/projects') return 'project:create'
   if (/^\/api\/projects\/[^/]+\/releases\/deploy$/.test(url)) return 'production:deploy'
   if (/^\/api\/projects\/[^/]+\/releases(?:\/|$)/.test(url)) return 'release:prepare'
+  if (/^\/api\/projects\/[^/]+\/git(?:\/|$)/.test(url)) return 'repository:write'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/retry$/.test(url)) return 'task:merge'
   if (/\/ci\/run(?:-on-machine)?$/.test(url) || /^\/api\/ci\/runs\/[^/]+\/(?:retry|retry-from-step|discard-and-retry)$/.test(url)) return 'workflow:start'
   if (method === 'POST' && /^\/api\/projects\/[^/]+\/tasks$/.test(url)) return 'task:create'
@@ -162,6 +220,7 @@ export function projectFeatureForRequest(method: string, url: string): ProjectFe
   if (!/^\/api\/projects\/[^/]+\//.test(url)) return null
   if (/^\/api\/projects\/[^/]+\/(?:releases|production)(?:\/|$)/.test(url)) return 'releases'
   if (/^\/api\/projects\/[^/]+\/(?:machines|default-machine)(?:\/|$)/.test(url)) return 'machines'
+  if (/^\/api\/projects\/[^/]+\/git(?:\/|$)/.test(url)) return 'git'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge(?:\/|$)/.test(url)) return 'git'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/qa(?:\/|$)/.test(url)) return 'qa'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/preview(?:\/|$)/.test(url)) return 'preview'
@@ -183,13 +242,8 @@ function previewSession(req: FastifyRequest, url: string): string | undefined {
   // Точный путь прокси плюс сброс cookie-контейнера превью (кнопка «Сессия» Reader).
   // Превью и экспорт Make лежат под тем же префиксом: iframe и ссылка «Скачать» шлют только cookie.
   if (url !== PREVIEW_COOKIE_PATH && url !== PREVIEW_COOKIE_PATH + '/reset-cookies' && !url.startsWith(PREVIEW_COOKIE_PATH + '/make')) return undefined
-  const header = req.headers.cookie
-  if (typeof header !== 'string') return undefined
-  for (const item of header.split(';')) {
-    const [name, ...value] = item.trim().split('=')
-    if (name === PREVIEW_SESSION_COOKIE) return value.join('=') || undefined
-  }
-  return undefined
+  // Оба имени: на https cookie превью называется `__Secure-vc_preview_session`.
+  return readCookie(req, PREVIEW_SESSION_COOKIE) || undefined
 }
 
 /** Публичные пути (без токена): health, сессия, скачивание бинарей/установщиков агента. */
@@ -286,7 +340,7 @@ async function notifyBulkRevoke(
 
 /** Секрет устройства из cookie: голый секрет наружу не хранится, только хеш. */
 function deviceSecretOf(req: FastifyRequest): string | undefined {
-  const raw = cookieOf(req, DEVICE_COOKIE)
+  const raw = readCookie(req, DEVICE_COOKIE)
   return raw && raw.length >= 16 ? raw.slice(0, 128) : undefined
 }
 
@@ -334,9 +388,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
     return resolveUser(db, token, secret)
   }
-  const tokenOf = (req: FastifyRequest): string | undefined => bearer(req) ?? cookieOf(req, SESSION_COOKIE)
+  const tokenOf = (req: FastifyRequest): string | undefined => bearer(req) ?? readCookie(req, SESSION_COOKIE)
   /** Мутации сессионных роутов по cookie требуют CSRF (общий preHandler их не покрывает — префикс публичный). */
-  const csrfOk = (req: FastifyRequest): boolean => Boolean(bearer(req)) || (Boolean(cookieOf(req, CSRF_COOKIE)) && req.headers[CSRF_HEADER] === cookieOf(req, CSRF_COOKIE))
+  const csrfOk = (req: FastifyRequest): boolean => Boolean(bearer(req)) || (Boolean(readCookie(req, CSRF_COOKIE)) && req.headers[CSRF_HEADER] === readCookie(req, CSRF_COOKIE))
   const sidOf = (req: FastifyRequest): string | null => verifyToken(tokenOf(req), secret)?.sid ?? null
   db.pruneSessions()
 
@@ -348,7 +402,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // Cookie авторизует мутации только с CSRF-заголовком, равным читаемой cookie: чужой сайт cookie отправит, заголовок — нет.
     let token = bearer(req)
     let viaCookie = false
-    if (!token) { token = cookieOf(req, SESSION_COOKIE); viaCookie = Boolean(token) }
+    if (!token) { token = readCookie(req, SESSION_COOKIE); viaCookie = Boolean(token) }
     if (!token) token = previewSession(req, url)
     // Путь запоминаем в сессии: в списке устройств он отвечает на вопрос «а что
     // это устройство вообще делает», когда вход выглядит подозрительно.
@@ -363,7 +417,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       return reply
     }
     if (viaCookie && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      const csrf = cookieOf(req, CSRF_COOKIE)
+      const csrf = readCookie(req, CSRF_COOKIE)
       if (!csrf || req.headers[CSRF_HEADER] !== csrf) {
         await reply.code(403).send({ error: 'csrf' })
         return reply
@@ -490,7 +544,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       }
     }
     const csrf = newSessionId()
-    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null), deviceCookie(req, deviceSecret)])
+    reply.header('set-cookie', [previewCookie(req, token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null), deviceCookie(req, deviceSecret), ...clearLegacySessionCookies(req)])
     return { token, user, csrf }
   }
   app.post<{ Body: { name?: string; password?: string; remember?: boolean } }>(
@@ -605,7 +659,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   app.post(REST.sessionPreview, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
-    reply.header('set-cookie', previewCookie(signToken(user, secret)))
+    reply.header('set-cookie', previewCookie(req, signToken(user, secret)))
     return { ok: true }
   })
 
@@ -629,14 +683,14 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // Выход по cookie — только с CSRF-заголовком: иначе любой запрос с приложенными браузером cookie (в т.ч. старая вкладка
     // без Bearer или чужой сайт) отзовёт общую сессию. Сессионные роуты публичны и общим preHandler не проверяются.
     if (!bearer(req)) {
-      const csrf = cookieOf(req, CSRF_COOKIE)
+      const csrf = readCookie(req, CSRF_COOKIE)
       if (!csrf || req.headers[CSRF_HEADER] !== csrf) return reply.code(403).send({ error: 'csrf' })
     }
     db.revokeSession(token!)
     const sid = sidOf(req)
     if (sid) db.revokeSessionById(sid)
     db.logSecurityEvent({ user: who.name, type: 'logout', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
-    reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
+    reply.header('set-cookie', [previewCookie(req, '', 0), ...clearSessionCookies(req)])
     return { ok: true }
   })
 
@@ -735,7 +789,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     if (result !== 'ok') return reply.code(400).send({ error: 'Ссылка сброса недействительна или уже использована' })
     db.revokeUserSessions(name)
     db.logSecurityEvent({ user: name, type: 'password_reset', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'по подтверждённому email' })
-    reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
+    reply.header('set-cookie', [previewCookie(req, '', 0), ...clearSessionCookies(req)])
     return { ok: true }
   })
 
@@ -800,7 +854,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const token = bearer(req)
     if (!activeUser(token)) return reply.code(401).send({ error: 'unauthorized' })
     const csrf = newSessionId()
-    reply.header('set-cookie', [previewCookie(token!), ...sessionCookies(req, token!, csrf, Math.floor(SESSION_TTL_MS / 1000))])
+    reply.header('set-cookie', [previewCookie(req, token!), ...sessionCookies(req, token!, csrf, Math.floor(SESSION_TTL_MS / 1000)), ...clearLegacySessionCookies(req)])
     return { ok: true, csrf }
   })
 
@@ -858,7 +912,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const token = tokenOf(req)
     if (token) db.revokeSession(token)
     db.setMustChangePassword(user.name, true)
-    reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
+    reply.header('set-cookie', [previewCookie(req, '', 0), ...clearSessionCookies(req)])
     db.logSecurityEvent({ user: user.name, type: 'session_panic', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}, требуется смена пароля` })
     void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: db.getUser(user.name)?.email, kind: 'panic', revoked, ip: req.ip })
     for (const session of doomed) options.sessions?.emit(user.name, session.sid)

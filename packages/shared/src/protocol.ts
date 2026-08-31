@@ -226,6 +226,13 @@ export const REST = {
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */
   conversationContextItem: (id: string, itemId: string) => `/api/conversations/${encodeURIComponent(id)}/context/${encodeURIComponent(itemId)}`,
+  /**
+   * Предпросмотр автоконтекста БЗ по черновику сообщения. POST, а не GET с
+   * query: черновик — текст пользователя, и в URL он попадать не должен.
+   */
+  conversationContextKbPreview: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-kb-preview`,
+  /** Прочитать цепочку AGENTS.md рабочей директории разговора (по явной просьбе). */
+  conversationAgentsChain: (id: string) => `/api/conversations/${encodeURIComponent(id)}/agents-chain`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
@@ -450,6 +457,26 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/sessions/${encodeURIComponent(sessionId)}/complete`,
   taskQaFix: (id: string, taskId: string, sessionId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/qa/sessions/${encodeURIComponent(sessionId)}/fix`,
+
+  // --- Git в рабочей копии задачи/сессии ---
+  // Все ручки принимают `workspace=<id>` (см. `GitWorkspaceRef.id`): путь на машине
+  // клиент не присылает никогда — его резолвит сервер по своим таблицам.
+  projectGitWorkspaces: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/workspaces`,
+  projectGitStatus: (id: string, workspace: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/status?workspace=${encodeURIComponent(workspace)}`,
+  projectGitBranches: (id: string, workspace: string, refresh?: boolean) =>
+    `/api/projects/${encodeURIComponent(id)}/git/branches?workspace=${encodeURIComponent(workspace)}${refresh ? '&refresh=1' : ''}`,
+  projectGitTree: (id: string, workspace: string, dir: string, ref?: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/tree?workspace=${encodeURIComponent(workspace)}&dir=${encodeURIComponent(dir)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`,
+  projectGitFile: (id: string, workspace: string, path: string, ref?: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/file?workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}${ref ? `&ref=${encodeURIComponent(ref)}` : ''}`,
+  projectGitDiff: (id: string, workspace: string, path: string, base?: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/diff?workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}${base ? `&base=${encodeURIComponent(base)}` : ''}`,
+  projectGitSaveFile: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/file`,
+  projectGitCheckout: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/checkout`,
+  projectGitBranch: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/branch`,
+  projectGitCommit: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/commit`,
+  projectGitPush: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/push`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',

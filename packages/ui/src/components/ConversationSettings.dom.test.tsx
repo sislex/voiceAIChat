@@ -7,6 +7,50 @@ import { ConversationSettings } from './ConversationSettings'
 import type { ProjectDetail, ProjectSummary } from '@shared/projects'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { makeAgent, makeConversation } from '../test/fixtures'
+import { contextLockReason, isContextToggleable } from '@shared/contextGating'
+
+/** Снимок без собственных блоков промпта — базовая заготовка для тестов. */
+const emptyPreview = { blocks: [], text: '', chars: 0, approxTokens: 0, omitted: ['Правила платформы добавляет CLI движка.'] }
+
+const PREVIEW_TEXT = 'Обращение к пользователю: Тест.'
+
+/**
+ * Снимок контекста как его отдаёт сервер: два пункта (неотключаемая
+ * безопасность и выключаемая персонализация) и предпросмотр промпта, который
+ * пустеет вместе с выключенным пунктом — ровно как на сервере.
+ */
+function contextSnapshot(options: {
+  personalizationEnabled?: boolean
+  viewerRole?: 'admin' | 'developer'
+  lastTurn?: false
+  warnings?: Array<{ itemId: string | null; level: 'notice' | 'problem'; text: string }>
+}) {
+  const on = options.personalizationEnabled ?? true
+  const size = { chars: PREVIEW_TEXT.length, approxTokens: Math.ceil(PREVIEW_TEXT.length / 4) }
+  const base = (id: string, title: string) => ({
+    id, title, type: 'Контекст', source: 'Настройки пользователя', scope: 'Следующий ход', priority: '1',
+    description: `Описание ${title}`, explanation: `Причина ${title}`, configured: true, available: true,
+    toggleable: isContextToggleable(id), lockReason: contextLockReason(id)
+  })
+  return {
+    schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.',
+    summary: { provider: 'claude' as const, model: 'opus', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Изменение данных отключено.' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Документы выбираются по сообщению.' } },
+    groups: [{ id: 'instructions', order: 1, title: 'Инструкции', description: '', items: [
+      { ...base('platform-instructions', 'Правила платформы'), enabled: true, includedInNextTurn: true },
+      { ...base('personalization', 'Предпочтения ответа'), enabled: on, includedInNextTurn: on, size }
+    ] }],
+    viewerRole: options.viewerRole ?? 'admin',
+    lastTurn: options.lastTurn === false ? null : {
+      at: '12:41', provider: 'claude' as const, model: 'opus',
+      prompt: 'Системный блок\n\nПользователь: почему падает гейт?',
+      chars: 48, approxTokens: 12, resumed: true, attachments: 1, kbSections: ['Соглашения']
+    },
+    warnings: options.warnings ?? [],
+    promptPreview: on
+      ? { blocks: [{ itemIds: ['personalization'], title: 'Персонализация', text: PREVIEW_TEXT, ...size }], text: PREVIEW_TEXT, ...size, omitted: ['Правила платформы и приложения добавляет CLI движка.'] }
+      : { blocks: [], text: '', chars: 0, approxTokens: 0, omitted: ['Правила платформы и приложения добавляет CLI движка.'] }
+  }
+}
 
 // Машина и беседа — общие фикстуры: раньше беседа собиралась частичным литералом,
 // и новое обязательное поле контракта в этом тесте не проявлялось.
@@ -221,7 +265,8 @@ describe('ConversationSettings', () => {
 
   it('показывает понятную сводку, источники и пять пользовательских статусов', async () => {
     const item = (id: string, title: string, configured: boolean, available: boolean, includedInNextTurn: boolean, source = 'Настройки пользователя') => ({
-      id, title, type: 'Контекст', source, scope: 'Следующий ход', priority: '1', description: `Описание ${title}`, explanation: `Причина ${title}`, configured, available, includedInNextTurn
+      id, title, type: 'Контекст', source, scope: 'Следующий ход', priority: '1', description: `Описание ${title}`, explanation: `Причина ${title}`, configured, available, includedInNextTurn,
+      toggleable: isContextToggleable(id), enabled: true, lockReason: contextLockReason(id)
     })
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({
       schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Штатное пояснение актуальности.',
@@ -241,7 +286,11 @@ describe('ConversationSettings', () => {
           item('current-message', 'Текущее сообщение', false, false, false)
         ] },
         { id: 'skills', order: 3, title: 'Навыки', description: '', items: [item('skill-review', 'Review', true, true, false)] }
-      ]
+      ],
+      viewerRole: 'admin' as const,
+      lastTurn: null,
+      warnings: [],
+      promptPreview: emptyPreview
     }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
@@ -269,7 +318,11 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({
       schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Не ошибка.',
       summary: { provider: 'codex' as const, model: '', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'off' as const, displayName: 'Отключено', explanation: 'Тест' } },
-      groups: [{ id: 'conversation', order: 1, title: 'Настройки', description: '', items: [{ id: 'machine', title: 'Машина', type: 'Настройка', source: 'Разговор', scope: 'offline', priority: '1', description: '10e', explanation: 'Машина отключена от сети.', configured: true, available: false, includedInNextTurn: false }] }]
+      groups: [{ id: 'conversation', order: 1, title: 'Настройки', description: '', items: [{ id: 'machine', title: 'Машина', type: 'Настройка', source: 'Разговор', scope: 'offline', priority: '1', description: '10e', explanation: 'Машина отключена от сети.', configured: true, available: false, includedInNextTurn: false, toggleable: false, enabled: true, lockReason: 'info' as const }] }],
+      viewerRole: 'admin' as const,
+      lastTurn: null,
+      warnings: [],
+      promptPreview: emptyPreview
     }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
@@ -280,7 +333,7 @@ describe('ConversationSettings', () => {
   })
 
   it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {
-    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }) } as never
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, lastTurn: null, warnings: [], promptPreview: emptyPreview }) } as never
     window.location.hash = '#/chat/c1/context/disappeared'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
@@ -288,6 +341,216 @@ describe('ConversationSettings', () => {
     expect(window.location.hash).toBe('#/chat/c1/context/disappeared')
     fireEvent.click(screen.getByRole('button', { name: '← Ко всем источникам' }))
     expect(window.location.hash).toBe('#/chat/c1')
+  })
+
+  it('тумблер выключает пункт контекста, безопасность показывает замок с причиной', async () => {
+    const setContextItem = vi.fn().mockImplementation(async ({ itemId, enabled }: { itemId: string; enabled: boolean }) => ({
+      ...contextSnapshot({ personalizationEnabled: itemId === 'personalization' ? enabled : true }),
+      conversationId: 'c1'
+    }))
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:setContextItem': setContextItem } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const toggle = await screen.findByRole('checkbox', { name: 'Учитывать «Предпочтения ответа» в этом разговоре' })
+    expect(toggle).toBeChecked()
+    fireEvent.click(toggle)
+    await waitFor(() => expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'personalization', enabled: false }))
+    // Снимок из ответа сервера заменяет прежний: статус и предпросмотр обновились одним ответом.
+    const knowledge = screen.getByRole('heading', { name: 'Что ИИ будет знать' }).closest('section')!
+    await waitFor(() => expect(within(knowledge).getByText('Выключено вами')).toBeInTheDocument())
+    expect(screen.getByTestId('context-prompt-size')).toHaveTextContent('0 блок(ов)')
+
+    // Правила платформы выключить нельзя — замок объясняет это словами.
+    expect(screen.queryByRole('checkbox', { name: /Правила платформы/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /Правила безопасности платформы/ })).toBeInTheDocument()
+  })
+
+  it('показывает итоговый текст промпта, его размер и чего в нём нет', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    expect(await screen.findByTestId('context-prompt-preview')).toHaveTextContent('Обращение к пользователю: Тест.')
+    expect(screen.getByTestId('context-prompt-size')).toHaveTextContent('1 блок(ов)')
+    expect(screen.getByTestId('context-prompt-size')).toHaveTextContent('≈8 токенов')
+    // Вклад пункта виден и в списке: понятно, кто занимает место в промпте.
+    expect(screen.getByRole('heading', { name: 'Что ИИ будет знать' }).closest('section')).toHaveTextContent('≈8 токенов · 31 символов')
+    const omitted = screen.getByText('Чего в этом тексте нет').closest('details')!
+    fireEvent.click(screen.getByText('Чего в этом тексте нет'))
+    expect(within(omitted).getByText(/добавляет CLI движка/)).toBeInTheDocument()
+  })
+
+  it('поиск и фильтр сужают список, «Не попадёт» собирает исключённое с причиной', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ personalizationEnabled: false })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    const knowledge = (await screen.findByRole('heading', { name: 'Что ИИ будет знать' })).closest('section')!
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск по источникам контекста' }), { target: { value: 'платформы' } })
+    expect(knowledge).toHaveTextContent('Правила платформы')
+    expect(knowledge).not.toHaveTextContent('Предпочтения ответа')
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск по источникам контекста' }), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Не попадёт' }))
+    expect(knowledge).not.toHaveTextContent('Правила платформы')
+    expect(knowledge).toHaveTextContent('Предпочтения ответа')
+
+    const excluded = screen.getByTestId('context-excluded')
+    expect(excluded).toHaveTextContent('Не попадёт в следующий ход')
+    expect(within(excluded).getByText(/Вы выключили источник/)).toBeInTheDocument()
+  })
+
+  it('быстрая правка режима БЗ применяется сразу; режим доступа правит только админ', async () => {
+    const setExecTarget = vi.fn().mockResolvedValue({ ...conversation, kbContextMode: 'off' })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ viewerRole: 'developer' })), 'conversations:setExecTarget': setExecTarget } as never
+    const { unmount } = render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    expect(await screen.findByTestId('context-role-hint')).toHaveTextContent('не связано с безопасностью')
+    // Режим доступа — безопасность: обычный пользователь его только видит.
+    expect(screen.getByTestId('context-permission-readonly')).toHaveTextContent('Только планирование')
+    expect(screen.queryByRole('combobox', { name: 'Режим доступа' })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'База знаний' }), { target: { value: 'off' } })
+    await waitFor(() => expect(setExecTarget).toHaveBeenCalledWith({ id: 'c1', execTarget: conversation.execTarget ?? null, kbContextMode: 'off' }))
+    unmount()
+
+    window.api = { ...window.api, 'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ viewerRole: 'admin' })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    expect(await screen.findByTestId('context-role-hint')).toHaveTextContent('Вы администратор')
+    expect(screen.getByRole('combobox', { name: 'Режим доступа' })).toBeInTheDocument()
+  })
+
+  it('подбор базы знаний считается по черновику, а не гадается снимком', async () => {
+    const kbPreview = vi.fn().mockImplementation(async ({ draft }: { draft: string }) => draft.includes('сборк')
+      ? { mode: 'auto' as const, text: '\n\n## База знаний\n### Сборка\nГейт запускается npm run gate.', chars: 60, approxTokens: 15, confidence: 'high' as const, sections: [{ documentId: 'conventions', title: 'Соглашения', anchor: 'гейт', chars: 60 }], emptyReason: null }
+      : { mode: 'auto' as const, text: '', chars: 0, approxTokens: 0, confidence: null, sections: [], emptyReason: 'no-match' })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:contextKbPreview': kbPreview } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    const area = await screen.findByRole('textbox', { name: /Черновик сообщения/ })
+
+    // Пустой черновик считать нечего — кнопка выключена.
+    expect(screen.getByRole('button', { name: 'Показать подбор' })).toBeDisabled()
+    fireEvent.change(area, { target: { value: 'Как запускается сборка?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Показать подбор' }))
+    await waitFor(() => expect(kbPreview).toHaveBeenCalledWith({ id: 'c1', draft: 'Как запускается сборка?' }))
+    const result = await screen.findByTestId('context-kb-result')
+    expect(result).toHaveTextContent('Соглашения')
+    expect(result).toHaveTextContent('≈15 токенов')
+    expect(result).toHaveTextContent('Гейт запускается npm run gate.')
+
+    // Нет совпадений — прямо об этом, а не пустое место.
+    fireEvent.change(area, { target: { value: 'погода на выходных' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Показать подбор' }))
+    expect(await screen.findByTestId('context-kb-empty')).toHaveTextContent('подходящих разделов не нашлось')
+
+    // «Нашлось, но уверенность низкая» — другой ответ, чем «ничего не нашлось»:
+    // документы есть, просто автоматически они не вставятся.
+    kbPreview.mockResolvedValueOnce({ mode: 'auto' as const, text: '', chars: 0, approxTokens: 0, confidence: 'medium' as const, sections: [], emptyReason: 'low-confidence' })
+    fireEvent.change(area, { target: { value: 'что-то расплывчатое' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Показать подбор' }))
+    await waitFor(() => expect(screen.getByTestId('context-kb-empty')).toHaveTextContent('уверенность подбора низкая'))
+  })
+
+  it('массовые действия выключают всё необязательное и включают обратно', async () => {
+    const off = new Set<string>()
+    const setContextItem = vi.fn().mockImplementation(async ({ itemId, enabled }: { itemId: string; enabled: boolean }) => {
+      if (enabled) off.delete(itemId)
+      else off.add(itemId)
+      return contextSnapshot({ personalizationEnabled: !off.has('personalization') })
+    })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:setContextItem': setContextItem } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // Пункт с замком в массовое действие не попадает: его и нельзя выключить.
+    fireEvent.click(await screen.findByRole('button', { name: 'Выключить необязательное (1)' }))
+    await waitFor(() => expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'personalization', enabled: false }))
+    expect(setContextItem).not.toHaveBeenCalledWith(expect.objectContaining({ itemId: 'platform-instructions' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Включить всё (1)' }))
+    await waitFor(() => expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'personalization', enabled: true }))
+  })
+
+  it('AGENTS.md читается только по просьбе и показывает цепочку от общей к конкретной', async () => {
+    const agentsChain = vi.fn().mockResolvedValue({
+      machineName: 'MacBook',
+      workdir: '/Users/me/work/project',
+      files: [
+        { path: '/Users/me/AGENTS.md', text: '# Общие правила', chars: 15 },
+        { path: '/Users/me/work/project/AGENTS.md', text: '# Правила проекта', chars: 17 }
+      ]
+    })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:agentsChain': agentsChain } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // Само по себе чтение не запускается: файл лежит на чужой машине.
+    expect(await screen.findByRole('heading', { name: 'Цепочка AGENTS.md' })).toBeInTheDocument()
+    expect(agentsChain).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Прочитать с машины' }))
+    await waitFor(() => expect(agentsChain).toHaveBeenCalledWith({ id: 'c1' }))
+    const result = await screen.findByTestId('context-agents-result')
+    expect(result).toHaveTextContent('MacBook')
+    const paths = within(result).getAllByText(/AGENTS\.md/).map((node) => node.textContent ?? '')
+    expect(paths[0]).toContain('/Users/me/AGENTS.md')
+    expect(paths[1]).toContain('/Users/me/work/project/AGENTS.md')
+  })
+
+  it('без машины цепочка AGENTS.md объясняет причину, а не молчит', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})),
+      'conversations:agentsChain': vi.fn().mockResolvedValue({ machineName: null, workdir: '/srv/app', files: [], unavailable: 'Машина недоступна: прочитать файлы её директории нельзя.' }) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Прочитать с машины' }))
+    expect(await screen.findByTestId('context-agents-unavailable')).toHaveTextContent('Машина недоступна')
+  })
+
+  it('показывает факт прошлого хода: что действительно ушло модели', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    const meta = await screen.findByTestId('context-lastturn-meta')
+    expect(meta).toHaveTextContent('≈12 токенов')
+    expect(meta).toHaveTextContent('продолжение сессии движка')
+    expect(meta).toHaveTextContent('вложений: 1')
+    expect(meta).toHaveTextContent('Соглашения')
+    // Текст под раскрытием: это факт, а не прогноз, и он бывает большим.
+    fireEvent.click(screen.getByText('Показать отправленный текст'))
+    expect(screen.getByTestId('context-lastturn-prompt')).toHaveTextContent('почему падает гейт')
+  })
+
+  it('без прошлого хода карточки факта нет, а предупреждения сервера видны и ведут к источнику', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        lastTurn: false,
+        warnings: [
+          { itemId: 'personalization', level: 'problem', text: 'Персонализация выключена, хотя предпочтения заданы.' },
+          { itemId: null, level: 'notice', text: 'Инструкций чата выключено для этого разговора: 1.' }
+        ]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const warnings = await screen.findByTestId('context-warnings')
+    expect(warnings).toHaveTextContent('Персонализация выключена')
+    expect(warnings).toHaveTextContent('Инструкций чата выключено')
+    expect(screen.queryByTestId('context-lastturn-meta')).not.toBeInTheDocument()
+
+    // Предупреждение с источником ведёт прямо в его карточку.
+    fireEvent.click(within(warnings).getByRole('button', { name: 'Открыть источник' }))
+    expect(await screen.findByRole('heading', { name: 'Предпочтения ответа' })).toBeInTheDocument()
   })
 
 })
