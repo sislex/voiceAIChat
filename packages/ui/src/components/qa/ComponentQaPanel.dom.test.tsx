@@ -25,8 +25,12 @@ describe('ComponentQaPanel',()=>{
   it('подписывает статусы рана и команд по-русски',async()=>{
     window.qa={get:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),completePreparation:vi.fn(),startSession:vi.fn(),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),requestFix:vi.fn(),getComponent:vi.fn().mockResolvedValue(state()),completeComponent:vi.fn()}
     render(<ComponentQaPanel projectId="p1" taskId="t1" active={false}/>)
-    expect(await screen.findByText('Пройден')).toHaveClass('qa-status--passed')
-    expect(screen.getByText(/Component tests — Пройден/)).toBeInTheDocument()
+    // Статус рана — общая лозенга карточки, команда — строка ленты с той же
+    // подписью: сырых `passed`/`failed` в панели быть не должно.
+    expect(await screen.findByTestId('status-pill')).toHaveTextContent('Пройден')
+    expect(screen.getByTestId('status-pill')).toHaveClass('vc-pill--success')
+    expect(screen.getByText('Component tests')).toBeInTheDocument()
+    expect(screen.getByText(/Пройден · exit 0/)).toBeInTheDocument()
     expect(screen.queryByText(/— passed,/)).not.toBeInTheDocument()
   })
 
