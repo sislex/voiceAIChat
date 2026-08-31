@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { userEvent, within } from '@storybook/test'
 import type { Conversation, MessageSearchHit } from '@shared/types'
-import type { TaskChatBadge } from '@shared/projects'
+import type { ProjectSummary, TaskChatBadge } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { Sidebar } from './Sidebar'
 import { makeConversation } from '../test/fixtures/conversations'
@@ -66,8 +66,25 @@ export const MessageSearch: Story = {
     messageSearch: { query: 'миграция', status: 'ready', hits: [hit], nextCursor: null, loadingMore: false, error: null }
   }
 }
+const FILTER_PROJECTS = [
+  { id: 'project-1', name: 'Альфа', role: 'owner' },
+  { id: 'project-2', name: 'Очень длинное название проекта для проверки узкого сайдбара', role: 'member' },
+  { id: 'project-3', name: 'Гамма', role: 'member' }
+] as ProjectSummary[]
+
 export const ScrollAndLongTitles: Story = {
-  args: { conversations: Array.from({ length: 14 }, (_, index) => conversation(`long-${index}`, `Длинная беседа номер ${index + 1}: детали проверки сайдбара и доступного управления`, NOW - index * 1000)) }
+  args: {
+    conversations: Array.from({ length: 14 }, (_, index) => conversation(`long-${index}`, `Длинная беседа номер ${index + 1}: детали проверки сайдбара и доступного управления`, NOW - index * 1000)),
+    projects: FILTER_PROJECTS,
+    selectedProjectIds: FILTER_PROJECTS.map((project) => project.id),
+    onToggleProject: () => {},
+    onSetAllProjects: () => {}
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    canvas.getByRole('list', { name: 'Беседы' }).dispatchEvent(new WheelEvent('wheel', { deltaY: -40, bubbles: true }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Фильтр проектов: Все чаты' }))
+  }
 }
 export const ChatsControlsHidden: Story = {
   args: { mode: 'chats', onModeChange: () => {}, onShowDoneTaskChatsChange: () => {}, width: 264, onWidthChange: () => {} }
@@ -96,7 +113,11 @@ export const ShortViewportAccountMenu: Story = {
     await userEvent.click(within(canvasElement).getByRole('button', { name: /Администратор/ }))
   }
 }
-export const Mobile: Story = { args: { open: true }, parameters: { viewport: { defaultViewport: 'mobile1' } } }
+export const Mobile: Story = {
+  ...ScrollAndLongTitles,
+  args: { ...ScrollAndLongTitles.args, open: true },
+  parameters: { viewport: { defaultViewport: 'mobile1' } }
+}
 export const DarkTheme: Story = {
   args: { ...ChatsControlsHidden.args },
   decorators: [(Story) => <div data-theme="dark" style={{ width: 340, height: '100vh', background: 'var(--bg)' }}><Story /></div>]
