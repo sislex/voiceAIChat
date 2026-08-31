@@ -986,6 +986,12 @@ export interface Settings {
    * вместо того чтобы щёлкать тумблеры по памяти.
    */
   contextPresets: ContextPreset[]
+  /**
+   * Пресет, который применяется к **новым** разговорам. Настроил «минимальный
+   * контекст» один раз — и он действует сразу, а не после того как человек
+   * вспомнит про кнопку. null — новые чаты начинают с полным контекстом.
+   */
+  defaultContextPresetId: string | null
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -1298,7 +1304,8 @@ export const DEFAULT_SETTINGS: Settings = {
   personalization: DEFAULT_PERSONALIZATION,
   chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item })),
   loginNewDeviceEmails: true,
-  contextPresets: []
+  contextPresets: [],
+  defaultContextPresetId: null
 }
 
 /**
@@ -1329,7 +1336,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
   oneOf('aiAssistProvider', ['claude', 'codex'] as const)
   for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails'] as const) bool(key)
   for (const key of ['voice', 'codexModel', 'aiAssistModel'] as const) text(key)
-  for (const key of ['micDeviceId', 'workdir', 'execTarget', 'llmEngineId', 'defaultAgentId'] as const) nullableText(key)
+  for (const key of ['micDeviceId', 'workdir', 'execTarget', 'llmEngineId', 'defaultAgentId', 'defaultContextPresetId'] as const) nullableText(key)
   if (Number.isInteger(input.generatedFilesTtlDays)) patch.generatedFilesTtlDays = input.generatedFilesTtlDays
   if (Array.isArray(input.aiAssistPrompts)) {
     patch.aiAssistPrompts = (input.aiAssistPrompts as unknown[])

@@ -892,6 +892,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('дефолтный пресет контекста применяется к новым разговорам', async () => {
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: {
+      ...settings,
+      contextPresets: [{ id: 'p-min', name: 'Минимальный', disabled: ['personalization', 'knowledge-mode', 'platform-instructions'] }],
+      defaultContextPresetId: 'p-min'
+    } })
+
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Новый с пресетом' } })).json()
+    // Пункт безопасности из пресета отфильтрован: выключить его нельзя нигде.
+    expect(created.disabledContext.sort()).toEqual(['knowledge-mode', 'personalization'])
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const platform = snapshot.groups.flatMap((group: { items: Array<{ id: string; enabled: boolean }> }) => group.items)
+      .find((item: { id: string }) => item.id === 'platform-instructions')
+    expect(platform.enabled).toBe(true)
+
+    // Без дефолта новые чаты начинаются с полным контекстом.
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, defaultContextPresetId: null } })
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
+    expect(plain.disabledContext).toEqual([])
+  })
+
   it('админ видит и правит контекст чужого чата, обычный пользователь — нет', async () => {
     // Чужой разговор: владелец — другой пользователь.
     db.createUser('marina', 'pass', 'developer')

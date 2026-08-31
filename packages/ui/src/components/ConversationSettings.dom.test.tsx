@@ -609,8 +609,9 @@ describe('ConversationSettings', () => {
     expect(log).toHaveTextContent('Журнал изменений контекста')
     fireEvent.click(within(log).getByText('Журнал изменений контекста'))
     // Имя источника, а не id: журнал читают люди.
-    expect(within(log).getByText(/admin · вернул: Предпочтения ответа/)).toBeInTheDocument()
-    expect(within(log).getByText(/marina · выключил: Предпочтения ответа/)).toBeInTheDocument()
+    const entries = within(log).getAllByRole('listitem').map((node) => node.textContent ?? '')
+    expect(entries.some((text) => text.includes('admin · вернул:') && text.includes('Предпочтения ответа'))).toBe(true)
+    expect(entries.some((text) => text.includes('marina · выключил:') && text.includes('Предпочтения ответа'))).toBe(true)
   })
 
   it('текст инструкции правится из инспектора и предупреждает, что настройка общая', async () => {
@@ -963,9 +964,47 @@ describe('ConversationSettings', () => {
     expect(foreign).toHaveTextContent('marina')
     expect(foreign).toHaveTextContent('в журнале останется ваш логин')
 
+    // Чужой чат по умолчанию только читается: случайный клик не должен менять
+    // работу другого человека.
+    expect(screen.getByRole('button', { name: 'Выключить инструменты машины (2)' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Учитывать «Предпочтения ответа» в этом разговоре' })).toBeDisabled()
+
+    fireEvent.click(within(foreign).getByRole('checkbox', { name: 'Разрешить изменения в этом разговоре' }))
     fireEvent.click(screen.getByRole('button', { name: 'Выключить инструменты машины (2)' }))
     await waitFor(() => expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'mcp-remote-bash', enabled: false }))
     expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'mcp-remote-read', enabled: false })
+  })
+
+  it('пресет по умолчанию для новых чатов и фильтр журнала по автору', async () => {
+    const onSetDefaultPreset = vi.fn().mockResolvedValue(undefined)
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        changes: [
+          { at: 3, actor: 'admin', itemId: 'personalization', enabled: false },
+          { at: 2, actor: 'marina', itemId: 'knowledge-mode', enabled: false }
+        ]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
+      defaultPresetId={null} onSetDefaultPreset={onSetDefaultPreset}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const presets = await screen.findByTestId('context-presets')
+    fireEvent.click(within(presets).getByText('Пресеты контекста'))
+    fireEvent.change(within(presets).getByRole('combobox', { name: 'Пресет по умолчанию для новых разговоров' }), { target: { value: 'p1' } })
+    await waitFor(() => expect(onSetDefaultPreset).toHaveBeenCalledWith('p1'))
+
+    // Журнал двух авторов: фильтр отвечает на «что менял именно этот человек».
+    const log = screen.getByTestId('context-changes')
+    fireEvent.click(within(log).getByText('Журнал изменений контекста'))
+    const actorsOf = (): string[] => within(log).getAllByRole('listitem').map((node) => node.textContent ?? '')
+    expect(actorsOf().some((text) => text.includes('marina'))).toBe(true)
+    fireEvent.change(within(log).getByRole('combobox', { name: 'Фильтр журнала по автору' }), { target: { value: 'admin' } })
+    expect(actorsOf().some((text) => text.includes('marina'))).toBe(false)
+    // Запись ведёт в карточку источника.
+    fireEvent.click(within(log).getByRole('button', { name: 'Предпочтения ответа' }))
+    expect(await screen.findByRole('heading', { name: 'Предпочтения ответа' })).toBeInTheDocument()
   })
 
 })
