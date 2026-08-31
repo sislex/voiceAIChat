@@ -97,7 +97,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
-  const contextRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/context/`
+  const contextRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/context`
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'context'>(() => window.location.hash.startsWith(contextRoutePrefix) ? 'context' : 'general')
   const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)

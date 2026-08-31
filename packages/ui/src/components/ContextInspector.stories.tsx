@@ -89,6 +89,7 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       { at: '12:20', model: 'opus', chars: 260, approxTokens: 65, resumed: false, costUsd: 0.00097 }
     ],
     disallowedTools: ['mcp__remote__bash'],
+    cliMcpServers: [{ name: 'remote', detail: 'ws://agent', status: 'connected' }],
     changes: [
       { at: new Date('2026-08-31T12:35:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: false },
       { at: new Date('2026-08-31T12:36:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: true }

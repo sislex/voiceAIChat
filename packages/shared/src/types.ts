@@ -1065,6 +1065,12 @@ export interface ConversationContextSnapshot {
    * сможет» — по списку доступных возможностей этого не увидеть.
    */
   disallowedTools: string[]
+  /**
+   * MCP-серверы профиля CLI, как их печатает сам движок. Каталог возможностей в
+   * группах — это то, что подключает приложение; здесь — что видит CLI. Пусто —
+   * список получить не удалось (движок не установлен или не ответил).
+   */
+  cliMcpServers: Array<{ name: string; detail: string; status: string }>
   /** Несогласованности конфигурации (порядок: problem раньше notice). */
   warnings: ContextWarning[]
   /**

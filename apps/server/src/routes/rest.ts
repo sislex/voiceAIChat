@@ -58,7 +58,7 @@ const kbDisplay: Record<KbContextMode, { displayName: string; explanation: strin
   manual: { displayName: 'По запросу', explanation: 'Автоматической вставки нет, инструменты поиска доступны.' },
   off: { displayName: 'Отключено', explanation: 'Автоматический контекст и инструменты БЗ не подключаются.' }
 }
-function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean, kbStatus?: KbStatus | null): ConversationContextSnapshot | null {
+function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean, kbStatus?: KbStatus | null, cliMcpServers: Array<{ name: string; detail: string; status: string }> = []): ConversationContextSnapshot | null {
   const conversation = db.getConversation(userId, conversationId)
   if (!conversation) return null
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
@@ -186,7 +186,18 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
           ? { overriddenFrom: `${projectLlm?.provider ?? settings.llmProvider} · ${projectLlm?.model ?? ((settings.llmProvider === 'codex' ? settings.codexModel : settings.model) || 'модель из конфигурации CLI')}` }
           : { inheritedFrom: projectLlm ? 'настройки проекта' : 'общие настройки пользователя' })
       } }),
-      contextItem({ id: 'machine', type: 'Настройка разговора', source: resolution?.source === 'explicit' ? 'Разговор' : 'Резолвер сервера', scope: agent?.name ?? resolution?.agentId ?? 'Сервер', priority: '7 · конфигурация', title: 'Машина выполнения', description: agent?.name ?? 'Доступной машины нет', explanation: resolution?.error ? `Недоступна: ${resolution.error}.` : `Источник: ${resolution?.source ?? 'none'}.`, configured: conversation.execTarget !== null, available: machineAvailable, includedInNextTurn: machineAvailable }),
+      // Политика машины — часть ответа «что модель сможет сделать»: каталоги и
+      // запрещённые команды ограничивают её сильнее, чем режим прав.
+      contextItem({ id: 'machine', type: 'Настройка разговора', source: resolution?.source === 'explicit' ? 'Разговор' : 'Резолвер сервера', scope: agent?.name ?? resolution?.agentId ?? 'Сервер', priority: '7 · конфигурация', title: 'Машина выполнения', description: agent?.name ?? 'Доступной машины нет', explanation: resolution?.error ? `Недоступна: ${resolution.error}.` : `Источник: ${resolution?.source ?? 'none'}.`, configured: conversation.execTarget !== null, available: machineAvailable, includedInNextTurn: machineAvailable, details: agent
+        ? {
+            'Разрешённые каталоги': agent.policy.allowedDirs.length ? agent.policy.allowedDirs.join(', ') : 'любой каталог',
+            'Запрещённые паттерны команд': agent.policy.denyPatterns.length ? agent.policy.denyPatterns.join(', ') : 'нет',
+            'Разрешены только команды': agent.policy.allowPatterns.length ? agent.policy.allowPatterns.join(', ') : 'ограничений нет',
+            'Правка файлов': agent.policy.allowWrite ? 'разрешена' : 'запрещена',
+            'Сеть': agent.policy.allowNetwork ? 'разрешена' : 'запрещена',
+            'Навыков в политике': agent.policy.skills.length
+          }
+        : { 'Машина': 'не выбрана или недоступна' } }),
       contextItem({ id: 'permission-mode', type: 'Режим разрешений', source: conversation.permissionMode ? 'Разговор' : 'Эффективная политика сервера', scope: 'Инструменты и изменения', priority: '7 · конфигурация', title: permissionDisplay[permissionMode].displayName, description: permissionDisplay[permissionMode].explanation, explanation: permissionMode === 'plan' && conversation.permissionMode !== 'plan' ? 'Сервер безопасно форсировал режим.' : 'Выбранное или унаследованное значение.', configured: true, available: true, includedInNextTurn: true, inheritance: {
         effective: permissionDisplay[permissionMode].displayName,
         ...(conversation.permissionMode && conversation.permissionMode !== permissionMode
@@ -285,6 +296,16 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       warnings.push({ itemId: null, level: 'notice', text: `Одинаковый текст в инструкциях: ${titles.join(', ')}. Модель получит его дважды.` })
     }
   }
+  // Все источники знаний выключены: модель отвечает только по истории и тексту
+  // сообщения. Иногда это и нужно, но чаще так выходит случайно.
+  const knowledgeSources = ['personalization', 'project-binding', 'knowledge-mode'] as const
+  if (knowledgeSources.every((id) => disabled.has(id)) && conversation.projectId) {
+    warnings.push({
+      itemId: null,
+      level: 'problem',
+      text: 'Выключены и проект, и база знаний, и персонализация: модель не знает ни о проекте, ни о ваших предпочтениях — только история разговора.'
+    })
+  }
   // Много постоянных подсказок — это не ошибка, но каждая уходит в каждом ходе,
   // и десяток заметно съедает и место, и внимание модели.
   const activeInstructions = settings.chatInstructions.filter((entry) => entry.enabled && !disabled.has(instructionContextId(entry.id)))
@@ -380,6 +401,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     changes: db.listConversationContextEvents(userId, conversationId, 20),
     // Тот же список, что уйдёт исполнителю (`turns.ts` → LlmRequest.disallowedTools).
     disallowedTools: [...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null).sort(),
+    cliMcpServers,
     warnings,
     promptPreview: {
       blocks: previewBlocks,
@@ -569,7 +591,11 @@ export async function registerRest(
   })
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/context-snapshot', async (req, reply) => {
-    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline, kbStatusSafe())
+    // Список MCP-серверов спрашиваем у самого движка: он показывает, что видит
+    // CLI, а не что подключает приложение. Ошибка или отсутствие движка не
+    // должны ломать снимок — тогда список просто пуст.
+    const cliMcp = await listMcpServers().catch(() => [])
+    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline, kbStatusSafe(), cliMcp)
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
   })
