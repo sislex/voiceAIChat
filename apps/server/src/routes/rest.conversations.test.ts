@@ -892,6 +892,34 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('статус индекса базы знаний виден в пункте, а множество инструкций замечено', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'БЗ' } })).json()
+    const item = async (): Promise<{ available: boolean; explanation: string; details?: Record<string, unknown> }> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return snapshot.groups.flatMap((group: { items: unknown[] }) => group.items).find((entry: { id: string }) => entry.id === 'knowledge-mode')
+    }
+    // Тестовый сервер поднимается без индекса БЗ: снимок это переживает и не
+    // выдаёт «доступно», когда искать негде.
+    const kb = await item()
+    expect(typeof kb.available).toBe('boolean')
+    expect(kb.details).toBeDefined()
+
+    // Больше десяти включённых постоянных подсказок — замечание, не запрет.
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      id: `bulk-${index}`, title: `Подсказка ${index}`, description: '', enabled: true, text: `Правило ${index}.`
+    }))
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, chatInstructions: many } })
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(snapshot.warnings.some((entry: { text: string }) => entry.text.includes('Инструкций чата включено 12'))).toBe(true)
+
+    // Выключенные тумблером в счёт не идут: замечание про то, что реально уходит.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-bulk-0`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-bulk-1`, payload: { enabled: false } })
+    const after = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(after.warnings.some((entry: { text: string }) => entry.text.includes('Инструкций чата включено'))).toBe(false)
+  })
+
   it('сравнение контекста двух разговоров показывает разницу и ничего не меняет', async () => {
     const here = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Здесь' } })).json()
     const there = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Там' } })).json()
