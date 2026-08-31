@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-31
-checked: 8b916927
+checked: 491eaaa7
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -383,6 +383,10 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 ok, result?, error? }`, где `result.surface` — снимок экрана после действия, а
 `result.confirmed` — ответ на запрос подтверждения. Мост — `window.widgetUi`
 (`RendererWidgetUiBridge`, только web).
+
+Клиент → сервер `widget.surface { conversationId, projectId, surface }` — экран
+сменился во время хода: без него модель весь ход считает открытым тот раздел,
+что был на момент реплики. Сервер принимает кадр только от владельца разговора.
 
 Сервер → клиент `assistant.orchestration { plan }` — прогресс плана работ
 ассистента. REST: `GET /api/projects/:id/orchestrations` (список планов),

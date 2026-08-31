@@ -13,7 +13,7 @@ export type OrchestrationItemStatus = 'pending' | 'running' | 'done' | 'failed' 
  * пока ветка задачи не влита, и это единственный способ не начинать
  * пересекающуюся работу раньше времени.
  */
-export type OrchestrationItemKind = 'create_task' | 'run_ci' | 'run_qa' | 'run_merge' | 'wait_merge'
+export type OrchestrationItemKind = 'create_task' | 'run_ci' | 'run_qa' | 'run_merge' | 'wait_merge' | 'run_preview'
 
 export interface OrchestrationItem {
   id: string
@@ -28,6 +28,8 @@ export interface OrchestrationItem {
   status: OrchestrationItemStatus
   /** Идентификатор запущенного рана (CI, QA, merge), если шаг его создал. */
   runId: string | null
+  /** Сколько раз шаг уже перезапускался после падения. */
+  attempts: number
   error: string | null
   startedAt: number | null
   finishedAt: number | null
@@ -53,6 +55,19 @@ export interface OrchestrationItemInput {
   dependsOn?: number[]
   payload?: Record<string, unknown>
 }
+
+/**
+ * Сколько раз шаг разрешено перезапустить после падения. Ноль по умолчанию:
+ * молчаливый автоповтор сломанной разработки жжёт машину и время, поэтому
+ * повтор — осознанное решение автора плана.
+ */
+export function orchestrationItemMaxAttempts(item: Pick<OrchestrationItem, 'payload'>): number {
+  const value = (item.payload as { retries?: unknown }).retries
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(3, Math.trunc(value))) : 0
+}
+
+/** Максимум одновременно идущих планов на проект: серия задач — не пулемёт. */
+export const MAX_ACTIVE_ORCHESTRATIONS = 3
 
 /** Шаг готов к запуску: сам ждёт и все его зависимости уже завершены успешно. */
 export function orchestrationItemReady(item: OrchestrationItem, all: OrchestrationItem[]): boolean {

@@ -1714,6 +1714,7 @@ CREATE TABLE IF NOT EXISTS assistant_orchestration_items (
   depends_on_json  TEXT NOT NULL DEFAULT '[]',
   payload_json     TEXT NOT NULL DEFAULT '{}',
   status           TEXT NOT NULL,
+  attempts         INTEGER NOT NULL DEFAULT 0,
   run_id           TEXT,
   result_json      TEXT,
   error            TEXT,

@@ -64,6 +64,18 @@ export type WidgetUiActionOutcome =
 /** Режим применения мутаций: `auto` — сразу, `confirm` — через карточку подтверждения. */
 export type WidgetAssistantAutonomy = 'auto' | 'confirm'
 
+/**
+ * Команды палитры, которые ассистент нажимать не должен. Иначе политика
+ * подтверждений обходится с чёрного хода: правка настроек проекта спрашивается,
+ * а «Выйти» одним `ui_run_command` — нет. Проверяется и на сервере, и в
+ * браузере: два рубежа дешевле одного разбирательства «кто разлогинил».
+ */
+export const ASSISTANT_FORBIDDEN_COMMANDS: readonly string[] = ['app.logout']
+
+export function isAssistantRunnableCommand(commandId: string): boolean {
+  return !ASSISTANT_FORBIDDEN_COMMANDS.includes(commandId)
+}
+
 /** Разделы вне проекта, куда ассистенту можно уводить пользователя. */
 const SHARED_ROUTE_PREFIXES = ['/kb']
 

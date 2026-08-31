@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  orchestrationItemMaxAttempts,
   orchestrationItemReady,
   orchestrationPlanError,
   orchestrationStatusOf,
@@ -16,6 +17,7 @@ function item(patch: Partial<OrchestrationItem> & { position: number }): Orchest
     payload: {},
     status: 'pending',
     runId: null,
+    attempts: 0,
     error: null,
     startedAt: null,
     finishedAt: null,
@@ -70,5 +72,15 @@ describe('orchestrationStatusOf', () => {
     expect(orchestrationStatusOf([item({ position: 0, status: 'done' }), item({ position: 1, status: 'running' })])).toBe('running')
     expect(orchestrationStatusOf([item({ position: 0, status: 'failed' }), item({ position: 1, status: 'cancelled' })])).toBe('failed')
     expect(orchestrationStatusOf([item({ position: 0, status: 'cancelled' })])).toBe('cancelled')
+  })
+})
+
+describe('orchestrationItemMaxAttempts', () => {
+  it('по умолчанию повторов нет, значение из payload ограничено тремя', () => {
+    expect(orchestrationItemMaxAttempts({ payload: {} })).toBe(0)
+    expect(orchestrationItemMaxAttempts({ payload: { retries: 2 } })).toBe(2)
+    expect(orchestrationItemMaxAttempts({ payload: { retries: 99 } })).toBe(3)
+    expect(orchestrationItemMaxAttempts({ payload: { retries: -1 } })).toBe(0)
+    expect(orchestrationItemMaxAttempts({ payload: { retries: 'два' } })).toBe(0)
   })
 })

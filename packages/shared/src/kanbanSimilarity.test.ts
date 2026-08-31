@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { STRONG_SIMILARITY, rankSimilarTasks, significantWords } from './kanbanSimilarity'
+import { STRONG_SIMILARITY, rankSimilarTasks, significantWords, wordStem } from './kanbanSimilarity'
 
 describe('significantWords', () => {
-  it('чистит пунктуацию, регистр, стоп-слова и короткие токены', () => {
+  it('чистит пунктуацию, регистр, стоп-слова, короткие токены и приводит слова к основе', () => {
     expect([...significantWords('Починить корзину: не сохраняются товары!')].sort())
-      .toEqual(['корзину', 'сохраняются', 'товары'])
+      .toEqual(['корзин', 'сохраня', 'товар'])
+  })
+})
+
+describe('wordStem', () => {
+  it('срезает окончание только когда остаётся узнаваемая основа', () => {
+    expect(wordStem('корзину')).toBe('корзин')
+    expect(wordStem('корзина')).toBe('корзин')
+    // Короткие слова не трогаем: от «дела» осталась бы буква.
+    expect(wordStem('дела')).toBe('дела')
+    expect(wordStem('логин')).toBe('логин')
+    // Возвратные формы сходятся между собой: «сохраняется» и «сохраняются».
+    expect(wordStem('сохраняются')).toBe(wordStem('сохраняется'))
   })
 })
 
@@ -17,7 +29,7 @@ describe('rankSimilarTasks', () => {
     const hits = rankSimilarTasks({ id: 'new', title: 'Корзина теряет товары' }, [login, cartUi, cart])
     expect(hits[0]!.id).toBe('t1')
     expect(hits[0]!.score).toBeGreaterThanOrEqual(STRONG_SIMILARITY)
-    expect(hits[0]!.overlap.sort()).toEqual(['корзина', 'теряет', 'товары'])
+    expect(hits[0]!.overlap.sort()).toEqual(['корзин', 'теря', 'товар'])
   })
 
   it('совпадение только в описании кандидата весит меньше заголовка', () => {
@@ -40,5 +52,14 @@ describe('rankSimilarTasks', () => {
   it('саму себя не считает похожей и не падает на пустом запросе', () => {
     expect(rankSimilarTasks({ id: 't1', title: 'Корзина теряет товары' }, [cart])).toEqual([])
     expect(rankSimilarTasks({ id: 'new', title: 'и не в' }, [cart])).toEqual([])
+  })
+})
+
+describe('падежи и формы слова', () => {
+  it('находит дубликат, написанный в другом падеже', () => {
+    const existing = { id: 't1', title: 'Корзина теряет товары' }
+    const hits = rankSimilarTasks({ id: 'new', title: 'Починить корзину: пропадают товары' }, [existing])
+    expect(hits[0]?.id).toBe('t1')
+    expect(hits[0]!.score).toBeGreaterThanOrEqual(STRONG_SIMILARITY)
   })
 })

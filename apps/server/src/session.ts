@@ -3,7 +3,7 @@
 // Сами ходы LLM живут в процесс-глобальном TurnManager и переживают обрыв
 // соединения: обновление страницы не отменяет генерацию ответа.
 
-import type { AgentInfo, Board, PreviewActionResult, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem, WidgetUiActionResult } from '@voicechat/shared'
+import type { AgentInfo, Board, PreviewActionResult, ServerMessage, SessionUser, SystemCapabilities, CcItem, CxItem, WidgetSurfaceSnapshot, WidgetUiActionResult } from '@voicechat/shared'
 import type { WsHandlers } from './ws.js'
 import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
@@ -93,6 +93,8 @@ export interface SessionDeps {
   widgetUi?: {
     subscribe(userId: string, sink: (m: ServerMessage) => void): () => void
     resolve(userId: string, requestId: string, outcome: { ok: boolean; result?: WidgetUiActionResult; error?: string }, conversationId?: string): void
+    /** Экран пользователя сменился во время хода — обновить снимок инструментов. */
+    surfaceChanged(userId: string, conversationId: string, surface: WidgetSurfaceSnapshot): void
   }
 }
 
@@ -375,6 +377,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
         }
         case 'ci.unsubscribe':
+          break
+        case 'widget.surface':
+          deps.widgetUi?.surfaceChanged(deps.user.name, msg.conversationId, msg.surface)
           break
         case 'widget.result':
           // Ответ на действие ассистента в UI: релей сам сверит пользователя.

@@ -11,6 +11,8 @@ let projectId: string
 let columnId: string
 let ciRuns: Array<{ id: string; taskId: string; status: string }>
 let launchers: KanbanRunLaunchers
+let reports: string[]
+let previewOps: string[]
 
 beforeEach(() => {
   let id = 0
@@ -21,7 +23,10 @@ beforeEach(() => {
   columnId = db.getBoard('ann', projectId)!.columns[0]!.id
   published = []
   ciRuns = []
+  reports = []
+  previewOps = []
   launchers = {
+    previewOperate: async (_userId, _projectId, _taskId, operation) => { previewOps.push(operation); return {} },
     startCi: (_userId, _projectId, taskId) => {
       const run = { id: `run-${ciRuns.length + 1}`, taskId, status: 'queued' }
       ciRuns.push(run)
@@ -35,6 +40,7 @@ beforeEach(() => {
     db,
     runs: () => launchers,
     publish: (plan) => published.push(plan),
+    report: (_plan, text) => reports.push(text),
     // Таймер в тестах не нужен: тик зовём руками, чтобы шаги были детерминированы.
     tickMs: 60_000
   })
@@ -134,5 +140,51 @@ describe('createOrchestrationManager', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(db.getOrchestrationById(created.id)!.items[0]!.status).toBe('running')
     revived.dispose()
+  })
+
+  it('шаг с retries перезапускается, а исчерпав попытки — валит план', async () => {
+    const taskId = db.createTask('ann', projectId, { columnId, title: 'A' })!.id
+    const created = plan([{ kind: 'run_ci', title: 'Разработка', taskId, payload: { retries: 1 } }])
+    await manager.tick(created.id)
+    ciRuns[0]!.status = 'failed'
+    await manager.tick(created.id)
+
+    // Первая неудача — не приговор: шаг ушёл на второй заход.
+    const retried = db.getOrchestrationById(created.id)!
+    expect(retried.status).toBe('running')
+    expect(retried.items[0]!.status).toBe('running')
+    expect(retried.items[0]!.attempts).toBe(1)
+    expect(ciRuns).toHaveLength(2)
+
+    ciRuns[1]!.status = 'failed'
+    await manager.tick(created.id)
+    const failed = db.getOrchestrationById(created.id)!
+    expect(failed.status).toBe('failed')
+    expect(reports.at(-1)).toContain('не прошёл')
+  })
+
+  it('успешный план отчитывается в чат', async () => {
+    const created = plan([{ kind: 'create_task', title: 'Корзина', payload: { columnId, title: 'Корзина' } }])
+    await manager.tick(created.id)
+    expect(db.getOrchestrationById(created.id)!.status).toBe('done')
+    expect(reports.at(-1)).toContain('выполнен')
+  })
+
+  it('шаг run_preview поднимает тестовое окружение и сразу завершается', async () => {
+    const taskId = db.createTask('ann', projectId, { columnId, title: 'A' })!.id
+    const created = plan([{ kind: 'run_preview', title: 'Окружение', taskId, payload: { operation: 'start' } }])
+    await manager.tick(created.id)
+    expect(previewOps).toEqual(['start'])
+    expect(db.getOrchestrationById(created.id)!.status).toBe('done')
+  })
+
+  it('notify продвигает все ведомые планы', async () => {
+    const taskId = db.createTask('ann', projectId, { columnId, title: 'A' })!.id
+    const created = plan([{ kind: 'run_ci', title: 'Разработка', taskId }])
+    await manager.track(created.id)
+    ciRuns[0]!.status = 'success'
+    manager.notify()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(db.getOrchestrationById(created.id)!.status).toBe('done')
   })
 })

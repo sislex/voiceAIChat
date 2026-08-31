@@ -2,6 +2,7 @@
 // Живёт отдельно от App: набор действий надо проверять тестом, а App и без
 // этого длинный. Зависимости инъектируются, поэтому тест обходится без рендера.
 
+import { isAssistantRunnableCommand } from '@shared/widgetAssistant'
 import type { WidgetSurfaceSnapshot, WidgetUiAction, WidgetUiActionResult } from '@shared/widgetAssistant'
 import type { Command } from './commands'
 
@@ -60,6 +61,9 @@ export async function runWidgetUiAction(
       deps.navigate(`/projects/${projectId}`)
       return settled('Карточка закрыта')
     case 'run-command': {
+      // Второй рубеж того же запрета, что и на сервере: клиент не обязан
+      // доверять тому, что пришло по WS.
+      if (!isAssistantRunnableCommand(action.commandId)) return { ok: false, error: 'Эту кнопку ассистент нажимать не может.' }
       const command = deps.commands().find((item) => item.id === action.commandId)
       if (!command) return { ok: false, error: 'Такой кнопки сейчас нет на экране: перечитай ui_state.' }
       if (command.enabled?.() === false) return { ok: false, error: `Кнопка «${command.title}» сейчас недоступна.` }
