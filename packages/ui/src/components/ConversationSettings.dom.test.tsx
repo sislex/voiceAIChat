@@ -28,6 +28,7 @@ function contextSnapshot(options: {
   changes?: Array<{ at: number; actor: string; itemId: string; enabled: boolean }>
   turnSizes?: Array<{ at: string; model: string; chars: number; approxTokens: number; resumed: boolean; costUsd: number | null }>
   disallowedTools?: string[]
+  cliMcpServers?: Array<{ name: string; detail: string; status: string }>
 }): ConversationContextSnapshot {
   const on = options.personalizationEnabled ?? true
   const size = { chars: PREVIEW_TEXT.length, approxTokens: Math.ceil(PREVIEW_TEXT.length / 4) }
@@ -52,6 +53,7 @@ function contextSnapshot(options: {
     turnSizes: options.turnSizes ?? [],
     changes: options.changes ?? [],
     disallowedTools: options.disallowedTools ?? [],
+    cliMcpServers: options.cliMcpServers ?? [],
     warnings: options.warnings ?? [],
     promptPreview: on
       ? { blocks: [{ itemIds: ['personalization'], title: 'Персонализация', text: PREVIEW_TEXT, ...size }], text: PREVIEW_TEXT, ...size, omitted: ['Правила платформы и приложения добавляет CLI движка.'], costUsd: null }
@@ -299,6 +301,7 @@ describe('ConversationSettings', () => {
       turnSizes: [],
       changes: [],
       disallowedTools: [],
+      cliMcpServers: [],
       warnings: [],
       promptPreview: emptyPreview
     }) } as never
@@ -334,6 +337,7 @@ describe('ConversationSettings', () => {
       turnSizes: [],
       changes: [],
       disallowedTools: [],
+      cliMcpServers: [],
       warnings: [],
       promptPreview: emptyPreview
     }) } as never
@@ -346,7 +350,7 @@ describe('ConversationSettings', () => {
   })
 
   it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {
-    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, lastTurn: null, turnSizes: [], changes: [], disallowedTools: [], warnings: [], promptPreview: emptyPreview }) } as never
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, lastTurn: null, turnSizes: [], changes: [], disallowedTools: [], cliMcpServers: [], warnings: [], promptPreview: emptyPreview }) } as never
     window.location.hash = '#/chat/c1/context/disappeared'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
@@ -892,6 +896,41 @@ describe('ConversationSettings', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Открыть общие настройки инструкций' }))
     expect(onOpenInstructionSettings).toHaveBeenCalledOnce()
+  })
+
+  it('фильтр по группе сужает список, MCP движка и статус «выключено в настройках» видны', async () => {
+    const snapshot = contextSnapshot({ cliMcpServers: [{ name: 'remote', detail: 'ws://agent', status: 'connected' }] })
+    // Инструкция, выключенная в общих настройках: configured=false, но она есть.
+    snapshot.groups.push({
+      id: 'chat-instructions', order: 3, title: 'Инструкции чата', description: '', items: [{
+        id: 'instruction-off', title: 'Выключенная всюду', type: 'Своя инструкция', source: 'Настройки пользователя',
+        scope: 'Каждый ход', priority: '3', description: 'Текст пользователя.', explanation: 'Выключена в настройках.',
+        configured: false, available: true, includedInNextTurn: false, toggleable: true, enabled: true, lockReason: null
+      }]
+    })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(snapshot) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // «Выключено в настройках» ≠ «Не настроено»: инструкция есть, но отключена везде.
+    // «Инструкции чата» встречается и в свёртке, и в фильтре групп — берём свёртку.
+    const instructions = (await screen.findByTestId('context-instructions-section'))
+    expect(within(instructions).getByText('Выключено в настройках')).toBeInTheDocument()
+
+    // Фильтр по группе: выбрали «Инструкции чата» — в списке знаний (его пункты
+    // из другой группы) не осталось ничего.
+    const knowledge = screen.getByRole('heading', { name: 'Что ИИ будет знать' }).closest('section')!
+    expect(knowledge).toHaveTextContent('Правила платформы')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Фильтр по группе источников' }), { target: { value: 'chat-instructions' } })
+    expect(knowledge).not.toHaveTextContent('Правила платформы')
+    expect(knowledge).toHaveTextContent('Под фильтр и поиск ничего не подошло')
+    // Сама группа инструкций при этом на месте.
+    expect(within(instructions).getByText('Выключенная всюду')).toBeInTheDocument()
+
+    // MCP-серверы движка — в технических сведениях: это то, что видит CLI.
+    fireEvent.click(screen.getByText('Технические сведения'))
+    expect(screen.getByTestId('context-cli-mcp')).toHaveTextContent('remote — connected')
   })
 
 })

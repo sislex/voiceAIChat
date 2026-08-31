@@ -892,6 +892,44 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('политика машины и «вслепую» видны в снимке', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Политика' } })).json()
+    const machine = db.createAgent(U, 'Мак с политикой')
+    db.setAgentPolicy(U, machine.id, {
+      ...db.listAgents(U).find((item) => item.id === machine.id)!.policy,
+      allowedDirs: ['/Users/me/work'],
+      denyPatterns: ['rm -rf'],
+      allowWrite: false,
+      allowNetwork: false
+    })
+    agentRegistry.isOnline = ((id: string) => id === machine.id) as typeof agentRegistry.isOnline
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: machine.id } })
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const machineItem = snapshot.groups.flatMap((group: { items: Array<{ id: string; details?: Record<string, unknown> }> }) => group.items)
+      .find((item: { id: string }) => item.id === 'machine')
+    // Политика ограничивает модель сильнее режима прав — она должна быть видна.
+    expect(machineItem.details).toMatchObject({
+      'Разрешённые каталоги': '/Users/me/work',
+      'Запрещённые паттерны команд': 'rm -rf',
+      'Правка файлов': 'запрещена',
+      'Сеть': 'запрещена'
+    })
+    // Список MCP движка приезжает полем (в тестах CLI нет — значит пусто).
+    expect(Array.isArray(snapshot.cliMcpServers)).toBe(true)
+  })
+
+  it('выключенные проект, БЗ и персонализация вместе дают предупреждение «вслепую»', async () => {
+    const project = db.createProject(U, { name: 'Проект контекста' })
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Вслепую', projectId: project.id } })).json()
+    for (const itemId of ['personalization', 'project-binding', 'knowledge-mode']) {
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${itemId}`, payload: { enabled: false } })
+    }
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const blind = snapshot.warnings.find((entry: { text: string }) => entry.text.includes('только история разговора'))
+    expect(blind).toMatchObject({ level: 'problem' })
+  })
+
   it('статус индекса базы знаний виден в пункте, а множество инструкций замечено', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'БЗ' } })).json()
     const item = async (): Promise<{ available: boolean; explanation: string; details?: Record<string, unknown> }> => {

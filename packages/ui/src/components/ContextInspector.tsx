@@ -7,7 +7,7 @@ import type { AgentsChainResult, ChatInstruction, ContextDiff, ContextKbPreview,
 import type { ProjectSummary } from '@shared/projects'
 import { Button, useConfirm, useToast } from '@voicechat/ui-kit'
 
-type UserStatus = 'Будет использовано' | 'Доступно при необходимости' | 'Не настроено' | 'Недоступно' | 'Определится после отправки' | 'Выключено вами'
+type UserStatus = 'Будет использовано' | 'Доступно при необходимости' | 'Не настроено' | 'Недоступно' | 'Определится после отправки' | 'Выключено вами' | 'Выключено в настройках'
 export interface ContextInspectorProps {
   conversationId: string
   provider: LlmProvider
@@ -51,6 +51,9 @@ type ItemFilter = 'all' | 'included' | 'excluded' | 'touched'
 
 function userStatus(item: ContextSnapshotItem): UserStatus {
   if (item.toggleable && !item.enabled) return 'Выключено вами'
+  // Инструкция, выключенная в общих настройках, раньше выглядела как «Не
+  // настроено» — а это разные вещи: она есть, но отключена во всех чатах.
+  if (item.id.startsWith('instruction-') && !item.configured) return 'Выключено в настройках'
   if (dynamicIds.has(item.id) || item.id.startsWith('skill-')) return 'Определится после отправки'
   if (item.includedInNextTurn) return 'Будет использовано'
   if (!item.configured) return 'Не настроено'
@@ -164,6 +167,8 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const [filter, setFilter] = useState<ItemFilter>('all')
   /** Порядок списка: по размеру вклада вместо порядка сборки промпта. */
   const [heavyFirst, setHeavyFirst] = useState(false)
+  /** Показывать источники только выбранной группы; пусто — все. */
+  const [groupFilter, setGroupFilter] = useState('')
   /**
    * Админ смотрит экран как обычный пользователь. Проверять политику «что видит
    * developer» иначе можно только вторым аккаунтом, а вопрос возникает часто.
@@ -619,7 +624,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       {(() => {
         const own = snapshot.changes.filter((event) => event.itemId === detail.id)
         return own.length > 0 && <details className="context-omitted" data-testid="context-detail-history">
-          <summary>История этого источника ({own.length})</summary>
+          <summary>История этого источника ({own.length}): выключали {own.filter((event) => !event.enabled).length} раз</summary>
           <ul>{own.map((event) => <li key={`${event.at}-${String(event.enabled)}`}>{new Date(event.at).toLocaleString('ru-RU')} · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}</li>)}</ul>
         </details>
       })()}
@@ -682,7 +687,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const permission = byId('permission-mode')
   // «Изменённые» — те, которых человек касался: по журналу, а не по догадке.
   const touched = new Set(snapshot.changes.map((event) => event.itemId))
-  const visible = (item: ContextSnapshotItem): boolean => matchesQuery(item, query)
+  // Группа пункта: фильтр по ней спрашивают, когда ищут «где настройки БЗ»,
+  // а не конкретный источник по названию.
+  const groupOfItem = new Map(snapshotGroups.flatMap((group) => group.items.map((item) => [item.id, group.id])))
+  const visible = (item: ContextSnapshotItem): boolean => (!groupFilter || groupOfItem.get(item.id) === groupFilter)
+    && matchesQuery(item, query)
     && (filter === 'all'
       || (filter === 'touched'
         ? touched.has(item.id)
@@ -828,6 +837,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           {/* Одна строка для задачи или переписки: «что уходит и сколько это
               стоит» без вложения файлов и без пересказа руками. */}
           <Button size="sm" variant="ghost" onClick={() => void copy(summaryLine(snapshot), 'Сводка')}>Скопировать сводку</Button>
+          {/* Ссылка на саму вкладку: в переписке чаще нужен «вот этот экран»,
+              а не конкретный источник. */}
+          <Button size="sm" variant="ghost" onClick={() => void copy(`${window.location.origin}${window.location.pathname}#/chat/${encodeURIComponent(props.conversationId)}/context`, 'Ссылка')}>Скопировать ссылку на вкладку</Button>
           {/* Разметка блоков: без неё непонятно, где кончается одна подсказка и
               начинается другая — в промпте они склеены пустой строкой. */}
           <Button size="sm" variant={showBlockMarks ? 'primary' : 'ghost'} aria-pressed={showBlockMarks} onClick={() => setShowBlockMarks((value) => !value)}>Показать границы блоков</Button>
@@ -946,6 +958,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         }}
       />
       {query.trim() && <span className="context-found" data-testid="context-found">Найдено: {allItems.filter((item) => matchesQuery(item, query)).length}</span>}
+      <label className="context-groupfilter">
+        <span>Группа</span>
+        <select aria-label="Фильтр по группе источников" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
+          <option value="">все группы</option>
+          {snapshotGroups.map((group) => <option key={group.id} value={group.id}>{group.title}</option>)}
+        </select>
+      </label>
       <div className="context-filter-tabs" role="group" aria-label="Фильтр источников">
         {([['all', 'Все'], ['included', 'Попадёт в ход'], ['excluded', 'Не попадёт'], ['touched', 'Изменённые']] as const).map(([id, label]) =>
           <Button key={id} size="sm" variant={filter === id ? 'primary' : 'ghost'} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</Button>)}
@@ -1039,7 +1058,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         </div>
       </div>
     </section>}
-    {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора{groupSize('chat-instructions')}</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
+    {instructionItems.length > 0 && <details className="context-section" data-testid="context-instructions-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора{groupSize('chat-instructions')}</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
     <details className="context-section" data-testid="context-excluded"><summary><span><b>Не попадёт в следующий ход</b><small>Выключенное вами, ненастроенное и недоступное — с причиной</small></span><span className="context-count">{excludedItems.length}</span></summary>{itemList(excludedItems, 'Всё найденное попадёт в следующий ход.', false)}</details>
     <details className="context-section"><summary><span><b>Дополнительные возможности</b><small>Навыки, MCP, приложения, плагины, машины и AGENTS.md</small></span><span className="context-count">{additionalItems.length}</span></summary>{itemList(ordered(additionalItems), 'Дополнительные возможности не обнаружены.')}</details>
     {diff && <section className="context-card" aria-labelledby="context-diff-title" data-testid="context-diff">
@@ -1099,6 +1118,6 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}: {byId(event.itemId)?.title ?? event.itemId}
       </li>)}</ul>
     </details>}
-    <details className="context-section"><summary><span><b>Технические сведения</b><small>Диагностика снимка и исходные признаки</small></span><span className="context-count">{allItems.length}</span></summary><div className="context-technical"><dl><div><dt>Время снимка</dt><dd>{new Date(snapshot.generatedAt).toLocaleString('ru-RU')}</dd></div><div><dt>Версия схемы</dt><dd>{snapshot.schemaVersion}</dd></div><div><dt>Роль смотрящего</dt><dd>{snapshot.viewerRole}</dd></div><div><dt>Актуальность</dt><dd>{snapshot.freshnessWarning}</dd></div></dl>{snapshotGroups.map((group) => <section key={group.id}><h4>{group.title}</h4><div className="context-tech-items">{group.items.map((item) => <button type="button" key={item.id} onClick={() => openDetail(item.id)}><b>{item.title}</b><small>ID: {item.id} · configured: {state(item.configured)} · available: {state(item.available)} · includedInNextTurn: {state(item.includedInNextTurn)} · enabled: {state(item.enabled)}</small></button>)}</div></section>)}</div></details>
+    <details className="context-section"><summary><span><b>Технические сведения</b><small>Диагностика снимка и исходные признаки</small></span><span className="context-count">{allItems.length}</span></summary><div className="context-technical">{snapshot.cliMcpServers.length > 0 && <dl data-testid="context-cli-mcp"><div><dt>MCP-серверы движка</dt><dd>{snapshot.cliMcpServers.map((server) => `${server.name} — ${server.status}`).join('; ')}</dd></div></dl>}<dl><div><dt>Время снимка</dt><dd>{new Date(snapshot.generatedAt).toLocaleString('ru-RU')}</dd></div><div><dt>Версия схемы</dt><dd>{snapshot.schemaVersion}</dd></div><div><dt>Роль смотрящего</dt><dd>{snapshot.viewerRole}</dd></div><div><dt>Актуальность</dt><dd>{snapshot.freshnessWarning}</dd></div></dl>{snapshotGroups.map((group) => <section key={group.id}><h4>{group.title}</h4><div className="context-tech-items">{group.items.map((item) => <button type="button" key={item.id} onClick={() => openDetail(item.id)}><b>{item.title}</b><small>ID: {item.id} · configured: {state(item.configured)} · available: {state(item.available)} · includedInNextTurn: {state(item.includedInNextTurn)} · enabled: {state(item.enabled)}</small></button>)}</div></section>)}</div></details>
   </section>
 }
