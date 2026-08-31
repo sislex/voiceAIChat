@@ -3821,6 +3821,9 @@ button.conscmd:hover {
 .context-warnings li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .context-toc { display: flex; flex-wrap: wrap; gap: 6px; }
 .context-copyfrom { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.context-bulk { padding: 0 20px 14px; display: grid; gap: 6px; font-size: 13px; }
+.context-bulk-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.context-bulk-list label { display: inline-flex; gap: 6px; align-items: center; }
 .context-import { display: inline-flex; gap: 6px; align-items: center; }
 .context-import input[type="file"] { max-width: 130px; font-size: 12px; }
 .context-changelog li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }

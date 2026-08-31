@@ -71,6 +71,10 @@ export interface ConversationSettingsProps {
   onSaveInstruction?: (id: string, text: string) => Promise<void>
   /** Добавить свою инструкцию чата (общая настройка пользователя). */
   onAddInstruction?: (title: string, text: string) => Promise<void>
+  /** Открыть раздел «Инструкции» общих настроек. */
+  onOpenInstructionSettings?: () => void
+  /** Скопировать контекст этого разговора в другой (пресет «к выбранным»). */
+  onCopyContextTo?: (targetId: string, fromId: string) => Promise<void>
   /** Открыть существующую панель статистики БЗ текущего разговора. */
   onOpenKbUsage?: () => void
   onClose: () => void
@@ -89,7 +93,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -354,6 +358,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           {...(chatInstructions ? { chatInstructions } : {})}
           {...(onSaveInstruction ? { onSaveInstruction } : {})}
           {...(onAddInstruction ? { onAddInstruction } : {})}
+          {...(onOpenInstructionSettings ? { onOpenInstructionSettings } : {})}
+          {...(onCopyContextTo ? { onCopyContextTo } : {})}
           onQuickEdit={(patch) => {
             // Быстрая правка уже сохранена на сервере; черновик окна обязан
             // догнать её, иначе кнопка «Сохранить» вернёт старое значение.
