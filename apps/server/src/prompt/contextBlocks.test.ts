@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 import type { ChatInstruction, UserPersonalization } from '@voicechat/shared'
 import { effectiveChatInstructions } from '@voicechat/shared'
-import { agentsChainDirs, ageFromBirth, buildContextBlocks, personalizationLines, personalizationPromptBlock, projectContextBlock } from './contextBlocks.js'
+import { agentsChainDirs, ageFromBirth, buildContextBlocks, promptCostUsd, personalizationLines, personalizationPromptBlock, projectContextBlock } from './contextBlocks.js'
 
 const empty: UserPersonalization = DEFAULT_SETTINGS.personalization
 
@@ -95,5 +95,27 @@ describe('contextBlocks — блоки промпта общие у хода и 
       now: new Date()
     })
     expect(blocks.map((block) => block.text)).toEqual(['Текст.'])
+  })
+  it('стоимость постоянной части: известная модель, тариф из таблицы, иначе null', () => {
+    // Модель Claude знает общий прайс — цена берётся оттуда.
+    const sonnet = promptCostUsd('claude', 'sonnet', 1000, [])
+    expect(sonnet).not.toBeNull()
+    expect(sonnet!).toBeGreaterThan(0)
+
+    // Общий прайс знает и часть моделей Codex, поэтому «своя» модель для
+    // проверки таблицы берётся такая, которой в нём заведомо нет.
+    const price = {
+      provider: 'codex', model: 'внутренняя-модель', inputPerMillion: 2, cachedInputPerMillion: 1,
+      cacheWritePerMillion: 1, outputPerMillion: 8, sourceUrl: '', effectiveAt: 0, updatedAt: 0
+    }
+    expect(promptCostUsd('codex', 'внутренняя-модель', 1_000_000, [price])).toBeCloseTo(2, 6)
+    // Модель Codex из общего прайса тоже считается — без таблицы.
+    expect(promptCostUsd('codex', 'gpt-5.6-luna', 1_000_000, [])).not.toBeNull()
+
+    // Ни там, ни там — null: «—» честнее выдуманной суммы.
+    expect(promptCostUsd('codex', 'неизвестная-модель', 1000, [price])).toBeNull()
+    // Пустая модель (codex берёт её из своего config.toml) и нулевые токены — тоже null.
+    expect(promptCostUsd('codex', '', 1000, [price])).toBeNull()
+    expect(promptCostUsd('claude', 'sonnet', 0, [])).toBeNull()
   })
 })

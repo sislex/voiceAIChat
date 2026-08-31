@@ -37,7 +37,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'security' | 'ui' | 'projectTypes'
+export type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'security' | 'ui' | 'projectTypes'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -56,6 +56,12 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
 
 export interface SettingsModalProps {
   settings: Settings
+  /**
+   * Раздел, с которого открыть окно. Нужен переходам из других экранов:
+   * инспектор контекста ведёт прямо в «Инструкции», и открывать вместо этого
+   * «LLM» значит просить человека искать раздел глазами.
+   */
+  initialSection?: SettingsSection
   /** Каталог типов проекта для раздела «Типы проектов». */
   projectTypes?: ProjectTypeNode[]
   projectTypesStatus?: LoadStatus
@@ -145,13 +151,14 @@ export function SettingsModal({
   role: _role,
   llmAccess = [],
   onClose,
-  voiceInputEnabled = true
+  voiceInputEnabled = true,
+  initialSection
 }: SettingsModalProps): JSX.Element {
   const confirm = useConfirm()
   // Блокировка функций при нехватке ресурсов контейнера (null — ещё не загружено, не блокируем).
   const sttBlocked = !voiceInputEnabled || (capabilities != null && !capabilities.stt.available)
   const ttsBlocked = capabilities != null && !capabilities.tts.available
-  const [section, setSection] = useState<SettingsSection>('llm')
+  const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm')
   const [ttlDraft, setTtlDraft] = useState(String(settings.generatedFilesTtlDays))
   const ttlNumber = Number(ttlDraft)
   const ttlValid = /^\d+$/.test(ttlDraft) && Number.isInteger(ttlNumber) && ttlNumber >= 1 && ttlNumber <= 3650
