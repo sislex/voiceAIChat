@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
-import { parseProjectsRoute } from '@voicechat/projects-app'
+import { buildProjectsRoute, parseProjectsRoute } from '@voicechat/projects-app'
+import type { GitWorkspaceRef } from '@shared/gitWorkspace'
+import type { LoadStatus } from './lib/loadState'
 import type { RendererApi } from '@shared/ipc'
 import { summarizeConversationUsage } from '@shared/usageSummary'
 import { MakeSharedView } from './components/MakeSharedView'
@@ -185,6 +187,21 @@ const ProjectBoard = lazy(async () => {
   return { default: module.ProjectBoard }
 })
 
+// Панель кода тянет за собой Monaco (редактор и diff) — свой чанк, который грузится
+// только при заходе в раздел «Код».
+const GitPane = lazy(async () => {
+  const module = await import('./components/git/GitPane')
+  return { default: module.GitPane }
+})
+const GitWorkspaceList = lazy(async () => {
+  const module = await import('./components/git/GitWorkspaceList')
+  return { default: module.GitWorkspaceList }
+})
+const GitTargetPane = lazy(async () => {
+  const module = await import('./components/git/GitTargetPane')
+  return { default: module.GitTargetPane }
+})
+
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
 // в главном чанке они лежат мёртвым весом до первого открытия.
 const SettingsModal = lazy(async () => {
@@ -302,6 +319,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
   const routeSettings = projectsRoute?.kind === 'settings'
   const routeReleases = projectsRoute?.kind === 'releases'
+  const routeCode = projectsRoute?.kind === 'code'
+  const routeCodeWorkspace = projectsRoute?.kind === 'code' ? projectsRoute.workspaceId ?? null : null
   // Проектный parser владеет deep links карточки, подготовки и связанного чата.
   const routeTaskId = projectsRoute && 'taskId' in projectsRoute ? projectsRoute.taskId : null
   const routeTaskChatId = projectsRoute?.kind === 'task-chat' ? projectsRoute.conversationId : null
@@ -421,6 +440,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
   }, [session.currentUser]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Вход состоялся, а cookie-сессии нет — значит браузер отбросил `Set-Cookie`, и
+  // страница держится только на токене в памяти: любая перезагрузка вернёт экран
+  // входа. Молчать здесь нельзя — со стороны это выглядит как поломка сессии
+  // (инцидент 31.08.2026: `Secure`-cookie с https затеняла http-версию адреса).
+  useEffect(() => {
+    if (!session.currentUser || !window.session?.hasCookieSession) return
+    if (window.session.hasCookieSession()) return
+    // duration: 0 — до крестика: сообщение объясняет, что делать руками, и
+    // исчезнувшая за четыре секунды подсказка тут бесполезна.
+    toast.error(
+      'Вход не сохранён в cookie: после перезагрузки страницы придётся войти заново. '
+      + 'Обычно так бывает, когда тот же адрес открывали по https — очистите cookie сайта в браузере или работайте по одному адресу.',
+      { duration: 0 }
+    )
+  }, [session.currentUser?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
   useEffect(() => {
     const name = session.currentUser?.name
@@ -439,6 +474,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }).catch(() => undefined)
     return () => { alive = false }
   }, [session.currentUser?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+  /** Открытая панель кода поверх чата: цель — рабочая копия этого разговора. */
+  const [gitChatPanel, setGitChatPanel] = useState<{ projectId: string; conversationId: string } | null>(null)
+  /**
+   * Рабочие копии проекта для раздела «Код». Держим локально, а не в сторе: список
+   * нужен одному экрану и живёт ровно пока он открыт, а `projectsStore` и без того
+   * подлежит выносу в отдельный пакет.
+   */
+  const [gitWorkspaces, setGitWorkspaces] = useState<{ items: GitWorkspaceRef[]; status: LoadStatus; error: string | null }>({ items: [], status: 'idle', error: null })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -1257,6 +1300,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (authed && shell.settingsOpen && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, shell.settingsOpen])
+  const loadGitWorkspaces = useCallback(async (projectId: string): Promise<void> => {
+    setGitWorkspaces((prev) => ({ ...prev, status: 'loading' }))
+    try {
+      const items = await api['projects:gitWorkspaces']({ id: projectId })
+      setGitWorkspaces({ items, status: 'ready', error: null })
+    } catch (error) {
+      setGitWorkspaces((prev) => ({ ...prev, status: 'error', error: error instanceof Error ? error.message : String(error) }))
+    }
+  }, [api])
+
+  useEffect(() => {
+    if (!authed || !routeCode || !routeProjectId) return
+    void loadGitWorkspaces(routeProjectId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, routeCode, routeProjectId])
+
   useEffect(() => {
     if (!authed) return
     if (routeSettings || routeReleases) {
@@ -2105,6 +2164,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           if (chat.activeId) void chatActions.renameConversation(chat.activeId, t)
         }}
         onOpenConversationSettings={() => { setConversationSettingsOpen(true); void projectsActions.refreshProjects() }}
+        {...(activeConversation?.projectId && chat.activeId
+          ? { onOpenGit: () => setGitChatPanel({ projectId: activeConversation.projectId!, conversationId: chat.activeId! }) }
+          : {})}
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
         storage={activeStorage}
@@ -2280,9 +2342,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             return chain?.nodes.length ? { typeLabel: chain.nodes[chain.nodes.length - 1].name } : {}
           })()}
           // Недоступный раздел в адресе не оставляем: тип мог измениться, а ссылка — остаться.
-          section={routeSettings ? 'settings' : routeReleases && projectFeatures.releases ? 'releases' : 'board'}
+          section={routeSettings ? 'settings' : routeReleases && projectFeatures.releases ? 'releases' : routeCode && projectFeatures.git ? 'code' : 'board'}
           onSectionChange={(section) =>
-            navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : section === 'releases' ? `/projects/${routeProjectId}/releases` : `/projects/${routeProjectId}`)
+            navigate(buildProjectsRoute(
+              section === 'settings' ? { kind: 'settings', projectId: routeProjectId }
+                : section === 'releases' ? { kind: 'releases', projectId: routeProjectId }
+                  : section === 'code' ? { kind: 'code', projectId: routeProjectId }
+                    : { kind: 'board', projectId: routeProjectId }
+            ))
           }
           onToggleSidebar={toggleSidebar}
           sidebarExpanded={sidebarExpanded}
@@ -2305,7 +2372,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               selectedId={assistantConversationId}
               onSelect={setAssistantConversationId}
             />}
-            widget={routeReleases ? (
+            widget={routeCode && projectFeatures.git ? (
+                routeCodeWorkspace
+                  ? <GitPane
+                      projectId={routeProjectId}
+                      workspaceId={routeCodeWorkspace}
+                      api={api}
+                      onOpenGitAccess={() => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId }))}
+                      onOpenRun={(_kind, runId) => navigate(`/ci/runs/${runId}`)}
+                    />
+                  : <GitWorkspaceList
+                      workspaces={gitWorkspaces.items}
+                      status={gitWorkspaces.status}
+                      error={gitWorkspaces.error}
+                      onOpen={(workspaceId) => navigate(buildProjectsRoute({ kind: 'code', projectId: routeProjectId, workspaceId }))}
+                      onRetry={() => void loadGitWorkspaces(routeProjectId)}
+                    />
+            ) : routeReleases ? (
             projects.projectDetail?.id === routeProjectId ? <ReleaseCenter projectId={routeProjectId} baseBranch={projects.projectDetail!.ciBaseBranch ?? 'main'} owner={projects.projectDetail!.role === 'owner'} machines={projects.projectDetail!.machines} agents={operations.agents} agentsStatus={operations.agentsStatus} agentsError={operations.agentsError} defaultAgentId={projects.projectDetail!.defaultAgentId} releaseTimeouts={projects.projectDetail!.releaseTimeouts} api={api} /> : <div className="proj-page-state" aria-busy="true"><Skeleton variant="list" count={4} item="block" height={64} gap={12} /></div>
           ) : routeSettings ? (
             projects.projectDetail?.id === routeProjectId ? (
@@ -2690,6 +2773,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         /></Suspense>
       )}
 
+      {gitChatPanel && (
+        <Suspense fallback={<div className="gitpane" role="status">Открываем код рабочей копии…</div>}>
+          <ToolFrame
+            title="Код рабочей копии"
+            variant="modal"
+            testId="git-chat-overlay"
+            onClose={() => setGitChatPanel(null)}
+          >
+            <GitTargetPane
+              projectId={gitChatPanel.projectId}
+              conversationId={gitChatPanel.conversationId}
+              api={api}
+              onOpenRun={(_kind, runId) => navigate(`/ci/runs/${runId}`)}
+            />
+          </ToolFrame>
+        </Suspense>
+      )}
       {conversationSettingsOpen && activeConversation && (
         <ConversationSettings
           conversation={activeConversation}
