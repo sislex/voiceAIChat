@@ -11,7 +11,8 @@ import { contextLockReason, isContextToggleable } from '@shared/contextGating'
 import type { ConversationContextSnapshot } from '@shared/types'
 
 /** Снимок без собственных блоков промпта — базовая заготовка для тестов. */
-const emptyPreview = { blocks: [], text: '', chars: 0, approxTokens: 0, omitted: ['Правила платформы добавляет CLI движка.'], costUsd: null }
+const emptyTurnTotal = { chars: 0, approxTokens: 0, historyChars: 0, historyApproxTokens: 0, resumed: false }
+const emptyPreview = { blocks: [], text: '', chars: 0, approxTokens: 0, omitted: ['Правила платформы добавляет CLI движка.'], costUsd: null, turnTotal: emptyTurnTotal, costByModel: [] }
 
 const PREVIEW_TEXT = 'Обращение к пользователю: Тест.'
 
@@ -33,6 +34,10 @@ function contextSnapshot(options: {
   foreign?: boolean
   /** Цена постоянной части: из неё UI выводит экономию за ход. */
   costUsd?: number | null
+  /** Итог хода вместе с историей — им проверяется строка сводки. */
+  turnTotal?: { chars: number; approxTokens: number; historyChars: number; historyApproxTokens: number; resumed: boolean }
+  /** Цена того же объёма на других моделях движка. */
+  costByModel?: Array<{ model: string; costUsd: number }>
 }): ConversationContextSnapshot {
   const on = options.personalizationEnabled ?? true
   const size = { chars: PREVIEW_TEXT.length, approxTokens: Math.ceil(PREVIEW_TEXT.length / 4) }
@@ -62,8 +67,11 @@ function contextSnapshot(options: {
     cliMcpServers: options.cliMcpServers ?? [],
     warnings: options.warnings ?? [],
     promptPreview: on
-      ? { blocks: [{ itemIds: ['personalization'], title: 'Персонализация', text: PREVIEW_TEXT, ...size }], text: PREVIEW_TEXT, ...size, omitted: ['Правила платформы и приложения добавляет CLI движка.'], costUsd: options.costUsd ?? null }
-      : { blocks: [], text: '', chars: 0, approxTokens: 0, omitted: ['Правила платформы и приложения добавляет CLI движка.'], costUsd: null }
+      ? { blocks: [{ itemIds: ['personalization'], title: 'Персонализация', text: PREVIEW_TEXT, ...size }], text: PREVIEW_TEXT, ...size, omitted: ['Правила платформы и приложения добавляет CLI движка.'], costUsd: options.costUsd ?? null,
+          turnTotal: options.turnTotal ?? { chars: PREVIEW_TEXT.length + 400, approxTokens: size.approxTokens + 100, historyChars: 400, historyApproxTokens: 100, resumed: false },
+          costByModel: options.costByModel ?? [] }
+      : { blocks: [], text: '', chars: 0, approxTokens: 0, omitted: ['Правила платформы и приложения добавляет CLI движка.'], costUsd: null,
+          turnTotal: options.turnTotal ?? emptyTurnTotal, costByModel: [] }
   }
 }
 
@@ -1150,6 +1158,120 @@ describe('ConversationSettings', () => {
     section.open = true
     fireEvent(section, new Event('toggle', { bubbles: false }))
     await waitFor(() => expect(JSON.parse(window.localStorage.getItem('vc.context.sections') ?? '{}')).toMatchObject({ excluded: true }))
+  })
+
+  it('сводка показывает итог хода вместе с историей', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        turnTotal: { chars: 8000, approxTokens: 2000, historyChars: 7800, historyApproxTokens: 1950, resumed: false }
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const total = await screen.findByTestId('context-turn-total')
+    expect(total.textContent).toContain('Всего в следующий ход: ≈2000 токенов')
+    expect(total.textContent).toContain('история — ≈1950')
+  })
+
+  it('при живой сессии движка итог хода объясняет, что история не уходит', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        turnTotal: { chars: 200, approxTokens: 50, historyChars: 0, historyApproxTokens: 0, resumed: true }
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    expect((await screen.findByTestId('context-turn-total')).textContent).toContain('история заново не уходит')
+  })
+
+  it('показывает цену того же объёма на других моделях', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        costUsd: 0.02, costByModel: [{ model: 'haiku', costUsd: 0.0013 }]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    const models = await screen.findByTestId('context-cost-models')
+    expect(models.textContent).toContain('haiku: ≈$0.0013 за ход')
+  })
+
+  it('Esc в карточке источника возвращает к списку', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // Пункт встречается и в списке источников, и в сводке «не попадёт»:
+    // открываем первый — тот, что в основном списке.
+    fireEvent.click((await screen.findAllByRole('button', { name: /Предпочтения ответа/ }))[0]!)
+    expect(await screen.findByRole('heading', { name: 'Предпочтения ответа' })).toBeInTheDocument()
+    // Esc обрабатывает стек окон в фазе перехвата, поэтому событие шлём так же,
+    // как браузер: на window с capture-слушателем стека.
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Предпочтения ответа' })).not.toBeInTheDocument())
+    // Окно настроек при этом остаётся открытым: Esc вернул к списку, а не закрыл всё.
+    expect(screen.getByTestId('conversation-settings-overlay')).toBeInTheDocument()
+  })
+
+  it('журнал фильтруется по источнику и выгружается в CSV', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        changes: [
+          { at: 3, actor: 'admin', itemId: 'personalization', enabled: false },
+          { at: 2, actor: 'admin', itemId: 'knowledge-mode', enabled: false }
+        ]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const log = await screen.findByTestId('context-changes')
+    expect(within(log).getAllByRole('listitem')).toHaveLength(2)
+    fireEvent.change(within(log).getByRole('combobox', { name: 'Фильтр журнала по источнику' }), { target: { value: 'personalization' } })
+    expect(within(log).getAllByRole('listitem')).toHaveLength(1)
+
+    // Выгрузка не должна падать в jsdom: там нет createObjectURL по умолчанию.
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:csv')
+    URL.revokeObjectURL = vi.fn()
+    fireEvent.click(within(log).getByRole('button', { name: 'Экспорт журнала (CSV)' }))
+    expect(URL.createObjectURL).toHaveBeenCalled()
+  })
+
+  it('в режиме границ блоков каждый блок копируется отдельно', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Показать границы блоков' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Скопировать блок' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(PREVIEW_TEXT))
+  })
+
+  it('сводка для переписки и переход к самому тяжёлому источнику', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        turnTotal: { chars: 8000, approxTokens: 2000, historyChars: 7800, historyApproxTokens: 1950, resumed: false }
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Скопировать сводку' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(String(writeText.mock.calls[0]![0])).toContain('всего в ход ≈2000 токенов, история ≈1950')
+
+    // Единственный пункт с размером — он же самый тяжёлый.
+    fireEvent.click(screen.getByRole('button', { name: 'Самый тяжёлый: Предпочтения ответа' }))
+    expect(await screen.findByRole('heading', { name: 'Предпочтения ответа' })).toBeInTheDocument()
   })
 
 })

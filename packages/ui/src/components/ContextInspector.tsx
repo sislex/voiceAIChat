@@ -169,6 +169,11 @@ function summaryLine(value: ConversationContextSnapshot): string {
   return [
     `Контекст ${value.conversationId}: ${value.summary.provider} · ${value.summary.model || 'модель из конфигурации CLI'}`,
     `постоянная часть ≈${value.promptPreview.approxTokens} токенов в ${value.promptPreview.blocks.length} блок(ах)${cost}`,
+    // Итог хода — та цифра, ради которой сводку и копируют в задачу: без неё
+    // «постоянная часть ≈600» выглядит маленькой в чате, где история весит втрое больше.
+    value.promptPreview.turnTotal.resumed
+      ? `ход продолжает сессию движка, история заново не передаётся`
+      : `всего в ход ≈${value.promptPreview.turnTotal.approxTokens} токенов, история ≈${value.promptPreview.turnTotal.historyApproxTokens}`,
     `режим доступа: ${value.summary.permissionMode.displayName}; база знаний: ${value.summary.kbMode.displayName}`,
     disabled.length ? `выключено: ${disabled.map((item) => item.title).join(', ')}` : 'выключенных источников нет'
   ].join('; ')
@@ -238,6 +243,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const [allowForeignEdit, setAllowForeignEdit] = useState(false)
   /** Фильтр журнала по автору изменений; пусто — все. */
   const [logActor, setLogActor] = useState('')
+  /** Фильтр журнала по источнику; пусто — все. В длинном журнале вопрос чаще
+   *  звучит «что было с этим пунктом», чем «что делал этот человек». */
+  const [logItem, setLogItem] = useState('')
   /** Разговоры, к которым применяем пресет «к выбранным». */
   const [bulkTargets, setBulkTargets] = useState<string[]>([])
   /**
@@ -321,6 +329,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const detail = detailId ? byId(detailId) : undefined
   const openDetail = (id: string): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}/context/${encodeURIComponent(id)}`; setDetailId(id) }
   const closeDetail = (): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}`; setDetailId(null) }
+
   const state = (value: boolean): string => value ? 'Да' : 'Нет'
 
   // Тумблер пункта: сервер возвращает свежий снимок, поэтому пересчитанные
@@ -450,6 +459,27 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       }
     }
     return lines.join('\n')
+  }
+
+  /**
+   * Журнал в CSV. Разделитель — точка с запятой: Excel в русской локали читает
+   * запятую как разделитель дробной части и складывает строку в одну ячейку.
+   * Кавычки внутри поля удваиваются — иначе дата с точкой с запятой в тексте
+   * разъедет таблицу.
+   */
+  const changesCsv = (value: ConversationContextSnapshot): string => {
+    const cell = (text: string): string => `"${text.replace(/"/g, '""')}"`
+    const rows = [['Время', 'Кто', 'Действие', 'Источник', 'ID источника'].map(cell).join(';')]
+    for (const event of value.changes) {
+      rows.push([
+        new Date(event.at).toLocaleString('ru-RU'),
+        event.actor,
+        event.enabled ? 'вернул' : 'выключил',
+        byId(event.itemId)?.title ?? event.itemId,
+        event.itemId
+      ].map(cell).join(';'))
+    }
+    return rows.join('\n')
   }
 
   /** Применить пресет: набор приводится к сохранённому, как при копировании. */
@@ -853,6 +883,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     const money = usdPerToken === null ? '' : `, −$${(usdPerToken * item.size.approxTokens).toFixed(4)} за ход`
     return `Выключение освободит ≈${item.size.approxTokens} токенов${money}`
   }
+  /** Самый тяжёлый источник постоянной части; null — размеров ни у кого нет. */
+  const heaviestItem = allItems
+    .filter((item) => (item.size?.approxTokens ?? 0) > 0)
+    .sort((a, b) => (b.size?.approxTokens ?? 0) - (a.size?.approxTokens ?? 0))[0] ?? null
   /** Доля пункта в постоянной части: «тяжёлым» помечаем от пятой части и выше. */
   const heavyShare = (item: ContextSnapshotItem): number => preview.approxTokens > 0 && item.size ? item.size.approxTokens / preview.approxTokens : 0
 
@@ -886,6 +920,14 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       <p className="context-summary" data-testid="context-summary">
         Сервер добавит ≈{preview.approxTokens} токенов в {preview.blocks.length} блок(ах){snapshot.lastTurn ? `; в прошлый ход ушло ≈${snapshot.lastTurn.approxTokens}` : ''}.
         {' '}Выключено источников: {disabledToggleable.length} из {toggleable.length}.
+        {/* Итог хода: в длинном чате место занимает история, и без этой строки
+            человек ищет экономию не там, где она есть. */}
+        {/* Самый тяжёлый источник: сортировка по весу уже есть, но чаще нужен
+            один переход к тому, что занимает больше всех. */}
+        {heaviestItem && <Button size="sm" variant="ghost" onClick={() => openDetail(heaviestItem.id)}>Самый тяжёлый: {heaviestItem.title}</Button>}
+        {' '}<span data-testid="context-turn-total">{preview.turnTotal.resumed
+          ? `Ход продолжает сессию движка: история заново не уходит, всего ≈${preview.turnTotal.approxTokens} токенов.`
+          : `Всего в следующий ход: ≈${preview.turnTotal.approxTokens} токенов, из них история — ≈${preview.turnTotal.historyApproxTokens}.`}</span>
       </p>
       {/* Чужой чат: без явной пометки легко решить, что правишь свой контекст. */}
       {snapshot.foreign && <div className="context-foreign" role="status" data-testid="context-foreign">
@@ -993,9 +1035,18 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
                       : <span key={index}>{part.text}</span>)}</pre>
                   : <p className="context-empty" data-testid="context-prompt-preview">В блоках промпта «{query.trim()}» не встречается.</p>
               })()
-            : <pre className="context-prompt" data-testid="context-prompt-preview">{showBlockMarks
-                ? preview.blocks.map((block, index) => `— ${index + 1}. ${block.title} (≈${block.approxTokens} токенов) —\n${block.text}`).join('\n\n')
-                : preview.text}</pre>)
+            : showBlockMarks
+              // С границами блок становится единицей работы: его копируют
+              // целиком, чтобы вставить в задачу или сравнить с ответом модели.
+              ? <div data-testid="context-prompt-preview">{preview.blocks.map((block, index) => <div className="context-block" key={`${block.title}-${index}`}>
+                  <div className="context-actions">
+                    <b>{index + 1}. {block.title}</b>
+                    <small>≈{block.approxTokens} токенов</small>
+                    <Button size="sm" variant="ghost" onClick={() => void copy(block.text, 'Блок')}>Скопировать блок</Button>
+                  </div>
+                  <pre className="context-prompt">{block.text}</pre>
+                </div>)}</div>
+              : <pre className="context-prompt" data-testid="context-prompt-preview">{preview.text}</pre>)
         : <p className="context-empty">Своих блоков сервер не добавляет: в ход уйдут только история разговора и ваше сообщение.</p>}
       {/* Вложения черновика знает только клиент: снимок описывает сохранённое
           состояние, а файлы приложены к неотправленному сообщению. */}
@@ -1007,6 +1058,12 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       {snapshot.disallowedTools.length > 0 && <p className="context-note" data-testid="context-disallowed">
         Инструменты выключены и не будут доступны модели: {snapshot.disallowedTools.join(', ')}.
       </p>}
+      {/* Во что обойдётся тот же объём на других моделях движка: вопрос «а если
+          перейти на модель попроще» задают, глядя ровно на эту цифру. */}
+      {preview.costByModel.length > 0 && <details className="context-omitted" data-testid="context-cost-models">
+        <summary>Тот же объём на других моделях</summary>
+        <ul>{preview.costByModel.map((entry) => <li key={entry.model}>{entry.model}: ≈${entry.costUsd.toFixed(4)} за ход</li>)}</ul>
+      </details>}
       <details className="context-omitted"><summary>Чего в этом тексте нет</summary><ul>{preview.omitted.map((line) => <li key={line}>{line}</li>)}</ul></details>
     </section>
     <section className="context-card" aria-labelledby="context-kb-title">
@@ -1331,7 +1388,21 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           </select>
         </label>
       </div>}
-      <ul className="context-changelog">{snapshot.changes.filter((event) => !logActor || event.actor === logActor).map((event, index, list) => {
+      <div className="context-bulk">
+        <label>
+          <span>Какой источник</span>
+          <select aria-label="Фильтр журнала по источнику" value={logItem} onChange={(event) => setLogItem(event.target.value)}>
+            <option value="">все</option>
+            {[...new Set(snapshot.changes.map((event) => event.itemId))].map((id) => <option key={id} value={id}>{byId(id)?.title ?? id}</option>)}
+          </select>
+        </label>
+        {/* Журнал в задачу или в переписку с поддержкой: CSV открывается всем,
+            в отличие от JSON снимка. */}
+        <div className="context-actions">
+          <Button size="sm" variant="ghost" onClick={() => download(`context-changes-${props.conversationId}.csv`, changesCsv(snapshot), 'text/csv')}>Экспорт журнала (CSV)</Button>
+        </div>
+      </div>
+      <ul className="context-changelog">{snapshot.changes.filter((event) => (!logActor || event.actor === logActor) && (!logItem || event.itemId === logItem)).map((event, index, list) => {
         const item = byId(event.itemId)
         // Отменять можно только последнюю запись про этот пункт и только пока
         // состояние совпадает с ней: иначе «вернуть как было» вернуло бы не то
