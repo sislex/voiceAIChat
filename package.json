@@ -37,6 +37,8 @@
     "test:storybook": "npm run build:storybook",
     "verify": "npm run typecheck && npm run test && npm run build && npm run build:storybook && npm run typecheck:desktop && npm run test:desktop && npm --prefix apps/desktop run build && npm run typecheck:agent-tray && npm run test:agent-tray",
     "gate": "npm run typecheck && npm run test && npm run -w @voicechat/web build && npm run build:storybook",
+  "//gate:fast": "Гейт шага разработки: только затронутые пакеты, related-тесты вместо полных наборов, адресные сборки. Перед коммитом/PR всё равно нужен полный npm run gate.",
+  "gate:fast": "node scripts/affected-check.mjs --fast --worktree",
     "typecheck:desktop": "npm --prefix apps/desktop run typecheck",
     "test:desktop": "npm --prefix apps/desktop run test",
     "typecheck:agent-tray": "npm --prefix apps/agent-tray run typecheck",

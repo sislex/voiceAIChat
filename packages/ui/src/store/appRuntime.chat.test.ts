@@ -98,6 +98,22 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(create).not.toHaveBeenCalled()
   })
 
+  it('createConversation передаёт проект в единственный create и активирует ответ', async () => {
+    const { store, api } = makeStore()
+    await store.actions.init()
+    const project = await api['projects:create']({ name: 'Проект' })
+    const create = vi.spyOn(api, 'conversations:create')
+    const setProject = vi.spyOn(api, 'conversations:setProject')
+
+    const id = await store.actions.createConversation({ title: 'Проектный чат', projectId: project.id })
+
+    expect(create).toHaveBeenCalledOnce()
+    expect(create).toHaveBeenCalledWith({ title: 'Проектный чат', projectId: project.id })
+    expect(setProject).not.toHaveBeenCalled()
+    expect(store.getState().activeId).toBe(id)
+    expect(store.getState().conversations.find((item) => item.id === id)?.projectId).toBe(project.id)
+  })
+
   it('повторные новые чаты не персистятся, а потерянный ответ повторяется идемпотентно', async () => {
     const { store, api } = makeStore()
     await store.actions.init()
