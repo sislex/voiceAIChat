@@ -34,6 +34,10 @@ function props(over: Partial<TaskModalProps> = {}): TaskModalProps {
 }
 
 
+/** Открыть «Ход выполнения»: отчёты по рану и БЗ грузятся с первого её показа. */
+const openProgress = async (): Promise<void> => {
+  await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
+}
 describe('TaskModal — синхронизация полных данных задачи', () => {
   it('подставляет поздно загруженные описание и критерии для того же task.id', () => {
     const { rerender } = render(<TaskModal {...props()} />)
@@ -136,7 +140,9 @@ describe('TaskModal — создание задачи из улучшения', 
       improvement: { ...improvement, status: 'implemented' as const, createdTaskId: 'created', isNew: false }
     }))
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    // Улучшения появляются только после рана — карточка без единого рана их и
+    // не запрашивает, поэтому сводка рана здесь обязательна.
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     await userEvent.click(await screen.findByRole('button', { name: 'Создать задачу ChatAI' }))
     const draft = screen.getByRole('dialog', { name: 'Создание задачи' })
@@ -158,7 +164,7 @@ describe('TaskModal — создание задачи из улучшения', 
       { ...improvement, id: 'i4', status: 'implemented' as const, isNew: false, createdTaskId: 't2' }
     ])
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     expect(await screen.findAllByRole('button', { name: 'Принять' })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: 'Отклонить' })).toHaveLength(1)
@@ -172,7 +178,7 @@ describe('TaskModal — создание задачи из улучшения', 
     const ci = createFakeCi()
     ci.listTaskImprovements = vi.fn(async () => [improvement])
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     const row = (await screen.findByText('Улучшить ретраи')).closest('details')!
     expect(within(row).getByText('Новое')).toHaveClass('vc-feed-status')
@@ -185,7 +191,7 @@ describe('TaskModal — создание задачи из улучшения', 
     const ci = createFakeCi()
     ci.listTaskImprovements = vi.fn(async () => [])
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     const empty = await screen.findByTestId('task-improvements-empty')
     expect(empty).toHaveClass('vc-state--empty')
@@ -262,6 +268,75 @@ describe('TaskModal — вложенное окно AI-помощника', () =
     // И только третий — самой карточке.
     await userEvent.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('TaskModal — что грузится при открытии карточки', () => {
+  // Открытая карточка тратила 3–4 запроса до того, как пользователь что-либо
+  // открыл: улучшения, использование БЗ, отчёт по рану и панели QA. Всё это
+  // живёт на вкладках, которые могут не открываться вовсе.
+  const spies = (): { ci: NonNullable<typeof window.ci>; calls: () => Record<string, number> } => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [])
+    // Содержимое отчётов здесь неважно — считаем только число обращений.
+    ci.getTaskKbUsage = vi.fn(async () => null as unknown as KbTaskUsageReport)
+    ci.getTaskReport = vi.fn(async () => null as unknown as CiTaskReport)
+    window.ci = ci as typeof window.ci
+    return {
+      ci: ci as NonNullable<typeof window.ci>,
+      calls: () => ({
+        improvements: (ci.listTaskImprovements as ReturnType<typeof vi.fn>).mock.calls.length,
+        kb: (ci.getTaskKbUsage as ReturnType<typeof vi.fn>).mock.calls.length,
+        report: (ci.getTaskReport as ReturnType<typeof vi.fn>).mock.calls.length
+      })
+    }
+  }
+
+  it('на «Общем» не запрашивает ни улучшения, ни отчёты', async () => {
+    const { calls } = spies()
+    render(<TaskModal {...props()} />)
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true'))
+    expect(calls()).toEqual({ improvements: 0, kb: 0, report: 0 })
+  })
+
+  it('отчёты грузятся с первого открытия «Хода выполнения» и не перезапрашиваются при возврате', async () => {
+    const { calls } = spies()
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
+    await waitFor(() => expect(calls().kb).toBe(1))
+    expect(calls().report).toBe(1)
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Общее' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
+    expect(calls()).toMatchObject({ kb: 1, report: 1 })
+  })
+
+  it('улучшения запрашиваются только у задачи, у которой был ран', async () => {
+    const { calls } = spies()
+    const { unmount } = render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    expect(calls().improvements).toBe(0)
+    unmount()
+
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    await waitFor(() => expect(calls().improvements).toBe(1))
+  })
+
+  it('панель Component QA молчит и не заводит опрос, пока её вкладку не открыли', async () => {
+    // У панели внутри `setInterval` на 2 секунды: раньше он запускался у любой
+    // открытой карточки, стоявшей на QA-этапе, даже если вкладку не смотрели.
+    window.ci = createFakeCi()
+    const getComponent = vi.fn(async () => null)
+    window.qa = { getComponent } as unknown as typeof window.qa
+    // Колонка «Ручное QA»: пройденные этапы остаются вкладками, но карточка
+    // открывается на «Общем» — именно этот случай и тратил запрос впустую.
+    const qaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
+    render(<TaskModal {...props({ board: qaBoard })} />)
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true'))
+    expect(getComponent).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Component QA' }))
+    await waitFor(() => expect(getComponent).toHaveBeenCalledTimes(1))
   })
 })
 
@@ -865,6 +940,7 @@ describe('TaskModal — использование базы знаний по р
 
   it('показывает агрегат по всем ранам задачи и ссылку на раздел', async () => {
     render(<TaskModal {...props()} />)
+    await openProgress()
     const block = await screen.findByTestId('task-modal-kb-usage')
     expect(within(block).getByText('по 2 ранам задачи')).toBeInTheDocument()
     expect(within(block).getByTestId('task-modal-kb-usage-nums').textContent).toContain('5 обращений')
@@ -1029,6 +1105,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('у завершённой задачи показывает плитки итогов и таблицу шагов', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false, durationMs: 720_000 }) })} />)
 
+    await openProgress()
     const block = await screen.findByTestId('task-modal-report')
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$1.84')
     expect(text(within(block).getByTestId('task-modal-report-tokens'))).toContain('219 400')
@@ -1046,6 +1123,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('показывает вызовы инструментов рана с разбивкой', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tools = await screen.findByTestId('task-modal-report-tools')
     // 12 bash + 31 read + 9 grep + 14 edit + 3 kb + 1 прочий = 70 вызовов.
     // Два отказа в «всего» не входят: сами вызовы уже посчитаны своими видами.
@@ -1059,6 +1137,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('показывает средний и максимальный контекст на запрос', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tile = await screen.findByTestId('task-modal-report-context')
     // (12 000 входа + 180 000 чтения кэша + 24 000 записи) / 24 запроса = 9 000.
     expect(text(tile)).toContain('9 000')
@@ -1070,6 +1149,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ apiRequests: 0, maxContextPerRequest: 0 }) })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tile = await screen.findByTestId('task-modal-report-context')
     expect(text(tile)).toContain('—')
     expect(text(tile)).toContain('CLI не сообщил число запросов')
@@ -1078,10 +1158,12 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('показывает объём ответов инструментов и три самых тяжёлых ответа', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tools = await screen.findByTestId('task-modal-report-tools')
     expect(text(tools)).toContain('ответами 290k симв.')
     expect(text(tools)).toContain('bash 148k')
 
+    await openProgress()
     const heaviest = await screen.findByTestId('task-modal-report-heaviest')
     expect(text(heaviest)).toContain('npm ci')
     expect(text(heaviest)).toContain('20k симв.')
@@ -1093,6 +1175,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ toolResponses: [] })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     await screen.findByTestId('task-modal-report')
     expect(screen.queryByTestId('task-modal-report-heaviest')).not.toBeInTheDocument()
   })
@@ -1103,6 +1186,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tools = await screen.findByTestId('task-modal-report-tools')
     expect(text(tools)).not.toContain('отказов')
   })
@@ -1111,6 +1195,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ modelActiveMs: 0 }) })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tile = await screen.findByTestId('task-modal-report-model-time')
     expect(text(tile)).toContain('—')
   })
@@ -1119,6 +1204,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ toolCalls: null })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     await screen.findByTestId('task-modal-report')
     expect(screen.queryByTestId('task-modal-report-tools')).not.toBeInTheDocument()
   })
@@ -1129,6 +1215,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const cost = await screen.findByTestId('task-modal-report-cost')
     expect(text(cost)).toContain('≈ $0.90')
     expect(text(cost)).toContain('итог занижен')
@@ -1140,6 +1227,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const hit = await screen.findByTestId('task-modal-report-kb-hit')
     expect(text(hit)).toContain('БЗ: выдано 5 разделов, пригодились 3 (60%')
   })
@@ -1148,6 +1236,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ costUsd: 2.07, costEstimated: true }) })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const cost = await screen.findByTestId('task-modal-report-cost')
     expect(text(cost)).toContain('≈ $2.07')
     expect(text(cost)).toContain('оценка по прайсу')
@@ -1160,6 +1249,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     ]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const block = await screen.findByTestId('task-modal-report')
     // По умолчанию — свежий ран со своими шагами.
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$0.50')
@@ -1172,6 +1262,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: { ...EMPTY_CI_USAGE_TOTALS }, stages: [], steps: [makeReportStep()] })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const block = await screen.findByTestId('task-modal-report')
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('—')
     expect(within(block).getByRole('rowheader', { name: /npm ci/, hidden: true })).toBeInTheDocument()
@@ -1182,6 +1273,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('стадии рана показывают модель, которой каждая посчитана', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const stages = await screen.findByTestId('task-modal-report-stages')
     const row = within(stages).getByRole('rowheader', { name: 'Актуализация базы знаний', hidden: true }).closest('tr')!
     expect(text(row)).toContain('sonnet')

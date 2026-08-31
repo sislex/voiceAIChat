@@ -58,6 +58,10 @@
   --line: var(--border);
   --surface2: var(--surface-hover);
   --surface-soft: var(--panel);
+  /* Утопленная поверхность: колонка свойств карточки. В светлых темах это
+     панель, в тёмной — поверхность на ступень выше фона, иначе колонка
+     сливается с окном (разница между --bg и --panel там 2%). */
+  --surface-sunken: #f2f1ec;
   --surface-raised: var(--surface);
   --success: var(--ci-success);
   --success-soft: var(--ci-success-bg);
@@ -117,6 +121,7 @@
   --surface-selected: #ccdfca;
   --skeleton-base: #d9e6d7;
   --skeleton-shine: #eef5ed;
+  --surface-sunken: #e7f0e5;
   color-scheme: light;
 }
 
@@ -152,6 +157,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.6);
+  --surface-sunken: #262620;
   color-scheme: dark;
 }
 
@@ -4708,8 +4714,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Колонка свойств прижата к краям карточки (отрицательные поля гасят padding
    .jmodal): по макету это панель во всю высоту с полем-строкой
    «подпись | значение», а не карточка в рамке с воздухом вокруг. */
-.jmodal-side { flex: 0 0 296px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin: -16px -20px -16px 0; padding: 20px 20px 24px; border-left: 1px solid var(--border); background: var(--surface-soft); }
+.jmodal-side { flex: 0 0 296px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin: -16px -20px -16px 0; padding: 20px 20px 24px; border-left: 1px solid var(--border); background: var(--surface-sunken); }
 .jmodal-side-title { margin: 4px 0 2px; color: var(--text-dim); font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+/* Пустое числовое поле не должно выглядеть как забытое: плейсхолдер «—»
+   читается так же, как приглушённый прочерк у «Автора». */
+.vc-prop input::placeholder { color: var(--text-dim); }
 /* Поля панели деталей в своей обёртке: на телефоне она сворачивается кнопкой
    «Подробности» (как в мобильной Jira), на десктопе всегда раскрыта. */
 .jmodal-side-fields { display: flex; flex-direction: column; gap: 2px; }
@@ -4726,20 +4735,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    справа. Раньше подпись стояла над полем, и колонка вытягивалась вдвое длиннее
    содержимого. Контрол остаётся нативным select/input: свой поповер потерял бы
    клавиатуру и системный выбор даты, а выглядит так же. */
-.jmodal-field { display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 38px; font-size: 12px; font-weight: 600; }
-.jmodal-field-label { color: var(--text-dim); font-weight: 500; }
-.jmodal-field .sel, .jmodal-field .login-input { width: 100%; border-color: transparent; background: transparent; font-weight: 400; font-size: 13px; }
-.jmodal-field .sel:hover, .jmodal-field .login-input:hover { background: var(--surface); border-color: var(--border-soft); }
-.jmodal-field .sel:focus, .jmodal-field .login-input:focus { background: var(--surface); border-color: var(--accent); }
+/* Контролы строки свойства прозрачны, пока их не трогают: в макете значение
+   читается как текст, а рамка появляется под курсором и в фокусе. */
+.vc-prop .sel, .vc-prop .login-input { width: 100%; border-color: transparent; background: transparent; font-weight: 400; font-size: 13px; }
+.vc-prop .sel:hover, .vc-prop .login-input:hover { background: var(--surface-hover); border-color: var(--border-soft); }
+.vc-prop .sel:focus, .vc-prop .login-input:focus { background: var(--surface); border-color: var(--accent); }
 .jmodal-project { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 400; font-size: 13px; overflow-wrap: anywhere; }
 .jmodal-project-mark { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; background: var(--text); color: var(--bg); font-size: 11px; font-weight: 700; }
 /* Метки и навыки — чипы во всю ширину строки: в 1fr они не помещались и
    переносились по одному в строку. */
-.jmodal-field--wide { grid-template-columns: 1fr; align-items: start; padding: 8px 0; }
 .jmodal-assignee { display: flex; align-items: center; gap: 6px; }
-.jmodal-labels { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-weight: 400; }
-.jlabel-x { border: none; background: none; cursor: pointer; color: inherit; padding: 0 2px; font-size: 12px; }
-.jlabel-input { flex: 1 1 120px; min-width: 90px; font-size: 12px; padding: 2px 6px; }
 .jmodal-dates { margin: 16px 0 0; padding-top: 16px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; font-weight: 400; line-height: 1.8; }
 
 /* Телефон: карточка как в мобильной Jira — один вертикальный скролл, статус и
@@ -4781,13 +4786,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   /* Телефон: колонка свойств уезжает под основную, поэтому граница у неё
      сверху, а не слева, и своей подложки нет — вся карточка и так один скролл. */
   .jmodal-side { border-left: none; border-top: 1px solid var(--border); border-radius: 0; padding: 12px 0 0; gap: 12px; background: none; }
-  .jmodal-field { grid-template-columns: 96px minmax(0, 1fr); min-height: 44px; }
-  .jmodal-field--wide { grid-template-columns: 1fr; }
   .jmodal-side-toggle { min-height: 44px; }
 
   /* Поля: подпись сверху, контрол во всю ширину и с пальцевым размером. */
-  .jmodal-quick .jmodal-field, .jmodal-side .jmodal-field { font-size: 12px; gap: 6px; }
-  .jmodal-field .sel, .jmodal-field .login-input { font-size: 16px; min-height: 44px; }
+  .jmodal-quick .vc-prop, .jmodal-side .vc-prop { font-size: 12px; gap: 6px; }
+  .vc-prop .sel, .vc-prop .login-input { font-size: 16px; min-height: 44px; }
   .jmodal-status { font-weight: 600; }
   .jmodal-assignee .sel { flex: 1; min-width: 0; }
   .jmodal-desc { font-size: 16px; min-height: 128px; }
@@ -4798,9 +4801,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { font-size: 16px; }
   .jmodal-desc-empty { font-size: 16px; min-height: 44px; }
   .jmodal-desc-actions button { flex: 1 1 auto; min-height: 44px; }
-  .jlabel-input { width: 100%; min-height: 40px; font-size: 16px; }
-  .jmodal-labels { gap: 6px; }
-  .jlabel-x { min-width: 30px; min-height: 30px; font-size: 15px; }
 
   /* Подзадачи: заголовок переносится, а не обрезается. */
   .jmodal-child { min-height: 44px; padding: 8px 10px; flex-wrap: wrap; }
@@ -6530,6 +6530,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-tab--active { border-bottom-color: var(--accent); color: var(--text); }
 /* Счётчик — пилюлей, а не в скобках подписи: в скобках он попадал в доступное
    имя вкладки и зачитывался при каждом переходе стрелками. */
+/* Кольцо фокуса рисуется внутрь и с радиусом: снаружи оно наезжало на
+   подчёркивание активной вкладки и на подписи соседних. */
+.task-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 6px; }
 .task-tab-count { padding: 1px 6px; border-radius: 10px; background: var(--surface-hover); color: var(--text-dim); font-size: 11px; font-weight: 700; }
 .task-tab--active .task-tab-count { background: var(--accent-soft); color: var(--accent); }
 /* `.jmodal` — флексбокс, а не грид: `grid-column` в нём ничего не делал, и
@@ -6539,9 +6542,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-tab-empty { padding: 18px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-dim); }
 .task-tab-warning { padding: 10px; border-radius: 8px; background: var(--warning-soft); }
 @media (max-width: 720px) {
-  .task-tabs { margin-inline: -8px; padding-inline: 8px; }
-  .task-tab { padding-inline: 8px; white-space: nowrap; }
+  /* Пальцем полоса останавливалась посреди подписи — вкладка «Интеграционные
+     тесты» обрывалась на «Интеграцион». Снап по началу вкладки это чинит. */
+  .task-tabs { margin-inline: -8px; padding-inline: 8px; scroll-snap-type: x proximity; }
+  .task-tab { padding-inline: 8px; white-space: nowrap; scroll-snap-align: start; min-height: 44px; }
   .task-tab-panel { width: 100%; }
+  /* 17. Текстовое действие секции — палец, а не курсор. */
+  .task-section-action { min-height: 40px; padding-inline: 8px; }
+  /* 19. Форма подзадачи: поле и кнопки во всю ширину. */
+  .task-subtask-form { flex-direction: column; align-items: stretch; }
+  .task-subtask-form .login-input { flex: none; width: 100%; min-height: 44px; font-size: 16px; }
+  .task-subtask-form .vc-btn { width: 100%; min-height: 44px; }
 }
 
 /* ---- Центр релизов ---- */
