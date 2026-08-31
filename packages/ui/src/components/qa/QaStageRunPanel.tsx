@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { formatDateTime } from '../../lib/dateFormat'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
-import { Button, EmptyState, ErrorState, FeedItem, FeedLog, MetricGrid, PanelHeading, QaScore, ResultTable, StatusPill } from '@voicechat/ui-kit'
-import { qaRunTone, qaStepTone } from './qaTone'
+import { AttemptHistory, Button, EmptyState, ErrorState, FeedItem, FeedLog, GateList, MetricGrid, PanelHeading, ProgressTrack, QaScore, ResultTable, StatusPill } from '@voicechat/ui-kit'
+import { qaRunTone, qaStepTone, stageRunTone } from './qaTone'
+import { usePolling } from '../../lib/usePolling'
 import { parseAutomatedQaVerdict, scenarioLabel, QA_RUN_STATUS_LABELS, QA_STAGE_RUN_STATUS_LABELS, QA_STEP_STATUS_LABELS } from '@shared/qa'
 import { Skeleton } from '@voicechat/ui-kit'
 
@@ -69,7 +70,7 @@ function IntegrationTestPanel(props:{projectId:string;taskId:string}):JSX.Elemen
   const [error,setError]=useState(''),[busy,setBusy]=useState(false)
   const load=useCallback(async()=>{if(!window.qa?.getIntegration)return;try{const next=await window.qa.getIntegration(props.projectId,props.taskId);setState((current)=>{if(!current||!next)return next;const a=current.latestRun?.finishedAt??current.latestRun?.startedAt??current.latestRun?.createdAt??0,b=next.latestRun?.finishedAt??next.latestRun?.startedAt??next.latestRun?.createdAt??0;return b>=a?next:current});setError('')}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}},[props.projectId,props.taskId])
   useEffect(()=>{void load()},[load])
-  useEffect(()=>{if(!state?.activeRun)return;const timer=window.setInterval(()=>void load(),2000);return()=>window.clearInterval(timer)},[state?.activeRun?.id,load])
+  usePolling(()=>void load(),{ enabled: Boolean(state?.activeRun), intervalMs: 2000 })
   if(!window.qa?.getIntegration)return <section>
     <EmptyState compact icon="🧪" title="Стадия недоступна" description="Мост QA не подключён в этой сборке." testId="integration-unavailable" />
   </section>
@@ -134,7 +135,16 @@ function IntegrationTestPanel(props:{projectId:string;taskId:string}):JSX.Elemen
       {run?.canRetry&&<Button size="sm" disabled={busy||!!state.activeRun} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Повторить</Button>}
       {run&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.fixIntegration!(props.projectId,props.taskId,run.id))}>Отправить на доработку</Button>}
       {run&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeIntegration!(props.projectId,props.taskId,run.id))}>Перейти к Automated QA</Button>}</div>
-    {state.runs.length>0&&<section><h4>История попыток</h4><ol>{state.runs.map((item)=><li key={item.id}>#{item.attempt} · {QA_RUN_STATUS_LABELS[item.status]}</li>)}</ol></section>}
+    {state.runs.length>0&&<AttemptHistory
+      testId="integration-history"
+      selectedId={run?.id}
+      attempts={state.runs.map((item)=>({
+        id: item.id,
+        attempt: item.attempt,
+        status: QA_RUN_STATUS_LABELS[item.status],
+        tone: qaRunTone(item.status)
+      }))}
+    />}
   </section>
 }
 
@@ -149,31 +159,53 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }, [props.projectId, props.taskId, props.stage])
   useEffect(() => { void load() }, [load])
-  useEffect(() => {
-    const current = runs[0]
-    if (!current || !['running','queued','awaiting_input'].includes(current.status)) return
-    const timer = window.setInterval(() => void load(), 1500)
-    return () => window.clearInterval(timer)
-  }, [runs, load])
+  const stageActive = ['running', 'queued', 'awaiting_input'].includes(runs[0]?.status ?? '')
+  usePolling(() => void load(), { enabled: stageActive, intervalMs: 1500 })
   const run = runs[0]
   const act = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true)
     try { await fn(); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
-  return <div className="qa-stage-run" data-testid={`qa-stage-${props.stage}`}>
-    <div className="qa-stage-run__head"><h3>{LABEL[props.stage]}</h3>
-      {!run?.canCancel && window.qa?.startStageRun && <Button size="sm" variant="primary" disabled={busy} onClick={() => void act(() => window.qa!.startStageRun!(props.projectId, props.taskId, props.stage))}>Запустить</Button>}
-      {run?.canCancel && window.qa?.cancelStageRun && <Button size="sm" variant="danger" disabled={busy} onClick={() => void act(() => window.qa!.cancelStageRun!(run.id))}>Отменить</Button>}
-      {run?.canRetry && window.qa?.retryStageRun && <Button size="sm" disabled={busy} onClick={() => void act(() => window.qa!.retryStageRun!(run.id))}>{run.scenarios?.length ? 'Повторить те же сценарии' : 'Повторить'}</Button>}
-    </div>
-    {error && <p role="alert">{error}</p>}
-    {!run && <p>Запусков этого этапа ещё нет.</p>}
-    {run && <><p><strong>{run.status}</strong> · попытка {run.attempt} · {run.branch || 'ветка не задана'} {run.commitSha && <>· <code>{run.commitSha.slice(0, 10)}</code></>}</p>
-      <p>{run.currentStep || 'Ожидание'} · {run.progress.current}/{run.progress.total} {run.progress.label}</p>
-      <progress max={Math.max(1, run.progress.total)} value={run.progress.current} />
-      {run.gateReasons.length > 0 && <section><h4>Quality gate не пройден</h4><ul>{run.gateReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></section>}
-      {run.error && <p role="alert">{run.error}</p>}
+  return <div className="qa-stage-run qa-stage-panel" data-testid={`qa-stage-${props.stage}`}>
+    {/* Раньше здесь печатался сырой `run.status` — «running» и «failed» в русской
+        карточке читались как отладочный вывод. Статус — лозенга с подписью. */}
+    <PanelHeading
+      kicker={run ? `Попытка ${run.attempt}` : LABEL[props.stage]}
+      title={LABEL[props.stage]}
+      description={run ? run.currentStep || 'Ожидание' : 'Этап ещё не запускался.'}
+      actions={<>
+        {run && <StatusPill tone={stageRunTone(run.status)}>{QA_STAGE_RUN_STATUS_LABELS[run.status]}</StatusPill>}
+        {!run?.canCancel && window.qa?.startStageRun && <Button size="sm" variant="primary" disabled={busy} onClick={() => void act(() => window.qa!.startStageRun!(props.projectId, props.taskId, props.stage))}>Запустить</Button>}
+        {run?.canCancel && window.qa?.cancelStageRun && <Button size="sm" variant="danger" disabled={busy} onClick={() => void act(() => window.qa!.cancelStageRun!(run.id))}>Отменить</Button>}
+        {run?.canRetry && window.qa?.retryStageRun && <Button size="sm" disabled={busy} onClick={() => void act(() => window.qa!.retryStageRun!(run.id))}>{run.scenarios?.length ? 'Повторить те же сценарии' : 'Повторить'}</Button>}
+      </>}
+    />
+    {error && <ErrorState compact message="Не удалось обновить этап" detail={error} onRetry={() => void load()} />}
+    {!run && <EmptyState compact icon="🧪" title="Запусков этого этапа ещё нет" description="Ран появится, когда задача дойдёт до этого этапа." testId={`qa-stage-empty-${props.stage}`} />}
+    {run && <>
+      <MetricGrid
+        testId={`qa-stage-summary-${props.stage}`}
+        items={[
+          { label: 'Ветка', value: run.branch || 'не задана', title: run.branch || undefined },
+          { label: 'SHA', value: run.commitSha ? run.commitSha.slice(0, 8) : '—', title: run.commitSha || undefined },
+          { label: 'Шаг', value: `${run.progress.current}/${run.progress.total} ${run.progress.label}` }
+        ]}
+      />
+      {/* Безымянный `<progress>` скринридер объявляет как «индикатор» без всякого
+          «чего»: у прогресса этапа теперь есть имя. */}
+      <ProgressTrack
+        value={run.progress.current}
+        max={Math.max(1, run.progress.total)}
+        label={`Прогресс этапа: ${run.progress.label || LABEL[props.stage]}`}
+        tone={stageRunTone(run.status)}
+      />
+      {run.gateReasons.length > 0 && <GateList
+        ariaLabel="Непройденные условия quality gate"
+        testId={`qa-stage-gates-${props.stage}`}
+        checks={run.gateReasons.map((reason) => ({ id: reason, name: reason, verdict: 'Не пройдено', tone: 'danger' as const }))}
+      />}
+      {run.error && <ErrorState compact message="Этап остановлен" detail={run.error} />}
       {run.result && <AutomatedQaVerdictView result={run.result} />}
       {run.scenarios && run.scenarios.length > 0 && (
         <details className="qa-verdict__scenario">
@@ -186,10 +218,25 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
           ))}
         </details>
       )}
-      <section><h4>Потоковая лента</h4><div className="ci-log">{run.log.map((line) => <div key={line.seq}>{line.text}</div>)}</div></section>
-      {run.status === 'awaiting_input' && props.stage === 'integration_tests' && window.qa?.answerStageRun && <form onSubmit={(event) => { event.preventDefault(); void act(async () => { await window.qa!.answerStageRun!(run.id, answer); setAnswer('') }) }}><label>Ответ модели<textarea value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><Button size="sm" type="submit" disabled={busy || !answer.trim()}>Отправить</Button></form>}
+      {/* Лента была набором `div`-ов без имени и без клавиатуры: прокрутить её
+          с клавиатуры было нельзя. */}
+      <div className="vc-feed">
+        <FeedItem tone={run.status === 'running' ? 'running' : 'neutral'} title="Потоковая лента" defaultOpen={run.status === 'running'}>
+          <FeedLog label={`Потоковая лента ${LABEL[props.stage]}`}>{run.log.map((line) => line.text).join('\n') || 'Лента пуста.'}</FeedLog>
+        </FeedItem>
+      </div>
+      {run.status === 'awaiting_input' && props.stage === 'integration_tests' && window.qa?.answerStageRun && <form className="qa-stage-answer" onSubmit={(event) => { event.preventDefault(); void act(async () => { await window.qa!.answerStageRun!(run.id, answer); setAnswer('') }) }}><label>Ответ модели<textarea value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><Button size="sm" type="submit" disabled={busy || !answer.trim()}>Отправить</Button></form>}
     </>}
-    {runs.length > 0 && <section><h4>История попыток</h4><ol>{runs.map((item) => <li key={item.id}>#{item.attempt} · {QA_STAGE_RUN_STATUS_LABELS[item.status]} · {formatDateTime(item.createdAt)}</li>)}</ol></section>}
+    {runs.length > 0 && <AttemptHistory
+      testId={`qa-stage-history-${props.stage}`}
+      attempts={runs.map((item) => ({
+        id: item.id,
+        attempt: item.attempt,
+        status: QA_STAGE_RUN_STATUS_LABELS[item.status],
+        tone: stageRunTone(item.status),
+        at: formatDateTime(item.createdAt)
+      }))}
+    />}
   </div>
 }
 export function QaStageRunPanel(props:{projectId:string;taskId:string;stage:QaRunStage}):JSX.Element {

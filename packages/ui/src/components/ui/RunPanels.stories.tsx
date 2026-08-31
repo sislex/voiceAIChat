@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import {
+  AttemptHistory,
   BranchFlow,
   FeedItem,
   FeedLog,
@@ -304,5 +305,68 @@ export const ResultsPhone: Story = {
         { id: '3', name: 'Пустое состояние без результатов', result: 'Ошибка', tone: 'danger', detail: 'подсказка не показана' }
       ]}
     />
+  )
+}
+
+export const Attempts: Story = {
+  name: 'История попыток',
+  render: function AttemptsStory() {
+    const [selected, setSelected] = useState('a3')
+    return (
+      <div style={{ display: 'grid', gap: 28, maxWidth: 520 }}>
+        <AttemptHistory
+          attempts={[
+            { id: 'a3', attempt: 3, status: 'Успешно', tone: 'success', at: 'сегодня, 11:24' },
+            { id: 'a2', attempt: 2, status: 'Не прошёл gate', tone: 'danger', at: 'сегодня, 10:58', note: 'codex · gpt-5' },
+            { id: 'a1', attempt: 1, status: 'Отменён', at: 'вчера, 19:02' }
+          ]}
+          selectedId={selected}
+          onSelect={setSelected}
+        />
+        <AttemptHistory
+          title="Попытки merge"
+          attempts={[{ id: 'm1', attempt: 1, status: 'Выполняется', tone: 'running', at: 'сейчас' }]}
+        />
+      </div>
+    )
+  }
+}
+
+export const AutomatedQa: Story = {
+  name: 'Automated QA целиком',
+  render: () => (
+    <div style={{ maxWidth: 760 }}>
+      <PanelHeading
+        kicker="Попытка 1"
+        title="Automated QA"
+        description="Проверка сценариев в браузере"
+        actions={<StatusPill tone="danger">Не прошёл gate</StatusPill>}
+      />
+      <MetricGrid
+        items={[
+          { label: 'Ветка', value: 'task/CHAT-248' },
+          { label: 'SHA', value: 'a8f31c27' },
+          { label: 'Шаг', value: '4/4 сценарии' }
+        ]}
+      />
+      <ProgressTrack value={4} max={4} label="Прогресс этапа: сценарии" tone="danger" />
+      <div style={{ marginTop: 16 }}>
+        <GateList
+          ariaLabel="Непройденные условия quality gate"
+          checks={[
+            { id: 'cov', name: 'coverage_below_threshold', verdict: 'Не пройдено', tone: 'danger' },
+            { id: 'flaky', name: 'flaky_scenario_detected', verdict: 'Не пройдено', tone: 'danger' }
+          ]}
+        />
+      </div>
+      <div className="vc-feed" style={{ marginTop: 16 }}>
+        <FeedItem tone="danger" title="Потоковая лента" defaultOpen>
+          <FeedLog label="Потоковая лента Automated QA">{'▶ scenario 1/4 ok\n▶ scenario 2/4 ok\n✗ scenario 3/4 flaky\ngate failed'}</FeedLog>
+        </FeedItem>
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <AttemptHistory attempts={[{ id: 'x1', attempt: 1, status: 'Не прошёл gate', tone: 'danger', at: 'сегодня, 12:03' }]} />
+      </div>
+    </div>
   )
 }

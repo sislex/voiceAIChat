@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-31
-checked: 56acc0d4
+checked: 6ef6dde6
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -1269,6 +1269,18 @@ viewport. На десктопе тест может сразу обращать�
 В Electron конфликта с меню приложения нет: `apps/desktop` не вызывает `Menu.setApplicationMenu` и не регистрирует `globalShortcut` — только меню трея, а в дефолтном меню Electron `⌘K` не занят.
 
 Тесты: `lib/fuzzy.test.ts`, `lib/hotkeys.test.ts`, `lib/commands.test.ts`, `lib/appCommands.test.ts`, `lib/useHotkeys.test.tsx`, `components/CommandPalette.dom.test.tsx`, `components/HotkeysCheatSheet.dom.test.tsx`, `App.commands.dom.test.tsx` (клавиши в собранном приложении) плюс проверки реестра в `KanbanBoard.dom.test.tsx` и `RunFeed.dom.test.tsx`. Сториз — `CommandPalette.stories.tsx` (в том числе `HugeList` на 600 бесед) и `HotkeysCheatSheet.stories.tsx`.
+
+## Опрос сервера и видимость вкладки
+
+`lib/usePolling.ts` — опрос, который встаёт вместе со вкладкой браузера.
+Панели QA опрашивают состояние этапа каждые 1,5–2 с; на голом `setInterval`
+таймер крутился и в фоновой вкладке, то есть карточка, оставленная открытой на
+ночь, продолжала стучать в сервер. Хук снимает таймер по `document.hidden` и по
+`visibilitychange` возвращает его, сразу дёрнув один внеплановый запрос — иначе
+на экране висело бы устаревшее состояние. Колбэк берётся через `ref`: у панелей
+он пересоздаётся на каждом рендере, и зависимость от его идентичности
+перезапускала бы таймер. Потребители — `ComponentQaPanel`,
+`IntegrationTestPanel`, `GenericQaStageRunPanel`.
 
 ## Ленивые чанки главного бандла
 

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ComponentQaTaskState } from '@shared/qa'
 import { QA_RUN_STATUS_LABELS, QA_STEP_STATUS_LABELS } from '@shared/qa'
 import { Skeleton } from '@voicechat/ui-kit'
-import { Button, EmptyState, ErrorState, FeedItem, FeedLog, MetricGrid, PanelHeading, QaScore, ResultTable, StatusPill, type ResultRow } from '@voicechat/ui-kit'
+import { AttemptHistory, Button, EmptyState, ErrorState, FeedItem, FeedLog, MetricGrid, PanelHeading, QaScore, ResultTable, StatusPill, type ResultRow } from '@voicechat/ui-kit'
 import { COMPONENT_QA_SCENARIO_LABEL, qaRunTone, qaScenarioTone, qaStepTone } from './qaTone'
+import { usePolling } from '../../lib/usePolling'
 
 export function ComponentQaPanel(props:{projectId:string;taskId:string;active:boolean;onFixStarted?:(id:string)=>void}):JSX.Element {
   const [state,setState]=useState<ComponentQaTaskState|null>(null)
@@ -23,11 +24,9 @@ export function ComponentQaPanel(props:{projectId:string;taskId:string;active:bo
     } catch(cause) { setError(cause instanceof Error?cause.message:String(cause)) }
   },[props.projectId,props.taskId])
   useEffect(()=>{void load()},[load])
-  useEffect(()=>{
-    if (!state?.activeRun) return
-    const timer=window.setInterval(()=>void load(),2000)
-    return ()=>window.clearInterval(timer)
-  },[state?.activeRun?.id,load])
+  // Опрос встаёт вместе со вкладкой браузера: карточка, оставленная открытой,
+  // стучала в сервер каждые две секунды и в фоне.
+  usePolling(()=>void load(),{ enabled: Boolean(state?.activeRun), intervalMs: 2000 })
   if (!window.qa?.getComponent) return <section className="component-qa-panel">
     <EmptyState compact icon="🧪" title="Component QA недоступен" description="Мост QA не подключён в этой сборке." testId="component-qa-unavailable" />
   </section>
@@ -117,6 +116,16 @@ export function ComponentQaPanel(props:{projectId:string;taskId:string;active:bo
       {run&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(async()=>{const fix=await window.qa!.fixComponent!(props.projectId,props.taskId,run.id);props.onFixStarted?.(fix.id)})}>Отправить на доработку</Button>}
       {run&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeComponent!(props.projectId,props.taskId,run.id))}>Перейти к созданию интеграционных автотестов</Button>}
     </div>
-    {state.runs.length>1&&<details><summary>История попыток ({state.runs.length})</summary><ol>{state.runs.map(item=><li key={item.id}>#{item.attempt} · {item.commitSha.slice(0,8)} · {item.status}</li>)}</ol></details>}
+    {state.runs.length>1&&<AttemptHistory
+      testId="component-qa-history"
+      selectedId={run?.id}
+      attempts={state.runs.map((item)=>({
+        id: item.id,
+        attempt: item.attempt,
+        status: QA_RUN_STATUS_LABELS[item.status],
+        tone: qaRunTone(item.status),
+        note: item.commitSha.slice(0,8)
+      }))}
+    />}
   </section>
 }
