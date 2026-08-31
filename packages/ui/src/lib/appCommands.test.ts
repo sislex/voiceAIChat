@@ -1,3 +1,6 @@
+// Окружение jsdom вопреки имени файла (без `.dom.`): компоненты здесь не
+// рендерятся, но карта горячих клавиш строится вокруг событий клавиатуры.
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest'
 import { buildAppCommands, buildHotkeyBindings, type AppCommandDeps } from './appCommands'
 import { searchCommands, type Command } from './commands'

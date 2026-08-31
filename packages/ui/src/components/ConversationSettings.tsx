@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { KB_CONTEXT_MODES, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
-import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
+import type { ChatInstruction, ContextPreset, Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
 import type { ChatStorageView, MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
@@ -58,6 +58,26 @@ export interface ConversationSettingsProps {
     projectId: string | null
   }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
+  /** Другие разговоры — источник для копирования контекста в инспекторе. */
+  otherConversations?: Array<{ id: string; title: string }>
+  /** Пресеты контекста пользователя и их сохранение (инспектор контекста). */
+  contextPresets?: ContextPreset[]
+  onSavePresets?: (presets: ContextPreset[]) => Promise<void>
+  /** Пресет для новых разговоров и его изменение (общая настройка). */
+  defaultPresetId?: string | null
+  onSetDefaultPreset?: (presetId: string | null) => Promise<void>
+  /** Вложения текущего черновика — их снимок контекста не видит. */
+  draftAttachments?: Array<{ name: string; status?: string }>
+  /** Инструкции чата из общих настроек — инспектор контекста правит их текст. */
+  chatInstructions?: ChatInstruction[]
+  /** Сохранить текст инструкции (общая настройка пользователя). */
+  onSaveInstruction?: (id: string, text: string) => Promise<void>
+  /** Добавить свою инструкцию чата (общая настройка пользователя). */
+  onAddInstruction?: (title: string, text: string) => Promise<void>
+  /** Открыть раздел «Инструкции» общих настроек. */
+  onOpenInstructionSettings?: () => void
+  /** Скопировать контекст этого разговора в другой (пресет «к выбранным»). */
+  onCopyContextTo?: (targetId: string, fromId: string) => Promise<void>
   /** Открыть существующую панель статистики БЗ текущего разговора. */
   onOpenKbUsage?: () => void
   onClose: () => void
@@ -76,11 +96,11 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
-  const contextRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/context/`
+  const contextRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/context`
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'context'>(() => window.location.hash.startsWith(contextRoutePrefix) ? 'context' : 'general')
   const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
@@ -333,6 +353,18 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           selectedSkillNames={skillNames}
           onOpenSettings={() => selectTab('general')}
           execTarget={execTarget}
+          onToggleSkill={(name, selected) => setSkillNames((prev) => selected ? [...new Set([...prev, name])] : prev.filter((entry) => entry !== name))}
+          {...(otherConversations ? { otherConversations } : {})}
+          {...(contextPresets ? { contextPresets } : {})}
+          {...(onSavePresets ? { onSavePresets } : {})}
+          {...(defaultPresetId !== undefined ? { defaultPresetId } : {})}
+          {...(onSetDefaultPreset ? { onSetDefaultPreset } : {})}
+          {...(draftAttachments ? { draftAttachments } : {})}
+          {...(chatInstructions ? { chatInstructions } : {})}
+          {...(onSaveInstruction ? { onSaveInstruction } : {})}
+          {...(onAddInstruction ? { onAddInstruction } : {})}
+          {...(onOpenInstructionSettings ? { onOpenInstructionSettings } : {})}
+          {...(onCopyContextTo ? { onCopyContextTo } : {})}
           onQuickEdit={(patch) => {
             // Быстрая правка уже сохранена на сервере; черновик окна обязан
             // догнать её, иначе кнопка «Сохранить» вернёт старое значение.

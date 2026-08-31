@@ -1,3 +1,6 @@
+// Окружение jsdom вопреки имени файла (без `.dom.`): компоненты здесь не
+// рендерятся, но стор пишет предпочтения в localStorage.
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'

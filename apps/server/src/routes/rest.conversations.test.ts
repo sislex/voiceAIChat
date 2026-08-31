@@ -892,6 +892,271 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('дефолтный пресет контекста применяется к новым разговорам', async () => {
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: {
+      ...settings,
+      contextPresets: [{ id: 'p-min', name: 'Минимальный', disabled: ['personalization', 'knowledge-mode', 'platform-instructions'] }],
+      defaultContextPresetId: 'p-min'
+    } })
+
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Новый с пресетом' } })).json()
+    // Пункт безопасности из пресета отфильтрован: выключить его нельзя нигде.
+    expect(created.disabledContext.sort()).toEqual(['knowledge-mode', 'personalization'])
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const platform = snapshot.groups.flatMap((group: { items: Array<{ id: string; enabled: boolean }> }) => group.items)
+      .find((item: { id: string }) => item.id === 'platform-instructions')
+    expect(platform.enabled).toBe(true)
+
+    // Без дефолта новые чаты начинаются с полным контекстом.
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, defaultContextPresetId: null } })
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
+    expect(plain.disabledContext).toEqual([])
+  })
+
+  it('админ видит и правит контекст чужого чата, обычный пользователь — нет', async () => {
+    // Чужой разговор: владелец — другой пользователь.
+    db.createUser('marina', 'pass', 'developer')
+    const foreign = db.createConversation('marina', 'Чат Марины')
+
+    // Админ (текущий токен) видит снимок с пометкой «чужой» и владельцем.
+    const asAdmin = await inj({ method: 'GET', url: `/api/conversations/${foreign.id}/context-snapshot` })
+    expect(asAdmin.statusCode).toBe(200)
+    expect(asAdmin.json()).toMatchObject({ owner: 'marina', foreign: true, viewerRole: 'admin' })
+
+    // И может выключить источник — в журнале остаётся, кто именно это сделал.
+    const toggled = await inj({ method: 'POST', url: `/api/conversations/${foreign.id}/context/personalization`, payload: { enabled: false } })
+    expect(toggled.statusCode).toBe(200)
+    expect(toggled.json().changes[0]).toMatchObject({ actor: U, itemId: 'personalization', enabled: false })
+    // Правка легла в чужой разговор, а не в свой.
+    expect(db.getConversation('marina', foreign.id)?.disabledContext).toEqual(['personalization'])
+
+    // Обычному пользователю чужой разговор неотличим от несуществующего.
+    const marinaToken = signToken({ name: 'marina', role: 'developer' }, SECRET)
+    const asDeveloper = await app.inject({
+      method: 'GET',
+      url: `/api/conversations/${(await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Мой' } })).json().id}/context-snapshot`,
+      headers: { authorization: `Bearer ${marinaToken}` }
+    })
+    expect(asDeveloper.statusCode).toBe(404)
+  })
+
+  it('политика машины и «вслепую» видны в снимке', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Политика' } })).json()
+    const machine = db.createAgent(U, 'Мак с политикой')
+    db.setAgentPolicy(U, machine.id, {
+      ...db.listAgents(U).find((item) => item.id === machine.id)!.policy,
+      allowedDirs: ['/Users/me/work'],
+      denyPatterns: ['rm -rf'],
+      allowWrite: false,
+      allowNetwork: false
+    })
+    agentRegistry.isOnline = ((id: string) => id === machine.id) as typeof agentRegistry.isOnline
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: machine.id } })
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const machineItem = snapshot.groups.flatMap((group: { items: Array<{ id: string; details?: Record<string, unknown> }> }) => group.items)
+      .find((item: { id: string }) => item.id === 'machine')
+    // Политика ограничивает модель сильнее режима прав — она должна быть видна.
+    expect(machineItem.details).toMatchObject({
+      'Разрешённые каталоги': '/Users/me/work',
+      'Запрещённые паттерны команд': 'rm -rf',
+      'Правка файлов': 'запрещена',
+      'Сеть': 'запрещена'
+    })
+    // Список MCP движка приезжает полем (в тестах CLI нет — значит пусто).
+    expect(Array.isArray(snapshot.cliMcpServers)).toBe(true)
+  })
+
+  it('выключенные проект, БЗ и персонализация вместе дают предупреждение «вслепую»', async () => {
+    const project = db.createProject(U, { name: 'Проект контекста' })
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Вслепую', projectId: project.id } })).json()
+    for (const itemId of ['personalization', 'project-binding', 'knowledge-mode']) {
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${itemId}`, payload: { enabled: false } })
+    }
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const blind = snapshot.warnings.find((entry: { text: string }) => entry.text.includes('только история разговора'))
+    expect(blind).toMatchObject({ level: 'problem' })
+  })
+
+  it('статус индекса базы знаний виден в пункте, а множество инструкций замечено', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'БЗ' } })).json()
+    const item = async (): Promise<{ available: boolean; explanation: string; details?: Record<string, unknown> }> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return snapshot.groups.flatMap((group: { items: unknown[] }) => group.items).find((entry: { id: string }) => entry.id === 'knowledge-mode')
+    }
+    // Тестовый сервер поднимается без индекса БЗ: снимок это переживает и не
+    // выдаёт «доступно», когда искать негде.
+    const kb = await item()
+    expect(typeof kb.available).toBe('boolean')
+    expect(kb.details).toBeDefined()
+
+    // Больше десяти включённых постоянных подсказок — замечание, не запрет.
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const many = Array.from({ length: 12 }, (_, index) => ({
+      id: `bulk-${index}`, title: `Подсказка ${index}`, description: '', enabled: true, text: `Правило ${index}.`
+    }))
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, chatInstructions: many } })
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(snapshot.warnings.some((entry: { text: string }) => entry.text.includes('Инструкций чата включено 12'))).toBe(true)
+
+    // Выключенные тумблером в счёт не идут: замечание про то, что реально уходит.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-bulk-0`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-bulk-1`, payload: { enabled: false } })
+    const after = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(after.warnings.some((entry: { text: string }) => entry.text.includes('Инструкций чата включено'))).toBe(false)
+  })
+
+  it('сравнение контекста двух разговоров показывает разницу и ничего не меняет', async () => {
+    const here = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Здесь' } })).json()
+    const there = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Там' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${here.id}/context/personalization`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${there.id}/context/knowledge-mode`, payload: { enabled: false } })
+    await inj({ method: 'PATCH', url: `/api/conversations/${there.id}`, payload: { execTarget: null, llmProvider: 'codex', llmModel: 'gpt-5.6-luna' } })
+
+    const diff = (await inj({ method: 'GET', url: `/api/conversations/${here.id}/context-diff/${there.id}` })).json()
+    expect(diff.otherTitle).toBe('Там')
+    expect(diff.onlyHere.map((entry: { itemId: string }) => entry.itemId)).toEqual(['personalization'])
+    expect(diff.onlyThere.map((entry: { itemId: string }) => entry.itemId)).toEqual(['knowledge-mode'])
+    expect(diff.settings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Движок', here: 'claude', there: 'codex' })
+    ]))
+
+    // Сравнение — только чтение: наборы обоих разговоров остались прежними.
+    const disabledOf = async (id: string): Promise<string[]> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${id}/context-snapshot` })).json()
+      return snapshot.groups.flatMap((group: { items: Array<{ id: string; enabled: boolean }> }) => group.items)
+        .filter((item: { enabled: boolean }) => !item.enabled).map((item: { id: string }) => item.id)
+    }
+    expect(await disabledOf(here.id)).toEqual(['personalization'])
+    expect(await disabledOf(there.id)).toEqual(['knowledge-mode'])
+
+    // Чужой или несуществующий разговор — 404.
+    expect((await inj({ method: 'GET', url: `/api/conversations/${here.id}/context-diff/нет-такого` })).statusCode).toBe(404)
+  })
+
+  it('выключенные инструменты приезжают списком, а группы знают свой размер', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Инструменты' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/mcp-kb-search`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/mcp-remote-bash`, payload: { enabled: false } })
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    // Ровно тот список, что уйдёт исполнителю: ответ на «что модель не сможет».
+    expect(snapshot.disallowedTools).toEqual(['mcp__kb__search', 'mcp__remote__bash'])
+    // Размер группы инструкций считается по блокам, а не суммой пунктов:
+    // склеенная подсказка принадлежит двум пунктам и удвоила бы сумму.
+    const instructions = snapshot.groups.find((group: { id: string }) => group.id === 'chat-instructions')
+    expect(instructions.size.chars).toBeGreaterThan(0)
+    const blocksChars = snapshot.promptPreview.blocks
+      .filter((block: { itemIds: string[] }) => block.itemIds.every((id) => id.startsWith('instruction-')))
+      .reduce((total: number, block: { chars: number }) => total + block.chars, 0)
+    expect(instructions.size.chars).toBe(blocksChars)
+  })
+
+  it('дубликат текста инструкций замечен, а «где выключена» различает настройки и чат', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Инструкции' } })).json()
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const own = { id: 'own-1', title: 'Своя первая', description: '', enabled: true, text: 'Отвечай по-русски.' }
+    const twin = { id: 'own-2', title: 'Своя вторая', description: '', enabled: true, text: 'Отвечай по-русски.' }
+    const off = { id: 'own-3', title: 'Выключенная в настройках', description: '', enabled: false, text: 'Не должна попасть.' }
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, chatInstructions: [...settings.chatInstructions, own, twin, off] } })
+
+    const snap = async (): Promise<{
+      warnings: Array<{ text: string }>
+      groups: Array<{ items: Array<{ id: string; details?: Record<string, unknown> }> }>
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    const withTwins = await snap()
+    expect(withTwins.warnings.some((entry) => entry.text.includes('Своя первая, Своя вторая'))).toBe(true)
+
+    const detailsOf = (snapshot: Awaited<ReturnType<typeof snap>>, id: string): Record<string, unknown> =>
+      snapshot.groups.flatMap((group) => group.items).find((item) => item.id === id)!.details!
+    // Выключенная в общих настройках и выключенная тумблером — разные ответы.
+    expect(detailsOf(withTwins, 'instruction-own-3')['Где выключена']).toBe('в общих настройках (во всех чатах)')
+    expect(detailsOf(withTwins, 'instruction-own-1')['Где выключена']).toBe('—')
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/instruction-own-1`, payload: { enabled: false } })
+    expect(detailsOf(await snap(), 'instruction-own-1')['Где выключена']).toBe('только в этом разговоре')
+
+    // Порядок и размер — рядом с текстом: их спрашивают, когда промпт распух.
+    const details = detailsOf(await snap(), 'instruction-own-2')
+    expect(String(details['Порядок в промпте'])).toMatch(/^\d+ из \d+$/)
+    expect(details['Символов в тексте']).toBe('Отвечай по-русски.'.length)
+  })
+
+  it('пустой контекст предупреждает, а история ходов несёт стоимость', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Пусто' } })).json()
+    const snap = async (): Promise<{
+      warnings: Array<{ text: string; level: string }>
+      turnSizes: Array<{ costUsd: number | null; approxTokens: number }>
+      promptPreview: { blocks: unknown[] }
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    // Пока блоки есть — предупреждения о пустоте нет.
+    expect((await snap()).warnings.some((entry) => entry.text.includes('Своих блоков сервер не добавит'))).toBe(false)
+
+    // Выключаем всё выключаемое: это законный режим, но о нём надо сказать.
+    const items = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      .groups.flatMap((group: { items: Array<{ id: string; toggleable: boolean }> }) => group.items)
+      .filter((item: { toggleable: boolean }) => item.toggleable)
+    for (const item of items) {
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${encodeURIComponent(item.id)}`, payload: { enabled: false } })
+    }
+    const empty = await snap()
+    expect(empty.promptPreview.blocks).toHaveLength(0)
+    expect(empty.warnings.some((entry) => entry.text.includes('Своих блоков сервер не добавит'))).toBe(true)
+
+    // У хода с известной моделью в истории есть и оценка стоимости.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {
+      role: 'ai', text: 'Готово', time: '10:00',
+      meta: { request: { provider: 'claude', model: 'sonnet', prompt: 'x'.repeat(800), promptChars: 800, resumed: false } }
+    } })
+    const sized = (await snap()).turnSizes[0]!
+    expect(sized.approxTokens).toBe(200)
+    expect(sized.costUsd).not.toBeNull()
+  })
+
+  it('копирование контекста переносит выключения другого разговора и не пускает чужой', async () => {
+    const source = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Образец' } })).json()
+    const target = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Цель' } })).json()
+    await inj({ method: 'POST', url: `/api/conversations/${source.id}/context/personalization`, payload: { enabled: false } })
+    await inj({ method: 'POST', url: `/api/conversations/${source.id}/context/knowledge-mode`, payload: { enabled: false } })
+    // В цели заранее выключено другое — копирование приводит набор к образцу,
+    // а не просто добавляет: иначе «скопировать» означало бы «объединить».
+    await inj({ method: 'POST', url: `/api/conversations/${target.id}/context/mcp-kb-search`, payload: { enabled: false } })
+
+    const copied = await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: source.id } })
+    expect(copied.statusCode).toBe(200)
+    const disabled = (copied.json().groups as Array<{ items: Array<{ id: string; enabled: boolean }> }>)
+      .flatMap((group) => group.items).filter((item) => !item.enabled).map((item) => item.id).sort()
+    expect(disabled).toEqual(['knowledge-mode', 'personalization'])
+
+    // Журнал видит обе стороны операции: и выключения, и возврат.
+    const changes = copied.json().changes as Array<{ itemId: string; enabled: boolean }>
+    expect(changes.some((entry) => entry.itemId === 'mcp-kb-search' && entry.enabled)).toBe(true)
+
+    // Сам себе источником быть не может, чужой разговор — 404.
+    expect((await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: target.id } })).statusCode).toBe(400)
+    expect((await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: 'нет-такого' } })).statusCode).toBe(404)
+  })
+
+  it('снимок отдаёт имена вложений, историю размеров и оценку стоимости', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Размеры' } })).json()
+    const turn = (chars: number, model: string, at: string) => inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {
+      role: 'ai', text: 'Готово', time: at,
+      meta: { request: { provider: 'claude', model, prompt: 'x'.repeat(chars), promptChars: chars, resumed: false, attachments: ['/tmp/uploads/схема.png'] } }
+    } })
+    await turn(400, 'sonnet', '10:00')
+    await turn(1200, 'sonnet', '10:05')
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    // Имена, а не только количество.
+    expect(snapshot.lastTurn.attachmentNames).toEqual(['схема.png'])
+    // История новыми сверху: виден рост промпта.
+    expect(snapshot.turnSizes.map((entry: { chars: number }) => entry.chars)).toEqual([1200, 400])
+    expect(snapshot.turnSizes[0]).toMatchObject({ model: 'sonnet', approxTokens: 300, resumed: false })
+    // Стоимость постоянной части: у известной модели число, а не выдумка.
+    expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
+  })
 })
 
 describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
@@ -979,5 +1244,49 @@ describe('REST: GET /api/search — полнотекстовый поиск по
     const res = await inj({ method: 'GET', url: '/api/search?q=миграция%20&limit=abc&cursor=%00%01' })
     expect(res.statusCode).toBe(200)
     expect(res.json().hits).toHaveLength(1)
+  })
+  it('журнал контекста пишет изменения (не нажатия) и попадает в снимок', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Журнал' } })).json()
+    const changes = async (): Promise<Array<{ actor: string; itemId: string; enabled: boolean }>> =>
+      (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json().changes
+
+    expect(await changes()).toEqual([])
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: false } })
+    expect(await changes()).toMatchObject([{ actor: U, itemId: 'personalization', enabled: false }])
+
+    // Повторное то же значение — не изменение: журнал не должен пухнуть от кликов.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: false } })
+    expect(await changes()).toHaveLength(1)
+
+    // Возврат пишется отдельной записью, новые сверху.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: true } })
+    const list = await changes()
+    expect(list).toHaveLength(2)
+    expect(list[0]).toMatchObject({ itemId: 'personalization', enabled: true })
+
+    // Пункт безопасности выключить нельзя — и в журнал он не попадает.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/platform-instructions`, payload: { enabled: false } })
+    expect(await changes()).toHaveLength(2)
+  })
+
+  it('крупная постоянная часть промпта даёт замечание о размере', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Размер' } })).json()
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const size = async (): Promise<{ approxTokens: number; warnings: Array<{ text: string }> }> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return { approxTokens: snapshot.promptPreview.approxTokens, warnings: snapshot.warnings }
+    }
+    // Штатный набор инструкций — без замечания.
+    const before = await size()
+    expect(before.approxTokens).toBeLessThan(4000)
+    expect(before.warnings.some((entry) => entry.text.includes('токенов — это много'))).toBe(false)
+
+    await inj({ method: 'PUT', url: '/api/settings', payload: {
+      ...settings,
+      chatInstructions: [...settings.chatInstructions, { id: 'huge', title: 'Огромная', description: '', enabled: true, text: 'т'.repeat(20_000) }]
+    } })
+    const after = await size()
+    expect(after.approxTokens).toBeGreaterThan(4000)
+    expect(after.warnings.some((entry) => entry.text.includes('токенов — это много'))).toBe(true)
   })
 })

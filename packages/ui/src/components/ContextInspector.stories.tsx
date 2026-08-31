@@ -71,6 +71,8 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       ] }
     ],
     viewerRole: options.viewerRole ?? 'admin',
+    owner: 'alexey',
+    foreign: false,
     lastTurn: {
       at: '12:41',
       provider: 'claude',
@@ -81,8 +83,19 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       resumed: true,
       permissionMode: 'acceptEdits',
       attachments: 1,
+      attachmentNames: ['макет-экрана.png'],
       kbSections: ['Соглашения / Гейт']
     },
+    turnSizes: [
+      { at: '12:41', model: 'opus', chars: 420, approxTokens: 105, resumed: true, costUsd: 0.00157 },
+      { at: '12:20', model: 'opus', chars: 260, approxTokens: 65, resumed: false, costUsd: 0.00097 }
+    ],
+    disallowedTools: ['mcp__remote__bash'],
+    cliMcpServers: [{ name: 'remote', detail: 'ws://agent', status: 'connected' }],
+    changes: [
+      { at: new Date('2026-08-31T12:35:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: false },
+      { at: new Date('2026-08-31T12:36:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: true }
+    ],
     warnings: [
       { itemId: 'machine', level: 'problem', text: 'Выбранная машина недоступна: команды и файловые инструменты в ход не попадут.' },
       { itemId: null, level: 'notice', text: 'Инструкций чата выключено для этого разговора: 1.' }
@@ -98,7 +111,8 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
         'История разговора: ход продолжает сессию движка, история заново не отправляется.',
         'AGENTS.md: файл читает исполнитель в рабочей директории машины.'
-      ]
+      ],
+      costUsd: 0.00032
     }
   }
 }

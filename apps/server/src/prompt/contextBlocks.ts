@@ -9,7 +9,8 @@
 // косметика, а неверные сведения.
 
 import type { ChatInstruction, ContextPromptBlock, UserPersonalization } from '@voicechat/shared'
-import { chatInstructionHintEntries, instructionContextId } from '@voicechat/shared'
+import { chatInstructionHintEntries, estimateCostUsd, instructionContextId } from '@voicechat/shared'
+import type { ModelPrice } from '@voicechat/shared'
 import type { ProjectSummary } from '@voicechat/shared'
 import { projectPromptBlock } from '../projects/promptContext.js'
 
@@ -119,4 +120,25 @@ export function agentsChainDirs(workdir: string): string[] {
     dirs.push(current)
   }
   return dirs
+}
+
+/**
+ * Оценка стоимости постоянной части промпта в USD за один ход — только входные
+ * токены. Сначала общий прайс `estimateCostUsd` (он знает и Claude, и ходовые
+ * модели Codex), затем таблица `model_prices` — там тарифы, которые админ ведёт
+ * руками, включая свои и редкие модели. `null` — цены нет ни там, ни там:
+ * досчитывать выдуманной ценой нельзя, «—» честнее заниженной суммы.
+ */
+export function promptCostUsd(
+  provider: 'claude' | 'codex',
+  model: string,
+  inputTokens: number,
+  prices: ModelPrice[]
+): number | null {
+  if (!model || inputTokens <= 0) return null
+  const known = estimateCostUsd(model, { inputTokens })
+  if (known !== undefined) return known
+  const row = prices.find((price) => price.model === model && (price.provider === provider || !price.provider))
+  if (!row) return null
+  return (inputTokens * row.inputPerMillion) / 1_000_000
 }

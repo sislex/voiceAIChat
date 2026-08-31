@@ -83,14 +83,21 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         { id: 'knowledge', order: 2, title: 'База знаний', description: 'Тест', items: [item('knowledge-mode', 'Автоматически')] }
       ],
       viewerRole: 'developer',
+      owner: 'test',
+      foreign: false,
       lastTurn: null,
+      turnSizes: [],
+      changes: [...disabledContext].map((itemId, index) => ({ at: index * 1000, actor: 'test', itemId, enabled: false })),
+      disallowedTools: [],
+      cliMcpServers: [],
       warnings: [],
       promptPreview: {
         blocks: disabledContext.has('personalization') ? [] : [{ itemIds: ['personalization'], title: 'Персонализация пользователя', text: preview, chars: preview.length, approxTokens: Math.ceil(preview.length / 4) }],
         text: disabledContext.has('personalization') ? '' : preview,
         chars: disabledContext.has('personalization') ? 0 : preview.length,
         approxTokens: disabledContext.has('personalization') ? 0 : Math.ceil(preview.length / 4),
-        omitted: ['Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.']
+        omitted: ['Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.'],
+        costUsd: null
       }
     }
   }
@@ -557,6 +564,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       machineName: 'MacBook',
       workdir: '/Users/test/project',
       files: [{ path: '/Users/test/project/AGENTS.md', text: '# Правила проекта\nТесты в том же шаге.', chars: 44 }]
+    }),
+    'conversations:copyContext': async ({ id }) => contextSnapshotFake(id),
+    'conversations:contextDiff': async ({ otherId }) => ({
+      otherId,
+      otherTitle: 'Другой разговор',
+      onlyThere: [{ itemId: 'knowledge-mode', title: 'Автоматически' }],
+      onlyHere: [],
+      settings: [{ label: 'Модель', here: 'default', there: 'opus' }]
     }),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
