@@ -178,6 +178,18 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
         throw error
       }
     },
+    'conversations:contextKbPreview': async ({ id, draft }) => {
+      try { return await req(REST.conversationContextKbPreview(id), { method: 'POST', body: JSON.stringify({ draft }) }) } catch (error) {
+        if (error instanceof Error && error.message.includes('404')) return null
+        throw error
+      }
+    },
+    'conversations:agentsChain': async ({ id }) => {
+      try { return await req(REST.conversationAgentsChain(id)) } catch (error) {
+        if (error instanceof Error && error.message.includes('404')) return null
+        throw error
+      }
+    },
     'conversations:listMachines': ({ id, projectId }) =>
       req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
     'conversations:search': ({ query, includeCompleted }) =>
@@ -459,6 +471,23 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access`, { method: 'DELETE', body: JSON.stringify({ repositoryUrl }) }),
     'projects:gitAccessDiagnostics': ({ id, agentId, repositoryUrl }) =>
       req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/diagnostics?repositoryUrl=${encodeURIComponent(repositoryUrl)}`),
+    // --- Панель кода: git в рабочей копии задачи/сессии ---
+    'projects:gitWorkspaces': ({ id }) => req(REST.projectGitWorkspaces(id)),
+    'projects:gitStatus': ({ id, workspace }) => req(REST.projectGitStatus(id, workspace)),
+    'projects:gitBranches': ({ id, workspace, refresh }) => req(REST.projectGitBranches(id, workspace, refresh)),
+    'projects:gitTree': ({ id, workspace, dir, ref }) => req(REST.projectGitTree(id, workspace, dir, ref)),
+    'projects:gitFile': ({ id, workspace, path, ref }) => req(REST.projectGitFile(id, workspace, path, ref)),
+    'projects:gitDiff': ({ id, workspace, path, base }) => req(REST.projectGitDiff(id, workspace, path, base)),
+    'projects:gitSaveFile': ({ id, ...body }) =>
+      req(REST.projectGitSaveFile(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitCheckout': ({ id, ...body }) =>
+      req(REST.projectGitCheckout(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitCreateBranch': ({ id, ...body }) =>
+      req(REST.projectGitBranch(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitCommit': ({ id, ...body }) =>
+      req(REST.projectGitCommit(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitPush': ({ id, ...body }) =>
+      req(REST.projectGitPush(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>

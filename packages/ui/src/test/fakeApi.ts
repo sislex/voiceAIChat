@@ -5,8 +5,11 @@ import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnap
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
+import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
+import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from './fixtures/git'
 import type { RendererApi } from '@shared/ipc'
-import type { Conversation, Message, Settings } from '@shared/types'
+import type { ContextSnapshotItem, Conversation, ConversationContextSnapshot, Message, Settings } from '@shared/types'
+import { contextLockReason, isContextToggleable } from '@shared/contextGating'
 import { sanitizeSettingsPatch } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } from '@shared/admin'
@@ -41,6 +44,56 @@ const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastS
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Вид доски на «сервере»: по проекту, как в таблице board_views. */
   const boardViews = new Map<string, BoardView>()
+  /**
+   * Состояние панели кода. Фейк держит его в памяти, чтобы тесты проверяли переходы
+   * (правка → сохранение → коммит → push), а не работу настоящего git.
+   */
+  const gitState: {
+    status: GitWorkspaceStatus
+    saved: Array<{ path: string; content: string }>
+    commits: Array<{ message: string; staged: number }>
+    pushed: string[]
+  } = { status: makeGitStatus(), saved: [], commits: [], pushed: [] }
+  /** Выключенные пункты контекста — «сервер» помнит их между снимками. */
+  const disabledContext = new Set<string>()
+  const contextSnapshotFake = (id: string): ConversationContextSnapshot => {
+    const item = (
+      itemId: string,
+      title: string,
+      extra: Partial<ContextSnapshotItem> = {}
+    ): ContextSnapshotItem => {
+      const toggleable = isContextToggleable(itemId)
+      const enabled = toggleable ? !disabledContext.has(itemId) : true
+      return {
+        id: itemId, type: 'Тест', source: 'Тест', scope: 'Следующий ход', priority: '1', title,
+        description: `${title} — описание`, explanation: 'Тестовое пояснение.',
+        configured: true, available: true, includedInNextTurn: enabled,
+        toggleable, enabled, lockReason: toggleable ? null : contextLockReason(itemId), ...extra
+      }
+    }
+    const preview = 'Обращение к пользователю: Тест.'
+    return {
+      schemaVersion: 1, conversationId: id, generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовый снимок.',
+      summary: { provider: 'claude', model: 'default', permissionMode: { value: 'plan', displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto', displayName: 'Автоматически', explanation: 'Тест' } },
+      groups: [
+        { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Тест', items: [
+          item('platform-instructions', 'Правила платформы'),
+          item('personalization', 'Предпочтения ответа', { size: { chars: preview.length, approxTokens: Math.ceil(preview.length / 4) } })
+        ] },
+        { id: 'knowledge', order: 2, title: 'База знаний', description: 'Тест', items: [item('knowledge-mode', 'Автоматически')] }
+      ],
+      viewerRole: 'developer',
+      lastTurn: null,
+      warnings: [],
+      promptPreview: {
+        blocks: disabledContext.has('personalization') ? [] : [{ itemIds: ['personalization'], title: 'Персонализация пользователя', text: preview, chars: preview.length, approxTokens: Math.ceil(preview.length / 4) }],
+        text: disabledContext.has('personalization') ? '' : preview,
+        chars: disabledContext.has('personalization') ? 0 : preview.length,
+        approxTokens: disabledContext.has('personalization') ? 0 : Math.ceil(preview.length / 4),
+        omitted: ['Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.']
+      }
+    }
+  }
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
   /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
@@ -479,8 +532,32 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       draftRequests.set(idempotencyKey, conv.id)
       return { conversation: withCounts(conv), messages: [persisted] }
     },
-    'conversations:contextSnapshot': async ({ id }) => ({ schemaVersion: 1, conversationId: id, generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовый снимок.', summary: { provider: 'claude', model: 'default', permissionMode: { value: 'plan', displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto', displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }),
-    'conversations:setContextItem': async ({ id }) => ({ schemaVersion: 1, conversationId: id, generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовый снимок.', summary: { provider: 'claude', model: 'default', permissionMode: { value: 'plan', displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto', displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }),
+    'conversations:contextSnapshot': async ({ id }) => contextSnapshotFake(id),
+    'conversations:setContextItem': async ({ id, itemId, enabled }) => {
+      // Фейк ведёт себя как сервер: выключенный пункт остаётся выключенным в
+      // следующем снимке, безопасность выключить нельзя.
+      if (enabled) disabledContext.delete(itemId)
+      else if (itemId !== 'platform-instructions' && itemId !== 'application-instructions') disabledContext.add(itemId)
+      return contextSnapshotFake(id)
+    },
+    'conversations:contextKbPreview': async ({ draft }) => {
+      // Фейк ведёт себя как сервер: пустой черновик — подбора нет.
+      const text = draft.trim() ? `\n\n## База знаний\n### Протокол\n${draft.trim()}` : ''
+      return {
+        mode: 'auto' as const,
+        text,
+        chars: text.length,
+        approxTokens: Math.ceil(text.length / 4),
+        confidence: text ? ('high' as const) : null,
+        sections: text ? [{ documentId: 'protocol', title: 'Протокол', chars: text.length }] : [],
+        emptyReason: text ? null : 'empty-query'
+      }
+    },
+    'conversations:agentsChain': async () => ({
+      machineName: 'MacBook',
+      workdir: '/Users/test/project',
+      files: [{ path: '/Users/test/project/AGENTS.md', text: '# Правила проекта\nТесты в том же шаге.', chars: 44 }]
+    }),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)
@@ -1126,6 +1203,39 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:verifyGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: true, repositoryUrl, account: 'octocat', checkedAt: Date.now(), readAccess: 'ok', writeAccess: 'ok', warnings: [] } }),
     'projects:deleteGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
     'projects:gitAccessDiagnostics': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] }, diagnostics: { originalUrl: repositoryUrl, effectiveUrl: repositoryUrl, matchingRules: [], warnings: [] } }),
+    // --- Панель кода. Фейк держит одно изменённое состояние в памяти: экраны
+    // проверяют переходы (правка → сохранение → коммит), а не работу git.
+    'projects:gitWorkspaces': async () => [makeGitWorkspace()],
+    'projects:gitStatus': async () => gitState.status,
+    'projects:gitBranches': async ({ refresh }) => ({ ...makeGitBranches(), fetchedAt: refresh ? 1700000000000 : null }),
+    'projects:gitTree': async ({ dir }) => ({ ...makeGitTree(), dir }),
+    'projects:gitFile': async ({ path, ref }) => ({ ...makeGitFile({ path }), ref: ref ?? null }),
+    'projects:gitDiff': async ({ path }) => makeGitDiff({ path }),
+    'projects:gitSaveFile': async ({ path, content }) => {
+      gitState.saved.push({ path, content })
+      return { file: makeGitFile({ path, content, size: content.length }), status: gitState.status }
+    },
+    'projects:gitCheckout': async ({ branch, confirmDirty }) => {
+      if (gitState.status.changes.length > 0 && !confirmDirty) throw new Error('dirty_worktree: есть незакоммиченные изменения')
+      gitState.status = { ...gitState.status, branch, changes: gitState.status.changes }
+      return { status: gitState.status, createdLocal: false }
+    },
+    'projects:gitCreateBranch': async ({ name }) => {
+      gitState.status = { ...gitState.status, branch: name }
+      return { status: gitState.status, createdLocal: true }
+    },
+    'projects:gitCommit': async ({ message, paths, all }) => {
+      const staged = all ? gitState.status.changes.length : (paths?.length ?? 0)
+      gitState.commits.push({ message, staged })
+      gitState.status = { ...gitState.status, changes: [], ahead: gitState.status.ahead + 1 }
+      return { status: gitState.status, sha: 'd'.repeat(40), staged }
+    },
+    'projects:gitPush': async ({ branch }) => {
+      const target = branch ?? gitState.status.branch ?? 'CHAT-42'
+      gitState.pushed.push(target)
+      gitState.status = { ...gitState.status, ahead: 0 }
+      return { status: gitState.status, branch: target, sha: 'd'.repeat(40) }
+    },
     'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setMachineSsh': async ({ id, agentId, sshHost, sshUser }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) Object.assign(m, { sshHost, sshUser }); return detail(p) },
     // Разовая проверка набора: фейк отвечает пустым списком — без раннера
