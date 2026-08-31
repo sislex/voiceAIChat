@@ -892,6 +892,38 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('пустой контекст предупреждает, а история ходов несёт стоимость', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Пусто' } })).json()
+    const snap = async (): Promise<{
+      warnings: Array<{ text: string; level: string }>
+      turnSizes: Array<{ costUsd: number | null; approxTokens: number }>
+      promptPreview: { blocks: unknown[] }
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    // Пока блоки есть — предупреждения о пустоте нет.
+    expect((await snap()).warnings.some((entry) => entry.text.includes('Своих блоков сервер не добавит'))).toBe(false)
+
+    // Выключаем всё выключаемое: это законный режим, но о нём надо сказать.
+    const items = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      .groups.flatMap((group: { items: Array<{ id: string; toggleable: boolean }> }) => group.items)
+      .filter((item: { toggleable: boolean }) => item.toggleable)
+    for (const item of items) {
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${encodeURIComponent(item.id)}`, payload: { enabled: false } })
+    }
+    const empty = await snap()
+    expect(empty.promptPreview.blocks).toHaveLength(0)
+    expect(empty.warnings.some((entry) => entry.text.includes('Своих блоков сервер не добавит'))).toBe(true)
+
+    // У хода с известной моделью в истории есть и оценка стоимости.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {
+      role: 'ai', text: 'Готово', time: '10:00',
+      meta: { request: { provider: 'claude', model: 'sonnet', prompt: 'x'.repeat(800), promptChars: 800, resumed: false } }
+    } })
+    const sized = (await snap()).turnSizes[0]!
+    expect(sized.approxTokens).toBe(200)
+    expect(sized.costUsd).not.toBeNull()
+  })
+
   it('копирование контекста переносит выключения другого разговора и не пускает чужой', async () => {
     const source = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Образец' } })).json()
     const target = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Цель' } })).json()
