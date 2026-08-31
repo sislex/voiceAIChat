@@ -43,6 +43,11 @@ async function renderWithProject(): Promise<{ api: FakeApi; projectId: string }>
   return { api, projectId: p.id }
 }
 
+// Страница проекта появляется асинхронно после смены hash, и дефолтной секунды
+// `findBy*` не хватает при параллельном прогоне: тест краснел в полном гейте,
+// проходя в одиночном. Запас тот же, что у `renderApp` в App.dom.test.tsx.
+const findProjectPage = (): Promise<HTMLElement> => screen.findByTestId('project-page', {}, { timeout: 10_000 })
+
 const tabs = (): HTMLElement => screen.getByRole('tablist', { name: 'Разделы проекта' })
 
 /** Переключатель списка и «+ Проект» в сайдбаре есть только в web-режиме (мост сессии). */
@@ -73,7 +78,7 @@ describe('App — страница проекта по URL', () => {
   it('#/projects/:id — страница с общей шапкой, вкладками и канбаном, без крестика', async () => {
     const { projectId } = await renderWithProject()
     window.location.hash = `#/projects/${projectId}`
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     // Полная страница: контейнер .toolpage, без модального оверлея .ovl.
     expect(page.closest('.toolpage')).not.toBeNull()
     expect(page.closest('.ovl')).toBeNull()
@@ -146,7 +151,7 @@ describe('App — страница проекта по URL', () => {
   it('вкладки меняют только содержимое: шапка и имя проекта остаются на месте', async () => {
     const { projectId } = await renderWithProject()
     window.location.hash = `#/projects/${projectId}`
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
 
     await userEvent.click(within(tabs()).getByRole('tab', { name: 'Настройки' }))
@@ -167,7 +172,7 @@ describe('App — страница проекта по URL', () => {
   it('#/projects/:id/settings открывается по прямой ссылке — с той же шапкой', async () => {
     const { projectId } = await renderWithProject()
     window.location.hash = `#/projects/${projectId}/settings`
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     expect(await screen.findByTestId('project-settings')).toBeInTheDocument()
     expect(within(page).getByRole('heading', { name: 'Мой проект' })).toBeInTheDocument()
     expect(within(tabs()).getByRole('tab', { name: 'Настройки' })).toHaveAttribute('aria-selected', 'true')
@@ -318,9 +323,10 @@ describe('App — чаты завершённых задач в сайдбаре
     return { api, projectId: p.id, taskId: task.id, chatId: chat.id }
   }
 
-  /** Область секций сайдбара, суженная проектом (может пока не содержать списков). */
+  /** Область секций сайдбара после загрузки проектного фильтра. */
   async function chatList(): Promise<HTMLElement> {
-    await userEvent.selectOptions(await screen.findByLabelText('Проект'), 'Мой проект')
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    await screen.findByRole('button', { name: 'Фильтр проектов: Все чаты' })
     await waitFor(() => expect(document.querySelector('.convo-groups')).not.toBeNull())
     return document.querySelector('.convo-groups') as HTMLElement
   }
@@ -387,7 +393,7 @@ describe('App — вход в раздел «Проекты»', () => {
     render(<App api={api} delays={SLOW} />)
 
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${first.id}`))
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     expect(within(page).getByRole('heading', { name: 'Первый' })).toBeInTheDocument()
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
   })
@@ -421,7 +427,7 @@ describe('App — вход в раздел «Проекты»', () => {
     const modes = await screen.findByRole('group', { name: 'Тип списка' })
     await userEvent.click(within(modes).getByRole('button', { name: 'Проекты' }))
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${first.id}`))
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     expect(within(page).getByRole('heading', { name: 'Первый' })).toBeInTheDocument()
   })
 
@@ -436,7 +442,7 @@ describe('App — вход в раздел «Проекты»', () => {
     await userEvent.type(within(dialog).getByLabelText('Название'), 'Свежий')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Создать' }))
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/projects\/.+/))
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     expect(within(page).getByRole('heading', { name: 'Свежий' })).toBeInTheDocument()
     // Проект уже в списке — «не найден» не мигает.
     expect(screen.queryByTestId('project-not-found')).not.toBeInTheDocument()
@@ -456,7 +462,7 @@ describe('App — удаление проекта из его настроек',
     await userEvent.click(within(settings).getByRole('button', { name: 'Удалить проект' }))
     await userEvent.click(within(settings).getByRole('button', { name: 'Удалить' }))
     await waitFor(() => expect(window.location.hash).toBe(`#/projects/${first.id}`))
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     expect(within(page).getByRole('heading', { name: 'Первый' })).toBeInTheDocument()
   })
 
@@ -514,7 +520,7 @@ describe('App — упавший вызов моста показывается 
     expect(toast).toHaveTextContent('Сервер недоступен')
     await userEvent.click(within(toast).getByRole('button', { name: 'Повторить' }))
 
-    const page = await screen.findByTestId('project-page')
+    const page = await findProjectPage()
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
   })
 })

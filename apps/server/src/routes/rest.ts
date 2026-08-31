@@ -229,9 +229,14 @@ export async function registerRest(
     return db.importDesktopData(uid(req), req.body)
   })
 
-  app.post<{ Body: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' } }>(REST.conversations, async (req) => {
+  app.post<{ Body: { title?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' } }>(REST.conversations, async (req, reply) => {
     const kind = req.body?.assistantKind
-    return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' ? kind : null)
+    try {
+      return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' ? kind : null, req.body?.projectId ?? null)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'project not found') return reply.code(404).send({ error: error.message })
+      throw error
+    }
   })
 
   app.get<{ Params: { projectId: string }; Querystring: { conversationId?: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
