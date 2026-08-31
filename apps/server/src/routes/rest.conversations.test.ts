@@ -1157,6 +1157,32 @@ describe('REST: conversations/messages/settings', () => {
     // Стоимость постоянной части: у известной модели число, а не выдумка.
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
+
+  it('предупреждает, когда постоянная часть выросла против прошлых ходов', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Рост' } })).json()
+    const turn = (chars: number, at: string) => inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {
+      role: 'ai', text: 'Готово', time: at,
+      meta: { request: { provider: 'claude', model: 'sonnet', prompt: 'x'.repeat(chars), promptChars: chars, resumed: false } }
+    } })
+    // Три обычных хода по ≈1000 токенов: на их фоне базовая постоянная часть
+    // мала, и порог роста молчит.
+    await turn(4000, '10:00'); await turn(4000, '10:05'); await turn(4000, '10:10')
+
+    const growth = (snapshot: { warnings: Array<{ text: string }> }): boolean =>
+      snapshot.warnings.some((entry) => entry.text.includes('Постоянная часть выросла'))
+    // Пока своих блоков почти нет — расти нечему.
+    expect(growth((await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json())).toBe(false)
+
+    // Длинная инструкция чата — та самая правка, из-за которой каждый ход
+    // становится дороже: предупреждение должно появиться сразу, не дожидаясь
+    // абсолютного порога в четыре тысячи токенов.
+    const current = (await inj({ method: 'GET', url: '/api/settings' })).json() as Record<string, unknown>
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...current,
+      chatInstructions: [{ id: 'custom-1', title: 'Длинная', text: 'и'.repeat(7000), enabled: true }] } })
+    const after = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(growth(after)).toBe(true)
+    expect(after.warnings.find((entry: { text: string }) => entry.text.includes('Постоянная часть выросла')).text).toContain('за последние 3 ход(ов)')
+  })
 })
 
 describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
