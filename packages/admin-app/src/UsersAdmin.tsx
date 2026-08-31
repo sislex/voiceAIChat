@@ -118,6 +118,11 @@ export interface UsersAdminProps {
   onLoadSignup?: () => void
   onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole; ownedProjectLimit?: number; sessionLimit?: number }) => void
   onOpenConversation: (id: string) => void
+  /**
+   * Открыть инспектор контекста чужого разговора. Снимок админу отдаёт сервер,
+   * но попасть в этот экран из чата нельзя: разговор не в его списке.
+   */
+  onOpenConversationContext?: (id: string) => void
   /** Типы проекта, ожидающие утверждения; нет обработчика — секции нет. */
   pendingProjectTypes?: ProjectTypeNode[]
   onReviewProjectType?: (input: { id: string; decision: 'approve' | 'reject'; note?: string }) => void | Promise<void>
@@ -165,6 +170,7 @@ export function UsersAdmin({
   userMachines = null,
   onLoadUserMachines,
   conversations,
+  onOpenConversationContext,
   messages,
   conversationId,
   currentUserName,
@@ -300,10 +306,18 @@ export function UsersAdmin({
                 <section className="uadmin-sec" data-testid="user-history-section">
                   <h3 className="uadmin-h">Разговоры ({conversations.length})</h3>
                   {conversations.map((conversation) => (
-                    <button key={conversation.id} className={conversation.id === conversationId ? 'cc-item on' : 'cc-item'} onClick={() => onOpenConversation(conversation.id)}>
-                      <span className="cc-name">{conversation.title}</span>
-                      <span className="cc-sub">{conversation.messageCount} сообщений</span>
-                    </button>
+                    <div key={conversation.id} className="uadmin-convrow">
+                      <button className={conversation.id === conversationId ? 'cc-item on' : 'cc-item'} onClick={() => onOpenConversation(conversation.id)}>
+                        <span className="cc-name">{conversation.title}</span>
+                        <span className="cc-sub">{conversation.messageCount} сообщений</span>
+                      </button>
+                      {/* Вход в контекст чужого чата: вопрос «почему у него этот
+                          чат отвечает иначе» решается снимком, а до этого места
+                          админ добраться не мог — разговор не в его списке. */}
+                      {onOpenConversationContext && (
+                        <Button size="sm" variant="ghost" onClick={() => onOpenConversationContext(conversation.id)}>Контекст</Button>
+                      )}
+                    </div>
                   ))}
                   {conversationId && (
                     <div className="uhistory" data-testid="user-history">

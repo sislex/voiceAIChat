@@ -495,7 +495,9 @@ describe('VoiceChatDb — настройки', () => {
       personalization: DEFAULT_SETTINGS.personalization,
       // Новых полей в сохранённом конфиге нет — безопасные значения включены по умолчанию.
       chatInstructions: DEFAULT_SETTINGS.chatInstructions,
-      loginNewDeviceEmails: true
+      loginNewDeviceEmails: true,
+      contextPresets: [],
+      defaultContextPresetId: null
     })
   })
 
