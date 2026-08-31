@@ -1566,3 +1566,18 @@ describe('TaskModal — вкладки по возможностям типа п
     expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
   })
 })
+
+describe('TaskModal — создание чата задачи', () => {
+  it('просит чат один раз на задачу, даже если родитель ререндерится с новым колбэком', async () => {
+    const calls: string[] = []
+    // Как в App.tsx: onEnsureChat — inline-стрелка, новая на каждый рендер.
+    const view = (): JSX.Element => <TaskModal {...props({ onEnsureChat: (taskId: string) => { calls.push(taskId) } })} />
+    const { rerender } = render(view())
+    expect(calls).toEqual(['t1'])
+
+    rerender(view())
+    rerender(view())
+
+    expect(calls).toEqual(['t1'])
+  })
+})
