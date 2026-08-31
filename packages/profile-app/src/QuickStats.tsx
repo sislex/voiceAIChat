@@ -1,7 +1,7 @@
 // Четыре факта о человеке, которые нужны раньше вкладок: когда был, сколько
 // моделей доступно, сколько машин в сети, сколько потрачено за месяц.
 
-import { StatCard } from '@voicechat/ui-kit'
+import { MetricGrid } from '@voicechat/ui-kit'
 import type { ProfileUsage, ProfileUser } from './contracts'
 import { formatAgo } from './format'
 import { formatUsd } from './model'
@@ -22,17 +22,29 @@ export function QuickStats({ user, access, usage, budget, now }: QuickStatsProps
   const online = user.machinesOnline ?? user.machines.filter((machine) => machine.online).length
   const total = user.machinesTotal ?? user.machines.length
   return (
-    <div className="vcp-quick" data-testid="profile-quick-stats">
-      <StatCard compact label="Последняя активность" value={formatAgo(user.lastSeenAt, now)} hint={user.liveSessions ? `${user.liveSessions} живых сессий` : undefined} />
-      <StatCard compact label="Доступ" value={`${access.allowed} из ${access.total} моделей`} />
-      <StatCard compact label="Машины" value={`${online} из ${total} онлайн`} />
-      <StatCard
-        compact
-        label="Расход за месяц"
-        value={usage ? formatUsd(usage.spendUsd, usage.spendIncomplete) : '—'}
-        hint={budget === null ? (user.llmLimitUsd == null ? 'лимит не задан' : undefined) : `${Math.round(budget * 100)}% лимита`}
-        tone={budget !== null && budget >= 0.8 ? 'warning' : 'neutral'}
-      />
-    </div>
+    <MetricGrid
+      compact
+      columns={4}
+      ariaLabel="Быстрые факты о человеке"
+      className="vcp-quick"
+      testId="profile-quick-stats"
+      items={[
+        {
+          label: 'Последняя активность',
+          value: formatAgo(user.lastSeenAt, now),
+          ...(user.liveSessions ? { hint: `${user.liveSessions} живых сессий` } : {})
+        },
+        { label: 'Доступ', value: `${access.allowed} из ${access.total} моделей` },
+        { label: 'Машины', value: `${online} из ${total} онлайн` },
+        {
+          label: 'Расход за месяц',
+          value: usage ? formatUsd(usage.spendUsd, usage.spendIncomplete) : '—',
+          ...(budget === null
+            ? (user.llmLimitUsd == null ? { hint: 'лимит не задан' } : {})
+            : { hint: `${Math.round(budget * 100)}% лимита` }),
+          tone: budget !== null && budget >= 0.8 ? 'warning' : 'neutral'
+        }
+      ]}
+    />
   )
 }

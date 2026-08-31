@@ -1,6 +1,6 @@
 // Машины человека: состояние агента, ОС и версия.
 
-import { Badge, Button, DefinitionList, EmptyState } from '@voicechat/ui-kit'
+import { Badge, Button, EmptyState, MetricGrid } from '@voicechat/ui-kit'
 import type { ProfileCapabilities, ProfileMachine } from '../contracts'
 import { machineOs, machineVersionState } from '../model'
 import { formatAgo } from '../format'
@@ -33,8 +33,10 @@ export function MachinesTab({ machines, capabilities, latestVersion, now, onUpda
                 <h3>{machine.name}</h3>
                 {/* Пары «подпись → значение», а не строка через точки: скринридер
                     читает их как свойства машины, а не как сплошной текст. */}
-                <DefinitionList
-                  inline
+                <MetricGrid
+                  compact
+                  columns={2}
+                  ariaLabel={`Свойства машины ${machine.name}`}
                   items={[
                     {
                       label: 'Состояние',

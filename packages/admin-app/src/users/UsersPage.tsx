@@ -6,7 +6,7 @@
 // заметить труднее всего.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, EmptyState, PageHeader } from '@voicechat/ui-kit'
+import { Button, EmptyState, PanelHeading } from '@voicechat/ui-kit'
 import {
   FULL_ACCESS,
   ProfilePanel,
@@ -235,7 +235,7 @@ export function UsersPage({
 
   return (
     <div className="ua" data-testid="users-page">
-      <PageHeader eyebrow="Администрирование" title="Пользователи" className="ua-top" testId="users-header">
+      <PanelHeading level={1} kicker="Администрирование" title="Пользователи" className="ua-top" testId="users-header" actions={<>
         <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'prices' })}>Цены моделей</Button>
         <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'engines' })}>Движки</Button>
         <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'system' })}>Система</Button>
@@ -249,7 +249,7 @@ export function UsersPage({
           </Button>
         )}
         {isAdmin && <Button size="sm" variant="primary" onClick={() => setCreating('')}>＋ Добавить</Button>}
-      </PageHeader>
+      </>} />
 
       <UserMetrics metrics={metrics} periodLabel="месяц" />
 
