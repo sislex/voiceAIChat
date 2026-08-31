@@ -130,6 +130,19 @@ export interface PromptMessage {
  * в него не попадают. Один ход (без предыдущей истории) отдаётся как обычный
  * текст — поведение идентично buildPrompt для нового разговора.
  */
+/**
+ * Сохранённый resume-id разговора, если он принадлежит текущему движку.
+ * Смена движка обнуляет чужой id (свежий ход), старый id без префикса считаем
+ * claude. Живёт здесь, а не в `turns.ts`: инспектор контекста обязан показывать
+ * ту же правду — при активном resume история разговора заново не пересобирается.
+ */
+export function resumeSessionIdFor(stored: string | null, provider: 'claude' | 'codex'): string | null {
+  if (!stored) return null
+  const m = /^(claude|codex):(.*)$/s.exec(stored)
+  if (!m) return provider === 'claude' ? stored : null
+  return m[1] === provider ? m[2] : null
+}
+
 export function buildConversationPrompt(
   messages: PromptMessage[],
   attachmentPaths: string[] = []

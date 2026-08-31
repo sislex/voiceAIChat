@@ -2182,6 +2182,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         {...(activeConversation?.projectId && chat.activeId
           ? { onOpenGit: () => setGitChatPanel({ projectId: activeConversation.projectId!, conversationId: chat.activeId! }) }
           : {})}
+        // Бейдж «контекст изменён» ведёт сразу на вкладку контекста: вкладку
+        // выбирает маршрут `#/chat/:id/context/`, поэтому достаточно адреса.
+        disabledContextCount={activeConversation?.disabledContext?.length ?? 0}
+        onOpenContextSettings={() => {
+          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context/`
+          setConversationSettingsOpen(true)
+          void projectsActions.refreshProjects()
+        }}
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
         storage={activeStorage}

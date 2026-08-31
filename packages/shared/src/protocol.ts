@@ -226,6 +226,13 @@ export const REST = {
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */
   conversationContextItem: (id: string, itemId: string) => `/api/conversations/${encodeURIComponent(id)}/context/${encodeURIComponent(itemId)}`,
+  /**
+   * Предпросмотр автоконтекста БЗ по черновику сообщения. POST, а не GET с
+   * query: черновик — текст пользователя, и в URL он попадать не должен.
+   */
+  conversationContextKbPreview: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-kb-preview`,
+  /** Прочитать цепочку AGENTS.md рабочей директории разговора (по явной просьбе). */
+  conversationAgentsChain: (id: string) => `/api/conversations/${encodeURIComponent(id)}/agents-chain`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,
