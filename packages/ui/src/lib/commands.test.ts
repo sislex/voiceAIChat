@@ -1,3 +1,6 @@
+// Окружение jsdom вопреки имени файла (без `.dom.`): компоненты здесь не
+// рендерятся, но недавние команды живут в localStorage.
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   DEFAULT_SECTION_LIMIT,
