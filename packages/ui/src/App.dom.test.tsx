@@ -946,6 +946,92 @@ describe('App — запуск задачи из чата', () => {
   })
 })
 
+describe('App — Sidebar в рабочих split-режимах', () => {
+  const originalMatchMedia = window.matchMedia
+  const originalApi = window.api
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`)
+    window.api = originalApi
+    localStorage.clear()
+  })
+
+  async function renderSplit(mode: 'console-reader' | 'make'): Promise<HTMLElement> {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Обычный разговор' })
+    const workspace = await api['conversations:create']({
+      title: mode === 'make' ? 'Тестовый Make' : 'Тестовая консоль',
+      assistantKind: mode
+    })
+    // MakePane по production-контракту монтируется только при доступном preload-мосте.
+    if (mode === 'make') window.api = api
+    localStorage.setItem('vc:sidebarCollapsed', 'false')
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${mode}/${workspace.id}`)
+    render(<App api={api} delays={SLOW} />)
+    if (mode === 'make') return screen.findByTestId('make-pane', {}, { timeout: 10_000 })
+    return screen.findByRole('region', { name: 'Консоль' })
+  }
+
+  it.each(['console-reader', 'make'] as const)(
+    '%s начинает со скрытого общего Sidebar и toggle не перемонтирует рабочую панель',
+    async (mode) => {
+      const workspace = await renderSplit(mode)
+      const open = screen.getByRole('button', { name: 'Открыть боковую панель' })
+      expect(open).toHaveAttribute('aria-expanded', 'false')
+      expect(document.querySelector('.app')).toHaveClass('app--sidebar-collapsed')
+
+      await userEvent.click(open)
+      expect(screen.getByRole('complementary')).toHaveTextContent('Обычный разговор')
+      expect(open).toHaveAttribute('aria-expanded', 'true')
+      expect(mode === 'make' ? screen.getByTestId('make-pane') : screen.getByRole('region', { name: 'Консоль' })).toBe(workspace)
+
+      await userEvent.click(open)
+      expect(open).toHaveAttribute('aria-expanded', 'false')
+      expect(mode === 'make' ? screen.getByTestId('make-pane') : screen.getByRole('region', { name: 'Консоль' })).toBe(workspace)
+
+      await userEvent.click(open)
+      const sidebar = screen.getByRole('complementary')
+      await userEvent.click(within(sidebar).getByRole('button', { name: /Более старые/ }))
+      await userEvent.click(within(sidebar).getByText('Обычный разговор'))
+      await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\//))
+      await waitFor(() => expect(document.querySelector('.app')).not.toHaveClass('app--sidebar-collapsed'))
+    }
+  )
+
+  it.each(['console-reader', 'make'] as const)(
+    '%s использует закрываемый мобильный overlay',
+    async (mode) => {
+      window.matchMedia = ((query: string) => ({
+        matches: query === '(max-width: 768px)',
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => true
+      })) as typeof window.matchMedia
+
+      await renderSplit(mode)
+      const open = screen.getByRole('button', { name: 'Открыть боковую панель' })
+      await userEvent.click(open)
+      expect(document.querySelector('aside.side')).toHaveClass('side--open')
+      expect(document.querySelector('.side-backdrop')).toBeInTheDocument()
+
+      await userEvent.keyboard('{Escape}')
+      await waitFor(() => expect(document.querySelector('.side-backdrop')).not.toBeInTheDocument())
+      expect(open).toHaveFocus()
+
+      await userEvent.click(open)
+      fireEvent.click(document.querySelector('.side-backdrop')!)
+      await waitFor(() => expect(document.querySelector('aside.side')).not.toHaveClass('side--open'))
+      expect(open).toHaveFocus()
+    }
+  )
+})
+
 describe('App — выход из аккаунта', () => {
   afterEach(() => {
     delete (window as unknown as { session?: unknown }).session
