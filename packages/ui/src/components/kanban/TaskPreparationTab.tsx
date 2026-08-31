@@ -69,9 +69,21 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   const liveRunIdRef = useRef(props.liveRunId)
   const refreshStatesRef = useRef(new Map<string, { running: boolean; pending: boolean }>())
   liveRunIdRef.current = props.liveRunId
+  /**
+   * Загрузчики держим в ref, а не в зависимостях эффекта: родитель (`App`) даёт
+   * их inline-стрелками, то есть новыми на каждый свой рендер. Пока они были в
+   * зависимостях, любой ререндер сверху перезагружал весь список — в проде это
+   * выглядело как поток запросов `preparation/runs` на открытой карточке.
+   */
+  const loadRunsRef = useRef(props.loadRuns)
+  const loadRunRef = useRef(props.loadRun)
+  loadRunsRef.current = props.loadRuns
+  loadRunRef.current = props.loadRun
+  /** Наличие моста меняет только первичный `loading`, поэтому хватает флага. */
+  const hasLoadRuns = Boolean(props.loadRuns)
 
   const refresh = useCallback(async (): Promise<void> => {
-    const loadRuns = props.loadRuns
+    const loadRuns = loadRunsRef.current
     const key = `${props.projectId}:${props.taskId}`
     if (!loadRuns) { if (identityRef.current === key) setLoading(false); return }
     let state = refreshStatesRef.current.get(key)
@@ -104,7 +116,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
       state.running = false
       if (refreshStatesRef.current.get(key) === state && identityRef.current !== key) refreshStatesRef.current.delete(key)
     }
-  }, [props.loadRuns, props.projectId, props.taskId])
+  }, [props.projectId, props.taskId])
 
   // Патч одного рана в локальный список: WS-обновление приходит по одному рану,
   // поэтому весь тяжёлый список (`preparation/runs`) больше не перезапрашивается.
@@ -123,7 +135,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
     identityRef.current = key
     setRuns([])
     setSelectedId(liveRunIdRef.current ?? null)
-    setLoading(Boolean(props.loadRuns))
+    setLoading(hasLoadRuns)
     setError(null)
     void refresh() // первичная загрузка списка — один раз при открытии
 
@@ -134,7 +146,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
     const flush = async (): Promise<void> => {
       debounceTimer = null
       const ids = [...pendingRunIds]; pendingRunIds.clear()
-      const loadRun = props.loadRun
+      const loadRun = loadRunRef.current
       if (!loadRun) { if (identityRef.current === key) void refresh(); return }
       for (const id of ids) {
         try { const run = await loadRun(id); if (identityRef.current === key) applyRun(run) }
@@ -159,7 +171,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
       offUpdate?.()
       offReconnect?.()
     }
-  }, [props.projectId, props.taskId, props.loadRuns, props.loadRun, refresh, applyRun])
+  }, [props.projectId, props.taskId, hasLoadRuns, refresh, applyRun])
   const loadMachines = useCallback(async (): Promise<void> => {
     setMachinesLoading(true)
     setMachinesError(null)
