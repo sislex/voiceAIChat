@@ -13,6 +13,40 @@ const STOP_WORDS = new Set([
   'задача', 'задачу', 'сделать', 'нужно', 'надо', 'добавить', 'починить', 'исправить', 'fix', 'add', 'task'
 ])
 
+/**
+ * Русские окончания, из-за которых «корзина» и «корзину» считались разными
+ * словами — и задача-дубликат спокойно проходила проверку. Полноценный
+ * стеммер сюда не тащим (пакет без зависимостей), но отбросить хвост у
+ * достаточно длинного слова дешевле и уже закрывает типичный случай.
+ */
+const RU_ENDINGS = [
+  'ами', 'ями', 'ого', 'его', 'ому', 'ему', 'ыми', 'ими', 'ать', 'ять', 'ует', 'ешь', 'ишь',
+  'ах', 'ях', 'ов', 'ев', 'ий', 'ый', 'ой', 'ая', 'яя', 'ое', 'ее', 'ые', 'ие', 'ем', 'ём',
+  'им', 'ым', 'ом', 'ух', 'ею', 'ью', 'ет', 'ит', 'ут', 'ют', 'ат', 'ят', 'ла', 'ло', 'ли',
+  'а', 'я', 'о', 'е', 'ы', 'и', 'у', 'ю', 'й', 'ь'
+]
+
+/**
+ * Основа слова: сравнение идёт по ней, в `overlap` уходит она же. Возвратный
+ * постфикс снимается отдельным проходом, иначе «сохраняются» остаётся
+ * «сохраняют» и не сходится с «сохраняется».
+ */
+export function wordStem(word: string): string {
+  let stem = word
+  for (const reflexive of ['ся', 'сь']) {
+    if (stem.length - reflexive.length >= 4 && stem.endsWith(reflexive)) {
+      stem = stem.slice(0, -reflexive.length)
+      break
+    }
+  }
+  if (stem.length <= 4) return stem
+  for (const ending of RU_ENDINGS) {
+    // Обрезаем только пока остаётся узнаваемая основа: «дела» не должно стать «д».
+    if (stem.length - ending.length >= 4 && stem.endsWith(ending)) return stem.slice(0, -ending.length)
+  }
+  return stem
+}
+
 /** Слова текста без пунктуации, регистра, стоп-слов и слишком коротких токенов. */
 export function significantWords(text: string): Set<string> {
   return new Set(
@@ -21,6 +55,7 @@ export function significantWords(text: string): Set<string> {
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .split(' ')
       .filter((word) => word.length >= 3 && !STOP_WORDS.has(word))
+      .map(wordStem)
   )
 }
 
@@ -52,7 +87,7 @@ export const STRONG_SIMILARITY = 0.4
 export function rankSimilarTasks(query: SimilarityItem, candidates: SimilarityItem[], limit = 5): SimilarityHit[] {
   const queryTitle = significantWords(query.title)
   const queryBody = significantWords([query.description ?? '', query.acceptanceCriteria ?? ''].join(' '))
-  const queryMeta = new Set([...(query.labels ?? []), ...(query.skills ?? [])].map((item) => item.toLocaleLowerCase()))
+  const queryMeta = new Set([...(query.labels ?? []), ...(query.skills ?? [])].map((item) => wordStem(item.toLocaleLowerCase())))
   const queryWeight = queryTitle.size * TITLE_WEIGHT + queryBody.size * BODY_WEIGHT + queryMeta.size * META_WEIGHT
   if (queryWeight === 0) return []
 
@@ -61,7 +96,7 @@ export function rankSimilarTasks(query: SimilarityItem, candidates: SimilarityIt
     .map((candidate) => {
       const title = significantWords(candidate.title)
       const body = significantWords([candidate.description ?? '', candidate.acceptanceCriteria ?? ''].join(' '))
-      const meta = new Set([...(candidate.labels ?? []), ...(candidate.skills ?? [])].map((item) => item.toLocaleLowerCase()))
+      const meta = new Set([...(candidate.labels ?? []), ...(candidate.skills ?? [])].map((item) => wordStem(item.toLocaleLowerCase())))
       const overlap = new Set<string>()
       let weight = 0
       for (const word of queryTitle) {

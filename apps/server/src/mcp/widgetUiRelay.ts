@@ -32,9 +32,30 @@ interface PendingRequest {
   resolve(outcome: WidgetUiOutcome): void
 }
 
+/**
+ * Сколько действий в интерфейсе ассистент может сделать за минуту. Цикл
+ * `ui_navigate` без тормоза дёргает экран пользователя быстрее, чем тот успевает
+ * читать, поэтому предел жёсткий и общий на разговор.
+ */
+export const WIDGET_UI_RATE_LIMIT = 40
+const RATE_WINDOW_MS = 60_000
+
 export class WidgetUiRelay {
   private readonly sinks = new Map<string, Set<(m: ServerMessage) => void>>()
   private readonly pending = new Map<string, PendingRequest>()
+  private readonly recent = new Map<string, number[]>()
+
+  /** Скользящее окно: событие старше минуты в счёт не идёт. */
+  private overLimit(conversationId: string, now: number): boolean {
+    const stamps = (this.recent.get(conversationId) ?? []).filter((at) => now - at < RATE_WINDOW_MS)
+    if (stamps.length >= WIDGET_UI_RATE_LIMIT) {
+      this.recent.set(conversationId, stamps)
+      return true
+    }
+    stamps.push(now)
+    this.recent.set(conversationId, stamps)
+    return false
+  }
 
   subscribe(userId: string, sink: (m: ServerMessage) => void): () => void {
     const set = this.sinks.get(userId) ?? new Set()
@@ -61,6 +82,11 @@ export class WidgetUiRelay {
     const sinks = this.sinks.get(userId)
     if (!sinks?.size) {
       return Promise.resolve({ ok: false, error: 'Приложение пользователя не подключено: интерфейсом сейчас управлять нельзя.' })
+    }
+    // Подтверждение не считаем: его инициирует не цикл модели, а её попытка
+    // что-то изменить, и она уже ограничена самим ожиданием ответа человека.
+    if (action.kind !== 'confirm' && this.overLimit(conversationId, Date.now())) {
+      return Promise.resolve({ ok: false, error: `Слишком много действий в интерфейсе подряд (предел ${WIDGET_UI_RATE_LIMIT} в минуту). Останови цикл и объясни пользователю, что происходит.` })
     }
     const requestId = randomUUID()
     return new Promise((resolvePromise) => {

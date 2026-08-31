@@ -7,6 +7,7 @@ import { ManagedEnvironmentResolver } from '../releases/managedEnvironmentResolv
 import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from '../releases/releaseManager.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { materializeProjectMachine } from '../projects/materialize.js'
+import { releaseCiTarget, releaseProductionTarget } from '../releases/targets.js'
 
 const DEFAULT_PRODUCTION_DEPLOY_COMMAND = '/usr/local/bin/voicechat-deploy'
 const DEFAULT_PRODUCTION_HEALTH_CHECK_COMMAND = 'curl -fsS --max-time 10 http://127.0.0.1:8787/api/health'
@@ -19,28 +20,9 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
   const managed=resolver??new ManagedEnvironmentResolver(db,releases)
   const confirmations=new Map<string,{projectId:string;expiresAt:number}>()
   const project=(req:FastifyRequest,projectId:string)=>db.getProject(uid(req),projectId)
-  const ciTarget=(req:FastifyRequest,projectId:string):ReleaseProjectTarget=>{
-    const value=project(req,projectId)
-    const agentId=value?.defaultAgentId
-    if(!value||!agentId)throw new Error('В настройках проекта не выбрана машина по умолчанию')
-    const machine=value.machines.find(item=>item.agentId===agentId)
-    if(!machine||!db.canUseAgent(uid(req),agentId,projectId))throw new Error('Нет доступа к машине проекта по умолчанию или она не подключена к проекту')
-    if(!releases.isOnline(agentId))throw new Error('Машина проекта по умолчанию offline')
-    if(!value.gitUrl)throw new Error('Для проекта не задан gitUrl')
-    const existingPath=machine.path?.trim()
-    const root=machine.reposRoot?.trim().replace(/[\\/]+$/,'')
-    if(!existingPath&&!root)throw new Error('У машины для этого проекта не настроена даже root-директория (repos_root)')
-    return {projectId,agentId,path:existingPath||`${root}/.release_repo`,prepareCheckout:!existingPath,gitUrl:value.gitUrl,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',limits:value.releaseTimeouts??DEFAULT_RELEASE_TIMEOUTS}
-  }
-  const productionTarget=(req:FastifyRequest,projectId:string):ProductionTarget|null=>{
-    const value=project(req,projectId)
-    const agentId=value?.productionAgentId
-    const linked=agentId?value?.machines.some(item=>item.agentId===agentId):false
-    if(!value||!agentId||!linked||!value.productionDeployCommand||!value.productionHealthCheckCommand||!value.gitUrl)return null
-    if(value.productionEnvironmentMode==='managed')return managed.resolve(uid(req),projectId,'production').target
-    if(!value.productionCheckoutPath)return null
-    return {projectId,agentId,path:value.productionCheckoutPath,prepareCheckout:false,gitUrl:value.gitUrl,baseBranch:value.ciBaseBranch||'main',testCommand:value.testCommand?.trim()||'npm run typecheck && npm run test',deployCommand:value.productionDeployCommand,healthCheckCommand:value.productionHealthCheckCommand,expectedRepository:value.gitUrl,limits:value.releaseTimeouts??DEFAULT_RELEASE_TIMEOUTS,mode:'legacy'}
-  }
+  // Правила «куда выпускать» общие с инструментами ассистента (releases/targets.ts).
+  const ciTarget=(req:FastifyRequest,projectId:string):ReleaseProjectTarget=>releaseCiTarget(db,releases,uid(req),projectId)
+  const productionTarget=(req:FastifyRequest,projectId:string):ProductionTarget|null=>releaseProductionTarget(db,managed,uid(req),projectId)
   const owner=(req:FastifyRequest,projectId:string):boolean=>db.isProjectOwner(uid(req),projectId)
   const prepareGuard={preHandler:async(req:FastifyRequest,reply:FastifyReply)=>{
     const projectId=(req.params as {id?:string}).id

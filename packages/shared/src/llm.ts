@@ -259,6 +259,10 @@ export const KANBAN_TOOLS = [
   'run_merge_start',
   'run_qa_start',
   'preview_start',
+  'run_preparation_start',
+  'project_machine_update',
+  'release_create_branch',
+  'release_deploy',
   'orchestration_plan',
   'orchestration_start',
   'orchestration_status',
@@ -284,7 +288,8 @@ export const KANBAN_ASSISTANT_HINT =
   'Менять доску можно инструментами kanban_task_create/update/move и kanban_column_*; настройки проекта — project_settings_update. ' +
   'Перед созданием задачи ВСЕГДА проверяй пересечения (kanban_find_similar): дубликат хуже, чем лишний вопрос. Если есть незавершённая пересекающаяся работа (in_progress, awaiting_merge, done_not_merged) — скажи об этом и предложи дождаться merge, а не заводи вторую задачу про то же. ' +
   'Перед запуском работы смотри machines_load и распределяй нагрузку, а не отправляй всё на одну машину. ' +
-  'Работу запускают run_ci_start (разработка), run_qa_start (проверки), preview_start (тестовое окружение фичи), run_merge_start (слияние в основную ветку); отменяет ран run_ci_cancel. ' +
+  'Работу запускают run_preparation_start (уточнение постановки), run_ci_start (разработка), run_qa_start (проверки), preview_start (тестовое окружение фичи), run_merge_start (слияние в основную ветку); отменяет ран run_ci_cancel. ' +
+  'Машины проекта меняет project_machine_update, релиз — release_create_branch и release_deploy (выкладка в production всегда спрашивает подтверждение). ' +
   'Задачи, которые трогают один и тот же код, не запускай одновременно: дождись merge предыдущей. ' +
   'Серию работ («сделай эти пять задач по очереди») веди планом: orchestration_plan показывает его пользователю, orchestration_start отдаёт исполнение серверу — он переживает закрытие вкладки, — orchestration_status показывает прогресс, orchestration_cancel останавливает. ' +
   'Шаг wait_merge в плане и есть способ не начинать пересекающуюся задачу раньше времени. ' +

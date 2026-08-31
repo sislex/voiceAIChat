@@ -66,7 +66,8 @@ beforeEach(async () => {
     },
     cancelCi: () => true,
     startMerge: async () => ({ id: 'merge-1', status: 'queued' }),
-    startQa: async () => ({ id: 'qa-1', status: 'queued' })
+    startQa: async () => ({ id: 'qa-1', status: 'queued' }),
+    deployRelease: async (_userId: string, _projectId: string, branch: string) => ({ id: 'rel-1', status: 'queued', branch })
   }
   orchestration = createOrchestrationManager({ db, runs: () => launchers, tickMs: 60_000 })
   app = Fastify({ logger: false })
@@ -324,5 +325,51 @@ describe('kanbanMcp', () => {
 
     const cancelled = resultJson<{ cancelled: { status: string } }>((await rpc(call('orchestration_cancel', { planId: started.started.id }))).json())
     expect(cancelled.cancelled.status).toBe('cancelled')
+  })
+
+  it('повтор того же вызова в ходе не создаёт вторую карточку', async () => {
+    await rpc(INIT)
+    const first = resultJson<{ created: { id: string } }>((await rpc(call('kanban_task_create', { title: 'Корзина' }))).json())
+    const second = resultText((await rpc(call('kanban_task_create', { title: 'Корзина' }))).json())
+    expect(second.text).toContain('Повтор того же вызова')
+    expect(second.text).toContain(first.created.id)
+    expect(db.getBoard('ann', projectId)!.tasks.filter((task) => task.title === 'Корзина')).toHaveLength(1)
+
+    // Другой ход — другой ключ: там это уже осознанное повторное действие.
+    const other = resultJson<{ created: { id: string } }>((await rpc(call('kanban_task_create', { title: 'Корзина' }), `?k=${SECRET}&conv=${conv}&turn=t2`)).json())
+    expect(other.created.id).not.toBe(first.created.id)
+  })
+
+  it('отказ не запоминается: после «нет» пользователь может согласиться', async () => {
+    db.setConversationAutonomy('ann', conv, 'confirm')
+    await rpc(INIT)
+    uiReply = () => ({ ok: true, result: { surface: null, confirmed: false } })
+    expect(resultText((await rpc(call('kanban_task_update', { taskId, title: 'Новое' }))).json()).isError).toBe(true)
+    uiReply = () => ({ ok: true, result: { surface: null, confirmed: true } })
+    const accepted = resultJson<{ updated: { title: string } }>((await rpc(call('kanban_task_update', { taskId, title: 'Новое' }))).json())
+    expect(accepted.updated.title).toBe('Новое')
+  })
+
+  it('ui_run_command не нажимает кнопки, обходящие подтверждения', async () => {
+    await rpc(INIT)
+    const forbidden = resultText((await rpc(call('ui_run_command', { commandId: 'app.logout' }))).json())
+    expect(forbidden.isError).toBe(true)
+    expect(uiActions).toHaveLength(0)
+  })
+
+  it('релизные инструменты закрыты для не-владельца и спрашивают подтверждение у владельца', async () => {
+    db.createUser('bob', '', 'developer')
+    db.addMember('ann', projectId, 'bob')
+    const memberConv = db.ensureKanbanAssistantConversation('bob', projectId)!.id
+    await rpc(INIT, `?k=${SECRET}&conv=${memberConv}&turn=t1`)
+    const forbidden = resultText((await rpc(call('release_deploy', { branch: 'release/1.0.0' }), `?k=${SECRET}&conv=${memberConv}&turn=t1`)).json())
+    expect(forbidden.isError).toBe(true)
+    expect(forbidden.text).toContain('владелец')
+
+    await rpc(INIT)
+    const asOwner = resultJson<{ deploy: { id: string } }>((await rpc(call('release_deploy', { branch: 'release/1.0.0' }))).json())
+    expect(asOwner.deploy.id).toBe('rel-1')
+    // Выкладка наружу спрашивается даже в режиме автопилота.
+    expect(uiActions.map((entry) => entry.action.kind)).toContain('confirm')
   })
 })
