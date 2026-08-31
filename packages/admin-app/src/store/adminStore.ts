@@ -63,7 +63,7 @@ export interface AdminActions {
   issueResetCode(name: string): Promise<{ code: string; expiresAt: number } | null>
   setUserLlmLimit(name: string, llmLimitUsd: number | null): Promise<void>
   updateUserRole(name: string, role: UserRole): Promise<void>
-  setUserBlocked(name: string, blocked: boolean): Promise<void>
+  setUserBlocked(name: string, blocked: boolean, reason?: string): Promise<void>
   deleteUserAccount(name: string): Promise<void>
   selectAdminUser(name: string): Promise<void>
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
@@ -344,9 +344,9 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     }
   }
 
-  async function setUserBlocked(name: string, blocked: boolean): Promise<void> {
+  async function setUserBlocked(name: string, blocked: boolean, reason?: string): Promise<void> {
     try {
-      await client.setUserBlocked({ name, blocked })
+      await client.setUserBlocked({ name, blocked, ...(reason ? { reason } : {}) })
       await refreshAdminUsers()
     } catch (err) {
       fail(err, () => void setUserBlocked(name, blocked))

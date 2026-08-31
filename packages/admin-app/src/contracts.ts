@@ -30,7 +30,8 @@ export interface AdminClient {
   signupConfig?(): Promise<SignupConfig>
   setSignupConfig?(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<SignupConfig>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
-  setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>
+  /** Причина уходит в журнал безопасности: через месяц «почему заблокирован» спросит другой администратор. */
+  setUserBlocked(input: { name: string; blocked: boolean; reason?: string }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>
   getUserLlmAccess(input: { name: string }): Promise<UserLlmAccess[]>
   replaceUserLlmAccess(input: { name: string; access: UserLlmAccess[] }): Promise<UserLlmAccess[]>

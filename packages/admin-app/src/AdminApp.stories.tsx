@@ -3,6 +3,8 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { UsersAdmin } from './UsersAdmin'
 
+const NOW = Date.now()
+
 const conversations = [
   { id: 'chat-1', title: 'Редизайн кабинета', createdAt: 1, updatedAt: 2, messageCount: 18, claudeSessionId: null, execTarget: null, workdir: '', skillNames: [], llmEngineId: null, llmProvider: 'codex' as const, llmModel: 'gpt-5.6-sol', permissionMode: null, kbContextMode: 'auto' as const, projectId: null, taskId: null, status: 'developing' as const, lastExecTarget: null },
   { id: 'chat-2', title: 'План релиза', createdAt: 1, updatedAt: 2, messageCount: 7, claudeSessionId: null, execTarget: null, workdir: '', skillNames: [], llmEngineId: null, llmProvider: 'claude' as const, llmModel: 'opus', permissionMode: null, kbContextMode: 'auto' as const, projectId: null, taskId: null, status: 'developing' as const, lastExecTarget: null }
@@ -15,10 +17,25 @@ const meta: Meta<typeof UsersAdmin> = {
   args: {
     variant: 'page',
     users: [
-      { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 12, agents: [] },
-      { name: 'alex', role: 'developer', blocked: false, createdAt: 2, conversationCount: 3, agents: [] }
+      { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 12, agents: [], lastSeenAt: NOW - 40_000, liveSessions: 2 },
+      { name: 'alex', role: 'developer', blocked: false, createdAt: 2, conversationCount: 3, lastSeenAt: NOW - 3 * 60_000, liveSessions: 1, llmLimitUsd: 50, email: 'alex@voicechat.team', agents: [
+        { id: 'm1', name: 'MacBook Pro 16"', online: true, createdAt: 1, lastSeen: NOW, policy: { allow: [], deny: [] } as never, version: '2.7.4', telemetry: { os: { platform: 'darwin', release: '15.6' } } as never },
+        { id: 'm2', name: 'Mac mini CI', online: false, createdAt: 1, lastSeen: NOW - 2 * 86_400_000, policy: { allow: [], deny: [] } as never }
+      ] },
+      { name: 'nikita', role: 'tester', blocked: true, createdAt: 3, conversationCount: 0, agents: [], lastSeenAt: NOW - 12 * 86_400_000, liveSessions: 0 }
     ],
     selected: 'alex',
+    route: { page: 'users', userName: 'alex', tab: 'overview' },
+    latestAgentVersion: '2.8.1',
+    usageSummary: [
+      { name: 'admin', totals: { inputTokens: 400_000, outputTokens: 60_000, cacheReadTokens: 0, costUsd: 21.4, messages: 12 }, byModel: [] },
+      { name: 'alex', totals: { inputTokens: 1_840_000, outputTokens: 284_000, cacheReadTokens: 6_400_000, costUsd: 13.72, messages: 25 }, byModel: [] }
+    ],
+    security: [
+      { id: 3, at: NOW - 12 * 60_000, user: 'alex', type: 'login', ip: '89.125.68.35', userAgent: 'Chrome 141 · macOS', details: 'новое устройство' },
+      { id: 2, at: NOW - 60 * 60_000, user: 'alex', type: 'agent_connected', ip: '10.0.0.4', userAgent: 'agent/2.7.4', details: 'MacBook Pro 16"' },
+      { id: 1, at: NOW - 26 * 60 * 60_000, user: 'alex', type: 'password_changed', ip: '89.125.68.35', userAgent: 'Chrome 141 · macOS', details: '' }
+    ],
     currentUserName: 'admin',
     conversations,
     conversationId: null,
@@ -50,6 +67,28 @@ const meta: Meta<typeof UsersAdmin> = {
 export default meta
 type Story = StoryObj<typeof UsersAdmin>
 
+/** Список, метрики и карточка выбранного человека — главный экран раздела. */
 export const Overview: Story = {}
-export const EmptyUsage: Story = { args: { usage: null } }
-export const AccessMatrix: Story = { args: { selected: 'alex', llmAccess: [{ provider: 'codex', modelId: '*' }] } }
+
+/** Новый период без ответов модели: честное пустое состояние вместо нулей. */
+export const EmptyUsage: Story = { args: { usage: null, route: { page: 'users', userName: 'alex', tab: 'usage' } } }
+
+/** Матрица доступа: Codex закрыт целиком, Claude — по моделям. */
+export const AccessMatrix: Story = {
+  args: { route: { page: 'users', userName: 'alex', tab: 'access' }, llmAccess: [{ provider: 'codex', modelId: '*' }] }
+}
+
+/** Машины человека: устаревшая версия агента и офлайн-машина без известной ОС. */
+export const Machines: Story = { args: { route: { page: 'users', userName: 'alex', tab: 'machines' } } }
+
+/** Журнал безопасности с фильтром и выгрузкой. */
+export const History: Story = { args: { route: { page: 'users', userName: 'alex', tab: 'history' } } }
+
+/** Пустая установка: ни одного человека, кроме встроенного администратора. */
+export const Empty: Story = { args: { users: [], selected: null, route: { page: 'users' }, usageSummary: [] } }
+
+/** Телефон 390×844: список превращается в ленту, карточка занимает экран. */
+export const Mobile: Story = {
+  args: { route: { page: 'users', userName: 'alex', tab: 'overview' } },
+  parameters: { viewport: { defaultViewport: 'mobile2' } }
+}

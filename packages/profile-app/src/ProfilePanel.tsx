@@ -49,6 +49,12 @@ export interface ProfilePanelProps extends ProfileCallbacks {
   now?: number
   /** Дополнительный блок хоста внутри вкладки «Машины» — например список сессий. */
   sessionsSlot?: React.ReactNode
+  /**
+   * Блок хоста под журналом: администратору там показывают переписку человека.
+   * Модуль профиля о чужих разговорах ничего не знает и знать не должен —
+   * это администрирование, а не свойство профиля.
+   */
+  historySlot?: React.ReactNode
 }
 
 const TAB_LABEL: Record<ProfileTab, string> = {
@@ -74,6 +80,7 @@ export function ProfilePanel({
   activeWindowMs = 5 * 60_000,
   now = Date.now(),
   sessionsSlot,
+  historySlot,
   onChangeRole,
   onSetBlocked,
   onDelete,
@@ -164,7 +171,10 @@ export function ProfilePanel({
           <UsageTab usage={usage} period={period} {...(onSelectPeriod ? { onSelectPeriod } : {})} />
         )}
         {active === 'history' && (
-          <HistoryTab events={events} userName={user.name} {...(onExportCsv ? { onExportCsv } : {})} />
+          <>
+            <HistoryTab events={events} userName={user.name} {...(onExportCsv ? { onExportCsv } : {})} />
+            {historySlot}
+          </>
         )}
       </div>
 
