@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 173 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 189 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 67 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 970 коммит(ов) в areas после сверки: 1df397c0 docs(kb): вернуть содержимое, потерянное при разрешении конфликта … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 971 коммит(ов) в areas после сверки: ba3ccc37 fix(server): убрать воскресший rest.test.ts, перенести дописанные тесты … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 87 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 123 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 59 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
@@ -34,8 +34,8 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-31 | ⚠ 19 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 155 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-31 | ⚠ 18 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 7 коммит(ов) в areas после сверки: d98d7863 Merge remote-tracking branch 'origin/main' into work2 … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 18 коммит(ов) в areas после сверки: d98d7863 Merge remote-tracking branch 'origin/main' into work2 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 8 коммит(ов) в areas после сверки: ba3ccc37 fix(server): убрать воскресший rest.test.ts, перенести дописанные тесты … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 19 коммит(ов) в areas после сверки: ba3ccc37 fix(server): убрать воскресший rest.test.ts, перенести дописанные тесты … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 58 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 115 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 3 коммит(ов) в areas после сверки: 2c62de0a perf(gate): гейт шага — инкрементальный typecheck, related-тесты, разрезка REST-набора … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 471. Последние:
+Всего записей: 472. Последние:
 
 - [2026-08-31-macbook-air-user-sidebar-console-make.md](log/2026-08-31-macbook-air-user-sidebar-console-make.md) — sidebar-console-make
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation
