@@ -13,7 +13,7 @@ import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, TaskDesignLink, WorkItemDefaultSkills } from '@shared/projects'
 import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS, DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@shared/projects'
 
 
@@ -153,6 +153,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     }))
   const columns: KanbanColumn[] = []
   const tasks: Task[] = []
+  /** Связи карточек с дизайнами Make (см. мосты `tasks:*Design`). */
+  const designLinks: TaskDesignLink[] = []
   const summary = (p: FProject): ProjectSummary => ({
     id: p.id,
     name: p.name,
@@ -1263,6 +1265,45 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       conversations.push(conv)
       task.chatId = conv.id
       return withCounts(conv)
+    },
+
+    // Дизайны карточки: держим связи в памяти — тестам достаточно круга
+    // «связал → показалось → снял», без правил доступа (их проверяет сервер).
+    'tasks:designs': async ({ taskId }) => designLinks.filter((link) => link.taskId === taskId),
+    'tasks:linkDesign': async ({ projectId, taskId, conversationId, path, label }) => {
+      const source = conversations.find((c) => c.id === conversationId)
+      void projectId
+      designLinks.push({
+        id: `design-${designLinks.length + 1}`, taskId, conversationId,
+        conversationTitle: source?.title ?? 'Проект', conversationOwner: 'me',
+        path: path ?? '', label: label ?? '', createdAt: nowMs, createdBy: 'me'
+      })
+      return designLinks.filter((link) => link.taskId === taskId)
+    },
+    'tasks:unlinkDesign': async ({ taskId, linkId }) => {
+      const index = designLinks.findIndex((link) => link.id === linkId)
+      if (index >= 0) designLinks.splice(index, 1)
+      return designLinks.filter((link) => link.taskId === taskId)
+    },
+    'projects:designSources': async ({ id }) => conversations
+      .filter((c) => c.assistantKind === 'make' && c.projectId === id)
+      .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
+    'make:taskLinks': async ({ conversationId, path }) => designLinks
+      .filter((link) => link.conversationId === conversationId && (path === undefined || link.path === path))
+      .map((link) => ({
+        id: link.id, taskId: link.taskId, projectId: tasks.find((t) => t.id === link.taskId)?.projectId ?? '',
+        taskKey: `TASK-${link.taskId}`, taskTitle: tasks.find((t) => t.id === link.taskId)?.title ?? '',
+        columnName: null, path: link.path, label: link.label, createdAt: link.createdAt
+      })),
+    'make:linkTask': async ({ conversationId, taskId, path, label }) => {
+      await api['tasks:linkDesign']({ projectId: tasks.find((t) => t.id === taskId)?.projectId ?? '', taskId, conversationId, path, label })
+      return api['make:taskLinks']({ conversationId, ...(path === undefined ? {} : { path }) })
+    },
+    'make:linkableTasks': async ({ conversationId }) => {
+      const projectId = conversations.find((c) => c.id === conversationId)?.projectId
+      return tasks.filter((t) => t.projectId === projectId).map((t) => ({
+        taskId: t.id, projectId: t.projectId, taskKey: `TASK-${t.id}`, title: t.title, columnName: null
+      }))
     },
 
     _advanceDays: (days) => { nowMs += days * 24 * 60 * 60 * 1000 },
