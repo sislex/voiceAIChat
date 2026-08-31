@@ -504,6 +504,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectGitPull(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:gitDiscard': ({ id, ...body }) =>
       req(REST.projectGitDiscard(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitBranchChanges': ({ id, workspace, base }) => req(REST.projectGitBranchChanges(id, workspace, base)),
+    'projects:gitLog': ({ id, workspace, path }) => req(REST.projectGitLog(id, workspace, path)),
+    'projects:gitCommitDetail': ({ id, workspace, sha }) => req(REST.projectGitCommitDetail(id, workspace, sha)),
+    'projects:gitGrep': ({ id, workspace, query }) => req(REST.projectGitGrep(id, workspace, query)),
+    'projects:gitFileBytes': ({ id, workspace, path }) => req(REST.projectGitFileBytes(id, workspace, path)),
+    'projects:gitConflict': ({ id, workspace, path }) => req(REST.projectGitConflict(id, workspace, path)),
+    'projects:gitStage': ({ id, ...body }) =>
+      req(REST.projectGitStage(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:gitResolveConflict': ({ id, ...body }) =>
+      req(REST.projectGitResolve(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>

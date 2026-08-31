@@ -12,13 +12,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, EmptyState, ErrorState, IconButton, RefreshIndicator, Skeleton, StatusPill, useConfirm, useToast } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
-import type { GitBranchList, GitFileDiff, GitWorkspaceStatus } from '@shared/gitWorkspace'
+import type {
+  GitBranchChanges, GitBranchList, GitCommitInfo, GitConflictSide, GitConflictStages,
+  GitFileDiff, GitWorkspaceStatus
+} from '@shared/gitWorkspace'
 import { isProtectedGitBranch } from '@shared/gitWorkspace'
 import { loadView, type LoadStatus } from '../../lib/loadState'
 import { CodeDiff } from '../CodeDiff'
 import { CodeEditor } from '../CodeEditor'
 import { GitChangeList } from './GitChangeList'
 import { GitTreeView } from './GitTreeView'
+import { GitSearchPanel } from './GitSearchPanel'
+import { GitConflictView } from './GitConflictView'
+import { GitCommitList } from './GitCommitList'
 import { GitBranchDialog } from './GitBranchDialog'
 import { gitProblemHint, gitProblemMessage } from './gitLabels'
 
@@ -28,6 +34,9 @@ export type GitPaneApi = Pick<
   'projects:gitStatus' | 'projects:gitBranches' | 'projects:gitDiff' | 'projects:gitTree' | 'projects:gitFile'
   | 'projects:gitSaveFile' | 'projects:gitCheckout' | 'projects:gitCreateBranch'
   | 'projects:gitCommit' | 'projects:gitPush' | 'projects:gitPull' | 'projects:gitDiscard'
+  | 'projects:gitBranchChanges' | 'projects:gitStage' | 'projects:gitLog'
+  | 'projects:gitCommitDetail' | 'projects:gitGrep' | 'projects:gitFileBytes'
+  | 'projects:gitConflict' | 'projects:gitResolveConflict'
 >
 
 export interface GitPaneProps {
@@ -52,7 +61,14 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
   const [branchDialog, setBranchDialog] = useState(false)
   const [branchBusy, setBranchBusy] = useState(false)
   const [branchError, setBranchError] = useState<string | null>(null)
-  const [side, setSide] = useState<'changes' | 'files'>('changes')
+  const [side, setSide] = useState<'changes' | 'branch' | 'files' | 'search'>('changes')
+  const [branchChanges, setBranchChanges] = useState<GitBranchChanges | null>(null)
+  const [branchChangesError, setBranchChangesError] = useState<string | null>(null)
+  const [conflict, setConflict] = useState<GitConflictStages | null>(null)
+  const [conflictBusy, setConflictBusy] = useState(false)
+  const [fileLog, setFileLog] = useState<{ path: string; commits: GitCommitInfo[] } | null>(null)
+  const [staging, setStaging] = useState(false)
+  const [treePaths, setTreePaths] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [diff, setDiff] = useState<GitFileDiff | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -89,6 +105,11 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
       setLoad({ status: 'error', error: errorText(error) })
     }
   }, [api, projectId, workspaceId])
+
+  useEffect(() => {
+    if (side === 'branch' && !branchChanges && !branchChangesError) void loadBranchChanges()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [side, branchChanges, branchChangesError])
 
   useEffect(() => {
     setStatus(null)
@@ -166,16 +187,110 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
     }
   }, [api, projectId, workspaceId])
 
-  const loadTreeDir = useCallback(async (dir: string) => {
+  const loadTreeDirCached = useCallback(async (dir: string) => {
     const listing = await api['projects:gitTree']({ id: projectId, workspace: workspaceId, dir })
+    // Пути прочитанных уровней — материал для поиска по имени: он работает без сети.
+    setTreePaths((prev) => [...new Set([...prev, ...listing.entries.filter((entry) => entry.kind === 'file').map((entry) => entry.path)])])
     return listing.entries
-  }, [api, projectId, workspaceId, keepDraft, drafts])
+  }, [api, projectId, workspaceId])
+
+  const openConflict = useCallback(async (path: string): Promise<void> => {
+    setConflict(null)
+    try {
+      setConflict(await api['projects:gitConflict']({ id: projectId, workspace: workspaceId, path }))
+    } catch (error) {
+      setFileError(errorText(error))
+    }
+  }, [api, projectId, workspaceId])
+
+  const resolveConflict = async (path: string, conflictSide: GitConflictSide): Promise<void> => {
+    setConflictBusy(true)
+    try {
+      setStatus(await api['projects:gitResolveConflict']({ id: projectId, workspace: workspaceId, path, side: conflictSide }))
+      setConflict(null)
+      toast.success(conflictSide === 'ours' ? 'Оставлена наша версия' : 'Оставлена версия из origin')
+    } catch (error) {
+      toast.error(`Не удалось разрешить конфликт: ${errorText(error)}`)
+    } finally {
+      setConflictBusy(false)
+    }
+  }
+
+  const stage = async (unstage: boolean): Promise<void> => {
+    setStaging(true)
+    try {
+      setStatus(await api['projects:gitStage']({ id: projectId, workspace: workspaceId, paths: pickedList, unstage }))
+      toast.success(unstage ? 'Снято с индекса' : 'Добавлено в индекс')
+    } catch (error) {
+      toast.error(`Индекс не изменён: ${errorText(error)}`)
+    } finally {
+      setStaging(false)
+    }
+  }
+
+  /** История файла — по требованию: у всех файлов сразу её никто не смотрит. */
+  const loadFileLog = async (path: string): Promise<void> => {
+    try {
+      const result = await api['projects:gitLog']({ id: projectId, workspace: workspaceId, path })
+      setFileLog({ path, commits: result.commits })
+    } catch (error) {
+      toast.error(`История не прочитана: ${errorText(error)}`)
+    }
+  }
+
+  /** Скачать файл как есть: бинарник и файл сверх лимита показать нельзя, а забрать — можно. */
+  const downloadFile = async (path: string): Promise<void> => {
+    try {
+      const result = await api['projects:gitFileBytes']({ id: projectId, workspace: workspaceId, path })
+      const bytes = Uint8Array.from(atob(result.dataBase64), (char) => char.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes]))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = path.split('/').pop() ?? 'file'
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      toast.error(`Не удалось скачать: ${errorText(error)}`)
+    }
+  }
+
+  /** Изменения ветки против общего предка с origin/<base>: «что задача меняет вообще». */
+  const loadBranchChanges = useCallback(async (): Promise<void> => {
+    setBranchChangesError(null)
+    try {
+      setBranchChanges(await api['projects:gitBranchChanges']({ id: projectId, workspace: workspaceId }))
+    } catch (error) {
+      setBranchChangesError(errorText(error))
+    }
+  }, [api, projectId, workspaceId])
+
+  /** Файл из списка изменений ветки: сравниваем с базой, а не с HEAD. */
+  const openBranchFile = useCallback(async (path: string, base: string): Promise<void> => {
+    const ticket = ++requestRef.current
+    keepDraft()
+    setSelected(path)
+    setEditing(false)
+    setConflict(null)
+    setFileError(null)
+    try {
+      const next = await api['projects:gitDiff']({ id: projectId, workspace: workspaceId, path, base })
+      if (requestRef.current !== ticket) return
+      setDiff(next)
+      const text = next.modified?.content ?? ''
+      setDraft(text)
+      setSavedText(text)
+    } catch (error) {
+      if (requestRef.current !== ticket) return
+      setFileError(errorText(error))
+    }
+  }, [api, projectId, workspaceId, keepDraft])
 
   const ref = status?.ref ?? null
   const writable = Boolean(ref?.writable && !ref?.busy && !ref?.released)
   const dirtyDraft = editing && draft !== savedText
   const view = loadView(load.status, status !== null)
   const branchProtected = status?.branch ? isProtectedGitBranch(status.branch) : false
+  const selectedConflicted = Boolean(selected && status?.changes.some((change) => change.path === selected && change.state === 'conflict'))
   const canCommit = writable && (picked.size > 0) && message.trim().length > 0
   const pickedList = useMemo(() => [...picked], [picked])
   /** Файлы с несохранёнными правками: и отложенные черновики, и открытый сейчас. */
@@ -432,9 +547,42 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
         <section className="gitpane-side" aria-label="Файлы рабочей копии">
           <div className="sideswitch gitpane-side-tabs" role="tablist" aria-label="Что показать слева">
             <button type="button" role="tab" aria-selected={side === 'changes'} className={side === 'changes' ? 'on' : ''} onClick={() => setSide('changes')}>Изменения</button>
+            <button type="button" role="tab" aria-selected={side === 'branch'} className={side === 'branch' ? 'on' : ''} onClick={() => setSide('branch')}>Ветка</button>
             <button type="button" role="tab" aria-selected={side === 'files'} className={side === 'files' ? 'on' : ''} onClick={() => setSide('files')}>Файлы</button>
+            <button type="button" role="tab" aria-selected={side === 'search'} className={side === 'search' ? 'on' : ''} onClick={() => setSide('search')}>Поиск</button>
           </div>
-          {side === 'files' && <GitTreeView loadDir={loadTreeDir} selectedPath={selected} onOpenFile={(path) => void openFromTree(path)} />}
+          {side === 'files' && <GitTreeView loadDir={loadTreeDirCached} selectedPath={selected} onOpenFile={(path) => void openFromTree(path)} />}
+          {side === 'search' && (
+            <GitSearchPanel
+              knownPaths={[...new Set([...treePaths, ...status.changes.map((change) => change.path)])]}
+              onOpenFile={(path) => void openFromTree(path)}
+              onSearch={(query) => api['projects:gitGrep']({ id: projectId, workspace: workspaceId, query })}
+            />
+          )}
+          {side === 'branch' && (
+            branchChangesError
+              ? <ErrorState compact message="Не удалось прочитать изменения ветки" detail={branchChangesError} onRetry={() => { setBranchChangesError(null); void loadBranchChanges() }} />
+              : !branchChanges
+                ? <Skeleton variant="list" count={4} item="line" height={20} gap={6} />
+                : branchChanges.changes.length === 0
+                  ? <EmptyState compact icon="=" title="Ветка не отличается от базы" description={`Относительно origin/${status.baseBranch} изменений нет — работа ещё не закоммичена или уже слита.`} />
+                  : (
+                    <>
+                      <p className="gitpane-side-note">
+                        Против {branchChanges.base.slice(0, 8)} (общий предок с origin/{status.baseBranch})
+                        {branchChanges.truncated ? ' · показаны первые' : ''}
+                      </p>
+                      <GitChangeList
+                        changes={branchChanges.changes}
+                        selectedPath={selected}
+                        checked={new Set()}
+                        writable={false}
+                        onSelect={(path) => void openBranchFile(path, branchChanges.base)}
+                        onToggle={() => {}}
+                      />
+                    </>
+                  )
+          )}
           {side === 'changes' && (status.changes.length === 0
             ? <EmptyState compact icon="✓" title="Рабочая копия чистая" description="Модель ещё ничего не меняла — или всё уже закоммичено." />
             : (
@@ -453,17 +601,13 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
                 })}
               />
             ))}
-          {side === 'changes' && status.commitsAhead.length > 0 && (
-            <div className="gitpane-commits">
-              <h4>Коммиты сверх origin/{status.baseBranch}</h4>
-              <ul role="list">
-                {status.commitsAhead.map((item) => (
-                  <li key={item.sha} role="listitem" title={item.sha}>
-                    <code>{item.sha.slice(0, 8)}</code> {item.subject}
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {(side === 'changes' || side === 'branch') && status.commitsAhead.length > 0 && (
+            <GitCommitList
+              commits={status.commitsAhead}
+              title={`Коммиты сверх origin/${status.baseBranch}`}
+              loadDetail={(sha) => api['projects:gitCommitDetail']({ id: projectId, workspace: workspaceId, sha })}
+              onOpenFile={(path) => void openFromTree(path)}
+            />
           )}
         </section>
 
@@ -477,14 +621,29 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
               <div className="gitpane-main-head">
                 <strong className="gitpane-main-path">{selected}{dirtyDraft ? ' ●' : ''}</strong>
                 <div className="sideswitch" role="tablist" aria-label="Вид файла">
-                  <button type="button" role="tab" aria-selected={!editing} className={!editing ? 'on' : ''} onClick={() => setEditing(false)}>Изменения</button>
-                  <button type="button" role="tab" aria-selected={editing} className={editing ? 'on' : ''} onClick={() => setEditing(true)}>Правка</button>
+                  <button type="button" role="tab" aria-selected={!editing && !conflict} className={!editing && !conflict ? 'on' : ''} onClick={() => { setEditing(false); setConflict(null) }}>Изменения</button>
+                  <button type="button" role="tab" aria-selected={editing} className={editing ? 'on' : ''} onClick={() => { setEditing(true); setConflict(null) }}>Правка</button>
+                  {selectedConflicted && (
+                    <button type="button" role="tab" aria-selected={Boolean(conflict)} className={conflict ? 'on' : ''} onClick={() => void openConflict(selected)}>Конфликт</button>
+                  )}
                 </div>
                 {editing && writable && (
                   <Button size="sm" variant="primary" loading={saving} disabled={!dirtyDraft} onClick={() => void save()}>Сохранить</Button>
                 )}
+                <Button size="sm" variant="ghost" onClick={() => void loadFileLog(selected)}>История файла</Button>
+                <IconButton size="sm" title="Скачать файл" aria-label={`Скачать ${selected}`} onClick={() => void downloadFile(selected)}>⬇</IconButton>
               </div>
-              {editing
+              {conflict
+                ? (
+                  <GitConflictView
+                    stages={conflict}
+                    writable={writable}
+                    busy={conflictBusy}
+                    onResolve={(conflictSide) => void resolveConflict(conflict.path, conflictSide)}
+                    {...(ref && onOpenRun ? {} : {})}
+                  />
+                )
+                : editing
                 ? (
                   <div className="gitpane-editor" data-testid="git-editor">
                     {diff?.modified?.binary || diff?.modified?.truncated
@@ -514,6 +673,14 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
                       )}
                   </div>
                 )}
+              {fileLog && fileLog.path === selected && (
+                <GitCommitList
+                  commits={fileLog.commits}
+                  title={`История файла (${fileLog.commits.length})`}
+                  loadDetail={(sha) => api['projects:gitCommitDetail']({ id: projectId, workspace: workspaceId, sha })}
+                  onOpenFile={(path) => void openFromTree(path)}
+                />
+              )}
             </>
           )}
         </section>
@@ -533,6 +700,8 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
         <div className="gitpane-foot-actions">
           <span className="gitpane-picked">{picked.size} выбрано</span>
           <Button size="sm" disabled={!writable || status.changes.length === 0} onClick={() => setPicked(new Set(status.changes.map((change) => change.path)))}>Выбрать все</Button>
+          <Button size="sm" loading={staging} disabled={!writable || picked.size === 0} onClick={() => void stage(false)}>В индекс</Button>
+          <Button size="sm" loading={staging} disabled={!writable || picked.size === 0} onClick={() => void stage(true)}>Из индекса</Button>
           <Button
             size="sm"
             variant="danger"

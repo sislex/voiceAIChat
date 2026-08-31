@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildGitWorkspaceId,
+  parseGitGrep,
+  parseGitNameStatus,
   gitChangeLabel,
   gitChangeShort,
   gitProblemMessage,
@@ -268,5 +270,63 @@ describe('подписи', () => {
     for (const problem of ['workspace_not_found', 'machine_missing', 'machine_offline', 'path_missing', 'not_a_repository', 'workspace_released', 'workspace_busy'] as const) {
       expect(gitProblemMessage(problem)).not.toBe('')
     }
+  })
+})
+
+describe('parseGitNameStatus', () => {
+  // Снято с живого репозитория: `M\u0000keep.txt\u0000R100\u0000new.txt\u0000renamed2.txt\u0000A\u0000…`
+  const raw = 'M\u0000keep.txt\u0000R100\u0000new.txt\u0000renamed2.txt\u0000A\u0000unt racked3.txt\u0000A\u0000ещё файл.txt\u0000'
+
+  it('у переименования СТАРЫЙ путь идёт первым — в отличие от status -z', () => {
+    const { changes } = parseGitNameStatus(raw)
+    expect(changes).toEqual([
+      { path: 'keep.txt', oldPath: null, state: 'modified', staged: true, worktree: false },
+      { path: 'renamed2.txt', oldPath: 'new.txt', state: 'renamed', staged: true, worktree: false },
+      { path: 'unt racked3.txt', oldPath: null, state: 'added', staged: true, worktree: false },
+      { path: 'ещё файл.txt', oldPath: null, state: 'added', staged: true, worktree: false }
+    ])
+  })
+
+  it('удаления, смена типа и конфликты различаются', () => {
+    const { changes } = parseGitNameStatus('D\u0000a\u0000T\u0000b\u0000U\u0000c\u0000')
+    expect(changes.map((change) => change.state)).toEqual(['deleted', 'typechange', 'conflict'])
+  })
+
+  it('обрезает по лимиту', () => {
+    const many = Array.from({ length: 5 }, (_, i) => `M\u0000f${i}\u0000`).join('')
+    const result = parseGitNameStatus(many, 2)
+    expect(result.changes).toHaveLength(2)
+    expect(result.truncated).toBe(true)
+  })
+
+  it('пустой вывод — пустой список', () => {
+    expect(parseGitNameStatus('')).toEqual({ changes: [], truncated: false })
+  })
+})
+
+describe('parseGitGrep', () => {
+  it('разбирает `путь\\u0000строка\\u0000текст`', () => {
+    const raw = 'ahead.txt\u00001\u0000ahead\nsrc/a.ts\u000042\u0000const x = 1\n'
+    const { matches } = parseGitGrep(raw)
+    expect(matches).toEqual([
+      { path: 'ahead.txt', line: 1, text: 'ahead' },
+      { path: 'src/a.ts', line: 42, text: 'const x = 1' }
+    ])
+  })
+
+  it('путь с двоеточием не разъезжается (потому и -z, а не двоеточия)', () => {
+    const { matches } = parseGitGrep('docs/a:b.md\u00007\u0000текст: и двоеточие\n')
+    expect(matches[0]).toEqual({ path: 'docs/a:b.md', line: 7, text: 'текст: и двоеточие' })
+  })
+
+  it('обрезает по лимиту и помечает это', () => {
+    const raw = Array.from({ length: 4 }, (_, i) => `f${i}\u0000${i + 1}\u0000текст\n`).join('')
+    const result = parseGitGrep(raw, 2)
+    expect(result.matches).toHaveLength(2)
+    expect(result.truncated).toBe(true)
+  })
+
+  it('строки без номера отбрасываются (сообщения git)', () => {
+    expect(parseGitGrep('fatal: ambiguous argument\n').matches).toEqual([])
   })
 })

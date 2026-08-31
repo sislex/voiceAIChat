@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { expectNoViolations } from '../../test/a11y'
-import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '../../test/fixtures/git'
+import { makeGitBranches, makeGitChange, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '../../test/fixtures/git'
 import { GitPane, type GitPaneApi } from './GitPane'
 import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
 
@@ -29,6 +29,29 @@ function api(over: Partial<GitPaneApi> = {}, status: GitWorkspaceStatus = makeGi
     'projects:gitPush': vi.fn(async () => ({ status, branch: 'CHAT-42', sha: 'd'.repeat(40) })),
     'projects:gitPull': vi.fn(async () => ({ status, mode: 'rebase' as const, pulled: 2 })),
     'projects:gitDiscard': vi.fn(async () => ({ status: { ...status, changes: [] }, reverted: 1, removed: 0 })),
+    'projects:gitBranchChanges': vi.fn(async () => ({
+      base: 'e'.repeat(40),
+      changes: [{ path: 'apps/server/src/git/scripts.ts', oldPath: null, state: 'added' as const, staged: true, worktree: false }],
+      truncated: false
+    })),
+    'projects:gitStage': vi.fn(async () => status),
+    'projects:gitLog': vi.fn(async () => ({ commits: status.commitsAhead })),
+    'projects:gitCommitDetail': vi.fn(async ({ sha }) => ({
+      sha, subject: 'feat(git): панель кода', author: 'bob', at: 1788172791,
+      files: [{ path: 'apps/server/src/index.ts', oldPath: null, state: 'modified' as const }],
+      truncated: false
+    })),
+    'projects:gitGrep': vi.fn(async ({ query }) => ({
+      query, matches: [{ path: 'apps/server/src/index.ts', line: 3, text: 'const app = await buildServer()' }], truncated: false
+    })),
+    'projects:gitFileBytes': vi.fn(async ({ path }) => ({ path, dataBase64: 'YQ==', size: 1 })),
+    'projects:gitConflict': vi.fn(async ({ path }) => ({
+      path,
+      base: { path, ref: ':1:', content: 'общий предок\n', size: 14, truncated: false, binary: false },
+      ours: { path, ref: ':2:', content: 'наша версия\n', size: 12, truncated: false, binary: false },
+      theirs: { path, ref: ':3:', content: 'их версия\n', size: 10, truncated: false, binary: false }
+    })),
+    'projects:gitResolveConflict': vi.fn(async () => ({ ...status, changes: [] })),
     ...over
   } as GitPaneApi
 }
@@ -274,5 +297,97 @@ describe('GitPane: правки, роль и origin', () => {
     await waitFor(() => expect(bridge['projects:gitDiscard']).toHaveBeenCalledWith(expect.objectContaining({
       id: 'p1', workspace: 'ws:ws-1', confirmText: 'CHAT-42'
     })))
+  })
+})
+
+describe('GitPane: ветка, поиск, индекс и конфликты', () => {
+  it('вкладка «Ветка» показывает, что задача меняет относительно базы', async () => {
+    const bridge = api()
+    paint(bridge)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Ветка' }))
+    await waitFor(() => expect(bridge['projects:gitBranchChanges']).toHaveBeenCalledWith({ id: 'p1', workspace: 'ws:ws-1' }))
+    expect(await screen.findByText(/общий предок с origin\/main/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('apps/server/src/git/scripts.ts'))
+    // Сравнение идёт с базой ветки, а не с HEAD: иначе закоммиченное не видно.
+    await waitFor(() => expect(bridge['projects:gitDiff']).toHaveBeenCalledWith({
+      id: 'p1', workspace: 'ws:ws-1', path: 'apps/server/src/git/scripts.ts', base: 'e'.repeat(40)
+    }))
+  })
+
+  it('поиск: имя фильтруется без сети, содержимое — по Enter через git grep', async () => {
+    const bridge = api()
+    paint(bridge)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Поиск' }))
+    const input = await screen.findByLabelText('Поиск по файлам и содержимому')
+    fireEvent.change(input, { target: { value: 'index' } })
+    // Файл нашёлся среди известных путей — запроса к машине не было.
+    expect(await screen.findByText('Файлы по имени')).toBeInTheDocument()
+    expect(bridge['projects:gitGrep']).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Искать' }))
+    await waitFor(() => expect(bridge['projects:gitGrep']).toHaveBeenCalledWith({ id: 'p1', workspace: 'ws:ws-1', query: 'index' }))
+    expect(await screen.findByText(/apps\/server\/src\/index\.ts:3/)).toBeInTheDocument()
+  })
+
+  it('индекс: выбранные файлы добавляются и снимаются', async () => {
+    const bridge = api()
+    paint(bridge)
+    await screen.findByTestId('git-change-list')
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать все' }))
+    fireEvent.click(screen.getByRole('button', { name: 'В индекс' }))
+    await waitFor(() => expect(bridge['projects:gitStage']).toHaveBeenCalledWith(expect.objectContaining({ unstage: false })))
+    fireEvent.click(screen.getByRole('button', { name: 'Из индекса' }))
+    await waitFor(() => expect(bridge['projects:gitStage']).toHaveBeenCalledWith(expect.objectContaining({ unstage: true })))
+  })
+
+  it('у конфликтного файла есть трёхсторонний вид и выбор стороны', async () => {
+    const conflicted = makeGitStatus({
+      changes: [makeGitChange({ path: 'src/conflict.ts', state: 'conflict' })]
+    })
+    const bridge = api({}, conflicted)
+    paint(bridge)
+    fireEvent.click(await screen.findByText('src/conflict.ts'))
+    await waitFor(() => expect(screen.getByTestId('git-diff')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('tab', { name: 'Конфликт' }))
+    const view = await screen.findByTestId('git-conflict')
+    expect(view.textContent).toContain('Слева — наша версия, справа — их')
+    // Общий предок по требованию: постоянно занимать им экран незачем.
+    expect(screen.queryByTestId('git-conflict-base')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Показать общего предка' }))
+    expect(await screen.findByTestId('git-conflict-base')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Оставить нашу' }))
+    await waitFor(() => expect(bridge['projects:gitResolveConflict']).toHaveBeenCalledWith({
+      id: 'p1', workspace: 'ws:ws-1', path: 'src/conflict.ts', side: 'ours'
+    }))
+  })
+
+  it('история файла и состав коммита раскрываются по требованию', async () => {
+    const bridge = api()
+    paint(bridge)
+    fireEvent.click(await screen.findByText('apps/server/src/index.ts'))
+    await waitFor(() => expect(screen.getByTestId('git-diff')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'История файла' }))
+    await waitFor(() => expect(bridge['projects:gitLog']).toHaveBeenCalledWith({
+      id: 'p1', workspace: 'ws:ws-1', path: 'apps/server/src/index.ts'
+    }))
+    // Состав коммита — только по клику: пятьдесят команд ради непрочитанных строк не нужны.
+    expect(bridge['projects:gitCommitDetail']).not.toHaveBeenCalled()
+    const commits = await screen.findAllByTestId('git-commits')
+    fireEvent.click(within(commits[commits.length - 1]!).getAllByRole('button')[0]!)
+    await waitFor(() => expect(bridge['projects:gitCommitDetail']).toHaveBeenCalled())
+  })
+
+  it('файл можно скачать, даже если показать его нельзя', async () => {
+    const createUrl = vi.fn(() => 'blob:git')
+    const revokeUrl = vi.fn()
+    Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: revokeUrl })
+    const bridge = api()
+    paint(bridge)
+    fireEvent.click(await screen.findByText('apps/server/src/index.ts'))
+    await waitFor(() => expect(screen.getByTestId('git-diff')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать apps/server/src/index.ts' }))
+    await waitFor(() => expect(bridge['projects:gitFileBytes']).toHaveBeenCalledWith({
+      id: 'p1', workspace: 'ws:ws-1', path: 'apps/server/src/index.ts'
+    }))
+    expect(createUrl).toHaveBeenCalled()
   })
 })

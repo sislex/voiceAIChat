@@ -488,6 +488,20 @@ export const REST = {
   projectGitPush: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/push`,
   projectGitPull: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/pull`,
   projectGitDiscard: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/discard`,
+  projectGitBranchChanges: (id: string, workspace: string, base?: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/branch-changes?workspace=${encodeURIComponent(workspace)}${base ? `&base=${encodeURIComponent(base)}` : ''}`,
+  projectGitLog: (id: string, workspace: string, path?: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/log?workspace=${encodeURIComponent(workspace)}${path ? `&path=${encodeURIComponent(path)}` : ''}`,
+  projectGitCommitDetail: (id: string, workspace: string, sha: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/commit?workspace=${encodeURIComponent(workspace)}&sha=${encodeURIComponent(sha)}`,
+  projectGitGrep: (id: string, workspace: string, query: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/grep?workspace=${encodeURIComponent(workspace)}&query=${encodeURIComponent(query)}`,
+  projectGitFileBytes: (id: string, workspace: string, path: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/file-bytes?workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}`,
+  projectGitConflict: (id: string, workspace: string, path: string) =>
+    `/api/projects/${encodeURIComponent(id)}/git/conflict?workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}`,
+  projectGitStage: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/stage`,
+  projectGitResolve: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/resolve`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',
