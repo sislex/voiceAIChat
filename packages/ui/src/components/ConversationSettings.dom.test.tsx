@@ -26,7 +26,7 @@ function contextSnapshot(options: {
   lastTurn?: false
   warnings?: Array<{ itemId: string | null; level: 'notice' | 'problem'; text: string }>
   changes?: Array<{ at: number; actor: string; itemId: string; enabled: boolean }>
-  turnSizes?: Array<{ at: string; model: string; chars: number; approxTokens: number; resumed: boolean }>
+  turnSizes?: Array<{ at: string; model: string; chars: number; approxTokens: number; resumed: boolean; costUsd: number | null }>
 }): ConversationContextSnapshot {
   const on = options.personalizationEnabled ?? true
   const size = { chars: PREVIEW_TEXT.length, approxTokens: Math.ceil(PREVIEW_TEXT.length / 4) }
@@ -643,6 +643,10 @@ describe('ConversationSettings', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
 
     fireEvent.change(await screen.findByRole('combobox', { name: 'Скопировать контекст из разговора' }), { target: { value: 'c3' } })
+    // Копирование перезаписывает набор целиком, поэтому спрашивает подтверждение.
+    const dialog = await screen.findByRole('dialog', { name: 'Скопировать контекст?' })
+    expect(dialog).toHaveTextContent('станет таким же, как в «Черновики»')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Скопировать' }))
     await waitFor(() => expect(copyContext).toHaveBeenCalledWith({ id: 'c1', fromConversationId: 'c3' }))
     expect(screen.getByTestId('context-announce')).toHaveTextContent('Контекст скопирован')
 
@@ -674,4 +678,49 @@ describe('ConversationSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сначала тяжёлые' }))
     expect(openTitles()[0]).toContain('Предпочтения ответа')
   })
+  it('пресеты контекста: применение приводит набор к сохранённому, сохранение просит имя полем', async () => {
+    const setContextItem = vi.fn().mockResolvedValue(contextSnapshot({ personalizationEnabled: false }))
+    const onSavePresets = vi.fn().mockResolvedValue(undefined)
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:setContextItem': setContextItem } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={onSavePresets}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Применить пресет контекста' }), { target: { value: 'p1' } })
+    await waitFor(() => expect(setContextItem).toHaveBeenCalledWith({ id: 'c1', itemId: 'personalization', enabled: false }))
+    expect(screen.getByTestId('context-announce')).toHaveTextContent('Пресет «Минимальный» применён')
+
+    // Имя пресета вводится полем: window.prompt в проекте запрещён.
+    expect(screen.getByRole('button', { name: 'Сохранить текущий' })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Имя нового пресета контекста' }), { target: { value: 'Без БЗ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить текущий' }))
+    await waitFor(() => expect(onSavePresets).toHaveBeenCalledWith([
+      { id: 'p1', name: 'Минимальный', disabled: ['personalization'] },
+      expect.objectContaining({ name: 'Без БЗ' })
+    ]))
+  })
+
+  it('вложения черновика видны в предпросмотре, админ может смотреть как обычный пользователь', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      draftAttachments={[{ name: 'схема.png', status: 'ready' }, { name: 'лог.txt', status: 'processing' }]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // Файлы приложены к неотправленному сообщению — серверный снимок их не знает.
+    const draft = await screen.findByTestId('context-draft-attachments')
+    expect(draft).toHaveTextContent('схема.png')
+    expect(draft).toHaveTextContent('лог.txt (processing)')
+
+    // Проверка политики глазами: админ переключается в вид обычного пользователя.
+    expect(screen.getByRole('combobox', { name: 'Режим доступа' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Смотреть как обычный пользователь' }))
+    expect(screen.getByTestId('context-role-hint')).toHaveTextContent('не связано с безопасностью')
+    expect(screen.queryByRole('combobox', { name: 'Режим доступа' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('context-permission-readonly')).toBeInTheDocument()
+  })
+
 })

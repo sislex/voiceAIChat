@@ -980,6 +980,12 @@ export interface Settings {
   chatInstructions: ChatInstruction[]
   /** Письма о входе с нового сочетания IP и User-Agent. */
   loginNewDeviceEmails: boolean
+  /**
+   * Пресеты контекста: именованные наборы выключенных источников. Настроил один
+   * раз («минимальный контекст», «без базы знаний») — применяешь к любому чату,
+   * вместо того чтобы щёлкать тумблеры по памяти.
+   */
+  contextPresets: ContextPreset[]
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -1152,6 +1158,8 @@ export interface ContextTurnSize {
   approxTokens: number
   /** Ход продолжал сессию движка: история в этом промпте не пересобиралась. */
   resumed: boolean
+  /** Оценка стоимости входных токенов этого хода; null — прайса для модели нет. */
+  costUsd: number | null
 }
 
 /**
@@ -1165,6 +1173,14 @@ export interface ContextWarning {
   /** `notice` — стоит знать, `problem` — почти наверняка не то, что нужно. */
   level: 'notice' | 'problem'
   text: string
+}
+
+/** Именованный набор выключенных источников контекста. */
+export interface ContextPreset {
+  id: string
+  name: string
+  /** id выключенных пунктов; остальные считаются включёнными. */
+  disabled: string[]
 }
 
 /** Запись журнала контекста: кто, когда и какой источник включил или выключил. */
@@ -1240,7 +1256,8 @@ export const DEFAULT_SETTINGS: Settings = {
   generatedFilesTtlDays: 30,
   personalization: DEFAULT_PERSONALIZATION,
   chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item })),
-  loginNewDeviceEmails: true
+  loginNewDeviceEmails: true,
+  contextPresets: []
 }
 
 /**
@@ -1279,6 +1296,18 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
       .map((item) => ({ ...item, title: String(item.title ?? ''), text: String(item.text ?? ''), enabled: item.enabled !== false }))
   }
   if (input.chatInstructions !== undefined) patch.chatInstructions = normalizeChatInstructions(input.chatInstructions)
+  // Пресеты контекста: имя и список id. Приводим к контракту здесь, иначе мусор
+  // осядет в записи настроек навсегда (она мержится, а не заменяется).
+  if (Array.isArray(input.contextPresets)) {
+    patch.contextPresets = (input.contextPresets as unknown[])
+      .filter((item): item is ContextPreset => typeof item === 'object' && item !== null && typeof (item as ContextPreset).id === 'string')
+      .map((item) => ({
+        id: item.id,
+        name: String(item.name ?? '').trim().slice(0, 60) || 'Без названия',
+        disabled: Array.isArray(item.disabled) ? item.disabled.filter((entry): entry is string => typeof entry === 'string') : []
+      }))
+      .slice(0, 20)
+  }
   if (typeof input.personalization === 'object' && input.personalization !== null) patch.personalization = input.personalization
   return patch as Partial<Settings>
 }

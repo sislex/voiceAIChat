@@ -215,6 +215,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   ]
   // Рост контекста: размеры промптов последних ходов. Отвечает на «почему стало
   // дороже» — из meta.request, без досчёта.
+  const prices = db.listModelPrices()
   const turnSizes: ContextTurnSize[] = [...messages]
     .reverse()
     .filter((message) => message.role === 'ai' && message.meta?.request)
@@ -226,7 +227,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         model: info.model,
         chars: info.promptChars,
         approxTokens: approxTokens(info.promptChars),
-        resumed: info.resumed
+        resumed: info.resumed,
+        costUsd: promptCostUsd(info.provider, info.model, approxTokens(info.promptChars), prices)
       }
     })
 
@@ -288,6 +290,16 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     now
   })
   const previewText = previewBlocks.map((block) => block.text).join('\n\n')
+  // Всё выключено: модель получит только историю и сообщение. Это законный
+  // режим (отладка «а что она сама умеет»), но случайно в него попадают чаще.
+  if (!previewBlocks.length && [...disabled].some((id) => isContextToggleable(id))) {
+    warnings.push({
+      itemId: null,
+      level: 'notice',
+      text: 'Своих блоков сервер не добавит: выключено всё, что можно. Модель получит только историю разговора и ваше сообщение.'
+    })
+    warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+  }
   // Размер: у движков контекст не бесконечный, и «почему модель забыла начало
   // разговора» чаще всего про объём. Порог мягкий — это замечание, не запрет.
   if (approxTokens(previewText.length) > CONTEXT_PREVIEW_TOKENS_NOTICE) {
@@ -321,7 +333,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       text: previewText,
       chars: previewText.length,
       approxTokens: promptBlock([], '', previewText).approxTokens,
-      costUsd: promptCostUsd(provider, model, approxTokens(previewText.length), db.listModelPrices()),
+      costUsd: promptCostUsd(provider, model, approxTokens(previewText.length), prices),
       omitted: [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
         resumeId

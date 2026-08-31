@@ -85,8 +85,8 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       kbSections: ['Соглашения / Гейт']
     },
     turnSizes: [
-      { at: '12:41', model: 'opus', chars: 420, approxTokens: 105, resumed: true },
-      { at: '12:20', model: 'opus', chars: 260, approxTokens: 65, resumed: false }
+      { at: '12:41', model: 'opus', chars: 420, approxTokens: 105, resumed: true, costUsd: 0.00157 },
+      { at: '12:20', model: 'opus', chars: 260, approxTokens: 65, resumed: false, costUsd: 0.00097 }
     ],
     changes: [
       { at: new Date('2026-08-31T12:35:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: false },
