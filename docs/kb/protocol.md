@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-31
-checked: ce48e235
+checked: ba8ba24e
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -309,6 +309,11 @@ Health-check — обычный REST-запрос, а не отдельный WS
 ## Administration frontend contract
 
 `@voicechat/admin-app` не меняет REST, WebSocket или runner protocol. Публичный `AdminClient` покрывает существующие admin users/role/block/access, read-only machines/history/messages, user/global usage, LLM engines/health и model prices. Host adapter использует прежние `RendererApi` bridges; единственное добавленное имя bridge — `admin:updateUserRole`, которое вызывает уже существующий `PATCH /api/admin/users/:name`. Маршруты Administration строятся и разбираются пакетом для `#/users`, пользователя и вкладок overview/access/machines/usage/history, а также engines/prices/project-types/system. Выборка списка (поиск, роль, статус, порядок) живёт в строке запроса адреса: `#/users?q=&role=&state=&sort=&asc=1`.
+
+`GET /api/admin/security` принимает `group=auth|account|machines` — разбиение
+живёт в контракте (`securityGroup`, `filterSecurityGroup` в `packages/shared/src/admin.ts`),
+поэтому клиенту не нужно тянуть двести событий ради трёх. `GET /api/admin/users/usage-summary`
+принимает `users=a,b,c` — сводку можно сузить до тех, кто виден на экране.
 
 `GET /api/admin/users` не содержит машин: там только счётчики `machinesTotal` и
 `machinesOnline`, а сам список отдаёт `GET /api/admin/users/:name/machines`

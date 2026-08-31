@@ -200,3 +200,13 @@ export function shortUserAgent(userAgent: string): string {
   // «неизвестное устройство» в журнале безопасности хуже сырых символов.
   return parts.length > 0 ? parts.join(' · ') : userAgent.slice(0, 40)
 }
+
+/**
+ * Изменение расхода к прошлому периоду: доля со знаком либо `null`, когда
+ * сравнивать не с чем. Рост с нуля процентом не выражается — там «впервые».
+ */
+export function spendTrend(current: number, previous: number | null | undefined): { share: number; up: boolean } | null {
+  if (previous === null || previous === undefined || previous <= 0) return null
+  const share = (current - previous) / previous
+  return { share: Math.abs(share), up: share >= 0 }
+}

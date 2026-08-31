@@ -113,3 +113,32 @@ export const LIST_PAGE = 200
 export function pageUsers<T>(users: readonly T[], shown: number): { visible: T[]; rest: number } {
   return { visible: users.slice(0, shown), rest: Math.max(0, users.length - shown) }
 }
+
+/** Экранирование поля CSV: кавычки удваиваются, поле берётся в кавычки. */
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+/**
+ * Список людей в CSV — то, что уносят в таблицу для сверки бюджета или аудита
+ * доступов. Берётся ровно текущая выборка: выгружать «всех», когда на экране
+ * фильтр, значит отдать не тот список, который человек видел.
+ */
+export function usersToCsv(
+  users: readonly AdminUserInfo[],
+  summary: readonly UserUsageSummary[],
+  now: number,
+  formatMoment: (at: number | null | undefined) => string
+): string {
+  const header = ['Логин', 'Роль', 'Состояние', 'Последняя активность', 'Машин', 'Разговоров', 'Расход за месяц']
+  const rows = users.map((user) => [
+    user.name,
+    user.role,
+    user.blocked ? 'заблокирован' : isActive(user, now) ? 'активен' : 'не в сети',
+    formatMoment(user.lastSeenAt),
+    String(user.machinesTotal ?? user.agents?.length ?? 0),
+    String(user.conversationCount),
+    userSpend(user.name, summary).toFixed(2)
+  ])
+  return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n')
+}

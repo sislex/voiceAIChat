@@ -77,7 +77,7 @@ export interface AdminActions {
   selectAdminUser(name: string): Promise<void>
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
   loadAdminSessions(): Promise<SessionInfo[]>
-  loadAdminSecurity(limit?: number): Promise<void>
+  loadAdminSecurity(limit?: number, group?: string): Promise<void>
   loadAdminInvites(): Promise<void>
   loadAdminSignup(): Promise<void>
   setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<void>
@@ -161,9 +161,11 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       // сессию не заставляет сервер пересчитывать её заново.
       const summaryKey = `\u0000summary:${from}`
       const cachedSummary = loaded.has(summaryKey) ? getState().adminUsageSummary : null
+      // Сводка расхода — необязательная часть экрана: её отказ не должен
+      // оставлять администратора без списка людей.
       const [adminUsers, adminUsageSummary] = await Promise.all([
         client.listUsers(),
-        cachedSummary ?? client.usageSummary({ from, to })
+        cachedSummary ?? client.usageSummary({ from, to }).catch(() => [])
       ])
       if (!cachedSummary) loaded.add(summaryKey)
       // Метрики машин переехали на страницу «Система»: список людей знает
@@ -380,20 +382,20 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
    * все двести. Разные лимиты — разные ключи кэша, поэтому переход с обзора на
    * историю догружает полный список, а обратный возврат уже ничего не грузит.
    */
-  async function loadAdminSecurity(limit = 200): Promise<void> {
+  async function loadAdminSecurity(limit = 200, group = 'all'): Promise<void> {
     const name = getState().adminSelected
     if (!name || !client.securityEvents) return
-    const key = `${name}\u0000security:${limit}`
+    const key = `${name}\u0000security:${limit}:${group}`
     if (loaded.has(key)) return
     const request = ++tabRequest
     try {
-      const events = await client.securityEvents({ user: name, limit })
+      const events = await client.securityEvents({ user: name, limit, ...(group !== 'all' ? { group } : {}) })
       if (request !== tabRequest || getState().adminSelected !== name) return
       loaded.add(key)
       setState({ adminSecurity: events, adminTabError: null })
     } catch (err) {
       setState({ adminTabError: err instanceof Error ? err.message : String(err) })
-      fail(err, () => void loadAdminSecurity(limit))
+      fail(err, () => void loadAdminSecurity(limit, group))
     }
   }
 

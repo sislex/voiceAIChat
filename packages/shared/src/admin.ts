@@ -259,6 +259,35 @@ export interface SignupConfig { enabled: boolean; role: UserRole; mailConfigured
 /** Инвайт на саморегистрацию (auth-roadmap п.8): роль, срок, лимит использований. */
 export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string; email: string | null; emailedAt: number | null }
 
+/**
+ * Группы событий журнала: вход и сессии, изменения учётки, машины. Живут в
+ * контракте, а не в UI, потому что по ним фильтрует и сервер — иначе клиент
+ * получал бы двести событий, чтобы показать три.
+ */
+export type SecurityGroup = 'all' | 'auth' | 'account' | 'machines'
+
+const SECURITY_AUTH = new Set(['login', 'login_failed', 'login_locked', 'login_2fa_failed', 'login_new_device', 'logout', 'logout_all', 'session_revoked', 'session_evicted', 'session_panic', 'session_trusted', 'session_untrusted', 'session_renamed'])
+const SECURITY_MACHINES = new Set(['agent_connected', 'agent_rejected', 'agent_token_rotated', 'agent_token_revoked'])
+
+/** К какой группе относится событие; всё, что не вход и не машины, — учётка. */
+export function securityGroup(type: string): Exclude<SecurityGroup, 'all'> {
+  if (SECURITY_AUTH.has(type)) return 'auth'
+  if (SECURITY_MACHINES.has(type)) return 'machines'
+  return 'account'
+}
+
+/** Тревожное событие: неудачные входы, замки, блокировки, отказы агентам. */
+export function isAlarmingSecurityEvent(type: string): boolean {
+  return /failed|locked|blocked|rejected|panic/.test(type)
+}
+
+/** Отбор событий по группе; неизвестная или пустая группа — без фильтра. */
+export function filterSecurityGroup<T extends { type: string }>(events: T[], group: string | undefined): T[] {
+  return group === 'auth' || group === 'account' || group === 'machines'
+    ? events.filter((event) => securityGroup(event.type) === group)
+    : events
+}
+
 /** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
 export type SecurityEventType = 'agent_connected' | 'agent_rejected' | 'agent_token_rotated' | 'agent_token_revoked' | 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'project_invited' | 'project_invite_accepted' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'session_renamed' | 'session_trusted' | 'session_untrusted' | 'session_evicted' | 'session_panic' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
 export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }

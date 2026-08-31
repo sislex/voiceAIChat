@@ -11,6 +11,7 @@ import {
   FULL_ACCESS,
   ProfilePanel,
   READ_ONLY,
+  formatAgo,
   securityLabel,
   type ProfileAccessDenial,
   type ProfileProvider,
@@ -29,7 +30,7 @@ import type { LoadStatus } from '../loadState'
 import { UsersList } from './UsersList'
 import { UserMetrics } from './UserMetrics'
 import { CreateUserDialog } from './CreateUserDialog'
-import { usersMetrics, type UsersFilter } from './usersModel'
+import { filterUsers, usersMetrics, usersToCsv, type UsersFilter } from './usersModel'
 import type { AdminRoute, AdminUsersQuery } from '../routes'
 
 const PROVIDERS: ProfileProvider[] = [
@@ -107,6 +108,9 @@ export interface UsersPageProps {
   list?: AdminUsersQuery
   period?: ProfilePeriod
   onSelectPeriod?: (period: ProfilePeriod) => void
+  /** Группа событий журнала: фильтрует сервер. */
+  securityGroup?: 'all' | 'auth' | 'account' | 'machines'
+  onChangeSecurityGroup?: (group: 'all' | 'auth' | 'account' | 'machines') => void
   usage: UsageReport | null
   /** Машины выбранного человека грузятся отдельно от списка. */
   userMachines?: import('@shared/admin').AdminAgentInfo[] | null
@@ -151,6 +155,8 @@ export function UsersPage({
   list,
   period = 'month',
   onSelectPeriod,
+  securityGroup = 'all',
+  onChangeSecurityGroup,
   usage,
   userMachines = null,
   usageLoading = false,
@@ -233,6 +239,15 @@ export function UsersPage({
         <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'prices' })}>Цены моделей</Button>
         <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'engines' })}>Движки</Button>
         <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'system' })}>Система</Button>
+        {onExportCsv && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onExportCsv('users.csv', usersToCsv(filterUsers(users, filter, now, usageSummary), usageSummary, now, (at) => formatAgo(at, now)))}
+          >
+            Экспорт CSV
+          </Button>
+        )}
         {isAdmin && <Button size="sm" variant="primary" onClick={() => setCreating('')}>＋ Добавить</Button>}
       </PageHeader>
 
@@ -268,6 +283,8 @@ export function UsersPage({
                 {...(onRetryTab ? { onRetry: onRetryTab } : {})}
                 period={period}
                 {...(onSelectPeriod ? { onSelectPeriod } : {})}
+                securityGroup={securityGroup}
+                {...(onChangeSecurityGroup ? { onChangeSecurityGroup } : {})}
                 events={toProfileEvents(security)}
                 tab={tab}
                 {...(latestAgentVersion ? { latestAgentVersion } : {})}

@@ -27,6 +27,7 @@ import { MachinesTab } from './tabs/MachinesTab'
 import { UsageTab } from './tabs/UsageTab'
 import { HistoryTab } from './tabs/HistoryTab'
 import { BlockDialog } from './BlockDialog'
+import type { SecurityGroup } from './securityLabels'
 import { accessSummary } from './model'
 import { PERIOD_LABEL } from './format'
 
@@ -43,6 +44,9 @@ export interface ProfilePanelProps extends ProfileCallbacks {
   events: readonly ProfileSecurityEvent[] | null
   /** Расход ещё грузится: показываем скелетон вместо пустого экрана. */
   usageLoading?: boolean
+  /** Группа событий журнала: фильтрует сервер, а не клиент. */
+  securityGroup?: SecurityGroup
+  onChangeSecurityGroup?: (group: SecurityGroup) => void
   /** Ошибка загрузки данных вкладки — видна в самой вкладке, а не только тостом. */
   error?: string | null
   onRetry?: () => void
@@ -80,6 +84,8 @@ export function ProfilePanel({
   period = 'month',
   events,
   usageLoading = false,
+  securityGroup = 'all',
+  onChangeSecurityGroup,
   error = null,
   onRetry,
   conversations = [],
@@ -191,7 +197,13 @@ export function ProfilePanel({
         )}
         {active === 'history' && (
           <>
-            <HistoryTab events={events} userName={user.name} {...(onExportCsv ? { onExportCsv } : {})} />
+            <HistoryTab
+              events={events}
+              userName={user.name}
+              group={securityGroup}
+              {...(onChangeSecurityGroup ? { onChangeGroup: onChangeSecurityGroup } : {})}
+              {...(onExportCsv ? { onExportCsv } : {})}
+            />
             {historySlot}
           </>
         )}
@@ -202,6 +214,8 @@ export function ProfilePanel({
         title="Есть несохранённые изменения"
         hint={`Настройки доступа: ${summary.allowed} разрешено, ${summary.denied} запрещено`}
       >
+        {/* Отмена возвращает права сервера, а не предыдущую правку черновика:
+            «отменить» человек читает как «вернуть как было», а не «шаг назад». */}
         <Button size="sm" onClick={() => setDraft(null)}>Отменить</Button>
         <Button
           size="sm"

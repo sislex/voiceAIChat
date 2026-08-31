@@ -188,12 +188,13 @@ describe('ProfilePanel — использование', () => {
 })
 
 describe('ProfilePanel — журнал', () => {
-  it('фильтр по группе оставляет только свои события', async () => {
-    setup({ tab: 'history' })
+  it('смена группы уходит наружу: фильтрует сервер, а не клиент', async () => {
+    const onChangeSecurityGroup = vi.fn()
+    setup({ tab: 'history', onChangeSecurityGroup })
     await userEvent.selectOptions(screen.getByLabelText('Тип событий'), 'machines')
-    const list = screen.getByTestId('history-tab')
-    expect(list).toHaveTextContent('Агент подключился')
-    expect(list).not.toHaveTextContent('Пароль изменён')
+    expect(onChangeSecurityGroup).toHaveBeenCalledWith('machines')
+    // Список не режется на клиенте: он показывает ровно то, что прислал сервер.
+    expect(screen.getByTestId('history-tab')).toHaveTextContent('Пароль изменён')
   })
 
   it('экспорт отдаёт CSV хосту вместе с именем файла', async () => {

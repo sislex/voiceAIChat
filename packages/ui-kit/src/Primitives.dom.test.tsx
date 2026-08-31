@@ -27,6 +27,14 @@ describe('Avatar', () => {
     }
   })
 
+  it('фотография заменяет инициалы и не дублирует имя для скринридера', () => {
+    render(<Avatar username="marina" photoUrl="https://example.test/marina.png" testId="ava-photo" />)
+    const image = screen.getByTestId('ava-photo').querySelector('img')!
+    expect(image).toHaveAttribute('src', 'https://example.test/marina.png')
+    expect(image).toHaveAttribute('alt', '')
+    expect(screen.getByTestId('ava-photo')).not.toHaveTextContent('MA')
+  })
+
   it('рисует круг с инициалами и подписью-подсказкой', () => {
     render(<Avatar username="marina" testId="ava" />)
     expect(screen.getByTestId('ava')).toHaveTextContent('MA')

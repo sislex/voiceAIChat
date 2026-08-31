@@ -357,7 +357,7 @@ export interface IpcInvokeMap {
   'admin:userSessions': { arg: { name: string }; result: { sessions: SessionInfo[] } }
   'admin:revokeSession': { arg: { sid: string }; result: { ok: true } }
   /** Журнал безопасности (auth-roadmap п.7). */
-  'admin:securityEvents': { arg: { user?: string; limit?: number }; result: { events: SecurityEvent[] } }
+  'admin:securityEvents': { arg: { user?: string; limit?: number; group?: string }; result: { events: SecurityEvent[] } }
   /** Инвайты (auth-roadmap п.8). */
   'admin:invites': { arg: void; result: { invites: InviteInfo[] } }
   'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }; result: InviteInfo }

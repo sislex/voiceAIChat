@@ -87,6 +87,45 @@ export const History: Story = { args: { route: { page: 'users', userName: 'alex'
 /** Пустая установка: ни одного человека, кроме встроенного администратора. */
 export const Empty: Story = { args: { users: [], selected: null, route: { page: 'users' }, usageSummary: [] } }
 
+/** Расход с данными: полосы по моделям, прерванные ходы, сравнение с прошлым периодом. */
+export const UsageWithData: Story = {
+  args: {
+    route: { page: 'users', userName: 'alex', tab: 'usage' },
+    usage: {
+      unit: 'day',
+      conversationId: null,
+      totals: { inputTokens: 6_100_000, outputTokens: 2_300_000, cacheReadTokens: 810_000, costUsd: 184.2, costFromPrices: 171.4, messages: 1284, interrupted: 17 },
+      byModel: [
+        { model: 'claude-opus-4.1', inputTokens: 3_100_000, outputTokens: 1_200_000, cacheReadTokens: 0, costUsd: 96.4, messages: 640 },
+        { model: 'gpt-5.2-codex', inputTokens: 2_100_000, outputTokens: 800_000, cacheReadTokens: 0, costUsd: 58.2, messages: 420 },
+        { model: 'claude-sonnet-4', inputTokens: 900_000, outputTokens: 300_000, cacheReadTokens: 0, costUsd: 29.6, messages: 224 }
+      ],
+      byBucket: Array.from({ length: 12 }, (_, index) => ({
+        bucket: `2026-08-${String(index + 1).padStart(2, '0')}`,
+        inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, messages: 0,
+        costUsd: Number((4 + Math.sin(index) * 3 + index * 0.6).toFixed(2))
+      })),
+      byConversation: []
+    }
+  }
+}
+
+/** Много машин у одного человека: список карточек и версии агентов. */
+export const ManyMachines: Story = {
+  args: {
+    route: { page: 'users', userName: 'alex', tab: 'machines' },
+    userMachines: Array.from({ length: 9 }, (_, index) => ({
+      id: `m${index}`,
+      name: `Машина ${index + 1}`,
+      online: index % 3 !== 0,
+      createdAt: 1,
+      lastSeen: NOW - index * 3_600_000,
+      ...(index % 3 !== 0 ? { version: index % 2 === 0 ? '2.7.4' : '2.8.1' } : {}),
+      ...(index % 3 !== 0 ? { telemetry: { os: { platform: index % 2 === 0 ? 'darwin' : 'linux', release: '15.6' } } as never } : {})
+    }))
+  }
+}
+
 /** Сотни учёток: список показывает первую страницу и предлагает догрузить. */
 export const ManyUsers: Story = {
   args: {

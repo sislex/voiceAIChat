@@ -28,7 +28,8 @@ import {
   type UserLlmAccess,
   CLAUDE_MODELS,
   CODEX_MODELS,
-  DEFAULT_OWNED_PROJECT_LIMIT
+  DEFAULT_OWNED_PROJECT_LIMIT,
+  filterSecurityGroup
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
@@ -325,7 +326,12 @@ export function registerAdminRoutes(
     return db.deleteInvite(req.params.token) ? { ok: true } : reply.code(404).send({ error: 'not found' })
   })
   // Журнал безопасности (auth-roadmap п.7).
-  app.get<{ Querystring: { user?: string; limit?: string } }>(REST.adminSecurity, guard, async (req) => ({ events: db.listSecurityEvents({ user: req.query.user || undefined, limit: req.query.limit ? Number(req.query.limit) : undefined }) }))
+  app.get<{ Querystring: { user?: string; limit?: string; group?: string } }>(REST.adminSecurity, guard, async (req) => ({
+    events: filterSecurityGroup(
+      db.listSecurityEvents({ user: req.query.user || undefined, limit: req.query.limit ? Number(req.query.limit) : undefined }),
+      req.query.group
+    )
+  }))
   app.get(REST.adminMakeStats, guard, async (_req, reply) => {
     if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
     return makeStats()
@@ -457,12 +463,16 @@ export function registerAdminRoutes(
 
   // Агрегаты строятся одним запросом к БД, а не вызовом usageReport для каждого
   // пользователя: это таблица дашборда, а не набор персональных отчётов.
-  app.get<{ Querystring: { from?: string; to?: string } }>(REST.adminUsersUsageSummary, guard, async (req, reply) => {
+  app.get<{ Querystring: { from?: string; to?: string; users?: string } }>(REST.adminUsersUsageSummary, guard, async (req, reply) => {
     const parse = (value: string | undefined): number | undefined => value === undefined || value === '' ? undefined : Number(value)
     const from = parse(req.query.from)
     const to = parse(req.query.to)
     if (!Number.isFinite(from ?? 0) && from !== undefined || !Number.isFinite(to ?? 0) && to !== undefined) return reply.code(400).send({ error: 'from and to must be timestamps' })
-    return db.usageSummary(from, to)
+    // Список имён сужает ответ до тех, кого видно на экране: полная сводка на
+    // установке с сотнями учёток считается ради четырёх строк метрик.
+    const only = (req.query.users ?? '').split(',').map((name) => name.trim()).filter(Boolean)
+    const summary = db.usageSummary(from, to)
+    return only.length > 0 ? summary.filter((row) => only.includes(row.name)) : summary
   })
 
   app.post<{ Body: { name?: string; password?: string; role?: string; mustChangePassword?: boolean } }>(

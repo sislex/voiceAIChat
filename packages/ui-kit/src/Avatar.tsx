@@ -58,6 +58,12 @@ export function avatarColor(username: string): string {
 
 export interface AvatarProps {
   username: string
+  /**
+   * Фотография человека, если она когда-нибудь появится в профиле. Пока её нет
+   * нигде — контракт готов, а поведение по умолчанию прежнее: инициалы на
+   * сгенерированном фоне.
+   */
+  photoUrl?: string | null
   /** Сторона круга в пикселях; шрифт подбирается от неё. */
   size?: number
   /** Дополнительный класс потребителя — доска метит им свои кружки. */
@@ -66,7 +72,7 @@ export interface AvatarProps {
 }
 
 /** Аватар: цветной круг с инициалами. */
-export function Avatar({ username, size = 24, className, testId }: AvatarProps): JSX.Element {
+export function Avatar({ username, size = 24, photoUrl, className, testId }: AvatarProps): JSX.Element {
   return (
     <span
       className={['vc-avatar', className].filter(Boolean).join(' ')}
@@ -74,7 +80,11 @@ export function Avatar({ username, size = 24, className, testId }: AvatarProps):
       style={{ width: size, height: size, background: avatarColor(username), fontSize: Math.round(size * 0.42) }}
       {...(testId ? { 'data-testid': testId } : {})}
     >
-      {initials(username)}
+      {photoUrl
+        // Подпись у картинки пустая: имя уже есть рядом и в title, а дубль
+        // заставил бы скринридер прочитать логин дважды подряд.
+        ? <img className="vc-avatar__photo" src={photoUrl} alt="" width={size} height={size} />
+        : initials(username)}
     </span>
   )
 }

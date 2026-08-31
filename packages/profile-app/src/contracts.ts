@@ -83,6 +83,8 @@ export interface ProfileUsage {
   interrupted?: number
   byModel: ProfileModelSpend[]
   byBucket: ProfileSpendPoint[]
+  /** Расход за предыдущий такой же период; нет данных — сравнивать не с чем. */
+  previousSpendUsd?: number | null
 }
 
 /** Разговор — вторая половина ленты активности. */
