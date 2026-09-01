@@ -783,7 +783,7 @@ export function ChatColumn({
                   <div className="bub">
                     {/* Копировать ответ — той же иконкой и в том же углу, что копия кода. */}
                     <button
-                      className="copymsg"
+                      className={`copymsg${copiedId === m.id ? ' copymsg--copied' : ''}`}
                       aria-label="Копировать ответ"
                       title="Копировать ответ"
                       onClick={() => copyMessage(m)}
@@ -857,7 +857,7 @@ export function ChatColumn({
                 ) : (
                   <div className="bub">
                     <button
-                      className="copymsg"
+                      className={`copymsg${copiedId === m.id ? ' copymsg--copied' : ''}`}
                       aria-label="Копировать вопрос"
                       title="Копировать вопрос"
                       onClick={() => copyMessage(m)}
