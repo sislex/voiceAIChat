@@ -98,10 +98,13 @@ describe('ChatColumn — копирование сообщений', () => {
       fireEvent.click(buttons[0]!)
       await act(async () => {})
       expect(buttons[0]).toHaveTextContent('✓')
+      expect(buttons[0]).toHaveClass('copymsg--copied')
       expect(buttons[1]).toHaveTextContent('⧉')
+      expect(buttons[1]).not.toHaveClass('copymsg--copied')
 
       act(() => vi.advanceTimersByTime(1500))
       expect(buttons[0]).toHaveTextContent('⧉')
+      expect(buttons[0]).not.toHaveClass('copymsg--copied')
       expect(buttons[1]).toHaveTextContent('⧉')
     } finally {
       vi.useRealTimers()
@@ -132,6 +135,7 @@ describe('ChatColumn — копирование сообщений', () => {
     await userEvent.click(button)
     expect(execCommand).toHaveBeenCalledWith('copy')
     expect(button).toHaveTextContent('⧉')
+    expect(button).not.toHaveClass('copymsg--copied')
   })
 })
 

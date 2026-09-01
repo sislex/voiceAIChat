@@ -103,6 +103,16 @@ type Story = StoryObj<typeof ChatColumn>
 /** Обычная беседа: свои реплики слева, ответы модели с подписями и мета-иконкой. */
 export const Conversation: Story = {}
 
+/** Успешное копирование вопроса: видимое подтверждение закреплено для visual-check. */
+export const UserMessageCopied: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole('button', { name: 'Копировать вопрос' })
+    await userEvent.click(button)
+    await expect(button).toHaveClass('copymsg--copied')
+  }
+}
+
 /** Пустая беседа: подсказка объясняет следующий шаг, а не констатирует пустоту. */
 export const EmptyConversation: Story = { args: { messages: [], onExport: undefined } }
 
@@ -216,7 +226,16 @@ export const LongThread: Story = { args: { messages: makeLongThread() } }
 
 /** Телефон: сайдбар выдвижной, поэтому в шапке появляется ☰. */
 export const MobileViewport: Story = {
-  args: { onToggleSidebar: fn() },
+  args: {
+    onToggleSidebar: fn(),
+    messages: [
+      makeUserMessage({
+        id: 'u-mobile-copy',
+        text: 'Проверь перенос длинной ссылки: https://example.test/very/long/unbroken/path/that/must/not/escape/the/message/bubble?query=mobile-copy-button'
+      }),
+      makeAiMessage({ id: 'a-mobile-copy', text: 'Кнопка остаётся внутри пузыря, а текст переносится.' })
+    ]
+  },
   parameters: { viewport: { defaultViewport: 'mobile2' } }
 }
 
