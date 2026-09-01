@@ -1157,6 +1157,31 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('контекст Make попадает в предпросмотр и выключается тумблером', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make' } })).json()
+    const snap = async (): Promise<{ blocks: Array<{ title: string; text: string }>; omitted: string[]; item?: { enabled: boolean; includedInNextTurn: boolean } }> => {
+      const value = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return {
+        blocks: value.promptPreview.blocks,
+        omitted: value.promptPreview.omitted,
+        item: value.groups
+          .flatMap((group: { items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean }> }) => group.items)
+          .find((entry: { id: string }) => entry.id === 'make-context')
+      }
+    }
+    const before = await snap()
+    // Пункт есть всегда, а блок — только когда мастерская что-то отдала. В
+    // тестовом сервере `makeContext` не подключён, поэтому проверяем пункт и
+    // честное описание, а не выдуманный текст.
+    expect(before.item).toBeDefined()
+    expect(before.blocks.some((block) => block.title === 'Контекст проекта Make')).toBe(false)
+    // Динамика хода перечислена прямо: человек видит её следы в ответах.
+    expect(before.omitted.some((line) => line.includes('Режим Make'))).toBe(true)
+
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/make-context`, payload: { enabled: false } })
+    expect((await snap()).item?.enabled).toBe(false)
+  })
+
   it('контекст задачи попадает в предпросмотр и выключается отдельным тумблером', async () => {
     const project = db.createProject(U, { name: 'Проект задач' })
     const board = db.getBoard(U, project.id)!
