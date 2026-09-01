@@ -1,4 +1,4 @@
-import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseStepKind, type ReleaseTimeouts } from '@voicechat/shared'
+import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
 export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; gitUrl:string; prepareCheckout:boolean; limits?:ReleaseTimeouts }

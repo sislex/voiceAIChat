@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it } from 'vitest'
 import { sessionStoreContract, createContractClock } from '@voicechat/sessions-core/testing'
 import { VoiceChatDb } from '../db/database.js'
 import { createDbSessionStore } from './sessionStore.js'

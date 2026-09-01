@@ -752,7 +752,7 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
         fsMkdir: async () => ({}),
         fsWrite: async () => ({})
       },
-      readServerFile: async (userId, path) => path.startsWith(dir) ? { name: 'pic.png', dataBase64: readFileSync(path).toString('base64') } : null,
+      readServerFile: async (_userId, path) => path.startsWith(dir) ? { name: 'pic.png', dataBase64: readFileSync(path).toString('base64') } : null,
       mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret'
     })
 
