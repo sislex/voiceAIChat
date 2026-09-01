@@ -838,6 +838,8 @@
   background: #edf1fb;
   border: 1px solid #dce4f6;
   border-bottom-right-radius: 4px;
+  /* Кнопка копирования всегда видна у вопроса, поэтому тексту нужен свой слот. */
+  padding-right: 52px;
 }
 .ai .bub {
   background: var(--surface);
@@ -7878,29 +7880,60 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    раскладки. Блоки возвращены в том виде, в каком были до мержа; правила
    инспектора контекста (`.context-*`) намеренно НЕ возвращены — их разметку
    убрал коммит «simplify context inspector». */
-/* Копировать ответ — та же иконка и тот же угол, что у копии кода в блоке кода. */
+/* Копия сообщения: у вопроса действие видно постоянно, у ответа модели —
+   раскрывается наведением/фокусом, как раньше. Интерактивная область 32×32 px
+   остаётся внутри пузыря и не перекрывает зарезервированный справа текст. */
 .copymsg {
   position: absolute;
   top: 6px;
   right: 6px;
   z-index: 1;
-  border: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: var(--surface-hover);
   color: var(--text-dim);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
-  padding: 4px 7px;
-  border-radius: 6px;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity 0.12s, color 0.12s, background-color 0.12s, border-color 0.12s;
 }
+.me .copymsg,
 .ai .bub:hover .copymsg,
-.copymsg:focus-visible {
+.copymsg:focus-visible,
+.copymsg--copied {
   opacity: 1;
+}
+.me .copymsg {
+  color: #38517f;
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(56, 81, 127, 0.24);
 }
 .copymsg:hover {
   color: var(--text);
+  border-color: var(--border);
+  background: var(--surface);
+}
+.copymsg:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.copymsg--copied {
+  color: #147a4b;
+  border-color: currentColor;
+}
+[data-theme='dark'] .me .copymsg {
+  color: #dce6ff;
+  background: rgba(13, 19, 35, 0.72);
+  border-color: rgba(220, 230, 255, 0.38);
+}
+[data-theme='dark'] .copymsg--copied {
+  color: #75e0a7;
 }
 /* Правая группа подвала: озвучить/удалить и крайним правым — время окончания. */
 .mfoot-right {
