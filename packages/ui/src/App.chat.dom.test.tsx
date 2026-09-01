@@ -11,6 +11,7 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 // можно скопировать и открыть заново. Между тестами hash сбрасывает setup.ts.
 afterEach(() => {
   window.location.hash = ''
+  vi.unstubAllGlobals()
 })
 
 interface Seeded {
@@ -38,6 +39,42 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
 
     expect(await screen.findByText('Погода в июле?')).toBeInTheDocument()
     await waitFor(() => expect(window.location.hash).toBe(`#/chat/${lisbon}`))
+  })
+
+  it('на мобильной ширине показывает centered-композер в пустом чате с id и после первой реплики переводит его в docked', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn()
+    })))
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const conversation = await api['conversations:create']({ title: 'Новый разговор' })
+    const addMessage = vi.spyOn(api, 'messages:add')
+    window.location.hash = `#/chat/${conversation.id}`
+
+    render(<App api={api} delays={SLOW} />)
+
+    const composer = await screen.findByRole('textbox', { name: 'Поле ввода сообщения' })
+    expect(composer.closest('.voicebar')).toHaveAttribute('data-layout', 'centered')
+    expect(screen.queryByTestId('composer-expand')).not.toBeInTheDocument()
+
+    await userEvent.type(composer, 'Первое сообщение{enter}')
+
+    await waitFor(() => expect(addMessage).toHaveBeenCalledTimes(1))
+    expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: conversation.id,
+      text: 'Первое сообщение'
+    }))
+    const expand = await screen.findByTestId('composer-expand')
+    expect(screen.queryByRole('textbox', { name: 'Поле ввода сообщения' })).not.toBeInTheDocument()
+    await userEvent.click(expand)
+    expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }).closest('.voicebar')).toHaveAttribute('data-layout', 'docked')
   })
 
   it('загрузка по ссылке открывает чат из адреса, а не самый свежий', async () => {
