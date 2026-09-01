@@ -1,0 +1,25 @@
+appId: com.voiceaichat.login
+productName: Голос·Чат Login
+directories:
+  output: release
+afterPack: scripts/afterPack.cjs
+files:
+  - out/**/*
+  - package.json
+  - '!src/**'
+  - '!**/*.map'
+protocols:
+  - name: VoiceChat Login Enrollment
+    schemes:
+      - voicechat-login
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  identity: null
+dmg:
+  title: Голос·Чат Login
+artifactName: voicechat-login-macos-arm64.${ext}
+npmRebuild: false

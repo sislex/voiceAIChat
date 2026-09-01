@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import App, { openWebReaderWorkspace } from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
 
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }
 
@@ -23,6 +24,8 @@ interface Seeded {
 
 async function seededApi(): Promise<Seeded> {
   const api = createFakeApi([])
+  const availableMachine: AgentInfo = { id: 'test-mac', name: 'Test Mac', online: true, createdAt: 1, lastSeen: 1, policy: DEFAULT_AGENT_POLICY }
+  api['agents:list'] = async () => [availableMachine]
   await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
   const gifts = await api['conversations:create']({ title: 'Идеи для подарка' })
   await api['messages:add']({ conversationId: gifts.id, role: 'u1', text: 'Что подарить?', time: '10:00' })
@@ -30,6 +33,21 @@ async function seededApi(): Promise<Seeded> {
   await api['messages:add']({ conversationId: lisbon.id, role: 'u1', text: 'Погода в июле?', time: '14:02' })
   return { api, gifts: gifts.id, lisbon: lisbon.id }
 }
+
+describe('App — machine-required guard', () => {
+  it('при отсутствии online-машины приостанавливает создание чата и показывает единый диалог', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Текущий чат' })
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Текущий чат')
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    expect(await screen.findByRole('dialog', { name: 'Подключить устройство' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Скачать приложение' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Открыть приложение' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Создать разговор' })).not.toBeInTheDocument()
+  })
+})
 
 describe('App — адрес открытого чата (#/chat/:id)', () => {
   it('загрузка без адреса открывает свежий чат и подставляет его id в URL', async () => {

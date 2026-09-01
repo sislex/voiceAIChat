@@ -2656,6 +2656,45 @@ export class VoiceChatDb {
 
   // ---- Agents (машины для удалённого выполнения команд) ------------------
 
+  /** Выпускает opaque enrollment: в БД хранится только SHA-256, status id не является секретом. */
+  createLoginEnrollment(userId: string, ttlMs: number): { token: string; statusId: string; expiresAt: number } {
+    const token = randomBytes(32).toString('base64url')
+    const statusId = randomUUID()
+    const expiresAt = this.now() + ttlMs
+    this.db.prepare(
+      'INSERT INTO login_enrollments(status_id,token_hash,user_id,expires_at,consumed_at,agent_id,created_at) VALUES(?,?,?,?,NULL,NULL,?)'
+    ).run(statusId, createHash('sha256').update(token).digest('hex'), userId, expiresAt, this.now())
+    return { token, statusId, expiresAt }
+  }
+
+  getLoginEnrollmentStatus(userId: string, statusId: string): { status: 'pending' | 'completed' | 'expired'; agentId?: string; expiresAt: number } | null {
+    const row = this.db.prepare(
+      'SELECT expires_at,consumed_at,agent_id FROM login_enrollments WHERE status_id=? AND user_id=?'
+    ).get(statusId, userId) as { expires_at: number; consumed_at: number | null; agent_id: string | null } | undefined
+    if (!row) return null
+    if (row.consumed_at && row.agent_id) return { status: 'completed', agentId: row.agent_id, expiresAt: row.expires_at }
+    return { status: row.expires_at <= this.now() ? 'expired' : 'pending', expiresAt: row.expires_at }
+  }
+
+  /** Атомарно погашает enrollment, создаёт ровно одну машину и назначает personal default. */
+  redeemLoginEnrollment(token: string, name: string): (AgentCreated & { userId: string }) | null {
+    const tokenHash = createHash('sha256').update(token).digest('hex')
+    return this.db.transaction(() => {
+      const row = this.db.prepare(
+        'SELECT status_id,user_id FROM login_enrollments WHERE token_hash=? AND consumed_at IS NULL AND expires_at>?'
+      ).get(tokenHash, this.now()) as { status_id: string; user_id: string } | undefined
+      if (!row) return null
+      const agent = this.createAgent(row.user_id, name)
+      const consumed = this.db.prepare(
+        'UPDATE login_enrollments SET consumed_at=?,agent_id=? WHERE status_id=? AND consumed_at IS NULL AND expires_at>?'
+      ).run(this.now(), agent.id, row.status_id, this.now())
+      if (consumed.changes !== 1) throw new Error('enrollment already consumed')
+      const settings = this.readSettings(row.user_id)
+      this.saveSettings(row.user_id, { ...settings, defaultAgentId: agent.id })
+      return { ...agent, userId: row.user_id }
+    })()
+  }
+
   /** Создаёт машину-агента пользователя; возвращает токен открытым текстом (раз). */
   createAgent(userId: string, name: string): AgentCreated {
     const id = this.newId()

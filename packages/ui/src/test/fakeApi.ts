@@ -822,6 +822,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       agents.push(agent)
       return { id: agent.id, name, token: `token-${agent.id}` }
     },
+    'loginApplication:artifacts': async ({ platform, arch }) => platform === 'macos' && arch === 'arm64'
+      ? [{ platform: 'macos', arch: 'arm64', available: true, downloadUrl: '/api/login-application/download?platform=macos&arch=arm64' }]
+      : [],
+    'loginApplication:issueEnrollment': async () => ({
+      enrollmentToken: 'enrollment-token', statusId: 'enrollment-status', expiresAt: Date.now() + 120_000,
+      deepLink: 'voicechat-login://enroll?v=1&token=enrollment-token&status=enrollment-status&server=http%3A%2F%2Flocalhost'
+    }),
+    'loginApplication:enrollmentStatus': async () => ({ status: 'pending', expiresAt: Date.now() + 120_000 }),
     'agents:delete': async ({ id }) => {
       const idx = agents.findIndex((a) => a.id === id)
       if (idx >= 0) agents.splice(idx, 1)

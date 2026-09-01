@@ -47,7 +47,8 @@ export const PACKAGES = [
   // их не ставит, и на машине без локального install гейт падал бы на чужой правке
   // UI. Свои гейты у них отдельные (`typecheck:desktop`, `test:desktop` в verify).
   { id: 'desktop', path: 'apps/desktop', prefix: 'apps/desktop', dependsOn: ['shared', 'ui', 'web'], manualGate: true },
-  { id: 'agent-tray', path: 'apps/agent-tray', prefix: 'apps/agent-tray', dependsOn: ['shared'], manualGate: true }
+  { id: 'agent-tray', path: 'apps/agent-tray', prefix: 'apps/agent-tray', dependsOn: ['shared'], manualGate: true },
+  { id: 'login-application', path: 'apps/login-application', prefix: 'apps/login-application', dependsOn: ['agent', 'shared'], manualGate: true }
 ]
 
 const workspacePackages = PACKAGES.filter((pkg) => pkg.workspace)

@@ -28,6 +28,8 @@ import {
   BATCH_OUTPUT_LIMIT,
   type BatchExecItem,
   type BatchExecResult,
+  LOGIN_ENROLLMENT_TTL_MS,
+  loginEnrollmentDeepLink,
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
@@ -51,6 +53,7 @@ const UPDATE_EXEC_TIMEOUT_MS = 30_000
 export interface AppArtifacts {
   agentApp?: string
   desktopApp?: string
+  loginApplicationMacosArm64?: string
 }
 
 /** Отдаёт .dmg на скачивание или 404 с подсказкой, как собрать. */
@@ -419,6 +422,50 @@ export async function registerAgentRoutes(
   app.get(REST.desktopApp, async (_req, reply) =>
     sendDmg(reply, artifacts.desktopApp, 'voicechat-desktop.dmg', 'npm --prefix apps/desktop run dist')
   )
+
+  // Реестр расширяем по platform/arch; на первом этапе доступна только macOS ARM64.
+  app.get<{ Querystring: { platform?: string; arch?: string } }>(REST.loginApplicationArtifacts, async (req) => {
+    const entries = [{
+      platform: 'macos' as const,
+      arch: 'arm64' as const,
+      available: Boolean(artifacts.loginApplicationMacosArm64 && existsSync(artifacts.loginApplicationMacosArm64)),
+      downloadUrl: REST.loginApplicationDownload + '?platform=macos&arch=arm64',
+      filename: 'voicechat-login-macos-arm64.dmg'
+    }]
+    if (!req.query.platform && !req.query.arch) return entries
+    return entries.filter((item) =>
+      (!req.query.platform || item.platform === req.query.platform) &&
+      (!req.query.arch || item.arch === req.query.arch)
+    )
+  })
+  app.get<{ Querystring: { platform?: string; arch?: string } }>(REST.loginApplicationDownload, async (req, reply) => {
+    if (req.query.platform !== 'macos' || req.query.arch !== 'arm64') {
+      return reply.code(404).send({ error: 'Сборка для этой платформы и архитектуры недоступна' })
+    }
+    return sendDmg(reply, artifacts.loginApplicationMacosArm64, 'voicechat-login-macos-arm64.dmg', 'npm --prefix apps/login-application run dist')
+  })
+
+  app.post(REST.loginEnrollmentIssue, async (req) => {
+    const enrollment = db.createLoginEnrollment(uid(req), LOGIN_ENROLLMENT_TTL_MS)
+    return {
+      enrollmentToken: enrollment.token,
+      statusId: enrollment.statusId,
+      expiresAt: enrollment.expiresAt,
+      deepLink: loginEnrollmentDeepLink(enrollment.token, enrollment.statusId, externalBase(req))
+    }
+  })
+  app.get<{ Params: { id: string } }>('/api/login-application/enrollments/:id', async (req, reply) => {
+    const status = db.getLoginEnrollmentStatus(uid(req), req.params.id)
+    return status ?? reply.code(404).send({ error: 'not found' })
+  })
+  app.post<{ Body: { token?: string; name?: string } }>(REST.loginEnrollmentRedeem, async (req, reply) => {
+    const token = req.body?.token?.trim() ?? ''
+    const name = req.body?.name?.trim() ?? ''
+    if (!token || !name) return reply.code(400).send({ error: 'token and name required' })
+    const result = db.redeemLoginEnrollment(token, name)
+    if (!result) return reply.code(409).send({ error: 'Enrollment недействителен, просрочен или уже использован' })
+    return { agentId: result.id, name: result.name, machineToken: result.token, serverUrl: externalBase(req) }
+  })
 
   // Бандл компаньон-агента (.cjs, без токена — настраивается строкой подключения).
   app.get(REST.agentScript, async (_req, reply) => {

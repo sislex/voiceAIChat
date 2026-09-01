@@ -100,6 +100,7 @@ import { buildAdminRoute, parseAdminRoute } from '@shared/adminRoute'
 import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioRecorder'
+import { createMachineRequiredGuard } from './lib/machineRequiredGuard'
 
 /** Подпись устройства для тоста о новом входе: ядро без текстов окна сессий. */
 function deviceLabel(userAgent: string): string {
@@ -893,6 +894,59 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [createChatPath, setCreateChatPath] = useState('')
   const [createChatError, setCreateChatError] = useState<string | null>(null)
   const [createChatSaving, setCreateChatSaving] = useState(false)
+  const [machineConnectOpen, setMachineConnectOpen] = useState(false)
+  const [machineConnectStatus, setMachineConnectStatus] = useState('Подключите устройство, чтобы продолжить действие.')
+  const [machineConnectBusy, setMachineConnectBusy] = useState(false)
+  const machineActionGuard = useRef(createMachineRequiredGuard(() => setMachineConnectOpen(true)))
+  const requireMachine = useCallback((action: () => void): void => {
+    setMachineConnectStatus('Подключите устройство, чтобы продолжить действие.')
+    machineActionGuard.current.require(operations.agents.some((agent) => agent.online), action)
+  }, [operations.agents])
+  const finishPendingMachineAction = useCallback(async (): Promise<boolean> => {
+    const agents = await api['agents:list']()
+    operationsActions.applyAgents(agents)
+    if (!agents.some((agent) => agent.online)) return false
+    setMachineConnectOpen(false)
+    setMachineConnectBusy(false)
+    return machineActionGuard.current.resume()
+  }, [api, operationsActions])
+  const openLoginApplication = useCallback(async (): Promise<void> => {
+    setMachineConnectBusy(true)
+    setMachineConnectStatus('Создаём безопасную одноразовую ссылку…')
+    try {
+      const enrollment = await api['loginApplication:issueEnrollment']()
+      window.location.href = enrollment.deepLink
+      setMachineConnectStatus('Ожидаем подтверждение сервера. Если приложение не открылось, скачайте его.')
+      const deadline = enrollment.expiresAt
+      const poll = async (): Promise<void> => {
+        if (!machineActionGuard.current.pending() || Date.now() >= deadline) {
+          setMachineConnectBusy(false)
+          setMachineConnectStatus('Ссылка истекла или приложение не ответило. Выпустите новую ссылку.')
+          return
+        }
+        try {
+          const status = await api['loginApplication:enrollmentStatus']({ statusId: enrollment.statusId })
+          if (status.status === 'completed') {
+            if (await finishPendingMachineAction()) return
+            setMachineConnectStatus('Устройство зарегистрировано; ожидаем, когда машина появится в сети…')
+          } else if (status.status === 'expired') {
+            setMachineConnectBusy(false)
+            setMachineConnectStatus('Ссылка истекла. Нажмите «Открыть приложение» ещё раз.')
+            return
+          }
+        } catch (error) {
+          setMachineConnectBusy(false)
+          setMachineConnectStatus(error instanceof Error ? error.message : String(error))
+          return
+        }
+        window.setTimeout(() => void poll(), 1000)
+      }
+      window.setTimeout(() => void poll(), 700)
+    } catch (error) {
+      setMachineConnectBusy(false)
+      setMachineConnectStatus(error instanceof Error ? error.message : String(error))
+    }
+  }, [api, finishPendingMachineAction])
   useEffect(() => {
     if (!createChatOpen) return
     void projectsActions.refreshProjects().catch(() => {})
@@ -2023,13 +2077,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             : [])
         ]}
         now={now ? now() : Date.now()}
-        onNew={() => {
+        onNew={() => requireMachine(() => {
           setCreateChatError(null)
           setCreateChatTitle('Новый разговор')
           setCreateChatProjectId('')
           setCreateChatPath('')
           setCreateChatOpen(true)
-        }}
+        })}
         onPick={(id) => {
           setSidebarOpen(false)
           navigate(`/chat/${id}`)
@@ -2121,14 +2175,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           if (projectId) navigate(`/projects/${projectId}`)
         }}
         onDeclineInvitation={(invitation) => { void projectsActions.declineInvitation(invitation.id) }}
-        onCreateProject={() => {
+        onCreateProject={() => requireMachine(() => {
           setSidebarOpen(false)
           setNewProjectOpen(true)
           setProjectQuota(null)
           void api['projects:quota']().then(setProjectQuota).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
           // Каталог типов нужен окну сразу; повторное открытие обновит список.
           void projectsActions.loadProjectTypes()
-        }}
+        })}
         onOpenCommandPalette={() => {
           setSidebarOpen(false)
           setPaletteOpen(true)
@@ -2147,6 +2201,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onDecline={(token) => projectsActions.declineInvitation(token)}
           onDone={() => navigate('/projects')}
         />
+      )}
+      {machineConnectOpen && (
+        <Dialog title="Подключить устройство" onClose={() => {
+          machineActionGuard.current.cancel()
+          setMachineConnectOpen(false)
+          setMachineConnectBusy(false)
+        }} padded>
+          <p>{machineConnectStatus}</p>
+          <div className="dialog-actions">
+            <button type="button" onClick={() => {
+              void api['downloads:url']({ kind: 'login-application-macos-arm64' }).then((url) => { window.location.href = url })
+            }}>Скачать приложение</button>
+            <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
+              {machineConnectBusy ? 'Ожидаем подключение…' : 'Открыть приложение'}
+            </button>
+          </div>
+        </Dialog>
       )}
       {newProjectOpen && (
         <NewProjectDialog

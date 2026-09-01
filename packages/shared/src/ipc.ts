@@ -49,6 +49,7 @@ import type {
   UsageUnit, SecurityEvent, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
+import type { EnrollmentIssued, EnrollmentStatusResult, LoginApplicationArtifact } from './enrollment'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
 import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent, BatchExecResult } from './agentProtocol'
@@ -328,6 +329,9 @@ export interface IpcInvokeMap {
   'agents:registerStorage': { arg: { id: string; rootPath: string }; result: MachineStorage }
   /** Создать машину-агента; токен возвращается один раз. */
   'agents:create': { arg: { name: string }; result: AgentCreated }
+  'loginApplication:artifacts': { arg: { platform: string; arch: string }; result: LoginApplicationArtifact[] }
+  'loginApplication:issueEnrollment': { arg: void; result: EnrollmentIssued }
+  'loginApplication:enrollmentStatus': { arg: { statusId: string }; result: EnrollmentStatusResult }
   /** Удалить машину-агента (отзывает токен, рвёт соединение). */
   'agents:delete': { arg: { id: string }; result: void }
   /** Задать политику возможностей машины. */
@@ -345,7 +349,7 @@ export interface IpcInvokeMap {
   /** Журнал команд машины: новые сверху; q — подстрока команды, source — фильтр источника. */
   'agents:commands': { arg: { id: string; limit?: number; q?: string; source?: MachineCommandSource }; result: MachineCommandRecord[] }
   /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
-  'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
+  'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' | 'login-application-macos-arm64' }; result: string }
   /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
   'agents:connectionString': { arg: { token: string }; result: string }
   /** Проекты Claude Code (~/.claude/projects). */
