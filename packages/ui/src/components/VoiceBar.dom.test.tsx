@@ -100,14 +100,15 @@ describe('VoiceBar — состояния', () => {
     expect(props.onSubmitText).toHaveBeenCalledOnce()
   })
 
-  it('pending подтверждения показывает loader и блокирует повторную отправку', async () => {
+  it('pending операции не блокируют кнопку и Enter', async () => {
     const props = setup('idle', { draft: 'привет', submitPending: true })
     const submit = screen.getByLabelText('Отправить сообщение')
-    expect(submit).toBeDisabled()
-    expect(submit).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByTestId('request-status')).toHaveTextContent('Запрос отправляется…')
+    expect(submit).toBeEnabled()
     await userEvent.click(submit)
-    expect(props.onSubmitText).not.toHaveBeenCalled()
+    expect(props.onSubmitText).toHaveBeenCalledOnce()
+    screen.getByLabelText('Поле ввода сообщения').focus()
+    await userEvent.keyboard('{Enter}')
+    expect(props.onSubmitText).toHaveBeenCalledTimes(2)
   })
 
   it('attach, send и stop имеют единые компактные контейнеры без уменьшения иконок', () => {
