@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-01
-checked: f2d4b823
+checked: e088f12a
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -28,6 +28,11 @@ areas:
   - packages/ui/src/components/ConversationSettings.tsx
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
+  - apps/server/src/mcp/makeMcp.ts
+  - apps/server/src/ci/modelHooks.ts
+  - apps/llm-runner/src/cli/claudeCli.ts
+  - apps/llm-runner/src/cli/codexCli.ts
+  - packages/shared/src/llm.ts
   - packages/shared/src/prompt.ts
   - packages/shared/src/types.ts
   - packages/ui/src/components/ChatColumn.tsx
@@ -215,7 +220,9 @@ workflow в `migrate()` дописывала конвейер разработк
 его собирали двумя копиями. Поэтому же `designs` подкладывает и `getTaskDetail`, и
 `getCiTask`; в снапшоте доски и в ответах create/update поля нет.
 
-**Task-run читает живые файлы связанных Make-проектов через read-only MCP.** `taskMakeSources` в shared группирует `task_designs` по `conversationId`, детерминированно выдаёт `make_design_N` и дедуплицирует `path`; пустой путь означает весь проект, конкретный — только стартовую точку, а не границу чтения. Серверный `buildTaskMakeSources` выпускает короткоживущий непрозрачный scope, а `makeMcp` на каждом запросе повторно проверяет членство пользователя, проект задачи, актуальную связь и проект Make-разговора. Для scoped-запроса MCP публикует только `make_list_files` и `make_read_file`; обычный Make-ассистент по отдельному `makeMcpUrl` сохраняет инструменты записи. Один и тот же билдер используется task-chat, CI model/fix/summary/KB-update и деталями инспектора контекста, поэтому список проектов и стартовых путей совпадает с фактическим запуском.
+**Task-run читает живые файлы всех связанных Make-проектов через независимые read-only MCP-источники.** `taskMakeSources` в `packages/shared/src/projects.ts` группирует актуальные `task_designs` по `conversationId`, сортирует источники с детерминированными именами `make_design_N` и дедуплицирует `path`: пустой путь означает проект целиком, конкретный путь — только стартовую точку, а не границу чтения. `buildTaskMakeSources` в `apps/server/src/mcp/makeMcp.ts` выпускает общий для списка краткоживущий непрозрачный scope и кладёт отдельные endpoint'ы в `LlmRequest.makeSources`; его вызывают task-chat и все модельные ходы CI, включая model/fix/summary/KB-update, даже когда машина выполнения не выбрана. Инспектор контекста использует тот же shared-билдер списка, поэтому показывает те же проекты и стартовые пути, что фактический запуск.
+
+**Scope не заменяет проверку доступа снимком на момент выпуска.** На каждом MCP-запросе `makeMcp` проверяет срок scope, наличие `conversationId` в нём, актуальную задачу пользователя в проекте, сохранённую связь дизайна, принадлежность Make-разговора тому же проекту и право пользователя читать его. Scoped-сервер регистрирует только `make_list_files` и `make_read_file`; CLI Claude явно добавляет в allow-list только эти инструменты каждого именованного источника, а Codex регистрирует каждый endpoint отдельно и получает ту же read-only инструкцию. Обычный Make-ассистент использует отдельный `makeMcpUrl` без task scope и сохраняет инструменты записи.
 
 **Контекст проекта для промпта строит один билдер** —
 `apps/server/src/projects/promptContext.ts`. Его зовут и ход модели (`turns.ts`),
