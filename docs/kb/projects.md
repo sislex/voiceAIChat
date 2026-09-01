@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-31
-checked: 7c27cea1
+updated: 2026-09-01
+checked: f2d4b823
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1508,3 +1508,17 @@ Component QA — `createAutomatedQaRunner` в `apps/server/src/ci/componentQa.ts
 теста. Там же зафиксирована ловушка подготовки: довести задачу до QA-колонки
 нужно по карте переходов (`backlog → preparation → ready → development → …`),
 из `backlog` в `development` напрямую нельзя.
+
+
+## Автопилот ассистента виден и правится в инспекторе контекста
+
+`Conversation.assistantAutonomy` (`auto` | `confirm`) решает на сервере
+(`mcp/kanbanMcp.ts`, `allowMutation`), применяет ли ассистент изменения доски
+сам или спрашивает каждое; необратимое — деплой и удаление — спрашивается
+всегда. Переключатель жил только в шапке панели ассистента, поэтому на вопрос
+«что модель сможет сделать в этом чате» инспектор контекста отвечал неполно.
+
+Теперь это пункт `assistant-autonomy` снимка (только у чатов с проектом: без
+доски автопилоту нечего делать) с правкой прямо из карточки через мост
+`kanbanAssistant:setAutonomy`. Правка доступна не только админу: доска — данные
+проекта, а не безопасность платформы.
