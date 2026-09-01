@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
   sanitizeProjectTestUsers,
-  designPromptLines, type TaskDesignLink
+  designPromptLines, taskMakeSources, type TaskDesignLink
 } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
@@ -338,6 +338,18 @@ describe('designPromptLines', () => {
     path: 'index.html', label: '', createdAt: T0, createdBy: 'alice', ...over
   })
   const preview = (id: string, path: string): string => `/api/preview/make/${id}/${path}`
+
+  it('группирует проекты детерминированно и дедуплицирует стартовые пути', () => {
+    expect(taskMakeSources([
+      link({ conversationId: 'c2', path: 'src/App.tsx' }),
+      link({ conversationId: 'c1', path: '' }),
+      link({ conversationId: 'c2', path: 'src/App.tsx' }),
+      link({ conversationId: 'c2', path: 'index.html' })
+    ])).toEqual([
+      { name: 'make_design_1', conversationId: 'c1', title: 'Проект 1', paths: [''] },
+      { name: 'make_design_2', conversationId: 'c2', title: 'Проект 1', paths: ['index.html', 'src/App.tsx'] }
+    ])
+  })
 
   it('называет страницу и адрес превью, а без пути говорит про проект целиком', () => {
     expect(designPromptLines([link()], preview)).toEqual([

@@ -98,6 +98,26 @@ describe('CodexCli', () => {
     expect(input).toContain('Независимые чтения и поиски объединяй')
   })
 
+  it('регистрирует несколько task Make-источников независимо', async () => {
+    const { child, stdin } = fakeChild()
+    let input = ''
+    stdin.on('data', (chunk) => (input += chunk.toString()))
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send({
+      prompt: 'x', sessionId: null, model: '',
+      makeSources: [
+        { name: 'make_design_1', conversationId: 'c1', paths: [''], mcpUrl: 'http://m/1' },
+        { name: 'make_design_2', conversationId: 'c2', paths: ['src/App.tsx'], mcpUrl: 'http://m/2' }
+      ]
+    }, makeHandlers())
+    const args = argsOf(spawn)
+    expect(args).toContain('mcp_servers.make_design_1.url="http://m/1"')
+    expect(args).toContain('mcp_servers.make_design_2.url="http://m/2"')
+    await tick()
+    expect(input).toContain('проект целиком')
+    expect(input).toContain('src/App.tsx')
+  })
+
   it('projectMachines: другие машины проекта и инструмент machines названы в промпте', async () => {
     const { child, stdin } = fakeChild()
     let input = ''

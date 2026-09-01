@@ -24,6 +24,7 @@ import {
   effectiveChatInstructions,
   instructionsForAssistantKind,
   designPromptLines,
+  taskMakeSources,
   makeDesignPreviewUrl,
   instructionContextId,
   instructionText,
@@ -194,16 +195,17 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const historyText = buildConversationPrompt(messages)
   // Контекст задачи — тот же блок, что уходит в ход: раньше предпросмотр про
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
+  const linkedTask = conversation.taskId && conversation.projectId ? db.getCiTask(userId, conversation.projectId, conversation.taskId) : null
+  const makeSources = taskMakeSources(linkedTask?.designs ?? [])
   const taskContext = (() => {
     if (!conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
     const tc = db.getTaskChatContext(userId, conversationId, isOnline)
     if (!tc) return null
-    const task = conversation.projectId ? db.getCiTask(userId, conversation.projectId, conversation.taskId) : null
     return taskContextBlock({
       context: tc,
-      description: task?.description ?? null,
-      acceptanceCriteria: task?.acceptanceCriteria ?? null,
-      designLines: task?.designs?.length ? designPromptLines(task.designs, makeDesignPreviewUrl) : []
+      description: linkedTask?.description ?? null,
+      acceptanceCriteria: linkedTask?.acceptanceCriteria ?? null,
+      designLines: linkedTask?.designs?.length ? designPromptLines(linkedTask.designs, makeDesignPreviewUrl) : []
     })
   })()
 
@@ -339,7 +341,10 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         explanation: conversation.taskId
           ? 'Уходит в каждом ходе чата задачи. Выключается отдельно от проекта: постановка бывает длинной, а привязка к проекту нужна и без неё.'
           : 'Появится, если чат создан из карточки задачи.',
-        configured: Boolean(conversation.taskId), available: Boolean(conversation.taskId), includedInNextTurn: Boolean(taskContext) }),
+        configured: Boolean(conversation.taskId), available: Boolean(conversation.taskId), includedInNextTurn: Boolean(taskContext),
+        details: makeSources.length ? {
+          'Make-источники': makeSources.map((source) => `${source.name}: ${source.title} (${source.conversationId}) — ${source.paths.includes('') ? 'проект целиком' : source.paths.join(', ')}`)
+        } : undefined }),
       contextItem({ id: 'working-directory', type: 'Рабочая директория', source: conversation.workdir ? 'Разговор' : projectMachine ? 'Проект' : 'Настройки пользователя', scope: workdir ?? 'Не задана', priority: '5 · рабочая область', title: 'Рабочая директория', description: workdir ?? 'Каталог не настроен.', explanation: workdir && machineAvailable ? 'Передаётся исполнителю как cwd.' : 'Каталог нельзя проверить без доступной машины.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir) }),
       contextItem({ id: 'agents-chain', type: 'AGENTS.md', source: 'Рабочая директория', scope: workdir ?? 'Не определена', priority: '6 · от общей к конкретной', title: 'Цепочка AGENTS.md', description: workdir ? 'Фактическую цепочку разрешает исполнитель в рабочей директории.' : 'Без директории цепочка не определяется.', explanation: workdir && machineAvailable ? 'Текст скрыт: снимок не раскрывает файл без отдельного подтверждённого чтения.' : 'Директория или машина недоступна.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir && machineAvailable), details: { hiddenReason: 'Содержимое не читалось сервером инспектора.' } })
     ] },

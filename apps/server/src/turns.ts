@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { personalizationPromptBlock, projectContextBlock, taskContextBlock } from './prompt/contextBlocks.js'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
+import { buildTaskMakeSources, type MakeTaskScopeBroker } from './mcp/makeMcp.js'
 import {
   type ChatStorageBinding,
   appendChatInstructionHints,
@@ -97,6 +98,7 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  makeTaskScopes?: MakeTaskScopeBroker
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
   kanbanMcpBaseUrl?: string
   /** Снимок «что открыто» для инструментов канбана: пишется на старте хода. */
@@ -870,6 +872,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const executionRemote = readOnlyRemote && remote
       ? { ...remote, mcpUrl: `${remote.mcpUrl}&ro=1` }
       : remote
+    const linkedTask = conv?.taskId && conv.projectId ? deps.db.getCiTask(userId, conv.projectId, conv.taskId) : null
+    const makeSources = linkedTask && conv?.projectId
+      ? buildTaskMakeSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id, baseUrl: deps.makeMcpBaseUrl, broker: deps.makeTaskScopes })
+      : []
     turn.handle = client.send(
       {
         userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
@@ -881,6 +887,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
         ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
         ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {}),
+        ...(makeSources.length ? { makeSources } : {}),
         // В режиме «План» канбан read-only: карточки и настройки не меняются (&ro=1).
         ...(kanbanMcpUrl ? { kanbanMcpUrl: permissionMode === 'plan' ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
       },
