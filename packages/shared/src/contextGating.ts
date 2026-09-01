@@ -8,6 +8,11 @@ export const SAFETY_CONTEXT_IDS = ['platform-instructions', 'application-instruc
 /** Чисто информационные пункты (конфигурация/история) — тумблера у них нет. */
 export const INFO_CONTEXT_IDS = [
   'working-directory', 'agents-chain', 'llm', 'machine', 'permission-mode',
+  // Автопилот ассистента — настройка разговора, а не блок промпта: у него свой
+  // переключатель в карточке. Без этой строки пункт получал тумблер списка,
+  // который писал в `disabledContext`, где его никто не читает, — то есть
+  // переключатель делал вид, что что-то меняет.
+  'assistant-autonomy',
   'conversation-history', 'current-message'
 ] as const
 
