@@ -440,14 +440,31 @@ describe('инструменты БЗ в остальных ходах рана'
     expect(rec.last()!.readOnlyRemote).toBe(true)
   })
 
+  it('после одобрения плана также требует только быстрый гейт задачи', async () => {
+    const rec = recorder('план готов')
+    const { ctx, run } = setup('off')
+    const planCtx = {
+      ...ctx,
+      run: { ...run, mode: 'plan' },
+      askPlanApproval: async () => ({ decision: 'approved' as const, comment: '' })
+    } as unknown as CiModelContext
+
+    expect(await hooksWith(rec.client).modelWork(planCtx)).toMatchObject({ ok: true })
+    expect(rec.all()).toHaveLength(2)
+    expect(rec.all()[1].prompt).toContain('запусти быстрый гейт задачи (`npm run gate:fast`)')
+    expect(rec.all()[1].prompt).toContain('Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай')
+  })
+
   it('не дублирует правила remote-инструментов в задаче: они уже в системном хинте CLI', async () => {
     const rec = recorder()
     const { ctx } = setup('off')
     await hooksWith(rec.client).modelWork(ctx)
     expect(rec.last()!.prompt).not.toContain('Файлы читай инструментом read')
-    // CHAT-106 отдал проверки самой модели: прежняя строка «сам не запускай»
-    // из промпта ушла, а проверка на неё осталась и падала на main.
-    expect(rec.last()!.prompt).toContain('прогони проверки затронутых пакетов штатным гейтом (`npm run affected-check`)')
+    // На development-этапе модель запускает только узкий гейт текущего worktree:
+    // полный affected-check принадлежит следующим шагам workflow.
+    expect(rec.last()!.prompt).toContain('запусти быстрый гейт задачи (`npm run gate:fast`)')
+    expect(rec.last()!.prompt).toContain('проверяет только связанные с текущими изменениями тесты и типы')
+    expect(rec.last()!.prompt).toContain('Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай')
   })
 })
 

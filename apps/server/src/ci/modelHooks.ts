@@ -289,6 +289,9 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
 const MODEL_COMMAND_TRIM_HINT =
   'полный вывод остался в ленте шага; повтори команду с фильтром, если нужна середина'
 
+const DEVELOPMENT_FAST_GATE_HINT =
+  'Перед завершением работы запусти быстрый гейт задачи (`npm run gate:fast`): он проверяет только связанные с текущими изменениями тесты и типы. Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай — они выполняются на следующих шагах workflow; не отдавай работу с падающими проверками.'
+
 function taskPrompt(ctx: CiModelContext, mode: CiRunMode, readiness: import('@voicechat/shared').DevelopmentReadiness | null): string {
   const tail = mode === 'plan'
     ? [
@@ -297,7 +300,7 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode, readiness: import('@vo
       ]
     : [
         'Реализуй задачу в рабочей директории. Команды выполняй через доступный инструмент bash.',
-        'Перед завершением работы прогони проверки затронутых пакетов штатным гейтом (`npm run affected-check`), а не сырым `npm test`; не отдавай работу с падающими тестами или ошибками типов.',
+        DEVELOPMENT_FAST_GATE_HINT,
         `Готовую работу коммить в ветку ${ctx.env.BRANCH ?? ''} — пушить не нужно: раннер сам отправит её в origin перед очисткой рабочей директории.`
       ]
   return [
@@ -757,7 +760,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             }
             log('system', 'План одобрен — перехожу к разработке.\n')
             phase = 'development'
-            prompt = 'План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.\nПеред завершением работы прогони проверки затронутых пакетов штатным гейтом (`npm run affected-check`), а не сырым `npm test`; не отдавай работу с падающими тестами или ошибками типов.'
+            prompt = `План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.\n${DEVELOPMENT_FAST_GATE_HINT}`
             continue
           }
 
