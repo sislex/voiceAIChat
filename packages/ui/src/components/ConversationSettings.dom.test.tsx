@@ -1418,4 +1418,20 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(setAutonomy).toHaveBeenCalledWith({ conversationId: 'c1', autonomy: 'confirm' }))
   })
 
+  it('раздел инструкций открыт по умолчанию, но подчиняется «свернуть все»', async () => {
+    window.localStorage.removeItem('vc.context.sections')
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})),
+      // Инструкция чата, чтобы раздел вообще появился.
+      'conversations:setContextItem': vi.fn() } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      chatInstructions={[{ id: 'custom-1', title: 'Своя', description: '', text: 'текст', enabled: true }]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    await screen.findByTestId('context-summary')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть все' }))
+    await waitFor(() => expect(JSON.parse(window.localStorage.getItem('vc.context.sections') ?? '{}')).toMatchObject({ instructions: false }))
+  })
+
 })
