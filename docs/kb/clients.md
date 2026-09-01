@@ -46,7 +46,7 @@ Main process создаёт основное окно, tray, external-link polic
 
 ### Режим компаньон-агента
 
-`agentMode.ts` позволяет desktop параллельно запускать локальный `@voicechat/agent`, а renderer-страницы setup/log управляют соединением. Это оболочка запуска; exec/fs/pty остаются реализацией `apps/agent`. Tray даёт быстрый доступ к основному окну и режиму машины.
+`agentMode.ts` позволяет desktop параллельно запускать локальный `@voicechat/agent`, а renderer-страницы setup/log управляют соединением. Это оболочка запуска; exec/fs/pty остаются реализацией `apps/agent`. Tray даёт быстрый доступ к основному окну и режиму машины. Machine token хранится зашифрованным через Electron `safeStorage`, рабочим корнем агента служит домашний каталог пользователя.
 
 Electron preload должен сохранять `contextIsolation` и публиковать минимальный API через `contextBridge`. Node primitives не выдаются renderer. Навигация и `window.open` валидируются и отправляются во внешний браузер только для разрешённых URL.
 
@@ -68,24 +68,11 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 
 Сборка отдельная: `npm --prefix apps/agent-tray install`, `npm run typecheck:agent-tray`, `npm run test:agent-tray`, `npm run dist:agent-tray`. DMG появляется в `apps/agent-tray/release`, autodiscovery server или `VC_AGENT_APP` публикует его на `/api/agents/app`.
 
-## Login application (`apps/login-application`)
+## Подключение текущего устройства
 
-Отдельное macOS ARM64 Electron-приложение подключает текущий Mac и не заменяет
-`apps/agent-tray`. Оно зарегистрировано для `voicechat-login://`, обрабатывает
-ссылку и при cold start, и через single-instance callback, а затем запускает
-`startConnection` непосредственно из `apps/agent`: exec/fs/pty не копируются.
-Renderer изолирован preload-мостом и не получает Node primitives.
+Отдельного login-приложения нет: `apps/desktop` — единая тонкая Electron-оболочка для общего web-интерфейса и локального `apps/agent`. Desktop зарегистрирован для `voicechat-login://`, принимает enrollment deep link при cold start, через macOS `open-url` и single-instance callback, атомарно погашает двухминутный одноразовый токен и запускает локальную машину.
 
-Доступны два входа. Обычная форма отправляет адрес ChatAI, логин и пароль в main;
-пароль после HTTP login не сохраняется. Web-flow передаёт в URI только opaque
-двухминутный enrollment secret, correlation id и адрес сервера. Постоянный machine
-token приходит приложению лишь в HTTPS-ответе redeem и хранится зашифрованным
-Electron `safeStorage`; уже настроенная машина не перезаписывается.
-
-Пакет вне npm workspaces и устанавливается отдельно. `npm --prefix
-apps/login-application run dist` собирает только ARM64 DMG
-`release/voicechat-login-macos-arm64.dmg`; `smoke` проверяет DMG, protocol
-metadata и ad-hoc codesign на Apple Silicon.
+В URI передаются только opaque enrollment secret, correlation id и адрес сервера. Постоянный machine token приходит desktop лишь в HTTPS-ответе redeem, не выдаётся renderer и хранится через `safeStorage`. Пункт «Открыть локальную версию» находится в раскрывающемся меню пользователя; браузер сначала пробует deep link, а общий диалог оставляет прямое скачивание основного ARM64 DMG как fallback.
 
 ## Границы безопасности Electron
 
@@ -103,7 +90,7 @@ metadata и ad-hoc codesign на Apple Silicon.
 | Новый экран/виджет чата | `packages/ui` |
 | REST/WS реализация web и desktop | `packages/ui/src/remote` |
 | URL/proxy/bootstrap браузера | `apps/web` |
-| Окно/tray/server config/legacy import | `apps/desktop` |
+| Окно/tray/server config/legacy import/enrollment текущего устройства | `apps/desktop` |
 | Exec/fs/pty/telemetry машины | `apps/agent` |
 | Setup/log/permissions упаковки агента | `apps/agent-tray` |
 | Пользовательские machines/terminal/files/LLM history/KB/CI monitor/diagnostics | `packages/operations-app` |

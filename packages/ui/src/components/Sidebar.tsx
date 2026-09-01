@@ -274,6 +274,8 @@ export interface SidebarProps {
   onOpenMake?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
+  /** Открыть установленную локальную версию или предложить её скачать. */
+  onOpenLocalApp?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
   onOpenMachines?: () => void
   /** Открыть страницу «Команды» (CI-раннер; web). */
@@ -362,6 +364,7 @@ export function Sidebar({
   onOpenConsoleReader,
   onOpenMake,
   onOpenUsers,
+  onOpenLocalApp,
   onOpenMachines,
   onOpenCi,
   currentUser,
@@ -934,6 +937,12 @@ export function Sidebar({
                   </Button>
                 )}
                 <div className="acct-sep" aria-hidden />
+                {onOpenLocalApp && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenLocalApp)}>
+                    <span className="footico">↗</span>
+                    Открыть локальную версию
+                  </Button>
+                )}
                 {onOpenMachines && (
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMachines)}>
                     <span className="footico">🖥</span>

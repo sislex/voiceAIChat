@@ -22,8 +22,6 @@ export interface ServerConfig {
   piperArgsPrefix: string[]
   /** Путь к .dmg компаньон-приложения для скачивания (undefined — не собрано). */
   agentAppPath?: string
-  /** Путь к macOS ARM64 DMG login-application. */
-  loginApplicationMacosArm64Path?: string
   /** Сколько мс операции машины (exec/fs) ждут возврата офлайн-агента перед отказом; 0 — сразу отказ. */
   agentOfflineGraceMs: number
   /** Команда машины длиннее этого (мс) считается долгой: владелец получает уведомление, для чата сохраняется лог. */
@@ -104,7 +102,6 @@ const REPO = {
   piperBin: join(REPO_ROOT, '.venv-piper/bin/piper'),
   piperVoicesDir: join(REPO_ROOT, 'apps/desktop/resources/piper-voices'),
   agentAppDir: join(REPO_ROOT, 'apps/agent-tray/release'),
-  loginApplicationDir: join(REPO_ROOT, 'apps/login-application/release'),
   desktopAppDir: join(REPO_ROOT, 'apps/desktop/release')
 }
 
@@ -173,7 +170,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
-    loginApplicationMacosArm64Path: env.VC_LOGIN_APPLICATION_MACOS_ARM64 ?? (AUTODISCOVER ? findDmg(REPO.loginApplicationDir) : undefined),
     // В тестах — 0, чтобы офлайн-проверки отвечали мгновенно; в проде даём агенту 15 с на переподключение.
     agentOfflineAlertMs: env.VC_AGENT_OFFLINE_ALERT_MIN !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_ALERT_MIN) || 0) * 60_000 : 10 * 60_000,
     longCommandMs: env.VC_LONG_COMMAND_MS !== undefined ? Math.max(0, Number(env.VC_LONG_COMMAND_MS) || 0) : 10_000,

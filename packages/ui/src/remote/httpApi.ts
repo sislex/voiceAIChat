@@ -323,9 +323,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
           ? REST.desktopApp
           : kind === 'agent-app'
             ? REST.agentApp
-            : kind === 'login-application-macos-arm64'
-              ? REST.loginApplicationDownload + '?platform=macos&arch=arm64'
-              : REST.agentScript
+            : REST.agentScript
       return httpBase + path
     },
     'agents:connectionString': async ({ token }) => encodeAgentConnection({ server: agentWsUrl, token }),

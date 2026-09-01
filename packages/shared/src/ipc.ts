@@ -349,7 +349,7 @@ export interface IpcInvokeMap {
   /** Журнал команд машины: новые сверху; q — подстрока команды, source — фильтр источника. */
   'agents:commands': { arg: { id: string; limit?: number; q?: string; source?: MachineCommandSource }; result: MachineCommandRecord[] }
   /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
-  'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' | 'login-application-macos-arm64' }; result: string }
+  'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
   /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
   'agents:connectionString': { arg: { token: string }; result: string }
   /** Проекты Claude Code (~/.claude/projects). */

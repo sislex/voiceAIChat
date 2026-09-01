@@ -425,7 +425,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   await registerAgentRoutes(app, db, agentRegistry, {
     agentApp: opts.config.agentAppPath,
-    loginApplicationMacosArm64: opts.config.loginApplicationMacosArm64Path,
     desktopApp: opts.config.desktopAppPath
   }, commandGate)
   const storageMigrations = new StorageMigrationManager(join(opts.config.dataDir, 'storage-migrations.json'), {
