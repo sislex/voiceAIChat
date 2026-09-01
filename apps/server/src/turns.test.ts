@@ -160,6 +160,60 @@ describe('turns: claude.start', () => {
   })
 })
 
+describe('turns: актуальная main проекта', () => {
+  function projectChat(db: VoiceChatDb) {
+    const project = db.createProject(U, { name: 'P', gitUrl: 'https://example.test/p.git' })
+    const agent = db.createAgent(U, 'Mac')
+    db.linkMachine(U, project.id, agent.id)
+    db.setProjectMachinePath(U, project.id, agent.id, '/srv/project')
+    db.setProjectDefaultMachine(U, project.id, agent.id)
+    const conv = db.createConversation(U, 'Проектный чат')
+    db.setConversationProject(U, conv.id, project.id)
+    db.addMessage(U, conv.id, 'u0', 'проверь код', '10:00')
+    return { project, agent, conv }
+  }
+
+  it('до LLM подтверждает origin/main и добавляет фактический SHA в промпт', async () => {
+    const db = freshDb()
+    const { project, agent, conv } = projectChat(db)
+    const rec = recorder()
+    const calls: unknown[] = []
+    const turns = createTurnManager({
+      db, claude: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret',
+      ensureProjectMainCurrent: async (args) => { calls.push(args); return { baseSha: 'a'.repeat(40) } }
+    })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'проверь код' }] })
+    })
+    expect(calls).toEqual([expect.objectContaining({ projectId: project.id, agentId: agent.id, path: '/srv/project', branch: 'main' })])
+    expect(rec.last()?.prompt).toContain(`main @ ${'a'.repeat(40)}`)
+    db.close()
+  })
+
+  it('не запускает LLM, если origin/main нельзя подтвердить', async () => {
+    const db = freshDb()
+    const { conv } = projectChat(db)
+    const rec = recorder()
+    const turns = createTurnManager({
+      db, claude: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret',
+      ensureProjectMainCurrent: async () => { throw new Error('dirty workspace') }
+    })
+    const errors: string[] = []
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => {
+        if (message.t === 'claude.error') { errors.push(message.message); off(); resolve() }
+      })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'проверь код' }] })
+    })
+    expect(rec.last()).toBeNull()
+    expect(errors[0]).toContain('dirty workspace')
+    db.close()
+  })
+})
+
 describe('turns: инструкции чата', () => {
   it('по умолчанию модель получает подсказку про терминал; выключенная в настройках — нет', async () => {
     const db = freshDb()

@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-29
-checked: 3295aeba
+updated: 2026-09-01
+checked: 092bd70d
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1062,10 +1062,13 @@ macOS, Windows drive, UNC и MSYS-путей. Bootstrap не зависит от
 `git rev-parse --is-inside-work-tree`. Для нового полного development-рана
 tracked и untracked изменения сначала проверяются командой
 `git status --porcelain --untracked-files=all` и останавливают подготовку с
-exit `66` без удаления файлов. Чистый checkout синхронизируется строго командами
-`git fetch origin main`, `git checkout main`, `git reset --hard origin/main`;
-`git pull` не используется. Ошибка status или любого этапа синхронизации
-завершает системную подготовку до пользовательских команд и запуска модели.
+exit `66` без удаления файлов. Чистый checkout синхронизируется с настроенной
+`BASE_BRANCH` командами `git fetch origin "$BASE_BRANCH"`, checkout базовой ветки
+и `git reset --hard "origin/$BASE_BRANCH"`; после этого локальный SHA обязательно
+сверяется с remote SHA. `git pull` не используется. Reset допустим именно здесь,
+потому что task-workspace управляется раннером и уже подтверждён как clean. Ошибка
+status, синхронизации или несовпадение SHA завершает системную подготовку до
+пользовательских команд и запуска модели.
 Retry-from-step системную подготовку и синхронизацию не повторяет, сохраняя
 результаты выполненных шагов. Пустой checkout-каталог и отсутствующие родительские
 каталоги допустимы и по-прежнему передаются стандартной команде clone из

@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-09-01
-checked: 4aab9ff7
+checked: 092bd70d
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -1165,11 +1165,13 @@ machine/storage identity.
 reader/writer координацию по тройке project/machine/storage: параллельные читатели
 совместно используют один refresh и получают один закреплённый SHA с идемпотентным
 `release`, а invalidation ждёт ухода активных readers и выполняется единственным
-writer. Это пока инфраструктурный контракт: production turn lifecycle не создаёт
-адаптер Git-refresh, не берёт snapshot для read-only хода и не повышает чат лениво
-в изменяемый workspace. Поэтому наличие типов, таблицы и UI не означает, что
-проектный ход уже автоматически работает из общего managed main или отдельного
-chat workspace.
+writer. Production-ход Git-проекта дополнительно проходит обязательный системный
+preflight общей проектной копии: сервер проверяет clean worktree и базовую ветку,
+выполняет fetch + merge `--ff-only`, сверяет локальный SHA с `origin/<base>` и
+только затем запускает LLM, добавляя подтверждённый SHA в промпт. Dirty/diverged,
+не-Git каталог, другая ветка, offline-машина и ошибка fetch блокируют ход вместо
+работы по устаревшему коду. Уже созданный `task_workspace` не переключается на
+main: его feature-веткой управляет CI lifecycle.
 
 Новый CI-workspace при наличии storage машины живёт в стабильном
 `projects/<projectId>/tasks/<taskId>/environments/test/temporary/repository/<taskKey>`;
