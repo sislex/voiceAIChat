@@ -79,7 +79,47 @@ export interface ContextBlocksInput {
   instructions: readonly ChatInstruction[]
   project: ProjectSummary | null
   projectId: string | null
+  /** Готовый текст блока задачи (`taskContextBlock`); null — чат не про задачу. */
+  taskContext?: string | null
   now: Date
+}
+
+/**
+ * Блок «Контекст задачи» — иерархия, этап воркфлоу, машина и папка, описание и
+ * критерии приёмки, макеты. Уходит в каждый ход чата задачи, поэтому строится
+ * здесь, а не в `turns.ts`: инспектор обязан показывать тот же текст, а не
+ * «проект такой-то». Аргументы — уже прочитанные из БД куски, чтобы функция
+ * оставалась чистой и её мог позвать и ход, и снимок.
+ */
+export function taskContextBlock(input: {
+  context: {
+    task: { key: string; title: string }
+    epic?: { key: string; title: string } | null
+    story?: { key: string; title: string } | null
+    columnName?: string | null
+    columnSemantic?: string | null
+    agentName?: string | null
+    workdir?: string | null
+    run?: { status: string; mode: string } | null
+  }
+  description?: string | null
+  acceptanceCriteria?: string | null
+  designLines?: string[]
+}): string | null {
+  const tc = input.context
+  const lines = [
+    `Задача: ${tc.task.key} · ${tc.task.title}`,
+    tc.epic ? `Эпик: ${tc.epic.key} · ${tc.epic.title}` : '',
+    tc.story ? `История: ${tc.story.key} · ${tc.story.title}` : '',
+    tc.columnName ? `Этап разработки: ${tc.columnName}${tc.columnSemantic ? ` (${tc.columnSemantic})` : ''}` : '',
+    tc.agentName ? `Машина разработки: ${tc.agentName}` : '',
+    tc.workdir ? `Рабочая директория: ${tc.workdir}` : '',
+    tc.run ? `Последний CI-ран: ${tc.run.status}, режим ${tc.run.mode === 'plan' ? 'план' : 'разработка'}` : ''
+  ].filter(Boolean)
+  if (input.description) lines.push(`Описание задачи: ${input.description}`)
+  if (input.acceptanceCriteria) lines.push(`Критерии приёмки: ${input.acceptanceCriteria}`)
+  if (input.designLines?.length) lines.push(...input.designLines)
+  return lines.length ? `## Контекст задачи\n${lines.join('\n')}` : null
 }
 
 /**
@@ -92,6 +132,9 @@ export function buildContextBlocks(input: ContextBlocksInput): ContextPromptBloc
   const blocks: ContextPromptBlock[] = []
   const project = projectContextBlock(input.project, input.projectId)
   if (project) blocks.push(promptBlock(['project-binding'], 'Контекст проекта', project))
+  // Порядок тот же, что в `turns.ts`: проект, затем задача — иначе предпросмотр
+  // показывал бы верный текст в неверном месте промпта.
+  if (input.taskContext) blocks.push(promptBlock(['task-context'], 'Контекст задачи', input.taskContext))
   const personalization = personalizationPromptBlock(input.personalization, input.now)
   if (personalization) blocks.push(promptBlock(['personalization'], 'Персонализация пользователя', personalization))
   // Источники подсказки приходят от `chatInstructionHintEntries`: у склейки

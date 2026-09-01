@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 import type { ChatInstruction, UserPersonalization } from '@voicechat/shared'
 import { effectiveChatInstructions } from '@voicechat/shared'
-import { agentsChainDirs, ageFromBirth, buildContextBlocks, promptCostUsd, personalizationLines, personalizationPromptBlock, projectContextBlock } from './contextBlocks.js'
+import { agentsChainDirs, ageFromBirth, buildContextBlocks, promptCostUsd, personalizationLines, personalizationPromptBlock, projectContextBlock, taskContextBlock } from './contextBlocks.js'
 
 const empty: UserPersonalization = DEFAULT_SETTINGS.personalization
 
@@ -117,5 +117,46 @@ describe('contextBlocks — блоки промпта общие у хода и 
     // Пустая модель (codex берёт её из своего config.toml) и нулевые токены — тоже null.
     expect(promptCostUsd('codex', '', 1000, [price])).toBeNull()
     expect(promptCostUsd('claude', 'sonnet', 0, [])).toBeNull()
+  })
+})
+
+describe('taskContextBlock', () => {
+  const context = {
+    task: { key: 'CHAT-1', title: 'Починить гейт' },
+    epic: { key: 'EP-1', title: 'Качество' },
+    story: null,
+    columnName: 'В работе',
+    columnSemantic: 'wip',
+    agentName: 'macbook',
+    workdir: '/repo',
+    run: { status: 'failed', mode: 'plan' }
+  }
+
+  it('собирает те же строки, что уходят в ход, и добавляет постановку', () => {
+    const text = taskContextBlock({ context, description: 'Гейт красный', acceptanceCriteria: 'Зелёный гейт', designLines: ['Макет: /d.png'] })!
+    expect(text.startsWith('## Контекст задачи')).toBe(true)
+    expect(text).toContain('Задача: CHAT-1 · Починить гейт')
+    expect(text).toContain('Эпик: EP-1 · Качество')
+    // История отсутствует — строки для неё нет вовсе, а не «История: —».
+    expect(text).not.toContain('История:')
+    expect(text).toContain('Этап разработки: В работе (wip)')
+    expect(text).toContain('Последний CI-ран: failed, режим план')
+    expect(text).toContain('Описание задачи: Гейт красный')
+    expect(text).toContain('Критерии приёмки: Зелёный гейт')
+    expect(text).toContain('Макет: /d.png')
+  })
+
+  it('попадает в предпросмотр отдельным блоком после проекта', () => {
+    const blocks = buildContextBlocks({
+      personalization: empty,
+      instructions: [],
+      project: null,
+      projectId: null,
+      taskContext: taskContextBlock({ context }),
+      now: new Date(0)
+    })
+    const task = blocks.find((block) => block.itemIds.includes('task-context'))
+    expect(task?.title).toBe('Контекст задачи')
+    expect(task?.text).toContain('CHAT-1')
   })
 })
