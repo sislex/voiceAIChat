@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   appendChatInstructionHints, chatInstructionHints, effectiveChatInstructions, instructionContextId,
   instructionIdForContextId, instructionText, missingBuiltinInstructions, stripDisabledInstructionBlocks
-} from './chatInstructions'
+, instructionsForAssistantKind } from './chatInstructions'
 import { IMAGE_HINT } from './images'
 import { CHANGE_AUTHORIZATION_HINT } from './prompt'
 import { QUESTIONS_HINT } from './questions'
@@ -68,5 +68,25 @@ describe('chatInstructions', () => {
       expect(stripDisabledInstructionBlocks(tool, without('explorer'))).toBe(tool)
       expect(stripDisabledInstructionBlocks(tool, without('console'))).toBe('Вот.')
     })
+  })
+})
+
+describe('instructionsForAssistantKind — вид чата решает, что уйдёт', () => {
+  const list: ChatInstruction[] = [
+    { id: 'console', title: 'Открывать терминал в чате', description: '', text: '', enabled: true, kind: 'console' },
+    { id: 'task-launch', title: 'Заводить задачу', description: '', text: '', enabled: true, kind: 'taskLaunch' },
+    { id: 'questions', title: 'Уточняющие вопросы', description: '', text: '', enabled: true, kind: 'questions' }
+  ]
+
+  it('обычный чат получает всё', () => {
+    expect(instructionsForAssistantKind(list, null).map((item) => item.id)).toEqual(['console', 'task-launch', 'questions'])
+  })
+
+  it('в консоли с ассистентом нет подсказки про терминал: он уже открыт справа', () => {
+    expect(instructionsForAssistantKind(list, 'console-reader').map((item) => item.id)).toEqual(['task-launch', 'questions'])
+  })
+
+  it('в Make нет ни терминала, ни «завести задачу» — правка проекта и есть задача чата', () => {
+    expect(instructionsForAssistantKind(list, 'make').map((item) => item.id)).toEqual(['questions'])
   })
 })
