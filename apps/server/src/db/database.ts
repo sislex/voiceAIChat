@@ -924,6 +924,12 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
     // Метаданные устройства сессии: ставятся поверх существующей таблицы, все
     // необязательные — старые строки продолжают читаться без них.
+    // Журнал контекста пишет и смену настроек разговора, а не только тумблеры:
+    // «кто понизил режим доступа» раньше не отвечал никто.
+    const contextEventCols = this.db.prepare(`PRAGMA table_info(conversation_context_events)`).all() as Array<{ name: string }>
+    if (contextEventCols.length && !contextEventCols.some((c) => c.name === 'value')) {
+      this.db.exec(`ALTER TABLE conversation_context_events ADD COLUMN value TEXT`)
+    }
     const eventCols = this.db.prepare(`PRAGMA table_info(security_events)`).all() as Array<{ name: string }>
     if (eventCols.length && !eventCols.some((c) => c.name === 'session_sid')) {
       this.db.exec(`ALTER TABLE security_events ADD COLUMN session_sid TEXT`)
@@ -1895,15 +1901,33 @@ export class VoiceChatDb {
   }
 
   /**
+   * Событие смены настройки разговора в журнале контекста. Тумблеры пишет
+   * `setConversationContextEnabled`, а здесь — то, у чего есть значение:
+   * режим доступа, режим базы знаний, движок и модель, машина. Пишем только
+   * фактическое изменение: повторное сохранение той же формы журнал не растит.
+   */
+  recordConversationSettingEvent(userId: string, id: string, itemId: string, value: string, actor = userId): void {
+    const conversation = this.getConversation(userId, id)
+    if (!conversation) return
+    const last = this.db
+      .prepare(`SELECT value FROM conversation_context_events WHERE conversation_id = ? AND item_id = ? AND value IS NOT NULL ORDER BY id DESC LIMIT 1`)
+      .get(id, itemId) as { value: string } | undefined
+    if (last?.value === value) return
+    this.db
+      .prepare(`INSERT INTO conversation_context_events (at, conversation_id, user_id, actor, item_id, enabled, value) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(this.now(), id, userId, actor, itemId, 1, value)
+  }
+
+  /**
    * Журнал изменений контекста разговора, новые сверху. Читается через scope
    * владельца: чужой разговор просто не найдётся и журнал будет пуст.
    */
   listConversationContextEvents(userId: string, id: string, limit = 50): ContextChangeEvent[] {
     if (!this.getConversation(userId, id)) return []
     const rows = this.db
-      .prepare(`SELECT at, actor, item_id, enabled FROM conversation_context_events WHERE conversation_id = ? ORDER BY id DESC LIMIT ?`)
-      .all(id, Math.max(1, Math.min(limit, 200))) as Array<{ at: number; actor: string; item_id: string; enabled: number }>
-    return rows.map((row) => ({ at: row.at, actor: row.actor, itemId: row.item_id, enabled: row.enabled === 1 }))
+      .prepare(`SELECT at, actor, item_id, enabled, value FROM conversation_context_events WHERE conversation_id = ? ORDER BY id DESC LIMIT ?`)
+      .all(id, Math.max(1, Math.min(limit, 200))) as Array<{ at: number; actor: string; item_id: string; enabled: number; value: string | null }>
+    return rows.map((row) => ({ at: row.at, actor: row.actor, itemId: row.item_id, enabled: row.enabled === 1, ...(row.value === null ? {} : { value: row.value }) }))
   }
 
   setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null): Conversation | null {

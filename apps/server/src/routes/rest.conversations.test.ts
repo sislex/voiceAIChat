@@ -1157,6 +1157,27 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('журнал контекста пишет смену настроек разговора, а не только тумблеры', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Журнал настроек' } })).json()
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: 'none', permissionMode: 'plan', kbContextMode: 'manual' } })
+
+    const changes = (): Promise<Array<{ itemId: string; actor: string; value?: string }>> =>
+      inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` }).then((res) => res.json().changes)
+    const first = await changes()
+    expect(first.find((entry) => entry.itemId === 'permission-mode')?.value).toBe('plan')
+    expect(first.find((entry) => entry.itemId === 'knowledge-mode')?.value).toBe('manual')
+    expect(first.every((entry) => entry.actor === 'admin')).toBe(true)
+
+    // Повторное сохранение той же формы журнал не растит: событие пишется на
+    // фактическое изменение, иначе каждый заход в настройки давал бы строку.
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: 'none', permissionMode: 'plan', kbContextMode: 'manual' } })
+    expect((await changes()).length).toBe(first.length)
+
+    // Новое значение — новая строка.
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: 'none', permissionMode: 'acceptEdits', kbContextMode: 'manual' } })
+    expect((await changes()).find((entry) => entry.itemId === 'permission-mode')?.value).toBe('acceptEdits')
+  })
+
   it('считает итог хода вместе с историей и цену на других моделях', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Итог' } })).json()
     // Пара сообщений: история — то, что пересобирается в промпт без resume.
