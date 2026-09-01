@@ -114,6 +114,10 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const effectOf = (id: string): 'prompt-block' | 'tool' | 'skill' => {
     if (toolNameForContextId(id) !== null) return 'tool'
     if (id.startsWith('skill-')) return 'skill'
+    // База знаний статического блока не даёт: автоконтекст зависит от текста
+    // сообщения, а выключение гасит инструменты mcp__kb__*. Объявлять здесь
+    // «блок промпта» значило бы проверять инвариантом не то, что происходит.
+    if (id === 'knowledge-mode') return 'tool'
     return 'prompt-block'
   }
   const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled' | 'lockReason' | 'effect'>): ContextSnapshotItem => {
@@ -146,7 +150,11 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       ? 'Унаследовано из настроек проекта.'
       : 'Унаследовано из настроек пользователя.'
   const permissionMode: PermissionMode = conversation.execTarget === 'none' || (role !== 'admin' && !machineAvailable) ? 'plan' : (conversation.permissionMode ?? settings.permissionMode)
-  const kbMode = conversation.kbContextMode ?? 'auto'
+  // Тумблер сильнее настройки — ровно как в ходе (`turns.ts`: kbMode). Пока
+  // снимок считал режим только по разговору, выключенная тумблером база знаний
+  // показывалась работающей: пункты `mcp-kb-*` оставались «доступны», хотя ход
+  // их не подключает.
+  const kbMode: KbContextMode = disabled.has('knowledge-mode') ? 'off' : (conversation.kbContextMode ?? 'auto')
   const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
   const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
   const messages = db.listMessages(userId, conversationId)
@@ -1090,11 +1098,17 @@ export async function registerRest(
       // Журнал контекста: смена настроек разговора — такое же изменение того,
       // что получит модель, как и тумблер источника. Раньше «кто понизил режим
       // доступа» не отвечал никто: писались только тумблеры.
+      // Пишем только то, что пришло в запросе. Иначе переименование чата давало
+      // четыре записи «изменил → из общих настроек»: у настройки не было
+      // прежнего значения, и первая запись выглядела изменением. Журнал из-за
+      // такого шума перестаёт отвечать на вопрос «кто менял контекст».
       const settingEvents: Array<[string, string | null | undefined]> = [
-        ['permission-mode', conversation.permissionMode ?? 'из общих настроек'],
-        ['knowledge-mode', conversation.kbContextMode ?? 'auto'],
-        ['llm', conversation.llmProvider ? `${conversation.llmProvider}${conversation.llmModel ? ` · ${conversation.llmModel}` : ''}` : 'из общих настроек'],
-        ['machine', conversation.execTarget ?? 'резолвер сервера']
+        ...(req.body.permissionMode !== undefined ? [['permission-mode', conversation.permissionMode ?? 'из общих настроек'] as [string, string]] : []),
+        ...(req.body.kbContextMode !== undefined ? [['knowledge-mode', conversation.kbContextMode ?? 'auto'] as [string, string]] : []),
+        ...(req.body.llmProvider !== undefined || req.body.llmModel !== undefined
+          ? [['llm', conversation.llmProvider ? `${conversation.llmProvider}${conversation.llmModel ? ` · ${conversation.llmModel}` : ''}` : 'из общих настроек'] as [string, string]]
+          : []),
+        ...(req.body.execTarget !== undefined ? [['machine', conversation.execTarget ?? 'резолвер сервера'] as [string, string]] : [])
       ]
       for (const [itemId, value] of settingEvents) {
         if (typeof value === 'string') db.recordConversationSettingEvent(uid(req), req.params.id, itemId, value, uid(req))

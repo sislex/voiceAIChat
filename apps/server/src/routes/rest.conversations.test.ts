@@ -1157,6 +1157,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('база знаний объявляет эффект инструментов, а не блока промпта', async () => {
+    // `knowledge-mode` не убирает статический блок: автоконтекст БЗ зависит от
+    // текста сообщения. Зато он гасит инструменты mcp__kb__*, и объявленный
+    // эффект должен говорить именно это — иначе инвариант проверяет не то.
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'БЗ' } })).json()
+    const item = async (): Promise<{ effect?: string | null }> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return snapshot.groups
+        .flatMap((group: { items: Array<{ id: string; effect?: string | null }> }) => group.items)
+        .find((entry: { id: string }) => entry.id === 'knowledge-mode')
+    }
+    expect((await item()).effect).toBe('tool')
+
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    // Выключенная БЗ = инструменты kb недоступны модели.
+    const kbTools = snapshot.groups
+      .flatMap((group: { items: Array<{ id: string; includedInNextTurn: boolean }> }) => group.items)
+      .filter((entry: { id: string }) => entry.id.startsWith('mcp-kb-'))
+    expect(kbTools.every((tool: { includedInNextTurn: boolean }) => !tool.includedInNextTurn)).toBe(true)
+  })
+
   it('список выключаемых пунктов зафиксирован: новый тумблер требует решения', async () => {
     // «Фальшивый тумблер» ловится не поведением, а составом: пункт, который ход
     // не читает, всё равно попадает в disabledContext и выглядит рабочим.
@@ -1186,10 +1208,10 @@ describe('REST: conversations/messages/settings', () => {
     // `includedInNextTurn` бесполезно — он пересчитывается для любого пункта.
     const project = db.createProject(U, { name: 'Проект инварианта' })
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Все тумблеры', projectId: project.id } })).json()
-    const snapshotOf = async (): Promise<{ items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; effect?: string | null }>; blocks: string[]; disallowed: string[] }> => {
+    const snapshotOf = async (): Promise<{ items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; includedInNextTurn: boolean; effect?: string | null }>; blocks: string[]; disallowed: string[] }> => {
       const value = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
       return {
-        items: value.groups.flatMap((group: { items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; effect?: string | null }> }) => group.items),
+        items: value.groups.flatMap((group: { items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; includedInNextTurn: boolean; effect?: string | null }> }) => group.items),
         blocks: (value.promptPreview.blocks as Array<{ title: string; itemIds: string[] }>).flatMap((block) => block.itemIds),
         disallowed: value.disallowedTools as string[]
       }
@@ -1205,7 +1227,15 @@ describe('REST: conversations/messages/settings', () => {
       await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${item.id}`, payload: { enabled: false } })
       const after = await snapshotOf()
       if (item.effect === 'tool') {
-        expect(after.disallowed.length, `тумблер «${item.id}» не запретил инструмент`).toBeGreaterThan(before.disallowed.length)
+        // Инструмент отнимается двумя способами: явным запретом
+        // (`--disallowedTools` у инструментов машины) или неподключением
+        // сервера вовсе (так работает выключенная база знаний). Инвариант
+        // принимает оба — важно, что модель его больше не получит.
+        const forbidden = after.disallowed.length > before.disallowed.length
+        const wasIncluded = before.items.filter((entry) => entry.effect === 'tool' && entry.includedInNextTurn).map((entry) => entry.id)
+        const nowIncluded = new Set(after.items.filter((entry) => entry.includedInNextTurn).map((entry) => entry.id))
+        const lost = wasIncluded.some((id) => !nowIncluded.has(id))
+        expect(forbidden || lost, `тумблер «${item.id}» не отнял инструмент ни запретом, ни отключением`).toBe(true)
       } else if (item.effect === 'prompt-block' && before.blocks.includes(item.id)) {
         // Пункт может быть настроен, но пуст (персонализация без полей): тогда
         // блока нет и выключать нечего. Если блок есть — он обязан исчезнуть.
@@ -1352,6 +1382,17 @@ describe('REST: conversations/messages/settings', () => {
     expect(titles.some((title) => title.includes('терминал'))).toBe(false)
     // И об этом сказано прямо, а не молчанием.
     expect((snapshot.warnings as Array<{ text: string }>).some((entry) => entry.text.includes('В чате этого вида не применяются инструкции'))).toBe(true)
+  })
+
+  it('переименование чата не пишет записи в журнал контекста', async () => {
+    // Журнал настроек пишется на PATCH разговора. Если он пишет все четыре
+    // настройки независимо от тела запроса, то простое переименование даёт
+    // четыре записи «изменил → из общих настроек» — шум, из-за которого журнал
+    // перестаёт быть полезным.
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Было' } })).json()
+    await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { title: 'Стало' } })
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(snapshot.changes).toEqual([])
   })
 
   it('журнал контекста пишет смену настроек разговора, а не только тумблеры', async () => {
