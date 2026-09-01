@@ -1157,6 +1157,26 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('в живой сессии движка предупреждает о повторе настроек каждым ходом', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Живая сессия' } })).json()
+    const repeats = async (): Promise<boolean> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return (snapshot.warnings as Array<{ text: string }>).some((entry) => entry.text.includes('уходят заново в каждом ходе'))
+    }
+    // Пока постоянная часть маленькая, повтор не стоит разговора.
+    expect(await repeats()).toBe(false)
+
+    // Длинная инструкция + живая сессия: история не пересылается, а настройки —
+    // да, каждым ходом, и модель их уже получила.
+    const current = (await inj({ method: 'GET', url: '/api/settings' })).json() as Record<string, unknown>
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...current,
+      chatInstructions: [{ id: 'custom-long', title: 'Длинная', text: 'и'.repeat(6000), enabled: true }] } })
+    expect(await repeats()).toBe(false) // сессии ещё нет — повторять нечего
+
+    db.setClaudeSession(U, created.id, 'claude:sess-1')
+    expect(await repeats()).toBe(true)
+  })
+
   it('контекст Make попадает в предпросмотр и выключается тумблером', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make' } })).json()
     const snap = async (): Promise<{ blocks: Array<{ title: string; text: string }>; omitted: string[]; item?: { enabled: boolean; includedInNextTurn: boolean } }> => {
