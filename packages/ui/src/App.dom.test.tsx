@@ -193,11 +193,17 @@ describe('App — действия модели в веб-превью (мост
   const fromReader = (frame: HTMLIFrameElement, data: object): void => {
     fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, ...data } }))
   }
-  /** Полный handshake v2: ready → ждём init и возвращаем выданные регистрационные ID. */
+  /**
+   * Полный handshake v2: ready → ждём init и возвращаем выданные регистрационные ID.
+   * Reader повторяет идемпотентный ready, пока React-effect host-а не установил
+   * message-listener: под нагрузкой iframe уже виден тесту, а подписка ещё не готова.
+   */
   const handshakeReader = async (frame: HTMLIFrameElement) => {
     const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
-    fromReader(frame, { kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: ['read'] })
-    await waitFor(() => expect(post.mock.calls.some(([message]) => (message as { kind?: string }).kind === 'init')).toBe(true))
+    await waitFor(() => {
+      fromReader(frame, { kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: ['read'] })
+      expect(post.mock.calls.some(([message]) => (message as { kind?: string }).kind === 'init')).toBe(true)
+    })
     const init = post.mock.calls.map(([message]) => message as { kind?: string; conversationId?: string; registrationId?: string }).find((message) => message.kind === 'init')!
     return { post, ids: { conversationId: init.conversationId!, registrationId: init.registrationId! } }
   }
