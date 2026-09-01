@@ -9,7 +9,7 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 218 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ✓ |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 206 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 5 коммит(ов) в areas после сверки: 491eaaa7 Merge remote-tracking branch 'origin/main' into work3 … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-01 | ⚠ 2 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 188 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 208 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 100 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1024 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1025 коммит(ов) в areas после сверки: 1addd2c1 docs(kb): update after merge ea022884-f48d-4a7a-bfb2-926aace5f4b2 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 113 коммит(ов) в areas после сверки: 7639103f Merge task ea022884-f48d-4a7a-bfb2-926aace5f4b2 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 150 коммит(ов) в areas после сверки: 7639103f Merge task ea022884-f48d-4a7a-bfb2-926aace5f4b2 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 69 коммит(ов) в areas после сверки: c28a39ce feat(git): блокировка каталога в БД, продолжение обрезанного списка, e2e и переводы кодов … |
@@ -61,9 +61,10 @@
 
 ## Журнал сессий
 
-Всего записей: 505. Последние:
+Всего записей: 506. Последние:
 
 - [2026-09-01-macbook-air-user-user-message-copy.md](log/2026-09-01-macbook-air-user-user-message-copy.md) — user-message-copy
+- [2026-09-01-macbook-air-user-invite-link-copy.md](log/2026-09-01-macbook-air-user-invite-link-copy.md) — invite-link-copy
 - [2026-09-01-alexeys-macbook-air-2-sidebar-project-menu-layer.md](log/2026-09-01-alexeys-macbook-air-2-sidebar-project-menu-layer.md) — sidebar-project-menu-layer
 - [2026-09-01-alexeys-macbook-air-2-qa-run-lifecycle-coverage.md](log/2026-09-01-alexeys-macbook-air-2-qa-run-lifecycle-coverage.md) — qa-run-lifecycle-coverage
 - [2026-09-01-alexeys-macbook-air-2-operations-store-coverage.md](log/2026-09-01-alexeys-macbook-air-2-operations-store-coverage.md) — operations-store-coverage
@@ -72,7 +73,6 @@
 - [2026-09-01-alexeys-macbook-air-2-dead-code-vs-uncovered.md](log/2026-09-01-alexeys-macbook-air-2-dead-code-vs-uncovered.md) — dead-code-vs-uncovered
 - [2026-09-01-alexeys-macbook-air-2-database-uncalled-methods.md](log/2026-09-01-alexeys-macbook-air-2-database-uncalled-methods.md) — database-uncalled-methods
 - [2026-09-01-alexeys-macbook-air-2-context-inspector-round-24.md](log/2026-09-01-alexeys-macbook-air-2-context-inspector-round-24.md) — 2026-09-01-alexeys-macbook-air-2-context-inspector-round-24
-- [2026-09-01-alexeys-macbook-air-2-context-inspector-round-23.md](log/2026-09-01-alexeys-macbook-air-2-context-inspector-round-23.md) — 2026-09-01-alexeys-macbook-air-2-context-inspector-round-23
 
 ## Исторические планы
 
