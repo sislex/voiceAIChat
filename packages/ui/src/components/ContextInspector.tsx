@@ -52,7 +52,7 @@ const dynamicIds = new Set(['current-message', 'knowledge-mode'])
 // подходит под маски дополнительных (`skill-*`, `mcp-*`, `instruction-*`), на
 // экран не попадёт вовсе — так пропал «Контекст задачи», пока его сюда не
 // добавили. Новый пункт сервера — сразу в этот набор или в маску.
-const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'task-context', 'knowledge-mode', 'conversation-history', 'current-message'])
+const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'task-context', 'make-context', 'knowledge-mode', 'conversation-history', 'current-message'])
 /** Фильтр списка: показывать всё, только уходящее в ход или только исключённое. */
 type ItemFilter = 'all' | 'included' | 'excluded' | 'touched'
 

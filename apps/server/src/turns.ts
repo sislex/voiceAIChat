@@ -619,7 +619,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       effectiveChatInstructions(settings.chatInstructions, disabledContext),
       conv?.assistantKind ?? null
     )
-    const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext ? await deps.makeContext(conversationId).catch(() => '') : ''
+    // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
+    // показывает, значит ход обязан его слушать.
+    const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext && !disabledContext.has('make-context')
+      ? await deps.makeContext(conversationId).catch(() => '')
+      : ''
     const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
