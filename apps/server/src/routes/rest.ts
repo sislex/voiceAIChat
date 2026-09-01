@@ -204,6 +204,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
    * появится новое семейство, оно обязано появиться и тут, иначе список «что
    * сможет модель» снова станет неполным.
    */
+  const autonomy = conversation.assistantAutonomy ?? 'auto'
   const kindTools = [
     {
       id: 'mcp-browser-preview', title: 'browser:* (веб-превью)', source: 'Вид чата: превью страницы',
@@ -315,6 +316,18 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
             'Навыков в политике': agent.policy.skills.length
           }
         : { 'Машина': 'не выбрана или недоступна' } }),
+      // Автопилот панели ассистента: решает, применяет ли модель изменения
+      // доски сама или спрашивает каждое. Это не «что ей уйдёт», а «что она
+      // сможет сделать», и до этого экран об этом молчал — хотя переключатель
+      // живёт в шапке ассистента и о нём легко забыть.
+      ...(conversation.projectId ? [contextItem({ id: 'assistant-autonomy', type: 'Панель ассистента', source: 'Настройки разговора', scope: project?.name ?? 'Проект чата', priority: '8 · права ассистента',
+        title: autonomy === 'auto' ? 'Автопилот: изменения без подтверждения' : 'Автопилот выключен: каждое изменение спрашивается',
+        description: autonomy === 'auto'
+          ? 'Ассистент меняет доску сам; необратимое (деплой, удаление) спрашивается всегда.'
+          : 'Ассистент спрашивает любое изменение доски.',
+        explanation: 'Действует только для ходов из панели ассистента проекта. Обычный чат доску не меняет.',
+        configured: true, available: true, includedInNextTurn: true,
+        details: { 'Значение': autonomy, 'Спрашивается всегда': ['деплой', 'удаление'] } })] : []),
       contextItem({ id: 'permission-mode', type: 'Режим разрешений', source: conversation.permissionMode ? 'Разговор' : 'Эффективная политика сервера', scope: 'Инструменты и изменения', priority: '7 · конфигурация', title: permissionDisplay[permissionMode].displayName, description: permissionDisplay[permissionMode].explanation, explanation: permissionMode === 'plan' && conversation.permissionMode !== 'plan' ? 'Сервер безопасно форсировал режим.' : 'Выбранное или унаследованное значение.', configured: true, available: true, includedInNextTurn: true, inheritance: {
         effective: permissionDisplay[permissionMode].displayName,
         ...(conversation.permissionMode && conversation.permissionMode !== permissionMode

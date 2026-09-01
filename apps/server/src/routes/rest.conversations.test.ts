@@ -1157,6 +1157,31 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('показывает автопилот ассистента и следует за его переключением', async () => {
+    const project = db.createProject(U, { name: 'Проект автопилота' })
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'С доской', projectId: project.id } })).json()
+    const autonomyItem = async (): Promise<{ title: string; details?: Record<string, unknown> } | undefined> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return snapshot.groups
+        .flatMap((group: { items: Array<{ id: string; title: string; details?: Record<string, unknown> }> }) => group.items)
+        .find((item: { id: string }) => item.id === 'assistant-autonomy')
+    }
+    // По умолчанию автопилот включён — так же читает и сам kanban-MCP.
+    expect((await autonomyItem())?.title).toContain('изменения без подтверждения')
+
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/assistant-autonomy`, payload: { autonomy: 'confirm' } })
+    const after = await autonomyItem()
+    expect(after?.title).toContain('каждое изменение спрашивается')
+    expect(after?.details?.['Значение']).toBe('confirm')
+  })
+
+  it('в чате без проекта автопилота нет: доски у него не бывает', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Без проекта' } })).json()
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const items = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items)
+    expect(items.some((item: { id: string }) => item.id === 'assistant-autonomy')).toBe(false)
+  })
+
   it('перечисляет инструменты, которые даёт вид чата, и не даёт их выключить', async () => {
     const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
     const make = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make' } })).json()
