@@ -1,0 +1,24 @@
+appId: com.voiceaichat.login
+productName: VoiceChat Login
+directories:
+  output: release
+afterPack: scripts/afterPack.cjs
+files:
+  - out/**/*
+  - package.json
+  - '!src/**'
+  - '!**/*.map'
+protocols:
+  - name: VoiceChat Device Enrollment
+    schemes:
+      - voicechat-login
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  identity: null
+dmg:
+  title: VoiceChat Login
+npmRebuild: false

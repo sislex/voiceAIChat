@@ -49,6 +49,7 @@ import type {
   UsageUnit, SecurityEvent, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
+import type { EnrollmentIssued, EnrollmentStatusResult, LoginApplicationArtifact } from './enrollment'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
 import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent, BatchExecResult } from './agentProtocol'
@@ -330,6 +331,9 @@ export interface IpcInvokeMap {
   'agents:registerStorage': { arg: { id: string; rootPath: string }; result: MachineStorage }
   /** Создать машину-агента; токен возвращается один раз. */
   'agents:create': { arg: { name: string }; result: AgentCreated }
+  'loginApplication:artifacts': { arg: { platform: string; arch: string }; result: LoginApplicationArtifact[] }
+  'loginApplication:issueEnrollment': { arg: void; result: EnrollmentIssued }
+  'loginApplication:enrollmentStatus': { arg: { statusId: string }; result: EnrollmentStatusResult }
   /** Удалить машину-агента (отзывает токен, рвёт соединение). */
   'agents:delete': { arg: { id: string }; result: void }
   /** Задать политику возможностей машины. */

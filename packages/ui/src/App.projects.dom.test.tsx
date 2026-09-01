@@ -5,6 +5,7 @@ import App, { appendWidgetAction } from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board } from '@shared/projects'
+import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
 
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }
 
@@ -28,8 +29,14 @@ afterEach(() => {
   localStorage.clear()
 })
 
+function withAvailableMachine(api: FakeApi): void {
+  const machine: AgentInfo = { id: 'test-mac', name: 'Test Mac', online: true, createdAt: 1, lastSeen: 1, policy: DEFAULT_AGENT_POLICY }
+  api['agents:list'] = async () => [machine]
+}
+
 async function renderApp(): Promise<FakeApi> {
   const api = createFakeApi([])
+  withAvailableMachine(api)
   await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
   render(<App api={api} delays={SLOW} />)
   return api
@@ -37,6 +44,7 @@ async function renderApp(): Promise<FakeApi> {
 
 async function renderWithProject(): Promise<{ api: FakeApi; projectId: string }> {
   const api = createFakeApi([])
+  withAvailableMachine(api)
   await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
   const p = await api['projects:create']({ name: 'Мой проект' })
   render(<App api={api} delays={SLOW} />)
@@ -192,6 +200,7 @@ describe('App — завершённые задачи скрыты с доски
   /** Проект с задачей в «Готово» и порогом 0 («убрать в конце дня»). */
   async function withCompleted(): Promise<{ api: FakeApi; projectId: string; taskId: string }> {
     const api = createFakeApi([])
+    withAvailableMachine(api)
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     const p = await api['projects:create']({ name: 'Мой проект' })
     const board = await api['board:get']({ id: p.id })
@@ -307,6 +316,7 @@ describe('App — чаты завершённых задач в сайдбаре
   /** Проект с задачей в «Готово» и её чатом; сайдбар уже сужен этим проектом. */
   async function withDoneTaskChat(): Promise<{ api: FakeApi; projectId: string; taskId: string; chatId: string }> {
     const api = createFakeApi([])
+    withAvailableMachine(api)
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     const p = await api['projects:create']({ name: 'Мой проект' })
     const board = await api['board:get']({ id: p.id })
@@ -527,6 +537,7 @@ describe('App — виджет задачи только в своём чате'
   /** Проект с задачей и её чатом; чат открыт по адресу. */
   async function withTaskChat(patch?: (api: FakeApi) => void): Promise<{ api: FakeApi; chatId: string }> {
     const api = createFakeApi([])
+    withAvailableMachine(api)
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     const p = await api['projects:create']({ name: 'Мой проект' })
     const board = await api['board:get']({ id: p.id })

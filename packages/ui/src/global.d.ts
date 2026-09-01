@@ -30,6 +30,11 @@ import type { RendererQaBridge } from './remote/qaBridge'
 declare global {
   interface Window {
     api: RendererApi
+    /** Минимальный host-мост единого Electron-приложения; в browser отсутствует. */
+    desktopHost?: {
+      kind: 'desktop'
+      enrollCurrentDevice: (deepLink: string) => Promise<void>
+    }
     audio: RendererAudioBridge
     auth?: RendererAuthBridge
     stt: RendererSttBridge

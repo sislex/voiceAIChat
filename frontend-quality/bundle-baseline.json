@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
   "measurement": "Vite minified JavaScript bytes",
-  "measuredAt": "2026-08-31 круг 6: карточка задачи, настройки проекта и маршрут админки вне главного чанка",
+  "measuredAt": "2026-09-01: общий machine-required enrollment guard и диалог первого устройства",
   "headroom": "~1% над фактом; бюджет поднимается только явно и с причиной",
   "maxBytes": {
-    "index-": 783000,
+    "index-": 913000,
     "react-": 160000,
     "markdown-": 375000,
     "terminal-": 327000,
     "qrcode-": 27000
   },
   "totalJsMaxBytes": 18120000,
-  "//": "index- 774 691 против 1 336 385 до круга 2 (−562 КБ, −42%). Круг 6 снял 257 КБ: TaskModal (85 КБ исходника — хост рендерил черновик задачи статическим импортом мимо ленивого раздела «Проекты»), ProjectSettings, BrowserSessionPane, а маршрут админки переехал в @shared/adminRoute — статический parseAdminRoute из индекса пакета возвращал в главный чанк всю админку (70 КБ) и профиль (60 КБ). Состав чанка мерян по sourcemap (vite build --sourcemap), без новых зависимостей."
+  "//": "Бюджет index- зафиксирован по production build после добавления общего enrollment guard. Guard не добавляет внешних runtime-зависимостей; рост принят явно, чтобы machine-required continuation, polling серверного статуса и единый диалог оставались в host lifecycle."
 }

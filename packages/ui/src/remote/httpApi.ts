@@ -292,6 +292,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/agents/${encodeURIComponent(id)}/storages`, { method: 'POST', body: JSON.stringify({ rootPath }) }),
     'agents:create': ({ name }) =>
       req(REST.agents, { method: 'POST', body: JSON.stringify({ name }) }),
+    'loginApplication:artifacts': ({ platform, arch }) =>
+      req(`${REST.loginApplicationArtifacts}?platform=${encodeURIComponent(platform)}&arch=${encodeURIComponent(arch)}`),
+    'loginApplication:issueEnrollment': () =>
+      req(REST.loginEnrollmentIssue, { method: 'POST' }),
+    'loginApplication:enrollmentStatus': ({ statusId }) =>
+      req(REST.loginEnrollmentStatus(statusId)),
     'agents:delete': async ({ id }) => {
       await req(REST.agent(id), { method: 'DELETE' })
     },

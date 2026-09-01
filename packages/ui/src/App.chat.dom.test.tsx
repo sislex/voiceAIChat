@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import App, { openWebReaderWorkspace } from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
 
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }
 
@@ -11,6 +12,7 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 // можно скопировать и открыть заново. Между тестами hash сбрасывает setup.ts.
 afterEach(() => {
   window.location.hash = ''
+  delete window.desktopHost
   vi.unstubAllGlobals()
 })
 
@@ -24,6 +26,8 @@ interface Seeded {
 
 async function seededApi(): Promise<Seeded> {
   const api = createFakeApi([])
+  const availableMachine: AgentInfo = { id: 'test-mac', name: 'Test Mac', online: true, createdAt: 1, lastSeen: 1, policy: DEFAULT_AGENT_POLICY }
+  api['agents:list'] = async () => [availableMachine]
   await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
   const gifts = await api['conversations:create']({ title: 'Идеи для подарка' })
   await api['messages:add']({ conversationId: gifts.id, role: 'u1', text: 'Что подарить?', time: '10:00' })
@@ -31,6 +35,60 @@ async function seededApi(): Promise<Seeded> {
   await api['messages:add']({ conversationId: lisbon.id, role: 'u1', text: 'Погода в июле?', time: '14:02' })
   return { api, gifts: gifts.id, lisbon: lisbon.id }
 }
+
+describe('App — machine-required guard', () => {
+  it('при отсутствии online-машины приостанавливает создание чата и показывает единый web-диалог', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Текущий чат' })
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Текущий чат')
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    expect(await screen.findByRole('dialog', { name: 'Подключить устройство' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Скачать приложение' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Открыть приложение' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Создать разговор' })).not.toBeInTheDocument()
+  })
+
+  it('после server-confirmed enrollment назначает default и продолжает создание чата ровно один раз', async () => {
+    let enrolled = false
+    const api = createFakeApi([])
+    const currentMac: AgentInfo = {
+      id: 'current-mac',
+      name: 'Текущий Mac',
+      online: true,
+      createdAt: 1,
+      lastSeen: 1,
+      policy: DEFAULT_AGENT_POLICY
+    }
+    api['agents:list'] = async () => enrolled ? [currentMac] : []
+    api['loginApplication:issueEnrollment'] = async () => {
+      enrolled = true
+      return {
+        enrollmentToken: 'one',
+        statusId: 'status-one',
+        expiresAt: Date.now() + 60_000,
+        deepLink: 'voicechat-login://enroll?v=1&token=one&status=status-one&server=http%3A%2F%2Flocalhost%3A8787'
+      }
+    }
+    api['loginApplication:enrollmentStatus'] = async () => ({
+      status: 'completed',
+      agentId: currentMac.id,
+      expiresAt: Date.now() + 60_000
+    })
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Текущий чат' })
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Текущий чат')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    expect(await screen.findByRole('dialog', { name: 'Подключить устройство' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть приложение' }))
+
+    await waitFor(() => expect(api._state.settings.defaultAgentId).toBe(currentMac.id), { timeout: 2_000 })
+    expect(await screen.findByRole('button', { name: 'Создать разговор' })).toBeInTheDocument()
+  })
+})
 
 describe('App — адрес открытого чата (#/chat/:id)', () => {
   it('загрузка без адреса открывает свежий чат и подставляет его id в URL', async () => {

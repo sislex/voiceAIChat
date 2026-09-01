@@ -32,10 +32,17 @@ const remoteClient = {
   markLegacyMigrated: (): Promise<void> => ipcRenderer.invoke('remote:markLegacyMigrated')
 }
 
+const desktopHost = {
+  kind: 'desktop' as const,
+  enrollCurrentDevice: (deepLink: string): Promise<void> =>
+    ipcRenderer.invoke('desktop:enrollCurrentDevice', deepLink)
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('agentAdmin', agentAdmin)
     contextBridge.exposeInMainWorld('remoteClient', remoteClient)
+    contextBridge.exposeInMainWorld('desktopHost', desktopHost)
   } catch (error) {
     console.error('[preload] exposeInMainWorld failed', error)
   }
@@ -43,7 +50,9 @@ if (process.contextIsolated) {
   const g = globalThis as unknown as {
     agentAdmin: typeof agentAdmin
     remoteClient: typeof remoteClient
+    desktopHost: typeof desktopHost
   }
   g.agentAdmin = agentAdmin
   g.remoteClient = remoteClient
+  g.desktopHost = desktopHost
 }

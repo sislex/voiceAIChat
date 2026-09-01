@@ -75,6 +75,7 @@ export * from './browserId'
 export * from './widgetAssistant'
 export * from './kanbanSimilarity'
 export * from './orchestration'
+export * from './enrollment'
 
 export * from './kb'
 export * from './kbGaps'

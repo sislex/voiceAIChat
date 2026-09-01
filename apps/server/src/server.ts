@@ -425,7 +425,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   await registerAgentRoutes(app, db, agentRegistry, {
     agentApp: opts.config.agentAppPath,
-    desktopApp: opts.config.desktopAppPath
+    desktopApp: opts.config.desktopAppPath,
+    loginApplication: opts.config.loginApplicationPath
   }, commandGate)
   const storageMigrations = new StorageMigrationManager(join(opts.config.dataDir, 'storage-migrations.json'), {
     list: (machineId, path) => agentRegistry.fsList(machineId, path),
