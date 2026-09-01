@@ -1108,8 +1108,36 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     const ok = exitCode === 0
     if (ok) {
       const sha = output.match(/\(([0-9a-f]{7,64})\)/)?.[1]
-      const workspaceId = deps.db.getCiRunRaw(runId)?.workspaceId
+      const runRow = deps.db.getCiRunRaw(runId)
+      const workspaceId = runRow?.workspaceId
       if (sha && workspaceId) deps.db.recordCiWorkspaceRevision(workspaceId, env.BRANCH ?? '', sha)
+      // Managed-запись рабочей копии чата задачи: до этого таблица
+      // `conversation_workspaces` не заполнялась никем, и UI (бейдж чата, панель кода)
+      // держался на legacy `conversations.workdir`. Пишем ровно там, где всё известно
+      // достоверно: ветка отправлена, SHA подтверждён сверкой с origin.
+      const branch = env.BRANCH ?? ''
+      if (sha && /^[0-9a-f]{40}$/.test(sha) && branch && agentId && runRow?.conversationId) {
+        const storageId = deps.db.getProjectMachine(runRow.projectId, agentId)?.storageId
+        // Без MachineStorage managed-режима нет — остаётся legacy workdir, и это
+        // честнее, чем записать половину привязки.
+        if (storageId) {
+          try {
+            deps.db.saveConversationWorkspace({
+              conversationId: runRow.conversationId,
+              projectId: runRow.projectId,
+              machineId: agentId,
+              storageId,
+              mode: 'task_workspace',
+              baseSha: sha,
+              branch,
+              repositoryPath: workspacePath,
+              state: 'ready'
+            })
+          } catch (err) {
+            logLine('system', `Не удалось записать привязку рабочей копии чата: ${err instanceof Error ? err.message : String(err)}\n`)
+          }
+        }
+      }
     }
     if (!ok) logLine('system', 'Ветка не отправлена — рабочая директория сохранена, работа модели не потеряна\n')
     const upd = deps.db.updateCiRunStep(step.id, { status: ok ? 'success' : 'failed', exitCode, finishedAt: now(), durationMs: now() - started })

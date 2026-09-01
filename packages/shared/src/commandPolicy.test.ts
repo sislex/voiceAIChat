@@ -11,6 +11,14 @@ describe('commandPolicy', () => {
     expect(isDangerousCommand('rm file.txt')).toBeNull()
     expect(isDangerousCommand('git push origin feature')).toBeNull()
     expect(isDangerousCommand('npm test')).toBeNull()
+    // Слитные флаги `git clean` — во всех формах. Раньше `\b` сразу после `f`
+    // пропускал `-fd` и `-fdx` (самые частые), и подтверждения у них не спрашивали:
+    // модель могла снести неотслеживаемые файлы без вопроса.
+    for (const command of ['git clean -f', 'git clean -fd', 'git clean -fdx', 'git clean -xdf', 'git clean -ffd']) {
+      expect(isDangerousCommand(command), command).toBe('git reset --hard / clean -f / branch -D')
+    }
+    expect(isDangerousCommand('git clean --dry-run')).toBeNull()
+    expect(isDangerousCommand('git cleanup -force')).toBeNull()
   })
 
   it('слои: deny любого слоя — отказ, allow каждого непустого слоя обязателен', () => {

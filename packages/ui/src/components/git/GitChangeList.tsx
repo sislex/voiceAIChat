@@ -14,11 +14,13 @@ export interface GitChangeListProps {
   checked: ReadonlySet<string>
   /** Правка запрещена (read-only машина, занятый раном каталог) — чекбоксов нет. */
   writable: boolean
+  /** Пути с несохранёнными черновиками — помечаются точкой, чтобы правка не пропала из виду. */
+  dirtyPaths?: ReadonlySet<string>
   onSelect: (path: string) => void
   onToggle: (path: string, next: boolean) => void
 }
 
-export function GitChangeList({ changes, selectedPath, checked, writable, onSelect, onToggle }: GitChangeListProps): JSX.Element {
+export function GitChangeList({ changes, selectedPath, checked, writable, dirtyPaths, onSelect, onToggle }: GitChangeListProps): JSX.Element {
   const sorted = [...changes].sort((a, b) => gitChangeOrder(a.state) - gitChangeOrder(b.state) || a.path.localeCompare(b.path))
   return (
     <ul className="gitpane-changes" role="list" data-testid="git-change-list">
@@ -42,6 +44,7 @@ export function GitChangeList({ changes, selectedPath, checked, writable, onSele
           <button type="button" className="gitpane-change-open" onClick={() => onSelect(change.path)}>
             <span className={`gitpane-change-mark gitpane-change-mark--${change.state}`} aria-hidden="true">{gitChangeShort(change.state)}</span>
             <span className="gitpane-change-path">{change.path}</span>
+            {dirtyPaths?.has(change.path) && <span className="gitpane-change-dirty" title="Есть несохранённая правка">●</span>}
             <span className="gitpane-change-state">{gitChangeLabel(change.state)}{change.staged ? ' · в индексе' : ''}</span>
           </button>
         </li>

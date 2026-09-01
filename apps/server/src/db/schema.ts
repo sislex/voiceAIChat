@@ -738,6 +738,22 @@ CREATE TABLE IF NOT EXISTS ci_llm_configs (
   PRIMARY KEY (owner_type, owner_id)
 );
 
+-- Блокировка рабочей копии на время мутации панели кода.
+--
+-- Внутрипроцессного замка недостаточно: панель открыта в двух вкладках или сервер
+-- перезапустился посреди push — и два git-процесса встречаются в одном каталоге на
+-- index.lock. Ключ — машина плюс путь; TTL нужен, чтобы упавший процесс не оставил
+-- каталог заблокированным навсегда.
+CREATE TABLE IF NOT EXISTS git_workspace_locks (
+  agent_id    TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  holder      TEXT NOT NULL,
+  operation   TEXT NOT NULL,
+  acquired_at INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  PRIMARY KEY (agent_id, path)
+);
+
 CREATE TABLE IF NOT EXISTS ci_workspaces (
   id                 TEXT PRIMARY KEY,
   project_id         TEXT NOT NULL,

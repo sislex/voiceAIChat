@@ -23,6 +23,8 @@ export interface MachineTerminalProps {
   onClose?: () => void
   /** Переключиться на проводник этой машины в её cwd (шапка утилиты). */
   onSwitchUtility?: SwitchUtility
+  /** У рабочей копии есть панель кода — кнопка в переключателе шапки. */
+  gitAvailable?: boolean
   /** Ссылка в раздел «Машины» из шапки утилиты. */
   onOpenMachines?: () => void
   /** Стор открытых сеансов (вкладок). По умолчанию — общий стор приложения. */
@@ -134,6 +136,7 @@ export function MachineTerminal({
   variant = 'modal',
   onClose,
   onSwitchUtility,
+  gitAvailable,
   onOpenMachines,
   sessions = ptySessionStore,
   initialCommand
@@ -171,6 +174,7 @@ export function MachineTerminal({
         onAgentChange={(next) => sessions.open(next)}
         kind="console"
         dir={active?.cwd ?? initialCwd}
+        gitAvailable={gitAvailable}
         onSwitch={onSwitchUtility && agentId ? (next) => onSwitchUtility(next, agentId, active?.cwd ?? initialCwd) : undefined}
         onOpenMachines={onOpenMachines}
       />

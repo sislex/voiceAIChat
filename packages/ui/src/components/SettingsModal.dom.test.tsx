@@ -47,7 +47,8 @@ describe('SettingsModal · Инструкции', () => {
 
   it('показывает чекбоксы всех инструкций и отправляет список с выключенной', async () => {
     const { onChange, list } = await open()
-    expect(within(list).getAllByRole('checkbox')).toHaveLength(5)
+    // Шесть встроенных инструкций: консоль, проводник, панель кода, вопросы, картинки, разрешение на правки.
+    expect(within(list).getAllByRole('checkbox')).toHaveLength(6)
     await userEvent.click(within(list).getByRole('checkbox', { name: 'Открывать терминал в чате' }))
     const sent = last(onChange)
     expect(sent.find((it: { id: string }) => it.id === 'console')?.enabled).toBe(false)
@@ -76,10 +77,11 @@ describe('SettingsModal · Инструкции', () => {
     const { onChange, list } = await open()
     await userEvent.click(within(list).getByRole('button', { name: 'Дублировать: Уточняющие вопросы с вариантами' }))
     const dup = last(onChange)
-    expect(dup).toHaveLength(6)
-    expect(dup[3]).toMatchObject({ title: 'Уточняющие вопросы с вариантами (копия)', enabled: true })
-    expect(dup[3].kind).toBeUndefined()
-    expect(dup[3].text).toContain('```questions')
+    expect(dup).toHaveLength(7)
+    const copy = dup.find((item: { title?: string }) => item.title === 'Уточняющие вопросы с вариантами (копия)')
+    expect(copy).toMatchObject({ enabled: true })
+    expect(copy?.kind).toBeUndefined()
+    expect(String(copy?.text)).toContain('```questions')
     await userEvent.click(screen.getByRole('button', { name: '+ Добавить инструкцию' }))
     const added = last(onChange)
     expect(added.at(-1)).toMatchObject({ title: 'Новая инструкция', enabled: true, text: '' })

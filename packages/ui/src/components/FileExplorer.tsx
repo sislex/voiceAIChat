@@ -27,6 +27,8 @@ export interface FileExplorerProps {
   onSwitchUtility?: SwitchUtility
   /** Подпись консольной кнопки переключателя: «Терминал» (есть PTY) или «Консоль». */
   consoleLabel?: string
+  /** У этой рабочей копии есть панель кода — показать её в переключателе шапки. */
+  gitAvailable?: boolean
   /** Ссылка в раздел «Машины» из шапки утилиты. */
   onOpenMachines?: () => void
 }
@@ -114,6 +116,7 @@ export function FileExplorer({
   onClose,
   onSwitchUtility,
   consoleLabel,
+  gitAvailable,
   onOpenMachines
 }: FileExplorerProps): JSX.Element {
   const [agentId, setAgentId] = useState<string | null>(
@@ -346,6 +349,7 @@ export function FileExplorer({
         onAgentChange={setAgentId}
         kind="explorer"
         consoleLabel={consoleLabel}
+        gitAvailable={gitAvailable}
         dir={cwd || undefined}
         // Папку берём из прочитанного `cwd`, а не из аргумента открытия: агент мог
         // нормализовать путь, да и пользователь давно ушёл в другой каталог.

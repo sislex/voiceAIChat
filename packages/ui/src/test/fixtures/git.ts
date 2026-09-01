@@ -26,6 +26,7 @@ export function makeGitWorkspace(over: Partial<GitWorkspaceRef> = {}): GitWorksp
     pushed: false,
     online: true,
     writable: true,
+    readOnlyReason: null,
     busy: null,
     released: false,
     ...over
@@ -55,6 +56,7 @@ export function makeGitStatus(over: Partial<GitWorkspaceStatus> = {}): GitWorksp
       makeGitChange({ path: 'docs/kb/ui.md', state: 'modified', staged: true, worktree: false })
     ],
     changesTruncated: false,
+    mergeBase: 'b1c2d3e4f5061728394a5b6c7d8e9f0123456789',
     commitsAhead: [
       { sha: SHA, subject: 'feat(git): панель кода рабочей копии', author: 'bob', at: Math.floor(T0 / 1000) }
     ],

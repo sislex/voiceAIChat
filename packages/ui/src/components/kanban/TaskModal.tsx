@@ -1189,6 +1189,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             runId={(task.activeMergeRunId ?? task.latestMergeRunId) ?? null}
             canStart={Boolean(props.onStartMerge) && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: isCurrentMergeSourceMerged({ sourceSha: task.mergeSourceSha, mergedSourceSha: task.mergedSourceSha, mergedSha: task.mergedSha }), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound })}
             onStartMerge={(agentId) => props.onStartMerge?.(task.id, agentId)}
+            onOpenCode={() => setActiveTab('code')}
           />}
         </section>
         <section className="task-tab-panel task-code-tab" data-testid="task-code-tab" {...panelProps('code')}>

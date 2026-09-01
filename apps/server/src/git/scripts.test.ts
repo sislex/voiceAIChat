@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { isDangerousCommand, evaluateAgentCommand, DEFAULT_AGENT_POLICY } from '@voicechat/shared'
 import { buildShellCommand } from '../ci/executor.js'
 import {
-  branchesScript, checkoutScript, commitScript, createBranchScript,
-  fileAtRefScript, gitBaseEnv, pushScript, statusScript, treeScript
+  branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,
+  fileAtRefScript, gitBaseEnv, pullScript, pushScript, statusScript, treeScript
 } from './scripts.js'
 
 const ALL = () => [
@@ -20,7 +20,9 @@ const ALL = () => [
   createBranchScript('feature/y', 'HEAD'),
   commitScript({ message: 'fix', paths: ['a.txt'], all: false, user: 'bob', email: 'bob@x' }),
   commitScript({ message: 'fix', paths: [], all: true, user: 'bob', email: 'bob@x' }),
-  pushScript('feature/x')
+  pushScript('feature/x'),
+  pullScript('feature/x', 'rebase'),
+  pullScript('feature/x', 'merge')
 ]
 
 const command = (script: { script: string; env: Record<string, string> }): string =>
@@ -44,12 +46,24 @@ describe('безопасность скриптов', () => {
     }
   })
 
-  it('ни один скрипт не является опасной командой', () => {
-    // push --force / reset --hard / clean -f / branch -D мы не генерируем вовсе;
-    // тест ловит попытку «дописать для удобства».
+  it('ни один скрипт, кроме отбрасывания правок, не является опасной командой', () => {
+    // push --force / reset --hard / branch -D мы не генерируем вовсе; тест ловит
+    // попытку «дописать для удобства».
     for (const script of ALL()) {
       expect(isDangerousCommand(command(script)), script.script).toBeNull()
     }
+  })
+
+  it('отбрасывание правок — единственная опасная команда, и это осознанно', () => {
+    // `git clean` попадает в DANGEROUS_COMMAND_PATTERNS, и правильно: операция
+    // необратима. Поэтому её вызывает только явное действие с вводом имени ветки, а
+    // сервер сверяет подтверждение сам (`workspaceService.discard`).
+    const cmd = command(discardScript(['src/a.ts']))
+    expect(isDangerousCommand(cmd)).toBe('git reset --hard / clean -f / branch -D')
+    // Порядок важен: checkout возвращает отслеживаемые файлы, и только потом clean
+    // убирает неотслеживаемые — иначе clean удалил бы восстановимый файл.
+    const { script } = discardScript(['src/a.ts'])
+    expect(script.indexOf('git checkout --')).toBeLessThan(script.indexOf('git clean -fd --'))
   })
 
   it('имя ветки не может вырваться из кавычек и породить вторую команду', () => {
@@ -123,7 +137,7 @@ describe('состав скриптов', () => {
   })
 
   it('мутации идут под set -e, чтение — нет', () => {
-    for (const script of [commitScript({ message: 'm', paths: ['a'], all: false, user: 'u', email: 'e' }), pushScript('b'), checkoutScript('b'), createBranchScript('b', 'HEAD')]) {
+    for (const script of [commitScript({ message: 'm', paths: ['a'], all: false, user: 'u', email: 'e' }), pushScript('b'), checkoutScript('b'), createBranchScript('b', 'HEAD'), pullScript('b', 'rebase'), discardScript(['a'])]) {
       expect(script.script.startsWith('set -e'), script.script).toBe(true)
     }
     // У чтения `set -e` был бы вреден: у свежей ветки нет upstream, и статус
@@ -138,5 +152,22 @@ describe('состав скриптов', () => {
       GIT_OPTIONAL_LOCKS: '0',
       LC_ALL: 'C'
     })
+  })
+})
+
+describe('подтягивание и отбрасывание', () => {
+  it('rebase и merge откатывают начатое при конфликте, чтобы копия не осталась в середине', () => {
+    expect(pullScript('x', 'rebase').script).toContain('git rebase --abort; exit 65')
+    expect(pullScript('x', 'merge').script).toContain('git merge --abort; exit 65')
+  })
+
+  it('отсутствие ветки в origin отличается от ошибки git отдельной меткой', () => {
+    expect(pullScript('x', 'rebase').script).toContain("'no-upstream'")
+  })
+
+  it('пути отбрасывания идут через xargs -0: пробелы и кириллица не разъезжаются', () => {
+    const script = discardScript(['a b.txt', 'папка/файл.md'])
+    expect(script.env.VC_GIT_PATHS).toBe('a b.txt\nпапка/файл.md')
+    expect(script.script).not.toContain('a b.txt')
   })
 })
