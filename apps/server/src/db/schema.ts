@@ -283,7 +283,11 @@ CREATE TABLE IF NOT EXISTS conversation_context_events (
   -- Кто изменил: обычно владелец разговора, но админ правит и чужие чаты.
   actor TEXT NOT NULL,
   item_id TEXT NOT NULL,
-  enabled INTEGER NOT NULL
+  enabled INTEGER NOT NULL,
+  -- Новое значение настройки разговора (режим доступа, база знаний, движок).
+  -- NULL — событие тумблера: у него состояние выражает колонка enabled.
+  -- Колонка добавляется в migrate() и на существующей базе.
+  value TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_context_events_conversation ON conversation_context_events(conversation_id, id DESC);
 

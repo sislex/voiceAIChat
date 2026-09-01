@@ -26,7 +26,7 @@ function contextSnapshot(options: {
   viewerRole?: 'admin' | 'developer'
   lastTurn?: false
   warnings?: Array<{ itemId: string | null; level: 'notice' | 'problem'; text: string }>
-  changes?: Array<{ at: number; actor: string; itemId: string; enabled: boolean }>
+  changes?: Array<{ at: number; actor: string; itemId: string; enabled: boolean; value?: string }>
   turnSizes?: Array<{ at: string; model: string; chars: number; approxTokens: number; resumed: boolean; costUsd: number | null }>
   disallowedTools?: string[]
   cliMcpServers?: Array<{ name: string; detail: string; status: string }>
@@ -1272,6 +1272,63 @@ describe('ConversationSettings', () => {
     // Единственный пункт с размером — он же самый тяжёлый.
     fireEvent.click(screen.getByRole('button', { name: 'Самый тяжёлый: Предпочтения ответа' }))
     expect(await screen.findByRole('heading', { name: 'Предпочтения ответа' })).toBeInTheDocument()
+  })
+
+  it('журнал показывает смену настроек значением и фильтруется по виду события', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        changes: [
+          { at: 4, actor: 'admin', itemId: 'permission-mode', enabled: true, value: 'plan' },
+          { at: 3, actor: 'admin', itemId: 'personalization', enabled: false }
+        ]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const log = await screen.findByTestId('context-changes')
+    const rows = (): string[] => within(log).getAllByRole('listitem').map((node) => node.textContent ?? '')
+    expect(rows().some((text) => text.includes('изменил') && text.includes('plan'))).toBe(true)
+
+    // Смену настройки нельзя «отменить» тумблером: у неё нет двух состояний.
+    const settingRow = within(log).getAllByRole('listitem').find((node) => (node.textContent ?? '').includes('plan'))!
+    expect(within(settingRow).queryByRole('button', { name: 'Отменить' })).not.toBeInTheDocument()
+
+    fireEvent.change(within(log).getByRole('combobox', { name: 'Фильтр журнала по виду события' }), { target: { value: 'settings' } })
+    expect(rows()).toHaveLength(1)
+    fireEvent.change(within(log).getByRole('combobox', { name: 'Фильтр журнала по виду события' }), { target: { value: 'toggles' } })
+    expect(rows().every((text) => !text.includes('plan'))).toBe(true)
+  })
+
+  it('показывает отличия набора от пресета по умолчанию', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ personalizationEnabled: true })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
+      defaultPresetId="p1" onSetDefaultPreset={vi.fn()}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // Пресет гасит персонализацию, а в разговоре она включена — это отличие.
+    const diff = await screen.findByTestId('context-preset-diff')
+    expect(diff.textContent).toContain('Отличия от пресета «Минимальный»')
+    expect(diff.textContent).toContain('оставлено включённым 1')
+  })
+
+  it('раскрывает и сворачивает все разделы разом', async () => {
+    window.localStorage.removeItem('vc.context.sections')
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Раскрыть все разделы' }))
+    await waitFor(() => expect(screen.getByTestId('context-excluded')).toHaveAttribute('open'))
+    expect(JSON.parse(window.localStorage.getItem('vc.context.sections') ?? '{}')).toMatchObject({ excluded: true, changes: true, technical: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Свернуть все' }))
+    await waitFor(() => expect(screen.getByTestId('context-excluded')).not.toHaveAttribute('open'))
   })
 
 })
