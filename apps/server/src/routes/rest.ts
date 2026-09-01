@@ -1217,7 +1217,7 @@ export async function registerRest(
   app.post<{ Params: { id: string }; Body: AddMessageArgs }>(
     '/api/conversations/:id/messages',
     async (req) => {
-      const { role, text, time, engine, meta, execTarget, attachments } = req.body
+      const { messageId, role, text, time, engine, meta, execTarget, attachments } = req.body
       const userId = uid(req)
       // Ответ без движка/машины (самодиагностика пишет текст сама) получает
       // эффективные значения разговора: проектное наследование знает только сервер.
@@ -1237,7 +1237,7 @@ export async function registerRest(
           effectiveTarget = machine?.source === 'disabled' ? 'none' : machine?.agentId ?? null
         }
       }
-      return db.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments)
+      return db.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
     }
   )
 
