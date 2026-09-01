@@ -253,10 +253,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:delete': async ({ id }) => {
       await req(REST.conversation(id), { method: 'DELETE' })
     },
-    'messages:add': ({ conversationId, role, text, time, engine, meta, execTarget, attachments }) =>
+    'messages:add': ({ conversationId, messageId, role, text, time, engine, meta, execTarget, attachments }) =>
       req(REST.messages(conversationId), {
         method: 'POST',
-        body: JSON.stringify({ role, text, time, ...(engine ? { engine } : {}), ...(meta ? { meta } : {}), ...(execTarget !== undefined ? { execTarget } : {}), ...(attachments?.length ? { attachments } : {}) })
+        body: JSON.stringify({ ...(messageId ? { messageId } : {}), role, text, time, ...(engine ? { engine } : {}), ...(meta ? { meta } : {}), ...(execTarget !== undefined ? { execTarget } : {}), ...(attachments?.length ? { attachments } : {}) })
       }),
     'messages:updateMeta': ({ conversationId, messageId, meta }) =>
       req(REST.message(conversationId, messageId), { method: 'PATCH', body: JSON.stringify({ meta }) }),

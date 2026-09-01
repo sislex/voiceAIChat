@@ -745,16 +745,20 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         if (messages[i].conversationId === id) messages.splice(i, 1)
       }
     },
-    'messages:add': async ({ conversationId, role, text, time, engine, meta }) => {
+    'messages:add': async ({ conversationId, messageId, role, text, time, engine, meta, execTarget, attachments }) => {
+      const existing = messageId ? messages.find((item) => item.id === messageId && item.conversationId === conversationId) : undefined
+      if (existing) return { ...existing }
       const msg: Message = {
-        id: nextId(),
+        id: messageId ?? nextId(),
         conversationId,
         role,
         text,
         time,
         createdAt: tick(),
         ...(engine ? { engine } : {}),
-        ...(meta ? { meta } : {})
+        ...(meta ? { meta } : {}),
+        ...(execTarget !== undefined ? { execTarget } : {}),
+        ...(attachments?.length ? { attachments } : {})
       }
       messages.push(msg)
       const conv = conversations.find((c) => c.id === conversationId)

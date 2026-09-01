@@ -1,7 +1,7 @@
 ---
 title: Frontend-модуль Administration: граница, store и подключение
-updated: 2026-08-19
-checked: 437c35b3
+updated: 2026-09-01
+checked: 65c889af
 areas:
   - packages/admin-app
   - packages/ui/src/App.tsx
@@ -45,3 +45,9 @@ Host adapter `createAdminClient` в `packages/ui/src/clients/browser.ts` пер�
 `src/styles.css` импортирует только стили `@voicechat/ui-kit`, использует theme tokens и имеет mobile breakpoint; пакет не зависит от полного host `app.css`. Storybook общего UI подхватывает `AdminApp.stories.tsx`; обязательная матрица включает overview, empty usage и access matrix с wildcard-доступом модели.
 
 Пакет имеет собственные команды `typecheck` и `test`, JSDOM setup, DOM/a11y, routes, store и architecture tests. Архитектурный тест запрещает host stores, platform apps, прямые transport API, browser storage и глубокие импорты host source. Пакет входит в канонический `npm run verify:frontend`; общий gate дополнительно проверяет публичные exports, CSS-изоляцию, Storybook-матрицу и role-gated lazy import Administration. `affected-check` запускает дорогие frontend build gates только для frontend-влияния.
+
+## Инвайт-ссылки и копирование
+
+Host передаёт в `UsersAdmin` абсолютную базу инвайта как `window.location.origin + window.location.pathname`; модуль добавляет hash-маршрут `#/invite/<URL-encoded token>`. Источники формирования ссылки — `packages/ui/src/App.tsx` и `packages/admin-app/src/users/InvitesPanel.tsx`.
+
+Для каждого инвайта `InvitesPanel` выводит клавиатурно доступную кнопку с доступным именем, содержащим токен. Копирование через `packages/admin-app/src/clipboard.ts` сначала ожидает `navigator.clipboard.writeText`, а при отсутствии API или отказе создаёт временный readonly textarea и вызывает `document.execCommand('copy')`; временный узел удаляется в любом исходе. Успешное состояние «Скопировано» ставится только при результате `true`, привязано к токену строки и сбрасывается через 1,5 секунды; завершение более старой попытки не перезаписывает новую. Если оба способа не сработали, у соответствующего инвайта появляется сообщение с `role="alert"` о ручном копировании без ложного успешного состояния.

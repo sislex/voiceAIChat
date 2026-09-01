@@ -2218,12 +2218,30 @@ export class VoiceChatDb {
     engine?: LlmProvider,
     meta?: TurnMeta,
     execTarget?: string | null,
-    attachments?: MessageAttachment[]
+    attachments?: MessageAttachment[],
+    requestedId?: string
   ): Message {
     if (!this.ownsConversation(userId, conversationId)) {
       throw new Error(`Разговор ${conversationId} не принадлежит пользователю`)
     }
-    const id = this.newId()
+    const id = requestedId ?? this.newId()
+    const existing = requestedId
+      ? this.db.prepare(`SELECT * FROM messages WHERE id = ? AND conversation_id = ?`).get(requestedId, conversationId) as MessageRow | undefined
+      : undefined
+    if (existing) {
+      return {
+        id: existing.id,
+        conversationId: existing.conversation_id,
+        role: existing.role as MessageRole,
+        text: existing.text,
+        time: existing.time,
+        createdAt: existing.created_at,
+        ...(existing.engine ? { engine: existing.engine as LlmProvider } : {}),
+        ...(existing.meta ? { meta: parseMeta(existing.meta) } : {}),
+        ...(existing.exec_target !== null ? { execTarget: existing.exec_target } : {}),
+        ...(parseAttachments(existing.attachments) ? { attachments: parseAttachments(existing.attachments) } : {})
+      }
+    }
     const createdAt = this.now()
     const insert = this.db.prepare(
       `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position)
