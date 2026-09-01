@@ -443,6 +443,26 @@ describe('REST: conversations/messages/settings', () => {
     expect(got.messages).toHaveLength(1)
   })
 
+  it('повторный POST с messageId возвращает исходное сообщение без дубля и изменения payload', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
+    const url = `/api/conversations/${c.id}/messages`
+    const first = (await inj({
+      method: 'POST',
+      url,
+      payload: { messageId: 'client-message-1', role: 'u1', text: 'Исходный', time: '10:00' }
+    })).json()
+    const replay = (await inj({
+      method: 'POST',
+      url,
+      payload: { messageId: 'client-message-1', role: 'u1', text: 'Дубликат', time: '11:00' }
+    })).json()
+
+    expect(replay).toEqual(first)
+    expect(replay.text).toBe('Исходный')
+    const got = (await inj({ method: 'GET', url: `/api/conversations/${c.id}` })).json()
+    expect(got.messages).toHaveLength(1)
+  })
+
   it('обновляет и сохраняет состояние списка task-launch в meta сообщения', async () => {
     const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
     const m = (await inj({
