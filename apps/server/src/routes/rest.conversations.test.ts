@@ -1232,7 +1232,7 @@ describe('REST: conversations/messages/settings', () => {
       .map((item: { id: string }) => item.id)
       .sort()
     expect(ids).toEqual([
-      'instruction-console', 'instruction-explorer', 'instruction-image', 'instruction-questions', 'instruction-taskLaunch',
+      'instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-image', 'instruction-questions', 'instruction-taskLaunch',
       'knowledge-mode',
       'mcp-kb-document', 'mcp-kb-search', 'mcp-kb-topics',
       'mcp-remote-bash', 'mcp-remote-edit', 'mcp-remote-machines', 'mcp-remote-read',
