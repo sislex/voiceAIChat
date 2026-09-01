@@ -84,7 +84,23 @@ const kbDisplay: Record<KbContextMode, { displayName: string; explanation: strin
  * данные берутся у владельца (иначе снимок был бы пустым), но роль и пометка
  * «чужой разговор» считаются по смотрящему.
  */
-function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean, kbStatus?: KbStatus | null, cliMcpServers: Array<{ name: string; detail: string; status: string }> = [], viewer: string = userId): ConversationContextSnapshot | null {
+/**
+ * Необязательные входы снимка. Раньше это были пять позиционных аргументов
+ * подряд, и на вызове было не понять, что означает шестой; новый вход (текст
+ * Make-контекста) сделал бы это окончательно нечитаемым.
+ */
+interface ContextSnapshotOptions {
+  isOnline?: (id: string) => boolean
+  kbStatus?: KbStatus | null
+  cliMcpServers?: Array<{ name: string; detail: string; status: string }>
+  /** Кто смотрит: у админа это может быть не владелец разговора. */
+  viewer?: string
+  /** Текст контекста Make-проекта, если чат Make: читается вне снимка (async). */
+  makeContext?: string | null
+}
+
+function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, options: ContextSnapshotOptions = {}): ConversationContextSnapshot | null {
+  const { isOnline, kbStatus, cliMcpServers = [], viewer = userId, makeContext = null } = options
   const conversation = db.getConversation(userId, conversationId)
   if (!conversation) return null
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
@@ -216,6 +232,14 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     })) },
     { id: 'project', order: 3, title: 'Проект, директория и AGENTS.md', description: 'Эффективная рабочая область следующего хода.', items: [
       contextItem({ id: 'project-binding', type: 'Проект', source: 'Настройки разговора', scope: project?.name ?? 'Без проекта', priority: '4 · проект', title: project?.name ?? 'Проект не выбран', description: project ? 'Проект доступен пользователю.' : 'Привязка отсутствует.', explanation: project ? 'Явная привязка разговора.' : 'Проектный контекст не включён.', configured: Boolean(conversation.projectId), available: Boolean(project), includedInNextTurn: Boolean(project), details: projectDetails }),
+      // Контекст Make-проекта: токены темы и открытые комментарии. Уходит в
+      // каждом ходе Make-чата и до этого в предпросмотре отсутствовал.
+      ...(conversation.assistantKind === 'make' ? [contextItem({ id: 'make-context', type: 'Make', source: 'Мастерская проекта', scope: 'Следующий ход', priority: '4 · проект Make',
+        title: 'Контекст проекта Make',
+        description: makeContext ? 'Токены темы и открытые комментарии к макету' : 'Пока пусто: нет токенов темы и открытых комментариев',
+        explanation: 'Собирается из файлов проекта Make в момент хода. Выключается тумблером — тогда модель работает без темы и замечаний.',
+        configured: true, available: Boolean(makeContext), includedInNextTurn: Boolean(makeContext) && !disabled.has('make-context'),
+        size: makeContext ? { chars: makeContext.length, approxTokens: approxTokens(makeContext.length) } : null })] : []),
       // Контекст задачи — отдельный пункт: в чате задачи это самый большой блок
       // после истории, а до этого он прятался внутри «проекта» и в предпросмотр
       // не попадал вовсе.
@@ -419,6 +443,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     project: disabled.has('project-binding') ? null : project,
     projectId: disabled.has('project-binding') ? null : conversation.projectId ?? null,
     taskContext,
+    // Тумблер `make-context` настоящий: ход его тоже проверяет.
+    makeContext: disabled.has('make-context') ? null : makeContext,
     now
   })
   const previewText = previewBlocks.map((block) => block.text).join('\n\n')
@@ -533,6 +559,15 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         .filter((entry): entry is { model: string; costUsd: number } => entry.costUsd !== null),
       omitted: [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
+        // Эти блоки собираются в момент хода из того, что происходит на экране
+        // или из режима запуска: показать их «как будет» снимок не может, но
+        // молчать о них тоже нельзя — человек видит их следы в ответах.
+        ...(conversation.assistantKind === 'make'
+          ? ['Режим Make: при «Только планирование» ход получает блок «Режим вопроса», а на больших переделках — «Режим плана». Оба добавляются в момент отправки.']
+          : []),
+        ...(conversation.projectId
+          ? ['Режим канбан-ассистента: снимок доски и открытого экрана добавляется, только когда сообщение отправлено из панели ассистента.']
+          : []),
         resumeId
           ? 'История разговора: ход продолжает сессию движка, история заново не отправляется.'
           : `История разговора: пересобирается в момент отправки, ≈${approxTokens(historyText.length)} токенов.`,
@@ -574,6 +609,11 @@ export async function registerRest(
     fsRead?: (agentId: string, path: string) => Promise<{ dataBase64?: string }>
     /** Живой статус машин (online, версия, телеметрия): реестр агентов живёт в server.ts. */
     liveAgents?: (agents: ReturnType<VoiceChatDb['listAgents']>) => AgentInfo[]
+    /**
+     * Контекст Make-проекта для предпросмотра: тот же текст, что ход добавляет
+     * к промпту. Мастерская живёт в `server.ts`, поэтому приходит функцией.
+     */
+    makeContext?: (conversationId: string) => Promise<string>
   } = {}
 ): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
@@ -731,7 +771,15 @@ export async function registerRest(
     // должны ломать снимок — тогда список просто пуст.
     const cliMcp = await listMcpServers().catch(() => [])
     const owner = contextOwnerFor(req, req.params.id)
-    const snapshot = owner ? contextSnapshot(db, owner, req.params.id, opts.isAgentOnline, kbStatusSafe(), cliMcp, uid(req)) : null
+    // Контекст Make-проекта (токены темы и открытые комментарии) уходит в ход
+    // отдельным блоком. Читается с диска, поэтому здесь, а не внутри снимка:
+    // сам снимок синхронный. Ошибка чтения не должна ломать экран — тогда
+    // блока просто не будет, как и в ходе (там та же `.catch`).
+    const makeConv = owner ? db.getConversation(owner, req.params.id) : null
+    const makeContextText = makeConv?.assistantKind === 'make' && opts.makeContext
+      ? await opts.makeContext(req.params.id).catch(() => '')
+      : null
+    const snapshot = owner ? contextSnapshot(db, owner, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe(), cliMcpServers: cliMcp, viewer: uid(req), makeContext: makeContextText }) : null
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
   })
@@ -745,7 +793,7 @@ export async function registerRest(
     if (!owner) return reply.code(404).send({ error: 'not found' })
     const updated = db.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
-    const snapshot = contextSnapshot(db, owner, req.params.id, opts.isAgentOnline, kbStatusSafe(), [], uid(req))
+    const snapshot = contextSnapshot(db, owner, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe(), viewer: uid(req) })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
@@ -757,8 +805,8 @@ export async function registerRest(
    */
   app.get<{ Params: { id: string; otherId: string } }>('/api/conversations/:id/context-diff/:otherId', async (req, reply) => {
     const userId = uid(req)
-    const here = contextSnapshot(db, userId, req.params.id, opts.isAgentOnline, kbStatusSafe())
-    const there = contextSnapshot(db, userId, req.params.otherId, opts.isAgentOnline, kbStatusSafe())
+    const here = contextSnapshot(db, userId, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe() })
+    const there = contextSnapshot(db, userId, req.params.otherId, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe() })
     const otherConversation = db.getConversation(userId, req.params.otherId)
     if (!here || !there || !otherConversation) return reply.code(404).send({ error: 'not found' })
     const itemsOf = (snapshot: ConversationContextSnapshot): Map<string, ContextSnapshotItem> =>
@@ -806,7 +854,7 @@ export async function registerRest(
       if (enabledNow === shouldBeEnabled) continue // уже как надо
       db.setConversationContextEnabled(userId, target.id, itemId, shouldBeEnabled, userId)
     }
-    const snapshot = contextSnapshot(db, userId, target.id, opts.isAgentOnline, kbStatusSafe())
+    const snapshot = contextSnapshot(db, userId, target.id, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe() })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 

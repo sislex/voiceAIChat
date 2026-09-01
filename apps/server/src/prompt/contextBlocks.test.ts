@@ -160,3 +160,22 @@ describe('taskContextBlock', () => {
     expect(task?.text).toContain('CHAT-1')
   })
 })
+
+describe('makeContext в предпросмотре', () => {
+  it('идёт последним блоком — как в промпте хода', () => {
+    const blocks = buildContextBlocks({
+      personalization: empty,
+      instructions: [],
+      project: null,
+      projectId: null,
+      makeContext: '## Проект Make\nТокены: --accent: #f00',
+      now: new Date(0)
+    })
+    expect(blocks[blocks.length - 1]).toMatchObject({ title: 'Контекст проекта Make', itemIds: ['make-context'] })
+  })
+
+  it('пустой контекст блока не даёт: в промпт нечего добавлять', () => {
+    const blocks = buildContextBlocks({ personalization: empty, instructions: [], project: null, projectId: null, makeContext: '', now: new Date(0) })
+    expect(blocks.some((block) => block.itemIds.includes('make-context'))).toBe(false)
+  })
+})
