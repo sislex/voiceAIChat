@@ -1,7 +1,7 @@
 // Сборка Fastify-приложения (HTTP + WebSocket). Экспортируется отдельно от запуска,
 // чтобы тестировать через fastify.inject / ws-клиент.
 
-import { mkdirSync, existsSync, statSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, existsSync } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
@@ -33,8 +33,7 @@ import { AgentCommandExecutor } from './ci/executor.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
-import { automatedQaRemarks, scenarioLabel } from '@voicechat/shared'
-import type { AutomatedQaCheckResult } from '@voicechat/shared'
+import { automatedQaRemarks } from '@voicechat/shared'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
 const CHECK_BUDGET_MS = 90_000
@@ -45,7 +44,7 @@ import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
-import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
+import { registerAuth, resolveActiveUser, uid } from './users/auth.js'
 import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
 import { createAgentWatchdog } from './agents/watchdog.js'
 import { createCommandGate } from './agents/commandGate.js'

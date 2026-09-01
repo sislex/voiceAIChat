@@ -14,8 +14,7 @@ const harness = setupRestHarness()
 const { inj, sentMails, SECRET } = harness
 let app: FastifyInstance
 let db: VoiceChatDb
-let token: string
-beforeEach(() => { ({ app, db, token } = harness) })
+beforeEach(() => { ({ app, db } = harness) })
 
 
 describe('REST: аутентификация', () => {

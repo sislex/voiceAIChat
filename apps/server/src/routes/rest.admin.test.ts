@@ -1,7 +1,6 @@
 // Админские маршруты и реестр LLM-исполнителей.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { signToken } from '../users/accounts.js'
-import { buildServer } from '../server.js'
 import type { FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
 import { setupRestHarness } from './restHarness.js'
@@ -13,8 +12,7 @@ const harness = setupRestHarness()
 const { inj, triggerDeploy, SECRET } = harness
 let app: FastifyInstance
 let db: VoiceChatDb
-let token: string
-beforeEach(() => { ({ app, db, token } = harness) })
+beforeEach(() => { ({ app, db } = harness) })
 
 
 describe('REST: админ-роуты (только admin)', () => {
