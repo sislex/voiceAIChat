@@ -1157,6 +1157,64 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('список выключаемых пунктов зафиксирован: новый тумблер требует решения', async () => {
+    // «Фальшивый тумблер» ловится не поведением, а составом: пункт, который ход
+    // не читает, всё равно попадает в disabledContext и выглядит рабочим.
+    // Поэтому набор выключаемого зафиксирован здесь; расширяя его, надо сначала
+    // научить ход (`turns.ts`) читать новый id — иначе тумблер будет врать.
+    const project = db.createProject(U, { name: 'Состав тумблеров' })
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Состав', projectId: project.id } })).json()
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    const ids = snapshot.groups
+      .flatMap((group: { items: Array<{ id: string; toggleable: boolean }> }) => group.items)
+      .filter((item: { toggleable: boolean }) => item.toggleable)
+      .map((item: { id: string }) => item.id)
+      .sort()
+    expect(ids).toEqual([
+      'instruction-console', 'instruction-explorer', 'instruction-image', 'instruction-questions', 'instruction-taskLaunch',
+      'knowledge-mode',
+      'mcp-kb-document', 'mcp-kb-search', 'mcp-kb-topics',
+      'mcp-remote-bash', 'mcp-remote-edit', 'mcp-remote-machines', 'mcp-remote-read',
+      'personalization', 'project-binding', 'task-context'
+    ])
+  })
+
+  it('каждый тумблер снимка делает ровно то, что объявил', async () => {
+    // Инвариант против «фальшивых тумблеров»: пункт объявлен выключаемым, а его
+    // выключение ни на что не влияет, потому что ход про этот id не знает.
+    // Ровно так однажды появился тумблер у автопилота ассистента: проверять
+    // `includedInNextTurn` бесполезно — он пересчитывается для любого пункта.
+    const project = db.createProject(U, { name: 'Проект инварианта' })
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Все тумблеры', projectId: project.id } })).json()
+    const snapshotOf = async (): Promise<{ items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; effect?: string | null }>; blocks: string[]; disallowed: string[] }> => {
+      const value = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return {
+        items: value.groups.flatMap((group: { items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; effect?: string | null }> }) => group.items),
+        blocks: (value.promptPreview.blocks as Array<{ title: string; itemIds: string[] }>).flatMap((block) => block.itemIds),
+        disallowed: value.disallowedTools as string[]
+      }
+    }
+    const before = await snapshotOf()
+    const toggleable = before.items.filter((item) => item.toggleable && item.enabled)
+    expect(toggleable.length).toBeGreaterThan(3)
+    // Выключаемый пункт обязан объявить свой эффект — иначе непонятно, что
+    // вообще проверять, и фальшивый тумблер снова пройдёт незамеченным.
+    expect(toggleable.every((item) => item.effect)).toBe(true)
+
+    for (const item of toggleable) {
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${item.id}`, payload: { enabled: false } })
+      const after = await snapshotOf()
+      if (item.effect === 'tool') {
+        expect(after.disallowed.length, `тумблер «${item.id}» не запретил инструмент`).toBeGreaterThan(before.disallowed.length)
+      } else if (item.effect === 'prompt-block' && before.blocks.includes(item.id)) {
+        // Пункт может быть настроен, но пуст (персонализация без полей): тогда
+        // блока нет и выключать нечего. Если блок есть — он обязан исчезнуть.
+        expect(after.blocks.includes(item.id), `тумблер «${item.id}» не убрал блок промпта`).toBe(false)
+      }
+      await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${item.id}`, payload: { enabled: true } })
+    }
+  })
+
   it('показывает автопилот ассистента и следует за его переключением', async () => {
     const project = db.createProject(U, { name: 'Проект автопилота' })
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'С доской', projectId: project.id } })).json()
