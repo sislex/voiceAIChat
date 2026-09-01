@@ -3,10 +3,11 @@
 // Секции ленивые по раскрытию — их данные не нужны при обычном просмотре списка,
 // а инвайты ещё и меняются реже всего остального на странице.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { InviteInfo, SignupConfig } from '@shared/admin'
 import type { UserRole } from '@shared/types'
 import { Button } from '@voicechat/ui-kit'
+import { copyText } from '../clipboard'
 
 export interface InvitesPanelProps {
   invites?: InviteInfo[] | null
@@ -36,7 +37,32 @@ export function InvitesPanel({
   const [inviteNote, setInviteNote] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [invitesOpen, setInvitesOpen] = useState(false)
-  const [copiedInvite, setCopiedInvite] = useState<string | null>(null)
+  const [copyResult, setCopyResult] = useState<{ token: string; status: 'copied' | 'error' } | null>(null)
+  const copyAttempt = useRef(0)
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current)
+  }, [])
+
+  const copyInvite = async (token: string, url: string): Promise<void> => {
+    const attempt = ++copyAttempt.current
+    if (resetTimer.current) {
+      clearTimeout(resetTimer.current)
+      resetTimer.current = null
+    }
+
+    const copied = await copyText(url)
+    // Более медленный старый вызов не должен перезаписать результат новой строки.
+    if (attempt !== copyAttempt.current) return
+
+    setCopyResult({ token, status: copied ? 'copied' : 'error' })
+    if (copied) {
+      resetTimer.current = setTimeout(() => {
+        if (attempt === copyAttempt.current) setCopyResult(null)
+      }, 1500)
+    }
+  }
 
   return (
     <div className="ua-invites">
@@ -75,8 +101,20 @@ export function InvitesPanel({
                   <li key={inv.token} className={dead ? 'sessions-item invite--dead' : 'sessions-item'}>
                     <div><strong>{inv.role}{inv.note ? ` · ${inv.note}` : ''}</strong><small>{inv.uses}/{inv.maxUses} исп. · до {new Date(inv.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{dead ? ' · недействителен' : ''}</small>{inv.email && <small>{inv.email} · {inv.emailedAt ? 'email отправлен' : 'email не отправлен'}</small>}<code className="invite-url">{url}</code></div>
                     <span className="uadmin-actions">
-                      <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText(url).then(() => { setCopiedInvite(inv.token); setTimeout(() => setCopiedInvite(null), 1500) }) }}>{copiedInvite === inv.token ? 'Скопировано' : 'Копировать'}</Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={copyResult?.token === inv.token && copyResult.status === 'copied'
+                          ? `Скопировано: ссылка для инвайта ${inv.token}`
+                          : `Копировать ссылку для инвайта ${inv.token}`}
+                        onClick={() => { void copyInvite(inv.token, url) }}
+                      >
+                        {copyResult?.token === inv.token && copyResult.status === 'copied' ? 'Скопировано' : 'Копировать ссылку'}
+                      </Button>
                       {onDeleteInvite && <Button size="sm" variant="ghost" onClick={() => onDeleteInvite(inv.token)}>Отозвать</Button>}
+                      {copyResult?.token === inv.token && copyResult.status === 'error' && (
+                        <span className="uadmin-copy-error" role="alert">Не удалось скопировать ссылку. Скопируйте её вручную.</span>
+                      )}
                     </span>
                   </li>
                 )

@@ -416,6 +416,106 @@ describe('UsersAdmin — приглашения и регистрация', () =
     expect(onDeleteInvite).toHaveBeenCalledWith('abc')
   })
 
+  it('копирует полный абсолютный URL через Clipboard API и показывает успех', async () => {
+    const originalClipboard = navigator.clipboard
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    try {
+      renderAdmin({
+        onLoadInvites: vi.fn(),
+        inviteBaseUrl: 'https://example.test/app/',
+        invites: [{ token: 'abc token', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 2, uses: 0, note: '', email: null, emailedAt: null }]
+      })
+      const box = screen.getByTestId('admin-invites')
+      await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
+      const copyButton = within(box).getByRole('button', { name: 'Копировать ссылку для инвайта abc token' })
+      await userEvent.click(copyButton)
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://example.test/app/#/invite/abc%20token'))
+      expect(within(box).getByRole('button', { name: 'Скопировано: ссылка для инвайта abc token' })).toBeInTheDocument()
+      expect(within(box).queryByRole('alert')).toBeNull()
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard })
+    }
+  })
+
+  it('после отказа Clipboard API копирует полный URL безопасным DOM-fallback', async () => {
+    const originalClipboard = navigator.clipboard
+    const originalExec = document.execCommand
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    let fallbackText = ''
+    const execCommand = vi.fn(() => {
+      fallbackText = document.querySelector('textarea')?.value ?? ''
+      return true
+    })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+    try {
+      renderAdmin({
+        onLoadInvites: vi.fn(),
+        inviteBaseUrl: 'https://example.test/base/',
+        invites: [{ token: 'fallback', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 1, uses: 0, note: '', email: null, emailedAt: null }]
+      })
+      const box = screen.getByTestId('admin-invites')
+      await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
+      await userEvent.click(within(box).getByRole('button', { name: 'Копировать ссылку для инвайта fallback' }))
+
+      await waitFor(() => expect(execCommand).toHaveBeenCalledWith('copy'))
+      expect(fallbackText).toBe('https://example.test/base/#/invite/fallback')
+      expect(document.querySelector('textarea')).toBeNull()
+      expect(within(box).getByText('Скопировано')).toBeInTheDocument()
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard })
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: originalExec })
+    }
+  })
+
+  it('при полном отказе показывает ошибку без ложного успеха', async () => {
+    const originalClipboard = navigator.clipboard
+    const originalExec = document.execCommand
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn().mockReturnValue(false) })
+    try {
+      renderAdmin({
+        onLoadInvites: vi.fn(),
+        inviteBaseUrl: 'https://example.test/',
+        invites: [{ token: 'fail', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 1, uses: 0, note: '', email: null, emailedAt: null }]
+      })
+      const box = screen.getByTestId('admin-invites')
+      await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
+      await userEvent.click(within(box).getByRole('button', { name: 'Копировать ссылку для инвайта fail' }))
+
+      expect(await within(box).findByRole('alert')).toHaveTextContent('Не удалось скопировать ссылку')
+      expect(within(box).queryByText('Скопировано')).toBeNull()
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard })
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: originalExec })
+    }
+  })
+
+  it('нативная кнопка копирования активируется с клавиатуры Enter и Space', async () => {
+    const originalClipboard = navigator.clipboard
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    try {
+      renderAdmin({
+        onLoadInvites: vi.fn(),
+        inviteBaseUrl: 'https://example.test/',
+        invites: [{ token: 'keyboard', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 1, uses: 0, note: '', email: null, emailedAt: null }]
+      })
+      const box = screen.getByTestId('admin-invites')
+      await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
+      const button = within(box).getByRole('button', { name: 'Копировать ссылку для инвайта keyboard' })
+      button.focus()
+      await userEvent.keyboard('{Enter}')
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+      await userEvent.keyboard(' ')
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: originalClipboard })
+    }
+  })
+
   it('открытая регистрация: раскрытие грузит настройку, изменения уходят наружу', async () => {
     const onLoadSignup = vi.fn(); const onSetSignup = vi.fn()
     renderAdmin({ onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5, sessionLimit: 0 } })
