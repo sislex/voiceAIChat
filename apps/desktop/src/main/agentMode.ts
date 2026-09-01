@@ -3,18 +3,23 @@
 // машине. Ядро подключения переиспользуется из @agent; настройка — строкой
 // подключения через окно из меню трея. Пункты меню агента отдаются в трей index.ts.
 
-import { app, BrowserWindow, ipcMain, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage, type MenuItemConstructorOptions } from 'electron'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { homedir, hostname } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { startConnection, type AgentConnection, type AgentStatus } from '@agent/connection'
 import { decodeAgentConnection } from '@shared/agentProtocol'
+import { parseLoginEnrollmentDeepLink } from '@shared/enrollment'
+import { REST } from '@shared/protocol'
 
 const isDev = !app.isPackaged
+const mainDir = dirname(fileURLToPath(import.meta.url))
 const LOG_CAP = 200
 
 interface StoredConfig {
   serverUrl: string
-  token: string
+  encryptedToken: string
 }
 type UiStatus = AgentStatus | 'unconfigured'
 
@@ -32,11 +37,19 @@ let onChange: () => void = () => {}
 
 const cfgPath = (): string => join(app.getPath('userData'), 'agent-config.json')
 
-function readCfg(): StoredConfig | null {
+function readCfg(): { serverUrl: string; token: string } | null {
   try {
-    const o = JSON.parse(readFileSync(cfgPath(), 'utf8')) as Partial<StoredConfig>
-    if (typeof o.serverUrl === 'string' && o.serverUrl && typeof o.token === 'string' && o.token) {
-      return { serverUrl: o.serverUrl, token: o.token }
+    if (!safeStorage.isEncryptionAvailable()) return null
+    const o = JSON.parse(readFileSync(cfgPath(), 'utf8')) as Partial<StoredConfig> & { token?: unknown }
+    if (typeof o.serverUrl !== 'string' || !o.serverUrl) return null
+    if (typeof o.encryptedToken === 'string' && o.encryptedToken) {
+      return { serverUrl: o.serverUrl, token: safeStorage.decryptString(Buffer.from(o.encryptedToken, 'base64')) }
+    }
+    // Одноразово мигрируем прежний plaintext agent-config.json в safeStorage.
+    if (typeof o.token === 'string' && o.token) {
+      const migrated = { serverUrl: o.serverUrl, token: o.token }
+      writeCfg(migrated)
+      return migrated
     }
     return null
   } catch {
@@ -44,9 +57,14 @@ function readCfg(): StoredConfig | null {
   }
 }
 
-function writeCfg(cfg: StoredConfig): void {
+function writeCfg(cfg: { serverUrl: string; token: string }): void {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Системное защищённое хранилище недоступно')
   mkdirSync(app.getPath('userData'), { recursive: true })
-  writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2))
+  const stored: StoredConfig = {
+    serverUrl: cfg.serverUrl,
+    encryptedToken: safeStorage.encryptString(cfg.token).toString('base64')
+  }
+  writeFileSync(cfgPath(), JSON.stringify(stored, null, 2))
 }
 
 function nowLabel(): string {
@@ -96,7 +114,7 @@ function startAgent(): void {
   }
   connection?.stop()
   connection = startConnection(
-    { serverUrl: cfg.serverUrl, token: cfg.token, rootDir: process.cwd() },
+    { serverUrl: cfg.serverUrl, token: cfg.token, rootDir: homedir() },
     handlers()
   )
 }
@@ -112,7 +130,7 @@ function stopAgent(): void {
 function loadRenderer(win: BrowserWindow, name: 'agent-setup' | 'agent-log'): void {
   const base = process.env['ELECTRON_RENDERER_URL']
   if (isDev && base) void win.loadURL(`${base}/${name}.html`)
-  else void win.loadFile(join(__dirname, `../renderer/${name}.html`))
+  else void win.loadFile(join(mainDir, `../renderer/${name}.html`))
 }
 
 function openSetup(): void {
@@ -126,7 +144,7 @@ function openSetup(): void {
     resizable: false,
     title: 'Режим агента',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(mainDir, '../preload/index.mjs'),
       contextIsolation: true,
       sandbox: false
     }
@@ -147,7 +165,7 @@ function openLog(): void {
     height: 460,
     title: 'Журнал агента',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(mainDir, '../preload/index.mjs'),
       contextIsolation: true,
       sandbox: false
     }
@@ -210,6 +228,23 @@ export function initAgentMode(onChangeCb: () => void): void {
 
   if (readCfg()) startAgent()
   else setStatus('unconfigured')
+}
+
+export async function enrollCurrentDevice(value: string): Promise<void> {
+  const parsed = parseLoginEnrollmentDeepLink(value)
+  if (!parsed) throw new Error('Некорректная ссылка подключения устройства')
+  const response = await fetch(parsed.serverUrl + REST.loginEnrollmentRedeem, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: parsed.token, name: hostname() })
+  })
+  const body = await response.json() as { machineToken?: string; serverUrl?: string; error?: string }
+  if (!response.ok || !body.machineToken || !body.serverUrl) throw new Error(body.error ?? `HTTP ${response.status}`)
+  const server = new URL(body.serverUrl)
+  const serverUrl = `${server.protocol === 'https:' ? 'wss:' : 'ws:'}//${server.host}/agent`
+  writeCfg({ serverUrl, token: body.machineToken })
+  startAgent()
+  openLog()
 }
 
 export function disposeAgentMode(): void {

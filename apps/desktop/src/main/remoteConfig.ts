@@ -52,3 +52,30 @@ export function markDesktopMigrationDone(dir: string, serverUrl: string): void {
   mkdirSync(dir, { recursive: true })
   writeFileSync(path(dir), JSON.stringify({ serverUrl: readServerUrl(dir), migratedServerUrls }, null, 2))
 }
+
+export interface DesktopEnrollmentFlow {
+  revealWindow: () => void
+  enroll: (deepLink: string) => Promise<void>
+  parse: (deepLink: string) => { serverUrl: string } | null
+  currentServerUrl: () => string | null
+  applyServerUrl: (url: string) => void
+  reportError: (error: unknown) => void
+}
+
+/** Окно должно появиться до любой сети: enrollment может ждать недоступный сервер. */
+export async function runDesktopEnrollment(value: string, flow: DesktopEnrollmentFlow): Promise<void> {
+  flow.revealWindow()
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol === 'voicechat-login:' && parsed.hostname === 'open') return
+
+    const enrollment = flow.parse(value)
+    await flow.enroll(value)
+    if (enrollment && flow.currentServerUrl() !== enrollment.serverUrl) {
+      flow.applyServerUrl(enrollment.serverUrl)
+    }
+  } catch (error) {
+    flow.reportError(error)
+    flow.revealWindow()
+  }
+}

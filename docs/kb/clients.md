@@ -1,6 +1,6 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-08-27
+updated: 2026-09-01
 checked: 0c109bca
 areas:
   - apps/web
@@ -8,6 +8,7 @@ areas:
   - apps/desktop/electron-builder.yml
   - apps/agent-tray/src
   - apps/agent-tray/electron-builder.yml
+  - apps/login-application
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
@@ -46,13 +47,13 @@ Main process создаёт основное окно, tray, external-link polic
 
 ### Режим компаньон-агента
 
-`agentMode.ts` позволяет desktop параллельно запускать локальный `@voicechat/agent`, а renderer-страницы setup/log управляют соединением. Это оболочка запуска; exec/fs/pty остаются реализацией `apps/agent`. Tray даёт быстрый доступ к основному окну и режиму машины.
+`agentMode.ts` позволяет desktop параллельно запускать локальный `@voicechat/agent`, а renderer-страницы setup/log управляют соединением. Это оболочка запуска; exec/fs/pty остаются реализацией `apps/agent`. Tray даёт быстрый доступ к основному окну и режиму машины. Machine token хранится зашифрованным через Electron `safeStorage`, рабочим корнем агента служит домашний каталог пользователя.
 
 Electron preload должен сохранять `contextIsolation` и публиковать минимальный API через `contextBridge`. Node primitives не выдаются renderer. Навигация и `window.open` валидируются и отправляются во внешний браузер только для разрешённых URL.
 
 ### Сборка
 
-`electron-vite` собирает main, preload и renderer. `electron-builder.yml` определяет app id, ресурсы и macOS DMG; `afterPack.cjs` выполняет package-specific обработку. Сервер может найти DMG автоматически в `apps/desktop/release` или получить путь через `VC_DESKTOP_APP`, после чего раздаёт `/api/app/desktop`.
+`electron-vite` собирает main, preload и renderer. Main bundle — ESM, поэтому пути к preload/renderer вычисляются через `dirname(fileURLToPath(import.meta.url))`; CommonJS-глобальная `__dirname` в packaged приложении не определена и оставляет процесс только с tray/menu-bar без `BrowserWindow`. `electron-builder.yml` определяет app id, ресурсы и macOS DMG; `afterPack.cjs` выполняет package-specific обработку. Сервер может найти DMG автоматически в `apps/desktop/release` или получить путь через `VC_DESKTOP_APP`, после чего раздаёт `/api/app/desktop`.
 
 Команды: `npm --prefix apps/desktop install`, `npm run typecheck:desktop`, `npm run test:desktop`, `npm --prefix apps/desktop run dev`, `npm --prefix apps/desktop run dist`.
 
@@ -67,6 +68,14 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 Поведение агента не копируется. Tray запускает распространяемый `voicechat-agent.cjs`; изменения exec/fs/pty делаются в `apps/agent`. Версия tray package и `AGENT_VERSION` независимы.
 
 Сборка отдельная: `npm --prefix apps/agent-tray install`, `npm run typecheck:agent-tray`, `npm run test:agent-tray`, `npm run dist:agent-tray`. DMG появляется в `apps/agent-tray/release`, autodiscovery server или `VC_AGENT_APP` публикует его на `/api/agents/app`.
+
+## Login application (`apps/login-application`)
+
+Самостоятельное Electron-приложение принимает `voicechat-login://enroll` при cold start, через macOS `open-url` и single-instance callback. Оно погашает двухминутный opaque enrollment, сохраняет полученный machine token только через `safeStorage` и запускает `startConnection` из `apps/agent`; exec/fs/pty не копируются. Уже настроенная машина не перезаписывается. Альтернативная форма принимает адрес ChatAI, логин и пароль, создаёт текущую машину через REST, очищает поле пароля и ничего из credentials не сохраняет; аккаунты с 2FA направляются в deep-link flow из открытой web-сессии.
+
+В URI находятся только краткоживущий enrollment secret, correlation id и origin сервера; постоянный machine token приходит в HTTPS-ответе redeem. Renderer видит только фиксированные операции preload и статусы, но не token store. `electron-builder.yml` регистрирует protocol и собирает только macOS ARM64 DMG. Пакет вне workspaces, имеет отдельный lockfile; команды проверки — `npm --prefix apps/login-application run typecheck`, `test`, `dist`, `smoke`.
+
+Серверный реестр `/api/login-application/artifacts` выбирает platform/arch; сейчас доступна только `macos/arm64`. Отдельный download endpoint отдаёт `voicechat-login-macos-arm64.dmg`, настроенный через `VC_LOGIN_APPLICATION` или autodiscovery `apps/login-application/release`. Общий frontend dialog всегда предлагает «Скачать приложение» и «Открыть приложение»; успех подтверждается status и online-машиной, после чего continuation выполняется один раз.
 
 ## Границы безопасности Electron
 
@@ -85,6 +94,7 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 | REST/WS реализация web и desktop | `packages/ui/src/remote` |
 | URL/proxy/bootstrap браузера | `apps/web` |
 | Окно/tray/server config/legacy import | `apps/desktop` |
+| Login/enrollment текущего Mac и ARM64 DMG | `apps/login-application` |
 | Exec/fs/pty/telemetry машины | `apps/agent` |
 | Setup/log/permissions упаковки агента | `apps/agent-tray` |
 | Пользовательские machines/terminal/files/LLM history/KB/CI monitor/diagnostics | `packages/operations-app` |

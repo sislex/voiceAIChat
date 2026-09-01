@@ -1,10 +1,11 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-31
+updated: 2026-09-01
 checked: e6e3153f
 areas:
   - apps/agent/src
   - apps/agent-tray/src
+  - apps/login-application/src
   - apps/server/src/agents
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
@@ -91,6 +92,35 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 колонка внешнего ключа не имеет, и CI-ран проекта уходил бы в никуда). Стор
 повторяет сброс `execTarget`/`defaultAgentId` в своём состоянии — иначе селекторы
 показывали бы удалённую машину до перезагрузки страницы.
+
+## Enrollment первой машины
+
+`login_enrollments` хранит только SHA-256 одноразового секрета, владельца,
+`expires_at`, `consumed_at` и созданный `agent_id`. Выпуск и status требуют
+web-сессию; status ищется одновременно по correlation id и текущему user id.
+Redeem публичен для установленного приложения, но авторизуется 256-битным opaque
+секретом. Транзакция проверяет срок и `consumed_at IS NULL`, создаёт ровно одну
+машину, фиксирует погашение и обновляет персональный `settings.defaultAgentId`.
+Повторный, неизвестный или просроченный секрет отвечает конфликтом и не создаёт
+машину.
+
+Frontend guard применяется к созданию чата и проекта. Если online-машина уже
+доступна, действие выполняется без диалога. Иначе сохраняется одно continuation,
+показывается общий диалог download/open и опрашивается серверный status. После
+completed UI обновляет список машин; continuation снимается и выполняется ровно
+один раз только когда новая машина стала online. Закрытие диалога очищает
+continuation, поэтому поздний callback ничего не запускает. Тот же open-flow
+доступен постоянно из раскрывающегося меню пользователя пунктом «Открыть локальную
+версию»; для него continuation не требуется.
+
+Текущий Mac подключает самостоятельное `apps/login-application`: оно зарегистрировано
+для `voicechat-login://`, хранит machine token через Electron `safeStorage` и
+переиспользует `startConnection` из `apps/agent`. Существующую настройку приложение
+не перезаписывает. Реестр артефактов сейчас содержит только `macos/arm64` и указывает
+на отдельный login-application DMG; download endpoint отдаёт его напрямую с
+`application/x-apple-diskimage` и attachment filename. Путь задаёт
+`VC_LOGIN_APPLICATION` либо autodiscovery `apps/login-application/release`;
+неподдерживаемая пара и отсутствующий файл — явные 404.
 
 ## Токены агентов: срок, отзыв, привязка к IP
 

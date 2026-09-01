@@ -30,6 +30,8 @@ export interface ServerConfig {
   agentOfflineAlertMs: number
   /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
   desktopAppPath?: string
+  /** Отдельный macOS ARM64 DMG приложения безопасного подключения машины. */
+  loginApplicationPath?: string
   /**
    * Каталог собранного web-приложения (apps/web/dist) для раздачи статики тем же
    * сервером. Задаётся только через env (VC_WEB_DIR) — в dev/тестах не задан, чтобы
@@ -102,7 +104,8 @@ const REPO = {
   piperBin: join(REPO_ROOT, '.venv-piper/bin/piper'),
   piperVoicesDir: join(REPO_ROOT, 'apps/desktop/resources/piper-voices'),
   agentAppDir: join(REPO_ROOT, 'apps/agent-tray/release'),
-  desktopAppDir: join(REPO_ROOT, 'apps/desktop/release')
+  desktopAppDir: join(REPO_ROOT, 'apps/desktop/release'),
+  loginApplicationDir: join(REPO_ROOT, 'apps/login-application/release')
 }
 
 /** Первый .dmg в каталоге (собранный компаньон-агент) или undefined. */
@@ -175,6 +178,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     longCommandMs: env.VC_LONG_COMMAND_MS !== undefined ? Math.max(0, Number(env.VC_LONG_COMMAND_MS) || 0) : 10_000,
     agentOfflineGraceMs: env.VC_AGENT_OFFLINE_GRACE_MS !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_GRACE_MS) || 0) : (AUTODISCOVER ? 15_000 : 0),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
+    loginApplicationPath: env.VC_LOGIN_APPLICATION ?? (AUTODISCOVER ? findDmg(REPO.loginApplicationDir) : undefined),
     webDir: env.VC_WEB_DIR,
     webRecorderDir: env.VC_WEB_RECORDER_DIR,
     claudeGatewayBackend: env.VC_CLAUDE_GATEWAY_BACKEND === 'codex' ? 'codex' : 'upstream',
