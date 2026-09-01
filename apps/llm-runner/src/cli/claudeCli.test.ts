@@ -145,6 +145,25 @@ describe('ClaudeCli', () => {
     expect(args2).not.toContain('--disallowedTools')
   })
 
+  it('регистрирует несколько task Make-источников только с list/read', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send({
+      prompt: 'x', sessionId: null, model: 'opus',
+      makeSources: [
+        { name: 'make_design_1', conversationId: 'c1', paths: [''], mcpUrl: 'http://m/1' },
+        { name: 'make_design_2', conversationId: 'c2', paths: ['src/App.tsx'], mcpUrl: 'http://m/2' }
+      ]
+    }, makeHandlers())
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, { url: string }> }
+    expect(Object.keys(config.mcpServers)).toEqual(['make_design_1', 'make_design_2'])
+    const allowed = args[args.indexOf('--allowedTools') + 1]
+    expect(allowed).toContain('mcp__make_design_1__make_list_files')
+    expect(allowed).toContain('mcp__make_design_2__make_read_file')
+    expect(allowed).not.toMatch(/write|edit|delete|rename|apply/)
+  })
+
   it('projectMachines: другие машины проекта в хинте, machines в allow-list; без них — нет', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn

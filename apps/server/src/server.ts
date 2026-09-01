@@ -76,7 +76,7 @@ import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
-import { registerMakeMcp, MAKE_MCP_PATH } from './mcp/makeMcp.js'
+import { registerMakeMcp, MAKE_MCP_PATH, MakeTaskScopeBroker } from './mcp/makeMcp.js'
 import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
 import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
@@ -505,7 +505,20 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
     const owner = db.conversationOwner(id)
     return owner ? db.listConversations(owner, { includeCompleted: true }).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
   })
-  registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
+  const makeTaskScopes = new MakeTaskScopeBroker()
+  registerMakeMcp(app, {
+    workspaces: makeWorkspaces,
+    hub: makeHub,
+    ownerOf: (id) => db.conversationOwner(id),
+    taskScopes: makeTaskScopes,
+    authorizeTaskSource: (scope, conversationId) => {
+      const task = db.getCiTask(scope.userId, scope.projectId, scope.taskId)
+      return Boolean(task
+        && db.makeConversationProject(conversationId) === scope.projectId
+        && db.isMakeProjectViewer(scope.userId, conversationId)
+        && task.designs?.some((design) => design.conversationId === conversationId))
+    }
+  }, mcpSecret)
   // Канбан (mcp__kanban__*): доска, карточки, настройки, машины и раны проекта
   // того разговора, в котором идёт ход. Снимок «что открыто» кладёт сюда turns.ts.
   const widgetContexts = new WidgetContextStore()
@@ -1141,6 +1154,7 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,
+    makeTaskScopes,
     kanbanMcpBaseUrl,
     widgetContexts,
     makeHub,
@@ -1171,7 +1185,9 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
     kbUsage,
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
-    kbMcpBaseUrl
+    kbMcpBaseUrl,
+    makeMcpBaseUrl,
+    makeTaskScopes
   })
   // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:
   // UI разбирает блок ```questions тем же парсером, что и вопросы в чате.

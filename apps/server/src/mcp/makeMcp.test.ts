@@ -6,7 +6,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import type { ServerMessage } from '@voicechat/shared'
 import { MakeHub } from '../make/hub'
 import { MakeWorkspaces } from '../make/workspace'
-import { registerMakeMcp } from './makeMcp'
+import { MakeTaskScopeBroker, registerMakeMcp } from './makeMcp'
 
 const SECRET = 's'
 const CONV = 'conv-mcp'
@@ -24,13 +24,16 @@ let workspaces: MakeWorkspaces
 let hub: MakeHub
 let events: ServerMessage[]
 
-async function setup(owner: string | null = 'ann'): Promise<void> {
+async function setup(owner: string | null = 'ann', taskAuth?: { broker: MakeTaskScopeBroker; allowed: boolean }): Promise<void> {
   workspaces = new MakeWorkspaces(await mkdtemp(join(tmpdir(), 'vc-make-mcp-')))
   hub = new MakeHub()
   events = []
   hub.subscribe('ann', (m) => events.push(m))
   app = Fastify({ logger: false })
-  registerMakeMcp(app, { workspaces, hub, ownerOf: () => owner }, SECRET)
+  registerMakeMcp(app, {
+    workspaces, hub, ownerOf: () => owner,
+    ...(taskAuth ? { taskScopes: taskAuth.broker, authorizeTaskSource: () => taskAuth.allowed } : {})
+  }, SECRET)
   await app.ready()
 }
 
@@ -88,6 +91,27 @@ describe('makeMcp', () => {
     const ro = resultText((await rpc(call('make_write_file', { path: 'z.js', content: '1' }), `?k=${SECRET}&conv=${CONV}&turn=t1&ro=1`)).json())
     expect(ro.isError).toBe(true)
     expect(ro.text).toMatch(/План/)
+  })
+
+  it('task scope публикует только list/read и отклоняет истёкший или неавторизованный scope', async () => {
+    let now = 1_000
+    const broker = new MakeTaskScopeBroker(100, () => now)
+    await setup('ann', { broker, allowed: true })
+    const token = broker.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', conversationIds: [CONV] })
+    const query = `?k=${SECRET}&conv=${CONV}&scope=${token}`
+    expect((await rpc(INIT, query)).statusCode).toBe(200)
+    const listed = (await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }, query)).json() as { result?: { tools?: Array<{ name: string }> } }
+    expect(listed.result?.tools?.map((tool) => tool.name)).toEqual(['make_list_files', 'make_read_file'])
+    const mutation = (await rpc(call('make_write_file', { path: 'x', content: 'x' }), query)).json()
+    expect(JSON.stringify(mutation)).toMatch(/not found/i)
+
+    now += 101
+    expect((await rpc(INIT, query)).statusCode).toBe(403)
+    await app.close()
+    const denied = new MakeTaskScopeBroker()
+    await setup('ann', { broker: denied, allowed: false })
+    const deniedToken = denied.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', conversationIds: [CONV] })
+    expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${deniedToken}`)).statusCode).toBe(403)
   })
 
   it('make_check сообщает о проблемах и об их отсутствии', async () => {

@@ -19,6 +19,7 @@ import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import type { KbUsageTracker } from '../kb/usage.js'
 import type { VoiceChatDb } from '../db/database.js'
+import { buildTaskMakeSources, type MakeTaskScopeBroker } from '../mcp/makeMcp.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
   EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_FILE_TOPICS_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
@@ -57,6 +58,8 @@ export interface CiModelHooksDeps {
   kbToolEnabled?: boolean
   /** Брокер токенов ходов БЗ (в тестах — двойник, следящий за утечкой). */
   kbTool?: { register(token: string, entry: KbToolEntry): void; unregister(token: string): void }
+  makeMcpBaseUrl?: string
+  makeTaskScopes?: MakeTaskScopeBroker
 }
 
 /**
@@ -264,9 +267,19 @@ function runTurn(
   })
 }
 
+function makeSourcesOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmRequest> {
+  const makeSources = buildTaskMakeSources({
+    designs: ctx.task.designs ?? [], userId: ctx.run.triggeredBy, projectId: ctx.project.id,
+    taskId: ctx.task.id, baseUrl: deps.makeMcpBaseUrl, broker: deps.makeTaskScopes
+  })
+  return makeSources.length ? { makeSources } : {}
+}
+
 /** remote-часть запроса: если есть машина — прокинуть remote-bash MCP на рабочую папку. */
 function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmRequest> {
-  if (!ctx.agentId) return { executionDisabled: true }
+  const makeSources = (makeSourcesOf(deps, ctx).makeSources ?? [])
+  const linked = makeSources.length ? { makeSources } : {}
+  if (!ctx.agentId) return { executionDisabled: true, ...linked }
   // Ран видит и остальные машины проекта: query `project` включает в мосте
   // инструмент machines и параметр machine (адресация операции другой машине),
   // имена уходят в системный хинт CLI. Одна машина — прежнее поведение.
@@ -277,6 +290,7 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
   const project = others.length ? `&project=${encodeURIComponent(ctx.project.id)}` : ''
   const mcpUrl = `${deps.mcpBaseUrl}&agent=${encodeURIComponent(ctx.agentId)}&cwd=${encodeURIComponent(ctx.workspacePath)}${project}`
   return {
+    ...linked,
     remote: {
       mcpUrl,
       agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId,
@@ -789,7 +803,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         model,
         permissionMode: 'plan',
         executionDisabled: true,
-        ...kbFields
+        ...kbFields,
+        ...makeSourcesOf(deps, ctx)
       })
       const r = await turnOf(req, () => {}, ctx.signal)
       return r.text.trim() || 'Резюме недоступно.'
@@ -989,7 +1004,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
               agentName: deps.agentNameOf(ctx.agentId) ?? ctx.agentId
             }
           }
-        : { executionDisabled: true })
+        : { executionDisabled: true }),
+      ...makeSourcesOf(deps, ctx)
     })
 
     // Таймаут шага: свой контроллер поверх сигнала рана, чтобы отличать «не

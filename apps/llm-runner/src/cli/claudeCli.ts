@@ -182,6 +182,12 @@ export function claudeArgs(req: LlmRequest): string[] {
     allowed.push('mcp__make__make_list_files', 'mcp__make__make_read_file', 'mcp__make__make_write_file', 'mcp__make__make_delete_file', 'mcp__make__make_rename_file', 'mcp__make__make_check')
     systemHints.push(MAKE_ASSISTANT_HINT)
   }
+  for (const source of req.makeSources ?? []) {
+    mcpServers[source.name] = { type: 'http', url: source.mcpUrl }
+    allowed.push(`mcp__${source.name}__make_list_files`, `mcp__${source.name}__make_read_file`)
+    const start = source.paths.includes('') ? 'проект целиком' : `стартовые пути: ${source.paths.join(', ')}`
+    systemHints.push(`Read-only Make-источник ${source.name} (${source.conversationId}), ${start}. Начни с указанных путей, но list/read доступны для всего проекта. При ошибке назови источник ${source.name} и conversationId ${source.conversationId}; не проси пользователя сообщить id или index.html.`)
+  }
   if (req.kanbanMcpUrl) {
     // Канбан: доска, карточки, настройки, машины и раны проекта разговора.
     mcpServers.kanban = { type: 'http', url: req.kanbanMcpUrl }
