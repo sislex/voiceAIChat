@@ -1,10 +1,11 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-31
+updated: 2026-09-01
 checked: e6e3153f
 areas:
   - apps/agent/src
   - apps/agent-tray/src
+  - apps/login-application/src
   - apps/server/src/agents
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
@@ -112,13 +113,14 @@ continuation, поэтому поздний callback ничего не запу�
 доступен постоянно из раскрывающегося меню пользователя пунктом «Открыть локальную
 версию»; для него continuation не требуется.
 
-Текущий Mac подключает основное тонкое Electron-приложение `apps/desktop`, которое
-зарегистрировано для `voicechat-login://` и переиспользует ядро `apps/agent`.
-Отдельного login-приложения и отдельного DMG нет. Артефакты выбираются endpoint-
-реестром по platform/arch; сейчас единственная запись — `macos/arm64`, указывающая
-на основной desktop DMG. Download endpoint отдаёт его напрямую с
-`application/x-apple-diskimage` и attachment filename; неподдерживаемая пара и
-отсутствующий файл — явные 404.
+Текущий Mac подключает самостоятельное `apps/login-application`: оно зарегистрировано
+для `voicechat-login://`, хранит machine token через Electron `safeStorage` и
+переиспользует `startConnection` из `apps/agent`. Существующую настройку приложение
+не перезаписывает. Реестр артефактов сейчас содержит только `macos/arm64` и указывает
+на отдельный login-application DMG; download endpoint отдаёт его напрямую с
+`application/x-apple-diskimage` и attachment filename. Путь задаёт
+`VC_LOGIN_APPLICATION` либо autodiscovery `apps/login-application/release`;
+неподдерживаемая пара и отсутствующий файл — явные 404.
 
 ## Токены агентов: срок, отзыв, привязка к IP
 
