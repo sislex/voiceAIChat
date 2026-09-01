@@ -13,9 +13,8 @@ const harness = setupRestHarness()
 const { inj, SECRET, U } = harness
 let app: FastifyInstance
 let db: VoiceChatDb
-let token: string
 let agentRegistry: AgentRegistry
-beforeEach(() => { ({ app, db, token, agentRegistry } = harness) })
+beforeEach(() => { ({ app, db, agentRegistry } = harness) })
 
 
 describe('REST: хранилище машины', () => {

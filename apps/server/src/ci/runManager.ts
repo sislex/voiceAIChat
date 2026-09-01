@@ -6,8 +6,8 @@
 // Работа модели и fix-loop подключаются хуками (реальная реализация — в Срезе 4).
 
 import type {
-  ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand,
-  CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
+  ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiCommand,
+  CiRunMode, CiInteraction, CiInteractionAnswer, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand, managedCiWorkspacePaths } from '@voicechat/shared'
 import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, resolveCiStageModel } from '@voicechat/shared'
@@ -1627,54 +1627,6 @@ fi`
         rollbackAndFail(runId, userId, runRow.prevColumnId, 'no_access')
         return
       }
-    }
-
-    /**
-     * Встроенный шаг «Актуализировать базу знаний»: `script` не исполняется,
-     * работу делает серверный хук (`kb/codeUpdate.ts`). Ошибка хука обязательна:
-     * шаг и весь ран завершаются failed, последующие команды не запускаются.
-     */
-    const runKbUpdateStep = async (command: CiCommand, slot: CiSlot, position: number): Promise<boolean> => {
-      const step = deps.db.addCiRunStep({
-        runId, slot, position, kind: 'command', initiatedBy: 'system',
-        commandId: command.id, title: command.name, status: 'running'
-      })
-      emitStep(step, userId)
-      const started = now()
-      const kbLlm = stageLlm('kb_update')
-      const kbStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'kb_update', llm: kbLlm })
-      deps.db.updateCiStageRun(kbStage.id, { status: 'running', startedAt: started })
-      emitStage(runId, userId)
-      let ok = false
-      let message = 'Актуализация базы знаний не выполнена: хук не подключён'
-      if (deps.kbUpdate) {
-        const ctx: CiModelContext = {
-          ...makePrimitives(runId, userId, agentId, project.machines, repoPath, commandWorkspacePath, env, signal),
-          run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: kbLlm.llmEngineId, llmProvider: kbLlm.provider, llmModel: kbLlm.model },
-          task,
-          project,
-          parentStepId: step.id
-        }
-        try {
-          const r = await deps.kbUpdate(ctx)
-          ok = r.ok
-          message = r.message
-          kbUpdateSummary = message
-        } catch (err) {
-          ok = false
-          message = `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}`
-        }
-      }
-      kbUpdateSummary = message
-      const line = deps.db.appendCiLog(runId, step.id, 'system', `${ok ? '' : 'Ошибка: '}${message}\n`)
-      broadcast({ t: 'ci.log', runId, line }, userId)
-      const status: CiStatus = signal.aborted ? 'cancelled' : ok ? 'success' : 'failed'
-      const finished = now()
-      const upd = deps.db.updateCiRunStep(step.id, { status, finishedAt: finished, durationMs: finished - started })
-      deps.db.updateCiStageRun(kbStage.id, { status, outcome: message, finishedAt: finished, durationMs: finished - started })
-      emitStage(runId, userId)
-      if (upd) emitStep(upd, userId)
-      return status === 'success'
     }
 
     // Хелпер обработки одного слота команд.

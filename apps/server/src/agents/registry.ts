@@ -184,7 +184,7 @@ export class AgentRegistry {
       waiters.add(done)
     })
   }
-  private offlineError(agentId: string): Error {
+  private offlineError(_agentId: string): Error {
     return new Error(this.offlineGraceMs > 0 ? `Машина не в сети (ждали ${Math.round(this.offlineGraceMs / 1000)} с)` : 'Машина не в сети')
   }
 

@@ -5,7 +5,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { CiCommandInput, CiGlobalSettings, CiLlmConfig, CiSlot, CiRunMode, CiPlanDecision, CiUsageKind, CiStageLlmSelection, CiTaskMachines } from '@voicechat/shared'
-import { CI_USAGE_KINDS, DEFAULT_CI_LLM_CONFIG } from '@voicechat/shared'
+import { CI_USAGE_KINDS } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { requireProjectPermission, uid } from '../users/auth.js'
@@ -180,7 +180,6 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     const task = db.getCiTask(userId, req.params.id, req.params.taskId)
     if (!project || !task) return nf(reply)
     const personalIds = new Set(db.listAgents(userId).map((agent) => agent.id))
-    const projectById = new Map(project.machines.map((machine) => [machine.agentId, machine]))
     const usable = db.listUsableAgents(userId, project.id)
     const myDefault = db.getUserProjectDefaultMachine(userId, project.id)
     const load = db.countActiveCiRunsByAgent()
@@ -322,7 +321,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
-  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))
+  app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, _reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/dequeue', async (req, reply) => {
     const result = ci.dequeue(uid(req), req.params.runId)
     if (result.status === 'not_found') return nf(reply)

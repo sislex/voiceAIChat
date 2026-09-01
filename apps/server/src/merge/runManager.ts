@@ -157,7 +157,7 @@ git add -- ${q}`,repo,30000)
     if(!project?.gitUrl||!ws?.path||!ws.pushed)return this.blocked('git_unavailable','Подготовленный workspace или Git origin недоступен')
     const machine=this.deps.db.getProjectMachine(projectId,agentId)
     if(!machine)return this.blocked('storage_missing','У машины не настроены каталоги проекта')
-    let repo:string,parent:string,workdir:string,cacheDir:string,mode:'managed'|'legacy'
+    let repo:string,parent:string,workdir:string,mode:'managed'|'legacy'
     const platform=this.deps.platformOf?.(agentId)??(/^(?:[A-Za-z]:[\\/]|\\\\)/.test(machine.storageRoot??'')?'win32':'linux')
     if(machine.storageId){
       mode='managed'
@@ -171,7 +171,7 @@ git add -- ${q}`,repo,30000)
         }
         const allowed=this.deps.policyOf?.(agentId)?.allowedDirs??[]
         if(!isMachineStoragePathAllowed(paths.root,allowed,platform))return this.blocked('storage_policy_denied','Каталог mergeClones находится вне разрешённых директорий машины',mode)
-        repo=paths.repository; parent=paths.root; cacheDir=paths.npmCache; workdir=machine.storageRoot
+        repo=paths.repository; parent=paths.root; workdir=machine.storageRoot
       } catch(error){ return this.blocked('storage_path_invalid',error instanceof Error?error.message:String(error),mode) }
       if(!this.deps.fsRead||!this.deps.fsWrite||!this.deps.fsDelete)return this.blocked('storage_not_found','Файловая проверка MachineStorage недоступна',mode)
       const separator=platform==='win32'?'\\':'/'
@@ -194,7 +194,7 @@ git add -- ${q}`,repo,30000)
         if(!projectDir)return this.blocked('storage_path_invalid','Некорректный путь подготовленного CI-workspace',mode)
         parent=`${root}/${projectDir}`; workdir=this.workspaceParent(parent)
       }
-      repo=`${parent}/.merge`; cacheDir=`${parent}/.merge-npm-cache`
+      repo=`${parent}/.merge`
     }
     let inspectionOutput=''
     const inspected=await this.deps.executor.run({agentId,script:`set -e

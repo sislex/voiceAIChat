@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { ciToolOutputLimits, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
 import { registerRemoteBashMcp, quoteCwd } from './remoteBashMcp'

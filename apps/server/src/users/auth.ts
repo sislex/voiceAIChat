@@ -216,7 +216,7 @@ export function projectPermissionForRequest(method: string, url: string): Projec
  * Чтение не отделяется от записи намеренно: в проекте без подсистемы её списки
  * бессмысленны, а UI их и не показывает.
  */
-export function projectFeatureForRequest(method: string, url: string): ProjectFeature | null {
+export function projectFeatureForRequest(_method: string, url: string): ProjectFeature | null {
   if (!/^\/api\/projects\/[^/]+\//.test(url)) return null
   if (/^\/api\/projects\/[^/]+\/(?:releases|production)(?:\/|$)/.test(url)) return 'releases'
   if (/^\/api\/projects\/[^/]+\/(?:machines|default-machine)(?:\/|$)/.test(url)) return 'machines'
