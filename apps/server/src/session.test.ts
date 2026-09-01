@@ -191,11 +191,22 @@ describe('WS: auth status', () => {
     expect(snapshot).toMatchObject({ t: 'auth.status', v: 1, status: { claude: { loggedIn: true }, codex: { loggedIn: false } } })
     let updates = 0
     first.on('message', (data) => { if (JSON.parse(data.toString()).t === 'auth.status') updates += 1 })
+    /**
+     * Ждём условие, а не фиксированные 20 мс: под полным прогоном пакета кадр
+     * успевал прийти позже, и тест падал «expected 0 to be 1» — при том что
+     * изолированно проходил за четверть секунды. Отсутствие кадра проверяется
+     * по-прежнему паузой: тут ждать нечего, ждём заведомо дольше доставки.
+     */
+    const waitUpdates = async (expected: number): Promise<void> => {
+      for (let attempt = 0; attempt < 100 && updates < expected; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+    }
     authStatus.set(U, snapshot.status)
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await new Promise((resolve) => setTimeout(resolve, 50))
     expect(updates).toBe(0)
     authStatus.reportRunError(U, 'claude', 'вход в Claude не выполнен')
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await waitUpdates(1)
     expect(updates).toBe(1)
     first.close()
 
