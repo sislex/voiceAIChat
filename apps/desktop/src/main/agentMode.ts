@@ -6,13 +6,15 @@
 import { app, BrowserWindow, ipcMain, safeStorage, type MenuItemConstructorOptions } from 'electron'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { homedir, hostname } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { startConnection, type AgentConnection, type AgentStatus } from '@agent/connection'
 import { decodeAgentConnection } from '@shared/agentProtocol'
 import { parseLoginEnrollmentDeepLink } from '@shared/enrollment'
 import { REST } from '@shared/protocol'
 
 const isDev = !app.isPackaged
+const mainDir = dirname(fileURLToPath(import.meta.url))
 const LOG_CAP = 200
 
 interface StoredConfig {
@@ -128,7 +130,7 @@ function stopAgent(): void {
 function loadRenderer(win: BrowserWindow, name: 'agent-setup' | 'agent-log'): void {
   const base = process.env['ELECTRON_RENDERER_URL']
   if (isDev && base) void win.loadURL(`${base}/${name}.html`)
-  else void win.loadFile(join(__dirname, `../renderer/${name}.html`))
+  else void win.loadFile(join(mainDir, `../renderer/${name}.html`))
 }
 
 function openSetup(): void {
@@ -142,7 +144,7 @@ function openSetup(): void {
     resizable: false,
     title: 'Режим агента',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(mainDir, '../preload/index.mjs'),
       contextIsolation: true,
       sandbox: false
     }
@@ -163,7 +165,7 @@ function openLog(): void {
     height: 460,
     title: 'Журнал агента',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(mainDir, '../preload/index.mjs'),
       contextIsolation: true,
       sandbox: false
     }

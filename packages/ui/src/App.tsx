@@ -894,30 +894,45 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [createChatPath, setCreateChatPath] = useState('')
   const [createChatError, setCreateChatError] = useState<string | null>(null)
   const [createChatSaving, setCreateChatSaving] = useState(false)
+  const isDesktopHost = window.desktopHost?.kind === 'desktop'
   const [machineConnectOpen, setMachineConnectOpen] = useState(false)
   const [machineConnectStatus, setMachineConnectStatus] = useState('Подключите устройство, чтобы продолжить действие.')
   const [machineConnectBusy, setMachineConnectBusy] = useState(false)
   const machineActionGuard = useRef(createMachineRequiredGuard(() => setMachineConnectOpen(true)))
   const requireMachine = useCallback((action: () => void): void => {
-    setMachineConnectStatus('Подключите устройство, чтобы продолжить действие.')
+    setMachineConnectStatus(isDesktopHost
+      ? 'Добавьте текущий Mac как рабочую машину, чтобы продолжить создание чата.'
+      : 'Подключите устройство, чтобы продолжить действие.')
     machineActionGuard.current.require(operations.agents.some((agent) => agent.online), action)
-  }, [operations.agents])
-  const finishPendingMachineAction = useCallback(async (): Promise<boolean> => {
+  }, [isDesktopHost, operations.agents])
+  const finishPendingMachineAction = useCallback(async (agentId?: string): Promise<boolean> => {
     const agents = await api['agents:list']()
     operationsActions.applyAgents(agents)
-    if (!agents.some((agent) => agent.online)) return false
+    const connectedAgent = agentId
+      ? agents.find((agent) => agent.id === agentId && agent.online)
+      : agents.find((agent) => agent.online)
+    if (!connectedAgent) return false
+    if (settingsState.settings.defaultAgentId !== connectedAgent.id) {
+      await settingsActions.updateSettings({ defaultAgentId: connectedAgent.id })
+    }
     setMachineConnectOpen(false)
     setMachineConnectBusy(false)
     machineActionGuard.current.resume()
     return true
-  }, [api, operationsActions])
+  }, [api, operationsActions, settingsActions, settingsState.settings.defaultAgentId])
   const openLoginApplication = useCallback(async (): Promise<void> => {
     setMachineConnectBusy(true)
     setMachineConnectStatus('Создаём безопасную одноразовую ссылку…')
     try {
       const enrollment = await api['loginApplication:issueEnrollment']()
-      window.location.href = enrollment.deepLink
-      setMachineConnectStatus('Ожидаем подтверждение сервера. Если приложение не открылось, скачайте его.')
+      if (isDesktopHost) {
+        await window.desktopHost!.enrollCurrentDevice(enrollment.deepLink)
+      } else {
+        window.location.href = enrollment.deepLink
+      }
+      setMachineConnectStatus(isDesktopHost
+        ? 'Текущая машина добавлена. Ожидаем её появления в сети…'
+        : 'Ожидаем подтверждение сервера. Если приложение не открылось, скачайте его.')
       const deadline = enrollment.expiresAt
       const poll = async (): Promise<void> => {
         if (Date.now() >= deadline) {
@@ -928,7 +943,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         try {
           const status = await api['loginApplication:enrollmentStatus']({ statusId: enrollment.statusId })
           if (status.status === 'completed') {
-            if (await finishPendingMachineAction()) return
+            if (await finishPendingMachineAction(status.agentId)) return
             setMachineConnectStatus('Устройство зарегистрировано; ожидаем, когда машина появится в сети…')
           } else if (status.status === 'expired') {
             setMachineConnectBusy(false)
@@ -947,7 +962,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       setMachineConnectBusy(false)
       setMachineConnectStatus(error instanceof Error ? error.message : String(error))
     }
-  }, [api, finishPendingMachineAction])
+  }, [api, finishPendingMachineAction, isDesktopHost])
   useEffect(() => {
     if (!createChatOpen) return
     void projectsActions.refreshProjects().catch(() => {})
@@ -2125,8 +2140,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenMake={session.authRequired ? menu(() => navigate('/make')) : undefined}
         onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenLocalApp={session.authRequired ? menu(() => {
-          window.location.href = 'voicechat-login://open'
-          setMachineConnectStatus('Если локальная версия не открылась, скачайте и установите её.')
+          setMachineConnectStatus(isDesktopHost
+            ? 'Добавьте текущий Mac как рабочую машину.'
+            : 'Откройте установленную локальную версию или скачайте её.')
           setMachineConnectOpen(true)
         }) : undefined}
         onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
@@ -2209,19 +2225,33 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
       {machineConnectOpen && (
-        <Dialog title="Подключить устройство" onClose={() => {
+        <Dialog title={isDesktopHost ? 'Добавить текущую машину?' : 'Подключить устройство'} onClose={() => {
           machineActionGuard.current.cancel()
           setMachineConnectOpen(false)
           setMachineConnectBusy(false)
         }} padded>
           <p>{machineConnectStatus}</p>
           <div className="dialog-actions">
-            <button type="button" onClick={() => {
-              void api['downloads:url']({ kind: 'desktop' }).then((url) => { window.location.href = url })
-            }}>Скачать локальную версию</button>
-            <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
-              {machineConnectBusy ? 'Ожидаем подключение…' : 'Открыть локальную версию'}
-            </button>
+            {isDesktopHost ? (
+              <>
+                <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
+                  {machineConnectBusy ? 'Добавляем машину…' : 'Добавить эту машину'}
+                </button>
+                <button type="button" disabled={machineConnectBusy} onClick={() => {
+                  machineActionGuard.current.cancel()
+                  setMachineConnectOpen(false)
+                }}>Не сейчас</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => {
+                  void api['downloads:url']({ kind: 'desktop' }).then((url) => { window.location.href = url })
+                }}>Скачать локальную версию</button>
+                <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
+                  {machineConnectBusy ? 'Ожидаем подключение…' : 'Открыть локальную версию'}
+                </button>
+              </>
+            )}
           </div>
         </Dialog>
       )}

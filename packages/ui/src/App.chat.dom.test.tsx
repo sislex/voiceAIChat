@@ -12,6 +12,7 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 // можно скопировать и открыть заново. Между тестами hash сбрасывает setup.ts.
 afterEach(() => {
   window.location.hash = ''
+  delete window.desktopHost
 })
 
 interface Seeded {
@@ -35,7 +36,7 @@ async function seededApi(): Promise<Seeded> {
 }
 
 describe('App — machine-required guard', () => {
-  it('при отсутствии online-машины приостанавливает создание чата и показывает единый диалог', async () => {
+  it('при отсутствии online-машины приостанавливает создание чата и показывает единый web-диалог', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     await api['conversations:create']({ title: 'Текущий чат' })
@@ -46,6 +47,51 @@ describe('App — machine-required guard', () => {
     expect(screen.getByRole('button', { name: 'Скачать локальную версию' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Открыть локальную версию' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Создать разговор' })).not.toBeInTheDocument()
+  })
+
+  it('в Electron добавляет текущую машину, назначает default и продолжает создание чата', async () => {
+    let enrolled = false
+    const enrollCurrentDevice = vi.fn(async () => { enrolled = true })
+    window.desktopHost = { kind: 'desktop', enrollCurrentDevice }
+    const api = createFakeApi([])
+    const currentMac: AgentInfo = {
+      id: 'current-mac',
+      name: 'Текущий Mac',
+      online: true,
+      createdAt: 1,
+      lastSeen: 1,
+      policy: DEFAULT_AGENT_POLICY
+    }
+    api['agents:list'] = async () => enrolled ? [currentMac] : []
+    api['loginApplication:issueEnrollment'] = async () => ({
+      enrollmentToken: 'one',
+      statusId: 'status-one',
+      expiresAt: Date.now() + 60_000,
+      deepLink: 'voicechat-login://enroll?v=1&token=one&status=status-one&server=http%3A%2F%2Flocalhost%3A8787'
+    })
+    api['loginApplication:enrollmentStatus'] = async () => ({
+      status: 'completed',
+      agentId: currentMac.id,
+      expiresAt: Date.now() + 60_000
+    })
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Текущий чат' })
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Текущий чат')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Добавить текущую машину?' })).toBeInTheDocument()
+    expect(screen.getByText('Добавьте текущий Mac как рабочую машину, чтобы продолжить создание чата.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Не сейчас' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Скачать локальную версию' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Открыть локальную версию' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить эту машину' }))
+
+    await waitFor(() => expect(enrollCurrentDevice).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(api._state.settings.defaultAgentId).toBe(currentMac.id), { timeout: 2_000 })
+    expect(await screen.findByRole('button', { name: 'Создать разговор' })).toBeInTheDocument()
   })
 })
 
