@@ -12,26 +12,37 @@ export const INFO_CONTEXT_IDS = [
 ] as const
 
 /**
+ * Инструменты, которые подключает сам вид чата: браузерные (`mcp__browser__*`)
+ * в чатах с превью, консольные в «Консоли с ассистентом», make-инструменты в
+ * Make и канбан-инструменты в ходах панели ассистента. Выключить их тумблером
+ * нельзя — они приходят вместе с видом чата, а не из настроек разговора.
+ */
+const KIND_TOOL_PREFIXES = ['mcp-browser-', 'mcp-console-', 'mcp-make-', 'mcp-kanban-'] as const
+
+/**
  * Почему пункт нельзя выключить. UI показывает замок с пояснением, поэтому
  * причина считается здесь же, где правило, а не выводится по id в компоненте.
  * Выключаемый пункт причины не имеет (null).
  */
-export function contextLockReason(id: string): 'safety' | 'info' | null {
+export function contextLockReason(id: string): 'safety' | 'info' | 'kind' | null {
   if ((SAFETY_CONTEXT_IDS as readonly string[]).includes(id)) return 'safety'
   if ((INFO_CONTEXT_IDS as readonly string[]).includes(id)) return 'info'
+  if (KIND_TOOL_PREFIXES.some((prefix) => id.startsWith(prefix))) return 'kind'
   return null
 }
 
 /** Человеческое объяснение замка — один текст на весь интерфейс. */
-export const CONTEXT_LOCK_TEXT: Record<'safety' | 'info', string> = {
+export const CONTEXT_LOCK_TEXT: Record<'safety' | 'info' | 'kind', string> = {
   safety: 'Правила безопасности платформы и приложения действуют в каждом ходе — выключить их нельзя.',
-  info: 'Это справочная информация о конфигурации: отдельным блоком в промпт она не добавляется, выключать нечего.'
+  info: 'Это справочная информация о конфигурации: отдельным блоком в промпт она не добавляется, выключать нечего.',
+  kind: 'Инструмент подключает сам вид чата (превью, консоль, Make, панель ассистента). Он появляется и исчезает вместе с этим экраном, тумблера у него нет.'
 }
 
 /** Можно ли выключить пункт контекста по его id. */
 export function isContextToggleable(id: string): boolean {
   if ((SAFETY_CONTEXT_IDS as readonly string[]).includes(id)) return false
   if ((INFO_CONTEXT_IDS as readonly string[]).includes(id)) return false
+  if (KIND_TOOL_PREFIXES.some((prefix) => id.startsWith(prefix))) return false
   return true // personalization, project-binding, skill-*, mcp-remote-*, mcp-kb-*, knowledge-mode
 }
 
