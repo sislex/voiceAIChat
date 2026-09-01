@@ -88,7 +88,7 @@ const ciExecutor: CommandExecutor = {
     if (req.script.includes('Недостаточно места для запуска рана') && lowDisk) { onChunk('Недостаточно места для запуска рана: свободно 400 МБ, нужно не меньше 1024 МБ. Освободите диск и повторите запуск.\n'); return { exitCode: 74, timedOut: false } }
     if (req.script.includes('MachineStorage недоступен') && failManagedBootstrap) return { exitCode: 73, timedOut: false }
     if (req.script.includes('Рабочая копия содержит локальные изменения') && dirtyWorkspace) return { exitCode: 66, timedOut: false }
-    if (syncFailure && req.script.includes('fetch origin main')) return { exitCode: 1, timedOut: false }
+    if (syncFailure && req.script.includes('fetch origin "$BASE_BRANCH"')) return { exitCode: 1, timedOut: false }
     // Боевой шаг клонирования: существующая копия с правками → exit 66.
     if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
     // Падение шага «оставляет» в копии правки модели — как в реальном ране.
@@ -300,7 +300,7 @@ describe('ci run manager', () => {
     expect(scripts).toContain('CLONE')
   })
 
-  it('синхронизирует существующий чистый checkout с origin/main без git pull', async () => {
+  it('синхронизирует существующий чистый checkout с актуальной базовой веткой без git pull', async () => {
     const { project, task, agent } = setup()
     db.saveMachineStorage('admin', agent.id, '/storage', 1)
 
@@ -309,9 +309,9 @@ describe('ci run manager', () => {
 
     const prep = scripts[0]
     const statusAt = prep.indexOf('status --porcelain --untracked-files=all')
-    const fetchAt = prep.indexOf('fetch origin main')
-    const checkoutAt = prep.indexOf('checkout main')
-    const resetAt = prep.indexOf('reset --hard origin/main')
+    const fetchAt = prep.indexOf('fetch origin "$BASE_BRANCH"')
+    const checkoutAt = prep.indexOf('checkout "$BASE_BRANCH"')
+    const resetAt = prep.indexOf('reset --hard "origin/$BASE_BRANCH"')
     expect(statusAt).toBeGreaterThan(-1)
     expect(fetchAt).toBeGreaterThan(statusAt)
     expect(checkoutAt).toBeGreaterThan(fetchAt)
@@ -329,7 +329,7 @@ describe('ci run manager', () => {
 
     expect(detail.run.status).toBe('failed')
     expect(scripts[0]).toContain('status --porcelain --untracked-files=all')
-    expect(scripts[0].indexOf('Рабочая копия содержит локальные изменения')).toBeLessThan(scripts[0].indexOf('fetch origin main'))
+    expect(scripts[0].indexOf('Рабочая копия содержит локальные изменения')).toBeLessThan(scripts[0].indexOf('fetch origin "$BASE_BRANCH"'))
     expect(scripts[0]).not.toContain('git clean')
     expect(scripts).not.toContain('CLONE')
     expect(modelRequests).toHaveLength(0)

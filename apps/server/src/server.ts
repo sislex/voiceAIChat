@@ -29,7 +29,7 @@ import { releaseCiTarget, releaseProductionTarget } from './releases/targets.js'
 import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
-import { AgentCommandExecutor } from './ci/executor.js'
+import { AgentCommandExecutor, shellQuote } from './ci/executor.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
@@ -316,6 +316,43 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Реестр создаётся до REST: task-chat context обязан показывать ту же effective
   // online-машину, которую затем использует фактический ход.
   const agentRegistry = opts.agentRegistry ?? new AgentRegistry({ offlineGraceMs: opts.config.agentOfflineGraceMs })
+  /**
+   * Системная граница актуальности общей копии проекта. Модель не участвует:
+   * dirty/diverged checkout блокирует ход, чистая базовая ветка обновляется только fast-forward.
+   */
+  const projectMainRefreshes = new Map<string, Promise<{ baseSha: string }>>()
+  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string }): Promise<{ baseSha: string }> => {
+    const key = [args.projectId, args.agentId, args.path, args.branch].join('\u0000')
+    const activeRefresh = projectMainRefreshes.get(key)
+    if (activeRefresh) return activeRefresh
+    const operation = (async () => {
+    const repo = shellQuote(args.path)
+    const branch = shellQuote(args.branch)
+    const script = `set -eu
+repo=${repo}
+base=${branch}
+test -d "$repo/.git" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
+status="$(git -C "$repo" status --porcelain --untracked-files=all)"
+test -z "$status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
+current="$(git -C "$repo" branch --show-current)"
+test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
+git -C "$repo" fetch --no-tags origin "refs/heads/$base:refs/remotes/origin/$base"
+git -C "$repo" merge --ff-only "refs/remotes/origin/$base"
+local_sha="$(git -C "$repo" rev-parse HEAD)"
+remote_sha="$(git -C "$repo" rev-parse "refs/remotes/origin/$base")"
+test "$local_sha" = "$remote_sha" || { echo "Локальная ветка $base не совпадает с origin/$base после fast-forward" >&2; exit 68; }
+printf 'BASE_SHA=%s\\n' "$local_sha"`
+    const result = await agentRegistry.exec(args.agentId, script, 120_000, undefined, { userId: args.userId, conversationId: args.conversationId, source: 'system' })
+    if (result.timedOut) throw new Error('Синхронизация с origin завершилась по таймауту')
+    if (result.exitCode !== 0) throw new Error(result.output.trim() || `Синхронизация с origin завершилась с кодом ${result.exitCode ?? 'unknown'}`)
+    const baseSha = result.output.match(/BASE_SHA=([0-9a-f]{40})/)?.[1]
+    if (!baseSha) throw new Error('Синхронизация не вернула SHA актуальной базовой ветки')
+    return { baseSha }
+    })()
+    projectMainRefreshes.set(key, operation)
+    void operation.finally(() => { if (projectMainRefreshes.get(key) === operation) projectMainRefreshes.delete(key) }).catch(() => {})
+    return operation
+  }
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
@@ -1086,6 +1123,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data)
     },
     ensureChatStorage,
+    ensureProjectMainCurrent,
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)
@@ -1525,7 +1563,26 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       })
       if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
     }
-    sendAttempt(1)
+    // Подготовка обязана исследовать тот же SHA, который сейчас опубликован в
+    // origin. Fetch выполняется сервером до LLM: read-only модель не может забыть
+    // его вызвать или молча продолжить на устаревшей копии.
+    void (async () => {
+      if (project?.gitUrl) {
+        if (!selectedMachine) throw new Error('Для Git-проекта не настроена доступная машина с рабочей директорией')
+        if (!agentRegistry.isOnline(selectedMachine.agentId)) throw new Error(`Машина «${selectedMachine.name ?? selectedMachine.agentId}» offline`)
+        const snapshot = await ensureProjectMainCurrent({
+          userId, projectId, conversationId: null, agentId: selectedMachine.agentId,
+          path: selectedMachine.path, branch: project.ciBaseBranch || 'main'
+        })
+        db.appendTaskPreparationLog(run.id, `[система] Актуальная базовая ветка: ${project.ciBaseBranch || 'main'} @ ${snapshot.baseSha}; совпадение с origin подтверждено.\n`)
+      }
+      sendAttempt(1)
+    })().catch((error) => {
+      const message = `Не удалось синхронизировать проект с origin: ${error instanceof Error ? error.message : String(error)}`
+      db.failTaskPreparationRun(run.id, message)
+      closePreparationTools()
+      preparationRunUpdated(userId, projectId, taskId, run.id)
+    })
     preparationRunUpdated(userId, projectId, taskId, run.id)
     return run
   }

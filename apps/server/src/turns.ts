@@ -134,6 +134,8 @@ export interface TurnManagerDeps {
   readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
   /** Привязка чата к хранилищу машины по умолчанию (ChatAI), если её ещё нет. */
   ensureChatStorage?: (userId: string, conversationId: string, machineId: string) => Promise<ChatStorageBinding | null>
+  /** Системный preflight общей main-копии проекта перед запуском модели. */
+  ensureProjectMainCurrent?: (args: { userId: string; projectId: string; conversationId: string; agentId: string; path: string; branch: string }) => Promise<{ baseSha: string }>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -628,7 +630,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
-    const prompt = makeAutoPlan
+    let prompt = makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
       : promptQ
     // Единый resolver используется также REST-каталогом и task-chat context:
@@ -660,6 +662,31 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Нет доступной online-машины: remote-команды заблокированы' }, userId)
     }
     const requestedTarget = target
+    // Проектный ход с Git-репозиторием стартует только после системного refresh
+    // общей базовой ветки. Task-workspace уже содержит feature-ветку и управляется
+    // CI lifecycle: переключать его на main означало бы потерять контекст задачи.
+    if (conv?.projectId && projectContext?.gitUrl && target && deps.ensureProjectMainCurrent
+      && conv.assistantKind !== 'make' && conv.workspace?.mode !== 'task_workspace') {
+      const projectMachine = deps.db.getProjectMachine(conv.projectId, target)
+      const projectPath = projectMachine?.directories?.projectWorkdir.path || projectMachine?.path || ''
+      if (!projectPath) {
+        starting.delete(conversationId)
+        broadcast({ t: 'claude.error', conversationId, message: 'Не настроена рабочая директория проекта: ход на устаревшем checkout запрещён.' }, userId)
+        return
+      }
+      try {
+        const snapshot = await deps.ensureProjectMainCurrent({
+          userId, projectId: conv.projectId, conversationId, agentId: target,
+          path: projectPath, branch: projectContext.ciBaseBranch || 'main'
+        })
+        prompt = `${prompt}\n\nАктуальная базовая ветка: ${projectContext.ciBaseBranch || 'main'} @ ${snapshot.baseSha}. Системный preflight подтвердил совпадение с origin.`
+      } catch (error) {
+        starting.delete(conversationId)
+        const detail = error instanceof Error ? error.message : String(error)
+        broadcast({ t: 'claude.error', conversationId, message: `Не удалось синхронизировать проект с origin: ${detail}` }, userId)
+        return
+      }
+    }
     // Клиент рисует шапку ответа сразу: движок/модель/машина известны уже здесь.
     // Шлём до подготовки контекста БЗ и вложений (они занимают секунды), иначе
     // до этого момента в шапке стоят догадки клиента без наследования от проекта.
