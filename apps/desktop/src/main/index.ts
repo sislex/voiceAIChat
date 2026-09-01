@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, Tray, ipcMain, session, shell } from 'electron'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseLoginEnrollmentDeepLink } from '@shared/enrollment'
 import { VoiceChatDb } from './db/database'
 import { trayIcon } from './trayIcon'
@@ -9,10 +10,12 @@ import {
   isDesktopMigrationDone,
   markDesktopMigrationDone,
   readServerUrl,
+  runDesktopEnrollment,
   writeServerUrl
 } from './remoteConfig'
 
 const isDev = !app.isPackaged
+const mainDir = dirname(fileURLToPath(import.meta.url))
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -53,14 +56,14 @@ function createWindow(): void {
     backgroundColor: '#FAFAF7',
     title: 'Голос·Чат',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(mainDir, '../preload/index.mjs'),
       contextIsolation: true,
       sandbox: false,
       nodeIntegration: false
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('ready-to-show', () => showChat())
   // Закрытие окна сворачивает в трей (приложение продолжает работать агентом);
   // реальный выход — только через «Выход» в трее (isQuitting) или Cmd-Q (before-quit).
   mainWindow.on('close', (e) => {
@@ -82,37 +85,29 @@ function createWindow(): void {
     void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(join(mainDir, '../renderer/index.html'))
   }
 }
 
 async function handleEnrollmentLink(value: string): Promise<void> {
-  try {
-    const parsed = new URL(value)
-    if (parsed.protocol === 'voicechat-login:' && parsed.hostname === 'open') {
-      pendingEnrollmentLink = null
-      showChat()
-      return
-    }
-    const enrollment = parseLoginEnrollmentDeepLink(value)
-    await enrollCurrentDevice(value)
-    pendingEnrollmentLink = null
-    if (enrollment && readServerUrl(app.getPath('userData')) !== enrollment.serverUrl) {
-      applyServerUrl(enrollment.serverUrl)
-      return
-    }
-    showChat()
-  } catch (error) {
-    console.error('[desktop enrollment]', error)
-    showChat()
-  }
+  await runDesktopEnrollment(value, {
+    revealWindow: showChat,
+    enroll: enrollCurrentDevice,
+    parse: parseLoginEnrollmentDeepLink,
+    currentServerUrl: () => readServerUrl(app.getPath('userData')),
+    applyServerUrl,
+    reportError: (error) => console.error('[desktop enrollment]', error)
+  })
+  pendingEnrollmentLink = null
 }
 
 /** Показать окно чата (создать, если было закрыто). */
 function showChat(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
+    app.focus({ steal: true })
   } else {
     createWindow()
   }
@@ -121,7 +116,10 @@ function showChat(): void {
 /** Окно ввода адреса сервера (тонкий клиент). */
 function openRemoteSetup(): void {
   if (remoteSetupWindow) {
+    if (remoteSetupWindow.isMinimized()) remoteSetupWindow.restore()
+    remoteSetupWindow.show()
     remoteSetupWindow.focus()
+    app.focus({ steal: true })
     return
   }
   remoteSetupWindow = new BrowserWindow({
@@ -130,7 +128,7 @@ function openRemoteSetup(): void {
     resizable: false,
     title: 'Подключение к серверу',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(mainDir, '../preload/index.mjs'),
       contextIsolation: true,
       sandbox: false
     }
@@ -141,7 +139,7 @@ function openRemoteSetup(): void {
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     void remoteSetupWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/remote-setup.html`)
   } else {
-    void remoteSetupWindow.loadFile(join(__dirname, '../renderer/remote-setup.html'))
+    void remoteSetupWindow.loadFile(join(mainDir, '../renderer/remote-setup.html'))
   }
 }
 
@@ -236,6 +234,15 @@ if (gotSingleInstanceLock) void app.whenReady().then(() => {
   tray = new Tray(trayIcon())
   tray.setToolTip('Голос·Чат')
   initAgentMode(rebuildTrayMenu)
+  ipcMain.handle('desktop:enrollCurrentDevice', async (_event, value: unknown) => {
+    const deepLink = String(value)
+    const enrollment = parseLoginEnrollmentDeepLink(deepLink)
+    const configuredServer = readServerUrl(app.getPath('userData'))
+    if (!enrollment || !configuredServer || enrollment.serverUrl !== configuredServer) {
+      throw new Error('Ссылка подключения выпущена не текущим сервером')
+    }
+    await handleEnrollmentLink(deepLink)
+  })
   rebuildTrayMenu()
   if (pendingEnrollmentLink) void handleEnrollmentLink(pendingEnrollmentLink)
 

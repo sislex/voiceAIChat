@@ -52,7 +52,7 @@ Electron preload должен сохранять `contextIsolation` и публ�
 
 ### Сборка
 
-`electron-vite` собирает main, preload и renderer. `electron-builder.yml` определяет app id, ресурсы и macOS DMG; `afterPack.cjs` выполняет package-specific обработку. Сервер может найти DMG автоматически в `apps/desktop/release` или получить путь через `VC_DESKTOP_APP`, после чего раздаёт `/api/app/desktop`.
+`electron-vite` собирает main, preload и renderer. Main bundle — ESM, поэтому пути к preload/renderer вычисляются через `dirname(fileURLToPath(import.meta.url))`; CommonJS-глобальная `__dirname` в packaged приложении не определена и оставляет процесс только с tray/menu-bar без `BrowserWindow`. `electron-builder.yml` определяет app id, ресурсы и macOS DMG; `afterPack.cjs` выполняет package-specific обработку. Сервер может найти DMG автоматически в `apps/desktop/release` или получить путь через `VC_DESKTOP_APP`, после чего раздаёт `/api/app/desktop`.
 
 Команды: `npm --prefix apps/desktop install`, `npm run typecheck:desktop`, `npm run test:desktop`, `npm --prefix apps/desktop run dev`, `npm --prefix apps/desktop run dist`.
 
@@ -70,9 +70,9 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 
 ## Подключение текущего устройства
 
-Отдельного login-приложения нет: `apps/desktop` — единая тонкая Electron-оболочка для общего web-интерфейса и локального `apps/agent`. Desktop зарегистрирован для `voicechat-login://`, принимает enrollment deep link при cold start, через macOS `open-url` и single-instance callback, атомарно погашает двухминутный одноразовый токен и запускает локальную машину.
+Отдельного login-приложения нет: `apps/desktop` — единая тонкая Electron-оболочка для общего web-интерфейса и локального `apps/agent`. Desktop зарегистрирован для `voicechat-login://`, принимает enrollment deep link при cold start, через macOS `open-url` и single-instance callback, атомарно погашает двухминутный одноразовый токен и запускает локальную машину. При любом deep link окно показывается, восстанавливается и фокусируется до сетевого enrollment: недоступный сервер не должен оставлять запущенное приложение видимым только в трее.
 
-В URI передаются только opaque enrollment secret, correlation id и адрес сервера. Постоянный machine token приходит desktop лишь в HTTPS-ответе redeem, не выдаётся renderer и хранится через `safeStorage`. Пункт «Открыть локальную версию» находится в раскрывающемся меню пользователя; браузер сначала пробует deep link, а общий диалог оставляет прямое скачивание основного ARM64 DMG как fallback.
+В URI передаются только opaque enrollment secret, correlation id и адрес сервера. Постоянный machine token приходит desktop лишь в HTTPS-ответе redeem, не выдаётся renderer и хранится через `safeStorage`. Пункт «Открыть локальную версию» находится в раскрывающемся меню пользователя и сначала открывает общий диалог выбора. В browser отдельная кнопка выпускает enrollment-токен и запускает deep link, а прямое скачивание основного ARM64 DMG остаётся fallback; запуск custom protocol до открытия диалога недопустим, потому что браузерная навигация может прервать React-обновление и оставить пользователя без окна. В Electron наличие минимального `window.desktopHost` переключает тот же guard на вопрос «Добавить текущую машину?»: без скачивания и внешнего deep-link перехода preload передаёт одноразовую ссылку main-процессу, main принимает только ссылку текущего настроенного сервера и запускает общее ядро агента. После появления зарегистрированного `agentId` online UI сохраняет его как персональный `defaultAgentId` и продолжает приостановленное создание чата.
 
 ## Границы безопасности Electron
 
