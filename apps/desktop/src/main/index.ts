@@ -1,9 +1,10 @@
 import { app, BrowserWindow, Menu, Tray, ipcMain, session, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { parseLoginEnrollmentDeepLink } from '@shared/enrollment'
 import { VoiceChatDb } from './db/database'
 import { trayIcon } from './trayIcon'
-import { initAgentMode, agentMenuItems, disposeAgentMode } from './agentMode'
+import { initAgentMode, agentMenuItems, disposeAgentMode, enrollCurrentDevice } from './agentMode'
 import {
   isDesktopMigrationDone,
   markDesktopMigrationDone,
@@ -17,6 +18,25 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let remoteSetupWindow: BrowserWindow | null = null
+let pendingEnrollmentLink: string | null = process.argv.find((arg) => arg.startsWith('voicechat-login://')) ?? null
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) app.quit()
+else {
+  app.setAsDefaultProtocolClient('voicechat-login')
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    pendingEnrollmentLink = url
+    if (app.isReady()) void handleEnrollmentLink(url)
+  })
+  app.on('second-instance', (_event, argv) => {
+    const link = argv.find((arg) => arg.startsWith('voicechat-login://'))
+    if (link) {
+      pendingEnrollmentLink = link
+      if (app.isReady()) void handleEnrollmentLink(link)
+    } else if (app.isReady()) showChat()
+  })
+}
 
 function createWindow(): void {
   const userDataDir = app.getPath('userData')
@@ -63,6 +83,28 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+async function handleEnrollmentLink(value: string): Promise<void> {
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol === 'voicechat-login:' && parsed.hostname === 'open') {
+      pendingEnrollmentLink = null
+      showChat()
+      return
+    }
+    const enrollment = parseLoginEnrollmentDeepLink(value)
+    await enrollCurrentDevice(value)
+    pendingEnrollmentLink = null
+    if (enrollment && readServerUrl(app.getPath('userData')) !== enrollment.serverUrl) {
+      applyServerUrl(enrollment.serverUrl)
+      return
+    }
+    showChat()
+  } catch (error) {
+    console.error('[desktop enrollment]', error)
+    showChat()
   }
 }
 
@@ -153,7 +195,7 @@ function applyServerUrl(url: string | null): void {
   }
 }
 
-app.whenReady().then(() => {
+if (gotSingleInstanceLock) void app.whenReady().then(() => {
   const userDataDir = app.getPath('userData')
   const serverUrl = readServerUrl(userDataDir)
 
@@ -195,6 +237,7 @@ app.whenReady().then(() => {
   tray.setToolTip('Голос·Чат')
   initAgentMode(rebuildTrayMenu)
   rebuildTrayMenu()
+  if (pendingEnrollmentLink) void handleEnrollmentLink(pendingEnrollmentLink)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

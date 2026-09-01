@@ -908,7 +908,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!agents.some((agent) => agent.online)) return false
     setMachineConnectOpen(false)
     setMachineConnectBusy(false)
-    return machineActionGuard.current.resume()
+    machineActionGuard.current.resume()
+    return true
   }, [api, operationsActions])
   const openLoginApplication = useCallback(async (): Promise<void> => {
     setMachineConnectBusy(true)
@@ -919,7 +920,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       setMachineConnectStatus('Ожидаем подтверждение сервера. Если приложение не открылось, скачайте его.')
       const deadline = enrollment.expiresAt
       const poll = async (): Promise<void> => {
-        if (!machineActionGuard.current.pending() || Date.now() >= deadline) {
+        if (Date.now() >= deadline) {
           setMachineConnectBusy(false)
           setMachineConnectStatus('Ссылка истекла или приложение не ответило. Выпустите новую ссылку.')
           return
@@ -2123,6 +2124,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenConsoleReader={session.authRequired ? menu(() => navigate('/console-reader')) : undefined}
         onOpenMake={session.authRequired ? menu(() => navigate('/make')) : undefined}
         onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
+        onOpenLocalApp={session.authRequired ? menu(() => {
+          window.location.href = 'voicechat-login://open'
+          setMachineConnectStatus('Если локальная версия не открылась, скачайте и установите её.')
+          setMachineConnectOpen(true)
+        }) : undefined}
         onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
         currentUser={session.currentUser}
@@ -2211,10 +2217,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           <p>{machineConnectStatus}</p>
           <div className="dialog-actions">
             <button type="button" onClick={() => {
-              void api['downloads:url']({ kind: 'login-application-macos-arm64' }).then((url) => { window.location.href = url })
-            }}>Скачать приложение</button>
+              void api['downloads:url']({ kind: 'desktop' }).then((url) => { window.location.href = url })
+            }}>Скачать локальную версию</button>
             <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
-              {machineConnectBusy ? 'Ожидаем подключение…' : 'Открыть приложение'}
+              {machineConnectBusy ? 'Ожидаем подключение…' : 'Открыть локальную версию'}
             </button>
           </div>
         </Dialog>

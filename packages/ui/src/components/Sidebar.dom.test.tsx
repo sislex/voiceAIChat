@@ -149,9 +149,11 @@ describe('Sidebar — инструменты в меню по клику на п
 
   it('иконки виджетов лежат в меню аккаунта, а не в отдельном ряду', () => {
     const onOpenObserver = vi.fn()
+    const onOpenLocalApp = vi.fn()
     setup({
       currentUser: user,
       onOpenObserver,
+      onOpenLocalApp,
       onOpenKnowledgeBase: vi.fn(),
         onOpenFiles: vi.fn(),
       onOpenConsole: vi.fn(),
@@ -172,11 +174,17 @@ describe('Sidebar — инструменты в меню по клику на п
       expect(within(menu).getByText(label)).toBeInTheDocument()
     }
     // Управление и настройки — там же.
+    expect(within(menu).getByText('Открыть локальную версию')).toBeInTheDocument()
     expect(within(menu).getByText('Машины')).toBeInTheDocument()
     expect(within(menu).getByText('Настройки')).toBeInTheDocument()
 
+    fireEvent.click(within(menu).getByText('Открыть локальную версию'))
+    expect(onOpenLocalApp).toHaveBeenCalledTimes(1)
+
+    // Открываем меню снова: первый клик по пункту корректно закрыл его.
+    fireEvent.click(screen.getByRole('button', { name: /Алекс/ }))
     // Пункт-инструмент кликабелен и вызывает свой обработчик.
-    fireEvent.click(within(menu).getByText('История LLM'))
+    fireEvent.click(within(screen.getByRole('menu')).getByText('История LLM'))
     expect(onOpenObserver).toHaveBeenCalledTimes(1)
   })
 
