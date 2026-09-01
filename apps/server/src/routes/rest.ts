@@ -32,6 +32,9 @@ import {
   isContextToggleable,
   toolNameForContextId,
   sanitizeSettingsPatch,
+  claudeModelAlias,
+  firstAllowedProvider,
+  isProviderAllowed,
   CLAUDE_MODELS,
   CODEX_MODELS
 } from '@voicechat/shared'
@@ -41,9 +44,10 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
-import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
+import { MAKE_ONLY_DISALLOWED_TOOLS } from '../turns.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 
 /**
@@ -138,18 +142,44 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const projectLlm = project && conversation.llmProvider === null
     ? db.getCiLlmConfig('project', project.id)
     : null
-  const provider = conversation.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
+  /**
+   * Движок — с учётом прав пользователя, как в ходе (`turns.ts`): если
+   * выбранный провайдер ему не разрешён, ход молча берёт первый доступный.
+   * Пока снимок показывал сохранённое значение как есть, инспектор обещал
+   * codex человеку, у которого он закрыт, — а отвечал claude.
+   */
+  const wantedProvider = conversation.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
+  const llmAccess = db.getUserLlmAccess(userId)
+  const fallbackProvider = firstAllowedProvider(llmAccess)
+  const provider: LlmProvider = isProviderAllowed(llmAccess, wantedProvider) || !fallbackProvider ? wantedProvider : fallbackProvider
   const selectedModel = conversation.llmProvider === provider
     ? conversation.llmModel
-    : (projectLlm?.provider === provider ? projectLlm.model : null)
-  const model = selectedModel ?? (provider === 'codex' ? settings.codexModel : settings.model)
+    : (projectLlm && projectLlm.provider === provider ? projectLlm.model : null)
+  // Модель Claude приводится к алиасу меню тем же `claudeModelAlias`, что и в
+  // ходе: сохранённое старое значение («opus») исполнитель резолвит в «opus[1m]»,
+  // и показывать сырое значение значит называть не ту модель.
+  const rawModel = selectedModel ?? (provider === 'codex' ? settings.codexModel : settings.model)
+  const model = provider === 'claude' && rawModel ? claudeModelAlias(rawModel) : rawModel
   const llmSource = conversation.llmProvider ? 'Разговор' : projectLlm ? 'Проект' : 'Настройки пользователя'
   const llmExplanation = conversation.llmProvider
     ? 'Явное переопределение.'
     : projectLlm
       ? 'Унаследовано из настроек проекта.'
       : 'Унаследовано из настроек пользователя.'
-  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (role !== 'admin' && !machineAvailable) ? 'plan' : (conversation.permissionMode ?? settings.permissionMode)
+  /**
+   * Режим доступа — по правилам хода (`turns.ts`), включая исключение для Make.
+   * Там ход НЕ понижает режим до «плана» без машины: инструменты `make_*`
+   * машины не требуют, а нативный plan-режим CLI их глушит. Вместо понижения
+   * запрещаются встроенные инструменты (`MAKE_ONLY_DISALLOWED_TOOLS`). Пока
+   * снимок этого не знал, обычный пользователь в Make-чате видел «Только
+   * планирование», а ход шёл с правкой файлов проекта.
+   */
+  const makeOnlyExecution = conversation.assistantKind === 'make' && provider === 'claude'
+    && conversation.execTarget !== 'none' && role !== 'admin' && !machineAvailable
+    && (conversation.permissionMode ?? settings.permissionMode) !== 'plan'
+  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (role !== 'admin' && !machineAvailable && !makeOnlyExecution)
+    ? 'plan'
+    : (conversation.permissionMode ?? settings.permissionMode)
   // Тумблер сильнее настройки — ровно как в ходе (`turns.ts`: kbMode). Пока
   // снимок считал режим только по разговору, выключенная тумблером база знаний
   // показывалась работающей: пункты `mcp-kb-*` оставались «доступны», хотя ход
@@ -625,7 +655,12 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     lastTurn,
     changes: db.listConversationContextEvents(userId, conversationId, 20),
     // Тот же список, что уйдёт исполнителю (`turns.ts` → LlmRequest.disallowedTools).
-    disallowedTools: [...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null).sort(),
+    disallowedTools: [
+      ...[...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null),
+      // Make без машины: ход глушит встроенные инструменты вместо понижения
+      // режима — значит модель их не получит, и список это обязан показывать.
+      ...(makeOnlyExecution ? MAKE_ONLY_DISALLOWED_TOOLS : [])
+    ].sort(),
     cliMcpServers,
     warnings,
     promptPreview: {

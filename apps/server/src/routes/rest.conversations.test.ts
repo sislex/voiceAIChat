@@ -1157,6 +1157,45 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('движок показывается с учётом прав пользователя, а модель — алиасом меню', async () => {
+    // Ход берёт первый разрешённый движок, если выбранный пользователю закрыт
+    // (`turns.ts`: permittedProvider). Снимок обязан показывать то же, иначе
+    // инспектор обещает codex человеку, у которого он запрещён.
+    // Права — deny-list: запись с modelId '*' закрывает движок целиком.
+    db.createUser('dev-access', 'password', 'developer')
+    const token = signToken({ name: 'dev-access', role: 'developer' }, SECRET)
+    const conv = db.createConversation('dev-access', 'Без codex')!
+    db.setConversationExecTarget('dev-access', conv.id, null, null, undefined, 'codex', 'gpt-5.6-sol', null)
+    db.setUserLlmAccess('dev-access', [{ provider: 'codex', modelId: '*' }])
+
+    const snap = async (): Promise<{ provider: string; model: string }> =>
+      (await app.inject({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot`, headers: { authorization: `Bearer ${token}` } })).json().summary
+    expect((await snap()).provider).toBe('claude')
+
+    // Модель приводится к алиасу меню тем же кодом, что в ходе: сохранённое
+    // старое значение «opus» исполнитель резолвит в «opus[1m]», и показывать
+    // сырое значение значит называть не ту модель.
+    db.setConversationExecTarget('dev-access', conv.id, null, null, undefined, 'claude', 'opus', null)
+    expect((await snap()).model).toBe('opus[1m]')
+  })
+
+  it('в Make-чате без машины режим не понижается, но встроенные инструменты запрещены', async () => {
+    // Ход (`turns.ts`, makeOnlyExecution) не переводит Make-чат в «План» без
+    // машины: инструменты make_* машины не требуют, а plan-режим CLI их глушит.
+    // Вместо понижения запрещаются встроенные инструменты. Снимок обязан
+    // говорить то же — иначе обычный пользователь читает «Только планирование»,
+    // а ход правит файлы проекта.
+    db.createUser('dev-make', 'password', 'developer')
+    const token = signToken({ name: 'dev-make', role: 'developer' }, SECRET)
+    const conv = db.createConversation('dev-make', 'Витрина', 'make')!
+    db.setConversationExecTarget('dev-make', conv.id, null, null, undefined, null, null, 'acceptEdits')
+    const snapshot = (await app.inject({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot`, headers: { authorization: `Bearer ${token}` } })).json()
+    expect(snapshot.summary.permissionMode.value).not.toBe('plan')
+    // Встроенные инструменты в списке запрещённых — модель их не получит.
+    expect(snapshot.disallowedTools).toContain('Bash')
+    expect(snapshot.disallowedTools).toContain('Write')
+  })
+
   it('база знаний объявляет эффект инструментов, а не блока промпта', async () => {
     // `knowledge-mode` не убирает статический блок: автоконтекст БЗ зависит от
     // текста сообщения. Зато он гасит инструменты mcp__kb__*, и объявленный
