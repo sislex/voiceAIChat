@@ -144,26 +144,35 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(api._state.messages.filter((message) => message.role === 'u1')).toHaveLength(1)
   })
 
-  it('submitText не сохраняет один черновик дважды при параллельных вызовах', async () => {
-    const { store, api } = makeStore()
+  it('три быстрые отправки создают независимые операции и запросы', async () => {
+    const { store, api } = makeStore(['Чат'])
     await store.actions.init()
-    const original = api['conversations:createDraft']
+    store.actions.applyClaudeToken('Активный ответ', store.getState().activeId!)
+
+    const original = api['messages:add']
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
-    const createDraft = vi.spyOn(api, 'conversations:createDraft').mockImplementation(async (args) => {
+    const add = vi.spyOn(api, 'messages:add').mockImplementation(async (args) => {
       await gate
       return original(args)
     })
 
-    store.actions.setDraft('Один раз')
-    const first = store.actions.submitText()
-    const duplicate = store.actions.submitText()
+    const sends: Array<Promise<boolean>> = []
+    for (const text of ['A', 'B', 'C']) {
+      store.actions.setDraft(text)
+      sends.push(store.actions.submitText())
+    }
+    await vi.advanceTimersByTimeAsync(0)
 
-    await expect(duplicate).resolves.toBe(false)
-    expect(createDraft).toHaveBeenCalledOnce()
+    expect(add).toHaveBeenCalledTimes(3)
+    expect(Object.values(store.getState().pendingSubmits)).toHaveLength(3)
+    expect(new Set(Object.values(store.getState().pendingSubmits).map((item) => item.operationId)).size).toBe(3)
+    expect(new Set(Object.values(store.getState().pendingSubmits).map((item) => item.messageId)).size).toBe(3)
+    expect(store.getState().queuedTurns[store.getState().activeId!]?.map((item) => item.text)).toEqual(['A', 'B', 'C'])
+    expect(store.getState().draft).toBe('')
+
     release()
-    await expect(first).resolves.toBe(true)
-    expect(api._state.messages.filter((message) => message.role === 'u1' && message.text === 'Один раз')).toHaveLength(1)
+    await Promise.all(sends)
   })
 
   it('обычная отправка остаётся pending до события ленты и резервирует место ответа', async () => {
@@ -204,7 +213,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     store.actions.setDraft('Раннее подтверждение')
     const sending = store.actions.submitText()
     await ready
-    expect(store.getState().pendingSubmit?.messageId).toBeNull()
+    expect(store.getState().pendingSubmit?.messageId).toBe(persisted.id)
 
     store.actions.applyChatMessage(persisted.conversationId, persisted)
     expect(store.getState().pendingSubmit).toBeNull()
@@ -369,14 +378,14 @@ describe('voiceStore — интеграция стора с api-моком и м
     await ready
     const conversationId = store.getState().activeId!
     const optimistic = store.getState().queuedTurns[conversationId]![0]!
-    expect(store.getState().pendingSubmit?.messageId).toBeNull()
+    expect(store.getState().pendingSubmit?.messageId).toBe(optimistic.messageId)
     expect(optimistic.attachments).toHaveLength(2)
 
-    const reversed = { ...optimistic, id: 'server-wrong', attachments: [...optimistic.attachments].reverse() }
+    const reversed = { ...optimistic, id: 'server-wrong', messageId: 'other-message', attachments: [...optimistic.attachments].reverse() }
     store.actions.applyClaudeQueue(conversationId, [reversed], false)
     expect(store.getState().pendingSubmit).not.toBeNull()
 
-    const confirmed = { ...optimistic, id: 'server-right', messageId: 'server-message' }
+    const confirmed = { ...optimistic, id: 'server-right' }
     store.actions.applyClaudeQueue(conversationId, [confirmed], false)
     expect(store.getState().pendingSubmit).toBeNull()
 
