@@ -48,7 +48,11 @@ export interface ContextInspectorProps {
 }
 
 const dynamicIds = new Set(['current-message', 'knowledge-mode'])
-const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'knowledge-mode', 'conversation-history', 'current-message'])
+// Основной список источников. Пункт снимка, которого здесь нет и который не
+// подходит под маски дополнительных (`skill-*`, `mcp-*`, `instruction-*`), на
+// экран не попадёт вовсе — так пропал «Контекст задачи», пока его сюда не
+// добавили. Новый пункт сервера — сразу в этот набор или в маску.
+const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'task-context', 'knowledge-mode', 'conversation-history', 'current-message'])
 /** Фильтр списка: показывать всё, только уходящее в ход или только исключённое. */
 type ItemFilter = 'all' | 'included' | 'excluded' | 'touched'
 
@@ -898,6 +902,14 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     const money = usdPerToken === null ? '' : `, −$${(usdPerToken * item.size.approxTokens).toFixed(4)} за ход`
     return `Выключение освободит ≈${item.size.approxTokens} токенов${money}`
   }
+  /**
+   * Пункт включён, но блока в промпте у него нет. Причина не в тумблере, и
+   * человеку это надо сказать: вид чата (в консоли не уходит терминал, в Make —
+   * заведение задачи) или пустой текст источника.
+   */
+  const silent = (item: ContextSnapshotItem): boolean =>
+    item.enabled && item.includedInNextTurn && (item.id.startsWith('instruction-') || item.id === 'task-context')
+    && !preview.blocks.some((block) => block.itemIds.includes(item.id))
   /** Самый тяжёлый источник постоянной части; null — размеров ни у кого нет. */
   const heaviestItem = allItems
     .filter((item) => (item.size?.approxTokens ?? 0) > 0)
@@ -917,7 +929,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           </label>
         : <span className="context-lock" role="img" aria-label={CONTEXT_LOCK_TEXT[item.lockReason ?? 'info']} title={CONTEXT_LOCK_TEXT[item.lockReason ?? 'info']}>🔒</span>}
     <button type="button" className="context-item-open" onClick={() => openDetail(item.id)}>
-      <span className="context-item-main"><b>{item.title}</b>{heavyShare(item) >= HEAVY_ITEM_SHARE && <span className="context-heavy" title={`Пункт занимает ${Math.round(heavyShare(item) * 100)}% постоянной части промпта`}>тяжёлый · {Math.round(heavyShare(item) * 100)}%</span>}<small>{item.description}</small><small className="context-reason"><b>Почему:</b> {reasonFor(item)}</small>{sizeLabel(item) && <small className="context-size">{sizeLabel(item)}{savingsLabel(item) ? ` · ${savingsLabel(item)}` : ''}</small>}</span>
+      <span className="context-item-main"><b>{item.title}</b>{silent(item) && <span className="context-heavy" title="Пункт включён, но в этом чате его текст не уходит: так решает вид чата или пустой текст источника">в этом чате не уходит</span>}{heavyShare(item) >= HEAVY_ITEM_SHARE && <span className="context-heavy" title={`Пункт занимает ${Math.round(heavyShare(item) * 100)}% постоянной части промпта`}>тяжёлый · {Math.round(heavyShare(item) * 100)}%</span>}<small>{item.description}</small><small className="context-reason"><b>Почему:</b> {reasonFor(item)}</small>{sizeLabel(item) && <small className="context-size">{sizeLabel(item)}{savingsLabel(item) ? ` · ${savingsLabel(item)}` : ''}</small>}</span>
       <span className="context-status">{userStatus(item)}</span><span aria-hidden="true">→</span>
     </button>
   </div>

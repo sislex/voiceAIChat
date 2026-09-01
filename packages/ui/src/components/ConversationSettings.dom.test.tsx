@@ -1331,4 +1331,24 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(screen.getByTestId('context-excluded')).not.toHaveAttribute('open'))
   })
 
+  it('помечает включённый источник, текст которого в этом чате не уходит', async () => {
+    // Инструкция включена и «уйдёт в следующий ход», но блока в промпте у неё
+    // нет — так бывает, когда вид чата её не применяет.
+    const base = contextSnapshot({})
+    const withSilent: typeof base = {
+      ...base,
+      groups: [{ ...base.groups[0]!, items: [
+        ...base.groups[0]!.items,
+        { ...base.groups[0]!.items[1]!, id: 'instruction-console', title: 'Открывать терминал в чате', enabled: true, includedInNextTurn: true, toggleable: true, lockReason: null, size: null }
+      ] }]
+    }
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(withSilent) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    expect(await screen.findByText('в этом чате не уходит')).toBeInTheDocument()
+  })
+
 })

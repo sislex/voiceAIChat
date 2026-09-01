@@ -1157,6 +1157,47 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('контекст задачи попадает в предпросмотр и выключается отдельным тумблером', async () => {
+    const project = db.createProject(U, { name: 'Проект задач' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Починить гейт' })!
+    db.updateTask(U, project.id, task.id, { description: 'Гейт красный', acceptanceCriteria: 'Зелёный гейт' })
+    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+
+    const snap = async (): Promise<{ blocks: Array<{ title: string; text: string }>; item: { enabled: boolean; includedInNextTurn: boolean } }> => {
+      const value = (await inj({ method: 'GET', url: `/api/conversations/${chat.id}/context-snapshot` })).json()
+      return {
+        blocks: value.promptPreview.blocks,
+        item: value.groups
+          .flatMap((group: { items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean }> }) => group.items)
+          .find((entry: { id: string }) => entry.id === 'task-context')
+      }
+    }
+    const before = await snap()
+    const taskBlock = before.blocks.find((block) => block.title === 'Контекст задачи')
+    // Тот же текст, что уходит в ход: постановка, а не одно название проекта.
+    expect(taskBlock?.text).toContain('Починить гейт')
+    expect(taskBlock?.text).toContain('Критерии приёмки: Зелёный гейт')
+    expect(before.item.includedInNextTurn).toBe(true)
+
+    // Тумблер настоящий: блок исчезает из предпросмотра, как исчезнет из хода.
+    await inj({ method: 'POST', url: `/api/conversations/${chat.id}/context/task-context`, payload: { enabled: false } })
+    const after = await snap()
+    expect(after.blocks.some((block) => block.title === 'Контекст задачи')).toBe(false)
+    expect(after.item.enabled).toBe(false)
+  })
+
+  it('предпросмотр не показывает инструкции, которых в чате этого вида не будет', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Консоль', assistantKind: 'console-reader' } })).json()
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    // «Открывать терминал в чате» включена в настройках, но в консоли терминал
+    // уже открыт справа — подсказка туда не уходит, и блока быть не должно.
+    const titles = (snapshot.promptPreview.blocks as Array<{ title: string }>).map((block) => block.title)
+    expect(titles.some((title) => title.includes('терминал'))).toBe(false)
+    // И об этом сказано прямо, а не молчанием.
+    expect((snapshot.warnings as Array<{ text: string }>).some((entry) => entry.text.includes('В чате этого вида не применяются инструкции'))).toBe(true)
+  })
+
   it('журнал контекста пишет смену настроек разговора, а не только тумблеры', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Журнал настроек' } })).json()
     await inj({ method: 'PATCH', url: `/api/conversations/${created.id}`, payload: { execTarget: 'none', permissionMode: 'plan', kbContextMode: 'manual' } })
