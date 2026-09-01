@@ -1645,6 +1645,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [chat.activeId, chatActions, inConsoleReader, operations.agents, toast])
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
+  const isEmptyPreparedChat = chat.conversationsStatus === 'ready' && !chat.loadingMessages && chat.messages.length === 0
   const activeKbUsage = chat.activeId ? chat.kbUsage[chat.activeId] : undefined
   // Счётчик обращений на кнопке «Использование БЗ» должен быть честным ДО
   // открытия панели, поэтому снапшот читаем при открытии чата и после каждого
@@ -2310,9 +2311,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
-            defaultCollapsed={compactChat && chat.messages.length > 0}
-            allowCollapse={compactChat && chat.messages.length > 0}
-            layout={chat.messages.length === 0 ? 'centered' : 'docked'}
+            defaultCollapsed={compactChat && !isEmptyPreparedChat}
+            allowCollapse={compactChat && !isEmptyPreparedChat}
+            layout={isEmptyPreparedChat ? 'centered' : 'docked'}
             userDisplayName={session.currentUser?.name}
             state={voice.voice}
             submitPending={chat.pendingSubmit?.conversationId === chat.activeId || (chat.pendingSubmit !== null && chat.activeId === null)}
