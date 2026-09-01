@@ -1,7 +1,7 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
-import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock } from '../prompt/contextBlocks.js'
+import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import {
   REST,
@@ -22,6 +22,9 @@ import {
   type AgentInfo,
   buildConversationPrompt,
   effectiveChatInstructions,
+  instructionsForAssistantKind,
+  designPromptLines,
+  makeDesignPreviewUrl,
   instructionContextId,
   instructionText,
   resumeSessionIdFor,
@@ -125,6 +128,21 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // истории: иначе размер в панели не совпадёт с отправленным.
   const resumeId = resumeSessionIdFor(conversation.claudeSessionId ?? null, provider)
   const historyText = buildConversationPrompt(messages)
+  // Контекст задачи — тот же блок, что уходит в ход: раньше предпросмотр про
+  // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
+  const taskContext = (() => {
+    if (!conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
+    const tc = db.getTaskChatContext(userId, conversationId, isOnline)
+    if (!tc) return null
+    const task = conversation.projectId ? db.getCiTask(userId, conversation.projectId, conversation.taskId) : null
+    return taskContextBlock({
+      context: tc,
+      description: task?.description ?? null,
+      acceptanceCriteria: task?.acceptanceCriteria ?? null,
+      designLines: task?.designs?.length ? designPromptLines(task.designs, makeDesignPreviewUrl) : []
+    })
+  })()
+
   const selectedSkills = new Set(conversation.skillNames)
 
   // Полная детализация для drill-in: те же данные и тот же текст, что реально
@@ -198,6 +216,16 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     })) },
     { id: 'project', order: 3, title: 'Проект, директория и AGENTS.md', description: 'Эффективная рабочая область следующего хода.', items: [
       contextItem({ id: 'project-binding', type: 'Проект', source: 'Настройки разговора', scope: project?.name ?? 'Без проекта', priority: '4 · проект', title: project?.name ?? 'Проект не выбран', description: project ? 'Проект доступен пользователю.' : 'Привязка отсутствует.', explanation: project ? 'Явная привязка разговора.' : 'Проектный контекст не включён.', configured: Boolean(conversation.projectId), available: Boolean(project), includedInNextTurn: Boolean(project), details: projectDetails }),
+      // Контекст задачи — отдельный пункт: в чате задачи это самый большой блок
+      // после истории, а до этого он прятался внутри «проекта» и в предпросмотр
+      // не попадал вовсе.
+      contextItem({ id: 'task-context', type: 'Задача', source: 'Карточка задачи', scope: conversation.taskId ?? 'Не привязан', priority: '4 · задача',
+        title: 'Контекст задачи',
+        description: conversation.taskId ? 'Иерархия, этап, описание и критерии приёмки' : 'Чат не привязан к задаче',
+        explanation: conversation.taskId
+          ? 'Уходит в каждом ходе чата задачи. Выключается отдельно от проекта: постановка бывает длинной, а привязка к проекту нужна и без неё.'
+          : 'Появится, если чат создан из карточки задачи.',
+        configured: Boolean(conversation.taskId), available: Boolean(conversation.taskId), includedInNextTurn: Boolean(taskContext) }),
       contextItem({ id: 'working-directory', type: 'Рабочая директория', source: conversation.workdir ? 'Разговор' : projectMachine ? 'Проект' : 'Настройки пользователя', scope: workdir ?? 'Не задана', priority: '5 · рабочая область', title: 'Рабочая директория', description: workdir ?? 'Каталог не настроен.', explanation: workdir && machineAvailable ? 'Передаётся исполнителю как cwd.' : 'Каталог нельзя проверить без доступной машины.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir) }),
       contextItem({ id: 'agents-chain', type: 'AGENTS.md', source: 'Рабочая директория', scope: workdir ?? 'Не определена', priority: '6 · от общей к конкретной', title: 'Цепочка AGENTS.md', description: workdir ? 'Фактическую цепочку разрешает исполнитель в рабочей директории.' : 'Без директории цепочка не определяется.', explanation: workdir && machineAvailable ? 'Текст скрыт: снимок не раскрывает файл без отдельного подтверждённого чтения.' : 'Директория или машина недоступна.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir && machineAvailable), details: { hiddenReason: 'Содержимое не читалось сервером инспектора.' } })
     ] },
@@ -385,9 +413,12 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // входят — им нужен текст ещё не отправленного сообщения.
   const previewBlocks = buildContextBlocks({
     personalization: disabled.has('personalization') ? { ...p, preferredName: '', responseLanguage: '', responseStyle: 'normal', tone: 'neutral', birthYear: null, birthMonth: null, birthDay: null } : p,
-    instructions: effectiveChatInstructions(settings.chatInstructions, disabled),
+    // Фильтр по виду чата общий с ходом: в «Консоли с ассистентом» не уходит
+    // подсказка про терминал, в Make — про терминал и заведение задачи.
+    instructions: instructionsForAssistantKind(effectiveChatInstructions(settings.chatInstructions, disabled), conversation.assistantKind ?? null),
     project: disabled.has('project-binding') ? null : project,
     projectId: disabled.has('project-binding') ? null : conversation.projectId ?? null,
+    taskContext,
     now
   })
   const previewText = previewBlocks.map((block) => block.text).join('\n\n')
@@ -408,6 +439,18 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       itemId: null,
       level: 'notice',
       text: `Свои блоки промпта занимают ≈${approxTokens(previewText.length)} токенов — это много для постоянной части каждого хода. Выключите ненужные источники или сократите инструкции чата.`
+    })
+    warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+  }
+  // Инструкция включена, но в чате этого вида не применяется. Раньше человек
+  // видел её в списке «уйдёт» и не понимал, почему модель ведёт себя иначе.
+  const skippedByKind = effectiveChatInstructions(settings.chatInstructions, disabled)
+    .filter((item) => !instructionsForAssistantKind([item], conversation.assistantKind ?? null).length)
+  if (skippedByKind.length) {
+    warnings.push({
+      itemId: null,
+      level: 'notice',
+      text: `В чате этого вида не применяются инструкции: ${skippedByKind.map((item) => item.title).join(', ')}. Они включены в настройках, но сюда не уходят.`
     })
     warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
   }

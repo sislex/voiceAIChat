@@ -5,13 +5,14 @@
 // активных ходов с накопленным частичным текстом (claude.active).
 
 import { readFileSync } from 'node:fs'
-import { personalizationPromptBlock, projectContextBlock } from './prompt/contextBlocks.js'
+import { personalizationPromptBlock, projectContextBlock, taskContextBlock } from './prompt/contextBlocks.js'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
   type ChatStorageBinding,
   appendChatInstructionHints,
   effectiveChatInstructions,
+  instructionsForAssistantKind,
   stripDisabledInstructionBlocks,
   parseTaskLaunchRequest,
   buildConversationPrompt,
@@ -570,24 +571,22 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Контекст задачи, к которой привязан чат: иерархия, этап воркфлоу, папка и
     // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
-    if (conv?.taskId && !disabledContext.has('project-binding')) {
+    // Контекст задачи выключается отдельно от проекта: постановка бывает
+    // длинной, и «убрать критерии приёмки, оставив проект» — законное желание.
+    if (conv?.taskId && !disabledContext.has('project-binding') && !disabledContext.has('task-context')) {
       const tc = deps.db.getTaskChatContext(userId, conversationId, deps.agents ? (agentId) => deps.agents!.isOnline(agentId) : undefined)
       if (tc) {
-        const lines = [
-          `Задача: ${tc.task.key} · ${tc.task.title}`,
-          tc.epic ? `Эпик: ${tc.epic.key} · ${tc.epic.title}` : '',
-          tc.story ? `История: ${tc.story.key} · ${tc.story.title}` : '',
-          tc.columnName ? `Этап разработки: ${tc.columnName}${tc.columnSemantic ? ` (${tc.columnSemantic})` : ''}` : '',
-          tc.agentName ? `Машина разработки: ${tc.agentName}` : '',
-          tc.workdir ? `Рабочая директория: ${tc.workdir}` : '',
-          tc.run ? `Последний CI-ран: ${tc.run.status}, режим ${tc.run.mode === 'plan' ? 'план' : 'разработка'}` : ''
-        ].filter(Boolean)
         const task = conv.projectId ? deps.db.getCiTask(userId, conv.projectId, conv.taskId) : null
-        if (task?.description) lines.push(`Описание задачи: ${task.description}`)
-        if (task?.acceptanceCriteria) lines.push(`Критерии приёмки: ${task.acceptanceCriteria}`)
-        // Дизайн из Make: макет — часть постановки, без ссылки модель его не найдёт.
-        if (task?.designs?.length) lines.push(...designPromptLines(task.designs, makeDesignPreviewUrl))
-        basePrompt = `${basePrompt}\n\n## Контекст задачи\n${lines.join('\n')}`
+        // Текст строит `prompt/contextBlocks.ts` — тот же код, что и предпросмотр
+        // инспектора. Дизайн из Make: макет — часть постановки, без ссылки
+        // модель его не найдёт.
+        const block = taskContextBlock({
+          context: tc,
+          description: task?.description ?? null,
+          acceptanceCriteria: task?.acceptanceCriteria ?? null,
+          designLines: task?.designs?.length ? designPromptLines(task.designs, makeDesignPreviewUrl) : []
+        })
+        if (block) basePrompt = `${basePrompt}\n\n${block}`
       }
     }
     // Панель ассистента работает и в приватном kanban-чате, и в обычном чате
@@ -612,9 +611,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // tool-блок console» модели не даётся, а такой блок из ответа вырезается.
     // Make: править проект — и есть задача чата, спрашивать «завести задачу или работать
     // в чате» (task-launch) бессмысленно; терминал в чат тоже не вставляем.
-    const instructions = effectiveChatInstructions(settings.chatInstructions, disabledContext)
-      .filter((item) => !(conv?.assistantKind === 'console-reader' && item.kind === 'console'))
-      .filter((item) => !(conv?.assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
+    // Фильтр по виду чата — общий с инспектором контекста
+    // (`instructionsForAssistantKind` в `@voicechat/shared`): пока он жил здесь
+    // двумя `.filter`, предпросмотр показывал подсказки, которых в этом чате
+    // не будет.
+    const instructions = instructionsForAssistantKind(
+      effectiveChatInstructions(settings.chatInstructions, disabledContext),
+      conv?.assistantKind ?? null
+    )
     const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext ? await deps.makeContext(conversationId).catch(() => '') : ''
     const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.

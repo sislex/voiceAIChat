@@ -55,6 +55,24 @@ export function effectiveChatInstructions(list: readonly ChatInstruction[], disa
 }
 
 /**
+ * Инструкции, которые не применяются в чатах особого вида. Правило жило в
+ * `turns.ts` двумя `.filter` подряд, поэтому инспектор их не знал и обещал
+ * пользователю подсказки, которые в этом чате не уходят:
+ *  - «Консоль с ассистентом»: терминал уже открыт справа, tool-блок console
+ *    модели не предлагается (и вырезается из ответа);
+ *  - Make: править проект — и есть задача чата, поэтому вопрос «завести задачу
+ *    или работать в чате» (taskLaunch) бессмыслен, а терминала там нет.
+ */
+export function instructionsForAssistantKind(
+  effective: readonly ChatInstruction[],
+  assistantKind: string | null | undefined
+): ChatInstruction[] {
+  return effective
+    .filter((item) => !(assistantKind === 'console-reader' && item.kind === 'console'))
+    .filter((item) => !(assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
+}
+
+/**
  * Подсказки с их источниками: у склейки консоль+проводник один текст на две
  * инструкции, поэтому источник — список id, а не один. Инспектор контекста по
  * этому списку показывает, какой именно текст стоит за пунктом: раньше он
