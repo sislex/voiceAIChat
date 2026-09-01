@@ -106,13 +106,23 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
   // не считается включённым в следующий ход (includedInNextTurn=false).
   const disabled = new Set(conversation.disabledContext ?? [])
-  const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled' | 'lockReason'>): ContextSnapshotItem => {
+  /**
+   * Что делает тумблер этого пункта. Считается по id — там же, где живёт само
+   * правило выключения: инструменты уходят в `--disallowedTools`, навыки не
+   * передаются исполнителю, остальное убирает блок промпта.
+   */
+  const effectOf = (id: string): 'prompt-block' | 'tool' | 'skill' => {
+    if (toolNameForContextId(id) !== null) return 'tool'
+    if (id.startsWith('skill-')) return 'skill'
+    return 'prompt-block'
+  }
+  const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled' | 'lockReason' | 'effect'>): ContextSnapshotItem => {
     const toggleable = isContextToggleable(value.id)
     const enabled = toggleable ? !disabled.has(value.id) : true
     // Причина замка приходит с сервера словом, а не выводится в UI по id:
     // правила гейтинга живут в одном месте (`contextGating.ts`).
     const lockReason = toggleable ? null : contextLockReason(value.id)
-    return { ...value, toggleable, enabled, lockReason, includedInNextTurn: value.includedInNextTurn && enabled }
+    return { ...value, toggleable, enabled, lockReason, effect: toggleable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled }
   }
   const settings = db.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
