@@ -6,8 +6,24 @@ import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
 import type { AgentsChainResult, ChatInstruction, ContextDiff, ContextKbPreview, ContextPreset, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
 import type { ProjectSummary } from '@shared/projects'
 import { Button, useConfirm, useToast } from '@voicechat/ui-kit'
+import {
+  HEAVY_ITEM_SHARE,
+  OPEN_SECTIONS_KEY,
+  SECTION_IDS,
+  detailIdFromHash,
+  highlightParts,
+  kbEmptyText,
+  matchesQuery,
+  primaryIds,
+  readTextFile,
+  reasonFor,
+  roleHint,
+  sizeLabel,
+  sourceLabel,
+  summaryLine,
+  userStatus
+} from './context/helpers'
 
-type UserStatus = 'Будет использовано' | 'Доступно при необходимости' | 'Не настроено' | 'Недоступно' | 'Определится после отправки' | 'Выключено вами' | 'Выключено в настройках'
 export interface ContextInspectorProps {
   conversationId: string
   provider: LlmProvider
@@ -47,148 +63,10 @@ export interface ContextInspectorProps {
   onCopyContextTo?: (targetId: string, fromId: string) => Promise<void>
 }
 
-const dynamicIds = new Set(['current-message', 'knowledge-mode'])
-// Основной список источников. Пункт снимка, которого здесь нет и который не
-// подходит под маски дополнительных (`skill-*`, `mcp-*`, `instruction-*`), на
-// экран не попадёт вовсе — так пропал «Контекст задачи», пока его сюда не
-// добавили. Новый пункт сервера — сразу в этот набор или в маску.
-const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'task-context', 'make-context', 'assistant-autonomy', 'knowledge-mode', 'conversation-history', 'current-message'])
 /** Фильтр списка: показывать всё, только уходящее в ход или только исключённое. */
 type ItemFilter = 'all' | 'included' | 'excluded' | 'touched'
 
-function userStatus(item: ContextSnapshotItem): UserStatus {
-  if (item.toggleable && !item.enabled) return 'Выключено вами'
-  // Инструкция, выключенная в общих настройках, раньше выглядела как «Не
-  // настроено» — а это разные вещи: она есть, но отключена во всех чатах.
-  if (item.id.startsWith('instruction-') && !item.configured) return 'Выключено в настройках'
-  if (dynamicIds.has(item.id) || item.id.startsWith('skill-')) return 'Определится после отправки'
-  if (item.includedInNextTurn) return 'Будет использовано'
-  if (!item.configured) return 'Не настроено'
-  if (!item.available) return 'Недоступно'
-  return 'Доступно при необходимости'
-}
-function sourceLabel(source: string): string {
-  if (source === 'Разговор' || source === 'Настройки разговора') return 'Переопределение чата'
-  if (source === 'Проект') return 'Настройки проекта'
-  if (source === 'Настройки пользователя') return 'Общие настройки'
-  if (source === 'Эффективная политика сервера' || source === 'Резолвер сервера') return 'Автоматически'
-  return source
-}
-function reasonFor(item: ContextSnapshotItem): string {
-  if (item.toggleable && !item.enabled) return 'Вы выключили источник для этого разговора — в промпт он не попадёт.'
-  if (item.id === 'current-message') return 'Текст станет известен после отправки сообщения.'
-  if (item.id === 'knowledge-mode' && item.configured) return 'Подходящие документы выбираются по тексту отправляемого сообщения.'
-  if (item.id.startsWith('skill-')) return item.configured ? 'Навык выбран, но активируется только при подходящем сообщении.' : 'Навык доступен и может быть выбран для разговора.'
-  return item.explanation || (item.includedInNextTurn ? 'Сервер включил источник в следующий ход.' : !item.configured ? 'Источник не настроен.' : !item.available ? 'Источник сейчас недоступен.' : 'Источник доступен модели по необходимости.')
-}
-/** «≈120 токенов · 480 символов» — вклад пункта в промпт; null — вклада нет. */
-/**
- * С какой доли постоянной части пункт называется тяжёлым. Пятая часть — та
- * граница, за которой выключение одного источника заметно меняет и объём, и
- * счёт; ниже это шум на фоне остальных десяти пунктов.
- */
-const HEAVY_ITEM_SHARE = 0.2
-/** Разделы, которыми управляет «раскрыть/свернуть все» и память раскрытия. */
-const SECTION_IDS = ['excluded', 'extra', 'presets', 'changes', 'technical'] as const
-/** Ключ раскрытых разделов инспектора в localStorage. */
-const OPEN_SECTIONS_KEY = 'vc.context.sections'
-function sizeLabel(item: ContextSnapshotItem): string | null {
-  if (!item.size || item.size.chars === 0) return null
-  return `≈${item.size.approxTokens} токенов · ${item.size.chars} символов`
-}
-function detailIdFromHash(conversationId: string): string | null {
-  const prefix = `#/chat/${encodeURIComponent(conversationId)}/context/`
-  return window.location.hash.startsWith(prefix) ? decodeURIComponent(window.location.hash.slice(prefix.length).split(/[/?]/)[0] ?? '') : null
-}
-/**
- * Совпадение пункта с поисковой строкой: заголовок, описание, id, тип — и текст
- * блока, который этот пункт добавляет в промпт. Последнее важнее остального:
- * вопрос звучит как «почему модель знает про отпуск», а слово «отпуск» стоит
- * не в названии источника, а внутри персонализации или инструкции.
- */
-function matchesQuery(item: ContextSnapshotItem, query: string, blockText = ''): boolean {
-  if (!query.trim()) return true
-  const needle = query.trim().toLowerCase()
-  return [item.title, item.description, item.id, item.type, item.explanation, blockText].some((field) => field.toLowerCase().includes(needle))
-}
-/**
- * Разбивает текст на куски вокруг совпадений, чтобы подсветить найденное.
- * Возвращает пары «текст, совпадение ли» — рисование остаётся за компонентом.
- *
- * Число подсветок ограничено: на короткой подстроке вроде «ии» в семитысячном
- * тексте инструкции их выходит две с лишним тысячи (проверено в браузере), и
- * это столько же узлов DOM на каждый ввод символа. Дальше лимита текст идёт
- * целым куском — сама выдача остаётся полной, подсвечено только начало.
- */
-const HIGHLIGHT_LIMIT = 200
-function highlightParts(text: string, query: string): Array<{ text: string; hit: boolean }> {
-  const needle = query.trim().toLowerCase()
-  if (!needle) return [{ text, hit: false }]
-  const parts: Array<{ text: string; hit: boolean }> = []
-  const lower = text.toLowerCase()
-  let from = 0
-  let hits = 0
-  while (hits < HIGHLIGHT_LIMIT) {
-    const at = lower.indexOf(needle, from)
-    if (at === -1) break
-    if (at > from) parts.push({ text: text.slice(from, at), hit: false })
-    parts.push({ text: text.slice(at, at + needle.length), hit: true })
-    from = at + needle.length
-    hits += 1
-  }
-  if (from < text.length) parts.push({ text: text.slice(from), hit: false })
-  return parts
-}
-/**
- * Почему автоконтекста не будет. Причину считает подборщик (`emptyReason`), и
- * они разные по смыслу: «ничего не нашлось» и «нашлось, но уверенность низкая» —
- * это разные ответы на вопрос «а почему модель не получит документы».
- */
-function kbEmptyText(preview: ContextKbPreview): string {
-  if (preview.mode !== 'auto') return 'Режим базы знаний — не «Авто»: автоматический контекст не добавляется, но модель может искать сама инструментами.'
-  switch (preview.emptyReason) {
-    case 'kb-unavailable': return 'База знаний сейчас недоступна — автоматический контекст не добавится.'
-    case 'empty-query': return 'Введите черновик сообщения: подбор считается по его тексту.'
-    case 'low-confidence': return 'Подходящие разделы нашлись, но уверенность подбора низкая — автоматически они не добавятся. Модель сможет запросить их инструментами базы знаний.'
-    case 'budget': return 'Найденные разделы не поместились в бюджет автоконтекста — они не добавятся.'
-    default: return 'Для такого сообщения подходящих разделов не нашлось — автоматический контекст не добавится.'
-  }
-}
-/**
- * Текст файла. `Blob.text()` есть в браузерах, но не в jsdom (тесты пакета
- * идут на нём), поэтому при его отсутствии читаем `FileReader` — он есть везде.
- */
-function readTextFile(file: File): Promise<string> {
-  if (typeof file.text === 'function') return file.text()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать файл'))
-    reader.readAsText(file)
-  })
-}
 
-/** Одна строка о контексте: движок, размер, стоимость и что выключено. */
-function summaryLine(value: ConversationContextSnapshot): string {
-  const disabled = value.groups.flatMap((group) => group.items).filter((item) => item.toggleable && !item.enabled)
-  const cost = value.promptPreview.costUsd === null ? '' : `, ≈$${value.promptPreview.costUsd.toFixed(4)} за ход`
-  return [
-    `Контекст ${value.conversationId}: ${value.summary.provider} · ${value.summary.model || 'модель из конфигурации CLI'}`,
-    `постоянная часть ≈${value.promptPreview.approxTokens} токенов в ${value.promptPreview.blocks.length} блок(ах)${cost}`,
-    // Итог хода — та цифра, ради которой сводку и копируют в задачу: без неё
-    // «постоянная часть ≈600» выглядит маленькой в чате, где история весит втрое больше.
-    value.promptPreview.turnTotal.resumed
-      ? `ход продолжает сессию движка, история заново не передаётся`
-      : `всего в ход ≈${value.promptPreview.turnTotal.approxTokens} токенов, история ≈${value.promptPreview.turnTotal.historyApproxTokens}`,
-    `режим доступа: ${value.summary.permissionMode.displayName}; база знаний: ${value.summary.kbMode.displayName}`,
-    disabled.length ? `выключено: ${disabled.map((item) => item.title).join(', ')}` : 'выключенных источников нет'
-  ].join('; ')
-}
-function roleHint(role: UserRole): string {
-  return role === 'admin'
-    ? 'Вы администратор: видны все сведения снимка и доступны любые настройки разговора.'
-    : 'Доступны просмотр всего контекста и правка того, что не связано с безопасностью и другими людьми.'
-}
 
 export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const toast = useToast()
@@ -309,8 +187,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     }
   }
   /** Свойства раскрывающегося раздела: раскрытие переживает закрытие окна. */
-  const sectionProps = (id: string): { open: boolean; onToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void } => ({
-    open: openSections[id] ?? false,
+  const sectionProps = (id: string, openByDefault = false): { open: boolean; onToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void } => ({
+    // Раздел инструкций был раскрыт всегда: это то, ради чего экран открывают
+    // чаще всего. Привязка к общей памяти не должна его закрывать — пока
+    // человек не свернул его сам, он открыт.
+    open: openSections[id] ?? openByDefault,
     onToggle: (event) => {
       const open = event.currentTarget.open
       setOpenSections((prev) => {
@@ -486,6 +367,8 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
    * разъедет таблицу.
    */
   const changesCsv = (value: ConversationContextSnapshot): string => {
+    // BOM в начале файла: Excel без него читает UTF-8 как ANSI, и кириллица в
+    // журнале превращается в кракозябры. Разделитель уже «;» по той же причине.
     const cell = (text: string): string => `"${text.replace(/"/g, '""')}"`
     const rows = [['Время', 'Кто', 'Действие', 'Источник', 'ID источника', 'Значение'].map(cell).join(';')]
     for (const event of value.changes) {
@@ -498,7 +381,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         event.value ?? ''
       ].map(cell).join(';'))
     }
-    return rows.join('\n')
+    return `\uFEFF${rows.join('\n')}`
   }
 
   /** Применить пресет: набор приводится к сохранённому, как при копировании. */
@@ -1379,7 +1262,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         </div>
       </div>
     </section>}
-    {instructionItems.length > 0 && <details className="context-section" data-testid="context-instructions-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора{groupSize('chat-instructions')}</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
+    {instructionItems.length > 0 && <details className="context-section" data-testid="context-instructions-section" {...sectionProps('instructions', true)}><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора{groupSize('chat-instructions')}</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
     <details className="context-section" data-testid="context-excluded" {...sectionProps('excluded')}><summary><span><b>Не попадёт в следующий ход</b><small>Выключенное вами, ненастроенное и недоступное — с причиной</small></span><span className="context-count">{excludedItems.length}</span></summary>{itemList(excludedItems, 'Всё найденное попадёт в следующий ход.', false)}</details>
     <details className="context-section" {...sectionProps('extra')}><summary><span><b>Дополнительные возможности</b><small>Навыки, MCP, приложения, плагины, машины и AGENTS.md</small></span><span className="context-count">{additionalItems.length}</span></summary>{itemList(ordered(additionalItems), 'Дополнительные возможности не обнаружены.')}</details>
     {diff && <section className="context-card" aria-labelledby="context-diff-title" data-testid="context-diff">
