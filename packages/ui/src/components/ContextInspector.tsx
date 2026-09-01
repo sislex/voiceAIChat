@@ -52,7 +52,7 @@ const dynamicIds = new Set(['current-message', 'knowledge-mode'])
 // подходит под маски дополнительных (`skill-*`, `mcp-*`, `instruction-*`), на
 // экран не попадёт вовсе — так пропал «Контекст задачи», пока его сюда не
 // добавили. Новый пункт сервера — сразу в этот набор или в маску.
-const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'task-context', 'make-context', 'knowledge-mode', 'conversation-history', 'current-message'])
+const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'task-context', 'make-context', 'assistant-autonomy', 'knowledge-mode', 'conversation-history', 'current-message'])
 /** Фильтр списка: показывать всё, только уходящее в ход или только исключённое. */
 type ItemFilter = 'all' | 'included' | 'excluded' | 'touched'
 
@@ -792,6 +792,33 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           .filter(([, value]) => !(block && typeof value === 'string' && value.trim() === block.text.trim()))
           .map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(', ') : String(value ?? '—')}</dd></div>)}
       </dl>
+      {/* Автопилот правится здесь же: пункт объясняет, что ассистент сможет
+          сделать, и уводить за этим в шапку панели — лишний шаг. Это не
+          безопасность (доска — данные проекта), поэтому доступно не только
+          админу. */}
+      {detail.id === 'assistant-autonomy' && window.api?.['kanbanAssistant:setAutonomy'] && <div className="context-detail-toggle">
+        <label>
+          <input
+            type="checkbox"
+            checked={String(detail.details?.['Значение'] ?? 'auto') === 'auto'}
+            disabled={busy || locked}
+            onChange={(event) => void (async () => {
+              setBusy(true)
+              try {
+                await window.api['kanbanAssistant:setAutonomy']({ conversationId: props.conversationId, autonomy: event.target.checked ? 'auto' : 'confirm' })
+                setReload((value) => value + 1)
+                toast.success('Автопилот применён к этому разговору')
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : String(error))
+              } finally {
+                setBusy(false)
+              }
+            })()}
+          />
+          <span>Автопилот: применять изменения доски без подтверждения</span>
+        </label>
+        <small>Необратимое — деплой и удаление — ассистент спрашивает в любом случае.</small>
+      </div>}
       {/* Навык выбирается здесь же: раньше инспектор показывал «выбран/не выбран»
           и отправлял человека на другую вкладку менять то, что он уже видит. */}
       {skillName && props.onToggleSkill && <div className="context-detail-toggle">

@@ -1394,4 +1394,28 @@ describe('ConversationSettings', () => {
     expect(total.textContent).toContain('$0.0080 за 2 прошедших ход(ов)')
   })
 
+  it('автопилот ассистента правится прямо из карточки пункта', async () => {
+    const setAutonomy = vi.fn().mockResolvedValue(undefined)
+    const base = contextSnapshot({})
+    const withAutonomy: typeof base = {
+      ...base,
+      groups: [{ ...base.groups[0]!, items: [
+        ...base.groups[0]!.items,
+        { ...base.groups[0]!.items[0]!, id: 'assistant-autonomy', title: 'Автопилот: изменения без подтверждения',
+          toggleable: false, lockReason: null, enabled: true, includedInNextTurn: true, details: { 'Значение': 'auto' } }
+      ] }]
+    }
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(withAutonomy),
+      'kanbanAssistant:setAutonomy': setAutonomy } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    fireEvent.click((await screen.findAllByRole('button', { name: /Автопилот/ }))[0]!)
+    // Правка доступна обычному пользователю: доска — данные проекта, не безопасность.
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Автопилот: применять изменения доски без подтверждения' }))
+    await waitFor(() => expect(setAutonomy).toHaveBeenCalledWith({ conversationId: 'c1', autonomy: 'confirm' }))
+  })
+
 })
