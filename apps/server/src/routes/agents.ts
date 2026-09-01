@@ -53,6 +53,7 @@ const UPDATE_EXEC_TIMEOUT_MS = 30_000
 export interface AppArtifacts {
   agentApp?: string
   desktopApp?: string
+  loginApplication?: string
 }
 
 /** Отдаёт .dmg на скачивание или 404 с подсказкой, как собрать. */
@@ -427,9 +428,9 @@ export async function registerAgentRoutes(
     const entries = [{
       platform: 'macos' as const,
       arch: 'arm64' as const,
-      available: Boolean(artifacts.desktopApp && existsSync(artifacts.desktopApp)),
+      available: Boolean(artifacts.loginApplication && existsSync(artifacts.loginApplication)),
       downloadUrl: REST.loginApplicationDownload + '?platform=macos&arch=arm64',
-      filename: 'voicechat-desktop-macos-arm64.dmg'
+      filename: 'voicechat-login-macos-arm64.dmg'
     }]
     if (!req.query.platform && !req.query.arch) return entries
     return entries.filter((item) =>
@@ -441,7 +442,7 @@ export async function registerAgentRoutes(
     if (req.query.platform !== 'macos' || req.query.arch !== 'arm64') {
       return reply.code(404).send({ error: 'Сборка для этой платформы и архитектуры недоступна' })
     }
-    return sendDmg(reply, artifacts.desktopApp, 'voicechat-desktop-macos-arm64.dmg', 'npm --prefix apps/desktop run dist')
+    return sendDmg(reply, artifacts.loginApplication, 'voicechat-login-macos-arm64.dmg', 'npm --prefix apps/login-application run dist')
   })
 
   app.post(REST.loginEnrollmentIssue, async (req) => {

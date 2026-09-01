@@ -1,6 +1,6 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-08-27
+updated: 2026-09-01
 checked: 0c109bca
 areas:
   - apps/web
@@ -8,6 +8,7 @@ areas:
   - apps/desktop/electron-builder.yml
   - apps/agent-tray/src
   - apps/agent-tray/electron-builder.yml
+  - apps/login-application
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
@@ -68,11 +69,13 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 
 Сборка отдельная: `npm --prefix apps/agent-tray install`, `npm run typecheck:agent-tray`, `npm run test:agent-tray`, `npm run dist:agent-tray`. DMG появляется в `apps/agent-tray/release`, autodiscovery server или `VC_AGENT_APP` публикует его на `/api/agents/app`.
 
-## Подключение текущего устройства
+## Login application (`apps/login-application`)
 
-Отдельного login-приложения нет: `apps/desktop` — единая тонкая Electron-оболочка для общего web-интерфейса и локального `apps/agent`. Desktop зарегистрирован для `voicechat-login://`, принимает enrollment deep link при cold start, через macOS `open-url` и single-instance callback, атомарно погашает двухминутный одноразовый токен и запускает локальную машину. При любом deep link окно показывается, восстанавливается и фокусируется до сетевого enrollment: недоступный сервер не должен оставлять запущенное приложение видимым только в трее.
+Самостоятельное Electron-приложение принимает `voicechat-login://enroll` при cold start, через macOS `open-url` и single-instance callback. Оно погашает двухминутный opaque enrollment, сохраняет полученный machine token только через `safeStorage` и запускает `startConnection` из `apps/agent`; exec/fs/pty не копируются. Уже настроенная машина не перезаписывается. Альтернативная форма принимает адрес ChatAI, логин и пароль, создаёт текущую машину через REST, очищает поле пароля и ничего из credentials не сохраняет; аккаунты с 2FA направляются в deep-link flow из открытой web-сессии.
 
-В URI передаются только opaque enrollment secret, correlation id и адрес сервера. Постоянный machine token приходит desktop лишь в HTTPS-ответе redeem, не выдаётся renderer и хранится через `safeStorage`. Пункт «Открыть локальную версию» находится в раскрывающемся меню пользователя и сначала открывает общий диалог выбора. В browser отдельная кнопка выпускает enrollment-токен и запускает deep link, а прямое скачивание основного ARM64 DMG остаётся fallback; запуск custom protocol до открытия диалога недопустим, потому что браузерная навигация может прервать React-обновление и оставить пользователя без окна. В Electron наличие минимального `window.desktopHost` переключает тот же guard на вопрос «Добавить текущую машину?»: без скачивания и внешнего deep-link перехода preload передаёт одноразовую ссылку main-процессу, main принимает только ссылку текущего настроенного сервера и запускает общее ядро агента. После появления зарегистрированного `agentId` online UI сохраняет его как персональный `defaultAgentId` и продолжает приостановленное создание чата.
+В URI находятся только краткоживущий enrollment secret, correlation id и origin сервера; постоянный machine token приходит в HTTPS-ответе redeem. Renderer видит только фиксированные операции preload и статусы, но не token store. `electron-builder.yml` регистрирует protocol и собирает только macOS ARM64 DMG. Пакет вне workspaces, имеет отдельный lockfile; команды проверки — `npm --prefix apps/login-application run typecheck`, `test`, `dist`, `smoke`.
+
+Серверный реестр `/api/login-application/artifacts` выбирает platform/arch; сейчас доступна только `macos/arm64`. Отдельный download endpoint отдаёт `voicechat-login-macos-arm64.dmg`, настроенный через `VC_LOGIN_APPLICATION` или autodiscovery `apps/login-application/release`. Общий frontend dialog всегда предлагает «Скачать приложение» и «Открыть приложение»; успех подтверждается status и online-машиной, после чего continuation выполняется один раз.
 
 ## Границы безопасности Electron
 
@@ -90,7 +93,8 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 | Новый экран/виджет чата | `packages/ui` |
 | REST/WS реализация web и desktop | `packages/ui/src/remote` |
 | URL/proxy/bootstrap браузера | `apps/web` |
-| Окно/tray/server config/legacy import/enrollment текущего устройства | `apps/desktop` |
+| Окно/tray/server config/legacy import | `apps/desktop` |
+| Login/enrollment текущего Mac и ARM64 DMG | `apps/login-application` |
 | Exec/fs/pty/telemetry машины | `apps/agent` |
 | Setup/log/permissions упаковки агента | `apps/agent-tray` |
 | Пользовательские machines/terminal/files/LLM history/KB/CI monitor/diagnostics | `packages/operations-app` |
