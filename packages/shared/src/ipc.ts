@@ -88,6 +88,8 @@ export interface ConversationWithMessages {
 
 export interface AddMessageArgs {
   conversationId: string
+  /** Заранее назначенный клиентом id; ключ идемпотентности повторного POST. */
+  messageId?: string
   role: MessageRole
   text: string
   time: string

@@ -240,7 +240,6 @@ export function VoiceBar({
   }, [state, replyStarted, requestError])
 
   const submitRequest = (): void => {
-    if (submitPending) return
     if (state === 'idle') cancelSent.current = false
     onSubmitText()
   }
@@ -288,7 +287,7 @@ export function VoiceBar({
   const errorAttachmentCount = blockedAttachments.filter((item) => item.status === 'error').length
   const readyAttachments = attachments.filter((item) => !item.status || item.status === 'ready')
   const canSend = draft.trim().length > 0 || readyAttachments.length > 0 || previewElement !== null
-  const canSubmit = canSend && blockedAttachments.length === 0 && !submitPending
+  const canSubmit = canSend && blockedAttachments.length === 0
   const helper = promptHelper ?? { open: false, loading: false, variants: [], error: null }
   // Палочку показываем в idle, когда есть что переформулировать.
   const canSuggest = isIdle && draft.trim().length > 0 && !!onSuggestPrompts
@@ -791,7 +790,6 @@ export function VoiceBar({
                 title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                 aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                 disabled={!canSubmit}
-                loading={submitPending}
                 aria-describedby={blockedAttachments.length > 0 ? 'attachment-submit-error' : undefined}
               >
                 <SendIcon />
