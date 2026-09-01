@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 193 коммит(ов) в areas после сверки: b0501717 merge: resolve main conflicts for CHAT-388 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 213 коммит(ов) в areas после сверки: b0501717 merge: resolve main conflicts for CHAT-388 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 107 коммит(ов) в areas после сверки: b0501717 merge: resolve main conflicts for CHAT-388 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1034 коммит(ов) в areas после сверки: b0501717 merge: resolve main conflicts for CHAT-388 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1035 коммит(ов) в areas после сверки: 092bd70d docs(kb): update after merge 88b7b070-7d2a-42d0-b858-97ab8fea8d35 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 118 коммит(ов) в areas после сверки: b0501717 merge: resolve main conflicts for CHAT-388 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 157 коммит(ов) в areas после сверки: b0501717 merge: resolve main conflicts for CHAT-388 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 74 коммит(ов) в areas после сверки: b0501717 merge: resolve main conflicts for CHAT-388 … |
