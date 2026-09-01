@@ -101,6 +101,13 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
     prompt = MAKE_ASSISTANT_HINT + '\n\n' + prompt
   }
 
+  // Связанные с задачей Make-проекты: независимые read-only MCP-серверы.
+  for (const source of req.makeSources ?? []) {
+    args.push('-c', `mcp_servers.${source.name}.url="${source.mcpUrl}"`)
+    const start = source.paths.includes('') ? 'проект целиком' : `стартовые пути: ${source.paths.join(', ')}`
+    prompt = `Read-only Make-источник ${source.name} (${source.conversationId}), ${start}. Начни с указанных путей, но make_list_files/make_read_file читают весь проект. Ошибку связывай с ${source.name} и ${source.conversationId}; не проси id или index.html.\n\n${prompt}`
+  }
+
   // Канбан: доска и проектное API разговора как MCP-инструменты.
   if (req.kanbanMcpUrl) {
     args.push('-c', `mcp_servers.kanban.url="${req.kanbanMcpUrl}"`)

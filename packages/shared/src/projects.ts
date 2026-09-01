@@ -829,6 +829,31 @@ export interface MakeTaskLink {
  * Строки блока «Дизайн» для промпта модели: где лежит макет и что открыть.
  * Общие у хода чата и у CI-рана — иначе они разъедутся, как когда-то контекст проекта.
  */
+export interface TaskMakeSource {
+  name: string
+  conversationId: string
+  title: string
+  paths: string[]
+}
+
+/** Один детерминированный источник на Make-проект; paths — лишь стартовые точки. */
+export function taskMakeSources(designs: TaskDesignLink[]): TaskMakeSource[] {
+  const grouped = new Map<string, { title: string; paths: Set<string> }>()
+  for (const design of designs) {
+    const current = grouped.get(design.conversationId) ?? { title: design.conversationTitle, paths: new Set<string>() }
+    current.paths.add(design.path)
+    grouped.set(design.conversationId, current)
+  }
+  return [...grouped.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([conversationId, source], index) => ({
+      name: `make_design_${index + 1}`,
+      conversationId,
+      title: source.title,
+      paths: [...source.paths].sort((a, b) => a.localeCompare(b))
+    }))
+}
+
 export function designPromptLines(designs: TaskDesignLink[], previewUrl: (conversationId: string, path: string) => string): string[] {
   return designs.map((design) => {
     const where = design.path ? `страница ${design.path}` : 'проект целиком'

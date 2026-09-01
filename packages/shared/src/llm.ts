@@ -25,6 +25,18 @@ export interface LlmAttachment {
   preserveServerPath?: boolean
 }
 
+/** Один независимый read-only Make-проект, связанный с задачей. */
+export interface LlmMakeSource {
+  /** Стабильное уникальное имя MCP-сервера, например make_design_1. */
+  name: string
+  /** Непрозрачный краткоживущий endpoint, авторизованный сервером для этого проекта. */
+  mcpUrl: string
+  /** Make-разговор, полезен для диагностики конкретного источника. */
+  conversationId: string
+  /** Подсказки точек входа; пустая строка означает весь проект. */
+  paths: string[]
+}
+
 export interface LlmRequest {
   /** Владелец CLI-профиля: история одного пользователя не смешивается с другими. */
   userId?: string
@@ -84,6 +96,8 @@ export interface LlmRequest {
    * превью которого открыто у пользователя справа.
    */
   makeMcpUrl?: string
+  /** Связанные с задачей живые Make-проекты; всегда только list/read. */
+  makeSources?: LlmMakeSource[]
   /**
    * URL MCP-эндпоинта канбана (инструменты mcp__kanban__*) с секретом и `conv`.
    * Есть только у хода канбан-ассистента: инструменты читают и меняют проект,

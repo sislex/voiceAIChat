@@ -5,21 +5,72 @@
 // история, к которой можно откатиться (аналог версий Figma Make). После каждой
 // мутации владелец получает `make.changed`, и превью справа перезагружается.
 
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { MAKE_LIMITS } from '@voicechat/shared'
+import { MAKE_LIMITS, taskMakeSources, type LlmMakeSource, type TaskDesignLink } from '@voicechat/shared'
 import { MakeError, type MakeWorkspaces } from '../make/workspace.js'
 import type { MakeHub } from '../make/hub.js'
 
 export const MAKE_MCP_PATH = '/mcp/make'
+
+export interface MakeTaskScope {
+  userId: string
+  projectId: string
+  taskId: string
+  conversationIds: string[]
+  expiresAt: number
+}
+
+/** Непрозрачные краткоживущие полномочия task-run. */
+export class MakeTaskScopeBroker {
+  private readonly entries = new Map<string, MakeTaskScope>()
+  constructor(private readonly ttlMs = 30 * 60_000, private readonly now = Date.now) {}
+  issue(entry: Omit<MakeTaskScope, 'expiresAt'>): string {
+    const token = randomUUID()
+    this.entries.set(token, { ...entry, expiresAt: this.now() + this.ttlMs })
+    return token
+  }
+  get(token: string): MakeTaskScope | null {
+    const entry = this.entries.get(token)
+    if (!entry || entry.expiresAt <= this.now()) {
+      this.entries.delete(token)
+      return null
+    }
+    return entry
+  }
+}
+
+export function buildTaskMakeSources(args: {
+  designs: TaskDesignLink[]
+  userId: string
+  projectId: string
+  taskId: string
+  baseUrl?: string
+  broker?: MakeTaskScopeBroker
+}): LlmMakeSource[] {
+  if (!args.baseUrl || !args.broker) return []
+  const sources = taskMakeSources(args.designs)
+  if (!sources.length) return []
+  const token = args.broker.issue({ userId: args.userId, projectId: args.projectId, taskId: args.taskId, conversationIds: sources.map((source) => source.conversationId) })
+  return sources.map((source) => ({
+    name: source.name,
+    conversationId: source.conversationId,
+    paths: source.paths,
+    mcpUrl: `${args.baseUrl}&conv=${encodeURIComponent(source.conversationId)}&scope=${encodeURIComponent(token)}`
+  }))
+}
 
 export interface MakeMcpDeps {
   workspaces: MakeWorkspaces
   hub: MakeHub
   /** Владелец разговора (для адресации make.changed); null — разговора нет. */
   ownerOf(conversationId: string): string | null
+  taskScopes?: MakeTaskScopeBroker
+  /** Перепроверяет актуальную task_designs, проект разговора и членство пользователя. */
+  authorizeTaskSource?(scope: MakeTaskScope, conversationId: string): boolean
 }
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
@@ -36,13 +87,18 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined))
-    scope.post<{ Querystring: { conv?: string; k?: string; turn?: string; ro?: string; note?: string } }>(
+    scope.post<{ Querystring: { conv?: string; k?: string; turn?: string; ro?: string; note?: string; scope?: string } }>(
       MAKE_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
         const conv = req.query.conv ?? ''
+        const taskScope = req.query.scope ? deps.taskScopes?.get(req.query.scope) ?? null : null
+        if (req.query.scope && (!taskScope || !taskScope.conversationIds.includes(conv) || !deps.authorizeTaskSource?.(taskScope, conv))) {
+          return reply.code(403).send({ error: 'task Make source forbidden or expired' })
+        }
+        const taskReadOnly = Boolean(taskScope)
         const turn = req.query.turn ?? ''
-        const readOnly = req.query.ro === '1'
+        const readOnly = taskReadOnly || req.query.ro === '1'
         const note = (req.query.note ?? '').trim().slice(0, 80)
         const owner = deps.ownerOf(conv)
         if (!owner) return reply.code(404).send({ error: 'conversation not found' })
@@ -89,7 +145,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
-        server.registerTool('make_write_file', {
+        if (!taskReadOnly) server.registerTool('make_write_file', {
           description: `Создать или полностью перезаписать файл проекта. Передавай ПОЛНОЕ содержимое файла (не diff). Лимит ${Math.round(MAKE_LIMITS.maxFileBytes / 1024)} КБ на файл. Превью пользователя обновится автоматически.`,
           inputSchema: {
             path: z.string().describe('Путь относительно корня проекта'),
@@ -110,7 +166,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
-        server.registerTool('make_apply_changes', {
+        if (!taskReadOnly) server.registerTool('make_apply_changes', {
           description: 'Записать НЕСКОЛЬКО файлов одной транзакцией (и при необходимости удалить). Если хоть один записанный файл не компилируется, все изменения откатываются и возвращаются ошибки. Используй для связанных правок (компонент + сториз + стили) вместо серии make_write_file.',
           inputSchema: {
             files: z.array(z.object({ path: z.string(), content: z.string() })).min(1).max(30).describe('Полное содержимое каждого файла'),
@@ -129,7 +185,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
-        server.registerTool('make_edit_file', {
+        if (!taskReadOnly) server.registerTool('make_edit_file', {
           description: 'Точечная правка: заменить фрагмент текста в файле, не переписывая его целиком. Фрагмент должен встречаться ровно один раз (или передай all=true). Экономит токены на больших файлах.',
           inputSchema: {
             path: z.string(),
@@ -150,7 +206,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
-        server.registerTool('make_remember', {
+        if (!taskReadOnly) server.registerTool('make_remember', {
           description: 'Записать в заметки проекта решение, которого нужно придерживаться дальше (палитра, структура, договорённости с пользователем). Заметки попадают в контекст каждого следующего хода.',
           inputSchema: { note: z.string().min(3).max(500).describe('Одна короткая формулировка') }
         }, async (args) => {
@@ -158,7 +214,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           try { const n = await workspaces.appendNote(conv, args.note); return text(`Записано. Заметок: ${n.notes.split('\n').filter(Boolean).length}.`) } catch (error) { return text(describeError(error), true) }
         })
 
-        server.registerTool('make_delete_file', {
+        if (!taskReadOnly) server.registerTool('make_delete_file', {
           description: 'Удалить файл проекта.',
           inputSchema: { path: z.string().describe('Путь относительно корня проекта') }
         }, async (args) => {
@@ -171,7 +227,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
-        server.registerTool('make_rename_file', {
+        if (!taskReadOnly) server.registerTool('make_rename_file', {
           description: 'Переименовать или переместить файл проекта. Ссылки на него в других файлах обнови сам (make_write_file).',
           inputSchema: { from: z.string().describe('Текущий путь'), to: z.string().describe('Новый путь') }
         }, async (args) => {
@@ -184,7 +240,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
-        server.registerTool('make_check', {
+        if (!taskReadOnly) server.registerTool('make_check', {
           description: 'Статическая проверка проекта: нет ли index.html, битых ссылок href/src/url() на отсутствующие файлы, пустых файлов и http-скриптов. Вызывай после правок вместо попыток открыть страницу.',
           inputSchema: {}
         }, async () => {
