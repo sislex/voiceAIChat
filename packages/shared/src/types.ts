@@ -1016,10 +1016,11 @@ export interface ContextSnapshotItem {
   enabled: boolean
   /**
    * Почему пункт нельзя выключить: `safety` — правила платформы и приложения,
-   * `info` — чистая информация без вклада в промпт. У выключаемого — null.
+   * `info` — чистая информация без вклада в промпт, `kind` — инструмент даёт
+   * сам вид чата (превью, консоль, Make, панель ассистента). У выключаемого — null.
    * UI объясняет замок словами, а не догадкой по id.
    */
-  lockReason?: 'safety' | 'info' | null
+  lockReason?: 'safety' | 'info' | 'kind' | null
   /** Размер вклада пункта в промпт: символы и грубая оценка токенов (chars/4). */
   size?: { chars: number; approxTokens: number } | null
   /**

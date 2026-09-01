@@ -1157,6 +1157,34 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('перечисляет инструменты, которые даёт вид чата, и не даёт их выключить', async () => {
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
+    const make = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make' } })).json()
+    const tools = async (id: string): Promise<Record<string, { available: boolean; toggleable: boolean; lockReason?: string | null }>> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${id}/context-snapshot` })).json()
+      const items = snapshot.groups.flatMap((group: { items: Array<{ id: string; available: boolean; toggleable: boolean; lockReason?: string | null }> }) => group.items)
+      return Object.fromEntries(items.filter((item: { id: string }) => item.id.startsWith('mcp-'))
+        .map((item: { id: string; available: boolean; toggleable: boolean; lockReason?: string | null }) => [item.id, item]))
+    }
+
+    const plainTools = await tools(plain.id)
+    // В обычном чате модель ходит браузером превью, но не правит файлы Make.
+    expect(plainTools['mcp-browser-preview']?.available).toBe(true)
+    expect(plainTools['mcp-make-files']?.available).toBe(false)
+    expect(plainTools['mcp-console-pty']?.available).toBe(false)
+
+    const makeTools = await tools(make.id)
+    // В Make наоборот: файлы проекта — да, браузер превью — нет.
+    expect(makeTools['mcp-make-files']?.available).toBe(true)
+    expect(makeTools['mcp-browser-preview']?.available).toBe(false)
+
+    // Тумблера у них нет: набор решает вид чата, а не настройки разговора.
+    expect(plainTools['mcp-browser-preview']?.toggleable).toBe(false)
+    expect(plainTools['mcp-browser-preview']?.lockReason).toBe('kind')
+    const attempt = await inj({ method: 'POST', url: `/api/conversations/${plain.id}/context/mcp-browser-preview`, payload: { enabled: false } })
+    expect(attempt.statusCode).toBe(400)
+  })
+
   it('в живой сессии движка предупреждает о повторе настроек каждым ходом', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Живая сессия' } })).json()
     const repeats = async (): Promise<boolean> => {
