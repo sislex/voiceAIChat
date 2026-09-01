@@ -252,6 +252,9 @@ function isPublic(url: string): boolean {
     url === REST.health ||
     url.startsWith('/api/session/') ||
     url === REST.agentApp ||
+    url === REST.loginApplicationArtifacts ||
+    url === REST.loginApplicationDownload ||
+    url === REST.loginEnrollmentRedeem ||
     url === REST.agentScript ||
     url === REST.agentInstallAndroid ||
     url === REST.agentInstallWindows ||

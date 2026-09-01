@@ -149,6 +149,18 @@ CREATE TABLE IF NOT EXISTS agents (
   user_id    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS login_enrollments (
+  status_id  TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  user_id    TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  consumed_at INTEGER,
+  agent_id   TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_enrollments_expiry ON login_enrollments(expires_at);
+
 CREATE TABLE IF NOT EXISTS machine_storages (
   id             TEXT PRIMARY KEY,
   machine_id     TEXT NOT NULL,

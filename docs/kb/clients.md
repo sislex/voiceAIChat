@@ -68,6 +68,25 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 
 Сборка отдельная: `npm --prefix apps/agent-tray install`, `npm run typecheck:agent-tray`, `npm run test:agent-tray`, `npm run dist:agent-tray`. DMG появляется в `apps/agent-tray/release`, autodiscovery server или `VC_AGENT_APP` публикует его на `/api/agents/app`.
 
+## Login application (`apps/login-application`)
+
+Отдельное macOS ARM64 Electron-приложение подключает текущий Mac и не заменяет
+`apps/agent-tray`. Оно зарегистрировано для `voicechat-login://`, обрабатывает
+ссылку и при cold start, и через single-instance callback, а затем запускает
+`startConnection` непосредственно из `apps/agent`: exec/fs/pty не копируются.
+Renderer изолирован preload-мостом и не получает Node primitives.
+
+Доступны два входа. Обычная форма отправляет адрес ChatAI, логин и пароль в main;
+пароль после HTTP login не сохраняется. Web-flow передаёт в URI только opaque
+двухминутный enrollment secret, correlation id и адрес сервера. Постоянный machine
+token приходит приложению лишь в HTTPS-ответе redeem и хранится зашифрованным
+Electron `safeStorage`; уже настроенная машина не перезаписывается.
+
+Пакет вне npm workspaces и устанавливается отдельно. `npm --prefix
+apps/login-application run dist` собирает только ARM64 DMG
+`release/voicechat-login-macos-arm64.dmg`; `smoke` проверяет DMG, protocol
+metadata и ad-hoc codesign на Apple Silicon.
+
 ## Границы безопасности Electron
 
 - renderer не получает `fs`, `child_process`, token store или произвольный IPC;

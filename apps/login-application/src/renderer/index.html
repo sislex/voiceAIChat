@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Голос·Чат Login</title>
+  <style>
+    body{font:14px/1.45 -apple-system,sans-serif;margin:0;padding:28px;color:#172018;background:#f7f8f4}
+    h1{font-size:24px;margin:0 0 8px}p{color:#586158;margin:0 0 22px}
+    label{display:block;font-weight:600;margin:12px 0 5px}input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #bdc5bd;border-radius:9px;font:inherit}
+    button{margin-top:20px;width:100%;padding:11px;border:0;border-radius:9px;background:#176b43;color:white;font-weight:700;font:inherit;cursor:pointer}
+    button:disabled{opacity:.55}.status{margin-top:16px;min-height:42px}.error{color:#a12622}.success{color:#176b43}
+  </style>
+</head>
+<body>
+  <h1>Добавить этот Mac</h1>
+  <p>Войдите в ChatAI или откройте приложение кнопкой из web-интерфейса. Пароль не сохраняется.</p>
+  <form id="form">
+    <label for="server">Адрес ChatAI</label><input id="server" type="url" required placeholder="https://chat.example.com" />
+    <label for="name">Логин</label><input id="name" autocomplete="username" required />
+    <label for="password">Пароль</label><input id="password" type="password" autocomplete="current-password" required />
+    <button id="add" type="submit">Добавить текущее устройство</button>
+  </form>
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+  <script type="module" src="./index.ts"></script>
+</body>
+</html>
