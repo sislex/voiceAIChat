@@ -32,8 +32,10 @@ import type {
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type {
-  GitBranchList, GitCheckoutResult, GitCommitResult, GitFileContent, GitFileDiff,
-  GitPushResult, GitSaveFileResult, GitTreeListing, GitWorkspaceRef, GitWorkspaceStatus
+  GitBranchChanges, GitBranchList, GitCheckoutResult, GitCommitDetail, GitCommitInfo,
+  GitCommitResult, GitConflictSide, GitConflictStages, GitDiscardResult, GitFileContent,
+  GitFileDiff, GitGrepResult, GitPullMode, GitPullResult, GitPushResult,
+  GitSaveFileResult, GitTreeListing, GitWorkspaceRef, GitWorkspaceStatus
 } from './gitWorkspace'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
@@ -535,7 +537,7 @@ export interface IpcInvokeMap {
   // `workspace` — id рабочей копии (`GitWorkspaceRef.id`), а не путь: путь и машину
   // знает только сервер.
   'projects:gitWorkspaces': { arg: { id: string }; result: GitWorkspaceRef[] }
-  'projects:gitStatus': { arg: { id: string; workspace: string }; result: GitWorkspaceStatus }
+  'projects:gitStatus': { arg: { id: string; workspace: string; changesLimit?: number }; result: GitWorkspaceStatus }
   'projects:gitBranches': { arg: { id: string; workspace: string; refresh?: boolean }; result: GitBranchList }
   'projects:gitTree': { arg: { id: string; workspace: string; dir: string; ref?: string }; result: GitTreeListing }
   'projects:gitFile': { arg: { id: string; workspace: string; path: string; ref?: string }; result: GitFileContent }
@@ -545,6 +547,16 @@ export interface IpcInvokeMap {
   'projects:gitCreateBranch': { arg: { id: string; workspace: string; name: string; from?: string }; result: GitCheckoutResult }
   'projects:gitCommit': { arg: { id: string; workspace: string; message: string; paths?: string[]; all?: boolean }; result: GitCommitResult }
   'projects:gitPush': { arg: { id: string; workspace: string; branch?: string }; result: GitPushResult }
+  'projects:gitPull': { arg: { id: string; workspace: string; mode?: GitPullMode }; result: GitPullResult }
+  'projects:gitDiscard': { arg: { id: string; workspace: string; paths: string[]; confirmText: string }; result: GitDiscardResult }
+  'projects:gitBranchChanges': { arg: { id: string; workspace: string; base?: string }; result: GitBranchChanges }
+  'projects:gitStage': { arg: { id: string; workspace: string; paths: string[]; unstage?: boolean }; result: GitWorkspaceStatus }
+  'projects:gitLog': { arg: { id: string; workspace: string; path?: string }; result: { commits: GitCommitInfo[] } }
+  'projects:gitCommitDetail': { arg: { id: string; workspace: string; sha: string }; result: GitCommitDetail }
+  'projects:gitGrep': { arg: { id: string; workspace: string; query: string }; result: GitGrepResult }
+  'projects:gitFileBytes': { arg: { id: string; workspace: string; path: string }; result: { path: string; dataBase64: string; size: number } }
+  'projects:gitConflict': { arg: { id: string; workspace: string; path: string }; result: GitConflictStages }
+  'projects:gitResolveConflict': { arg: { id: string; workspace: string; path: string; side: GitConflictSide }; result: GitWorkspaceStatus }
   /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /**
@@ -1362,6 +1374,16 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:gitCreateBranch',
   'projects:gitCommit',
   'projects:gitPush',
+  'projects:gitPull',
+  'projects:gitDiscard',
+  'projects:gitBranchChanges',
+  'projects:gitStage',
+  'projects:gitLog',
+  'projects:gitCommitDetail',
+  'projects:gitGrep',
+  'projects:gitFileBytes',
+  'projects:gitConflict',
+  'projects:gitResolveConflict',
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',

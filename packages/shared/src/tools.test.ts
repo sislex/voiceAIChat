@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseToolBlock, toolBlock, detectOpenUtility } from './tools'
+import { parseToolBlock, toolBlock, detectOpenUtility, toolHint } from './tools'
 import type { AgentInfo } from './agentProtocol'
 
 const agents: AgentInfo[] = [
@@ -51,5 +51,32 @@ describe('detectOpenUtility', () => {
   it('не-команда → null', () => {
     expect(detectOpenUtility('расскажи про консоль')).toBeNull()
     expect(detectOpenUtility('привет')).toBeNull()
+  })
+})
+
+describe('панель кода как третий вид утилиты', () => {
+  it('блок модели с kind git распознаётся, а неизвестный вид — нет', () => {
+    expect(parseToolBlock('текст\n```tool\n{"kind":"git"}\n```')?.tool).toEqual({ kind: 'git' })
+    expect(parseToolBlock('```tool\n{"kind":"database"}\n```')).toBeNull()
+  })
+
+  it('цель рабочей копии из блока модели не читается: подставляет её приложение', () => {
+    const parsed = parseToolBlock('```tool\n{"kind":"git","gitTarget":{"projectId":"чужой"}}\n```')
+    expect(parsed?.tool).toEqual({ kind: 'git' })
+    expect(parsed?.tool).not.toHaveProperty('gitTarget')
+  })
+
+  it('подсказка перечисляет все включённые виды', () => {
+    expect(toolHint(['git'])).toContain('панель кода')
+    expect(toolHint(['console', 'explorer', 'git'])).toContain('"kind": "git"')
+    expect(toolHint([])).toBe('')
+  })
+
+  it('«покажи изменения» и «открой код» открывают панель кода', () => {
+    expect(detectOpenUtility('покажи изменения')?.kind).toBe('git')
+    expect(detectOpenUtility('открой код')?.kind).toBe('git')
+    expect(detectOpenUtility('открой git')?.kind).toBe('git')
+    expect(detectOpenUtility('открой консоль')?.kind).toBe('console')
+    expect(detectOpenUtility('открой проводник')?.kind).toBe('explorer')
   })
 })

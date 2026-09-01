@@ -33,11 +33,15 @@ export function registerProjectGitRoutes(app: FastifyInstance, git: GitWorkspace
   app.get<{ Params: { id: string } }>('/api/projects/:id/git/workspaces', async (req, reply) =>
     handle(reply, () => git.listWorkspaces(uid(req), req.params.id)))
 
-  app.get<{ Params: { id: string }; Querystring: { workspace?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; changesLimit?: string } }>(
     '/api/projects/:id/git/status',
     async (req, reply) => {
       if (!req.query.workspace) return required(reply, 'workspace')
-      return handle(reply, () => git.status(uid(req), req.params.id, req.query.workspace!))
+      const limit = Number(req.query.changesLimit)
+      return handle(reply, () => git.status(
+        uid(req), req.params.id, req.query.workspace!,
+        Number.isFinite(limit) && limit > 0 ? limit : undefined
+      ))
     }
   )
 
@@ -117,6 +121,100 @@ export function registerProjectGitRoutes(app: FastifyInstance, git: GitWorkspace
         ...(body.paths ? { paths: body.paths } : {}),
         ...(body.all !== undefined ? { all: body.all } : {})
       }))
+    }
+  )
+
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; base?: string } }>(
+    '/api/projects/:id/git/branch-changes',
+    async (req, reply) => {
+      if (!req.query.workspace) return required(reply, 'workspace')
+      return handle(reply, () => git.branchChanges(uid(req), req.params.id, req.query.workspace!, req.query.base))
+    }
+  )
+
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; path?: string } }>(
+    '/api/projects/:id/git/log',
+    async (req, reply) => {
+      if (!req.query.workspace) return required(reply, 'workspace')
+      return handle(reply, () => git.log(uid(req), req.params.id, req.query.workspace!, req.query.path))
+    }
+  )
+
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; sha?: string } }>(
+    '/api/projects/:id/git/commit',
+    async (req, reply) => {
+      if (!req.query.workspace) return required(reply, 'workspace')
+      if (!req.query.sha) return required(reply, 'sha')
+      return handle(reply, () => git.commitDetail(uid(req), req.params.id, req.query.workspace!, req.query.sha!))
+    }
+  )
+
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; query?: string } }>(
+    '/api/projects/:id/git/grep',
+    async (req, reply) => {
+      if (!req.query.workspace) return required(reply, 'workspace')
+      if (!req.query.query) return required(reply, 'query')
+      return handle(reply, () => git.grep(uid(req), req.params.id, req.query.workspace!, req.query.query!))
+    }
+  )
+
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; path?: string } }>(
+    '/api/projects/:id/git/file-bytes',
+    async (req, reply) => {
+      if (!req.query.workspace) return required(reply, 'workspace')
+      if (!req.query.path) return required(reply, 'path')
+      return handle(reply, () => git.fileBytes(uid(req), req.params.id, req.query.workspace!, req.query.path!))
+    }
+  )
+
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; path?: string } }>(
+    '/api/projects/:id/git/conflict',
+    async (req, reply) => {
+      if (!req.query.workspace) return required(reply, 'workspace')
+      if (!req.query.path) return required(reply, 'path')
+      return handle(reply, () => git.conflict(uid(req), req.params.id, req.query.workspace!, req.query.path!))
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { workspace?: string; paths?: string[]; unstage?: boolean } }>(
+    '/api/projects/:id/git/stage',
+    async (req, reply) => {
+      const body = req.body ?? {}
+      if (!body.workspace) return required(reply, 'workspace')
+      if (!Array.isArray(body.paths) || body.paths.length === 0) return required(reply, 'paths')
+      return handle(reply, () => git.stage(uid(req), req.params.id, body.workspace!, body.paths!, body.unstage === true))
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { workspace?: string; path?: string; side?: 'ours' | 'theirs' } }>(
+    '/api/projects/:id/git/resolve',
+    async (req, reply) => {
+      const body = req.body ?? {}
+      if (!body.workspace) return required(reply, 'workspace')
+      if (!body.path) return required(reply, 'path')
+      if (body.side !== 'ours' && body.side !== 'theirs') return required(reply, 'side')
+      return handle(reply, () => git.resolveConflict(uid(req), req.params.id, body.workspace!, body.path!, body.side!))
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { workspace?: string; mode?: 'rebase' | 'merge' } }>(
+    '/api/projects/:id/git/pull',
+    async (req, reply) => {
+      const body = req.body ?? {}
+      if (!body.workspace) return required(reply, 'workspace')
+      const mode = body.mode === 'merge' ? 'merge' : 'rebase'
+      return handle(reply, () => git.pull(uid(req), req.params.id, body.workspace!, mode))
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { workspace?: string; paths?: string[]; confirmText?: string } }>(
+    '/api/projects/:id/git/discard',
+    async (req, reply) => {
+      const body = req.body ?? {}
+      if (!body.workspace) return required(reply, 'workspace')
+      if (!Array.isArray(body.paths) || body.paths.length === 0) return required(reply, 'paths')
+      if (typeof body.confirmText !== 'string') return required(reply, 'confirmText')
+      return handle(reply, () => git.discard(uid(req), req.params.id, body.workspace!, body.paths!, body.confirmText!))
     }
   )
 

@@ -6,16 +6,19 @@ import {
 import { IMAGE_HINT } from './images'
 import { CHANGE_AUTHORIZATION_HINT } from './prompt'
 import { QUESTIONS_HINT } from './questions'
-import { TOOL_HINT, toolHint } from './tools'
+import { toolHint } from './tools'
 import { DEFAULT_CHAT_INSTRUCTIONS, normalizeChatInstructions, type ChatInstruction } from './types'
 
 const all = DEFAULT_CHAT_INSTRUCTIONS
 const without = (...ids: string[]): ChatInstruction[] => all.filter((item) => !ids.includes(item.id))
 
 describe('chatInstructions', () => {
-  it('стандартный набор даёт четыре подсказки в прежнем порядке: консоль+проводник склеены', () => {
-    expect(chatInstructionHints(all)).toEqual([TOOL_HINT, QUESTIONS_HINT, IMAGE_HINT, CHANGE_AUTHORIZATION_HINT])
-    expect(appendChatInstructionHints('Привет', all)).toBe(`Привет\n\n${[TOOL_HINT, QUESTIONS_HINT, IMAGE_HINT, CHANGE_AUTHORIZATION_HINT].join('\n\n')}`)
+  it('стандартный набор: консоль+проводник склеены, у панели кода своя подсказка', () => {
+    // Панель кода не входит в склейку намеренно: перечисление трёх видов в одном
+    // абзаце читается хуже, чем две отдельные подсказки.
+    const expected = [toolHint(['console', 'explorer']), toolHint(['git']), QUESTIONS_HINT, IMAGE_HINT, CHANGE_AUTHORIZATION_HINT]
+    expect(chatInstructionHints(all)).toEqual(expected)
+    expect(appendChatInstructionHints('Привет', all)).toBe(`Привет\n\n${expected.join('\n\n')}`)
     expect(appendChatInstructionHints('  ', all)).toBe('  ')
   })
 
@@ -23,7 +26,10 @@ describe('chatInstructions', () => {
     const one = chatInstructionHints(without('console'))
     expect(one[0]).toBe(toolHint(['explorer']))
     expect(one.join('\n')).not.toContain('"kind": "console"')
-    expect(chatInstructionHints(without('console', 'explorer')).join('\n')).not.toContain('```tool')
+    // Без консоли и проводника tool-подсказка остаётся только у панели кода.
+    const onlyGit = chatInstructionHints(without('console', 'explorer'))
+    expect(onlyGit.filter((hint) => hint.includes('```tool'))).toEqual([toolHint(['git'])])
+    expect(chatInstructionHints(without('console', 'explorer', 'git')).join('\n')).not.toContain('```tool')
   })
 
   it('правка текста встроенной и своя инструкция идут как есть, в порядке списка', () => {
@@ -39,7 +45,7 @@ describe('chatInstructions', () => {
   it('эффективные = включённые в настройках и не выключенные в чате', () => {
     const list = all.map((item) => item.id === 'image' ? { ...item, enabled: false } : item)
     const eff = effectiveChatInstructions(list, [instructionContextId('console')])
-    expect(eff.map((item) => item.id)).toEqual(['explorer', 'questions', 'taskLaunch'])
+    expect(eff.map((item) => item.id)).toEqual(['explorer', 'git', 'questions', 'taskLaunch'])
     expect(instructionIdForContextId(instructionContextId('a b'))).toBe('a b')
     expect(instructionIdForContextId('skill-x')).toBeNull()
   })

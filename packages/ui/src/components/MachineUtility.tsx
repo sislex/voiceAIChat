@@ -1,10 +1,12 @@
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ToolSpec } from '@shared/tools'
 import type { RendererPtyBridge } from '@shared/ipc'
+import { EmptyState } from '@voicechat/ui-kit'
 import { FileExplorer } from './FileExplorer'
 import { MachineConsole } from './MachineConsole'
 import { MachineTerminal } from './MachineTerminal'
 import type { ConsoleHistoryStore, MachineOps, SwitchUtility, UtilityVariant } from './machine'
+import { GitTargetPane } from './git/GitTargetPane'
 
 export interface MachineUtilityProps {
   tool: ToolSpec
@@ -25,7 +27,7 @@ export interface MachineUtilityProps {
   onOpenMachines?: () => void
 }
 
-/** Рендерит нужную утилиту (консоль/проводник) по ToolSpec. */
+/** Рендерит нужную утилиту (консоль/проводник/панель кода) по ToolSpec. */
 export function MachineUtility({
   tool,
   agents,
@@ -37,6 +39,27 @@ export function MachineUtility({
   onOpenMachines,
   pty = typeof window !== 'undefined' ? window.pty : undefined
 }: MachineUtilityProps): JSX.Element {
+  if (tool.kind === 'git') {
+    // Панель кода живёт рядом с двумя другими утилитами: человек попадает в неё из
+    // проводника и терминала по той же папке. Цель (проект + чат/задача) кладёт
+    // приложение — из блока модели она не читается.
+    return tool.gitTarget
+      ? (
+        <GitTargetPane
+          projectId={tool.gitTarget.projectId}
+          {...(tool.gitTarget.taskId ? { taskId: tool.gitTarget.taskId } : {})}
+          {...(tool.gitTarget.conversationId ? { conversationId: tool.gitTarget.conversationId } : {})}
+          api={window.api}
+        />
+      )
+      : (
+        <EmptyState
+          icon="🌿"
+          title="Не выбрана рабочая копия"
+          description="Панель кода открывается для задачи или разговора: откройте её из карточки задачи, из раздела «Код» проекта или из чата, привязанного к проекту."
+        />
+      )
+  }
   if (tool.kind === 'console') {
     // Настоящий терминал (xterm+PTY), если доступен мост; иначе — однострочная консоль.
     if (pty) {
@@ -47,6 +70,7 @@ export function MachineUtility({
           initialCwd={tool.path}
           initialCommand={tool.command}
           projectId={tool.projectId}
+          gitAvailable={Boolean(tool.gitTarget)}
           pty={pty}
           variant={variant}
           onClose={onClose}
@@ -80,6 +104,7 @@ export function MachineUtility({
       // Переключатель шапки обещает то, что откроется на самом деле: без моста PTY
       // консоль однострочная, и называть её «Терминалом» было бы неправдой.
       consoleLabel={pty ? 'Терминал' : 'Консоль'}
+      gitAvailable={Boolean(tool.gitTarget)}
       onSwitchUtility={onSwitchUtility}
       onOpenMachines={onOpenMachines}
       variant={variant}

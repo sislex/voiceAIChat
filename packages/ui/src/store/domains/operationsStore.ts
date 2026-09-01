@@ -19,19 +19,26 @@ import type { DownloadPort, OperationsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 
 /** Сколько команд консоли помним по одной машине (дальше вытесняются старые). */
+import type { UtilityKind } from '../../components/machine'
+
 const CONSOLE_HISTORY_MAX = 100
 /** Потолок роста транскрипта наблюдателя. */
 const TRANSCRIPT_CAP = 4000
 
 /** Открытая из меню машинная утилита. */
 export interface UtilityTarget {
-  kind: 'console' | 'explorer'
+  kind: UtilityKind
   agentId: string | null
   path?: string
   dir?: boolean
   projectId?: string
   /** Команда для немедленного выполнения в консоли (навык машины из шапки чата). */
   command?: string
+  /**
+   * Для панели кода — чья рабочая копия. Путь тут не годится: панель адресуется
+   * рабочей копией (задача или разговор), а её резолвит сервер.
+   */
+  gitTarget?: { projectId: string; conversationId?: string; taskId?: string }
 }
 
 export interface OperationsState {
@@ -80,8 +87,8 @@ export interface OperationsActions {
   openMachines(): void
   closeMachines(): void
   // --- Утилиты машины ---
-  openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string, dir?: boolean): void
-  openUtilityForActiveChat(kind: 'console' | 'explorer'): void
+  openUtility(kind: UtilityKind, agentId?: string | null, path?: string, dir?: boolean): void
+  openUtilityForActiveChat(kind: UtilityKind): void
   /** Открыть консоль машины и сразу выполнить команду навыка. */
   runSkill(agentId: string, command: string): void
   closeUtility(): void
@@ -123,7 +130,7 @@ export interface OperationsDeps {
   operations: OperationsClient
   download: DownloadPort
   /** Эффективная машина и папка активного чата — их владелец chatStore. */
-  activeChat: () => { execTarget: string | null; workdir: string | null; projectId: string | undefined }
+  activeChat: () => { execTarget: string | null; workdir: string | null; projectId: string | undefined; conversationId?: string | null }
   fail?: (err: unknown, retry?: () => void) => void
   /** Машину удалили — runtime разошлёт это остальным доменам. */
   onAgentDeleted?: (id: string) => void
@@ -324,7 +331,7 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
         setState({ utility: { kind: 'console', agentId, command } })
       },
       openUtilityForActiveChat(kind) {
-        const { execTarget, workdir, projectId: pid } = deps.activeChat()
+        const { execTarget, workdir, projectId: pid, conversationId } = deps.activeChat()
         // Утилита остаётся на эффективной машине чата даже во время
         // переподключения: иначе проводник открывался бы на чужой машине.
         const agentId = execTarget && execTarget !== 'none' ? execTarget : defaultUtilityAgent()
@@ -334,7 +341,10 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
             agentId,
             ...(workdir ? { path: workdir } : {}),
             ...(workdir && kind === 'explorer' ? { dir: true } : {}),
-            ...(pid ? { projectId: pid } : {})
+            ...(pid ? { projectId: pid } : {}),
+            // Панель кода адресуется рабочей копией, а не путём: цель — разговор
+            // этого чата вместе с его проектом.
+            ...(kind === 'git' && pid && conversationId ? { gitTarget: { projectId: pid, conversationId } } : {})
           }
         })
       },

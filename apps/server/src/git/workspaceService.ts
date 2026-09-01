@@ -14,17 +14,23 @@ import {
   isSafeRepoRelativePath, isValidGitBranchName, isValidGitRef, normalizeCommitMessage,
   parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain,
   parseGitWorkspaceId, splitGitSections,
-  type AgentPolicy, type FsResult, type GitBranchList, type GitCheckoutResult,
-  type GitCommitResult, type GitFileContent, type GitFileDiff, type GitPushResult,
+  GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus,
+  type AgentPolicy, type FsResult, type GitBranchChanges, type GitBranchList,
+  type GitCheckoutResult, type GitCommitDetail, type GitCommitResult, type GitConflictSide,
+  type GitConflictStages, type GitDiscardResult, type GitFileContent, type GitFileDiff,
+  type GitGrepResult, type GitPullMode, type GitPullResult, type GitPushResult,
   type GitSaveFileResult, type GitTreeListing, type GitWorkspaceProblem,
   type GitWorkspaceRef, type GitWorkspaceStatus
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { buildShellCommand } from '../ci/executor.js'
 import type { CommandGate } from '../agents/commandGate.js'
+import { hasProjectPermission } from '../users/auth.js'
 import {
-  branchesScript, checkoutScript, commitScript, createBranchScript,
-  fileAtRefScript, gitBaseEnv, pushScript, statusScript, treeScript, type GitScript
+  branchChangesScript, branchesScript, checkoutScript, commitDetailScript, commitScript,
+  conflictStagesScript, createBranchScript, discardScript, fileAtRefScript, gitBaseEnv,
+  grepScript, logScript, pullScript, pushScript, resolveConflictScript, stageScript,
+  statusScript, treeScript, type GitScript
 } from './scripts.js'
 
 /** Что сервису нужно от реестра машин — ровно это, чтобы тесты не поднимали агента. */
@@ -82,8 +88,13 @@ export function looksBinary(text: string): boolean {
   return text.includes('\u0000') || text.includes('\uFFFD')
 }
 
+/**
+ * Сколько держим блокировку каталога. Длиннее самой долгой операции (push/fetch с
+ * сетью), но конечно: упавший процесс не должен запирать рабочую копию навсегда.
+ */
+const LOCK_TTL_MS = 6 * 60_000
+
 export class GitWorkspaceService {
-  private readonly locks = new Set<string>()
 
   constructor(private readonly deps: GitWorkspaceDeps) {}
 
@@ -150,12 +161,12 @@ export class GitWorkspaceService {
         : 'Каталог занят активным merge-раном задачи')
     }
     if (ref.kind === 'merge-clone') throw new GitError(403, 'read_only_workspace', 'Merge-клон доступен только для чтения')
-    if (!ref.writable) throw new GitError(403, 'read_only_machine', 'Запись на этой машине запрещена: только чтение по политике или по режиму доступа проекта')
+    if (!ref.writable) throw new GitError(403, 'read_only_machine', ref.readOnlyReason ?? 'Изменение рабочей копии запрещено')
     return ref
   }
 
   /** Состояние рабочей копии. Проблема — не исключение: панели нужно её нарисовать. */
-  async status(userId: string, projectId: string, workspaceId: string): Promise<GitWorkspaceStatus> {
+  async status(userId: string, projectId: string, workspaceId: string, changesLimit: number = GIT_MAX_CHANGES): Promise<GitWorkspaceStatus> {
     let ref: GitWorkspaceRef
     try {
       ref = this.resolve(userId, projectId, workspaceId, { write: false })
@@ -174,7 +185,9 @@ export class GitWorkspaceService {
     }
     const head = /^[0-9a-f]{7,40}$/.exec(lastLine(sections.head ?? ''))?.[0] ?? null
     const porcelain = decodeBase64Section(sections.status_b64)
-    const parsed = parseGitStatusPorcelain(porcelain, GIT_MAX_CHANGES)
+    // Лимит — параметр, а не константа: список из тысячи файлов бывает у первого
+    // рана в свежем репозитории, и «показаны первые 500» должно иметь продолжение.
+    const parsed = parseGitStatusPorcelain(porcelain, Math.max(1, Math.min(changesLimit, GIT_MAX_CHANGES * 8)))
     const upstreamRaw = lastLine(sections.upstream ?? '')
     const upstream = upstreamRaw && !/^fatal|^error|no upstream/i.test(upstreamRaw) ? upstreamRaw : parsed.head.upstream
     const track = parseAheadBehind(sections.track ?? '')
@@ -194,7 +207,8 @@ export class GitWorkspaceService {
       behind: counts.behind,
       changes: parsed.changes,
       changesTruncated: parsed.truncated,
-      commitsAhead: parseGitLog(sections.commits ?? '')
+      commitsAhead: parseGitLog(sections.commits ?? ''),
+      mergeBase: /^[0-9a-f]{40}$/.exec(lastLine(sections.mergebase ?? ''))?.[0] ?? null
     }
   }
 
@@ -228,6 +242,19 @@ export class GitWorkspaceService {
       throw new GitError(409, 'git_failed', lastLine(result.output) || 'Не удалось прочитать дерево файлов')
     }
     return { ref: revision, dir, entries: parseGitLsTree(listing, dir) }
+  }
+
+  /**
+   * Байты файла как есть — для скачивания бинарника или файла сверх лимита показа.
+   * Отдаётся base64: канал текстовый, и «просто отдать содержимое» его бы испортило.
+   */
+  async fileBytes(userId: string, projectId: string, workspaceId: string, path: string): Promise<{ path: string; dataBase64: string; size: number }> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    const absolute = joinMachinePath(ref.path, path, this.deps.runtime.platformOf(ref.agentId))
+    const result = await this.deps.runtime.fsRead(ref.agentId, absolute)
+    const data = result.dataBase64 ?? ''
+    return { path, dataBase64: data, size: Buffer.from(data, 'base64').byteLength }
   }
 
   /** Содержимое файла: из ревизии (`ref`) или из рабочей копии (`ref` не задан). */
@@ -373,6 +400,161 @@ export class GitWorkspaceService {
     return { status: await this.status(userId, projectId, workspaceId), branch, sha: head }
   }
 
+  /**
+   * Подтянуть origin в текущую ветку. Нужен, потому что без него отказ push с
+   * `non-fast-forward` был тупиком: единственным выходом оставался терминал.
+   *
+   * Требует чистого дерева: rebase поверх незакоммиченных правок либо откажется, либо
+   * потребует stash — и то и другое человек должен решить сам, видя список файлов.
+   */
+  async pull(userId: string, projectId: string, workspaceId: string, mode: GitPullMode = 'rebase'): Promise<GitPullResult> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const before = await this.status(userId, projectId, workspaceId)
+    if (!before.branch) throw new GitError(409, 'detached_head', 'HEAD не на ветке: сначала переключитесь на ветку')
+    if (before.changes.length > 0) {
+      throw new GitError(409, 'dirty_worktree', `Сначала закоммитьте или отбросьте изменения (${before.changes.length})`)
+    }
+    const result = await this.runMutation(
+      userId, projectId, ref, pullScript(before.branch, mode), NETWORK_TIMEOUT_MS, 'Не удалось подтянуть изменения'
+    )
+    const sections = splitGitSections(result.output)
+    if (/no-upstream/.test(sections.combine ?? '')) {
+      throw new GitError(409, 'unknown_ref', `Ветки ${before.branch} нет в origin — сначала отправьте её`)
+    }
+    const status = await this.status(userId, projectId, workspaceId)
+    this.audit(userId, projectId, ref, 'git.pull', { branch: before.branch, mode })
+    return { status, mode, pulled: Math.max(0, before.behind) }
+  }
+
+  /**
+   * Отбросить правки в выбранных файлах — единственная необратимая операция панели.
+   * Поэтому подтверждение приходит от клиента текстом (`confirmText` = имя ветки),
+   * и сервер сверяет его сам: иначе «отбросить всё» отделяло бы от случайного клика
+   * только модальное окно в браузере.
+   */
+  async discard(
+    userId: string, projectId: string, workspaceId: string, paths: string[], confirmText: string
+  ): Promise<GitDiscardResult> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const before = await this.status(userId, projectId, workspaceId)
+    const expected = before.branch ?? before.head?.slice(0, 8) ?? ''
+    if (!expected || confirmText.trim() !== expected) {
+      throw new GitError(409, 'confirmation_mismatch', `Для подтверждения введите «${expected}»`)
+    }
+    const chosen = paths.filter((path) => path.length > 0)
+    if (chosen.length === 0) throw new GitError(400, 'nothing_to_discard', 'Не выбрано ни одного файла')
+    for (const path of chosen) {
+      if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', `Недопустимый путь: ${path}`)
+      if (!before.changes.some((change) => change.path === path)) {
+        throw new GitError(409, 'nothing_to_discard', `Файл ${path} не изменён — отбрасывать нечего`)
+      }
+    }
+    const untracked = chosen.filter((path) => before.changes.find((change) => change.path === path)?.state === 'untracked')
+    await this.runMutation(userId, projectId, ref, discardScript(chosen), MUTATE_TIMEOUT_MS, 'Не удалось отбросить правки')
+    this.audit(userId, projectId, ref, 'git.discard', { files: chosen.length, untracked: untracked.length })
+    return {
+      status: await this.status(userId, projectId, workspaceId),
+      reverted: chosen.length - untracked.length,
+      removed: untracked.length
+    }
+  }
+
+  /**
+   * Что ветка меняет относительно базы (`merge-base` с origin/<base>), а не только
+   * незакоммиченное. Именно этот вид нужен, когда смотрят работу модели за ран:
+   * коммиты уже сделаны, и рабочее дерево чистое.
+   */
+  async branchChanges(userId: string, projectId: string, workspaceId: string, base?: string): Promise<GitBranchChanges> {
+    const status = await this.status(userId, projectId, workspaceId)
+    if (status.problem) throw new GitError(409, status.problem, status.detail ?? 'Рабочая копия недоступна')
+    const from = base ?? status.mergeBase
+    if (!from) throw new GitError(409, 'unknown_ref', `Нет общего предка с origin/${status.baseBranch}: подтяните origin`)
+    if (!isValidGitRef(from)) throw new GitError(400, 'invalid_ref', 'Недопустимая ревизия сравнения')
+    const result = await this.run(userId, projectId, status.ref!, branchChangesScript(from), READ_TIMEOUT_MS)
+    const parsed = parseGitNameStatus(decodeBase64Section(splitGitSections(result.output).names_b64), GIT_MAX_CHANGES)
+    return { base: from, changes: parsed.changes, truncated: parsed.truncated }
+  }
+
+  /** Индексация и снятие с индекса: коммит выбранного не должен зависеть от чужого индекса. */
+  async stage(userId: string, projectId: string, workspaceId: string, paths: string[], unstage: boolean): Promise<GitWorkspaceStatus> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const chosen = paths.filter((path) => path.length > 0)
+    if (chosen.length === 0) throw new GitError(400, 'bad_request', 'Не выбрано ни одного файла')
+    for (const path of chosen) {
+      if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', `Недопустимый путь: ${path}`)
+    }
+    await this.runMutation(userId, projectId, ref, stageScript(chosen, unstage), MUTATE_TIMEOUT_MS, 'Не удалось изменить индекс')
+    this.audit(userId, projectId, ref, unstage ? 'git.unstage' : 'git.stage', { files: chosen.length })
+    return await this.status(userId, projectId, workspaceId)
+  }
+
+  /** История ветки или одного файла. */
+  async log(userId: string, projectId: string, workspaceId: string, path?: string, limit: number = GIT_MAX_LOG): Promise<{ commits: ReturnType<typeof parseGitLog> }> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (path && !isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    const bounded = Math.max(1, Math.min(limit, GIT_MAX_LOG))
+    const result = await this.run(userId, projectId, ref, logScript(bounded, path ?? ''), READ_TIMEOUT_MS)
+    return { commits: parseGitLog(splitGitSections(result.output).log ?? '') }
+  }
+
+  /** Что в коммите: метаданные и список файлов. */
+  async commitDetail(userId: string, projectId: string, workspaceId: string, sha: string): Promise<GitCommitDetail> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (!isValidGitRef(sha)) throw new GitError(400, 'invalid_ref', 'Недопустимая ревизия')
+    const result = await this.run(userId, projectId, ref, commitDetailScript(sha), READ_TIMEOUT_MS)
+    const sections = splitGitSections(result.output)
+    const meta = parseGitLog(sections.meta ?? '')[0]
+    if (!meta) throw new GitError(409, 'unknown_ref', lastLine(result.output) || 'Коммит не найден')
+    const parsed = parseGitNameStatus(decodeBase64Section(sections.names_b64), GIT_MAX_CHANGES)
+    return { ...meta, files: parsed.changes.map(({ path, oldPath, state }) => ({ path, oldPath, state })), truncated: parsed.truncated }
+  }
+
+  /** Поиск по содержимому рабочей копии. */
+  async grep(userId: string, projectId: string, workspaceId: string, query: string, limit: number = GIT_MAX_GREP): Promise<GitGrepResult> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const needle = query.trim()
+    if (needle.length < 2) throw new GitError(400, 'bad_request', 'Запрос короче двух символов')
+    if (needle.length > 200) throw new GitError(400, 'bad_request', 'Запрос слишком длинный')
+    const bounded = Math.max(1, Math.min(limit, GIT_MAX_GREP))
+    const result = await this.run(userId, projectId, ref, grepScript(needle, bounded), READ_TIMEOUT_MS)
+    // Пустой результат — не ошибка: git grep выходит с кодом 1, когда ничего не нашёл.
+    const parsed = parseGitGrep(decodeBase64Section(splitGitSections(result.output).grep), bounded)
+    return { query: needle, matches: parsed.matches, truncated: parsed.truncated }
+  }
+
+  /** Три стадии конфликта для трёхстороннего просмотра. */
+  async conflict(userId: string, projectId: string, workspaceId: string, path: string): Promise<GitConflictStages> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    const result = await this.run(userId, projectId, ref, conflictStagesScript(path), READ_TIMEOUT_MS)
+    const sections = splitGitSections(result.output)
+    const stage = (name: string, label: string): GitFileContent | null => {
+      const text = decodeBase64Section(sections[name])
+      if (!text) return null
+      const binary = looksBinary(text)
+      return { path, ref: label, content: binary ? '' : text, size: Buffer.byteLength(text), truncated: false, binary }
+    }
+    const stages = {
+      path,
+      base: stage('stage1_b64', ':1:'),
+      ours: stage('stage2_b64', ':2:'),
+      theirs: stage('stage3_b64', ':3:')
+    }
+    if (!stages.ours && !stages.theirs) {
+      throw new GitError(409, 'not_conflicted', 'У файла нет конфликтных стадий — возможно, конфликт уже разрешён')
+    }
+    return stages
+  }
+
+  /** Оставить одну сторону конфликта. */
+  async resolveConflict(userId: string, projectId: string, workspaceId: string, path: string, side: GitConflictSide): Promise<GitWorkspaceStatus> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    await this.runMutation(userId, projectId, ref, resolveConflictScript(path, side), MUTATE_TIMEOUT_MS, 'Не удалось разрешить конфликт')
+    this.audit(userId, projectId, ref, 'git.resolve', { path, side })
+    return await this.status(userId, projectId, workspaceId)
+  }
+
   // --- внутреннее ---------------------------------------------------------
 
   private async fileAtRef(userId: string, projectId: string, ref: GitWorkspaceRef, path: string, revision: string): Promise<GitFileContent> {
@@ -421,9 +603,17 @@ export class GitWorkspaceService {
     if (verdict && !verdict.allowed) {
       throw new GitError(403, 'command_denied', `Запрещено политикой команд: ${verdict.reason ?? 'нет доступа'}`)
     }
-    const key = `${ref.agentId}::${ref.path}`
-    if (this.locks.has(key)) throw new GitError(409, 'git_busy', 'Другая операция в этой рабочей копии ещё выполняется')
-    this.locks.add(key)
+    // Блокировка живёт в БД, а не в памяти процесса: панель открывают в двух вкладках,
+    // а сервер может перезапуститься посреди push — тогда два git-процесса встретятся
+    // в одном каталоге на index.lock, и вторая операция упадёт непонятной ошибкой.
+    const holder = `${userId}:${process.pid}:${this.now()}`
+    const lock = this.deps.db.acquireGitWorkspaceLock(ref.agentId, ref.path, holder, script.script.slice(0, 40), LOCK_TTL_MS)
+    if (!lock) {
+      const busy = this.deps.db.gitWorkspaceLockHolder(ref.agentId, ref.path)
+      throw new GitError(409, 'git_busy', busy
+        ? `В этой рабочей копии уже идёт операция (${busy.holder.split(':')[0]}) — дождитесь её окончания`
+        : 'Другая операция в этой рабочей копии ещё выполняется')
+    }
     try {
       const result = await this.deps.runtime.exec(ref.agentId, command, timeoutMs, undefined, { source: 'console', userId })
       if (result.timedOut) throw new GitError(409, 'git_timeout', 'Команда git не завершилась за отведённое время')
@@ -432,7 +622,7 @@ export class GitWorkspaceService {
       if (error instanceof GitError) throw error
       throw new GitError(409, 'machine_error', error instanceof Error ? error.message : String(error))
     } finally {
-      this.locks.delete(key)
+      this.deps.db.releaseGitWorkspaceLock(ref.agentId, ref.path, holder)
     }
   }
 
@@ -462,7 +652,7 @@ export class GitWorkspaceService {
       gitUrl: project?.gitUrl ?? null,
       baseBranch: project?.ciBaseBranch ?? 'main',
       branch: null, detached: false, head: null, upstream: null,
-      ahead: 0, behind: 0, changes: [], changesTruncated: false, commitsAhead: []
+      ahead: 0, behind: 0, changes: [], changesTruncated: false, commitsAhead: [], mergeBase: null
     }
   }
 
@@ -483,17 +673,37 @@ export class GitWorkspaceService {
       projectId, type, actorType: 'user', actorId: userId,
       payload: { ...payload, workspace: ref.id, path: ref.path, agentId: ref.agentId }
     })
+    // Второй адресат — журнал безопасности: операция меняет рабочую копию на чужом
+    // хосте, и владелец машины должен видеть её там же, где входы и подключения
+    // агентов, а не только в событиях проекта.
+    const details = [type, ref.path, ...Object.entries(payload).map(([key, value]) => `${key}=${String(value)}`)].join(' · ')
+    this.deps.db.logSecurityEvent({ user: userId, type: 'git_workspace_mutation', details })
   }
 
   private machineAccess(userId: string, project: { id: string; machines: { agentId: string; ownership?: string; sharedWithProject?: boolean }[] }, agentId: string):
-    { online: boolean; writable: boolean; machineName: string | null } | null {
+    { online: boolean; writable: boolean; readOnlyReason: string | null; machineName: string | null } | null {
     const linked = project.machines.some((machine) => machine.agentId === agentId)
     if (!linked && !this.deps.db.canUseAgent(userId, agentId, project.id)) return null
     if (!this.deps.db.canUseAgent(userId, agentId, project.id)) return null
     const policy = this.deps.runtime.policyOf(agentId)
+    // Три независимых условия, и ни одно не перекрывает другое: полномочие роли,
+    // режим доступа машины проекту и её собственная политика записи. UI получает
+    // готовый флаг с причиной — иначе он показывал бы активную кнопку, а отказ
+    // приходил бы тостом уже после клика.
+    const role = this.deps.db.getUser(userId)?.role
+    const permitted = role ? hasProjectPermission(role, 'repository:write') : false
+    const shared = this.deps.db.canWriteAgent(userId, agentId, project.id)
+    const policyAllows = policy?.allowWrite !== false
     return {
       online: this.deps.runtime.isOnline(agentId),
-      writable: this.deps.db.canWriteAgent(userId, agentId, project.id) && policy?.allowWrite !== false,
+      writable: permitted && shared && policyAllows,
+      readOnlyReason: !permitted
+        ? 'Ваша роль не позволяет менять рабочую копию'
+        : !shared
+          ? 'Машина предоставлена проекту только для чтения'
+          : !policyAllows
+            ? 'Политика машины запрещает изменение файлов'
+            : null,
       machineName: this.deps.runtime.nameOf(agentId) ?? null
     }
   }
@@ -529,6 +739,7 @@ export class GitWorkspaceService {
       pushed: workspace.pushed,
       online: access.online,
       writable: access.writable,
+      readOnlyReason: access.readOnlyReason,
       busy: this.busyFor(userId, project.id, workspace.taskId),
       released: workspace.state === 'released'
     }
@@ -557,6 +768,9 @@ export class GitWorkspaceService {
       pushed: workspace?.path === repository.path ? workspace.pushed : null,
       online: access.online,
       writable: repository.kind === 'merge-clone' ? false : access.writable,
+      readOnlyReason: repository.kind === 'merge-clone'
+        ? 'Merge-клоном управляет merge-ран: он только для чтения'
+        : access.readOnlyReason,
       busy: this.busyFor(userId, project.id, repository.taskId),
       released: repository.state === 'deleted'
     }
@@ -591,6 +805,9 @@ export class GitWorkspaceService {
       pushed: null,
       online: access.online,
       writable: access.writable && conversation.workspace?.readOnly !== true,
+      readOnlyReason: conversation.workspace?.readOnly === true
+        ? 'Рабочий каталог разговора помечен как read-only'
+        : access.readOnlyReason,
       busy: null,
       released: false
     }
@@ -620,6 +837,7 @@ export class GitWorkspaceService {
       pushed: null,
       online: access.online,
       writable: access.writable,
+      readOnlyReason: access.readOnlyReason,
       busy: null,
       released: false
     }

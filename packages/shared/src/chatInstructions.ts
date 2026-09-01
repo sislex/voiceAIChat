@@ -26,6 +26,7 @@ export function standardInstructionText(kind: ChatInstructionKind): string {
   switch (kind) {
     case 'console': return toolHint(['console'])
     case 'explorer': return toolHint(['explorer'])
+    case 'git': return toolHint(['git'])
     case 'questions': return QUESTIONS_HINT
     case 'image': return IMAGE_HINT
     case 'taskLaunch': return CHANGE_AUTHORIZATION_HINT

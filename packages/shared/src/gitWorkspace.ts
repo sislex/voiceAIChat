@@ -52,8 +52,14 @@ export interface GitWorkspaceRef {
   /** Ветка уже отправлена в origin (`ci_workspaces.pushed`). */
   pushed: boolean | null
   online: boolean
-  /** Роль в проекте, режим шаринга машины и её политика позволяют запись. */
+  /**
+   * Запись разрешена: полномочие `repository:write`, режим шаринга машины и её
+   * политика — всё сразу. UI выключает кнопки по этому флагу, а не угадывает роль:
+   * иначе тестировщик видел бы активную кнопку и узнавал об отказе из тоста.
+   */
   writable: boolean
+  /** Почему запись запрещена — текст для подписи выключенной кнопки. */
+  readOnlyReason: string | null
   busy: GitWorkspaceBusy | null
   released: boolean
 }
@@ -98,6 +104,12 @@ export interface GitWorkspaceStatus {
   behind: number
   changes: GitFileChange[]
   changesTruncated: boolean
+  /**
+   * Общий предок с `origin/<baseBranch>` (`git merge-base`). Относительно него
+   * смотрят «что ветка задачи меняет вообще», а не только незакоммиченное —
+   * это главный вид, когда ревьюят работу модели за ран.
+   */
+  mergeBase: string | null
   /** Коммиты сверх `origin/<baseBranch>` — «что уже сделано в этой ветке». */
   commitsAhead: GitCommitInfo[]
 }
@@ -181,6 +193,24 @@ export interface GitPushResult {
   sha: string
 }
 
+/** Подтягивание изменений origin в рабочую копию. */
+export interface GitPullResult {
+  status: GitWorkspaceStatus
+  /** Режим, которым свели истории. */
+  mode: GitPullMode
+  /** Сколько коммитов приехало из origin. */
+  pulled: number
+}
+
+export type GitPullMode = 'rebase' | 'merge'
+
+/** Отброшенные правки: сколько путей вернули к HEAD и сколько удалили как неотслеживаемые. */
+export interface GitDiscardResult {
+  status: GitWorkspaceStatus
+  reverted: number
+  removed: number
+}
+
 /**
  * Лимит на одну сторону сравнения. Вывод exec машины ограничен 200 КБ
  * (`OUTPUT_CAP_BYTES` реестра), поэтому просить у git больше бессмысленно: ответ
@@ -191,6 +221,59 @@ export const GIT_TEXT_MAX_BYTES = 192 * 1024
 export const GIT_MAX_CHANGES = 500
 /** Сколько коммитов сверх базы показываем в статусе. */
 export const GIT_MAX_COMMITS_AHEAD = 20
+
+/** Изменения ветки относительно базы (`merge-base`), а не рабочего дерева. */
+export interface GitBranchChanges {
+  /** Ревизия, с которой сравнивали. */
+  base: string
+  changes: GitFileChange[]
+  truncated: boolean
+}
+
+/** Совпадение поиска по содержимому (`git grep`). */
+export interface GitGrepMatch {
+  path: string
+  line: number
+  text: string
+}
+
+export interface GitGrepResult {
+  query: string
+  matches: GitGrepMatch[]
+  truncated: boolean
+}
+
+/** Файл внутри коммита — из `git show --name-status`. */
+export interface GitCommitFile {
+  path: string
+  oldPath: string | null
+  state: GitChangeState
+}
+
+export interface GitCommitDetail {
+  sha: string
+  subject: string
+  author: string
+  at: number
+  files: GitCommitFile[]
+  truncated: boolean
+}
+
+/** Три стадии конфликта: общий предок, наша и их версии. */
+export interface GitConflictStages {
+  path: string
+  base: GitFileContent | null
+  ours: GitFileContent | null
+  theirs: GitFileContent | null
+}
+
+/** Какую сторону конфликта оставить. */
+export type GitConflictSide = 'ours' | 'theirs'
+
+/** Сколько коммитов истории показываем за один запрос. */
+export const GIT_MAX_LOG = 50
+/** Сколько совпадений поиска отдаём за раз. */
+export const GIT_MAX_GREP = 200
 
 /** Ветки, в которые панель не пушит: туда попадают только через merge-ран и релизы. */
 export function isProtectedGitBranch(name: string): boolean {
@@ -512,4 +595,65 @@ export function buildGitWorkspaceId(ref: GitWorkspaceIdRef): string {
   if (ref.kind === 'task-repository') return `repo:${ref.taskRepositoryId}`
   if (ref.kind === 'conversation') return `chat:${ref.conversationId}`
   return `project:${ref.agentId}`
+}
+
+/**
+ * Разбор `git diff --name-status -z`: `<XY>\0<путь>\0` и `R100\0<старый>\0<новый>\0`.
+ * Внимание на порядок у переименования: здесь, в отличие от `status -z`, первым идёт
+ * СТАРЫЙ путь. Перепутать легко, и тогда файл в списке называется прежним именем.
+ */
+export function parseGitNameStatus(output: string, maxChanges: number = GIT_MAX_CHANGES): { changes: GitFileChange[]; truncated: boolean } {
+  const records = output.split('\0').filter((value) => value.length > 0)
+  const changes: GitFileChange[] = []
+  let truncated = false
+  for (let i = 0; i < records.length; i += 1) {
+    const code = records[i]
+    if (!code || !/^[A-Z]/.test(code)) continue
+    const letter = code[0]
+    const renamed = letter === 'R' || letter === 'C'
+    const first = records[i += 1]
+    if (first === undefined) break
+    const second = renamed ? records[i += 1] : undefined
+    if (changes.length >= maxChanges) {
+      truncated = true
+      continue
+    }
+    const state: GitChangeState = letter === 'A'
+      ? 'added'
+      : letter === 'D'
+        ? 'deleted'
+        : renamed
+          ? 'renamed'
+          : letter === 'T' ? 'typechange' : letter === 'U' ? 'conflict' : 'modified'
+    changes.push({
+      path: (renamed ? second : first) ?? first,
+      oldPath: renamed ? first : null,
+      state,
+      staged: true,
+      worktree: false
+    })
+  }
+  return { changes, truncated }
+}
+
+/**
+ * Разбор `git grep -n -I -z`: `путь\0строка\0текст`. `-z` нужен по той же причине,
+ * что в статусе: путь с двоеточием иначе не отличить от разделителя.
+ */
+export function parseGitGrep(output: string, maxMatches: number = GIT_MAX_GREP): { matches: GitGrepMatch[]; truncated: boolean } {
+  const matches: GitGrepMatch[] = []
+  let truncated = false
+  for (const raw of output.split('\n')) {
+    if (!raw.trim()) continue
+    const parts = raw.split('\0')
+    if (parts.length < 3) continue
+    const line = Number(parts[1])
+    if (!Number.isFinite(line)) continue
+    if (matches.length >= maxMatches) {
+      truncated = true
+      break
+    }
+    matches.push({ path: parts[0]!, line, text: parts.slice(2).join('\0').slice(0, 400) })
+  }
+  return { matches, truncated }
 }

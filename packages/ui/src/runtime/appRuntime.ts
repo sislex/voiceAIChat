@@ -199,7 +199,9 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       return {
         execTarget: conv?.execTarget ?? null,
         workdir: conv?.workdir ?? null,
-        projectId: conv?.projectId ?? undefined
+        projectId: conv?.projectId ?? undefined,
+        // Панели кода нужен сам разговор: её цель — рабочая копия, а не путь.
+        conversationId: conv?.id ?? null
       }
     },
     fail: (err, retry) => shell.actions.fail(err, retry),

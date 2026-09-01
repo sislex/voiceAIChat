@@ -47,3 +47,14 @@ describe('перевод кодов ответов сервера', () => {
     expect(serverErrorMessage({ error: 'not_found' })).toBe('Объект не найден.')
   })
 })
+
+describe('коды панели кода переводятся', () => {
+  it('технический код не доходит до человека', () => {
+    // Раньше в панели вместо объяснения показывался `workspace_not_found`.
+    expect(serverErrorMessage({ error: 'workspace_not_found' })).toContain('Рабочая копия не найдена')
+    expect(serverErrorMessage({ error: 'protected_branch' })).toContain('merge-ран')
+    expect(serverErrorMessage({ error: 'git_credentials_missing' })).toContain('токен')
+    expect(serverErrorMessage({ error: 'dirty_worktree' })).toContain('незакоммиченные')
+    expect(serverErrorMessage({ error: 'confirmation_mismatch' })).toContain('имя ветки')
+  })
+})
