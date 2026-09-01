@@ -81,6 +81,8 @@ export interface ContextBlocksInput {
   projectId: string | null
   /** Готовый текст блока задачи (`taskContextBlock`); null — чат не про задачу. */
   taskContext?: string | null
+  /** Контекст Make-проекта: токены темы и открытые комментарии; null — не Make. */
+  makeContext?: string | null
   now: Date
 }
 
@@ -141,10 +143,13 @@ export function buildContextBlocks(input: ContextBlocksInput): ContextPromptBloc
   // консоль+проводник один текст на две инструкции, и оба пункта инспектора
   // должны находить свой блок.
   const byId = new Map(input.instructions.map((item) => [item.id, item]))
+  // Make-контекст идёт последним — как в `turns.ts`, где он приклеивается к
+  // промпту после подсказок инструкций.
   for (const entry of chatInstructionHintEntries(input.instructions)) {
     const titles = entry.instructionIds.map((id) => byId.get(id)?.title).filter((title): title is string => Boolean(title))
     blocks.push(promptBlock(entry.instructionIds.map(instructionContextId), titles.join(' + ') || 'Инструкции чата', entry.text))
   }
+  if (input.makeContext) blocks.push(promptBlock(['make-context'], 'Контекст проекта Make', input.makeContext))
   return blocks
 }
 
