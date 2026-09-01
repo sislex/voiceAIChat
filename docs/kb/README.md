@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 197 коммит(ов) в areas после сверки: e088f12a Merge task 5d3391f3-18ec-43e5-8555-50619f1245c5 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 215 коммит(ов) в areas после сверки: fe892d1b feat: expose task Make sources read-only … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 108 коммит(ов) в areas после сверки: fe892d1b feat: expose task Make sources read-only … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1039 коммит(ов) в areas после сверки: e088f12a Merge task 5d3391f3-18ec-43e5-8555-50619f1245c5 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1040 коммит(ов) в areas после сверки: 58d4287e docs(kb): update after merge 5d3391f3-18ec-43e5-8555-50619f1245c5 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 120 коммит(ов) в areas после сверки: fe892d1b feat: expose task Make sources read-only … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 159 коммит(ов) в areas после сверки: fe892d1b feat: expose task Make sources read-only … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 76 коммит(ов) в areas после сверки: fe892d1b feat: expose task Make sources read-only … |
