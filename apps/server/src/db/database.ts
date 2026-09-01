@@ -29,7 +29,6 @@ import {
   projectTypeChainLabel,
   resolveProjectTypeDefaults,
   resolveProjectTypeFeatures,
-  type ProjectFeature,
   type ProjectFeatureOverride,
   type ProjectFeatureSet,
   type ProjectTypeChain,
@@ -5970,7 +5969,7 @@ export class VoiceChatDb {
     return mapCiCommand(this.db.prepare(`SELECT * FROM ci_commands WHERE id = ?`).get(id) as CiCommandRow)
   }
 
-  updateCiCommand(userId: string, id: string, input: CiCommandInput): CiCommand | null {
+  updateCiCommand(_userId: string, id: string, input: CiCommandInput): CiCommand | null {
     const cur = this.db.prepare(`SELECT * FROM ci_commands WHERE id = ? AND deleted_at IS NULL`).get(id) as CiCommandRow | undefined
     if (!cur) return null
     const set: string[] = []
@@ -5997,7 +5996,7 @@ export class VoiceChatDb {
     return mapCiCommand(this.db.prepare(`SELECT * FROM ci_commands WHERE id = ?`).get(id) as CiCommandRow)
   }
 
-  softDeleteCiCommand(userId: string, id: string): boolean {
+  softDeleteCiCommand(_userId: string, id: string): boolean {
     const cur = this.db.prepare(`SELECT * FROM ci_commands WHERE id = ? AND deleted_at IS NULL`).get(id) as CiCommandRow | undefined
     if (!cur) return false
     this.db.prepare(`UPDATE ci_commands SET deleted_at = ?, updated_at = ? WHERE id = ?`).run(this.now(), this.now(), id)
@@ -8504,7 +8503,7 @@ export class VoiceChatDb {
     }
   }
 
-  setTaskPreparationExecution(id: string, execution: { llmEngineId?: string | null; provider: LlmProvider; model: string }, phase: TaskPreparationPhase = 'knowledge_research'): void {
+  setTaskPreparationExecution(id: string, _execution: { llmEngineId?: string | null; provider: LlmProvider; model: string }, phase: TaskPreparationPhase = 'knowledge_research'): void {
     const now = this.now()
     this.db.transaction(() => {
       this.db.prepare(`UPDATE task_preparation_runs SET status='running',phase=? WHERE id=? AND status IN ('queued','running')`).run(phase, id)

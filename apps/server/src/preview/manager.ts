@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { PreviewConfig, PreviewEnvironment, PreviewErrorType, PreviewOperation, PreviewRun, PreviewRunStep } from '@voicechat/shared'
@@ -139,7 +139,7 @@ export class FeaturePreviewManager {
   private platform(agentId: string, root: string): string {
     return this.deps.platformOf?.(agentId) ?? (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(root) ? 'win32' : 'linux')
   }
-  private async managedPaths(userId: string, projectId: string, taskId: string, previewId: string, agentId: string) {
+  private async managedPaths(_userId: string, projectId: string, taskId: string, previewId: string, agentId: string) {
     if (!this.deps.isOnline(agentId)) throw new Error('Машина не в сети')
     const machine = this.deps.db.getProjectMachine(projectId, agentId)
     if (!machine?.storageId) throw new Error('Для нового preview не настроено MachineStorage выбранной машины')
@@ -213,7 +213,6 @@ export class FeaturePreviewManager {
     const targetAgentId = args.agentId ?? env?.agentId ?? activeWorkspace?.agentId ?? task.agentId ?? project.defaultAgentId
     if (!targetAgentId) throw new Error('Выберите машину для тестового окружения')
     if (!this.deps.isOnline(targetAgentId)) throw new Error('Машина не в сети')
-    const machine = project.machines.find((item) => item.agentId === targetAgentId)
     const expectedBranch = sourceWorkspace?.branch ?? null
     const expectedSha = sourceWorkspace?.commitSha ?? null
     const legacy = !!env && !env.managed

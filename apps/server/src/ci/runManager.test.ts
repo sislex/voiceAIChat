@@ -616,7 +616,7 @@ describe('ci run manager', () => {
   })
 
   it('падение в слоте «до» → ран failed и откат задачи в предыдущую колонку', async () => {
-    const { project, task, readyColId } = setup()
+    const { project, task } = setup()
     // Двигаем задачу в development, чтобы откат был виден.
     const devCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     db.moveTask('admin', project.id, task.id, { columnId: devCol.id })

@@ -3,7 +3,7 @@
 // одна опечатка здесь меняет контракт сразу полусотни эндпоинтов, а через сами
 // маршруты каждый код пришлось бы проверять по отдельности.
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { FastifyReply } from 'fastify'
 import { MakeError, type MakeErrorCode } from '../make/workspace.js'
 import { sendError } from './make.js'

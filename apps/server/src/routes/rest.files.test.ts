@@ -15,9 +15,8 @@ const harness = setupRestHarness()
 const { inj, U } = harness
 let app: FastifyInstance
 let db: VoiceChatDb
-let token: string
 let dataDir: string
-beforeEach(() => { ({ app, db, token, dataDir } = harness) })
+beforeEach(() => { ({ app, db, dataDir } = harness) })
 
 
 describe('REST: чтение файла с диска сервера (/api/files/read)', () => {

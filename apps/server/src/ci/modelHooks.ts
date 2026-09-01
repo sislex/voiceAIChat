@@ -8,7 +8,7 @@ import {
   appendQuestionsHint, ciToolCallsAny, designPromptLines, makeDesignPreviewUrl, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
   classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, CI_USAGE_KIND_LABELS, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
   isCiToolDenial, KB_GAPS_HINT, parseKbGaps, parseQuestions,
-  resolveCiStageModel, trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
+  trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
 } from '@voicechat/shared'
 import type { CiRunMode, CiTestFailure, CiTargetedTestRun, CiToolCalls, CiToolChars, CiToolKind, CiUsageKind, KbContextMode, TurnMeta, TurnUsage } from '@voicechat/shared'
 import { ciToolBroker } from './ciCommandsMcp.js'

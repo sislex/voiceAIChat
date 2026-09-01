@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import type { FsEntry, MigrationAssignment, MigrationAuditEvent, MigrationItem, MigrationPathMapping, MigrationPlan } from '@voicechat/shared'
 import { STORAGE_MIGRATION_CHECKSUM_ALGORITHM, STORAGE_MIGRATION_SCHEMA_VERSION, isMigrationPathInside, migrationDestinationRelativePath, migrationPathKey } from '@voicechat/shared'
 

@@ -140,7 +140,7 @@ describe('KbResearchManager', () => {
   })
 
   it('второй запуск во время прогона не плодит параллельные CLI', () => {
-    const { db, manager } = setup('{"documents":[]}')
+    const { db } = setup('{"documents":[]}')
     const projectId = projectWithMachine(db)
     let started = 0
     const client: LlmClient = { send: () => { started += 1; return { cancel: () => {} } } }
