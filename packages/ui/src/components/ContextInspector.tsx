@@ -910,6 +910,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const silent = (item: ContextSnapshotItem): boolean =>
     item.enabled && item.includedInNextTurn && (item.id.startsWith('instruction-') || item.id === 'task-context')
     && !preview.blocks.some((block) => block.itemIds.includes(item.id))
+  /**
+   * Во что обошёлся повтор постоянной части за прошедшие ходы. Живая сессия
+   * движка не пересылает историю, но блоки настроек уходят снова каждым ходом —
+   * модель их уже видела, а платит за них человек. Цену берём у сервера
+   * (`costUsd`) и умножаем на число ходов: своей таблицы цен в UI нет.
+   */
+  const repeatCost = preview.turnTotal.resumed && preview.costUsd !== null && snapshot.turnSizes.length > 0
+    ? (preview.costUsd * snapshot.turnSizes.length).toFixed(4)
+    : null
   /** Самый тяжёлый источник постоянной части; null — размеров ни у кого нет. */
   const heaviestItem = allItems
     .filter((item) => (item.size?.approxTokens ?? 0) > 0)
@@ -953,7 +962,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
             один переход к тому, что занимает больше всех. */}
         {heaviestItem && <Button size="sm" variant="ghost" onClick={() => openDetail(heaviestItem.id)}>Самый тяжёлый: {heaviestItem.title}</Button>}
         {' '}<span data-testid="context-turn-total">{preview.turnTotal.resumed
-          ? `Ход продолжает сессию движка: история заново не уходит, всего ≈${preview.turnTotal.approxTokens} токенов.`
+          ? `Ход продолжает сессию движка: история заново не уходит, всего ≈${preview.turnTotal.approxTokens} токенов — и столько же уходит каждым следующим ходом${repeatCost ? `, это ≈$${repeatCost} за ${snapshot.turnSizes.length} прошедших ход(ов)` : ''}.`
           : `Всего в следующий ход: ≈${preview.turnTotal.approxTokens} токенов, из них история — ≈${preview.turnTotal.historyApproxTokens}.`}</span>
       </p>
       {/* Чужой чат: без явной пометки легко решить, что правишь свой контекст. */}
@@ -976,13 +985,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     </header>
     {/* Предупреждения считает сервер: настройки формально верны, но вместе дают
         не то, чего ждёт человек. Проблемы идут раньше замечаний. */}
-    {snapshot.warnings.length > 0 && <aside className={`context-warnings context-warnings--${snapshot.warnings[0]?.level ?? 'notice'}`} role={snapshot.warnings.some((entry) => entry.level === 'problem') ? 'alert' : 'status'} data-testid="context-warnings">
+    {/* Роль ставится на `div`, а не на `aside`: у `aside` своя роль
+        `complementary`, и `alert` поверх неё axe считает ошибкой. */}
+    {snapshot.warnings.length > 0 && <div className={`context-warnings context-warnings--${snapshot.warnings[0]?.level ?? 'notice'}`} role={snapshot.warnings.some((entry) => entry.level === 'problem') ? 'alert' : 'status'} data-testid="context-warnings">
       <b>Стоит проверить</b>
       <ul>{snapshot.warnings.map((warning) => <li key={warning.text}>
         <span aria-hidden="true">{warning.level === 'problem' ? '❗' : '•'}</span> {warning.text}
         {warning.itemId && byId(warning.itemId) && <Button size="sm" variant="ghost" onClick={() => openDetail(warning.itemId!)}>Открыть источник</Button>}
       </li>)}</ul>
-    </aside>}
+    </div>}
     <div className="context-actions context-sections-bulk">
       {/* Разделов десяток, и «раскрыть всё» перед чтением снимка целиком —
           обычное начало работы, а не редкий случай. */}
@@ -998,7 +1009,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     {machineProblem && <aside className="context-problem" role="alert"><div><b>Машина недоступна</b><p>{machine?.explanation || 'Настроенная машина сейчас недоступна.'}</p></div>{props.onOpenSettings && <Button size="sm" onClick={props.onOpenSettings}>Перейти к настройкам разговора</Button>}</aside>}
     <section className="context-card" aria-labelledby="context-launch-title">
       <h3 id="context-launch-title">Как будет запущен ответ</h3>
-      <dl className="context-launch-grid">{launchValues.map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}</dd><small>Источник: {sourceLabel(entry.source ?? 'Серверный снимок')}</small></div>)}</dl>
+      {/* Подпись источника живёт внутри `dd`: прямым ребёнком `div` в списке
+          определений может быть только `dt`/`dd` (axe: definition-list). */}
+      <dl className="context-launch-grid">{launchValues.map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}<small>Источник: {sourceLabel(entry.source ?? 'Серверный снимок')}</small></dd></div>)}</dl>
       {workdir?.configured && !workdir.available && <p className="context-note">{workdir.explanation}</p>}
       {/* Сброс переопределений: строка «Источник: Переопределение чата» говорит,
           что значение своё, но вернуть наследование было можно только через

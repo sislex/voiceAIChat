@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/shared'
 import { render } from '../test/uiRender'
+import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ConversationSettings } from './ConversationSettings'
@@ -1349,6 +1350,48 @@ describe('ConversationSettings', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
 
     expect(await screen.findByText('в этом чате не уходит')).toBeInTheDocument()
+  })
+
+  it('доступность инспектора: список источников и карточка пункта', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        warnings: [{ itemId: 'personalization', level: 'problem', text: 'Проверьте персонализацию.' }],
+        changes: [{ at: 2, actor: 'admin', itemId: 'personalization', enabled: false }]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    await screen.findByTestId('context-summary')
+
+    // Самый большой экран раздела до этого проверялся только сториз-прогоном.
+    await expectNoViolations()
+    expectLabelledIconButtons()
+
+    // Карточка источника — второй экран инспектора, со своей разметкой.
+    fireEvent.click((await screen.findAllByRole('button', { name: /Предпочтения ответа/ }))[0]!)
+    await screen.findByRole('heading', { name: 'Предпочтения ответа' })
+    await expectNoViolations()
+  })
+
+  it('в живой сессии движка видно, что настройки уходят повторно каждым ходом', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({
+        costUsd: 0.004,
+        turnTotal: { chars: 200, approxTokens: 50, historyChars: 0, historyApproxTokens: 0, resumed: true },
+        turnSizes: [
+          { at: '10:00', model: 'opus', chars: 400, approxTokens: 100, resumed: true, costUsd: null },
+          { at: '10:05', model: 'opus', chars: 400, approxTokens: 100, resumed: true, costUsd: null }
+        ]
+      })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const total = await screen.findByTestId('context-turn-total')
+    expect(total.textContent).toContain('столько же уходит каждым следующим ходом')
+    // Цена повтора — из серверной оценки, умноженной на число ходов.
+    expect(total.textContent).toContain('$0.0080 за 2 прошедших ход(ов)')
   })
 
 })
