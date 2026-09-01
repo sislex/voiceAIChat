@@ -84,6 +84,8 @@ function reasonFor(item: ContextSnapshotItem): string {
  * счёт; ниже это шум на фоне остальных десяти пунктов.
  */
 const HEAVY_ITEM_SHARE = 0.2
+/** Разделы, которыми управляет «раскрыть/свернуть все» и память раскрытия. */
+const SECTION_IDS = ['excluded', 'extra', 'presets', 'changes', 'technical'] as const
 /** Ключ раскрытых разделов инспектора в localStorage. */
 const OPEN_SECTIONS_KEY = 'vc.context.sections'
 function sizeLabel(item: ContextSnapshotItem): string | null {
@@ -246,6 +248,8 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   /** Фильтр журнала по источнику; пусто — все. В длинном журнале вопрос чаще
    *  звучит «что было с этим пунктом», чем «что делал этот человек». */
   const [logItem, setLogItem] = useState('')
+  /** Вид события журнала: тумблеры источников или смена настроек разговора. */
+  const [logKind, setLogKind] = useState<'all' | 'toggles' | 'settings'>('all')
   /** Разговоры, к которым применяем пресет «к выбранным». */
   const [bulkTargets, setBulkTargets] = useState<string[]>([])
   /**
@@ -290,6 +294,16 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       return {}
     }
   })
+  /** Раскрыть или свернуть все разделы разом — и запомнить это, как обычный клик. */
+  const setAllSections = (open: boolean): void => {
+    const next = Object.fromEntries(SECTION_IDS.map((id) => [id, open]))
+    setOpenSections(next)
+    try {
+      window.localStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify(next))
+    } catch {
+      // приватный режим браузера: раскрытие просто не переживёт закрытие
+    }
+  }
   /** Свойства раскрывающегося раздела: раскрытие переживает закрытие окна. */
   const sectionProps = (id: string): { open: boolean; onToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void } => ({
     open: openSections[id] ?? false,
@@ -469,14 +483,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
    */
   const changesCsv = (value: ConversationContextSnapshot): string => {
     const cell = (text: string): string => `"${text.replace(/"/g, '""')}"`
-    const rows = [['Время', 'Кто', 'Действие', 'Источник', 'ID источника'].map(cell).join(';')]
+    const rows = [['Время', 'Кто', 'Действие', 'Источник', 'ID источника', 'Значение'].map(cell).join(';')]
     for (const event of value.changes) {
       rows.push([
         new Date(event.at).toLocaleString('ru-RU'),
         event.actor,
-        event.enabled ? 'вернул' : 'выключил',
+        event.value === undefined ? (event.enabled ? 'вернул' : 'выключил') : 'изменил',
         byId(event.itemId)?.title ?? event.itemId,
-        event.itemId
+        event.itemId,
+        event.value ?? ''
       ].map(cell).join(';'))
     }
     return rows.join('\n')
@@ -956,6 +971,12 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         {warning.itemId && byId(warning.itemId) && <Button size="sm" variant="ghost" onClick={() => openDetail(warning.itemId!)}>Открыть источник</Button>}
       </li>)}</ul>
     </aside>}
+    <div className="context-actions context-sections-bulk">
+      {/* Разделов десяток, и «раскрыть всё» перед чтением снимка целиком —
+          обычное начало работы, а не редкий случай. */}
+      <Button size="sm" variant="ghost" onClick={() => setAllSections(true)}>Раскрыть все разделы</Button>
+      <Button size="sm" variant="ghost" onClick={() => setAllSections(false)}>Свернуть все</Button>
+    </div>
     <nav className="context-toc" aria-label="Разделы контекста">
       {/* Страница длинная: без переходов до «Итогового текста» и списка источников
           приходится прокручивать мимо всего остального. */}
@@ -1178,6 +1199,21 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     <section className="context-card" aria-labelledby="context-knowledge-title">
       <div className="context-cardhead">
         <h3 id="context-knowledge-title">Что ИИ будет знать</h3>
+      {/* Чем разговор отличается от пресета по умолчанию: вопрос «у меня всё как
+          обычно?» задают чаще, чем «применить» — а раньше ответом было применить
+          и посмотреть, что изменилось. */}
+      {props.defaultPresetId && (() => {
+        const preset = props.contextPresets?.find((entry) => entry.id === props.defaultPresetId)
+        if (!preset) return null
+        const wanted = new Set(preset.disabled)
+        const extraOff = toggleable.filter((item) => !wanted.has(item.id) && !item.enabled)
+        const extraOn = toggleable.filter((item) => wanted.has(item.id) && item.enabled)
+        return <p className="context-note" data-testid="context-preset-diff">
+          {extraOff.length + extraOn.length === 0
+            ? `Набор совпадает с пресетом по умолчанию «${preset.name}».`
+            : `Отличия от пресета «${preset.name}»: сверх него выключено ${extraOff.length}, оставлено включённым ${extraOn.length}.`}
+        </p>
+      })()}
       {/* Что именно сделает пресет: имя вроде «минимальный» не говорит, какие
           десять пунктов оно выключит в этом конкретном разговоре. */}
       {pendingPreset && (() => {
@@ -1390,6 +1426,14 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       </div>}
       <div className="context-bulk">
         <label>
+          <span>Что менялось</span>
+          <select aria-label="Фильтр журнала по виду события" value={logKind} onChange={(event) => setLogKind(event.target.value as 'all' | 'toggles' | 'settings')}>
+            <option value="all">всё</option>
+            <option value="toggles">тумблеры источников</option>
+            <option value="settings">настройки разговора</option>
+          </select>
+        </label>
+        <label>
           <span>Какой источник</span>
           <select aria-label="Фильтр журнала по источнику" value={logItem} onChange={(event) => setLogItem(event.target.value)}>
             <option value="">все</option>
@@ -1402,18 +1446,21 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           <Button size="sm" variant="ghost" onClick={() => download(`context-changes-${props.conversationId}.csv`, changesCsv(snapshot), 'text/csv')}>Экспорт журнала (CSV)</Button>
         </div>
       </div>
-      <ul className="context-changelog">{snapshot.changes.filter((event) => (!logActor || event.actor === logActor) && (!logItem || event.itemId === logItem)).map((event, index, list) => {
+      <ul className="context-changelog">{snapshot.changes.filter((event) => (!logActor || event.actor === logActor) && (!logItem || event.itemId === logItem)
+        && (logKind === 'all' || (logKind === 'settings' ? event.value !== undefined : event.value === undefined))).map((event, index, list) => {
         const item = byId(event.itemId)
         // Отменять можно только последнюю запись про этот пункт и только пока
         // состояние совпадает с ней: иначе «вернуть как было» вернуло бы не то
         // состояние, которое человек видит в строке журнала.
         const latest = list.findIndex((entry) => entry.itemId === event.itemId) === index
-        const undoable = Boolean(item?.toggleable) && latest && item!.enabled === event.enabled && !locked
+        const undoable = event.value === undefined && Boolean(item?.toggleable) && latest && item!.enabled === event.enabled && !locked
         return <li key={`${event.at}-${event.itemId}-${String(event.enabled)}`}>
-          <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}:{' '}
+          <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.value === undefined ? (event.enabled ? 'вернул' : 'выключил') : 'изменил'}:{' '}
           {item
             ? <Button size="sm" variant="ghost" onClick={() => openDetail(event.itemId)}>{item.title}</Button>
             : event.itemId}
+          {/* У события-настройки состояние выражает значение, а не «включено». */}
+          {event.value !== undefined && <span className="context-log-value"> → {event.value}</span>}
           {undoable && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void toggleItem(item!, !event.enabled)}>Отменить</Button>}
         </li>
       })}</ul>

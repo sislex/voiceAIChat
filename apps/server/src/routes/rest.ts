@@ -912,6 +912,18 @@ export async function registerRest(
       }
       const conversation = db.getConversation(uid(req), req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
+      // Журнал контекста: смена настроек разговора — такое же изменение того,
+      // что получит модель, как и тумблер источника. Раньше «кто понизил режим
+      // доступа» не отвечал никто: писались только тумблеры.
+      const settingEvents: Array<[string, string | null | undefined]> = [
+        ['permission-mode', conversation.permissionMode ?? 'из общих настроек'],
+        ['knowledge-mode', conversation.kbContextMode ?? 'auto'],
+        ['llm', conversation.llmProvider ? `${conversation.llmProvider}${conversation.llmModel ? ` · ${conversation.llmModel}` : ''}` : 'из общих настроек'],
+        ['machine', conversation.execTarget ?? 'резолвер сервера']
+      ]
+      for (const [itemId, value] of settingEvents) {
+        if (typeof value === 'string') db.recordConversationSettingEvent(uid(req), req.params.id, itemId, value, uid(req))
+      }
       return conversation
     }
   )
