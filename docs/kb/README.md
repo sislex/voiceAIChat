@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 189 коммит(ов) в areas после сверки: 5e37d08e feat(chat): allow independent queued sends … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 209 коммит(ов) в areas после сверки: 5e37d08e feat(chat): allow independent queued sends … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 102 коммит(ов) в areas после сверки: d86d1003 fix(ui): restore new chat composer … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1028 коммит(ов) в areas после сверки: 00c66ea8 docs(kb): update after merge 0375e7c6-db3d-4273-b8b4-df5b0a1ad71a … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1029 коммит(ов) в areas после сверки: 69dc4c02 docs(kb): update after merge 4881c624-5e69-48cb-95d5-b27333203b4e … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 114 коммит(ов) в areas после сверки: 5e37d08e feat(chat): allow independent queued sends … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 152 коммит(ов) в areas после сверки: d86d1003 fix(ui): restore new chat composer … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 70 коммит(ов) в areas после сверки: 5e37d08e feat(chat): allow independent queued sends … |
