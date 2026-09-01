@@ -198,6 +198,47 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       }
     : { 'Проект': 'Не выбран — проектный контекст в промпт не добавляется.' }
   // Конфиг/описание каждого MCP-инструмента для drill-in.
+  /**
+   * Инструменты вида чата: их подключает `turns.ts` по `assistantKind`, а не
+   * настройки разговора. Условия здесь повторяют условия хода — если там
+   * появится новое семейство, оно обязано появиться и тут, иначе список «что
+   * сможет модель» снова станет неполным.
+   */
+  const kindTools = [
+    {
+      id: 'mcp-browser-preview', title: 'browser:* (веб-превью)', source: 'Вид чата: превью страницы',
+      scope: 'Браузер пользователя', tools: ['mcp__browser__*'],
+      description: 'Клики, ввод и чтение страницы в браузере пользователя.',
+      available: conversation.assistantKind !== 'make',
+      whenAvailable: 'Подключается в чатах с превью: действия выполняет браузер пользователя, машина-агент для них не нужна.',
+      whenUnavailable: 'В Make-чате браузерные инструменты не подключаются: панель — iframe проекта, и модель упиралась в таймауты.'
+    },
+    {
+      id: 'mcp-console-pty', title: 'console:* (живой терминал)', source: 'Вид чата: консоль с ассистентом',
+      scope: 'PTY-сессия чата', tools: ['mcp__console__*'],
+      description: 'Пишет команды в открытую справа PTY-сессию.',
+      available: conversation.assistantKind === 'console-reader',
+      whenAvailable: 'Подключается в «Консоли с ассистентом»: терминал уже открыт, модель работает прямо в нём.',
+      whenUnavailable: 'Появится только в чате «Консоль с ассистентом».'
+    },
+    {
+      id: 'mcp-make-files', title: 'make:* (файлы проекта)', source: 'Вид чата: Make',
+      scope: 'Проект Make этого чата', tools: ['mcp__make__*'],
+      description: 'Читает и пишет файлы проекта Make.',
+      available: conversation.assistantKind === 'make',
+      whenAvailable: 'Подключается в Make-чате: правка файлов проекта и есть задача такого чата.',
+      whenUnavailable: 'Появится только в чате Make.'
+    },
+    {
+      id: 'mcp-kanban-board', title: 'kanban:* (доска проекта)', source: 'Панель ассистента проекта',
+      scope: project?.name ?? 'Проект чата', tools: ['mcp__kanban__*'],
+      description: 'Читает доску, задачи и открытый экран пользователя.',
+      available: Boolean(conversation.projectId),
+      whenAvailable: 'Подключается, когда сообщение отправлено из панели ассистента проекта: обычный ход чата их не получает.',
+      whenUnavailable: 'Чат не привязан к проекту — доски у него нет.'
+    }
+  ]
+
   const mcpToolDetails: Record<string, Record<string, string | number | boolean | string[] | null>> = {
     'mcp-remote-machines': { 'Инструмент': 'mcp__remote__machines', 'Назначение': 'Список машин проекта и их онлайн-статус.', 'Параметры': ['machine'], 'Изменяет данные': false },
     'mcp-remote-read': { 'Инструмент': 'mcp__remote__read', 'Назначение': 'Читает окно строк файла в рабочей директории машины.', 'Параметры': ['path', 'offset', 'limit', 'machine'], 'Изменяет данные': false },
@@ -284,6 +325,15 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     { id: 'skills', order: 5, title: 'Навыки', description: 'Выбор отделён от доступности и активации.', items: (agent?.policy.skills ?? []).map((skill) => contextItem({ id: `skill-${encodeURIComponent(skill.name)}`, type: 'Навык', source: 'Политика машины', scope: agent?.name ?? 'Машина', priority: '8 · навык', title: skill.name, description: skill.description || 'Инструкция навыка', explanation: selectedSkills.has(skill.name) ? 'Выбран; активация определяется текстом сообщения при отправке.' : 'Доступен, но не выбран.', configured: selectedSkills.has(skill.name), available: machineAvailable, includedInNextTurn: false, details: { activationReason: 'Текущее сообщение ещё не отправлено.', ...(skill.command ? { 'Команда навыка': skill.command } : {}) } })) },
     { id: 'capabilities', order: 6, title: 'MCP, приложения и плагины', description: 'Активный каталог вычислен сервером для текущего окружения.', items: [
       ...(['machines', 'read', 'edit', 'bash'] as const).map((name) => contextItem({ id: `mcp-remote-${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: agent?.name ?? 'Удалённая машина', priority: 'Возможность', title: `remote:${name}`, description: String(mcpToolDetails[`mcp-remote-${name}`]?.['Назначение'] ?? 'Инструмент удалённой машины.'), explanation: machineAvailable ? 'Подключается для эффективной машины.' : 'Машина недоступна.', configured: Boolean(resolution?.agentId), available: machineAvailable, includedInNextTurn: machineAvailable, details: { ...mcpToolDetails[`mcp-remote-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('remote')) ? 'да' : 'нет данных' } })),
+      // Инструменты, которые даёт сам вид чата. Их набор решает `turns.ts` по
+      // `assistantKind`, тумблера у них нет — отсюда замок с причиной `kind`.
+      // Без них список «что сможет модель» отвечал только за remote и kb, хотя
+      // в чате с превью модель ходит браузером, а в Make правит файлы проекта.
+      ...kindTools.map((tool) => contextItem({ id: tool.id, type: 'MCP-инструмент', source: tool.source, scope: tool.scope, priority: 'Возможность',
+        title: tool.title, description: tool.description,
+        explanation: tool.available ? tool.whenAvailable : tool.whenUnavailable,
+        configured: true, available: tool.available, includedInNextTurn: tool.available,
+        details: { 'Инструменты': tool.tools, 'Подключает': tool.source } })),
       ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } }))
     ] },
     { id: 'knowledge', order: 7, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
