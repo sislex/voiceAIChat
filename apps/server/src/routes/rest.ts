@@ -791,7 +791,7 @@ function queryFlag(v: string | undefined): boolean {
   return v === '1' || v === 'true'
 }
 
-const CONVERSATION_SCOPES = ['chat', 'kanban', 'make', 'console', 'playwright-reader', 'web-reader'] as const
+const CONVERSATION_SCOPES = ['chat', 'kanban', 'make', 'images', 'console', 'playwright-reader', 'web-reader'] as const
 function parseConversationScope(value: string | undefined): (typeof CONVERSATION_SCOPES)[number] | null {
   return CONVERSATION_SCOPES.includes(value as (typeof CONVERSATION_SCOPES)[number])
     ? value as (typeof CONVERSATION_SCOPES)[number]
@@ -874,14 +874,14 @@ export async function registerRest(
     return db.importDesktopData(uid(req), req.body)
   })
 
-  app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' } }>(REST.conversations, async (req, reply) => {
+  app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' } }>(REST.conversations, async (req, reply) => {
     const kind = req.body?.assistantKind
     const scope = req.body?.scope === undefined
-      ? kind === 'web-recorder' ? 'web-reader' : kind === 'playwright-reader' ? 'playwright-reader' : kind === 'console-reader' ? 'console' : kind === 'make' ? 'make' : 'chat'
+      ? kind === 'web-recorder' ? 'web-reader' : kind === 'playwright-reader' ? 'playwright-reader' : kind === 'console-reader' ? 'console' : kind === 'make' ? 'make' : kind === 'images' ? 'images' : 'chat'
       : parseConversationScope(req.body.scope)
     if (!scope || (scope === 'kanban' && !req.body?.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
     try {
-      return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' ? kind : null, req.body?.projectId ?? null, scope)
+      return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope)
     } catch (error) {
       if (error instanceof Error && error.message === 'project not found') return reply.code(404).send({ error: error.message })
       throw error

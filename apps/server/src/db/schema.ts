@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   preview_url       TEXT,
   task_id           TEXT,
   assistant_kind    TEXT,
-  scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','console','playwright-reader','web-reader')),
+  scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')),
   -- Режим применения мутаций канбан-ассистентом: auto (сразу) или confirm.
   assistant_autonomy TEXT,
   status            TEXT NOT NULL DEFAULT 'developing'

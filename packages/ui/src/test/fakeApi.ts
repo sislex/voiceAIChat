@@ -216,6 +216,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Связи карточек с дизайнами Make (см. мосты `tasks:*Design`). */
   const designLinks: TaskDesignLink[] = []
   const projectSyncLinks: Array<import('@shared/make').MakeProjectLinkInfo> = []
+  const studioFiles = new Map<string, { path: string; size: number; updatedAt: number; dataBase64: string }[]>()
   const taskActivityStore = new Map<string, import('@shared/projects').TaskActivity>()
   const activityOf = (taskId: string): import('@shared/projects').TaskActivity => {
     if (!taskActivityStore.has(taskId)) taskActivityStore.set(taskId, { comments: [], worklog: [], history: [], totalMinutes: 0 })
@@ -1497,6 +1498,39 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       .filter((c) => c.assistantKind === 'make' && c.projectId === id)
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
     // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
+    // Студия картинок: галерея в замыкании фейка.
+    'imgstudio:list': async ({ conversationId }) => (studioFiles.get(conversationId) ?? []).map(({ dataBase64: _b64, ...file }) => file),
+    'imgstudio:read': async ({ conversationId, path }) => {
+      const file = (studioFiles.get(conversationId) ?? []).find((entry) => entry.path === path)
+      if (!file) throw new Error('файл не найден')
+      return { path, dataBase64: file.dataBase64 }
+    },
+    'imgstudio:upload': async ({ conversationId, path, dataBase64 }) => {
+      const list = studioFiles.get(conversationId) ?? []
+      studioFiles.set(conversationId, [{ path, size: dataBase64.length, updatedAt: Date.now(), dataBase64 }, ...list.filter((entry) => entry.path !== path)])
+      return api['imgstudio:list']({ conversationId })
+    },
+    'imgstudio:delete': async ({ conversationId, path }) => {
+      studioFiles.set(conversationId, (studioFiles.get(conversationId) ?? []).filter((entry) => entry.path !== path))
+      return api['imgstudio:list']({ conversationId })
+    },
+    'imgstudio:rename': async ({ conversationId, from, to }) => {
+      const list = studioFiles.get(conversationId) ?? []
+      for (const entry of list) if (entry.path === from) entry.path = to
+      return api['imgstudio:list']({ conversationId })
+    },
+    'imgstudio:generate': async ({ conversationId, prompt, name }) => {
+      const path = (name?.trim() || 'изображение.png')
+      await api['imgstudio:upload']({ conversationId, path, dataBase64: Buffer.from(`generated:${prompt}`).toString('base64') })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === path)!, files }
+    },
+    'imgstudio:edit': async ({ conversationId, path, prompt }) => {
+      const next = path.replace(/(\.[a-z]+)$/i, '-2$1')
+      await api['imgstudio:upload']({ conversationId, path: next, dataBase64: Buffer.from(`edited:${prompt}`).toString('base64') })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === next)!, files }
+    },
     'tasks:activity': async ({ taskId }) => activityOf(taskId),
     'tasks:commentAdd': async ({ taskId, text }) => {
       const activity = activityOf(taskId)

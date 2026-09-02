@@ -102,8 +102,30 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       return req(`${REST.conversations}?${q.toString()}`)
     },
     'conversations:create': ({ title, scope, projectId, assistantKind }) =>
-      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, scope: scope ?? (assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'make' ? 'make' : 'chat'), projectId, assistantKind }) }),
+      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, scope: scope ?? (assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'make' ? 'make' : assistantKind === 'images' ? 'images' : 'chat'), projectId, assistantKind }) }),
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
+    'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
+    'imgstudio:read': async ({ conversationId, path }) => {
+      // Байты картинки — через авторизованный fetch: <img src> без токена
+      // получил бы 401, поэтому панель строит blob-URL сама.
+      const response = await fetch(`${httpBase}/api/image-studio/${encodeURIComponent(conversationId)}/file?path=${encodeURIComponent(path)}`, { headers: authHeaders() })
+      if (!response.ok) throw new Error(await response.text().catch(() => 'файл не найден'))
+      const buffer = await response.arrayBuffer()
+      let binary = ''
+      const bytes = new Uint8Array(buffer)
+      for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!)
+      return { path, dataBase64: btoa(binary) }
+    },
+    'imgstudio:upload': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/file`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:delete': ({ conversationId, path }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
+    'imgstudio:rename': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/rename`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:generate': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/generate`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:edit': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/edit`, { method: 'POST', body: JSON.stringify(b) }),
     'make:projectFiles': ({ conversationId, path }) =>
       req(`${REST.makeProjectFiles(conversationId)}${path ? `?path=${encodeURIComponent(path)}` : ''}`),
     'make:projectLinks': ({ conversationId }) => req(REST.makeProjectLinks(conversationId)),
