@@ -42,6 +42,7 @@ import type { CiRunManager } from '../ci/runManager.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { materializeProjectMachine as materialize } from '../projects/materialize.js'
 import type { MergeRunManager } from '../merge/runManager.js'
+import type { MakeWorkspaces } from '../make/workspace.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -91,7 +92,8 @@ export function registerProjectRoutes(
    */
   checkAutomatedQa?: (userId: string, projectId: string, scenarioIndex?: number) => Promise<AutomatedQaCheckResult[]>,
   /** Оркестратор планов ассистента: отмена должна ещё и снять его таймер. */
-  orchestration?: { cancel(owner: string, planId: string): import('@voicechat/shared').Orchestration | null }
+  orchestration?: { cancel(owner: string, planId: string): import('@voicechat/shared').Orchestration | null },
+  makeWorkspaces?: MakeWorkspaces
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
@@ -929,17 +931,39 @@ export function registerProjectRoutes(
   // не должна приводить участника к дизайну, которого он не вправе открыть.
   app.get<{ Params: { id: string; taskId: string } }>(
     '/api/projects/:id/tasks/:taskId/designs',
-    async (req, reply) => db.listTaskDesigns(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+    async (req, reply) => {
+      const links = db.listTaskDesigns(uid(req), req.params.id, req.params.taskId)
+      if (!links) return nf(reply)
+      if (!makeWorkspaces) return links
+      return Promise.all(links.map(async (link) => {
+        if (link.mode === 'whole_project') return link
+        try {
+          const existing = new Set((await makeWorkspaces.list(link.conversationId)).map((file) => file.path))
+          return { ...link, fileStatuses: link.paths.map((path) => existing.has(path) ? { path, available: true } : { path, available: false, error: `Make-проект «${link.conversationTitle}» (${link.conversationId}): файл ${path} недоступен` }) }
+        } catch (error) {
+          return { ...link, fileStatuses: link.paths.map((path) => ({ path, available: false, error: `Make-проект «${link.conversationTitle}» (${link.conversationId}), файл ${path}: ${errMessage(error)}` })) }
+        }
+      }))
+    }
   )
 
-  app.post<{ Params: { id: string; taskId: string }; Body: { conversationId?: string; path?: string; label?: string } }>(
+  app.post<{ Params: { id: string; taskId: string }; Body: { conversationId?: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string } }>(
     '/api/projects/:id/tasks/:taskId/designs',
     async (req, reply) => {
       const conversationId = req.body?.conversationId
       if (!conversationId) return badReq(reply, 'conversationId required')
       try {
+        if (req.body?.mode === 'files') {
+          if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
+          const requested = req.body.paths ?? []
+          const existing = new Set((await makeWorkspaces.list(conversationId)).map((file) => file.path))
+          const missing = requested.find((path) => !existing.has(path))
+          if (missing) throw new Error(`Make-проект ${conversationId}: файл ${missing} не найден`)
+        }
         const links = db.linkTaskDesign(uid(req), req.params.id, req.params.taskId, {
           conversationId,
+          mode: req.body?.mode,
+          paths: req.body?.paths,
           path: req.body?.path,
           label: req.body?.label
         })

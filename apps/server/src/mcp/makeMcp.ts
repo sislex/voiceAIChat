@@ -20,7 +20,7 @@ export interface MakeTaskScope {
   userId: string
   projectId: string
   taskId: string
-  conversationIds: string[]
+  sources: Array<{ conversationId: string; title: string; mode: 'whole_project' | 'files'; paths: string[] }>
   expiresAt: number
 }
 
@@ -54,10 +54,11 @@ export function buildTaskMakeSources(args: {
   if (!args.baseUrl || !args.broker) return []
   const sources = taskMakeSources(args.designs)
   if (!sources.length) return []
-  const token = args.broker.issue({ userId: args.userId, projectId: args.projectId, taskId: args.taskId, conversationIds: sources.map((source) => source.conversationId) })
+  const token = args.broker.issue({ userId: args.userId, projectId: args.projectId, taskId: args.taskId, sources: sources.map(({ conversationId, title, mode, paths }) => ({ conversationId, title, mode, paths })) })
   return sources.map((source) => ({
     name: source.name,
     conversationId: source.conversationId,
+    mode: source.mode,
     paths: source.paths,
     mcpUrl: `${args.baseUrl}&conv=${encodeURIComponent(source.conversationId)}&scope=${encodeURIComponent(token)}`
   }))
@@ -93,8 +94,9 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
         const conv = req.query.conv ?? ''
         const taskScope = req.query.scope ? deps.taskScopes?.get(req.query.scope) ?? null : null
-        if (req.query.scope && (!taskScope || !taskScope.conversationIds.includes(conv) || !deps.authorizeTaskSource?.(taskScope, conv))) {
-          return reply.code(403).send({ error: 'task Make source forbidden or expired' })
+        const scopedSource = taskScope?.sources.find((source) => source.conversationId === conv)
+        if (req.query.scope && (!taskScope || !scopedSource || !deps.authorizeTaskSource?.(taskScope, conv))) {
+          return reply.code(403).send({ error: `Make-источник ${conv} недоступен: scope отсутствует, истёк или отозван` })
         }
         const taskReadOnly = Boolean(taskScope)
         const turn = req.query.turn ?? ''
@@ -130,8 +132,13 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           try {
             await workspaces.ensure(conv)
             const files = await workspaces.list(conv)
-            if (files.length === 0) return text('(проект пуст)')
-            return text(files.map((f) => `${f.path} (${f.size} байт)`).join('\n'))
+            const visible = scopedSource?.mode === 'files'
+              ? scopedSource.paths.map((path) => files.find((file) => file.path === path) ?? { path, size: 0, unavailable: true })
+              : files
+            if (visible.length === 0) return text('(проект пуст)')
+            return text(visible.map((file) => 'unavailable' in file
+              ? `${file.path} — недоступен в Make-проекте «${scopedSource?.title ?? conv}» (${conv})`
+              : `${file.path} (${file.size} байт)`).join('\n'))
           } catch (error) { return text(describeError(error), true) }
         })
 
@@ -140,9 +147,16 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           inputSchema: { path: z.string().describe('Путь относительно корня проекта, например index.html или css/app.css') }
         }, async (args) => {
           try {
+            if (scopedSource?.mode === 'files' && !scopedSource.paths.includes(args.path)) {
+              return text(`Make-проект «${scopedSource.title}» (${conv}): путь ${args.path} не входит в выбранный набор файлов`, true)
+            }
             const file = await workspaces.read(conv, args.path)
             return text(file.content)
-          } catch (error) { return text(describeError(error), true) }
+          } catch (error) {
+            return text(scopedSource
+              ? `Make-проект «${scopedSource.title}» (${conv}), файл ${args.path}: ${describeError(error)}`
+              : describeError(error), true)
+          }
         })
 
         if (!taskReadOnly) server.registerTool('make_write_file', {

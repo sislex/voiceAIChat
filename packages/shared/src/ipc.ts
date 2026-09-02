@@ -657,7 +657,7 @@ export interface IpcInvokeMap {
   /** Дизайны карточки: связи с Make-проектами проекта. */
   'tasks:designs': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskDesignLink[] }
   'tasks:linkDesign': {
-    arg: { projectId: string; taskId: string; conversationId: string; path?: string; label?: string }
+    arg: { projectId: string; taskId: string; conversationId: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string }
     result: import('./projects').TaskDesignLink[]
   }
   'tasks:unlinkDesign': { arg: { projectId: string; taskId: string; linkId: string }; result: import('./projects').TaskDesignLink[] }

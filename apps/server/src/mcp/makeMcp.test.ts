@@ -97,7 +97,7 @@ describe('makeMcp', () => {
     let now = 1_000
     const broker = new MakeTaskScopeBroker(100, () => now)
     await setup('ann', { broker, allowed: true })
-    const token = broker.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', conversationIds: [CONV] })
+    const token = broker.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет', mode: 'whole_project', paths: [] }] })
     const query = `?k=${SECRET}&conv=${CONV}&scope=${token}`
     expect((await rpc(INIT, query)).statusCode).toBe(200)
     const listed = (await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }, query)).json() as { result?: { tools?: Array<{ name: string }> } }
@@ -110,8 +110,27 @@ describe('makeMcp', () => {
     await app.close()
     const denied = new MakeTaskScopeBroker()
     await setup('ann', { broker: denied, allowed: false })
-    const deniedToken = denied.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', conversationIds: [CONV] })
+    const deniedToken = denied.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет', mode: 'whole_project', paths: [] }] })
     expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${deniedToken}`)).statusCode).toBe(403)
+  })
+
+  it('файловый task scope разрешает только выбранные пути и сохраняет частичный доступ', async () => {
+    const broker = new MakeTaskScopeBroker()
+    await setup('ann', { broker, allowed: true })
+    await workspaces.write(CONV, 'allowed.css', 'body{}')
+    await workspaces.write(CONV, 'secret.txt', 'secret')
+    const token = broker.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет оплаты', mode: 'files', paths: ['allowed.css', 'missing.tsx'] }] })
+    const query = `?k=${SECRET}&conv=${CONV}&scope=${token}`
+    expect(resultText((await rpc(call('make_read_file', { path: 'allowed.css' }), query)).json()).text).toBe('body{}')
+    const denied = resultText((await rpc(call('make_read_file', { path: 'secret.txt' }), query)).json())
+    expect(denied.isError).toBe(true)
+    expect(denied.text).toContain('Макет оплаты')
+    expect(denied.text).toContain('secret.txt')
+    const missing = resultText((await rpc(call('make_read_file', { path: 'missing.tsx' }), query)).json())
+    expect(missing.isError).toBe(true)
+    expect(missing.text).toContain('Макет оплаты')
+    expect(missing.text).toContain('missing.tsx')
+    expect(resultText((await rpc(call('make_read_file', { path: 'allowed.css' }), query)).json()).isError).toBe(false)
   })
 
   it('make_check сообщает о проблемах и об их отсутствии', async () => {

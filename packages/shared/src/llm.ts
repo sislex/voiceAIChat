@@ -33,7 +33,9 @@ export interface LlmMakeSource {
   mcpUrl: string
   /** Make-разговор, полезен для диагностики конкретного источника. */
   conversationId: string
-  /** Подсказки точек входа; пустая строка означает весь проект. */
+  /** Точная граница доступа источника. */
+  mode: 'whole_project' | 'files'
+  /** Канонические разрешённые пути; пусто только для whole_project. */
   paths: string[]
 }
 
