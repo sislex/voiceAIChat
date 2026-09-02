@@ -74,6 +74,24 @@ describe('TaskDesigns — секция «Дизайн» карточки', () =>
     expect(screen.queryByText('pay.html, styles/app.css')).not.toBeInTheDocument()
   })
 
+  it('показывает полный список источников, возвращённый сервером', async () => {
+    const api = createFakeApi([])
+    window.api = api as unknown as typeof window.api
+    const { projectId, taskId } = await scene(api)
+    for (const title of ['Проект 2', 'Проект 3']) {
+      const make = await api['conversations:create']({ title, assistantKind: 'make' })
+      await api['conversations:setProject']({ id: make.id, projectId })
+    }
+
+    render(<TaskDesigns projectId={projectId} taskId={taskId} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Связать дизайн' }))
+
+    expect(await screen.findAllByRole('option')).toHaveLength(3)
+    expect(screen.getByRole('option', { name: 'Проект 1' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Проект 2' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Проект 3' })).toBeInTheDocument()
+  })
+
   it('без привязанных Make-проектов объясняет, где взять источник', async () => {
     const api = createFakeApi([])
     window.api = api as unknown as typeof window.api
