@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { WidgetAssistantContext } from '@shared/widgetAssistant'
 import { WidgetAssistantFrame, WidgetProposalCard } from './WidgetAssistantFrame'
-import { KanbanAssistant, ProjectAssistantChatSelector, projectAssistantChatSource } from './KanbanAssistant'
+import { KanbanAssistant, ProjectAssistantChatSelector, projectAssistantChatSource, projectAssistantChatState, relativeTime } from './KanbanAssistant'
 import { createFakeApi } from '../test/fakeApi'
 
 const context: WidgetAssistantContext<any> = {
@@ -29,6 +29,12 @@ describe('WidgetAssistantFrame', () => {
   it('supports the standalone page variant', () => {
     render(<WidgetAssistantFrame mode="page" open widget={<div>Widget only</div>} assistant={<div>Assistant</div>} />)
     expect(screen.getByTestId('widget-assistant-frame')).toHaveClass('widget-assistant--page')
+  })
+
+  it('hideHeader: рамка не рисует свою шапку и крестик — их даёт сам ассистент', () => {
+    render(<WidgetAssistantFrame open hideHeader widget={<div>Kanban</div>} assistant={<div>Chat</div>} onOpenChange={vi.fn()} />)
+    expect(screen.getByRole('complementary', { name: 'Ассистент' })).toHaveTextContent('Chat')
+    expect(screen.queryByRole('button', { name: 'Закрыть ассистента' })).not.toBeInTheDocument()
   })
 
   it('persists a message and sends the latest safe context through the normal LLM transport', async () => {
@@ -58,27 +64,101 @@ describe('WidgetAssistantFrame', () => {
     expect(await api['kanbanAssistant:get']({ projectId: 'p1', conversationId: selected.id })).toMatchObject({ messages: [{ text: 'История выбранного' }, { role: 'u0', text: 'UI' }] })
   })
 
-  it('shows project chats in the shell header with their source labels and persists the selection', async () => {
+  it('список чатов проекта: статусы, выбор с сохранением, создание, поиск и удаление', async () => {
     const api = createFakeApi()
     const regular = await api['conversations:create']({ title: 'Обычный чат' })
     await api['conversations:setProject']({ id: regular.id, projectId: 'p1' })
     await api['kanbanAssistant:get']({ projectId: 'p1' })
     localStorage.setItem('voicechat.projectAssistantChat.p1', regular.id)
     const select = vi.fn()
-    const view = render(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={null} onSelect={select} />)
+    const view = render(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={null} onSelect={select} projectName="ChatAI" />)
 
-    const selector = await screen.findByRole('combobox', { name: 'Чат ассистента' })
-    expect(await screen.findByRole('option', { name: 'Обычный чат · chat' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /Ассистент · p1 · kanban/ })).toBeInTheDocument()
-    await userEvent.selectOptions(selector, regular.id)
+    const list = await screen.findByRole('navigation', { name: 'Чаты канбана' })
+    expect(await within(list).findByRole('button', { name: /^Обычный чат/ })).toBeInTheDocument()
+    expect(within(list).getByRole('button', { name: /^Ассистент · p1/ })).toHaveTextContent('Ассистент доски')
+    expect(screen.getByText('Проект · ChatAI')).toBeInTheDocument()
+    // Сохранённый выбор восстанавливается при загрузке.
     expect(select).toHaveBeenCalledWith(regular.id)
-    expect(localStorage.getItem('voicechat.projectAssistantChat.p1')).toBe(regular.id)
-    view.rerender(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={regular.id} onSelect={select} />)
+    view.rerender(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={regular.id} onSelect={select} projectName="ChatAI" />)
+    expect(within(list).getByRole('button', { name: /^Обычный чат/ })).toHaveAttribute('aria-current', 'true')
+
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Найти чат' }), 'Обычный')
+    expect(within(list).queryByRole('button', { name: /^Ассистент · p1/ })).not.toBeInTheDocument()
+    await userEvent.clear(screen.getByRole('searchbox', { name: 'Найти чат' }))
+
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
-    await vi.waitFor(() => expect(select).toHaveBeenCalledTimes(3))
-    const createdId = select.mock.calls[2]?.[0]
+    await vi.waitFor(() => expect(select).toHaveBeenCalledTimes(2))
+    const createdId = select.mock.calls[1]?.[0]
     expect((await api['conversations:get']({ id: createdId }))?.conversation.projectId).toBe('p1')
+    expect(localStorage.getItem('voicechat.projectAssistantChat.p1')).toBe(createdId)
+
+    // Чат ассистента удалить нельзя, обычный — можно; удалённый текущий уступает место ассистенту.
+    expect(within(list).queryByRole('button', { name: /Удалить Ассистент/ })).not.toBeInTheDocument()
+    await userEvent.click(within(list).getByRole('button', { name: 'Удалить Обычный чат' }))
+    await vi.waitFor(() => expect(within(list).queryByRole('button', { name: /^Обычный чат/ })).not.toBeInTheDocument())
+    expect(select).toHaveBeenLastCalledWith(expect.not.stringMatching(regular.id))
     expect(projectAssistantChatSource({ assistantKind: 'browser' } as any)).toBe('browser')
+    expect(projectAssistantChatState('developing')).toBe('working')
+    expect(projectAssistantChatState('planned')).toBe('waiting')
+    expect(projectAssistantChatState('done')).toBe('done')
+    expect(projectAssistantChatState(undefined)).toBe('ready')
+    expect(relativeTime(1000, 30_000)).toBe('Только что')
+    expect(relativeTime(0, 5 * 60_000)).toBe('5 мин назад')
+    expect(relativeTime(0, 30 * 3_600_000)).toBe('Вчера')
+  })
+
+  it('пустой экран макета: подсказка подставляет текст, шапка показывает проект и статус, настройки открываются', async () => {
+    const api = createFakeApi()
+    await api['kanbanAssistant:get']({ projectId: 'p1' })
+    const transport = { send: vi.fn(), onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
+    const withProject = { ...context, project: { id: 'p1', name: 'ChatAI', description: '', technologies: [], skills: [], typeChain: [] } }
+    render(<KanbanAssistant projectId="p1" context={withProject as any} api={api} llmEngines={[]} transport={transport} onCommand={vi.fn()} />)
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'С чего начнём?' })).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent('Готов к работе')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/Ассистент · p1/)
+    const input = screen.getByRole('textbox', { name: 'Поле ввода сообщения' })
+    await vi.waitFor(() => expect(input).toBeEnabled())
+    expect(screen.getByRole('button', { name: 'Отправить сообщение' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: /Продумать функцию/ }))
+    expect(input).toHaveValue('Помоги спланировать новую функцию для продукта')
+    expect(screen.getByRole('button', { name: 'Отправить сообщение' })).toBeEnabled()
+
+    // Enter отправляет, Shift+Enter — перенос строки.
+    await userEvent.clear(input)
+    await userEvent.type(input, 'строка{Shift>}{Enter}{/Shift}вторая')
+    expect(input).toHaveValue('строка\nвторая')
+    expect(transport.send).not.toHaveBeenCalled()
+    await userEvent.type(input, '{Enter}')
+    await vi.waitFor(() => expect(transport.send).toHaveBeenCalledTimes(1))
+    // После отправки лента переключается в режим сообщений: пузырь пользователя и индикатор набора.
+    await vi.waitFor(() => expect(document.querySelector('.ka-bubble')?.textContent).toBe('строка\nвторая'))
+    expect(screen.getByTestId('kanban-assistant-streaming')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Готовит ответ…')
+    expect(screen.queryByRole('heading', { level: 2, name: 'С чего начнём?' })).not.toBeInTheDocument()
+
+    expect(screen.queryByRole('region', { name: 'Настройки ассистента' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки ассистента' }))
+    expect(screen.getByRole('region', { name: 'Настройки ассистента' })).toHaveTextContent('LLM:')
+  })
+
+  it('со списком чатов: выдвижная колонка открывается кнопкой в шапке и закрывается выбором чата; крестик закрывает панель', async () => {
+    const api = createFakeApi()
+    await api['kanbanAssistant:get']({ projectId: 'p1' })
+    const transport = { send: vi.fn(), onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
+    const onSelect = vi.fn(); const onClose = vi.fn()
+    render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={vi.fn()} onSelectConversation={onSelect} onClose={onClose} />)
+
+    const toggle = await screen.findByRole('button', { name: 'Открыть канбан-чаты' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const list = screen.getByRole('navigation', { name: 'Чаты канбана' })
+    await userEvent.click(await within(list).findByRole('button', { name: /^Ассистент · p1/ }))
+    expect(onSelect).toHaveBeenCalled()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(screen.getByRole('button', { name: 'Закрыть ассистента' }))
+    expect(onClose).toHaveBeenCalledOnce()
   })
 
   it('различает загрузку, пустой диалог, ошибку и отсутствие транспорта', async () => {
