@@ -85,13 +85,21 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 перезагружает список (`refreshAgents`) и строка исчезает.
 
 Удаление чистит **все ссылки на машину**, иначе висячий id уводил бы ход на
-машину, которой нет: `registry.disconnect` рвёт соединение,
-`clearConversationExecTargetForAgent` снимает цель у разговоров, роут сбрасывает
-`settings.execTarget` **и** `settings.defaultAgentId`, а `db.deleteAgent` — ещё и
-`projects.default_agent_id` (связки `project_machines` уносит CASCADE, а вот эта
-колонка внешнего ключа не имеет, и CI-ран проекта уходил бы в никуда). Стор
-повторяет сброс `execTarget`/`defaultAgentId` в своём состоянии — иначе селекторы
-показывали бы удалённую машину до перезагрузки страницы.
+машину, которой нет. `db.deleteAgent` выполняет очистку одной SQLite-транзакцией:
+сначала удаляет `chat_storage_bindings` и `conversation_workspaces`, потому что
+обе таблицы имеют `ON DELETE RESTRICT` и на `agents`, и на
+`machine_storages`; затем удаляет workspace-lock, обнуляет nullable-ссылки
+CI/workspace, `conversations.exec_target`, проектные
+`default_agent_id`/`production_agent_id` и персональные
+`settings.execTarget`/`settings.defaultAgentId`; последним удаляет `agents`.
+`project_machines`, shares, пользовательские project-default и storages уносит
+`ON DELETE CASCADE`, а `login_enrollments.agent_id` — `SET NULL`. Исторические
+`merge_runs` и `task_repositories` сохраняют обязательный snapshot `agent_id`
+без FK и не удаляются. При ошибке весь набор откатывается. После commit
+`registry.disconnect` разрывает живое соединение; токен удалённой машины больше
+не проходит регистрацию. Стор повторяет сброс `execTarget`/`defaultAgentId` в
+своём состоянии — иначе селекторы показывали бы удалённую машину до перезагрузки
+страницы.
 
 ## Enrollment первой машины
 
