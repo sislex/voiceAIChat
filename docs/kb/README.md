@@ -33,7 +33,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-02 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 182 коммит(ов) в areas после сверки: 649b4525 feat(assistant): панель канбан-ассистента повторяет Make-макет «Проект 14» (CHAT-391, итерация 2) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-02 | ⚠ 4 коммит(ов) в areas после сверки: 0a7acd40 Merge remote-tracking branch 'origin/main' into feat/kanban-assistant-template … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-02 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-02 | ⚠ 6 коммит(ов) в areas после сверки: 7a2b4078 Merge task 61d0a89f-10de-4eeb-a134-0d7615d64f0e … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 92 коммит(ов) в areas после сверки: 7a2b4078 Merge task 61d0a89f-10de-4eeb-a134-0d7615d64f0e … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 97 коммит(ов) в areas после сверки: 7a2b4078 Merge task 61d0a89f-10de-4eeb-a134-0d7615d64f0e … |
@@ -69,10 +69,10 @@
 - [2026-09-02-alexeys-macbook-air-2-wake-lock.md](log/2026-09-02-alexeys-macbook-air-2-wake-lock.md) — wake-lock
 - [2026-09-02-alexeys-macbook-air-2-task-preparation-zsh-refspec.md](log/2026-09-02-alexeys-macbook-air-2-task-preparation-zsh-refspec.md) — task-preparation-zsh-refspec
 - [2026-09-02-alexeys-macbook-air-2-task-make-design-link.md](log/2026-09-02-alexeys-macbook-air-2-task-make-design-link.md) — 2026-09-02-alexeys-macbook-air-2-task-make-design-link
+- [2026-09-02-alexeys-macbook-air-2-task-activity.md](log/2026-09-02-alexeys-macbook-air-2-task-activity.md) — 2026-09-02-alexeys-macbook-air-2-task-activity
 - [2026-09-02-alexeys-macbook-air-2-project-settings-tab-routes.md](log/2026-09-02-alexeys-macbook-air-2-project-settings-tab-routes.md) — project-settings-tab-routes
 - [2026-09-02-alexeys-macbook-air-2-project-main-preflight-bootstrap.md](log/2026-09-02-alexeys-macbook-air-2-project-main-preflight-bootstrap.md) — project-main-preflight-bootstrap
 - [2026-09-02-alexeys-macbook-air-2-make-project-sync.md](log/2026-09-02-alexeys-macbook-air-2-make-project-sync.md) — 2026-09-02-alexeys-macbook-air-2-make-project-sync
-- [2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md](log/2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md) — machine-delete-sync
 
 ## Исторические планы
 

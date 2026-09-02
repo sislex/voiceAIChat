@@ -1232,3 +1232,56 @@ export function sanitizeBoardView(raw: unknown): Partial<BoardView> {
   }
   return view as Partial<BoardView>
 }
+
+// ---------------------------------------------------------------------------
+// Активность карточки как в Jira: комментарии, ворклог и история изменений.
+// Комментарии добавляют и правят и человек, и модель канбан-ассистента (via
+// различает их в ленте); историю пишет сервер сам при изменении полей.
+
+/** Кем внесена запись: человеком напрямую или моделью ассистента от его имени. */
+export type TaskActivityVia = 'user' | 'model'
+
+export interface TaskComment {
+  id: string
+  taskId: string
+  author: string
+  via: TaskActivityVia
+  text: string
+  createdAt: number
+  /** null — не правился; правка помечается «изменён» в ленте, как в Jira. */
+  updatedAt: number | null
+}
+
+export interface TaskWorklogEntry {
+  id: string
+  taskId: string
+  author: string
+  /** Затраченное время в минутах; UI показывает «2 ч 30 м». */
+  minutes: number
+  comment: string
+  /** Когда работа была сделана (задаёт автор), а не когда запись создана. */
+  startedAt: number
+  createdAt: number
+  updatedAt: number | null
+}
+
+export interface TaskHistoryEvent {
+  id: string
+  taskId: string
+  actor: string
+  via: TaskActivityVia
+  /** Код поля: title, description, acceptanceCriteria, column, assignee, priority, … */
+  field: string
+  from: string | null
+  to: string | null
+  at: number
+}
+
+/** Снимок вкладки «Активность»: три ленты одним запросом. */
+export interface TaskActivity {
+  comments: TaskComment[]
+  worklog: TaskWorklogEntry[]
+  history: TaskHistoryEvent[]
+  /** Сумма ворклога в минутах — итог считает сервер, а не каждый клиент. */
+  totalMinutes: number
+}

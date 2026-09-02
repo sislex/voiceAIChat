@@ -150,6 +150,9 @@ import {
   type TaskChatBadge,
   type TaskChatContext,
   type TaskChatCrumb,
+  type TaskActivity,
+  type TaskComment,
+  type TaskWorklogEntry,
   type TaskDesignLink,
   type ProjectDesignSource,
   type MakeTaskLink,
@@ -5971,8 +5974,51 @@ export class VoiceChatDb {
     set.push('updated_at = ?')
     vals.push(ts)
     this.db.prepare(`UPDATE tasks SET ${set.join(', ')} WHERE id = ? AND project_id = ?`).run(...vals, taskId, projectId)
+    // История изменений (вкладка «Активность», как в Jira): пишем только
+    // реально изменившиеся человекочитаемые поля — техника (позиции, ранги)
+    // человеку в истории не нужна.
+    this.recordTaskHistoryDiff(userId, projectId, taskId, current, fields, ts)
     this.touchProject(projectId, ts)
     return this.getTask(projectId, taskId)
+  }
+
+  /** Дифф видимых полей задачи → строки истории. Пустая строка и null равны. */
+  private recordTaskHistoryDiff(
+    actor: string,
+    projectId: string,
+    taskId: string,
+    before: Task,
+    fields: Record<string, unknown>,
+    at: number,
+    via: 'user' | 'model' = 'user'
+  ): void {
+    const norm = (value: unknown): string | null => {
+      if (value === undefined || value === null) return null
+      if (Array.isArray(value)) return value.length ? value.join(', ') : null
+      const text = String(value).trim()
+      return text === '' ? null : text
+    }
+    const watched: Array<[string, unknown, unknown]> = [
+      ['title', before.title, fields.title],
+      ['description', before.description, fields.description],
+      ['acceptanceCriteria', before.acceptanceCriteria, fields.acceptanceCriteria],
+      ['priority', before.priority, fields.priority],
+      ['assignee', before.assignee, fields.assignee],
+      ['storyPoints', before.storyPoints, fields.storyPoints],
+      ['dueDate', before.dueDate, fields.dueDate],
+      ['labels', before.labels, fields.labels],
+      ['skills', before.skills, fields.skills],
+      ['type', before.type, fields.type],
+      ['flagged', before.flagged, fields.flagged]
+    ]
+    const insert = this.db.prepare(`INSERT INTO task_history (id, project_id, task_id, actor, via, field, from_value, to_value, at) VALUES (?,?,?,?,?,?,?,?,?)`)
+    for (const [field, was, next] of watched) {
+      if (next === undefined) continue
+      const fromValue = norm(was)
+      const toValue = norm(next)
+      if (fromValue === toValue) continue
+      insert.run(this.newId(), projectId, taskId, actor, via, field, fromValue, toValue, at)
+    }
   }
 
   private renormalizeColumn(projectId: string, columnId: string): void {
@@ -5991,7 +6037,8 @@ export class VoiceChatDb {
     args: { columnId: string; afterId?: string | null; beforeId?: string | null }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
-    if (!this.getTask(projectId, taskId)) return null
+    const current = this.getTask(projectId, taskId)
+    if (!current) return null
     if (!this.columnInProject(projectId, args.columnId)) return null
     const ts = this.now()
     this.db.transaction(() => {
@@ -6035,9 +6082,102 @@ export class VoiceChatDb {
            WHERE id = ? AND project_id = ?`
         )
         .run(args.columnId, pos, ts, done, ts, taskId, projectId)
+      // История: перенос между колонками — главное событие жизни карточки.
+      // Перестановка внутри колонки историю не пишет: этап не изменился.
+      const fromColumn = this.db.prepare(`SELECT name FROM kanban_columns WHERE id = ?`).get(current.columnId) as { name: string } | undefined
+      const toColumn = this.db.prepare(`SELECT name FROM kanban_columns WHERE id = ?`).get(args.columnId) as { name: string } | undefined
+      if (current.columnId !== args.columnId) {
+        this.db.prepare(`INSERT INTO task_history (id, project_id, task_id, actor, via, field, from_value, to_value, at) VALUES (?,?,?,?,?,?,?,?,?)`)
+          .run(this.newId(), projectId, taskId, userId, 'user', 'column', fromColumn?.name ?? current.columnId, toColumn?.name ?? args.columnId, ts)
+      }
     })()
     this.touchProject(projectId, ts)
     return this.getTask(projectId, taskId)
+  }
+
+  // ---- Активность карточки: комментарии, ворклог, история (как в Jira) ----
+
+  /** Право редактировать чужую запись: автор, владелец проекта или админ. */
+  private canModerateTaskEntry(userId: string, projectId: string, author: string): boolean {
+    if (userId === author) return true
+    if (this.getUser(userId)?.role === 'admin') return true
+    const owner = this.db.prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`).get(projectId, userId)
+    return Boolean(owner)
+  }
+
+  taskActivity(userId: string, projectId: string, taskId: string): TaskActivity | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    const comments = (this.db.prepare(`SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC, rowid ASC`).all(taskId) as Array<Record<string, unknown>>)
+      .map((row) => ({ id: String(row.id), taskId, author: String(row.author), via: row.via === 'model' ? 'model' as const : 'user' as const, text: String(row.text), createdAt: Number(row.created_at), updatedAt: row.updated_at === null ? null : Number(row.updated_at) }))
+    const worklog = (this.db.prepare(`SELECT * FROM task_worklog WHERE task_id = ? ORDER BY started_at DESC, rowid DESC`).all(taskId) as Array<Record<string, unknown>>)
+      .map((row) => ({ id: String(row.id), taskId, author: String(row.author), minutes: Number(row.minutes), comment: String(row.comment), startedAt: Number(row.started_at), createdAt: Number(row.created_at), updatedAt: row.updated_at === null ? null : Number(row.updated_at) }))
+    const history = (this.db.prepare(`SELECT * FROM task_history WHERE task_id = ? ORDER BY at DESC, rowid DESC LIMIT 200`).all(taskId) as Array<Record<string, unknown>>)
+      .map((row) => ({ id: String(row.id), taskId, actor: String(row.actor), via: row.via === 'model' ? 'model' as const : 'user' as const, field: String(row.field), from: row.from_value === null ? null : String(row.from_value), to: row.to_value === null ? null : String(row.to_value), at: Number(row.at) }))
+    return { comments, worklog, history, totalMinutes: worklog.reduce((total, entry) => total + entry.minutes, 0) }
+  }
+
+  addTaskComment(userId: string, projectId: string, taskId: string, text: string, via: 'user' | 'model' = 'user'): TaskComment | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    const trimmed = text.trim()
+    if (!trimmed) throw new Error('Пустой комментарий сохранять нечего')
+    const id = this.newId(); const ts = this.now()
+    this.db.prepare(`INSERT INTO task_comments (id, project_id, task_id, author, via, text, created_at, updated_at) VALUES (?,?,?,?,?,?,?,NULL)`)
+      .run(id, projectId, taskId, userId, via, trimmed, ts)
+    this.touchProject(projectId, ts)
+    return { id, taskId, author: userId, via, text: trimmed, createdAt: ts, updatedAt: null }
+  }
+
+  updateTaskComment(userId: string, projectId: string, commentId: string, text: string): TaskComment | null {
+    const row = this.db.prepare(`SELECT * FROM task_comments WHERE id = ? AND project_id = ?`).get(commentId, projectId) as Record<string, unknown> | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return null
+    if (!this.canModerateTaskEntry(userId, projectId, String(row.author))) throw new Error('Комментарий может править автор, владелец проекта или админ')
+    const trimmed = text.trim()
+    if (!trimmed) throw new Error('Пустой комментарий сохранять нечего')
+    const ts = this.now()
+    this.db.prepare(`UPDATE task_comments SET text = ?, updated_at = ? WHERE id = ?`).run(trimmed, ts, commentId)
+    return { id: commentId, taskId: String(row.task_id), author: String(row.author), via: row.via === 'model' ? 'model' : 'user', text: trimmed, createdAt: Number(row.created_at), updatedAt: ts }
+  }
+
+  deleteTaskComment(userId: string, projectId: string, commentId: string): boolean {
+    const row = this.db.prepare(`SELECT author FROM task_comments WHERE id = ? AND project_id = ?`).get(commentId, projectId) as { author: string } | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return false
+    if (!this.canModerateTaskEntry(userId, projectId, row.author)) throw new Error('Комментарий может удалить автор, владелец проекта или админ')
+    return this.db.prepare(`DELETE FROM task_comments WHERE id = ?`).run(commentId).changes > 0
+  }
+
+  addTaskWorklog(userId: string, projectId: string, taskId: string, entry: { minutes: number; comment?: string; startedAt?: number }): TaskWorklogEntry | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    const minutes = Math.round(entry.minutes)
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60 * 31) throw new Error('Время — от 1 минуты до месяца')
+    const id = this.newId(); const ts = this.now()
+    const startedAt = entry.startedAt ?? ts
+    this.db.prepare(`INSERT INTO task_worklog (id, project_id, task_id, author, minutes, comment, started_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,NULL)`)
+      .run(id, projectId, taskId, userId, minutes, (entry.comment ?? '').trim(), startedAt, ts)
+    this.touchProject(projectId, ts)
+    return { id, taskId, author: userId, minutes, comment: (entry.comment ?? '').trim(), startedAt, createdAt: ts, updatedAt: null }
+  }
+
+  updateTaskWorklog(userId: string, projectId: string, entryId: string, patch: { minutes?: number; comment?: string; startedAt?: number }): TaskWorklogEntry | null {
+    const row = this.db.prepare(`SELECT * FROM task_worklog WHERE id = ? AND project_id = ?`).get(entryId, projectId) as Record<string, unknown> | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return null
+    if (!this.canModerateTaskEntry(userId, projectId, String(row.author))) throw new Error('Запись ворклога может править автор, владелец проекта или админ')
+    const minutes = patch.minutes === undefined ? Number(row.minutes) : Math.round(patch.minutes)
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60 * 31) throw new Error('Время — от 1 минуты до месяца')
+    const ts = this.now()
+    const comment = patch.comment === undefined ? String(row.comment) : patch.comment.trim()
+    const startedAt = patch.startedAt ?? Number(row.started_at)
+    this.db.prepare(`UPDATE task_worklog SET minutes = ?, comment = ?, started_at = ?, updated_at = ? WHERE id = ?`).run(minutes, comment, startedAt, ts, entryId)
+    return { id: entryId, taskId: String(row.task_id), author: String(row.author), minutes, comment, startedAt, createdAt: Number(row.created_at), updatedAt: ts }
+  }
+
+  deleteTaskWorklog(userId: string, projectId: string, entryId: string): boolean {
+    const row = this.db.prepare(`SELECT author FROM task_worklog WHERE id = ? AND project_id = ?`).get(entryId, projectId) as { author: string } | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return false
+    if (!this.canModerateTaskEntry(userId, projectId, row.author)) throw new Error('Запись ворклога может удалить автор, владелец проекта или админ')
+    return this.db.prepare(`DELETE FROM task_worklog WHERE id = ?`).run(entryId).changes > 0
   }
 
   deleteTask(userId: string, projectId: string, taskId: string): boolean {
