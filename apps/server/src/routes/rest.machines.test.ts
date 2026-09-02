@@ -5,6 +5,7 @@ import { signToken } from '../users/accounts.js'
 import type { FastifyInstance } from 'fastify'
 import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness, type InjOpts } from './restHarness.js'
+import { AGENT_VERSION } from '@voicechat/shared'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -365,6 +366,6 @@ describe('REST: утилиты машины (exec/fs)', () => {
   it('GET /api/agents/version публичен и отдаёт версию', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ version: '0.15.0' })
+    expect(res.json()).toEqual({ version: AGENT_VERSION })
   })
 })
