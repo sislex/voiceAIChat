@@ -838,7 +838,7 @@
   background: #edf1fb;
   border: 1px solid #dce4f6;
   border-bottom-right-radius: 4px;
-  /* Кнопка копирования всегда видна у вопроса, поэтому тексту нужен свой слот. */
+  /* Слот под кнопку сохраняет геометрию текста при hover, focus и copied. */
   padding-right: 52px;
 }
 .ai .bub {
@@ -7880,9 +7880,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    раскладки. Блоки возвращены в том виде, в каком были до мержа; правила
    инспектора контекста (`.context-*`) намеренно НЕ возвращены — их разметку
    убрал коммит «simplify context inspector». */
-/* Копия сообщения: у вопроса действие видно постоянно, у ответа модели —
-   раскрывается наведением/фокусом, как раньше. Интерактивная область 32×32 px
-   остаётся внутри пузыря и не перекрывает зарезервированный справа текст. */
+/* Копия сообщения скрыта в покое и раскрывается при наведении на пузырь,
+   собственном клавиатурном фокусе или после успешного копирования.
+   Интерактивная область 32×32 px остаётся внутри пузыря и не перекрывает
+   зарезервированный справа текст. */
 .copymsg {
   position: absolute;
   top: 6px;
@@ -7903,7 +7904,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background-color 0.12s, border-color 0.12s;
 }
-.me .copymsg,
+.me .bub:hover .copymsg,
 .ai .bub:hover .copymsg,
 .copymsg:focus-visible,
 .copymsg--copied {
