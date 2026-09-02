@@ -551,6 +551,17 @@ export const REST = {
   ciRunReport: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/report`,
   taskCiReport: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/report`,
+  // Активность карточки (как в Jira): комментарии, ворклог, история.
+  taskActivity: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/activity`,
+  taskComments: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/comments`,
+  taskComment: (id: string, taskId: string, commentId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
+  taskWorklog: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/worklog`,
+  taskWorklogEntry: (id: string, taskId: string, entryId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/worklog/${encodeURIComponent(entryId)}`,
   taskTimeline: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/timeline`,
   ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,

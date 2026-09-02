@@ -559,6 +559,19 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/projects/${encodeURIComponent(projectId)}/task-launch/preparation`, { method: 'POST', body: JSON.stringify(b) }),
     'tasks:get': ({ projectId, taskId }) =>
       req(REST.projectTask(projectId, taskId)),
+    'tasks:activity': ({ projectId, taskId }) => req(REST.taskActivity(projectId, taskId)),
+    'tasks:commentAdd': ({ projectId, taskId, ...b }) =>
+      req(REST.taskComments(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:commentUpdate': ({ projectId, taskId, commentId, ...b }) =>
+      req(REST.taskComment(projectId, taskId, commentId), { method: 'PATCH', body: JSON.stringify(b) }),
+    'tasks:commentDelete': ({ projectId, taskId, commentId }) =>
+      req(REST.taskComment(projectId, taskId, commentId), { method: 'DELETE' }),
+    'tasks:worklogAdd': ({ projectId, taskId, ...b }) =>
+      req(REST.taskWorklog(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:worklogUpdate': ({ projectId, taskId, entryId, ...b }) =>
+      req(REST.taskWorklogEntry(projectId, taskId, entryId), { method: 'PATCH', body: JSON.stringify(b) }),
+    'tasks:worklogDelete': ({ projectId, taskId, entryId }) =>
+      req(REST.taskWorklogEntry(projectId, taskId, entryId), { method: 'DELETE' }),
     'tasks:update': ({ projectId, taskId, ...b }) =>
       req(REST.projectTask(projectId, taskId), { method: 'PATCH', body: JSON.stringify(b) }),
     'tasks:move': ({ projectId, taskId, ...b }) =>
