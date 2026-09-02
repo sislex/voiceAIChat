@@ -269,7 +269,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const autonomy = conversation.assistantAutonomy ?? 'auto'
   const kindTools = [
     {
-      id: 'mcp-browser-preview', title: 'browser:* (веб-превью)', source: 'Вид чата: превью страницы',
+      id: 'mcp-browser-preview', title: 'browser:* (веб-превью)', source: 'Вид чата: превью страницы', readOnlyInPlan: false,
       scope: 'Браузер пользователя', tools: ['mcp__browser__*'],
       description: 'Клики, ввод и чтение страницы в браузере пользователя.',
       available: conversation.assistantKind !== 'make',
@@ -277,7 +277,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       whenUnavailable: 'В Make-чате браузерные инструменты не подключаются: панель — iframe проекта, и модель упиралась в таймауты.'
     },
     {
-      id: 'mcp-console-pty', title: 'console:* (живой терминал)', source: 'Вид чата: консоль с ассистентом',
+      id: 'mcp-console-pty', title: 'console:* (живой терминал)', source: 'Вид чата: консоль с ассистентом', readOnlyInPlan: true,
       scope: 'PTY-сессия чата', tools: ['mcp__console__*'],
       description: 'Пишет команды в открытую справа PTY-сессию.',
       available: conversation.assistantKind === 'console-reader',
@@ -285,7 +285,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       whenUnavailable: 'Появится только в чате «Консоль с ассистентом».'
     },
     {
-      id: 'mcp-make-files', title: 'make:* (файлы проекта)', source: 'Вид чата: Make',
+      id: 'mcp-make-files', title: 'make:* (файлы проекта)', source: 'Вид чата: Make', readOnlyInPlan: true,
       scope: 'Проект Make этого чата', tools: ['mcp__make__*'],
       description: 'Читает и пишет файлы проекта Make.',
       available: conversation.assistantKind === 'make',
@@ -293,7 +293,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       whenUnavailable: 'Появится только в чате Make.'
     },
     {
-      id: 'mcp-kanban-board', title: 'kanban:* (доска проекта)', source: 'Панель ассистента проекта',
+      id: 'mcp-kanban-board', title: 'kanban:* (доска проекта)', source: 'Панель ассистента проекта', readOnlyInPlan: true,
       scope: project?.name ?? 'Проект чата', tools: ['mcp__kanban__*'],
       description: 'Читает доску, задачи и открытый экран пользователя.',
       available: Boolean(conversation.projectId),
@@ -413,9 +413,13 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       // в чате с превью модель ходит браузером, а в Make правит файлы проекта.
       ...kindTools.map((tool) => contextItem({ id: tool.id, type: 'MCP-инструмент', source: tool.source, scope: tool.scope, priority: 'Возможность',
         title: tool.title, description: tool.description,
-        explanation: tool.available ? tool.whenAvailable : tool.whenUnavailable,
+        // Режим «Только планирование» подключает консоль, Make и канбан с
+        // &ro=1 (`turns.ts`): чтение работает, запись отклоняется. Без этой
+        // фразы пункт обещал полноценный инструмент, которого в плане нет.
+        explanation: (tool.available ? tool.whenAvailable : tool.whenUnavailable)
+          + (tool.available && tool.readOnlyInPlan && permissionMode === 'plan' ? ' Режим «Только планирование»: инструмент подключается только на чтение — запись отклоняется.' : ''),
         configured: true, available: tool.available, includedInNextTurn: tool.available,
-        details: { 'Инструменты': tool.tools, 'Подключает': tool.source } })),
+        details: { 'Инструменты': tool.tools, 'Подключает': tool.source, ...(tool.readOnlyInPlan ? { 'В режиме планирования': 'только чтение' } : {}) } })),
       ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } }))
     ] },
     { id: 'knowledge', order: 7, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
