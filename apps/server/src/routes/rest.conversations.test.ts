@@ -1177,6 +1177,24 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('в режиме планирования инструменты вида чата честно обещают только чтение', async () => {
+    // Ход подключает консоль, Make и канбан с &ro=1 в режиме «Только
+    // планирование» (turns.ts): чтение работает, запись отклоняется. Пункт
+    // инструмента обязан сказать это до отправки, а не обещать полный доступ.
+    const make = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make' } })).json()
+    const makeItem = async (): Promise<{ explanation: string; details?: Record<string, unknown> }> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${make.id}/context-snapshot` })).json()
+      return snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'mcp-make-files')
+    }
+    // Make-чат без машины у админа идёт в выбранном режиме — по умолчанию не план.
+    const before = await makeItem()
+    expect(before.details?.['В режиме планирования']).toBe('только чтение')
+
+    await inj({ method: 'PATCH', url: `/api/conversations/${make.id}`, payload: { execTarget: null, permissionMode: 'plan' } })
+    const after = await makeItem()
+    expect(after.explanation).toContain('только на чтение — запись отклоняется')
+  })
+
   it('перечисляет хинты CLI в «чего в тексте нет» с размерами из shared', async () => {
     // Исполнитель приклеивает к промпту свои системные хинты (БЗ, превью, Make,
     // канбан). Их условия сервер знает, тексты части хинтов лежат в shared —

@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 205 коммит(ов) в areas после сверки: a6a6c2ff Merge remote-tracking branch 'origin/main' into fix/project-main-preflight-bootstrap … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 223 коммит(ов) в areas после сверки: a6a6c2ff Merge remote-tracking branch 'origin/main' into fix/project-main-preflight-bootstrap … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 113 коммит(ов) в areas после сверки: 69a65e41 feat(context): хинты исполнителя CLI в «чего в тексте нет» и движок-исполнитель … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1054 коммит(ов) в areas после сверки: f8c7b050 Merge task 568f660a-84ef-4273-a76d-92ec2c57bf79 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1055 коммит(ов) в areas после сверки: e8050b21 docs(kb): update after merge 568f660a-84ef-4273-a76d-92ec2c57bf79 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 130 коммит(ов) в areas после сверки: f8c7b050 Merge task 568f660a-84ef-4273-a76d-92ec2c57bf79 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 169 коммит(ов) в areas после сверки: f8c7b050 Merge task 568f660a-84ef-4273-a76d-92ec2c57bf79 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 84 коммит(ов) в areas после сверки: a6a6c2ff Merge remote-tracking branch 'origin/main' into fix/project-main-preflight-bootstrap … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 520. Последние:
+Всего записей: 521. Последние:
 
 - [2026-09-02-alexeys-macbook-air-2-task-preparation-zsh-refspec.md](log/2026-09-02-alexeys-macbook-air-2-task-preparation-zsh-refspec.md) — task-preparation-zsh-refspec
 - [2026-09-02-alexeys-macbook-air-2-task-make-design-link.md](log/2026-09-02-alexeys-macbook-air-2-task-make-design-link.md) — 2026-09-02-alexeys-macbook-air-2-task-make-design-link
@@ -69,10 +69,10 @@
 - [2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md](log/2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md) — machine-delete-sync
 - [2026-09-02-alexeys-macbook-air-2-exact-make-files.md](log/2026-09-02-alexeys-macbook-air-2-exact-make-files.md) — exact-make-files
 - [2026-09-02-alexeys-macbook-air-2-copy-question-hover.md](log/2026-09-02-alexeys-macbook-air-2-copy-question-hover.md) — copy-question-hover
+- [2026-09-02-alexeys-macbook-air-2-context-inspector-round-26.md](log/2026-09-02-alexeys-macbook-air-2-context-inspector-round-26.md) — 2026-09-02-alexeys-macbook-air-2-context-inspector-round-26
 - [2026-09-02-alexeys-macbook-air-2-context-inspector-round-25.md](log/2026-09-02-alexeys-macbook-air-2-context-inspector-round-25.md) — 2026-09-02-alexeys-macbook-air-2-context-inspector-round-25
 - [2026-09-01-macbook-air-user-user-message-copy.md](log/2026-09-01-macbook-air-user-user-message-copy.md) — user-message-copy
 - [2026-09-01-macbook-air-user-unlimited-message-queue.md](log/2026-09-01-macbook-air-user-unlimited-message-queue.md) — unlimited-message-queue
-- [2026-09-01-macbook-air-user-login-application-enrollment.md](log/2026-09-01-macbook-air-user-login-application-enrollment.md) — login-application-enrollment
 
 ## Исторические планы
 
