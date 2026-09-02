@@ -195,6 +195,35 @@ describe('kanbanMcp', () => {
     expect(accepted.updated.title).toBe('Другое имя')
   })
 
+  it('комментарии карточки: модель добавляет, правит и удаляет с подтверждением', async () => {
+    await rpc(INIT)
+    const board = db.getBoard('ann', projectId)!
+    const taskId = db.createTask('ann', projectId, { columnId: board.columns[0]!.id, title: 'С комментами' })!.id
+
+    // Добавление и правка — обычные мутации (в автономии идут без вопросов).
+    const added = resultJson<{ comment: { id: string; via: string; author: string } }>((await rpc(call('task_comment_add', { taskId, text: 'Предлагаю уточнить критерии' }))).json())
+    expect(added.comment.via).toBe('model')
+    expect(added.comment.author).toBe('ann')
+
+    const updated = resultJson<{ comment: { text: string } }>((await rpc(call('task_comment_update', { taskId, commentId: added.comment.id, text: 'Уточнил сам' }))).json())
+    expect(updated.comment.text).toBe('Уточнил сам')
+
+    // Чтение активности отдаёт комментарий с пометкой модели.
+    const activity = resultJson<{ comments: Array<{ via: string }> }>((await rpc(call('task_comments', { taskId }))).json())
+    expect(activity.comments.map((comment) => comment.via)).toEqual(['model'])
+
+    // Удаление необратимо: подтверждение спрашивается даже в полной автономии.
+    uiActions.length = 0
+    const deleted = resultJson<{ deleted: string }>((await rpc(call('task_comment_delete', { taskId, commentId: added.comment.id }))).json())
+    expect(deleted.deleted).toBe(added.comment.id)
+    expect(uiActions.map((entry) => entry.action.kind)).toEqual(['confirm'])
+    expect(db.taskActivity('ann', projectId, taskId)!.comments).toEqual([])
+
+    // Ворклог от модели.
+    const entry = resultJson<{ entry: { minutes: number } }>((await rpc(call('task_worklog_add', { taskId, minutes: 45, comment: 'ревью' }))).json())
+    expect(entry.entry.minutes).toBe(45)
+  })
+
   it('настройки проекта спрашивают подтверждение даже в режиме автономии', async () => {
     await rpc(INIT)
     const result = resultJson<{ updated: { name: string } }>((await rpc(call('project_settings_update', { name: 'Chat 2' }))).json())

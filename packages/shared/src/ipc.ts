@@ -623,6 +623,14 @@ export interface IpcInvokeMap {
     }
     result: import('./types').TaskLaunchResult
   }
+  /** Активность карточки: три ленты одним снимком + CRUD комментариев и ворклога. */
+  'tasks:activity': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskActivity }
+  'tasks:commentAdd': { arg: { projectId: string; taskId: string; text: string }; result: import('./projects').TaskComment }
+  'tasks:commentUpdate': { arg: { projectId: string; taskId: string; commentId: string; text: string }; result: import('./projects').TaskComment }
+  'tasks:commentDelete': { arg: { projectId: string; taskId: string; commentId: string }; result: { ok: true } }
+  'tasks:worklogAdd': { arg: { projectId: string; taskId: string; minutes: number; comment?: string; startedAt?: number }; result: import('./projects').TaskWorklogEntry }
+  'tasks:worklogUpdate': { arg: { projectId: string; taskId: string; entryId: string; minutes?: number; comment?: string; startedAt?: number }; result: import('./projects').TaskWorklogEntry }
+  'tasks:worklogDelete': { arg: { projectId: string; taskId: string; entryId: string }; result: { ok: true } }
   'tasks:update': {
 
     arg: {
@@ -1419,6 +1427,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:get',
   'tasks:create',
   'tasks:createFromProposalInPreparation',
+  'tasks:activity',
+  'tasks:commentAdd',
+  'tasks:commentUpdate',
+  'tasks:commentDelete',
+  'tasks:worklogAdd',
+  'tasks:worklogUpdate',
+  'tasks:worklogDelete',
   'tasks:update',
   'tasks:move',
   'tasks:listPreparationRuns',

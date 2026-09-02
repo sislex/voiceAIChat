@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-02
-checked: 844bf44e
+checked: 1222584c
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1582,3 +1582,27 @@ Component QA — `createAutomatedQaRunner` в `apps/server/src/ci/componentQa.ts
 доски автопилоту нечего делать) с правкой прямо из карточки через мост
 `kanbanAssistant:setAutonomy`. Правка доступна не только админу: доска — данные
 проекта, а не безопасность платформы.
+
+
+## Активность карточки: комментарии, ворклог, история (как в Jira)
+
+Вкладка «Активность» в `TaskModal` (`TaskActivityPanel`) — три ленты с
+переключателем. **История** пишется сервером сама: `updateTask` диффом видимых
+полей (title, description, criteria, priority, assignee, storyPoints, dueDate,
+labels, skills, type, flagged), `moveTask` — переносом между колонками с их
+именами (перестановка внутри колонки историю не пишет). **Комментарии** и
+**ворклог** — CRUD; чужую запись правит и удаляет только автор, владелец
+проекта или админ (и все — только участники проекта: членство — граница
+видимости, роль — граница модерации). Итог ворклога считает сервер
+(`totalMinutes`).
+
+Таблицы `task_comments`, `task_worklog`, `task_history` (`via` различает
+человека и модель). REST: `GET tasks/:taskId/activity` (снимок трёх лент),
+CRUD `…/comments[/:commentId]` и `…/worklog[/:entryId]`; ошибка прав — 403
+словами. Мосты `tasks:activity`, `tasks:comment*`, `tasks:worklog*`.
+
+**Модель тоже работает с комментариями** — инструменты канбан-ассистента
+`task_comments` (чтение активности), `task_comment_add/update`,
+`task_comment_delete` (необратимо — подтверждение даже при полной автономии),
+`task_worklog_add`. Записи модели помечены `via='model'` и бейджем «модель»
+в ленте.
