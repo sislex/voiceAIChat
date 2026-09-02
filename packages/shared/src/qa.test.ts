@@ -60,6 +60,9 @@ describe('development readiness gate', () => {
       { id: 'code', kind: 'code' as const, status: 'available' as const, summary: 'Read', refs: ['qa.ts'], critical: true }
     ]
     expect(canConfirmDevelopmentReadiness(input).allowed).toBe(true)
+    input.sources.push({ id: 'design', kind: 'code', status: 'unavailable', summary: 'Живой шаблон нужен на реализации', refs: ['index.html'], critical: false })
+    expect(canConfirmDevelopmentReadiness(input).allowed).toBe(true)
+    expect(canConfirmDevelopmentReadiness(input).reasons).not.toContain('critical_source_unavailable:design')
     input.sources[1] = { ...input.sources[1], status: 'absent', summary: 'Файл не найден' }
     expect(canConfirmDevelopmentReadiness(input).reasons).toEqual(expect.arrayContaining([
       'missing_code_source', 'critical_source_unavailable:code'

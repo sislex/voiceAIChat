@@ -608,6 +608,14 @@ export function canStartCiRun(summary: { status: CiStatus } | null | undefined):
   return summary == null || !isActiveCiStatus(summary.status)
 }
 
+/**
+ * Доступно ли действие «Параллельно». В отличие от создания нового рана оно
+ * умеет продвинуть queued-run, но running и awaiting_input остаются защищены.
+ */
+export function canStartParallelCiRun(summary: { status: CiStatus } | null | undefined): boolean {
+  return summary?.status === 'queued' || canStartCiRun(summary)
+}
+
 // --- Способ запуска и распределение по машинам -----------------------------
 
 /**

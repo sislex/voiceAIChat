@@ -104,15 +104,26 @@ describe('TaskCard CI-панель', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'В очередь' })).toBeEnabled())
   })
 
-  it('кнопка «Параллельно» запускает мимо очереди и скрыта при активном ране', () => {
-    const onStartCiParallel = vi.fn()
-    const { rerender } = render(<TaskCard {...props({ onStartCi: vi.fn(), onStartCiParallel })} />)
+  it('кнопка «Параллельно» запускает новый или продвигает queued-ран, блокируя повторный клик', async () => {
+    let finish!: () => void
+    const onStartCiParallel = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    const { rerender } = render(<TaskCard {...props({
+      ciSummary: mkSummary({ status: 'queued' }),
+      onStartCi: vi.fn(),
+      onStartCiParallel
+    })} />)
     const parallel = screen.getByRole('button', { name: 'Параллельно' })
     expect(parallel).toHaveAttribute('title', 'Запустить задачу сразу, минуя общую очередь. Машина будет выбрана автоматически с учётом загрузки')
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
     fireEvent.click(parallel)
+    fireEvent.click(parallel)
+    expect(onStartCiParallel).toHaveBeenCalledTimes(1)
     expect(onStartCiParallel).toHaveBeenCalledWith('t1')
+    expect(screen.getByRole('button', { name: 'Параллельно' })).toBeDisabled()
+    finish()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Параллельно' })).toBeEnabled())
 
-    rerender(<TaskCard {...props({ ciSummary: mkSummary({ status: 'queued' }), onStartCi: vi.fn(), onStartCiParallel })} />)
+    rerender(<TaskCard {...props({ ciSummary: mkSummary({ status: 'running' }), onStartCi: vi.fn(), onStartCiParallel })} />)
     expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
   })
 

@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   canStartCiRun,
+  canStartParallelCiRun,
   extractImprovementFiles,
   canTransitionTestGroup,
   blockedGroupsAfterFailure,
@@ -147,6 +148,16 @@ describe('canStartCiRun', () => {
 
   it('покрыты все статусы: запуск закрыт ровно на активных', () => {
     for (const s of CI_STATUSES) expect(canStartCiRun({ status: s })).toBe(!isActiveCiStatus(s))
+  })
+})
+
+describe('canStartParallelCiRun', () => {
+  it('разрешает отсутствие, терминальный и queued-ран, но защищает выполняющийся и ожидающий ответа', () => {
+    expect(canStartParallelCiRun(null)).toBe(true)
+    expect(canStartParallelCiRun({ status: 'success' })).toBe(true)
+    expect(canStartParallelCiRun({ status: 'queued' })).toBe(true)
+    expect(canStartParallelCiRun({ status: 'running' })).toBe(false)
+    expect(canStartParallelCiRun({ status: 'awaiting_input' })).toBe(false)
   })
 })
 

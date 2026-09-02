@@ -7,7 +7,9 @@
   <style>
     body { font: 14px/1.45 -apple-system,sans-serif; margin: 0; padding: 28px; color: #1a1a1a; background: #fafaf7; }
     h1 { font-size: 22px; margin: 0 0 8px; } p { color: #555; }
-    form { display: grid; gap: 12px; margin-top: 22px; }
+    details { margin-top: 22px; }
+    summary { cursor: pointer; font-weight: 700; }
+    form { display: grid; gap: 12px; margin-top: 14px; }
     label { display: grid; gap: 5px; font-weight: 600; }
     input { padding: 10px; border: 1px solid #bbb; border-radius: 8px; font: inherit; }
     button { padding: 11px; border: 0; border-radius: 8px; background: #276b4d; color: white; font-weight: 700; }
@@ -16,14 +18,18 @@
 </head>
 <body>
   <h1>Подключить этот Mac</h1>
-  <p>Откройте приложение из ChatAI или войдите вручную. Пароль не сохраняется.</p>
-  <form>
-    <label>Адрес ChatAI<input name="serverUrl" type="url" placeholder="https://chat.example.com" required autofocus /></label>
-    <label>Логин<input name="login" autocomplete="username" required /></label>
-    <label>Пароль<input name="password" type="password" autocomplete="current-password" required /></label>
-    <button type="submit">Добавить текущее устройство</button>
-  </form>
-  <p id="message" role="status"></p>
+  <p>Вернитесь в ChatAI и нажмите «Подключить текущее устройство». Одноразовая ссылка откроет это приложение автоматически.</p>
+  <details>
+    <summary>Подключиться вручную</summary>
+    <p>Резервный способ: пароль используется только для запроса и не сохраняется.</p>
+    <form>
+      <label>Адрес ChatAI<input name="serverUrl" type="url" placeholder="https://chat.example.com" required autofocus /></label>
+      <label>Логин<input name="login" autocomplete="username" required /></label>
+      <label>Пароль<input name="password" type="password" autocomplete="current-password" required /></label>
+      <button type="submit" disabled>Добавить текущее устройство</button>
+    </form>
+  </details>
+  <p id="message" role="status" aria-live="polite"></p>
   <script type="module" src="./index.ts"></script>
 </body>
 </html>
