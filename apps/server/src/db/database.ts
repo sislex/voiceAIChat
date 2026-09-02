@@ -2986,14 +2986,43 @@ export class VoiceChatDb {
   }
 
   /**
-   * Удаляет машину. Связки с проектами уносит CASCADE (`project_machines`), а вот
-   * `projects.default_agent_id` — обычная колонка без внешнего ключа: не почистить
-   * её означает оставить проекту машину по умолчанию, которой больше нет (CI-ран
-   * такого проекта уходил бы в никуда). То же делает `unlinkMachine`.
+   * Атомарно удаляет принадлежащую пользователю машину и все активные ссылки на
+   * неё. Исторические записи с обязательным snapshot agent_id сохраняются.
+   * Возвращает false для отсутствующей или чужой машины.
    */
-  deleteAgent(userId: string, id: string): void {
-    this.db.prepare(`DELETE FROM agents WHERE id = ? AND user_id = ?`).run(id, userId)
-    this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`).run(id)
+  deleteAgent(userId: string, id: string): boolean {
+    return this.db.transaction(() => {
+      const owned = this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(id, userId)
+      if (!owned) return false
+
+      // Обе таблицы имеют RESTRICT одновременно на agents и machine_storages,
+      // поэтому их необходимо очистить до каскадного удаления storage.
+      this.db.prepare(`DELETE FROM chat_storage_bindings WHERE machine_id = ?`).run(id)
+      this.db.prepare(`DELETE FROM conversation_workspaces WHERE machine_id = ?`).run(id)
+
+      // Активные и nullable-привязки теряют машину, но история ран/checkout
+      // сохраняется. Обязательные snapshot-id в merge_runs/task_repositories не
+      // являются FK и намеренно остаются частью исторической записи.
+      this.db.prepare(`DELETE FROM git_workspace_locks WHERE agent_id = ?`).run(id)
+      this.db.prepare(`UPDATE ci_workspaces SET agent_id = NULL WHERE agent_id = ?`).run(id)
+      this.db.prepare(`UPDATE ci_runs SET agent_id = NULL WHERE agent_id = ?`).run(id)
+      this.db.prepare(`UPDATE ci_test_runs SET agent_id = NULL WHERE agent_id = ?`).run(id)
+      this.db.prepare(`UPDATE conversations SET exec_target = NULL WHERE user_id = ? AND exec_target = ?`).run(userId, id)
+      this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`).run(id)
+      this.db.prepare(`UPDATE projects SET production_agent_id = NULL WHERE production_agent_id = ?`).run(id)
+
+      const settings = this.readSettings(userId)
+      if (settings.execTarget === id || settings.defaultAgentId === id) {
+        this.saveSettings(userId, {
+          ...settings,
+          ...(settings.execTarget === id ? { execTarget: null } : {}),
+          ...(settings.defaultAgentId === id ? { defaultAgentId: null } : {})
+        })
+      }
+
+      this.db.prepare(`DELETE FROM agents WHERE id = ? AND user_id = ?`).run(id, userId)
+      return true
+    })()
   }
 
   /** Обновляет last_seen (при регистрации и по pong). */

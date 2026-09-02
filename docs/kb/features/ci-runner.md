@@ -1070,6 +1070,14 @@ Development-run нельзя запустить из `backlog` или `preparati
 `npm_config_cache` строятся одной portable-функцией shared для POSIX, Termux,
 macOS, Windows drive, UNC и MSYS-путей. Bootstrap не зависит от чата задачи.
 
+Перед запуском подготовки задачи общая рабочая копия проекта обновляет настроенную
+базовую ветку только fast-forward. Fetch обязан использовать полный refspec
+`refs/heads/${base}:refs/remotes/origin/${base}`, после чего merge идёт от
+`refs/remotes/origin/${base}`. Фигурные скобки существенны: запись
+`$base:refs` неоднозначно разбирается shell и в zsh приводила к склеенной ссылке
+вида `refs/heads/mainefs/remotes/origin/main`. До fetch проверяются чистое дерево
+и совпадение текущей ветки с базовой.
+
 Существующий каталог считается checkout только после успешного
 `git rev-parse --is-inside-work-tree`. Для нового полного development-рана
 tracked и untracked изменения сначала проверяются командой

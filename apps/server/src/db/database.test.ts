@@ -824,6 +824,67 @@ describe('VoiceChatDb — хранилища машин', () => {
     expect(() => db.saveChatStorageBinding(U, { ...binding, relativePath: '../outside' })).toThrow()
     db.close()
   })
+
+  it('атомарно удаляет машину с RESTRICT-связями и сбрасывает логические цели', () => {
+    const db = makeDb()
+    db.createUser(U, '', 'admin')
+    const machine = db.createAgent(U, 'MacBook')
+    const storage = db.saveMachineStorage(U, machine.id, '/Users/admin/ChatAI', 1)
+    const conversation = db.createConversation(U, 'Storage')
+    const project = db.createProject(U, { name: 'Project' })
+    db.linkMachine(U, project.id, machine.id, storage.id)
+    db.setProjectDefaultMachine(U, project.id, machine.id)
+    db.saveChatStorageBinding(U, {
+      conversationId: conversation.id,
+      machineId: machine.id,
+      storageId: storage.id,
+      relativePath: 'chats/chat-1'
+    })
+    db.saveSettings(U, { ...DEFAULT_SETTINGS, execTarget: machine.id, defaultAgentId: machine.id })
+
+    const raw = (db as unknown as { db: Database.Database }).db
+    raw.prepare(`UPDATE conversations SET exec_target=? WHERE id=?`).run(machine.id, conversation.id)
+    raw.prepare(
+      `INSERT INTO conversation_workspaces
+       (conversation_id,project_id,machine_id,storage_id,mode,base_sha,branch,repository_path,state,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`
+    ).run(conversation.id, project.id, machine.id, storage.id, 'task', 'abc', 'CHAT-395', '/repo/task', 'active', 1)
+
+    expect(db.deleteAgent(U, machine.id)).toBe(true)
+    expect(db.deleteAgent(U, machine.id)).toBe(false)
+    expect(db.listAgents(U)).toEqual([])
+    expect(db.listMachineStorages(U, machine.id)).toEqual([])
+    expect(db.getChatStorageBinding(U, conversation.id)).toBeNull()
+    expect(db.getConversation(U, conversation.id)).toMatchObject({ id: conversation.id, execTarget: null })
+    expect(db.getProject(U, project.id)).toMatchObject({ id: project.id, defaultAgentId: null, machines: [] })
+    expect(db.getSettings(U)).toMatchObject({ execTarget: null, defaultAgentId: null })
+    expect(raw.prepare(`SELECT 1 FROM conversation_workspaces WHERE conversation_id=?`).get(conversation.id)).toBeUndefined()
+    expect(raw.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
+    db.close()
+  })
+
+  it('откатывает очистку связей, если финальное удаление машины падает', () => {
+    const db = makeDb()
+    db.createUser(U, '', 'admin')
+    const machine = db.createAgent(U, 'MacBook')
+    const storage = db.saveMachineStorage(U, machine.id, '/Users/admin/ChatAI', 1)
+    const conversation = db.createConversation(U, 'Storage')
+    db.saveChatStorageBinding(U, {
+      conversationId: conversation.id,
+      machineId: machine.id,
+      storageId: storage.id,
+      relativePath: 'chats/chat-1'
+    })
+    const raw = (db as unknown as { db: Database.Database }).db
+    raw.exec(`CREATE TRIGGER fail_agent_delete BEFORE DELETE ON agents BEGIN SELECT RAISE(ABORT, 'forced'); END`)
+
+    expect(() => db.deleteAgent(U, machine.id)).toThrow('forced')
+    expect(db.listAgents(U)).toHaveLength(1)
+    expect(db.listMachineStorages(U, machine.id)).toHaveLength(1)
+    expect(db.getChatStorageBinding(U, conversation.id)).not.toBeNull()
+    expect(raw.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
+    db.close()
+  })
 })
 
 describe('VoiceChatDb — персистентная очередь ходов', () => {
