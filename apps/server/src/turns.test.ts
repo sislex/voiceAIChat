@@ -187,8 +187,39 @@ describe('turns: актуальная main проекта', () => {
       const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
       void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'проверь код' }] })
     })
-    expect(calls).toEqual([expect.objectContaining({ projectId: project.id, agentId: agent.id, path: '/srv/project', branch: 'main' })])
+    expect(calls).toEqual([expect.objectContaining({ projectId: project.id, agentId: agent.id, path: '/srv/project', branch: 'main', gitUrl: 'https://example.test/p.git' })])
     expect(rec.last()?.prompt).toContain(`main @ ${'a'.repeat(40)}`)
+    db.close()
+  })
+
+  it('чат Git-проекта без привязанной машины не блокируется: preflight пропущен, модель предупреждена', async () => {
+    const db = freshDb()
+    // Свежий проект: gitUrl задан, машин к проекту не привязано, ход идёт на
+    // машину пользователя по умолчанию.
+    const project = db.createProject(U, { name: 'P', gitUrl: 'https://example.test/p.git' })
+    db.createAgent(U, 'Mac')
+    const conv = db.createConversation(U, 'Проектный чат')
+    db.setConversationProject(U, conv.id, project.id)
+    db.addMessage(U, conv.id, 'u0', 'проверь код', '10:00')
+    const rec = recorder()
+    const calls: unknown[] = []
+    const turns = createTurnManager({
+      db, claude: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret',
+      ensureProjectMainCurrent: async (args) => { calls.push(args); return { baseSha: 'a'.repeat(40) } }
+    })
+    const errors: string[] = []
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => {
+        if (message.t === 'claude.error') errors.push(message.message)
+        if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() }
+      })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'проверь код' }] })
+    })
+    expect(errors).toEqual([])
+    expect(calls).toEqual([])
+    expect(rec.last()?.prompt).toContain('не привязана к проекту')
+    expect(rec.last()?.prompt).not.toContain('Системный preflight подтвердил')
     db.close()
   })
 
