@@ -228,3 +228,49 @@ export const HistoryDominates: Story = {
     }
   })]
 }
+
+/**
+ * Пресет применяется через предпросмотр: выбор в списке ничего не меняет,
+ * панель показывает «выключит N / вернёт M», и только кнопка трогает настройки.
+ * Состояние достижимо действием — доводит `play`.
+ */
+export const PresetPreviewFlow: Story = {
+  args: {
+    contextPresets: [{ id: 'preset-min', name: 'Минимальный', disabled: ['personalization'] }],
+    onSavePresets: async () => {}
+  },
+  decorators: [withBridges((bridges) => {
+    bridges.api['conversations:contextSnapshot'] = async () => snapshot()
+  })],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const picker = await canvas.findByRole('combobox', { name: 'Применить пресет контекста' })
+    await userEvent.selectOptions(picker, 'preset-min')
+    const panel = await canvas.findByTestId('context-preset-preview')
+    await expect(panel).toHaveTextContent('выключит 1')
+  }
+}
+
+/**
+ * Журнал с обоими видами событий: тумблер источника (можно «Отменить», пока
+ * состояние совпадает с записью) и смена настройки со значением («изменил →
+ * plan»), которую тумблером не отменить.
+ */
+export const JournalWithSettings: Story = {
+  decorators: [withBridges((bridges) => {
+    bridges.api['conversations:contextSnapshot'] = async () => ({
+      ...snapshot({ personalizationEnabled: false }),
+      changes: [
+        { at: Date.UTC(2026, 8, 1, 10, 5), actor: 'admin', itemId: 'permission-mode', enabled: true, value: 'plan' },
+        { at: Date.UTC(2026, 8, 1, 10, 0), actor: 'marina', itemId: 'personalization', enabled: false }
+      ]
+    })
+  })],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const log = await canvas.findByTestId('context-changes')
+    await userEvent.click(within(log).getByText('Журнал изменений контекста'))
+    await expect(within(log).getByRole('button', { name: 'Отменить' })).toBeInTheDocument()
+    await expect(log).toHaveTextContent('изменил')
+  }
+}
