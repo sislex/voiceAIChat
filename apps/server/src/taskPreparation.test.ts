@@ -3,7 +3,7 @@
 // реальный CLI в тестах не стартует.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { execFileSync, execSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -197,6 +197,69 @@ describe('синхронизация общей базовой ветки пер
       expect(git('-C', checkout, 'rev-parse', 'HEAD')).toBe(remoteHead)
       expect(git('-C', checkout, 'rev-parse', 'refs/remotes/origin/main')).toBe(remoteHead)
       expect(git('-C', checkout, 'for-each-ref', '--format=%(refname)')).not.toContain('refs/heads/mainefs/remotes/origin/main')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('пустой или отсутствующий projectWorkdir клонирует по gitUrl, непустой чужой каталог отвергает', () => {
+    const root = mkdtempSync(join(tmpdir(), 'vc-main-bootstrap-'))
+    const origin = join(root, 'origin.git')
+    const seed = join(root, 'seed')
+    const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim()
+    try {
+      git('init', '--bare', origin)
+      git('init', '-b', 'main', seed)
+      git('-C', seed, 'config', 'user.email', 'test@example.com')
+      git('-C', seed, 'config', 'user.name', 'Test')
+      writeFileSync(join(seed, 'value.txt'), 'one\n')
+      git('-C', seed, 'add', 'value.txt')
+      git('-C', seed, 'commit', '-m', 'first')
+      git('-C', seed, 'remote', 'add', 'origin', origin)
+      git('-C', seed, 'push', '-u', 'origin', 'main')
+      const remoteHead = git('-C', seed, 'rev-parse', 'HEAD')
+
+      // Так выглядит каталог после привязки машины: materialize сделал только mkdir.
+      const empty = join(root, 'projects', 'p1', 'worktree')
+      mkdirSync(empty, { recursive: true })
+      const fromEmpty = execSync(projectMainRefreshScript(empty, 'main', origin), { shell: '/bin/sh', stdio: 'pipe', encoding: 'utf8' })
+      expect(fromEmpty).toContain(`BASE_SHA=${remoteHead}`)
+      expect(git('-C', empty, 'branch', '--show-current')).toBe('main')
+      expect(git('-C', empty, 'config', '--get', 'remote.origin.url')).toBe(origin)
+
+      const missing = join(root, 'projects', 'p2', 'worktree')
+      const fromMissing = execSync(projectMainRefreshScript(missing, 'main', origin), { shell: '/bin/sh', stdio: 'pipe', encoding: 'utf8' })
+      expect(fromMissing).toContain(`BASE_SHA=${remoteHead}`)
+
+      // Повторный вызов на уже склонированном каталоге — обычный fast-forward, без клона.
+      const again = execSync(projectMainRefreshScript(empty, 'main', origin), { shell: '/bin/sh', stdio: 'pipe', encoding: 'utf8' })
+      expect(again).toContain(`BASE_SHA=${remoteHead}`)
+
+      // Без gitUrl пустой каталог — прежняя ошибка «не Git-репозиторий».
+      const noUrl = join(root, 'projects', 'p3', 'worktree')
+      mkdirSync(noUrl, { recursive: true })
+      expect(() => execSync(projectMainRefreshScript(noUrl, 'main'), { shell: '/bin/sh', stdio: 'pipe' })).toThrow(/не является Git-репозиторием/)
+
+      // Непустой каталог без репозитория не перезаписывается даже при известном gitUrl.
+      const foreign = join(root, 'projects', 'p4', 'worktree')
+      mkdirSync(foreign, { recursive: true })
+      writeFileSync(join(foreign, 'notes.txt'), 'чужое\n')
+      expect(() => execSync(projectMainRefreshScript(foreign, 'main', origin), { shell: '/bin/sh', stdio: 'pipe' })).toThrow(/не является Git-репозиторием/)
+      expect(readFileSync(join(foreign, 'notes.txt'), 'utf8')).toBe('чужое\n')
+
+      // Подкаталог чужого репозитория — не корень рабочего дерева, а значит не копия проекта.
+      const nested = join(seed, 'nested')
+      mkdirSync(nested)
+      writeFileSync(join(nested, 'x.txt'), 'x\n')
+      expect(() => execSync(projectMainRefreshScript(nested, 'main', origin), { shell: '/bin/sh', stdio: 'pipe' })).toThrow(/не является Git-репозиторием/)
+
+      // Каталог от `git worktree add` — полноценный корень с `.git`-файлом, принимается.
+      git('-C', seed, 'branch', 'aside')
+      git('-C', seed, 'checkout', 'aside')
+      const linked = join(root, 'linked')
+      git('-C', seed, 'worktree', 'add', linked, 'main')
+      const fromLinked = execSync(projectMainRefreshScript(linked, 'main', origin), { shell: '/bin/sh', stdio: 'pipe', encoding: 'utf8' })
+      expect(fromLinked).toContain(`BASE_SHA=${remoteHead}`)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

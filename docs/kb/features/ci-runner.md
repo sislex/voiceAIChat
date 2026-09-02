@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-09-02
-checked: ac1a87f0
+checked: d36f2147
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -831,7 +831,9 @@ reconnect либо после пользовательской мутации. �
 
 Для Git-проекта сервер до первого LLM-вызова подготовки и перед ходом в обычном
 проектном чате синхронизирует одну общую рабочую копию на выбранной машине через
-`ensureProjectMainCurrent`. Он требует чистое дерево и текущую базовую ветку,
+`ensureProjectMainCurrent`. Пустой или отсутствующий каталог он сначала клонирует
+по `gitUrl` (`projectWorkdir` после привязки машины пуст — см. machines.md), затем
+требует чистое дерево и текущую базовую ветку,
 явно обновляет `refs/remotes/origin/<base>`, делает `merge --ff-only` и сверяет
 локальный SHA с remote SHA. Поэтому если `origin/main` ушёл вперёд, локальный
 `main` обновляется в каждой новой попытке подготовки; dirty checkout, другая
