@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import type { AddressInfo } from 'node:net'
 import { WebSocket } from 'ws'
-import { buildServer, taskPreparationFailure, taskPreparationModel } from './server.js'
+import { buildServer, projectMainRefreshScript, taskPreparationFailure, taskPreparationModel } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
@@ -153,6 +153,18 @@ async function settled(token: string, runId: string): Promise<TaskPreparationRun
 function useCodex(userId: string): void {
   db.saveSettings(userId, { ...DEFAULT_SETTINGS, llmProvider: 'codex' })
 }
+
+describe('синхронизация общей базовой ветки перед подготовкой', () => {
+  it('совместима с zsh и fast-forward обновляет отставший main до origin/main', () => {
+    const script = projectMainRefreshScript('/srv/project', 'main')
+
+    expect(script).toContain('worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"')
+    expect(script).not.toMatch(/(?:^|\n)status=/)
+    expect(script.indexOf(' fetch --no-tags origin ')).toBeLessThan(script.indexOf(' merge --ff-only '))
+    expect(script).toContain('merge --ff-only "refs/remotes/origin/$base"')
+    expect(script).toContain('test "$local_sha" = "$remote_sha"')
+  })
+})
 
 describe('подготовка к разработке: движок из настроек', () => {
   it('публикует адресные WS-инвалидации и не рассылает полную доску на каждую текстовую дельту', async () => {
