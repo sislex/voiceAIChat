@@ -34,6 +34,10 @@ import {
   toolNameForContextId,
   sanitizeSettingsPatch,
   claudeModelAlias,
+  kbToolHint,
+  previewToolHint,
+  MAKE_ASSISTANT_HINT,
+  KANBAN_ASSISTANT_HINT,
   firstAllowedProvider,
   isProviderAllowed,
   CLAUDE_MODELS,
@@ -156,6 +160,14 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const selectedModel = conversation.llmProvider === provider
     ? conversation.llmModel
     : (projectLlm && projectLlm.provider === provider ? projectLlm.model : null)
+  /**
+   * Движок-исполнитель — по правилам хода (`turns.ts`): закреплённый в
+   * разговоре/проекте движок, недоступный роли пользователя, молча заменяется
+   * дефолтным. Пока снимок об этом молчал, «какой раннер исполнит ход» было
+   * видно только по факту исполнения.
+   */
+  const wantedEngineId = conversation.llmEngineId ?? projectLlm?.llmEngineId ?? settings.llmEngineId ?? null
+  const engineResolution = db.resolveLlmEngine(wantedEngineId, provider, role)
   // Модель Claude приводится к алиасу меню тем же `claudeModelAlias`, что и в
   // ходе: сохранённое старое значение («opus») исполнитель резолвит в «opus[1m]»,
   // и показывать сырое значение значит называть не ту модель.
@@ -356,7 +368,11 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         ...(conversation.llmProvider
           ? { overriddenFrom: `${projectLlm?.provider ?? settings.llmProvider} · ${projectLlm?.model ?? ((settings.llmProvider === 'codex' ? settings.codexModel : settings.model) || 'модель из конфигурации CLI')}` }
           : { inheritedFrom: projectLlm ? 'настройки проекта' : 'общие настройки пользователя' })
-      } }),
+      },
+        details: {
+          'Исполнитель': engineResolution.engine ? engineResolution.engine.name : 'встроенный запуск CLI на сервере',
+          ...(engineResolution.substituted ? { 'Замена движка': 'закреплённый исполнитель недоступен вашей роли или выключен — взят доступный по умолчанию' } : {})
+        } }),
       // Политика машины — часть ответа «что модель сможет сделать»: каталоги и
       // запрещённые команды ограничивают её сильнее, чем режим прав.
       contextItem({ id: 'machine', type: 'Настройка разговора', source: resolution?.source === 'explicit' ? 'Разговор' : 'Резолвер сервера', scope: agent?.name ?? resolution?.agentId ?? 'Сервер', priority: '7 · конфигурация', title: 'Машина выполнения', description: agent?.name ?? 'Доступной машины нет', explanation: resolution?.error ? `Недоступна: ${resolution.error}.` : `Источник: ${resolution?.source ?? 'none'}.`, configured: conversation.execTarget !== null, available: machineAvailable, includedInNextTurn: machineAvailable, details: agent
@@ -607,6 +623,16 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     })
     warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
   }
+  // Закреплённый движок-исполнитель недоступен: ход пойдёт через другой раннер,
+  // и человек должен узнать об этом до отправки, а не по логам исполнения.
+  if (engineResolution.substituted) {
+    warnings.push({
+      itemId: 'llm',
+      level: 'notice',
+      text: `Закреплённый движок-исполнитель недоступен (роль или выключен) — ход выполнит «${engineResolution.engine?.name ?? 'встроенный запуск CLI'}».`
+    })
+    warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+  }
   // История больше половины хода: выключать источники в таком чате бессмысленно
   // — место занимают сообщения, а не настройки, и совет должен быть другим.
   if (!resumeId && historyText.length > previewText.length && approxTokens(historyText.length) > CONTEXT_HISTORY_TOKENS_NOTICE) {
@@ -691,6 +717,28 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         .filter((entry): entry is { model: string; costUsd: number } => entry.costUsd !== null),
       omitted: [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
+        // Системные хинты, которые к промпту приклеивает сам исполнитель CLI.
+        // Их условия сервер знает (машина, режим БЗ, вид чата), а тексты для
+        // части хинтов лежат в shared — тогда называем и размер. Без этих строк
+        // «полный просмотр» молчал о заметной части того, что читает модель.
+        ...(machineAvailable
+          ? ['Хинт CLI про машину: встроенный Bash отключён, команды и файлы идут через mcp__remote__* (текст живёт в исполнителе).']
+          : ['Хинт CLI: машина не выбрана — shell-команды этому ходу запрещены (текст живёт в исполнителе).']),
+        ...(kbMode !== 'off'
+          ? [`Хинт CLI про инструменты базы знаний (режим «${kbMode}»): ≈${approxTokens(kbToolHint(kbMode).length)} токенов.`]
+          : []),
+        ...(conversation.assistantKind !== 'make'
+          ? [`Хинт CLI про браузер превью: ≈${approxTokens(previewToolHint().length)} токенов (в чатах с поверхностью превью).`]
+          : []),
+        ...(conversation.assistantKind === 'make'
+          ? [`Хинт CLI ассистента Make: ≈${approxTokens(MAKE_ASSISTANT_HINT.length)} токенов.`]
+          : []),
+        ...(conversation.assistantKind === 'console-reader'
+          ? ['Хинт CLI про живую консоль: работа в PTY-сессии пользователя (текст живёт в исполнителе).']
+          : []),
+        ...(conversation.projectId
+          ? [`Хинт CLI канбан-ассистента (только ходы из панели): ≈${approxTokens(KANBAN_ASSISTANT_HINT.length)} токенов.`]
+          : []),
         // Эти блоки собираются в момент хода из того, что происходит на экране
         // или из режима запуска: показать их «как будет» снимок не может, но
         // молчать о них тоже нельзя — человек видит их следы в ответах.
