@@ -187,7 +187,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Создать разговор' }))
 
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
-    expect(create).toHaveBeenCalledWith({ title: 'Новый разговор', projectId: project.id })
+    expect(create).toHaveBeenCalledWith({ title: 'Новый разговор', scope: 'chat', projectId: project.id })
     const created = api._state.conversations.at(-1)
     expect(created?.projectId).toBe(project.id)
     expect(window.location.hash).toBe(`#/chat/${created?.id}`)
@@ -315,7 +315,7 @@ describe('App — отдельная страница Web Reader', () => {
     }
   })
 
-  it('селектор перечисляет typed и legacy reader-чаты и подсвечивает активный', async () => {
+  it('селектор перечисляет только scope=web-reader и отклоняет legacy chat из URL', async () => {
     const { api } = await seededApi()
     await api['conversations:create']({ title: 'Reader', assistantKind: 'web-recorder' })
     const legacy = await api['conversations:create']({ title: 'Старый ридер' })
@@ -324,9 +324,9 @@ describe('App — отдельная страница Web Reader', () => {
     render(<App api={api} delays={SLOW} />)
 
     const select = await screen.findByLabelText('Разговор Web Reader')
-    await waitFor(() => expect(select).toHaveValue(legacy.id))
+    await waitFor(() => expect(select).not.toHaveValue(legacy.id))
     expect(screen.getByRole('option', { name: 'Reader' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Старый ридер' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Старый ридер' })).not.toBeInTheDocument()
     // Обычные чаты в селектор не попадают, плейсхолдера при подсвеченном активном нет.
     expect(screen.queryByRole('option', { name: 'Поездка в Лиссабон' })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Чат не выбран' })).not.toBeInTheDocument()

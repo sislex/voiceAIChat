@@ -60,6 +60,7 @@ import {
   type AgentCreated,
   type AgentPolicy,
   type Conversation,
+  type ConversationScope,
   type ContextChangeEvent,
   type ConversationStatus,
   DEFAULT_CONVERSATION_STATUS,
@@ -367,6 +368,7 @@ interface ConversationRow {
   preview_url: string | null
   task_id: string | null
   assistant_kind: string | null
+  scope: string
   assistant_autonomy: string | null
   status: string | null
   last_exec_target?: string | null
@@ -1067,6 +1069,18 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'assistant_kind')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN assistant_kind TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'scope')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN scope TEXT NOT NULL DEFAULT 'chat'`)
+      this.db.exec(`UPDATE conversations SET scope = CASE
+        WHEN task_id IS NOT NULL AND project_id IS NOT NULL THEN 'kanban'
+        WHEN assistant_kind = 'kanban' AND project_id IS NOT NULL THEN 'kanban'
+        WHEN assistant_kind = 'make' THEN 'make'
+        WHEN assistant_kind = 'console-reader' THEN 'console'
+        WHEN assistant_kind = 'playwright-reader' THEN 'playwright-reader'
+        WHEN assistant_kind = 'web-recorder' THEN 'web-reader'
+        ELSE 'chat' END`)
+    }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_user_scope_project_updated ON conversations(user_id, scope, project_id, updated_at DESC)`)
     if (!convCols.some((c) => c.name === 'status')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
     }
@@ -1595,18 +1609,20 @@ export class VoiceChatDb {
     return row?.user_id ?? null
   }
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null, projectId: string | null = null): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null, projectId: string | null = null, requestedScope?: ConversationScope): Conversation {
+    const scope = requestedScope ?? (assistantKind === 'make' ? 'make' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'web-recorder' ? 'web-reader' : 'chat')
+    if (scope === 'kanban' && !projectId) throw new Error('projectId is required for kanban')
     const project = projectId ? this.getProject(userId, projectId) : null
-    if (projectId && (!project || assistantKind === 'playwright-reader')) throw new Error('project not found')
+    if (projectId && !project) throw new Error('project not found')
     const skillNames = project?.skills ?? []
     const id = this.newId()
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names)
-         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names, scope)
+         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames))
+      .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames), scope)
     // Дефолтный пресет контекста: применяется сразу при создании, иначе
     // «минимальный контекст» действует только после того, как человек вспомнит
     // про кнопку. Пункты безопасности пресет не трогает — их фильтрует запись.
@@ -1619,7 +1635,7 @@ export class VoiceChatDb {
       this.db.prepare(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`)
         .run(JSON.stringify(disabledContext), id, userId)
     }
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -1685,8 +1701,8 @@ export class VoiceChatDb {
     const id = this.newId()
     const ts = this.now()
     this.db.prepare(
-      `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind)
-       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban')`
+      `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind, scope)
+       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban', 'kanban')`
     ).run(id, `Ассистент · ${project.name}`, ts, ts, userId, projectId)
     return this.getConversation(userId, id)
   }
@@ -1698,7 +1714,9 @@ export class VoiceChatDb {
    * задачу вернули в работу, чат снова в списке. Доступ к скрытому чату
    * остаётся: `getConversation` его отдаёт, карточка задачи открывает.
    */
-  listConversations(userId: string, opts?: { includeCompleted?: boolean }): Conversation[] {
+  listConversations(userId: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Conversation[] {
+    const scope = opts?.scope ?? 'chat'
+    if (scope === 'kanban' && !opts?.projectId) return []
     const rows = this.db
       .prepare(
         `SELECT c.*,
@@ -1707,17 +1725,18 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader', 'make'))
+           AND c.scope = ?
+           AND (? <> 'kanban' OR c.project_id = ?)
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
-      .all(userId, opts?.includeCompleted ? 1 : 0) as Array<ConversationRow & { message_count: number }>
+      .all(userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0) as Array<ConversationRow & { message_count: number }>
     const costs = this.conversationCosts(rows)
     return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
   }
 
-  getConversation(userId: string, id: string): Conversation | null {
+  getConversation(userId: string, id: string, context?: { scope: ConversationScope; projectId?: string }): Conversation | null {
     const row = this.db
       .prepare(`SELECT c.*,
                        (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
@@ -1725,6 +1744,7 @@ export class VoiceChatDb {
                 FROM conversations c WHERE c.id = ? AND c.user_id = ?`)
       .get(id, userId) as ConversationRow | undefined
     if (!row) return null
+    if (context && (row.scope !== context.scope || (context.scope === 'kanban' && row.project_id !== context.projectId))) return null
     const count = (
       this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?`).get(id) as {
         n: number
@@ -1747,7 +1767,9 @@ export class VoiceChatDb {
    * только с `includeCompleted` — иначе выключенный фильтр возвращал бы их
    * через строку поиска.
    */
-  searchConversations(userId: string, query: string, opts?: { includeCompleted?: boolean }): Conversation[] {
+  searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Conversation[] {
+    const scope = opts?.scope ?? 'chat'
+    if (scope === 'kanban' && !opts?.projectId) return []
     const q = query.trim()
     if (!q) return this.listConversations(userId, opts)
     const like = `%${q.toLowerCase().replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
@@ -1759,7 +1781,8 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader', 'make'))
+           AND c.scope = ?
+           AND (? <> 'kanban' OR c.project_id = ?)
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
@@ -1767,7 +1790,7 @@ export class VoiceChatDb {
                        WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\'))
          ORDER BY c.updated_at DESC`
       )
-      .all(userId, opts?.includeCompleted ? 1 : 0, like, like) as Array<ConversationRow & { message_count: number }>
+      .all(userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0, like, like) as Array<ConversationRow & { message_count: number }>
     const costs = this.conversationCosts(rows)
     return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
   }
@@ -3913,6 +3936,7 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       disabledContext: parseJsonValue<string[]>(row.disabled_context_json, []).filter((item): item is string => typeof item === 'string'),
+      scope: row.scope === 'kanban' || row.scope === 'make' || row.scope === 'console' || row.scope === 'playwright-reader' || row.scope === 'web-reader' ? row.scope : 'chat',
       projectId: row.project_id ?? null,
       assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' || row.assistant_kind === 'make' ? row.assistant_kind : null,
       // Дефолт — полная автономия: ассистент задуман действующим, а не советующим.
@@ -5306,8 +5330,8 @@ export class VoiceChatDb {
       .get(taskId, userId) as { id: string } | undefined
     if (existing) {
       this.db
-        .prepare(`UPDATE conversations SET updated_at = ? WHERE id = ? AND user_id = ?`)
-        .run(this.now(), existing.id, userId)
+        .prepare(`UPDATE conversations SET updated_at = ?, scope = 'kanban', project_id = ? WHERE id = ? AND user_id = ?`)
+        .run(this.now(), projectId, existing.id, userId)
       return this.getConversation(userId, existing.id)
     }
     const id = this.newId()
@@ -5315,8 +5339,8 @@ export class VoiceChatDb {
     const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id, scope)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'kanban')`
       )
       .run(id, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId)
     return this.getConversation(userId, id)

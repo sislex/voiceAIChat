@@ -95,10 +95,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
     'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
-    'conversations:list': ({ includeCompleted }) =>
-      req(`${REST.conversations}${includeCompleted ? '?includeCompleted=1' : ''}`),
-    'conversations:create': ({ title, projectId, assistantKind }) =>
-      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, projectId, assistantKind }) }),
+    'conversations:list': ({ scope, projectId, includeCompleted }) => {
+      const q = new URLSearchParams({ scope: scope ?? 'chat' })
+      if (projectId) q.set('projectId', projectId)
+      if (includeCompleted) q.set('includeCompleted', '1')
+      return req(`${REST.conversations}?${q.toString()}`)
+    },
+    'conversations:create': ({ title, scope, projectId, assistantKind }) =>
+      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, scope: scope ?? (assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'make' ? 'make' : 'chat'), projectId, assistantKind }) }),
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
     'make:projectFiles': ({ conversationId, path }) =>
       req(`${REST.makeProjectFiles(conversationId)}${path ? `?path=${encodeURIComponent(path)}` : ''}`),
@@ -165,8 +169,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'widget:query': (body) => req('/api/widget-tools/query', { method: 'POST', body: JSON.stringify(body) }),
     'widget:get': (body) => req('/api/widget-tools/get', { method: 'POST', body: JSON.stringify(body) }),
     'widget:action': (body) => req('/api/widget-tools/action', { method: 'POST', body: JSON.stringify(body) }),
-    'conversations:get': async ({ id }) => {
-      const res = await fetch(httpBase + REST.conversation(id), {
+    'conversations:get': async ({ id, scope, projectId }) => {
+      const q = new URLSearchParams({ scope: scope ?? 'chat' })
+      if (projectId) q.set('projectId', projectId)
+      const res = await fetch(httpBase + `${REST.conversation(id)}?${q.toString()}`, {
         headers: authHeaders()
       })
       if (res.status === 404) return null
@@ -211,8 +217,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'conversations:listMachines': ({ id, projectId }) =>
       req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
-    'conversations:search': ({ query, includeCompleted }) =>
-      req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}${includeCompleted ? '&includeCompleted=1' : ''}`),
+    'conversations:search': ({ query, scope, projectId, includeCompleted }) => {
+      const q = new URLSearchParams({ q: query, scope: scope ?? 'chat' })
+      if (projectId) q.set('projectId', projectId)
+      if (includeCompleted) q.set('includeCompleted', '1')
+      return req(`${REST.conversationsSearch}?${q.toString()}`)
+    },
     'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
       searchAbort?.abort()
       const ctl = new AbortController()

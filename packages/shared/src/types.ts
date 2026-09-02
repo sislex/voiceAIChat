@@ -101,6 +101,16 @@ export type ConversationStatus =
 export const PLAYWRIGHT_READER_KIND = 'playwright-reader' as const
 export const CONSOLE_READER_KIND = 'console-reader' as const
 export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'kanban'
+export type ConversationScope = 'chat' | 'kanban' | 'make' | 'console' | 'playwright-reader' | 'web-reader'
+
+export function conversationScopeForAssistantKind(kind: AssistantKind | null | undefined, projectId?: string | null): ConversationScope {
+  if (kind === 'kanban' && projectId) return 'kanban'
+  if (kind === 'make') return 'make'
+  if (kind === 'console-reader') return 'console'
+  if (kind === 'playwright-reader') return 'playwright-reader'
+  if (kind === 'web-recorder') return 'web-reader'
+  return 'chat'
+}
 
 /**
  * Живой контекст PTY-сессии консоли: агент периодически сообщает, где сейчас
@@ -355,6 +365,8 @@ export interface Conversation {
   kbContextMode?: KbContextMode
   /** id пунктов контекста, выключенных пользователем в инспекторе: не попадают ассистенту. */
   disabledContext?: string[]
+  /** Обязательная область происхождения и авторизации разговора. */
+  scope: ConversationScope
   /** Проект, к которому привязан чат (null/undefined — не привязан). */
   projectId?: string | null
   /** Служебный приватный чат виджета; его строковое имя становится лейблом источника в селекторах. */
