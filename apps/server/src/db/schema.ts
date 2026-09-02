@@ -657,8 +657,10 @@ CREATE TABLE IF NOT EXISTS task_designs (
   id              TEXT PRIMARY KEY,
   task_id         TEXT NOT NULL,
   conversation_id TEXT NOT NULL,
-  -- Путь файла внутри Make-проекта; пустая строка — проект целиком.
+  -- Legacy-путь для обратной панели; целевой контракт хранится mode + paths_json.
   path            TEXT NOT NULL DEFAULT '',
+  mode            TEXT NOT NULL DEFAULT 'whole_project',
+  paths_json      TEXT NOT NULL DEFAULT '[]',
   label           TEXT NOT NULL DEFAULT '',
   created_by      TEXT,
   created_at      INTEGER NOT NULL,

@@ -783,8 +783,14 @@ export interface TaskDesignLink {
   conversationTitle: string
   /** Владелец Make-проекта (логин): дизайн может быть заведён другим участником. */
   conversationOwner: string | null
-  /** Файл-страница внутри проекта (`index.html`, `src/components/Card.jsx`); пусто — проект целиком. */
+  /** Явный режим доступа: весь проект либо точный набор файлов. */
+  mode: 'whole_project' | 'files'
+  /** Канонические уникальные пути в детерминированном порядке; пусто только для whole_project. */
+  paths: string[]
+  /** Legacy-представление для обратной панели Make: первый путь либо пустая строка. */
   path: string
+  /** Актуальная доступность каждого сохранённого пути (вычисляется сервером). */
+  fileStatuses?: Array<{ path: string; available: boolean; error?: string }>
   /** Подпись экрана; пусто — показываем путь. */
   label: string
   createdAt: number
@@ -833,32 +839,29 @@ export interface TaskMakeSource {
   name: string
   conversationId: string
   title: string
+  mode: 'whole_project' | 'files'
   paths: string[]
+  fileStatuses?: Array<{ path: string; available: boolean; error?: string }>
 }
 
-/** Один детерминированный источник на Make-проект; paths — лишь стартовые точки. */
+/** Один детерминированный точный источник на Make-проект. */
 export function taskMakeSources(designs: TaskDesignLink[]): TaskMakeSource[] {
-  const grouped = new Map<string, { title: string; paths: Set<string> }>()
-  for (const design of designs) {
-    const current = grouped.get(design.conversationId) ?? { title: design.conversationTitle, paths: new Set<string>() }
-    current.paths.add(design.path)
-    grouped.set(design.conversationId, current)
-  }
-  return [...grouped.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([conversationId, source], index) => ({
+  return [...designs]
+    .sort((a, b) => a.conversationId.localeCompare(b.conversationId))
+    .map((design, index) => ({
       name: `make_design_${index + 1}`,
-      conversationId,
-      title: source.title,
-      paths: [...source.paths].sort((a, b) => a.localeCompare(b))
+      conversationId: design.conversationId,
+      title: design.label || design.conversationTitle,
+      mode: design.mode,
+      paths: [...new Set(design.paths)].sort((a, b) => a.localeCompare(b)),
+      ...(design.fileStatuses ? { fileStatuses: [...design.fileStatuses].sort((a, b) => a.path.localeCompare(b.path)) } : {})
     }))
 }
 
-export function designPromptLines(designs: TaskDesignLink[], previewUrl: (conversationId: string, path: string) => string): string[] {
-  return designs.map((design) => {
-    const where = design.path ? `страница ${design.path}` : 'проект целиком'
-    const name = design.label || design.conversationTitle
-    return `Дизайн: «${name}» — Make-проект ${design.conversationId}, ${where}; превью ${previewUrl(design.conversationId, design.path)}`
+export function designPromptLines(designs: TaskDesignLink[], _previewUrl?: (conversationId: string, path: string) => string): string[] {
+  return taskMakeSources(designs).map((source) => {
+    const where = source.mode === 'whole_project' ? 'проект целиком' : `точные файлы: ${source.paths.join(', ')}`
+    return `Дизайн: «${source.title}» — Make-проект ${source.conversationId}, ${where}; чтение через ${source.name}.make_read_file`
   })
 }
 

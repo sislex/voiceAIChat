@@ -1462,13 +1462,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     // Дизайны карточки: держим связи в памяти — тестам достаточно круга
     // «связал → показалось → снял», без правил доступа (их проверяет сервер).
     'tasks:designs': async ({ taskId }) => designLinks.filter((link) => link.taskId === taskId),
-    'tasks:linkDesign': async ({ projectId, taskId, conversationId, path, label }) => {
+    'tasks:linkDesign': async ({ projectId, taskId, conversationId, mode, paths, path, label }) => {
       const source = conversations.find((c) => c.id === conversationId)
       void projectId
+      const resolvedMode = mode ?? (path ? 'files' : 'whole_project')
+      const resolvedPaths = [...new Set(paths ?? (path ? [path] : []))].sort((a, b) => a.localeCompare(b))
+      const previous = designLinks.findIndex((link) => link.taskId === taskId && link.conversationId === conversationId)
+      if (previous >= 0) designLinks.splice(previous, 1)
       designLinks.push({
         id: `design-${designLinks.length + 1}`, taskId, conversationId,
         conversationTitle: source?.title ?? 'Проект', conversationOwner: 'me',
-        path: path ?? '', label: label ?? '', createdAt: nowMs, createdBy: 'me'
+        mode: resolvedMode, paths: resolvedPaths, path: resolvedPaths[0] ?? '', label: label ?? '', createdAt: nowMs, createdBy: 'me'
       })
       return designLinks.filter((link) => link.taskId === taskId)
     },

@@ -106,8 +106,8 @@ describe('CodexCli', () => {
     new CodexCli({ spawn }).send({
       prompt: 'x', sessionId: null, model: '',
       makeSources: [
-        { name: 'make_design_1', conversationId: 'c1', paths: [''], mcpUrl: 'http://m/1' },
-        { name: 'make_design_2', conversationId: 'c2', paths: ['src/App.tsx'], mcpUrl: 'http://m/2' }
+        { name: 'make_design_1', conversationId: 'c1', mode: 'whole_project', paths: [], mcpUrl: 'http://m/1' },
+        { name: 'make_design_2', conversationId: 'c2', mode: 'files', paths: ['src/App.tsx'], mcpUrl: 'http://m/2' }
       ]
     }, makeHandlers())
     const args = argsOf(spawn)

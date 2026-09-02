@@ -76,7 +76,7 @@ import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
-import { registerMakeMcp, MAKE_MCP_PATH, MakeTaskScopeBroker } from './mcp/makeMcp.js'
+import { registerMakeMcp, MAKE_MCP_PATH, MakeTaskScopeBroker, buildTaskMakeSources } from './mcp/makeMcp.js'
 import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
 import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
@@ -521,10 +521,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     taskScopes: makeTaskScopes,
     authorizeTaskSource: (scope, conversationId) => {
       const task = db.getCiTask(scope.userId, scope.projectId, scope.taskId)
-      return Boolean(task
+      const scopedSource = scope.sources.find((source) => source.conversationId === conversationId)
+      const current = task?.designs?.find((design) => design.conversationId === conversationId)
+      return Boolean(task && scopedSource && current
         && db.makeConversationProject(conversationId) === scope.projectId
         && db.isMakeProjectViewer(scope.userId, conversationId)
-        && task.designs?.some((design) => design.conversationId === conversationId))
+        && current.mode === scopedSource.mode
+        && JSON.stringify(current.paths) === JSON.stringify(scopedSource.paths))
     }
   }, mcpSecret)
   // Канбан (mcp__kanban__*): доска, карточки, настройки, машины и раны проекта
@@ -1409,6 +1412,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (run.status !== 'running' && run.status !== 'queued') return run
     if (run.status === 'running' && run.log) return run
     const task = db.getCiTask(userId, projectId, taskId)
+    const preparationMakeSources = task ? buildTaskMakeSources({ designs: task.designs ?? [], userId, projectId, taskId, baseUrl: makeMcpBaseUrl, broker: makeTaskScopes }) : []
     // Любое продолжение использует снимок попытки, а не текущие настройки проекта.
     const provider: LlmProvider = run.provider ?? 'claude'
     const model = taskPreparationModel(provider, run.model ?? '')
@@ -1501,7 +1505,7 @@ affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reus
 openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
 sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
 Сохрани исходные требования. Если диагностика выявляет дефект подготовки, добавь в scope, acceptanceCriteria/acceptanceCriteriaItems и testCases отдельные проверяемые работы: усиление prompt/schema, безопасная нормализация однозначных совместимых значений, регрессионные тесты и актуализация существующего раздела БЗ. Не добавляй новые исследования и не выдумывай источники.`
-      const handle = client.send({ userId, prompt: recoveryPrompt, sessionId: null, model, executionDisabled: true }, {
+      const handle = client.send({ userId, prompt: recoveryPrompt, sessionId: null, model, executionDisabled: true, makeSources: preparationMakeSources }, {
         onDelta: () => {},
         onSession: () => {},
         onDone: (text) => {
@@ -1535,7 +1539,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     }
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный единственный JSON-объект без любого текста вне JSON.` : basePrompt
-      const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, ...remote, ...kbFields }, {
+      const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, makeSources: preparationMakeSources, ...remote, ...kbFields }, {
         onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); preparationRunDelta(userId, projectId, taskId, run.id) },
         onSession: () => {},
         onDone: (text) => {
@@ -1811,7 +1815,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           budgetMs: CHECK_BUDGET_MS
         })
       : undefined,
-    { cancel: (owner, planId) => orchestrationManager.cancel(owner, planId) })
+    { cancel: (owner, planId) => orchestrationManager.cancel(owner, planId) },
+    makeWorkspaces)
   mergeRunManager.reconcile()
   const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): void => {
     const run = stage === 'component_qa' ? db.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? db.getIntegrationTestRun(userId, runId) : db.getQaStageRun(userId, runId)
