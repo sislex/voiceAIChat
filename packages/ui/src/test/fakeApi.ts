@@ -265,7 +265,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
-    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: 'developing', lastExecTarget: null }
+    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, scope: 'chat', claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: 'developing', lastExecTarget: null }
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
@@ -335,8 +335,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'widget:get': async ({ itemId }) => { throw new Error(`fake widget item not found: ${itemId}`) },
     'widget:action': async () => ({ applied: true, replayed: false, revision: String(Date.now()) }),
-    'conversations:list': async ({ includeCompleted } = {}) =>
+    'conversations:list': async ({ scope = 'chat', projectId, includeCompleted } = {}) =>
       [...conversations]
+        .filter((c) => c.scope === scope && (scope !== 'kanban' || c.projectId === projectId))
         .filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(withCounts),
@@ -505,9 +506,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },
     'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); for (const [k, v] of Object.entries(MAKE_SCAFFOLD)) files.set(k, v); return makeState(conversationId) },
-    'conversations:create': async ({ title, projectId, assistantKind } = {}) => {
+    'conversations:create': async ({ title, scope: requestedScope, projectId, assistantKind } = {}) => {
+      const scope = requestedScope ?? (assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'make' ? 'make' : 'chat')
+      if (scope === 'kanban' && !projectId) throw new Error('projectId is required for kanban')
       if (projectId && !projects.some((item) => item.id === projectId)) throw new Error('project not found')
-      const conv = { ...makeConversation(title ?? 'Новый разговор'), projectId: projectId ?? null, ...(assistantKind ? { assistantKind } : {}) }
+      const conv = { ...makeConversation(title ?? 'Новый разговор'), scope, projectId: projectId ?? null, ...(assistantKind ? { assistantKind } : {}) }
       conversations.push(conv)
       return conv
     },
@@ -580,8 +583,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       settings: [{ label: 'Модель', here: 'default', there: 'opus' }]
     }),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
-    'conversations:get': async ({ id }) => {
-      const conv = conversations.find((c) => c.id === id)
+    'conversations:get': async ({ id, scope = 'chat', projectId }) => {
+      const conv = conversations.find((c) => c.id === id && c.scope === scope && (scope !== 'kanban' || c.projectId === projectId))
       if (!conv) return null
       return {
         conversation: withCounts(conv),
@@ -590,9 +593,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           .sort((a, b) => a.createdAt - b.createdAt)
       }
     },
-    'conversations:search': async ({ query, includeCompleted }) => {
+    'conversations:search': async ({ query, scope = 'chat', projectId, includeCompleted }) => {
       const q = query.trim().toLowerCase()
-      const visible = [...conversations].filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
+      const visible = [...conversations]
+        .filter((c) => c.scope === scope && (scope !== 'kanban' || c.projectId === projectId))
+        .filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
       if (!q) return visible.sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
       return visible
         .filter(
@@ -719,6 +724,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         createdAt: 0,
         updatedAt: 0,
         messageCount: 0,
+        scope: 'chat',
         claudeSessionId: null,
         execTarget: null,
         workdir: null,

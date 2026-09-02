@@ -8,6 +8,7 @@ const conv: Conversation = {
   createdAt: 1000,
   updatedAt: 2000,
   messageCount: 2,
+  scope: 'chat',
   claudeSessionId: null,
   execTarget: null,
   workdir: null,

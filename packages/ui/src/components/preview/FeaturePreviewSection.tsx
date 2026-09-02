@@ -117,7 +117,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     try {
       const parsed = new URL(environment.appUrl, 'http://127.0.0.1/')
       parsed.hostname = environment.agentId + '.machine.internal'
-      const conversation = await chatApi['conversations:create']({ title: `Reader: ${environment.branch}`, assistantKind: 'web-recorder' })
+      const conversation = await chatApi['conversations:create']({ title: `Reader: ${environment.branch}`, scope: 'web-reader', assistantKind: 'web-recorder' })
       await chatApi['conversations:setPreviewUrl']({ id: conversation.id, previewUrl: parsed.toString() })
       const target = new URL(window.location.href)
       target.hash = `#/web-reader/${conversation.id}`

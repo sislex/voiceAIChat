@@ -917,16 +917,16 @@ describe('projects: чаты завершённых задач в списке �
 
   it('задача в «Готово» убирает свой чат из списка, возврат в работу — возвращает', () => {
     const { pid, taskId, chatId, dev, done } = withTaskChat()
-    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).toContain(chatId)
 
     db.moveTask('alice', pid, taskId, { columnId: done })
-    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).not.toContain(chatId)
     // Скрытие — только про список: сам чат открывается по id как раньше.
     expect(db.getConversation('alice', chatId)!.id).toBe(chatId)
-    expect(db.listConversations('alice', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid, includeCompleted: true }).map((c) => c.id)).toContain(chatId)
 
     db.moveTask('alice', pid, taskId, { columnId: dev })
-    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).toContain(chatId)
   })
 
   it('cancelled скрывает чат всегда, а возврат восстанавливает историю', () => {
@@ -935,14 +935,14 @@ describe('projects: чаты завершённых задач в списке �
     db.addMessage('alice', chatId, 'u0', 'сохранить историю', '10:00')
 
     db.moveTask('alice', pid, taskId, { columnId: cancelled.id })
-    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
-    expect(db.listConversations('alice', { includeCompleted: true }).map((c) => c.id)).not.toContain(chatId)
-    expect(db.searchConversations('alice', 'Скролл', { includeCompleted: true }).map((c) => c.id)).not.toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).not.toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid, includeCompleted: true }).map((c) => c.id)).not.toContain(chatId)
+    expect(db.searchConversations('alice', 'Скролл', { scope: 'kanban', projectId: pid, includeCompleted: true }).map((c) => c.id)).not.toContain(chatId)
     expect(db.getConversation('alice', chatId)!.taskId).toBe(taskId)
     expect(db.listMessages('alice', chatId).map((m) => m.text)).toEqual(['сохранить историю'])
 
     db.moveTask('alice', pid, taskId, { columnId: dev })
-    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).toContain(chatId)
     expect(db.listMessages('alice', chatId).map((m) => m.text)).toEqual(['сохранить историю'])
   })
 
@@ -953,7 +953,7 @@ describe('projects: чаты завершённых задач в списке �
     expect(db.updateColumn('alice', pid, cancelled.id, { name: 'Никогда не делать' })).toBe(true)
     expect(db.reorderColumns('alice', pid, [cancelled.id, ...board.columns.filter((c) => c.id !== cancelled.id).map((c) => c.id)])).toBe(true)
     db.moveTask('alice', pid, taskId, { columnId: cancelled.id })
-    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).not.toContain(chatId)
   })
 
   it('скрытие не зависит от порога дней: done — и чата в списке нет', () => {
@@ -962,15 +962,15 @@ describe('projects: чаты завершённых задач в списке �
     db.updateProject('alice', pid, { doneRetentionDays: null })
     db.moveTask('alice', pid, taskId, { columnId: done })
     expect(db.getBoard('alice', pid)!.tasks.map((t) => t.id)).toContain(taskId)
-    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).not.toContain(chatId)
   })
 
   it('поиск по беседам скрывает те же чаты', () => {
     const { pid, taskId, chatId, done } = withTaskChat()
-    expect(db.searchConversations('alice', 'Скролл').map((c) => c.id)).toContain(chatId)
+    expect(db.searchConversations('alice', 'Скролл', { scope: 'kanban', projectId: pid }).map((c) => c.id)).toContain(chatId)
     db.moveTask('alice', pid, taskId, { columnId: done })
-    expect(db.searchConversations('alice', 'Скролл').map((c) => c.id)).not.toContain(chatId)
-    expect(db.searchConversations('alice', 'Скролл', { includeCompleted: true }).map((c) => c.id)).toContain(chatId)
+    expect(db.searchConversations('alice', 'Скролл', { scope: 'kanban', projectId: pid }).map((c) => c.id)).not.toContain(chatId)
+    expect(db.searchConversations('alice', 'Скролл', { scope: 'kanban', projectId: pid, includeCompleted: true }).map((c) => c.id)).toContain(chatId)
   })
 
   it('отмена отдельного CI-рана не скрывает чат активной задачи', () => {
@@ -986,7 +986,7 @@ describe('projects: чаты завершённых задач в списке �
     })
     db.updateCiRun(run.id, { status: 'cancelled', terminalColumnId: dev })
 
-    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+    expect(db.listConversations('alice', { scope: 'kanban', projectId: pid }).map((c) => c.id)).toContain(chatId)
     expect(db.getBoard('alice', pid)!.tasks.find((task) => task.id === taskId)!.columnId).toBe(dev)
   })
 
@@ -994,7 +994,7 @@ describe('projects: чаты завершённых задач в списке �
     const { pid, taskId, done } = withTaskChat()
     const plain = db.createConversation('alice', 'Просто чат')
     db.moveTask('alice', pid, taskId, { columnId: done })
-    expect(db.listConversations('alice').map((c) => c.id)).toContain(plain.id)
+    expect(db.listConversations('alice', { scope: 'chat' }).map((c) => c.id)).toContain(plain.id)
   })
 })
 

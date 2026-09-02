@@ -791,6 +791,13 @@ function queryFlag(v: string | undefined): boolean {
   return v === '1' || v === 'true'
 }
 
+const CONVERSATION_SCOPES = ['chat', 'kanban', 'make', 'console', 'playwright-reader', 'web-reader'] as const
+function parseConversationScope(value: string | undefined): (typeof CONVERSATION_SCOPES)[number] | null {
+  return CONVERSATION_SCOPES.includes(value as (typeof CONVERSATION_SCOPES)[number])
+    ? value as (typeof CONVERSATION_SCOPES)[number]
+    : null
+}
+
 export async function registerRest(
   app: FastifyInstance,
   db: VoiceChatDb,
@@ -857,18 +864,24 @@ export async function registerRest(
 
   // includeCompleted=1 — вместе с чатами задач, лежащих в колонке «Готово»
   // (по умолчанию их в списке нет, см. `listConversations`).
-  app.get<{ Querystring: { includeCompleted?: string } }>(REST.conversations, async (req) =>
-    db.listConversations(uid(req), { includeCompleted: queryFlag(req.query.includeCompleted) })
-  )
+  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversations, async (req, reply) => {
+    const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+    if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+    return db.listConversations(uid(req), { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
+  })
    app.post<{ Body: DesktopMigrationBundle }>(REST.desktopMigration, async (req, reply) => {
     if (!req.body || !Array.isArray(req.body.conversations)) return reply.code(400).send({ error: 'invalid migration bundle' })
     return db.importDesktopData(uid(req), req.body)
   })
 
-  app.post<{ Body: { title?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' } }>(REST.conversations, async (req, reply) => {
+  app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' } }>(REST.conversations, async (req, reply) => {
     const kind = req.body?.assistantKind
+    const scope = req.body?.scope === undefined
+      ? kind === 'web-recorder' ? 'web-reader' : kind === 'playwright-reader' ? 'playwright-reader' : kind === 'console-reader' ? 'console' : kind === 'make' ? 'make' : 'chat'
+      : parseConversationScope(req.body.scope)
+    if (!scope || (scope === 'kanban' && !req.body?.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
     try {
-      return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' ? kind : null, req.body?.projectId ?? null)
+      return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' ? kind : null, req.body?.projectId ?? null, scope)
     } catch (error) {
       if (error instanceof Error && error.message === 'project not found') return reply.code(404).send({ error: error.message })
       throw error
@@ -878,8 +891,8 @@ export async function registerRest(
   app.get<{ Params: { projectId: string }; Querystring: { conversationId?: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
     const userId = uid(req)
     const privateConversation = db.ensureKanbanAssistantConversation(userId, req.params.projectId)
-    const requested = req.query.conversationId ? db.getConversation(userId, req.query.conversationId) : null
-    const conversation = requested?.projectId === req.params.projectId && (requested.assistantKind === null || requested.assistantKind === 'kanban')
+    const requested = req.query.conversationId ? db.getConversation(userId, req.query.conversationId, { scope: 'kanban', projectId: req.params.projectId }) : null
+    const conversation = requested?.projectId === req.params.projectId && requested.scope === 'kanban'
       ? requested
       : privateConversation
     if (!conversation) return reply.code(404).send({ error: 'not found' })
@@ -923,9 +936,11 @@ export async function registerRest(
     }
   })
 
-  app.get<{ Querystring: { q?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req) =>
-    db.searchConversations(uid(req), req.query.q ?? '', { includeCompleted: queryFlag(req.query.includeCompleted) })
-  )
+  app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req, reply) => {
+    const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+    if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+    return db.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
+  })
 
   /**
    * Полнотекстовый поиск по сообщениям (FTS5). `projectId` со значением `none`
@@ -945,8 +960,10 @@ export async function registerRest(
     })
   })
 
-  app.get<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
-    const conversation = db.getConversation(uid(req), req.params.id)
+  app.get<{ Params: { id: string }; Querystring: { scope?: string; projectId?: string } }>('/api/conversations/:id', async (req, reply) => {
+    const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+    if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+    const conversation = db.getConversation(uid(req), req.params.id, { scope, projectId: req.query.projectId })
     if (!conversation) return reply.code(404).send({ error: 'not found' })
     return { conversation, messages: db.listMessages(uid(req), req.params.id) }
   })
