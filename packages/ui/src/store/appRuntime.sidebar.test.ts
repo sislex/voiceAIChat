@@ -251,10 +251,10 @@ describe('voiceStore — список reader-чатов и гонка выбор
 
     // Сайдбар сужен проектом: reader-чаты без проекта из него ушли…
     expect(store.getState().conversations.map((c) => c.id)).not.toContain(readerId)
-    // …а список Web Reader остался полным — оба вида reader-чатов на месте.
+    // …а список Web Reader остался полным, но legacy chat не пересекает scope.
     const readerIds = store.getState().readerConversations.map((c) => c.id)
     expect(readerIds).toContain(readerId)
-    expect(readerIds).toContain(legacy.id)
+    expect(readerIds).not.toContain(legacy.id)
     // Обычных чатов в нём нет и лишние reader-чаты не создавались.
     expect(api._state.conversations.filter((c) => c.assistantKind === 'web-recorder')).toHaveLength(1)
   })
