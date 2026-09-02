@@ -3805,6 +3805,21 @@ button.conscmd:hover {
 .context-heavy { margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-small); background: var(--surface-hover); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 /* Массовые действия по выбранной группе стоят в одном ряду с общими. */
 .context-group-bulk { display: inline-flex; gap: var(--space-1); flex-wrap: wrap; }
+/* Диалог «Компоненты из проекта»: две колонки — файлы машины и связи. */
+.make-sync { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.make-sync h3 { margin: 0 0 8px; font-size: 14px; }
+.make-sync-list { display: grid; gap: 2px; max-height: 320px; overflow: auto; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); padding: 6px; }
+.make-sync-dir { display: block; width: 100%; padding: 6px 8px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; border-radius: 6px; }
+.make-sync-dir:hover { background: var(--surface-hover); }
+.make-sync-file { display: flex; gap: 8px; align-items: center; padding: 6px 8px; }
+.make-sync-link { display: flex; gap: 8px; align-items: center; padding: 6px 8px; }
+.make-sync-path { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
+.make-sync-status { margin-left: auto; color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+.make-sync-status[data-status='edited_in_make'] { color: var(--accent); }
+.make-sync-status[data-status='changed_in_project'], .make-sync-status[data-status='both'] { color: var(--danger); }
+.make-sync-actions { margin-top: 10px; display: flex; gap: 8px; }
+@media (max-width: 720px) { .make-sync { grid-template-columns: 1fr; } }
+
 /* Блок предпросмотра с шапкой: заголовок, размер и «скопировать блок». */
 .context-block { margin-bottom: var(--space-2); }
 .context-block .context-actions { align-items: baseline; gap: var(--space-2); }
