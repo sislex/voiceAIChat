@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from './database.js'
+import { execFileSync } from 'node:child_process'
+import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_SCRIPT, VoiceChatDb } from './database.js'
 import { CI_KB_UPDATE_COMMAND_ID, ciToolOutputLimits, DEFAULT_CI_STAGE_MODELS, DEFAULT_TOOL_OUTPUT_SETTINGS } from '@voicechat/shared'
 
 let db: VoiceChatDb
@@ -621,13 +622,41 @@ describe('встроенный шаг «Актуализировать базу 
 
     const second = new VoiceChatDb(file, { newId: () => `s2-${++n}`, now: () => 2000 })
     expect(second.getCiSlotConfig('project', p.id).afterModel).toEqual([commit.id])
+    expect(second.getCiCommand('alice', commit.id)).toMatchObject({ script: TASK_COMMIT_COMMAND_SCRIPT, version: 2 })
     expect(second.getCiCommand('alice', CI_KB_UPDATE_COMMAND_ID)).toBeTruthy()
     // Повторное открытие ничего не возвращает в development pipeline.
     second.setCiSlotCommands('project', p.id, 'after_model', [test.id, commit.id])
     second.close()
     const third = new VoiceChatDb(file, { newId: () => `s3-${++n}`, now: () => 3000 })
     expect(third.getCiSlotConfig('project', p.id).afterModel).toEqual([commit.id])
+    expect(third.getCiCommand('alice', commit.id)).toMatchObject({ script: TASK_COMMIT_COMMAND_SCRIPT, version: 2 })
     third.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('обязательный commit-step задачи', () => {
+  it('создаёт ветку и коммит, а чистое дерево завершает без пустого коммита', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-task-commit-'))
+    const repo = join(dir, 'репозиторий задачи')
+    mkdirSync(repo)
+    execFileSync('git', ['init', '-q', repo])
+    writeFileSync(join(repo, 'work.txt'), 'готово\n')
+    const env = {
+      ...process.env,
+      SLUG: 'репозиторий задачи',
+      BRANCH: 'CHAT-401-ветка',
+      TASK_KEY: 'CHAT-401'
+    }
+
+    execFileSync('bash', ['-c', TASK_COMMIT_COMMAND_SCRIPT], { cwd: dir, env })
+    expect(execFileSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).trim()).toBe('CHAT-401-ветка')
+    expect(execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: repo, encoding: 'utf8' }).trim()).toBe('CHAT-401: работа CI-рана')
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()
+
+    const cleanOutput = execFileSync('bash', ['-c', TASK_COMMIT_COMMAND_SCRIPT], { cwd: dir, env, encoding: 'utf8' })
+    expect(cleanOutput).toContain('Нет незакоммиченных изменений — коммит не нужен')
+    expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()).toBe(head)
     rmSync(dir, { recursive: true, force: true })
   })
 })
