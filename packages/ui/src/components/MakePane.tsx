@@ -27,6 +27,7 @@ import { MakeUsageDialog } from './MakeUsageDialog'
 import { MakeCommentsPanel } from './MakeCommentsPanel'
 import { MakeNotesDialog } from './MakeNotesDialog'
 import { MakeTaskLinksDialog } from './MakeTaskLinksDialog'
+import { MakeProjectSyncDialog } from './MakeProjectSyncDialog'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
@@ -57,7 +58,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks' | 'make:projectFiles' | 'make:projectLinks' | 'make:projectPull' | 'make:projectPush'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -232,6 +233,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [usageOpen, setUsageOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
   const [taskLinksOpen, setTaskLinksOpen] = useState(false)
+  /** Обмен с репозиторием проекта: компоненты и стили туда-обратно. */
+  const [projectSyncOpen, setProjectSyncOpen] = useState(false)
   /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
   const [changedLines, setChangedLines] = useState<number[]>([])
   /** Таблица коллекции моков (roadmap-4 п.29): для mock/*.json с массивом объектов — вид «Таблица» по умолчанию. */
@@ -1334,6 +1337,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             </>}
             {item('🧠 Память проекта', () => setNotesOpen(true), { ariaLabel: 'Память проекта', title: 'Заметки для ассистента и режим «дизайнер / разработчик»' })}
             {item('🗂 Задачи проекта', () => setTaskLinksOpen(true), { ariaLabel: 'Задачи проекта', title: 'Связать открытую страницу с карточкой доски и увидеть уже связанные' })}
+            {item('⇅ Компоненты из проекта', () => setProjectSyncOpen(true), { ariaLabel: 'Компоненты из проекта', title: 'Скопировать компоненты и стили из репозитория проекта, поправить в Make и вернуть обратно' })}
             {onInsertToChat && item('✦ Идеи для старта', () => setIdeasOpen(true), { ariaLabel: 'Идеи для старта' })}
             {item('▤ Шаблоны проекта', () => setTemplatesOpen(true), { ariaLabel: 'Шаблоны проекта' })}
             {item('⇪ Импорт проекта', () => setImportOpen(true), { ariaLabel: 'Импорт проекта', title: 'Импорт: ZIP, страница по URL или репозиторий GitHub' })}
@@ -1907,6 +1911,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
       {notesOpen && <MakeNotesDialog conversationId={conversationId} api={api} onClose={() => setNotesOpen(false)} />}
       {taskLinksOpen && <MakeTaskLinksDialog conversationId={conversationId} currentPath={selectedPath ?? ''} api={api} onOpenTask={onOpenTask} onClose={() => setTaskLinksOpen(false)} />}
+      {projectSyncOpen && <MakeProjectSyncDialog conversationId={conversationId} api={api} onClose={() => setProjectSyncOpen(false)} />}
       {usageOpen && <MakeUsageDialog conversationId={conversationId} api={api} onClose={() => setUsageOpen(false)} onChanged={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {diffOpen && turnDiff && (
         <Dialog className="make-dialog" padded title="До и после" ariaLabel="До и после" size="lg" onClose={() => setDiffOpen(false)} testId="make-turn-diff-dialog">

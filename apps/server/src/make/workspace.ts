@@ -14,7 +14,8 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { AdminDiskStats, MakePublicComment, MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import type {
+  MakeProjectLink, AdminDiskStats, MakePublicComment, MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { lintMakeFile, addComponentImports, componentExports, pickEntryFile, type AutoImportSpec } from '@voicechat/shared'
 import { MAKE_DISK_ALERT_BYTES, deployConfigFiles, type MakeDeployTarget } from '@voicechat/shared'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
@@ -34,6 +35,8 @@ const SNAPSHOTS_DIR = '.snapshots'
 /** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
 const PUBLISH_FILE = '.publish.json'
 const COMMENTS_FILE = '.comments.json'
+/** Связи файлов мастерской с файлами репозитория проекта (project-pull/push). */
+const PROJECT_LINKS_FILE = '.project-links.json'
 
 /** Хост реферера для аналитики публикаций; пустой/невалидный/прямой заход → null. */
 export function refererHost(referer?: string | null): string | null {
@@ -573,6 +576,20 @@ export class MakeWorkspaces {
     return list
   }
 
+  // ---- Связи с репозиторием проекта: .project-links.json, живёт как комментарии ----
+
+  async projectLinks(conversationId: string): Promise<MakeProjectLink[]> {
+    try {
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PROJECT_LINKS_FILE), 'utf8')) as MakeProjectLink[]
+      return Array.isArray(raw) ? raw : []
+    } catch { return [] }
+  }
+
+  async saveProjectLinks(conversationId: string, list: MakeProjectLink[]): Promise<MakeProjectLink[]> {
+    await writeFile(join(this.dirOf(conversationId), PROJECT_LINKS_FILE), JSON.stringify(list), 'utf8')
+    return list
+  }
+
   async addComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; author: string; status?: 'pending' | 'approved'; guestName?: string }): Promise<MakeComment[]> {
     const text = input.text.trim().slice(0, 2000)
     const selector = input.selector.trim().slice(0, 500)
@@ -814,7 +831,7 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === SHARE_FILE || entry === NOTES_DIR) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === PROJECT_LINKS_FILE || entry === SHARE_FILE || entry === NOTES_DIR) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }

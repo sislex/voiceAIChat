@@ -564,7 +564,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
   registerMakeRoutes(app, {
     db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
-    boardChanged: (projectId) => boardHub.emit(projectId)
+    boardChanged: (projectId) => boardHub.emit(projectId),
+    // Обмен с репозиторием проекта: файловый мост машины. Политику записи
+    // (allowWrite, allowedDirs) агент проверяет на своей стороне.
+    machineFs: {
+      list: (agentId, path) => agentRegistry.fsList(agentId, path),
+      read: (agentId, path) => agentRegistry.fsRead(agentId, path),
+      write: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId)
+    }
   })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
