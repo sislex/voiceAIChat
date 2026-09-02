@@ -17,7 +17,7 @@
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 52 коммит(ов) в areas после сверки: c9caced5 Merge remote-tracking branch 'origin/main' into feat/make-project-sync … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-02 | ⚠ 6 коммит(ов) в areas после сверки: 0a7acd40 Merge remote-tracking branch 'origin/main' into feat/kanban-assistant-template … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 89 коммит(ов) в areas после сверки: 813b6f6b feat(agent): добавить wake lock жизненного цикла … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 4 коммит(ов) в areas после сверки: 0a7acd40 Merge remote-tracking branch 'origin/main' into feat/kanban-assistant-template … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 185 коммит(ов) в areas после сверки: 0a7acd40 Merge remote-tracking branch 'origin/main' into feat/kanban-assistant-template … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 129 коммит(ов) в areas после сверки: c9caced5 Merge remote-tracking branch 'origin/main' into feat/make-project-sync … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 215 коммит(ов) в areas после сверки: c9caced5 Merge remote-tracking branch 'origin/main' into feat/make-project-sync … |
@@ -30,7 +30,7 @@
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-02 | ⚠ 16 коммит(ов) в areas после сверки: 0a7acd40 Merge remote-tracking branch 'origin/main' into feat/kanban-assistant-template … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 213 коммит(ов) в areas после сверки: c9caced5 Merge remote-tracking branch 'origin/main' into feat/make-project-sync … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 5 коммит(ов) в areas после сверки: e088f12a Merge task 5d3391f3-18ec-43e5-8555-50619f1245c5 … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-02 | ⚠ 1 коммит(ов) в areas после сверки: 6b806394 feat(make): компоненты и стили из репозитория проекта — туда и обратно |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-02 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 182 коммит(ов) в areas после сверки: 649b4525 feat(assistant): панель канбан-ассистента повторяет Make-макет «Проект 14» (CHAT-391, итерация 2) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-02 | ✓ |

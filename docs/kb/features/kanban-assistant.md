@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
 updated: 2026-09-02
-checked: 844bf44e
+checked: 1222584c
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts
@@ -106,7 +106,10 @@ areas:
 /api/conversations/:id/assistant-autonomy`, тумблер «Автопилот» в шапке
 `KanbanAssistant`. Одна точка политики — `allowMutation` в `kanbanMcp.ts`:
 
-- режим «План» (`ro=1`) запрещает любые изменения;
+- режим «План» (`ro=1`) запрещает любые изменения — но только **явный** `permissionMode: 'plan'`
+  этого разговора (`kanbanExplicitPlan` в `turns.ts`); принудительный plan хода без машины
+  на инструменты доски не распространяется, иначе ассистент вообще не мог менять доску
+  (инцидент 2026-09-02, см. [llm.md](../llm.md));
 - в `auto` обычные изменения применяются сразу;
 - в `confirm` любое изменение спрашивается у пользователя;
 - **необратимое наружу спрашивается всегда**, в обоих режимах: настройки
@@ -229,6 +232,19 @@ areas:
 
 Инструменты: `orchestration_plan` (проверить, не запуская), `orchestration_start`
 (всегда с подтверждением), `orchestration_status`, `orchestration_cancel`.
+Виды шагов (`ORCHESTRATION_ITEM_KINDS` в `packages/shared/src/orchestration.ts`):
+`create_task`, `run_preparation` (подготовка задачи; завершение читается по статусу
+рана `completed|success`, провал — `failed|cancelled|blocked`), `run_ci` (payload
+`launch/agentId/provider/model` — те же настройки, что у кнопки запуска), `run_qa`,
+`run_merge`, `wait_merge`, `wait_column` (условие «карточка в колонке»: payload
+`semantic` — например `ready`, куда задачу переводит успешная подготовка, — или
+`columnId`; валидация требует одно из двух), `run_preview`. `wait_column` и
+`wait_merge` — события доски: `boardHub.onChange → notify()` продвигает планы сразу
+после перехода карточки, таймер 60 с — страховка. Так собираются сценарии «после
+подготовки CHAT-401 и CHAT-402 запустить их параллельно и смержить» (`wait_column
+ready → run_ci parallel → run_merge` на каждую) и «CHAT-3455 в разработку только
+после merge CHAT-3422» (`wait_merge 3422 → run_ci 3455`); хинт `KANBAN_ASSISTANT_HINT`
+прямо велит собирать такие просьбы в план, а не отвечать «невозможно».
 Прогресс уходит в UI кадром `assistant.orchestration` (публикуется через
 `ciRunManager.publish`, поэтому доезжает по уже существующей подписке), список
 планов читается через `GET /api/projects/:id/orchestrations`, отмена —
