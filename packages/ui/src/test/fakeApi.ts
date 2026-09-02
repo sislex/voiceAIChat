@@ -215,6 +215,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const tasks: Task[] = []
   /** Связи карточек с дизайнами Make (см. мосты `tasks:*Design`). */
   const designLinks: TaskDesignLink[] = []
+  const projectSyncLinks: Array<import('@shared/make').MakeProjectLinkInfo> = []
   const summary = (p: FProject): ProjectSummary => ({
     id: p.id,
     name: p.name,
@@ -1484,6 +1485,29 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:designSources': async ({ id }) => conversations
       .filter((c) => c.assistantKind === 'make' && c.projectId === id)
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
+    // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
+    'make:projectFiles': async ({ path }) => (path
+      ? [{ name: 'Button.jsx', path: `${path}/Button.jsx`, kind: 'file' as const, size: 120 }]
+      : [
+          { name: 'src', path: 'src', kind: 'dir' as const, size: 0 },
+          { name: 'styles', path: 'styles', kind: 'dir' as const, size: 0 },
+          { name: 'theme.css', path: 'theme.css', kind: 'file' as const, size: 64 }
+        ]),
+    'make:projectLinks': async () => projectSyncLinks,
+    'make:projectPull': async ({ paths }) => {
+      const now = Date.now()
+      for (const path of paths) {
+        if (!projectSyncLinks.some((link) => link.path === path)) {
+          projectSyncLinks.push({ path, importedHash: `hash-${path}`, importedAt: now, status: 'same' })
+        }
+      }
+      return { links: projectSyncLinks, state: { rev: 1, files: [] } as never }
+    },
+    'make:projectPush': async ({ paths }) => {
+      const pushed = (paths?.length ? paths : projectSyncLinks.map((link) => link.path))
+      for (const link of projectSyncLinks) if (pushed.includes(link.path)) link.status = 'same'
+      return { pushed, conflicts: [], links: projectSyncLinks }
+    },
     'make:taskLinks': async ({ conversationId, path }) => designLinks
       .filter((link) => link.conversationId === conversationId && (path === undefined || link.path === path))
       .map((link) => ({

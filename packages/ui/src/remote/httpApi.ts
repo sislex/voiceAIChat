@@ -100,6 +100,13 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:create': ({ title, projectId, assistantKind }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, projectId, assistantKind }) }),
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
+    'make:projectFiles': ({ conversationId, path }) =>
+      req(`${REST.makeProjectFiles(conversationId)}${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+    'make:projectLinks': ({ conversationId }) => req(REST.makeProjectLinks(conversationId)),
+    'make:projectPull': ({ conversationId, ...b }) =>
+      req(REST.makeProjectPull(conversationId), { method: 'POST', body: JSON.stringify(b) }),
+    'make:projectPush': ({ conversationId, ...b }) =>
+      req(REST.makeProjectPush(conversationId), { method: 'POST', body: JSON.stringify(b) }),
     'make:taskLinks': ({ conversationId, path }) =>
       req(path === undefined ? REST.makeTaskLinks(conversationId) : `${REST.makeTaskLinks(conversationId)}?path=${encodeURIComponent(path)}`),
     'make:linkTask': ({ conversationId, ...body }) =>

@@ -673,6 +673,11 @@ export interface IpcInvokeMap {
   /** Make-проекты, привязанные к проекту: выбор источника дизайна в карточке. */
   'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
+  /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
+  'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
+  'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
+  'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
+  'make:projectPush': { arg: { conversationId: string; paths?: string[]; force?: boolean }; result: import('./make').MakeProjectPushResult }
   'make:taskLinks': { arg: { conversationId: string; path?: string }; result: import('./projects').MakeTaskLink[] }
   'make:linkTask': { arg: { conversationId: string; taskId: string; path?: string; label?: string }; result: import('./projects').MakeTaskLink[] }
   /** Задачи проекта Make-чата — выбор в диалоге «Связать с задачей». */
@@ -1431,6 +1436,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:linkDesign',
   'tasks:unlinkDesign',
   'projects:designSources',
+  'make:projectFiles',
+  'make:projectLinks',
+  'make:projectPull',
+  'make:projectPush',
   'make:taskLinks',
   'make:linkTask',
   'make:linkableTasks'
