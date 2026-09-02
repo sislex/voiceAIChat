@@ -17,13 +17,13 @@
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 50 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-02 | ⚠ 2 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 88 коммит(ов) в areas после сверки: 82b41efe Merge task 3a082bb9-94d9-4366-b006-cf5221a8d4cd … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-08-31 | ⚠ 73 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 181 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 127 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 213 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 231 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 123 коммит(ов) в areas после сверки: 88432f64 Merge task 0b551ca6-ddd1-4291-834c-708e9d364311 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1072 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1073 коммит(ов) в areas после сверки: 844bf44e docs(kb): update after merge 8310b973-fb2f-47fb-bb36-a53da1d081d1 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 138 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 178 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 94 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 529. Последние:
+Всего записей: 530. Последние:
 
 - [2026-09-02-macbook-air-user-queued-parallel-promotion.md](log/2026-09-02-macbook-air-user-queued-parallel-promotion.md) — queued-parallel-promotion
 - [2026-09-02-macbook-air-user-own-make-design-sources.md](log/2026-09-02-macbook-air-user-own-make-design-sources.md) — own-make-design-sources
@@ -71,8 +71,8 @@
 - [2026-09-02-alexeys-macbook-air-2-project-settings-tab-routes.md](log/2026-09-02-alexeys-macbook-air-2-project-settings-tab-routes.md) — project-settings-tab-routes
 - [2026-09-02-alexeys-macbook-air-2-project-main-preflight-bootstrap.md](log/2026-09-02-alexeys-macbook-air-2-project-main-preflight-bootstrap.md) — project-main-preflight-bootstrap
 - [2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md](log/2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md) — machine-delete-sync
+- [2026-09-02-alexeys-macbook-air-2-kanban-assistant-template.md](log/2026-09-02-alexeys-macbook-air-2-kanban-assistant-template.md) — kanban-assistant-template
 - [2026-09-02-alexeys-macbook-air-2-kanban-assistant-make-redesign.md](log/2026-09-02-alexeys-macbook-air-2-kanban-assistant-make-redesign.md) — kanban-assistant-make-redesign
-- [2026-09-02-alexeys-macbook-air-2-improvement-queue.md](log/2026-09-02-alexeys-macbook-air-2-improvement-queue.md) — improvement-queue
 
 ## Исторические планы
 

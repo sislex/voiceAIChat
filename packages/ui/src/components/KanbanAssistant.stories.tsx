@@ -83,7 +83,7 @@ const meta: Meta<typeof KanbanAssistant> = {
   component: KanbanAssistant,
   decorators: [
     withBridges(),
-    (Story) => <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 32px)', width: 420 }}><Story /></div>
+    (Story) => <div className="widget-assistant" style={{ height: 'calc(100vh - 32px)' }}><aside className="widget-assistant-panel" style={{ flex: '1 1 auto' }}><Story /></aside></div>
   ],
   args: {
     projectId: PROJECT_ID,
@@ -119,4 +119,25 @@ export const FailedPlan: Story = {
 export const ConfirmMode: Story = {
   name: 'Режим подтверждений',
   args: { api: apiWith([], 'confirm') }
+}
+
+export const EmptyDialog: Story = {
+  name: 'Пустой диалог (макет «Проект 14»)',
+  args: { api: apiWith([]), context: { ...context, project: { id: PROJECT_ID, name: 'ChatAI', description: '', technologies: [], skills: [], typeChain: { nodes: [], features: [], label: '' } } as unknown as WidgetAssistantContext<any>['project'] }, onSelectConversation: () => {}, onClose: () => {} }
+}
+
+export const Unavailable: Story = {
+  name: 'Транспорт не подключён',
+  args: { api: apiWith([]), transport: undefined }
+}
+
+export const LoadError: Story = {
+  name: 'Ошибка загрузки разговора',
+  args: {
+    api: (() => {
+      const api = createFakeApi()
+      api['kanbanAssistant:get'] = (async () => { throw new Error('Модель временно недоступна') }) as typeof api['kanbanAssistant:get']
+      return api
+    })()
+  }
 }
