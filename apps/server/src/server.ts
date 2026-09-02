@@ -1750,7 +1750,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
-  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId))
+  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId))
 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.

@@ -192,7 +192,7 @@ const preparationRun: TaskPreparationRun = {
 const improvement = (over: Partial<TaskImprovement>): TaskImprovement => ({
   id: 'imp', taskId: task.id, projectId: task.projectId, runId: 'run-2', stepId: null,
   source: 'development', status: 'new', title: 'Улучшение', description: 'Подробности',
-  acceptanceCriteria: '', createdTaskId: null, fingerprint: 'fp', evidence: [], occurrences: 1,
+  acceptanceCriteria: '', createdTaskId: null, fingerprint: 'fp', evidence: [], files: [], occurrences: 1,
   suggestedAction: 'create_chatai_task', isNew: true, createdAt: 1, updatedAt: 1, ...over
 })
 
