@@ -151,8 +151,8 @@ describe('ClaudeCli', () => {
     new ClaudeCli({ spawn }).send({
       prompt: 'x', sessionId: null, model: 'opus',
       makeSources: [
-        { name: 'make_design_1', conversationId: 'c1', paths: [''], mcpUrl: 'http://m/1' },
-        { name: 'make_design_2', conversationId: 'c2', paths: ['src/App.tsx'], mcpUrl: 'http://m/2' }
+        { name: 'make_design_1', conversationId: 'c1', mode: 'whole_project', paths: [], mcpUrl: 'http://m/1' },
+        { name: 'make_design_2', conversationId: 'c2', mode: 'files', paths: ['src/App.tsx'], mcpUrl: 'http://m/2' }
       ]
     }, makeHandlers())
     const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]

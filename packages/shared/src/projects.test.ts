@@ -335,27 +335,26 @@ describe('chatStorageDirectories', () => {
 describe('designPromptLines', () => {
   const link = (over: Partial<TaskDesignLink> = {}): TaskDesignLink => ({
     id: 'l1', taskId: 't1', conversationId: 'c1', conversationTitle: 'Проект 1', conversationOwner: 'alice',
-    path: 'index.html', label: '', createdAt: T0, createdBy: 'alice', ...over
+    mode: 'files', paths: ['index.html'], path: 'index.html', label: '', createdAt: T0, createdBy: 'alice', ...over
   })
   const preview = (id: string, path: string): string => `/api/preview/make/${id}/${path}`
 
-  it('группирует проекты детерминированно и дедуплицирует стартовые пути', () => {
+  it('сортирует проекты и точные пути детерминированно', () => {
     expect(taskMakeSources([
-      link({ conversationId: 'c2', path: 'src/App.tsx' }),
-      link({ conversationId: 'c1', path: '' }),
-      link({ conversationId: 'c2', path: 'src/App.tsx' }),
-      link({ conversationId: 'c2', path: 'index.html' })
+      link({ conversationId: 'c2', paths: ['src/App.tsx', 'index.html', 'src/App.tsx'] }),
+      link({ conversationId: 'c1', mode: 'whole_project', paths: [], path: '' })
     ])).toEqual([
-      { name: 'make_design_1', conversationId: 'c1', title: 'Проект 1', paths: [''] },
-      { name: 'make_design_2', conversationId: 'c2', title: 'Проект 1', paths: ['index.html', 'src/App.tsx'] }
+      { name: 'make_design_1', conversationId: 'c1', title: 'Проект 1', mode: 'whole_project', paths: [] },
+      { name: 'make_design_2', conversationId: 'c2', title: 'Проект 1', mode: 'files', paths: ['index.html', 'src/App.tsx'] }
     ])
   })
 
-  it('называет страницу и адрес превью, а без пути говорит про проект целиком', () => {
+  it('передаёт точные файлы через MCP без preview URL', () => {
     expect(designPromptLines([link()], preview)).toEqual([
-      'Дизайн: «Проект 1» — Make-проект c1, страница index.html; превью /api/preview/make/c1/index.html'
+      'Дизайн: «Проект 1» — Make-проект c1, точные файлы: index.html; чтение через make_design_1.make_read_file'
     ])
-    expect(designPromptLines([link({ path: '' })], preview)[0]).toContain('проект целиком')
+    expect(designPromptLines([link({ mode: 'whole_project', paths: [], path: '' })], preview)[0]).toContain('проект целиком')
+    expect(designPromptLines([link()], preview)[0]).not.toContain('/api/preview')
   })
 
   it('подпись связи важнее имени Make-проекта: экран называют по задаче', () => {
