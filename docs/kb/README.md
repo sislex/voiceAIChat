@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 213 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 231 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 123 коммит(ов) в areas после сверки: 88432f64 Merge task 0b551ca6-ddd1-4291-834c-708e9d364311 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1072 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1073 коммит(ов) в areas после сверки: 844bf44e docs(kb): update after merge 8310b973-fb2f-47fb-bb36-a53da1d081d1 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 138 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 178 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 94 коммит(ов) в areas после сверки: ecfec79c merge: update CHAT-391 from main … |
