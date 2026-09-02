@@ -755,6 +755,41 @@ describe('ci run manager', () => {
     await waitRun(first.headers['x-ci-run-id'] as string)
   })
 
+  it('быстрый parallel после ready → development продвигает автосозданный queued-run с тем же id', async () => {
+    const { project, task, readyColId } = setup()
+    const board = db.getBoard('admin', project.id)!
+    const development = board.columns.find((column) => column.semanticType === 'development')!
+    const blocker = db.createTask('admin', project.id, { columnId: readyColId, title: 'Занимает FIFO-слот' })!
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    let release: () => void = () => {}
+    modelGate = new Promise<void>((resolve) => { release = resolve })
+
+    const blockerRunId = await run(project.id, blocker.id)
+    for (let i = 0; i < 200 && !modelRequests.length; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const moved = await inj(admin, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${task.id}/move`,
+      payload: { columnId: development.id, fromColumnId: readyColId }
+    })
+    expect(moved.statusCode).toBe(200)
+    const queuedRunId = moved.headers['x-ci-run-id'] as string
+    expect(db.getCiRunRaw(queuedRunId)?.status).toBe('queued')
+
+    const promoted = await inj(admin, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${task.id}/ci/run`,
+      payload: { launch: 'parallel' }
+    })
+    expect(promoted.statusCode).toBe(202)
+    expect(promoted.json().id).toBe(queuedRunId)
+    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(1)
+
+    release()
+    expect((await waitRun(queuedRunId)).run.status).toBe('success')
+    expect((await waitRun(blockerRunId)).run.status).toBe('success')
+  })
+
   it('ошибка автозапуска оставляет карточку в ready, а прочие переходы в development не создают ран', async () => {
     const project = db.createProject('admin', { name: 'Без машины', gitUrl: 'git@github.com:x/y.git' })
     const board = db.getBoard('admin', project.id)!
