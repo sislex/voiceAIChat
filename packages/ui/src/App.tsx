@@ -118,6 +118,10 @@ const SessionsDialogHost = lazy(async () => {
   return { default: module.SessionsDialogHost }
 })
 
+const ImageStudioPane = lazy(async () => {
+  const module = await import('./components/ImageStudioPane')
+  return { default: module.ImageStudioPane }
+})
 const UsersAdmin = lazy(async () => {
   const module = await import('@voicechat/admin-app')
   return { default: module.UsersAdmin }
@@ -379,9 +383,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const inConsoleReader = segments[0] === 'console-reader'
   const routeConsoleReaderChatId = inConsoleReader ? (segments[1] ?? null) : null
   const inMake = segments[0] === 'make'
+  const inImageStudio = segments[0] === 'images'
   const routeMakeChatId = inMake ? (segments[1] ?? null) : null
+  const routeImageStudioChatId = inImageStudio ? (segments[1] ?? null) : null
   // Любой полноэкранный split-режим «чат | панель справа».
-  const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake
+  const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake || inImageStudio
   // Console и Make сохраняют полноэкранную рабочую область, но используют общий
   // Sidebar. Reader-режимы по-прежнему изолированы от оболочки навигации.
   const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
@@ -1341,6 +1347,29 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .catch(() => { /* store owns the visible error */ })
       .finally(() => { makeCreating.current = false })
   }
+  const imageStudioCreating = useRef(false)
+  const createImageStudioChat = (replace = false): void => {
+    if (imageStudioCreating.current) return
+    imageStudioCreating.current = true
+    void chatActions.newConversation('images')
+      .then((id) => { if (id) navigate(`/images/${id}`, { replace }) })
+      .catch(() => { /* store owns the visible error */ })
+      .finally(() => { imageStudioCreating.current = false })
+  }
+  useEffect(() => {
+    if (!authed || !inImageStudio || chat.conversationsStatus !== 'ready' || imageStudioCreating.current) return
+    const chats = chat.imageStudioConversations
+    const routed = chats.find((item) => item.id === routeImageStudioChatId)
+    if (routed) {
+      if (routed.id !== chat.activeId) void chatActions.selectConversation(routed.id)
+      return
+    }
+    const fallback = chats[0]
+    if (fallback) { navigate(`/images/${fallback.id}`, { replace: true }); return }
+    createImageStudioChat(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inImageStudio, routeImageStudioChatId, chat.activeId, chat.imageStudioConversations, chat.conversationsStatus, chatActions, navigate])
+
   useEffect(() => {
     if (!authed || !inMake || chat.conversationsStatus !== 'ready' || makeCreating.current) return
     const chats = chat.makeConversations
@@ -1490,6 +1519,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const playwrightReaderActiveListed = chat.playwrightReaderConversations.some((c) => c.id === chat.activeId)
   const consoleReaderActiveListed = chat.consoleReaderConversations.some((c) => c.id === chat.activeId)
   const makeActiveListed = chat.makeConversations.some((c) => c.id === chat.activeId)
+  const imageStudioActiveListed = chat.imageStudioConversations.some((c) => c.id === chat.activeId)
   // Reader route is authoritative. While its asynchronous conversation selection is
   // pending, the previous ChatColumn must not remain interactive: otherwise a user
   // can submit a turn for the old activeId while already seeing the new Reader URL.
@@ -1507,7 +1537,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       chat.activeId === routeConsoleReaderChatId &&
       consoleReaderActiveListed)
   const makeRouteReady = !inMake || (routeMakeChatId !== null && chat.activeId === routeMakeChatId && makeActiveListed)
-  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady
+  const imageStudioRouteReady = !inImageStudio || (routeImageStudioChatId !== null && chat.activeId === routeImageStudioChatId && imageStudioActiveListed)
+  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady && imageStudioRouteReady
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
   // Каталог результатов активного чата — для чипа в шапке; обновляется при смене чата, закрытии настроек и после хода.
   const [activeStorage, setActiveStorage] = useState<ChatStorageView | null>(null)
@@ -2013,7 +2044,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         inReader && 'app--web-reader',
         inPlaywrightReader && 'app--playwright-reader',
         inConsoleReader && 'app--console-reader',
-        inMake && 'app--make'
+        inMake && 'app--make',
+        // Студия картинок живёт в той же раскладке, что и Make: чат + панель.
+        inImageStudio && 'app--make app--image-studio'
       ].filter(Boolean).join(' ')}
       data-theme={settingsState.settings.theme}
       style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
@@ -2147,6 +2180,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenPlaywrightReader={session.authRequired ? menu(() => navigate('/playwright-reader')) : undefined}
         onOpenConsoleReader={session.authRequired ? menu(() => navigate('/console-reader')) : undefined}
         onOpenMake={session.authRequired ? menu(() => navigate('/make')) : undefined}
+        onOpenImageStudio={session.authRequired ? menu(() => navigate('/images')) : undefined}
         onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenLocalApp={session.authRequired ? menu(() => {
           setMachineConnectStatus('Откройте приложение подключения или скачайте его.')
@@ -2314,11 +2348,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
       {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && (
       <div className={inSplit ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inSplit ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
-      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : 'Сайт'}</button></div></nav>}
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
       <div className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
       {inConsoleReader && <header className="web-recorder-selector console-reader-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
+      {inImageStudio && <header className="web-recorder-selector make-selector image-studio-selector"><strong>Студия</strong><label><span className="vc-sr-only">Чат студии картинок</span><select aria-label="Чат студии картинок" value={imageStudioActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/images/${event.target.value}`) }}>{!imageStudioActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.imageStudioConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createImageStudioChat()}>+ Новый</button></header>}
       {inMake && <header className="web-recorder-selector make-selector"><strong>Make</strong><label><span className="vc-sr-only">Проект Make</span><select aria-label="Проект Make" value={makeActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/make/${event.target.value}`) }}>{!makeActiveListed && <option value="" disabled>Проект не выбран</option>}{chat.makeConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createMakeChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
@@ -2485,6 +2520,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       } : {})} /></Suspense>}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
+      {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} /></Suspense>}
       {inReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}

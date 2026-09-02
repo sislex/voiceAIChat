@@ -94,6 +94,10 @@ export function isPlaywrightReaderConversation(conv: Conversation): boolean {
   return conv.assistantKind === 'playwright-reader'
 }
 
+export function isImageStudioConversation(conv: Conversation): boolean {
+  return conv.assistantKind === 'images'
+}
+
 export function isMakeConversation(conv: Conversation): boolean {
   return conv.assistantKind === 'make'
 }
@@ -160,6 +164,7 @@ export interface ChatState {
   consoleReaderConversations: Conversation[]
   /** Разговоры инструмента Make (веб-проект с ассистентом). */
   makeConversations: Conversation[]
+  imageStudioConversations: Conversation[]
   conversationsStatus: LoadStatus
   conversationsError: string | null
   searchQuery: string
@@ -221,7 +226,7 @@ export interface ChatActions {
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
   scheduleConversationsRefresh(): void
   retryConversations(): Promise<void>
-  newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make'): Promise<string | null>
+  newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images'): Promise<string | null>
   /** Создаёт сохранённый чат из явной формы создания и сразу открывает его. */
   createConversation(input: { title: string; projectId?: string | null }): Promise<string>
   selectConversation(id: string): Promise<boolean>
@@ -345,6 +350,7 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
     playwrightReaderConversations: [],
     consoleReaderConversations: [],
     makeConversations: [],
+    imageStudioConversations: [],
     conversationsStatus: 'loading',
     conversationsError: null,
     searchQuery: '',
@@ -679,7 +685,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   function activeConversation(): Conversation | undefined {
     const state = getState()
-    return [...state.conversations, ...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations]
+    return [...state.conversations, ...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.imageStudioConversations]
       .find((c) => c.id === state.activeId)
   }
 
@@ -837,7 +843,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   // --- Выбор и создание разговора ------------------------------------------
 
-  async function newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make'): Promise<string | null> {
+  async function newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images'): Promise<string | null> {
     selectToken++ // недолетевший ответ прежнего выбора не перетрёт новый чат
     core.clearTimers()
     // Ход текущего разговора не отменяем — он доиграет на сервере.
@@ -860,10 +866,12 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       assistantKind === 'playwright-reader' ? state.playwrightReaderConversations
         : assistantKind === 'console-reader' ? state.consoleReaderConversations
         : assistantKind === 'make' ? state.makeConversations
+        : assistantKind === 'images' ? state.imageStudioConversations
         : state.readerConversations
     const prefix = assistantKind === 'playwright-reader' ? 'Playwright Reader'
       : assistantKind === 'console-reader' ? 'Консоль'
       : assistantKind === 'make' ? 'Проект'
+      : assistantKind === 'images' ? 'Картинки'
       : 'Web Reader'
     let number = 1
     while (readerList.some((item) => item.title === `${prefix} ${number}`)) number++
@@ -887,6 +895,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         assistantKind === 'make'
           ? withConversation(getState().makeConversations, conversation)
           : getState().makeConversations,
+      imageStudioConversations:
+        assistantKind === 'images'
+          ? withConversation(getState().imageStudioConversations, conversation)
+          : getState().imageStudioConversations,
       ...common
     })
     await refreshConversations()
@@ -918,7 +930,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     let opened: Conversation | null = null
     try {
       const state = getState()
-      const known = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.conversations].find((item) => item.id === id)
+      const known = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.imageStudioConversations, ...state.conversations].find((item) => item.id === id)
       const res = await client['conversations:get']({ id, scope: known?.scope ?? 'chat', ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {}) })
       // Пока ответ летел, выбрали другой чат — этот ответ отбрасываем молча.
       if (token !== selectToken || core.disposed()) return false
@@ -1524,12 +1536,13 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
         try {
           const includeCompleted = getState().showDoneTaskChats
-          const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations] = await Promise.all([
+          const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations, imageStudioConversations] = await Promise.all([
             client['conversations:list']({ scope: 'chat', includeCompleted }),
             client['conversations:list']({ scope: 'web-reader', includeCompleted }),
             client['conversations:list']({ scope: 'playwright-reader', includeCompleted }),
             client['conversations:list']({ scope: 'console', includeCompleted }),
-            client['conversations:list']({ scope: 'make', includeCompleted })
+            client['conversations:list']({ scope: 'make', includeCompleted }),
+            client['conversations:list']({ scope: 'images', includeCompleted })
           ])
           setState({
             conversations: filterBySidebarProjects(conversations),
@@ -1537,6 +1550,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
             playwrightReaderConversations,
             consoleReaderConversations,
             makeConversations,
+            imageStudioConversations,
             conversationsStatus: 'ready',
             conversationsError: null
           })
@@ -1573,7 +1587,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
             readerConversations: getState().readerConversations.filter((c) => c.id !== id),
             playwrightReaderConversations: getState().playwrightReaderConversations.filter((c) => c.id !== id),
             consoleReaderConversations: getState().consoleReaderConversations.filter((c) => c.id !== id),
-            makeConversations: getState().makeConversations.filter((c) => c.id !== id)
+            makeConversations: getState().makeConversations.filter((c) => c.id !== id),
+            imageStudioConversations: getState().imageStudioConversations.filter((c) => c.id !== id)
           })
           const wasActive = getState().activeId === id
           await refreshConversations()

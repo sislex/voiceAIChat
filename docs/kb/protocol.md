@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-02
-checked: 37702dce
+updated: 2026-09-03
+checked: 722c56fe
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -503,3 +503,20 @@ ok, result?, error? }`, где `result.surface` — снимок экрана п
 пароля). Мост: `window.session.sessions/logoutAll/revokeSession/renameSession/
 trustSession/endedSessions/panicSessions/onSessionsChanged` — все необязательные, desktop их не реализует, и UI-модуль
 скрывает действия по `store.capabilities`.
+
+## Студия картинок (2026-09-03)
+
+Контракт в `packages/shared/src/imageStudio.ts`: kind/scope `images`,
+`isImageStudioPath` (png/jpg/jpeg/webp/gif/svg), лимиты
+`IMAGE_STUDIO_LIMITS` (12 МБ файл, 128 МБ галерея), `imageStudioMime`.
+REST (`apps/server/src/routes/imageStudio.ts`, все — только владельцу
+разговора с `assistantKind === 'images'`, иначе 404): `GET
+/api/image-studio/:id/files`, `GET|POST|DELETE .../file` (GET отдаёт байты с
+mime, POST принимает `{path,dataBase64}` под bodyLimit 20 МБ), `POST
+.../rename`, `POST .../generate` `{prompt,name?}`, `POST .../edit`
+`{path,prompt}` — правка пишет НОВЫЙ файл (`freeName`), оригинал цел. Ошибки
+хранилища мапятся кодами: 413 `too_big|quota`, 400 `bad_name|empty_prompt`,
+404, 502 от генератора. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+web-клиенте — авторизованный fetch → base64 (см. ui.md). POST
+`/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
+и CHECK по scope расширены (см. data-auth.md).

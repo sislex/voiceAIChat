@@ -100,12 +100,13 @@ export type ConversationStatus =
 
 export const PLAYWRIGHT_READER_KIND = 'playwright-reader' as const
 export const CONSOLE_READER_KIND = 'console-reader' as const
-export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'kanban'
-export type ConversationScope = 'chat' | 'kanban' | 'make' | 'console' | 'playwright-reader' | 'web-reader'
+export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' | 'kanban'
+export type ConversationScope = 'chat' | 'kanban' | 'make' | 'images' | 'console' | 'playwright-reader' | 'web-reader'
 
 export function conversationScopeForAssistantKind(kind: AssistantKind | null | undefined, projectId?: string | null): ConversationScope {
   if (kind === 'kanban' && projectId) return 'kanban'
   if (kind === 'make') return 'make'
+  if (kind === 'images') return 'images'
   if (kind === 'console-reader') return 'console'
   if (kind === 'playwright-reader') return 'playwright-reader'
   if (kind === 'web-recorder') return 'web-reader'

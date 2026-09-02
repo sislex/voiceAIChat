@@ -3805,6 +3805,23 @@ button.conscmd:hover {
 .context-heavy { margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-small); background: var(--surface-hover); color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 /* Массовые действия по выбранной группе стоят в одном ряду с общими. */
 .context-group-bulk { display: inline-flex; gap: var(--space-1); flex-wrap: wrap; }
+/* Студия картинок: панель-галерея справа от чата (раскладка как у Make). */
+.image-studio { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 14px; overflow: auto; }
+.image-studio-toolbar { display: grid; gap: 8px; }
+.image-studio-toolbar textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--panel, #fff); color: inherit; font: inherit; resize: vertical; }
+.image-studio-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.image-studio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.image-studio-card { display: grid; gap: 6px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); padding: 8px; }
+.image-studio-card--selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.image-studio-thumb { display: block; width: 100%; aspect-ratio: 1; border: 0; padding: 0; background: var(--surface-hover); border-radius: 8px; overflow: hidden; cursor: pointer; }
+.image-studio-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.image-studio-thumb-loading { display: grid; place-items: center; height: 100%; color: var(--text-dim); }
+.image-studio-meta { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.image-studio-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.image-studio-card-actions { display: inline-flex; gap: 2px; }
+.image-studio-rename { display: flex; gap: 4px; align-items: center; }
+.image-studio-rename input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--panel, #fff); color: inherit; font: inherit; }
+
 /* Вкладка «Активность» карточки: три ленты (комментарии, история, ворклог). */
 .task-activity-panel { display: grid; gap: 12px; }
 .task-act-tabs { display: flex; gap: 6px; flex-wrap: wrap; }

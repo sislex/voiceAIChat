@@ -365,6 +365,36 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('CHECK по scope без images пересобирается и пускает студию картинок', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-scope-check-'))
+    const file = join(dir, 'data.db')
+    const seed = new VoiceChatDb(file)
+    const kept = seed.createConversation(U, 'Обычный')
+    seed.close()
+
+    // Возвращаем таблице «старый» CHECK без 'images' — как в БД, созданных
+    // из schema.ts до появления студии.
+    const raw = new Database(file)
+    const ddl = (raw.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'`).get() as { sql: string }).sql
+    const oldDdl = ddl
+      .replace(/scope IN \([^)]*\)/, `scope IN ('chat','kanban','make','console','playwright-reader','web-reader')`)
+      .replace(/^CREATE TABLE ("conversations"|conversations)/, 'CREATE TABLE conversations_old')
+    raw.exec('PRAGMA foreign_keys=OFF')
+    raw.exec(oldDdl)
+    raw.exec(`INSERT INTO conversations_old SELECT * FROM conversations`)
+    raw.exec(`DROP TABLE conversations`)
+    raw.exec(`ALTER TABLE conversations_old RENAME TO conversations`)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    const studio = migrated.createConversation(U, 'Картинки 1', 'images')
+    expect(studio.scope).toBe('images')
+    expect(studio.assistantKind).toBe('images')
+    expect(migrated.getConversation(U, kept.id)?.title).toBe('Обычный')
+    migrated.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('ALTER добавляет engine/user_id и удаляет строки без владельца', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-mig-'))
     const file = join(dir, 'legacy.db')
