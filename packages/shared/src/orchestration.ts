@@ -13,7 +13,30 @@ export type OrchestrationItemStatus = 'pending' | 'running' | 'done' | 'failed' 
  * пока ветка задачи не влита, и это единственный способ не начинать
  * пересекающуюся работу раньше времени.
  */
-export type OrchestrationItemKind = 'create_task' | 'run_ci' | 'run_qa' | 'run_merge' | 'wait_merge' | 'run_preview'
+export type OrchestrationItemKind = 'create_task' | 'run_preparation' | 'run_ci' | 'run_qa' | 'run_merge' | 'wait_merge' | 'wait_column' | 'run_preview'
+
+/** Все виды шагов — единственный список; по нему строится схема инструмента и валидация плана. */
+export const ORCHESTRATION_ITEM_KINDS: readonly OrchestrationItemKind[] = ['create_task', 'run_preparation', 'run_ci', 'run_qa', 'run_merge', 'wait_merge', 'wait_column', 'run_preview']
+
+/**
+ * `wait_column` — условие «карточка попала в колонку»: ждёт, пока задача не
+ * окажется в колонке с нужной семантикой (например `ready` после подготовки)
+ * или с указанным id. Так план реагирует на переход между колонками, а не
+ * только на завершение своих же ранов.
+ */
+export interface WaitColumnPayload {
+  semantic?: string
+  columnId?: string
+}
+
+/** Настройки шага run_ci: модель и машина — как у кнопки запуска разработки. */
+export interface RunCiPayload {
+  launch?: 'queue' | 'parallel'
+  agentId?: string
+  provider?: 'claude' | 'codex'
+  model?: string
+  retries?: number
+}
 
 export interface OrchestrationItem {
   id: string
@@ -109,6 +132,10 @@ export function orchestrationPlanError(items: OrchestrationItemInput[]): string 
       // Задача может рождаться в этом же плане: тогда шаг ссылается на
       // create_task через dependsOn — напрямую или через другие шаги.
       return `Шагу ${index + 1} (${item.kind}) нужна задача: укажи taskId или зависимость от create_task`
+    }
+    if (item.kind === 'wait_column') {
+      const payload = (item.payload ?? {}) as WaitColumnPayload
+      if (!payload.semantic && !payload.columnId) return `Шагу ${index + 1} (wait_column) нужна колонка: payload.semantic (например ready) или payload.columnId`
     }
   }
   const visiting = new Set<number>()

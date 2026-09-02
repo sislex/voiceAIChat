@@ -115,6 +115,65 @@ describe('createOrchestrationManager', () => {
     expect(afterMerge.items[1]!.status).toBe('running')
   })
 
+  it('wait_column ждёт перехода карточки в колонку, затем run_ci стартует с заданными моделью и машиной', async () => {
+    const board = db.getBoard('ann', projectId)!
+    const ready = board.columns.find((column) => column.semanticType === 'ready')!
+    const task = db.createTask('ann', projectId, { columnId, title: 'После подготовки' })!.id
+    const startOptions: unknown[] = []
+    launchers.startCi = (_userId, _projectId, taskId, options) => {
+      startOptions.push(options)
+      const run = { id: `run-${ciRuns.length + 1}`, taskId, status: 'queued' }
+      ciRuns.push(run)
+      return { run: { id: run.id, status: run.status, agentId: null } }
+    }
+    const created = plan([
+      { kind: 'wait_column', title: 'Дождаться готовности', taskId: task, payload: { semantic: 'ready' } },
+      { kind: 'run_ci', title: 'Разработка', taskId: task, dependsOn: [0], payload: { launch: 'parallel', provider: 'codex', model: 'gpt-5.6-sol', agentId: 'mac-1' } }
+    ])
+    await manager.tick(created.id)
+    expect(db.getOrchestrationById(created.id)!.items[0]!.status).toBe('pending')
+    expect(ciRuns).toHaveLength(0)
+
+    // Карточка перешла в колонку «Готово к разработке» (так делает завершение подготовки).
+    db.moveTask('ann', projectId, task, { columnId: ready.id })
+    await manager.tick(created.id)
+    const after = db.getOrchestrationById(created.id)!
+    expect(after.items[0]!.status).toBe('done')
+    expect(after.items[1]!.status).toBe('running')
+    expect(startOptions).toEqual([{ launch: 'parallel', provider: 'codex', model: 'gpt-5.6-sol', agentId: 'mac-1' }])
+  })
+
+  it('wait_column по columnId и run_preparation: подготовка стартует, завершение подхватывается по статусу рана', async () => {
+    const task = db.createTask('ann', projectId, { columnId, title: 'Подготовить' })!.id
+    const prepRuns: Array<{ id: string; status: string; error: string | null }> = []
+    launchers.startPreparation = () => { const run = { id: 'prep-1', status: 'running', error: null }; prepRuns.push(run); return run }
+    vi.spyOn(db, 'listTaskPreparationRuns').mockImplementation(() => prepRuns as never)
+    const created = plan([
+      { kind: 'run_preparation', title: 'Подготовка', taskId: task },
+      { kind: 'wait_column', title: 'Карточка в TODO', taskId: task, dependsOn: [0], payload: { columnId } }
+    ])
+    await manager.tick(created.id)
+    let current = db.getOrchestrationById(created.id)!
+    expect(current.items[0]).toMatchObject({ status: 'running', runId: 'prep-1' })
+    expect(current.items[1]!.status).toBe('pending')
+
+    prepRuns[0]!.status = 'completed'
+    await manager.tick(created.id)
+    current = db.getOrchestrationById(created.id)!
+    expect(current.items[0]!.status).toBe('done')
+    // Карточка и так стоит в этой колонке — условие выполняется в том же проходе.
+    expect(current.items[1]!.status).toBe('done')
+    expect(current.status).toBe('done')
+
+    // Провал подготовки валит план с причиной.
+    const failing = plan([{ kind: 'run_preparation', title: 'Подготовка 2', taskId: task }])
+    prepRuns.length = 0
+    await manager.tick(failing.id)
+    prepRuns[0]!.status = 'failed'; prepRuns[0]!.error = 'Нет машины'
+    await manager.tick(failing.id)
+    expect(db.getOrchestrationById(failing.id)).toMatchObject({ status: 'failed', error: 'Нет машины' })
+  })
+
   it('отмена останавливает незавершённые шаги и публикует состояние', async () => {
     const taskId = db.createTask('ann', projectId, { columnId, title: 'A' })!.id
     const created = plan([
