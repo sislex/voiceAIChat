@@ -12,10 +12,12 @@ export interface WidgetAssistantFrameProps {
   title?: string
   /** Optional replacement for the static assistant title in the panel header. */
   assistantHeader?: ReactNode
+  /** Ассистент рисует шапку сам (макет «Проект 14»): рамка не дублирует заголовок и крестик. */
+  hideHeader?: boolean
 }
 
 /** Universal split shell. It owns layout only; widget and assistant communicate through shared contracts. */
-export function WidgetAssistantFrame({ widget, assistant, open, onOpenChange, mode = 'embedded', storageKey = 'voicechat.widgetAssistantWidth', title = 'Ассистент', assistantHeader }: WidgetAssistantFrameProps): JSX.Element {
+export function WidgetAssistantFrame({ widget, assistant, open, onOpenChange, mode = 'embedded', storageKey = 'voicechat.widgetAssistantWidth', title = 'Ассистент', assistantHeader, hideHeader = false }: WidgetAssistantFrameProps): JSX.Element {
   const [mobileView, setMobileView] = useState<'widget' | 'assistant'>('widget')
   const [width, setWidth] = useState(() => {
     const saved = Number(globalThis.localStorage?.getItem(storageKey))
@@ -41,7 +43,7 @@ export function WidgetAssistantFrame({ widget, assistant, open, onOpenChange, mo
   return <section className={`widget-assistant widget-assistant--${mode} widget-assistant--${open ? 'open' : 'closed'} widget-assistant--mobile-${mobileView}`} style={{ '--widget-assistant-width': `${width}%` } as CSSProperties} data-testid="widget-assistant-frame">
     {open && <nav className="widget-assistant-tabs" aria-label="Область страницы"><div role="tablist"><button role="tab" aria-selected={mobileView === 'widget'} onClick={() => setMobileView('widget')}>Виджет</button><button role="tab" aria-selected={mobileView === 'assistant'} onClick={() => setMobileView('assistant')}>{title}</button></div></nav>}
     <div className="widget-assistant-widget">{widget}</div>
-    {open && <><div className="widget-assistant-divider" onPointerDown={resize}><div role="separator" aria-label="Изменить ширину ассистента" aria-orientation="vertical" /></div><aside className="widget-assistant-panel" aria-label={title}><header>{assistantHeader ?? <strong>{title}</strong>}{onOpenChange && <button type="button" aria-label="Закрыть ассистента" onClick={() => onOpenChange(false)}>×</button>}</header>{assistant}</aside></>}
+    {open && <><div className="widget-assistant-divider" onPointerDown={resize}><div role="separator" aria-label="Изменить ширину ассистента" aria-orientation="vertical" /></div><aside className="widget-assistant-panel" aria-label={title}>{!hideHeader && <header>{assistantHeader ?? <strong>{title}</strong>}{onOpenChange && <button type="button" aria-label="Закрыть ассистента" onClick={() => onOpenChange(false)}>×</button>}</header>}{assistant}</aside></>}
   </section>
 }
 
