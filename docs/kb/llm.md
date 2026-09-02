@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-09-02
-checked: febde2c8
+checked: 1222584c
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -280,7 +280,7 @@ Usage нормализуется в `TurnUsage` и рассылается как
 
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
 
-**Make без машины у не-admin (roadmap-3 п.2).** Раньше `turns.ts` форсил `plan` для любого пользователя без машины, а нативный plan-режим CLI глушит MCP — Make не мог писать файлы. Теперь для Make-разговора с провайдером Claude ход идёт в `default` с `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …) — остаются только MCP-инструменты, make MCP без `ro=1`. Для Codex `--sandbox read-only` блокирует HTTP-MCP, поэтому там по-прежнему план (ограничение Codex CLI, не наше).
+**Make без машины у не-admin (roadmap-3 п.2).** Раньше `turns.ts` форсил `plan` для любого пользователя без машины, а нативный plan-режим CLI глушит MCP — Make не мог писать файлы. Теперь для Make-разговора с провайдером Claude ход идёт в `default` с `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …) — остаются только MCP-инструменты, make MCP без `ro=1`. Для Codex ход остаётся в плане (`--sandbox read-only`): раньше считалось, что read-only sandbox блокирует HTTP-MCP, но настоящая причина — Codex ≥0.15 требует одобрения любого MCP-вызова, а неинтерактивный `codex exec` отвечает «MCP tool call requires approval, but approval policy is never». С 2026-09-02 раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`), и MCP работает и в read-only sandbox; проверено на 0.152 против пробного сервера (без ключа падают даже read-only инструменты, с `--dangerously-bypass-approvals-and-sandbox` проходят, с ключом — проходят при read-only). Политику изменений при этом держат сами MCP-серверы (`ro=1`, автопилот/подтверждения).
 
 ## Канбан: инструменты `mcp__kanban__*`
 
@@ -544,7 +544,7 @@ heredoc — то есть к поведению, ради отмены кото�
 отклоняются до обращения к машине, `..` внутри абсолютного пути запрещён,
 Windows-путь сходится без учёта регистра и направления слэшей.
 
-В режиме `plan` с выбранной машиной CLI не получает нативный plan-режим: он блокирует MCP-инструменты. Вместо него сервер запускает CLI в `default`, подключает remote MCP с `ro=1` и передаёт `readOnlyRemote`; для Codex это также позволяет нужный remote bypass. Гейт `remoteBashMcp` при `ro=1` отклоняет изменяющие shell-команды и `edit`, поэтому модели остаются `read`, `grep` и команды исследования (`ls`, `git log/diff/status`). MCP базы знаний подключается отдельно и остаётся доступным: он read-only. Без выбранной машины ход остаётся нативным `plan` с локальным read-only sandbox.
+В режиме `plan` с выбранной машиной CLI не получает нативный plan-режим: он блокирует MCP-инструменты. Вместо него сервер запускает CLI в `default`, подключает remote MCP с `ro=1` и передаёт `readOnlyRemote`; для Codex это также позволяет нужный remote bypass. Гейт `remoteBashMcp` при `ro=1` отклоняет изменяющие shell-команды и `edit`, поэтому модели остаются `read`, `grep` и команды исследования (`ls`, `git log/diff/status`). MCP базы знаний подключается отдельно и остаётся доступным: он read-only. Без выбранной машины ход остаётся нативным `plan` с локальным read-only sandbox. Исключение — ход канбан-ассистента (`kanbanMcpUrl`): для Claude он идёт в `default` с `MAKE_ONLY_DISALLOWED_TOOLS` (как Make без машины), для Codex — в `plan`, а `ro=1` доска получает только при явном `permissionMode: 'plan'` самого разговора (`kanbanExplicitPlan` в `turns.ts`). Иначе принудительный plan хода без машины делал доску read-only, и ассистент отвечал «Kanban API требует подтверждения доступа, но подтверждения запрещены» (инцидент 2026-09-02).
 
 ## AI-помощник формулировки
 
