@@ -602,6 +602,13 @@ export interface IpcInvokeMap {
       skills?: string[]
       storyPoints?: number | null
       dueDate?: number | null
+      /**
+       * Чат, из которого создаётся задача. Если это Make-чат этого проекта,
+       * сервер сразу свяжет задачу с макетом (task_designs, весь проект):
+       * без связи подготовка и разработка не получают файлы Make и модель
+       * спрашивает «дайте доступ к опубликованной странице».
+       */
+      sourceConversationId?: string
     }
     result: Task
   }
@@ -611,6 +618,8 @@ export interface IpcInvokeMap {
       type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null
       labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null
       selection?: import('./qa').TaskPreparationLlmSelection
+      /** См. tasks:create — автосвязь задачи с Make-проектом источника. */
+      sourceConversationId?: string
     }
     result: import('./types').TaskLaunchResult
   }
