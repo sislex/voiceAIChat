@@ -250,14 +250,29 @@ export function taskPreparationFailure(provider: LlmProvider, userId: string, me
 /**
  * Обновляет общую базовую ветку до origin только fast-forward. Имя переменной
  * worktree_status намеренно не сокращается до status: в zsh status — read-only.
+ *
+ * Каталог `projectWorkdir` создаётся привязкой машины пустым (`materializeProjectMachine`
+ * делает только mkdir), клона в него никто не кладёт — поэтому при известном
+ * `gitUrl` пустой или отсутствующий каталог клонируется здесь же, как это делают
+ * релизы и preview. Непустой каталог без репозитория остаётся ошибкой: чужие файлы
+ * не перезаписываются. Репозиторием считается корень рабочего дерева (в том числе
+ * созданный `git worktree add`, где `.git` — файл), а не подкаталог чужого репозитория.
  */
-export function projectMainRefreshScript(path: string, branch: string): string {
+export function projectMainRefreshScript(path: string, branch: string, gitUrl?: string | null): string {
   const repo = shellQuote(path)
   const base = shellQuote(branch)
+  const url = shellQuote(gitUrl ?? '')
   return `set -eu
 repo=${repo}
 base=${base}
-test -d "$repo/.git" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
+url=${url}
+if [ ! -d "$repo" ] || [ -z "$(ls -A "$repo" 2>/dev/null)" ]; then
+  test -n "$url" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
+  mkdir -p "$repo"
+  git clone --no-tags --origin origin --branch "$base" -- "$url" "$repo" || { echo "Не удалось клонировать $url (ветка $base) в $repo" >&2; exit 69; }
+fi
+toplevel="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
+test -n "$toplevel" && test "$toplevel" = "$(cd "$repo" && pwd -P)" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
 worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
 test -z "$worktree_status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
 current="$(git -C "$repo" branch --show-current)"
@@ -344,12 +359,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
    * dirty/diverged checkout блокирует ход, чистая базовая ветка обновляется только fast-forward.
    */
   const projectMainRefreshes = new Map<string, Promise<{ baseSha: string }>>()
-  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string }): Promise<{ baseSha: string }> => {
+  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl?: string | null }): Promise<{ baseSha: string }> => {
     const key = [args.projectId, args.agentId, args.path, args.branch].join('\u0000')
     const activeRefresh = projectMainRefreshes.get(key)
     if (activeRefresh) return activeRefresh
     const operation = (async () => {
-    const script = projectMainRefreshScript(args.path, args.branch)
+    const script = projectMainRefreshScript(args.path, args.branch, args.gitUrl)
     const result = await agentRegistry.exec(args.agentId, script, 120_000, undefined, { userId: args.userId, conversationId: args.conversationId, source: 'system' })
     if (result.timedOut) throw new Error('Синхронизация с origin завершилась по таймауту')
     if (result.exitCode !== 0) throw new Error(result.output.trim() || `Синхронизация с origin завершилась с кодом ${result.exitCode ?? 'unknown'}`)
@@ -1600,7 +1615,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         if (!agentRegistry.isOnline(selectedMachine.agentId)) throw new Error(`Машина «${selectedMachine.name ?? selectedMachine.agentId}» offline`)
         const snapshot = await ensureProjectMainCurrent({
           userId, projectId, conversationId: null, agentId: selectedMachine.agentId,
-          path: selectedMachine.path, branch: project.ciBaseBranch || 'main'
+          path: selectedMachine.path, branch: project.ciBaseBranch || 'main', gitUrl: project.gitUrl
         })
         db.appendTaskPreparationLog(run.id, `[система] Актуальная базовая ветка: ${project.ciBaseBranch || 'main'} @ ${snapshot.baseSha}; совпадение с origin подтверждено.\n`)
       }
