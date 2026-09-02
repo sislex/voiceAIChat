@@ -11,6 +11,7 @@ import type { CiRunSummary } from '@shared/ci'
 import type { GenerateParams } from '../prompt-builder/PromptBuilder'
 import { DRAG_HOLD_MS } from '../../lib/dnd'
 import { listCommands, resetCommands } from '../../lib/commands'
+import { createFakeCi } from '../../test/fakeApi'
 
 const task = (over: Partial<Task>): Task => ({
   id: 't', projectId: 'p1', columnId: 'c1', type: 'task', parentId: null, title: 'T', description: '',
@@ -394,6 +395,84 @@ describe('KanbanBoard (изолированный)', () => {
     expect(cards[0]!.className).toContain('jcard--ci-running')
     expect(cards[1]!.className).toContain('jcard--ci-awaiting')
     expect(cards[2]!.className).toContain('jcard--ci-failed')
+  })
+})
+
+describe('KanbanBoard — очередь «Улучшения»', () => {
+  const improvement = {
+    id: 'imp-1', taskId: 't1', projectId: 'p1', runId: 'run-1', stepId: 'step-1', source: 'development' as const,
+    status: 'new' as const, title: 'Стабилизировать: npm test', description: '## Проблема\n\nШаг падал.',
+    acceptanceCriteria: 'Шаг проходит с первой попытки.\nПовторный авторан подтверждает исправление.',
+    createdTaskId: null, fingerprint: 'fp', evidence: ['Статус шага: failed'], files: ['apps/server/src/turns.ts'],
+    occurrences: 2, suggestedAction: 'create_chatai_task' as const, isNew: true, createdAt: 1, updatedAt: 1,
+    taskTitle: 'A', taskSeq: 1, taskColumnId: 'c1'
+  }
+  const created = { created: true, preparationStarted: false, preparationError: null, task: task({ id: 't-new', title: 'Стабилизировать: npm test', sourceTaskId: 't1' }), improvement: { ...improvement, status: 'implemented' as const, createdTaskId: 't-new', isNew: false } }
+  afterEach(() => { window.ci = undefined })
+
+  function withCi(over: Partial<NonNullable<typeof window.ci>> = {}): NonNullable<typeof window.ci> {
+    const ci = createFakeCi()
+    ci.listProjectImprovements = vi.fn(async () => [improvement])
+    ci.createTaskFromImprovement = vi.fn(async () => created)
+    ci.deleteImprovement = vi.fn(async () => ({ ok: true }))
+    Object.assign(ci, over)
+    window.ci = ci
+    return ci
+  }
+
+  it('рисует карточку на каждое предложение и открывает его подробности', async () => {
+    withCi()
+    renderBoard()
+    const column = await screen.findByTestId('kanban-improvements-column')
+    const card = within(column).getByTestId('improvement-card')
+    expect(card).toHaveTextContent('Стабилизировать: npm test')
+    expect(card).toHaveTextContent('из P1-1 · A')
+    await userEvent.click(card)
+    const modal = await screen.findByTestId('improvement-modal')
+    expect(within(modal).getByTestId('improvement-source-task')).toHaveTextContent('P1-1 · A')
+    expect(within(modal).getByTestId('improvement-criteria')).toHaveTextContent('Шаг проходит с первой попытки.')
+    expect(within(modal).getByTestId('improvement-files')).toHaveTextContent('apps/server/src/turns.ts')
+    expect(screen.getByTestId('improvement-modal-actions')).toBeInTheDocument()
+  })
+
+  it('«Создать задачу» создаёт без выбора колонки и открывает новую карточку; «Создать и подготовить» просит подготовку', async () => {
+    const ci = withCi()
+    const onOpenTaskChange = vi.fn()
+    renderBoard({ openTaskId: null, onOpenTaskChange })
+    await userEvent.click(await screen.findByTestId('improvement-card'))
+    await userEvent.click(await screen.findByTestId('improvement-create'))
+    await waitFor(() => expect(ci.createTaskFromImprovement).toHaveBeenCalledWith('imp-1', { startPreparation: false }))
+    expect(onOpenTaskChange).toHaveBeenCalledWith('t-new', undefined)
+    await waitFor(() => expect(screen.queryByTestId('improvement-modal')).not.toBeInTheDocument())
+
+    ci.createTaskFromImprovement = vi.fn(async () => ({ ...created, preparationStarted: true }))
+    await userEvent.click(await screen.findByTestId('improvement-card'))
+    await userEvent.click(await screen.findByTestId('improvement-create-prepare'))
+    await waitFor(() => expect(ci.createTaskFromImprovement).toHaveBeenCalledWith('imp-1', { startPreparation: true }))
+    expect(onOpenTaskChange).toHaveBeenLastCalledWith('t-new', 'preparation')
+  })
+
+  it('ошибка подготовки не скрывает созданную задачу: окно остаётся с текстом ошибки', async () => {
+    withCi({ createTaskFromImprovement: vi.fn(async () => ({ ...created, preparationError: 'Не настроена колонка preparation' })) })
+    renderBoard()
+    await userEvent.click(await screen.findByTestId('improvement-card'))
+    await userEvent.click(await screen.findByTestId('improvement-create-prepare'))
+    expect(await screen.findByTestId('improvement-modal-error')).toHaveTextContent('Не настроена колонка preparation')
+  })
+
+  it('«Отменить» удаляет предложение только со второго нажатия и убирает карточку', async () => {
+    const ci = withCi()
+    renderBoard()
+    await userEvent.click(await screen.findByTestId('improvement-card'))
+    const remove = await screen.findByTestId('improvement-delete')
+    expect(remove).toHaveTextContent('Отменить')
+    await userEvent.click(remove)
+    expect(ci.deleteImprovement).not.toHaveBeenCalled()
+    expect(remove).toHaveTextContent('Точно удалить предложение?')
+    await userEvent.click(remove)
+    await waitFor(() => expect(ci.deleteImprovement).toHaveBeenCalledWith('imp-1'))
+    await waitFor(() => expect(screen.queryByTestId('improvement-modal')).not.toBeInTheDocument())
+    expect(screen.queryByTestId('kanban-improvements-column')).not.toBeInTheDocument()
   })
 })
 

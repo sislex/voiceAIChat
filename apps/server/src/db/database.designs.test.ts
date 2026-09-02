@@ -72,10 +72,12 @@ describe('дизайны карточки', () => {
     expect(() => db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, mode: 'files', paths: ['/index.html'] })).toThrow('каноническим')
   })
 
-  it('связь видна другому участнику проекта, а посторонний не получает ни списка, ни привязки', () => {
+  it('историческая чужая связь видна участнику, но новую связь с чужим Make-проектом создать нельзя', () => {
     const { projectId, taskId, makeId } = scene()
-    db.linkTaskDesign('bob', projectId, taskId, { conversationId: makeId, path: 'index.html' })
+    db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'index.html' })
     expect(db.listTaskDesigns('bob', projectId, taskId)).toHaveLength(1)
+    expect(db.getTaskDetail('bob', projectId, taskId)!.designs).toHaveLength(1)
+    expect(() => db.linkTaskDesign('bob', projectId, taskId, { conversationId: makeId })).toThrow('только свой')
     expect(db.listTaskDesigns('carol', projectId, taskId)).toBeNull()
     expect(() => db.linkTaskDesign('carol', projectId, taskId, { conversationId: makeId })).toThrow()
   })
@@ -105,11 +107,23 @@ describe('дизайны карточки', () => {
     expect(db.makeLinkableTasks('carol', makeId)).toEqual([])
   })
 
-  it('источники дизайна проекта — его Make-чаты, включая чужие', () => {
+  it('источники дизайна проекта — все и только собственные Make-проекты участника', () => {
     const { projectId, makeId } = scene()
+    const first = db.createConversation('bob', 'Bob 1', 'make')
+    db.setConversationProject('bob', first.id, projectId)
+    const second = db.createConversation('bob', 'Bob 2', 'make')
+    db.setConversationProject('bob', second.id, projectId)
+    const other = db.createConversation('alice', 'Alice 2', 'make')
+    db.setConversationProject('alice', other.id, projectId)
+
     const sources = db.projectDesignSources('bob', projectId)!
-    expect(sources).toHaveLength(1)
-    expect(sources[0]).toMatchObject({ conversationId: makeId, title: 'Проект 1', owner: 'alice', own: false })
+    expect(sources.map((source) => source.conversationId)).toEqual([second.id, first.id])
+    expect(sources).toMatchObject([
+      { title: 'Bob 2', owner: 'bob', own: true },
+      { title: 'Bob 1', owner: 'bob', own: true }
+    ])
+    expect(sources.map((source) => source.conversationId)).not.toContain(makeId)
+    expect(sources.map((source) => source.conversationId)).not.toContain(other.id)
     expect(db.projectDesignSources('carol', projectId)).toBeNull()
   })
 

@@ -1,5 +1,5 @@
 const form = document.querySelector('form')!
-const button = document.querySelector<HTMLButtonElement>('button')!
+const button = document.querySelector<HTMLButtonElement>('form button')!
 const message = document.querySelector<HTMLElement>('#message')!
 const field = (name: string): HTMLInputElement => document.querySelector<HTMLInputElement>(`[name="${name}"]`)!
 
@@ -8,8 +8,11 @@ function show(text: string, error = false): void {
   message.className = error ? 'error' : ''
 }
 void window.voicechatLogin.configured().then((configured) => {
-  if (configured) show('Этот Mac уже подключён. Существующая настройка защищена от перезаписи.')
+  if (configured) show('Этот Mac уже подключён. Перед заменой приложение запросит подтверждение.')
 })
+const updateValidity = (): void => { button.disabled = !form.checkValidity() }
+form.addEventListener('input', updateValidity)
+updateValidity()
 form.addEventListener('submit', (event) => {
   event.preventDefault()
   button.disabled = true
@@ -18,10 +21,14 @@ form.addEventListener('submit', (event) => {
     serverUrl: field('serverUrl').value,
     login: field('login').value,
     password: field('password').value
+  }).then((result) => {
+    if (!result.ok) show('Существующее подключение сохранено.')
   }).catch((error) => {
     show(error instanceof Error ? error.message : String(error), true)
-    button.disabled = false
-  }).finally(() => { field('password').value = '' })
+  }).finally(() => {
+    field('password').value = ''
+    updateValidity()
+  })
 })
 window.voicechatLogin.onStatus((status) => show(`Статус машины: ${status}`))
 window.voicechatLogin.onComplete((name) => { show(`Mac «${name}» подключён. Можно вернуться в ChatAI.`); button.disabled = true })

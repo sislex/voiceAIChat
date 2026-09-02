@@ -835,6 +835,32 @@ describe('дизайны карточки: REST', () => {
     expect(removed.json()).toEqual([])
   })
 
+  it('изолирует источники по владельцу сессии и запрещает прямую связь с чужим Make-проектом', async () => {
+    const { project, taskId, makeId } = await designScene()
+    db.addMember('admin', project.id, 'bob')
+    const bobFirst = db.createConversation('bob', 'Bob 1', 'make')
+    db.setConversationProject('bob', bobFirst.id, project.id)
+    const bobSecond = db.createConversation('bob', 'Bob 2', 'make')
+    db.setConversationProject('bob', bobSecond.id, project.id)
+
+    const adminSources = await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/design-sources?userId=bob&owner=bob` })
+    expect(adminSources.json()).toMatchObject([{ conversationId: makeId, own: true }])
+    const bobSources = await inj(bobTok, { method: 'GET', url: `/api/projects/${project.id}/design-sources?userId=admin` })
+    expect(bobSources.json()).toMatchObject([
+      { conversationId: bobSecond.id, own: true },
+      { conversationId: bobFirst.id, own: true }
+    ])
+
+    const rejected = await inj(bobTok, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${taskId}/designs`,
+      payload: { conversationId: makeId }
+    })
+    expect(rejected.statusCode).toBe(400)
+    expect(String((rejected.json() as { error: string }).error)).toContain('только свой')
+    expect(db.listTaskDesigns('bob', project.id, taskId)).toEqual([])
+  })
+
   it('чужой Make-проект и не-Make чат отклоняются с объяснением, посторонний получает 404', async () => {
     const { project, taskId } = await designScene()
     const foreign = db.createConversation('admin', 'Чужой макет', 'make')

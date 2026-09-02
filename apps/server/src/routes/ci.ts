@@ -14,7 +14,11 @@ const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 
 const forbid = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
 const bad = (reply: FastifyReply, error: unknown): FastifyReply => reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
 
-export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager, agents?: { isOnline(id: string): boolean }, boardChanged?: (projectId: string) => void): void {
+export function registerCiRoutes(
+  app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager, agents?: { isOnline(id: string): boolean }, boardChanged?: (projectId: string) => void,
+  /** Запуск подготовки задачи (server.ts `launchTaskPreparation`): нужен кнопке «Создать и подготовить» очереди улучшений. */
+  startPreparation?: (userId: string, projectId: string, taskId: string) => unknown
+): void {
   const isOwner = (req: FastifyRequest, projectId: string): boolean => db.getProject(uid(req), projectId)?.role === 'owner'
   const isAdmin = (req: FastifyRequest): boolean => req.user?.role === 'admin'
   const workflowGuard = { preHandler: requireProjectPermission('workflow:start') }
@@ -303,22 +307,49 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   app.get<{ Params: { id: string } }>('/api/projects/:id/improvements/tasks', async (req) =>
     db.listProjectImprovementTaskIds(uid(req), req.params.id)
   )
+  app.get<{ Params: { id: string } }>('/api/projects/:id/improvements', async (req) =>
+    db.listProjectImprovements(uid(req), req.params.id)
+  )
+  app.delete<{ Params: { id: string } }>('/api/improvements/:id', async (req, reply) => {
+    const projectId = db.improvementProjectId(req.params.id)
+    if (!db.deleteTaskImprovement(uid(req), req.params.id)) return nf(reply)
+    if (projectId) boardChanged?.(projectId)
+    return { ok: true }
+  })
   app.patch<{ Params: { id: string }; Body: { status?: string } }>('/api/improvements/:id', async (req, reply) => {
     const status = req.body?.status
     if (status !== 'new' && status !== 'accepted' && status !== 'rejected' && status !== 'implemented') return reply.code(400).send({ error: 'Некорректный статус предложения' })
     try { return db.updateTaskImprovementStatus(uid(req), req.params.id, status) ?? nf(reply) }
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
-  app.post<{ Params: { id: string }; Body: import('@voicechat/shared').CreateTaskFromImprovementInput }>('/api/improvements/:id/create-task', async (req, reply) => {
-    const body = req.body
-    if (!body?.columnId || !body?.title?.trim() || typeof body.description !== 'string' || typeof body.acceptanceCriteria !== 'string') return reply.code(400).send({ error: 'columnId, title, description and acceptanceCriteria required' })
+  app.post<{ Params: { id: string }; Body: import('@voicechat/shared').CreateTaskFromImprovementInput | undefined }>('/api/improvements/:id/create-task', async (req, reply) => {
+    const body = req.body ?? {}
+    // Все поля необязательны (значения берутся из предложения), но переданные должны быть строками.
+    for (const key of ['columnId', 'title', 'description', 'acceptanceCriteria'] as const) {
+      if (body[key] !== undefined && typeof body[key] !== 'string') return reply.code(400).send({ error: `${key} must be a string` })
+    }
+    if (body.title !== undefined && !body.title.trim()) return reply.code(400).send({ error: 'title must not be empty' })
+    let created: NonNullable<ReturnType<VoiceChatDb['createTaskFromImprovement']>>
     try {
       const result = db.createTaskFromImprovement(uid(req), req.params.id, body)
       if (!result) return nf(reply)
-      boardChanged?.(result.task.projectId)
-      return result
+      created = result
     }
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
+    // Подготовка — отдельный шаг после успешного создания: её отказ (нет машины,
+    // модель недоступна) не должен откатывать уже созданную задачу.
+    let preparationStarted = false
+    let preparationError: string | null = null
+    if (body.startPreparation && created.created) {
+      if (!startPreparation) preparationError = 'Запуск подготовки недоступен на этом сервере'
+      else {
+        try { await startPreparation(uid(req), created.task.projectId, created.task.id); preparationStarted = true }
+        catch (error) { preparationError = error instanceof Error ? error.message : String(error) }
+      }
+    }
+    boardChanged?.(created.task.projectId)
+    const task = db.getCiTask(uid(req), created.task.projectId, created.task.id) ?? created.task
+    return { ...created, task, preparationStarted, preparationError }
   })
 
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, _reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))

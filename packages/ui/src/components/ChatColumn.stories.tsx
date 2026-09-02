@@ -100,8 +100,60 @@ const meta: Meta<typeof ChatColumn> = {
 export default meta
 type Story = StoryObj<typeof ChatColumn>
 
-/** Обычная беседа: свои реплики слева, ответы модели с подписями и мета-иконкой. */
-export const Conversation: Story = {}
+/** Обычная беседа: кнопка вопроса есть в DOM, но в покое визуально скрыта. */
+export const Conversation: Story = {
+  play: async ({ canvasElement }) => {
+    const button = within(canvasElement).getByRole('button', { name: 'Копировать вопрос' })
+    await expect(button).toHaveClass('copymsg')
+    await expect(button).not.toHaveClass('copymsg--copied')
+  }
+}
+
+/** Наведение на пользовательский пузырь раскрывает кнопку вопроса. */
+export const UserMessageHovered: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole('button', { name: 'Копировать вопрос' })
+    const bubble = button.closest('.me .bub')
+    if (!bubble) throw new Error('User message bubble not found')
+    await userEvent.hover(bubble)
+    await expect(button).toHaveClass('copymsg')
+  }
+}
+
+/** Клавиатурный фокус раскрывает кнопку и сохраняет нативную активацию. */
+export const UserMessageFocused: Story = {
+  play: async ({ canvasElement }) => {
+    const button = within(canvasElement).getByRole('button', { name: 'Копировать вопрос' })
+    button.focus()
+    await expect(button).toHaveFocus()
+  }
+}
+
+/** Тёмная тема сохраняет контраст пользовательской кнопки в видимом состоянии. */
+export const UserMessageHoveredDark: Story = {
+  decorators: [(Story) => <div data-theme="dark" style={{ height: '100%' }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole('button', { name: 'Копировать вопрос' })
+    const bubble = button.closest('.me .bub')
+    if (!bubble) throw new Error('User message bubble not found')
+    await userEvent.hover(bubble)
+  }
+}
+
+/** Ответ модели сохраняет прежнее раскрытие при наведении и фокусе. */
+export const ModelMessageHovered: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole('button', { name: 'Копировать ответ' })
+    const bubble = button.closest('.ai .bub')
+    if (!bubble) throw new Error('Model message bubble not found')
+    await userEvent.hover(bubble)
+    button.focus()
+    await expect(button).toHaveFocus()
+  }
+}
 
 /** Успешное копирование вопроса: видимое подтверждение закреплено для visual-check. */
 export const UserMessageCopied: Story = {
@@ -236,7 +288,14 @@ export const MobileViewport: Story = {
       makeAiMessage({ id: 'a-mobile-copy', text: 'Кнопка остаётся внутри пузыря, а текст переносится.' })
     ]
   },
-  parameters: { viewport: { defaultViewport: 'mobile2' } }
+  parameters: { viewport: { defaultViewport: 'mobile2' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const button = canvas.getByRole('button', { name: 'Копировать вопрос' })
+    const bubble = button.closest('.me .bub')
+    if (!bubble) throw new Error('User message bubble not found')
+    await userEvent.hover(bubble)
+  }
 }
 
 /**

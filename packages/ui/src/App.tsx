@@ -326,6 +326,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
   const routeSettings = projectsRoute?.kind === 'settings'
+  // Вкладка настроек — из адреса; без сегмента открыто «Общее».
+  const routeSettingsTab = projectsRoute?.kind === 'settings' ? projectsRoute.tab ?? 'general' : 'general'
   const routeReleases = projectsRoute?.kind === 'releases'
   const routeCode = projectsRoute?.kind === 'code'
   const routeCodeWorkspace = projectsRoute?.kind === 'code' ? projectsRoute.workspaceId ?? null : null
@@ -897,13 +899,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [machineConnectOpen, setMachineConnectOpen] = useState(false)
   const [machineConnectStatus, setMachineConnectStatus] = useState('Подключите устройство, чтобы продолжить действие.')
   const [machineConnectBusy, setMachineConnectBusy] = useState(false)
+  const machineConnectGeneration = useRef(0)
   const machineActionGuard = useRef(createMachineRequiredGuard(() => setMachineConnectOpen(true)))
   const requireMachine = useCallback((action: () => void): void => {
     setMachineConnectStatus('Подключите устройство, чтобы продолжить действие.')
     machineActionGuard.current.require(operations.agents.some((agent) => agent.online), action)
   }, [operations.agents])
-  const finishPendingMachineAction = useCallback(async (agentId?: string): Promise<boolean> => {
+  const finishPendingMachineAction = useCallback(async (generation: number, agentId?: string): Promise<boolean> => {
     const agents = await api['agents:list']()
+    if (generation !== machineConnectGeneration.current || !machineActionGuard.current.pending()) return false
     operationsActions.applyAgents(agents)
     const connectedAgent = agentId
       ? agents.find((agent) => agent.id === agentId && agent.online)
@@ -911,47 +915,56 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!connectedAgent) return false
     if (settingsState.settings.defaultAgentId !== connectedAgent.id) {
       await settingsActions.updateSettings({ defaultAgentId: connectedAgent.id })
+      if (generation !== machineConnectGeneration.current || !machineActionGuard.current.pending()) return false
     }
     setMachineConnectOpen(false)
     setMachineConnectBusy(false)
+    machineConnectGeneration.current += 1
     machineActionGuard.current.resume()
     return true
   }, [api, operationsActions, settingsActions, settingsState.settings.defaultAgentId])
   const openLoginApplication = useCallback(async (): Promise<void> => {
+    const generation = ++machineConnectGeneration.current
     setMachineConnectBusy(true)
     setMachineConnectStatus('Создаём безопасную одноразовую ссылку…')
     try {
       const enrollment = await api['loginApplication:issueEnrollment']()
+      if (generation !== machineConnectGeneration.current) return
       window.location.href = enrollment.deepLink
       setMachineConnectStatus('Ожидаем подтверждение сервера. Если приложение не открылось, скачайте его.')
       const deadline = enrollment.expiresAt
       const poll = async (): Promise<void> => {
+        if (generation !== machineConnectGeneration.current) return
         if (Date.now() >= deadline) {
           setMachineConnectBusy(false)
-          setMachineConnectStatus('Ссылка истекла или приложение не ответило. Выпустите новую ссылку.')
+          setMachineConnectStatus('Ссылка истекла или приложение не ответило. Повторите подключение — будет выпущена новая ссылка.')
           return
         }
         try {
           const status = await api['loginApplication:enrollmentStatus']({ statusId: enrollment.statusId })
+          if (generation !== machineConnectGeneration.current) return
           if (status.status === 'completed') {
-            if (await finishPendingMachineAction(status.agentId)) return
+            if (await finishPendingMachineAction(generation, status.agentId)) return
+            if (generation !== machineConnectGeneration.current) return
             setMachineConnectStatus('Устройство зарегистрировано; ожидаем, когда машина появится в сети…')
           } else if (status.status === 'expired') {
             setMachineConnectBusy(false)
-            setMachineConnectStatus('Ссылка истекла. Нажмите «Открыть приложение» ещё раз.')
+            setMachineConnectStatus('Ссылка истекла. Нажмите «Подключить текущее устройство» ещё раз.')
             return
           }
         } catch (error) {
+          if (generation !== machineConnectGeneration.current) return
           setMachineConnectBusy(false)
-          setMachineConnectStatus(error instanceof Error ? error.message : String(error))
+          setMachineConnectStatus('Ошибка сети: ' + (error instanceof Error ? error.message : String(error)))
           return
         }
         window.setTimeout(() => void poll(), 1000)
       }
       window.setTimeout(() => void poll(), 700)
     } catch (error) {
+      if (generation !== machineConnectGeneration.current) return
       setMachineConnectBusy(false)
-      setMachineConnectStatus(error instanceof Error ? error.message : String(error))
+      setMachineConnectStatus('Не удалось создать ссылку: ' + (error instanceof Error ? error.message : String(error)))
     }
   }, [api, finishPendingMachineAction])
   useEffect(() => {
@@ -2220,6 +2233,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
       {machineConnectOpen && (
         <Dialog title="Подключить устройство" onClose={() => {
+          machineConnectGeneration.current += 1
           machineActionGuard.current.cancel()
           setMachineConnectOpen(false)
           setMachineConnectBusy(false)
@@ -2236,7 +2250,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               }).catch((error) => setMachineConnectStatus(error instanceof Error ? error.message : String(error)))
             }}>Скачать приложение</button>
             <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
-              {machineConnectBusy ? 'Ожидаем подключение…' : 'Открыть приложение'}
+              {machineConnectBusy ? 'Ожидаем подключение…' : 'Подключить текущее устройство'}
             </button>
           </div>
         </Dialog>
@@ -2543,6 +2557,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             projects.projectDetail?.id === routeProjectId ? (
               <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings
                 detail={projects.projectDetail!}
+                activeTab={routeSettingsTab}
+                onTabChange={(tab, opts) => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId, tab }), opts)}
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
                 onDeriveType={async (id, name) => { await projectsActions.deriveProjectType(id, name) }}
