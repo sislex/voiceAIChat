@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-01
-checked: 4aab9ff7
+updated: 2026-09-02
+checked: 88432f64
 areas:
   - apps/web
   - apps/desktop/src
