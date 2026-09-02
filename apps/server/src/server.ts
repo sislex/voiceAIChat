@@ -262,7 +262,7 @@ worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
 test -z "$worktree_status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
 current="$(git -C "$repo" branch --show-current)"
 test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
-git -C "$repo" fetch --no-tags origin "refs/heads/$base:refs/remotes/origin/$base"
+git -C "$repo" fetch --no-tags origin "refs/heads/\${base}:refs/remotes/origin/\${base}"
 git -C "$repo" merge --ff-only "refs/remotes/origin/$base"
 local_sha="$(git -C "$repo" rev-parse HEAD)"
 remote_sha="$(git -C "$repo" rev-parse "refs/remotes/origin/$base")"
