@@ -5482,11 +5482,21 @@ export class VoiceChatDb {
     return this.taskDesigns(taskId)
   }
 
+  /** Проверяет, что новую дизайн-связь создаёт владелец Make-проекта. */
+  assertTaskDesignSource(userId: string, projectId: string, taskId: string, conversationId: string): void {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    if (!this.getTask(projectId, taskId)) throw new Error('Задача не найдена в проекте')
+    const conv = this.db
+      .prepare(`SELECT id, assistant_kind, project_id, user_id FROM conversations WHERE id = ?`)
+      .get(conversationId) as { id: string; assistant_kind: string | null; project_id: string | null; user_id: string | null } | undefined
+    if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
+    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    if (conv.user_id !== userId) throw new Error('Можно связать только свой Make-проект')
+  }
+
   /**
-   * Связывает карточку со страницей Make-проекта. Источник обязан быть привязан
-   * к тому же проекту: иначе участники увидели бы в карточке дизайн, к которому
-   * у них нет доступа, — привязка Make-проекта к проекту и есть акт, открывающий
-   * его команде на чтение (см. `access` в routes/make.ts).
+   * Связывает карточку с принадлежащим пользователю Make-проектом, который
+   * привязан к тому же обычному проекту.
    */
   linkTaskDesign(
     userId: string,
@@ -5494,14 +5504,7 @@ export class VoiceChatDb {
     taskId: string,
     args: { conversationId: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string }
   ): TaskDesignLink[] {
-    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
-    const task = this.getTask(projectId, taskId)
-    if (!task) throw new Error('Задача не найдена в проекте')
-    const conv = this.db
-      .prepare(`SELECT id, assistant_kind, project_id FROM conversations WHERE id = ?`)
-      .get(args.conversationId) as { id: string; assistant_kind: string | null; project_id: string | null } | undefined
-    if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
-    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    this.assertTaskDesignSource(userId, projectId, taskId, args.conversationId)
     const legacyPath = (args.path ?? '').trim()
     const mode = args.mode ?? (legacyPath ? 'files' : 'whole_project')
     const inputPaths = args.paths ?? (legacyPath ? [legacyPath] : [])
@@ -5530,15 +5533,15 @@ export class VoiceChatDb {
     return this.taskDesigns(taskId)
   }
 
-  /** Make-проекты, привязанные к проекту: то, из чего карточка выбирает дизайн. */
+  /** Собственные Make-проекты пользователя, привязанные к проекту. */
   projectDesignSources(userId: string, projectId: string): ProjectDesignSource[] | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const rows = this.db
       .prepare(
         `SELECT id, title, user_id, updated_at FROM conversations
-          WHERE project_id = ? AND assistant_kind = ? ORDER BY updated_at DESC`
+          WHERE project_id = ? AND assistant_kind = ? AND user_id = ? ORDER BY updated_at DESC`
       )
-      .all(projectId, MAKE_KIND) as Array<{ id: string; title: string; user_id: string | null; updated_at: number }>
+      .all(projectId, MAKE_KIND, userId) as Array<{ id: string; title: string; user_id: string | null; updated_at: number }>
     return rows.map((r) => ({
       conversationId: r.id,
       title: r.title,
