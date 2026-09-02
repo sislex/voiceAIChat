@@ -134,6 +134,12 @@ export interface TurnManagerDeps {
   }
   /** Чтение файла картинки с диска сервера или из профиля исполнителя. */
   readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
+  /**
+   * Студия картинок: положить изображения из ответа ассистента в галерею
+   * разговора вида images. Пути — из fenced-блоков image финального текста;
+   * ошибки чтения глотаются в реализации: ход не должен падать из-за галереи.
+   */
+  captureStudioImages?: (userId: string, conversationId: string, finalText: string) => Promise<void>
   /** Привязка чата к хранилищу машины по умолчанию (ChatAI), если её ещё нет. */
   ensureChatStorage?: (userId: string, conversationId: string, machineId: string) => Promise<ChatStorageBinding | null>
   /** Системный preflight общей main-копии проекта перед запуском модели. */
@@ -1008,6 +1014,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               turnInputTokens: turnInputTokens(merged)
             })
             return message
+          }
+          // Чат студии картинок: всё нарисованное в ходе попадает в галерею.
+          // Fire-and-forget: галерея — побочный продукт хода, а не его условие.
+          if (conv?.assistantKind === 'images' && deps.captureStudioImages) {
+            void deps.captureStudioImages(userId, conversationId, taskLaunch.text)
           }
           const emitDone = (finalText: string, message?: Message): void => {
             broadcast(

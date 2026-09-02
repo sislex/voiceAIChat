@@ -1096,6 +1096,27 @@ export class VoiceChatDb {
         ELSE 'chat' END`)
     }
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_user_scope_project_updated ON conversations(user_id, scope, project_id, updated_at DESC)`)
+    // В БД, созданных из schema.ts до появления студии картинок, список scope
+    // зажат CHECK-констрейнтом в DDL таблицы. SQLite не умеет расширять CHECK
+    // через ALTER, поэтому пересобираем таблицу: тот же DDL с новым списком,
+    // копия данных и родные индексы. В старых БД scope добавлялся ALTER-ом без
+    // CHECK — там пересборка не нужна и не запускается.
+    const convDdl = (this.db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'`).get() as { sql: string } | undefined)?.sql
+    if (convDdl && /scope IN \([^)]*\)/.test(convDdl) && !/scope IN \([^)]*'images'/.test(convDdl)) {
+      const newDdl = convDdl
+        .replace(/scope IN \([^)]*\)/, `scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')`)
+        .replace(/^CREATE TABLE ("conversations"|conversations)/, 'CREATE TABLE conversations_new')
+      const convIndexes = this.db.prepare(`SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='conversations' AND sql IS NOT NULL`).all() as Array<{ sql: string }>
+      this.db.exec('PRAGMA foreign_keys=OFF')
+      this.db.transaction(() => {
+        this.db.exec(newDdl)
+        this.db.exec(`INSERT INTO conversations_new SELECT * FROM conversations`)
+        this.db.exec(`DROP TABLE conversations`)
+        this.db.exec(`ALTER TABLE conversations_new RENAME TO conversations`)
+        for (const { sql } of convIndexes) this.db.exec(sql)
+      })()
+      this.db.exec('PRAGMA foreign_keys=ON')
+    }
     if (!convCols.some((c) => c.name === 'status')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
     }
@@ -1631,8 +1652,8 @@ export class VoiceChatDb {
     return row?.user_id ?? null
   }
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null, projectId: string | null = null, requestedScope?: ConversationScope): Conversation {
-    const scope = requestedScope ?? (assistantKind === 'make' ? 'make' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'web-recorder' ? 'web-reader' : 'chat')
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' | null = null, projectId: string | null = null, requestedScope?: ConversationScope): Conversation {
+    const scope = requestedScope ?? (assistantKind === 'make' ? 'make' : assistantKind === 'images' ? 'images' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'web-recorder' ? 'web-reader' : 'chat')
     if (scope === 'kanban' && !projectId) throw new Error('projectId is required for kanban')
     const project = projectId ? this.getProject(userId, projectId) : null
     if (projectId && !project) throw new Error('project not found')
@@ -3958,9 +3979,9 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       disabledContext: parseJsonValue<string[]>(row.disabled_context_json, []).filter((item): item is string => typeof item === 'string'),
-      scope: row.scope === 'kanban' || row.scope === 'make' || row.scope === 'console' || row.scope === 'playwright-reader' || row.scope === 'web-reader' ? row.scope : 'chat',
+      scope: row.scope === 'kanban' || row.scope === 'make' || row.scope === 'images' || row.scope === 'console' || row.scope === 'playwright-reader' || row.scope === 'web-reader' ? row.scope : 'chat',
       projectId: row.project_id ?? null,
-      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' || row.assistant_kind === 'make' ? row.assistant_kind : null,
+      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' || row.assistant_kind === 'make' || row.assistant_kind === 'images' ? row.assistant_kind : null,
       // Дефолт — полная автономия: ассистент задуман действующим, а не советующим.
       assistantAutonomy: row.assistant_autonomy === 'confirm' ? 'confirm' : 'auto',
       previewUrl: row.preview_url ?? null,

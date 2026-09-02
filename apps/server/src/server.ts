@@ -77,6 +77,9 @@ import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { registerMakeMcp, MAKE_MCP_PATH, MakeTaskScopeBroker, buildTaskMakeSources } from './mcp/makeMcp.js'
+import { ImageStudioStore } from './images/studio.js'
+import { registerImageStudioRoutes } from './routes/imageStudio.js'
+import { llmImageStudioGenerator } from './llm/imageStudioGenerator.js'
 import { preparationDesignNote } from './ci/preparationNotes.js'
 import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
@@ -562,6 +565,25 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     runs: () => kanbanRunLaunchers
   }, mcpSecret)
   // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
+  // Студия картинок: галерея на разговор + генерация/правка через LLM — тем же
+  // способом, что ретушь (модель сохраняет PNG и показывает fenced-блоком).
+  const imageStudioStore = new ImageStudioStore(join(opts.config.dataDir, 'image-studio'))
+  registerImageStudioRoutes(app, {
+    db,
+    store: imageStudioStore,
+    generator: (userId) => llmImageStudioGenerator({
+      client: codex,
+      userId,
+      model: db.getSettings(userId).codexModel,
+      cwd: profileHome(userId),
+      readGenerated: async (path) => {
+        if (runnerFs) return runnerFs.readFile(userId, path)
+        const local = readUserFile(path, [profileHome(userId)])
+        return local.ok ? local.file : null
+      }
+    })
+  })
+
   registerMakeRoutes(app, {
     db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
     boardChanged: (projectId) => boardHub.emit(projectId),
@@ -1172,6 +1194,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     ensureChatStorage,
     ensureProjectMainCurrent,
+    // Студия картинок: изображения из ответа складываются в галерею разговора.
+    captureStudioImages: async (userId, conversationId, finalText) => {
+      const { parseImages } = await import('@voicechat/shared')
+      for (const image of parseImages(finalText).images.slice(0, 10)) {
+        try {
+          const file = await (runnerFs ? runnerFs.readFile(userId, image.path) : Promise.resolve(readUserFile(image.path, [profileHome(userId)])).then((r) => r.ok ? r.file : null))
+          if (!file?.dataBase64) continue
+          const name = await imageStudioStore.freeName(conversationId, image.path.split('/').pop() ?? 'изображение.png')
+          await imageStudioStore.writeBuffer(conversationId, name, Buffer.from(file.dataBase64, 'base64'))
+        } catch {
+          // не-картинка, квота или чтение не удалось — ход это не ломает
+        }
+      }
+    },
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)

@@ -202,7 +202,7 @@ export interface IpcInvokeMap {
   'make:import': { arg: { conversationId: string; dataBase64: string; mode: MakeImportMode }; result: MakeProjectState }
   /** Импорт страницы по URL: HTML + same-origin css/js/картинки. */
   'make:importUrl': { arg: { conversationId: string; url: string; mode: MakeImportMode }; result: MakeProjectState }
-  'conversations:create': { arg: { title?: string; scope?: ConversationScope; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
+  'conversations:create': { arg: { title?: string; scope?: ConversationScope; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
     arg: { idempotencyKey: string; title: string; projectId?: string | null; message: Omit<AddMessageArgs, 'conversationId'> }
@@ -683,6 +683,14 @@ export interface IpcInvokeMap {
   'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
+  /** Студия картинок: галерея разговора, генерация и правка по промпту. */
+  'imgstudio:list': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:read': { arg: { conversationId: string; path: string }; result: { path: string; dataBase64: string } }
+  'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:delete': { arg: { conversationId: string; path: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
   'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
   'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
@@ -1452,6 +1460,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:linkDesign',
   'tasks:unlinkDesign',
   'projects:designSources',
+  'imgstudio:list',
+  'imgstudio:read',
+  'imgstudio:upload',
+  'imgstudio:delete',
+  'imgstudio:rename',
+  'imgstudio:generate',
+  'imgstudio:edit',
   'make:projectFiles',
   'make:projectLinks',
   'make:projectPull',
