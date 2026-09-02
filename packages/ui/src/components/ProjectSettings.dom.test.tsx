@@ -289,6 +289,30 @@ describe('ProjectSettings — тип проекта', () => {
   })
 })
 
+describe('ProjectSettings — вкладка из адреса', () => {
+  const generalChain = builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.general)
+
+  it('открывает вкладку, пришедшую от хоста, и не переключает её сама', async () => {
+    const onTabChange = vi.fn()
+    render(<ProjectSettings {...props({ activeTab: 'members', onTabChange })} />)
+    expect(screen.getByRole('tab', { name: 'Участники' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(screen.getByRole('tab', { name: 'LLM' }))
+    // Вкладку меняет адрес: компонент только просит хоста перейти.
+    expect(onTabChange).toHaveBeenCalledWith('llm', undefined)
+    expect(screen.getByRole('tab', { name: 'Участники' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'LLM' })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('вкладку выключенной подсистемы заменяет на «Общее» без новой записи в истории', async () => {
+    const onTabChange = vi.fn()
+    render(<ProjectSettings {...props({
+      activeTab: 'machines', onTabChange,
+      detail: detail({ typeId: BUILTIN_PROJECT_TYPE_IDS.general, typeChain: generalChain })
+    })} />)
+    await waitFor(() => expect(onTabChange).toHaveBeenCalledWith('general', { replace: true }))
+  })
+})
+
 describe('ProjectSettings — приглашения участников', () => {
   const invitation = (over: Partial<ProjectInvitation> = {}): ProjectInvitation => ({
     id: 'inv1', projectId: 'p1', email: 'bob@example.com', invitedUsername: null,

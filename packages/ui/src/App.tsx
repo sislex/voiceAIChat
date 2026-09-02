@@ -326,6 +326,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
   const routeSettings = projectsRoute?.kind === 'settings'
+  // Вкладка настроек — из адреса; без сегмента открыто «Общее».
+  const routeSettingsTab = projectsRoute?.kind === 'settings' ? projectsRoute.tab ?? 'general' : 'general'
   const routeReleases = projectsRoute?.kind === 'releases'
   const routeCode = projectsRoute?.kind === 'code'
   const routeCodeWorkspace = projectsRoute?.kind === 'code' ? projectsRoute.workspaceId ?? null : null
@@ -2543,6 +2545,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             projects.projectDetail?.id === routeProjectId ? (
               <Suspense fallback={<div role="status">Загрузка настроек проекта…</div>}><ProjectSettings
                 detail={projects.projectDetail!}
+                activeTab={routeSettingsTab}
+                onTabChange={(tab, opts) => navigate(buildProjectsRoute({ kind: 'settings', projectId: routeProjectId, tab }), opts)}
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
                 onDeriveType={async (id, name) => { await projectsActions.deriveProjectType(id, name) }}
