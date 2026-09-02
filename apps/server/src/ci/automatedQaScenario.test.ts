@@ -201,4 +201,51 @@ describe('шаг, который нельзя проверить', () => {
     // Снимок всё равно нужен: по нему видно, что было на странице.
     expect(outcome.screenshotUrl).toBe('/shot')
   })
+
+  it('снимок в конце получает сигнал отмены: круг 29 научил клиент слушать, но сюда сигнал не передавался', async () => {
+    const client = browser()
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+    const signal = new AbortController().signal
+    await runner.run({ runId: 'run-7', userId: 'alice', signal, scenario: scenario([{ id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#a' } }]) })
+    expect((client.screenshot as ReturnType<typeof vi.fn>).mock.calls[0][2]).toBe(signal)
+  })
+
+  it('отмена между шагами: недошедшие шаги пропущены с причиной, прогон заблокирован, а не «пройден»', async () => {
+    // Раньше цикл просто обрывался: шагов в отчёте становилось меньше, и разовая
+    // проверка считала сценарий пройденным по двум шагам из пяти.
+    const controller = new AbortController()
+    const client = browser({ command: vi.fn(async (_id, request) => {
+      if (request.command.type === 'selector' && request.command.action.kind === 'click' && request.command.action.selector === '#second') controller.abort()
+      return { ok: true } as never
+    }) })
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+    const outcome = await runner.run({
+      runId: 'run-8', userId: 'alice', signal: controller.signal,
+      scenario: scenario([
+        { id: 's1', title: 'Первый', action: { kind: 'click', selector: '#first' } },
+        { id: 's2', title: 'Второй', action: { kind: 'click', selector: '#second' } },
+        { id: 's3', title: 'Третий', action: { kind: 'click', selector: '#third' } }
+      ])
+    })
+    expect(outcome.steps.map((step) => step.status)).toEqual(['passed', 'skipped', 'skipped'])
+    expect(outcome.steps[1].detail).toBe('Прерван: прогон отменён')
+    expect(outcome.steps[2].detail).toBe('Пропущен: прогон отменён')
+    expect(outcome.blocked).toBe('Прогон отменён')
+  })
+
+  it('исчерпанный бюджет (AbortSignal.timeout) — блокировка «бюджет», а не провал шага', async () => {
+    // Команда, прерванная таймаутом, падала «запрос отменён» и шла в отчёт
+    // провалом — дефектом реализации за то, что кончилось время.
+    const signal = AbortSignal.timeout(5)
+    const client = browser({ command: vi.fn(async (_id, request, abort?: AbortSignal) => {
+      if (request.command.type === 'selector' && request.command.action.kind === 'click') {
+        await new Promise<void>((_resolve, reject) => { abort?.addEventListener('abort', () => reject(new Error('Запрос к Browser Runner отменён')), { once: true }) })
+      }
+      return { ok: true } as never
+    }) })
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+    const outcome = await runner.run({ runId: 'run-9', userId: 'alice', signal, scenario: scenario([{ id: 's1', title: 'Долгий', action: { kind: 'click', selector: '#slow' } }]) })
+    expect(outcome.steps[0].status).toBe('skipped')
+    expect(outcome.blocked).toBe('Исчерпан бюджет времени прогона сценария')
+  })
 })

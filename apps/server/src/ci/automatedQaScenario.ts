@@ -68,6 +68,18 @@ export interface AutomatedQaScenarioRunner {
 const DEFAULT_BUDGET_MS = 10 * 60_000
 
 /**
+ * Почему прогон прерван. `AbortSignal.timeout` кладёт в `reason` TimeoutError —
+ * так разовая проверка отличает исчерпанный бюджет от «Отменить» человека.
+ * Обе причины — не дефект реализации, и вердикт обязан это сказать.
+ */
+export function abortReason(signal: AbortSignal): string {
+  const reason = signal.reason as { name?: unknown } | undefined
+  return reason && typeof reason === 'object' && reason.name === 'TimeoutError'
+    ? 'Исчерпан бюджет времени прогона сценария'
+    : 'Прогон отменён'
+}
+
+/**
  * Ошибки консоли с момента прошлого чтения: журнал читается с `clear`, поэтому
  * каждый вызов отдаёт только новое. Повтор одного текста схлопывается с
  * кратностью — одно исключение раннер видит дважды, слушателями `console` и
@@ -125,21 +137,37 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         }
         let failed = false
         let expired = false
+        let aborted: string | null = null
         let unverifiable: string | null = null
         for (let index = 0; index < steps.length; index++) {
           const step = steps[index]
-          if (input.signal.aborted) break
+          // Прерванный прогон раньше просто обрывал цикл: недошедшие шаги
+          // исчезали из отчёта, и разовая проверка считала сценарий пройденным
+          // по двум шагам из пяти. Теперь они пропущены с причиной, а прогон
+          // заблокирован — судить о реализации по нему нельзя.
+          if (input.signal.aborted && !aborted) aborted = abortReason(input.signal)
           // Бюджет всего прогона: у командного режима он есть с самого начала, а
           // сценарий мог идти часами — сто шагов по 30 секунд ожидания.
-          if (!failed && now() >= deadline) expired = true
-          if (failed || expired) {
-            const skipped: AutomatedQaStepResult = { id: step.id, title: step.title, status: 'skipped', detail: expired ? 'Пропущен: исчерпан бюджет времени прогона' : 'Пропущен после провала предыдущего шага', durationMs: 0 }
+          if (!failed && !aborted && now() >= deadline) expired = true
+          if (failed || expired || aborted) {
+            const detail = aborted ? `Пропущен: ${aborted.toLowerCase()}` : expired ? 'Пропущен: исчерпан бюджет времени прогона' : 'Пропущен после провала предыдущего шага'
+            const skipped: AutomatedQaStepResult = { id: step.id, title: step.title, status: 'skipped', detail, durationMs: 0 }
             results.push(skipped)
             input.onStep?.(skipped, index, steps.length)
             continue
           }
           const startedAt = now()
           const outcome = await runScenarioStep(step, send)
+          // Прервали посреди шага: команда упала с «запрос отменён», и шаг шёл
+          // в отчёт провалом — то есть дефектом реализации за то, что человек
+          // нажал «Отменить» или кончился бюджет.
+          if (input.signal.aborted) {
+            aborted = abortReason(input.signal)
+            const cut: AutomatedQaStepResult = { id: step.id, title: step.title, status: 'skipped', detail: `Прерван: ${aborted.toLowerCase()}`, durationMs: now() - startedAt }
+            results.push(cut)
+            input.onStep?.(cut, index, steps.length)
+            continue
+          }
           // Журнал читается с очисткой: следующий шаг увидит только свои
           // ошибки. Иначе одна поломка тянулась бы по всем шагам подряд, а за
           // весь прогон (как в круге 27) непонятно, какое действие её вызвало.
@@ -160,13 +188,17 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         }
         expiredBudget = expired
         if (unverifiable) blocked = unverifiable
+        if (aborted) blocked = aborted
         // Хвост: ошибки, прилетевшие после последнего шага (асинхронный запрос
         // страницы вполне мог не успеть к моменту его завершения).
         pageErrors.push(...await readPageErrors(send))
         // Снимок делается в любом исходе: на провале он объясняет причину, на
         // успехе служит доказательством, что проверялась именно та страница.
+        // Сигнал отмены передаётся и сюда: круг 29 научил `screenshot()` его
+        // слушать, но единственный вызывающий сигнал не передавал — после
+        // «Отменить» снимок висел до собственного таймаута в 35 с.
         try {
-          const shot = await deps.browser.screenshot(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command: { type: 'screenshot', format: 'png' } })
+          const shot = await deps.browser.screenshot(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command: { type: 'screenshot', format: 'png' } }, input.signal)
           if (input.inlineScreenshot) {
             screenshotDataUrl = `data:image/png;base64,${shot.buffer.toString('base64')}`
           } else {

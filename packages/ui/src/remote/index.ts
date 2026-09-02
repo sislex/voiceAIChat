@@ -450,8 +450,15 @@ export function makeBrowserBridge(httpBase: string): RendererBrowserBridge {
     const res = await fetch(httpBase + path, { method: 'POST', headers: authJson(), body: JSON.stringify(body) })
     if (!res.ok) {
       let message = `Browser Runner: ${res.status}`
-      try { const data = await res.json() as { message?: string }; if (data.message) message = data.message } catch { /* не JSON */ }
-      throw new Error(message)
+      let code: string | undefined
+      try {
+        const data = await res.json() as { message?: string; code?: string }
+        if (data.message) message = data.message
+        code = data.code
+      } catch { /* не JSON */ }
+      // Код раннера едет вместе с текстом: по `not_found`/`stale_incarnation`
+      // панель понимает, что сессии больше нет, и предлагает перезапуск.
+      throw Object.assign(new Error(message), code ? { code } : {})
     }
     return res.json() as Promise<T>
   }

@@ -95,6 +95,15 @@ describe('registerBrowserRoutes', () => {
     await app.close()
   })
 
+  it('код раннера уходит в ответ отдельным полем: по нему панель узнаёт потерянную сессию', async () => {
+    const runner = makeRunner({ command: vi.fn(async () => { throw new BrowserRunnerError(404, 'Сессия Chromium закрыта', 'not_found') }) })
+    const app = await makeApp({ runner })
+    const res = await app.inject({ method: 'POST', url: '/api/browser/c1/command', payload: { incarnation: 'inc', command: { type: 'reload' } } })
+    expect(res.statusCode).toBe(404)
+    expect(res.json()).toEqual({ error: 'browser_runner', message: 'Сессия Chromium закрыта', code: 'not_found' })
+    await app.close()
+  })
+
   it('stop закрывает сессию', async () => {
     const runner = makeRunner()
     const app = await makeApp({ runner })

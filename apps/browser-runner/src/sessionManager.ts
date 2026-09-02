@@ -3,6 +3,7 @@ import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
 import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import { humanizeNavigationError } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -26,6 +27,11 @@ interface Session {
   lastUsedAt: number
   /** Кто выполнял последнюю команду: человек из панели или модель. */
   lastActor?: 'user' | 'assistant'
+  /**
+   * Сессия закрывается: страницы гаснут одна за другой, и открывать взамен
+   * последней пустую вкладку уже нельзя — контекста вот-вот не станет.
+   */
+  stopping?: boolean
 }
 
 /** Держим последние записи: журнал живой страницы иначе растёт без предела. */
@@ -121,35 +127,7 @@ export class BrowserSessionManager {
         return route.abort('blockedbyclient')
       }
     })
-    const register = (page: Page): string => {
-      const known = session.pageIds.get(page)
-      if (known) return known
-      const id = randomUUID()
-      session.pageIds.set(page, id)
-      session.pages.set(id, page)
-      page.on('close', () => {
-        session.pages.delete(id)
-        session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id)
-      })
-      // Журналы собираются с момента открытия страницы: спросить их задним
-      // числом нельзя, а этапу автотестов нужны именно они.
-      page.on('console', (message) => {
-        session.console.push({ level: message.type(), text: message.text().slice(0, 2000), at: Date.now() })
-        if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
-      })
-      page.on('response', (response) => {
-        session.network.push({
-          method: response.request().method(), url: response.url().slice(0, 500),
-          status: response.status(), ok: response.ok(), at: Date.now()
-        })
-        if (session.network.length > LOG_LIMIT) session.network.splice(0, session.network.length - LOG_LIMIT)
-      })
-      page.on('pageerror', (err) => {
-        session.console.push({ level: 'error', text: String(err.message).slice(0, 2000), at: Date.now() })
-        if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
-      })
-      return id
-    }
+    const register = (page: Page): string => this.attach(session, page)
     for (const page of context.pages()) register(page)
     const initial = context.pages()[0] ?? await context.newPage()
     session.activeTabId = register(initial)
@@ -163,6 +141,7 @@ export class BrowserSessionManager {
     if (!pending) return false
     this.sessions.delete(sessionId)
     const session = await pending
+    session.stopping = true
     await session.context.close()
     // Каталог профиля детерминирован от пары ключей, а у QA-рана вторым ключом
     // идёт id прогона — значит, каждый прогон оставлял бы свой каталог навсегда.
@@ -198,22 +177,39 @@ export class BrowserSessionManager {
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
     const command = request.command
-    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
-    else if (command.type === 'back') await page.goBack()
-    else if (command.type === 'forward') await page.goForward()
-    else if (command.type === 'reload') await page.reload()
+    // Ошибки навигации переводятся словами: «page.goto: net::ERR_NAME_NOT_RESOLVED
+    // at …» читали и в панели, и в вердикте этапа, хотя это код движка.
+    const navigate = async (action: () => Promise<unknown>): Promise<void> => {
+      try { await action() } catch (error) { throw new Error(humanizeNavigationError(error instanceof Error ? error.message : String(error))) }
+    }
+    if (command.type === 'navigate') await navigate(() => page.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 }))
+    else if (command.type === 'back') await navigate(() => page.goBack())
+    else if (command.type === 'forward') await navigate(() => page.goForward())
+    else if (command.type === 'reload') await navigate(() => page.reload())
     else if (command.type === 'stop') await page.evaluate('window.stop()')
     else if (command.type === 'newTab') {
-      const created = await session.context.newPage()
-      const id = session.pageIds.get(created) ?? randomUUID()
-      session.pageIds.set(created, id); session.pages.set(id, created); session.activeTabId = id
+      const created = await this.openTab(session)
       // Тот же путь, что у navigate: без подстановки алиаса новая вкладка шла
       // на внешний адрес, до которого контейнер не достаёт, и держалась на нём
       // только благодаря перехватчику маршрутов — то есть по случайности.
-      if (command.url) await created.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString())
-    } else if (command.type === 'selectTab') session.activeTabId = command.tabId
-    else if (command.type === 'closeTab') await session.pages.get(command.tabId)?.close()
-    else if (command.type === 'resize') {
+      const url = command.url
+      if (url) await navigate(() => created.goto(applyHostAlias(validatePublicUrl(url), this.hostAliases).toString()))
+    } else if (command.type === 'selectTab') {
+      // Неизвестный id раньше записывался как есть: активная вкладка указывала
+      // в никуда, и каждая следующая команда падала stale_tab, пока человек не
+      // кликал по другой вкладке. Отказ здесь оставляет активную прежней.
+      if (!session.pages.has(command.tabId)) throw new Error('stale_tab')
+      session.activeTabId = command.tabId
+    } else if (command.type === 'closeTab') {
+      const closing = session.pages.get(command.tabId)
+      if (!closing) throw new Error('stale_tab')
+      // Последняя вкладка закрывается как в браузере — с пустой взамен. Иначе
+      // сессия оставалась без страниц и отвечала stale_tab на всё подряд; панель
+      // прятала кнопку у последней вкладки, но модель и сама страница
+      // (`window.close()`) кнопок не видят.
+      if (session.pages.size === 1) await this.openTab(session)
+      await closing.close()
+    } else if (command.type === 'resize') {
       session.viewport = command.viewport
       await Promise.all([...session.pages.values()].map((item) => item.setViewportSize(command.viewport)))
     } else if (command.type === 'input') {
@@ -239,6 +235,57 @@ export class BrowserSessionManager {
       return page.screenshot({ ...options, fullPage: command.fullPage })
     }
     return await this.metadata(session)
+  }
+
+  /** Новая вкладка становится активной; регистрация общая с `context.on('page')`. */
+  private async openTab(session: Session): Promise<Page> {
+    const created = await session.context.newPage()
+    session.activeTabId = this.attach(session, created)
+    return created
+  }
+
+  /**
+   * Подписки на страницу: id, закрытие и журналы. Одна точка на все пути
+   * появления вкладки — начальную, `newTab`, `window.open` и пустую взамен
+   * последней закрытой.
+   */
+  private attach(session: Session, page: Page): string {
+    const known = session.pageIds.get(page)
+    if (known) return known
+    const id = randomUUID()
+    session.pageIds.set(page, id)
+    session.pages.set(id, page)
+    page.on('close', () => {
+      session.pages.delete(id)
+      session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id)
+      // Страница закрыла себя сама (`window.close()`), и вкладок не осталось:
+      // без пустой взамен сессия непригодна, хотя Chromium жив.
+      if (!session.pages.size && !session.stopping) void this.openTab(session).catch(() => undefined)
+    })
+    const pushConsole = (entry: BrowserConsoleEntry): void => {
+      session.console.push(entry)
+      if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
+    }
+    const pushNetwork = (entry: BrowserNetworkEntry): void => {
+      session.network.push(entry)
+      if (session.network.length > LOG_LIMIT) session.network.splice(0, session.network.length - LOG_LIMIT)
+    }
+    // Журналы собираются с момента открытия страницы: спросить их задним
+    // числом нельзя, а этапу автотестов нужны именно они.
+    page.on('console', (message) => pushConsole({ level: message.type(), text: message.text().slice(0, 2000), at: Date.now() }))
+    page.on('response', (response) => pushNetwork({
+      method: response.request().method(), url: response.url().slice(0, 500),
+      status: response.status(), ok: response.ok(), at: Date.now()
+    }))
+    // Запрос без ответа — DNS, отказ в соединении, запрет политикой раннера —
+    // раньше в журнал не попадал: слушался только `response`. А «Ошибки
+    // страницы» открывают как раз ради заблокированного вызова API.
+    page.on('requestfailed', (request) => pushNetwork({
+      method: request.method(), url: request.url().slice(0, 500), status: 0, ok: false, at: Date.now(),
+      error: (request.failure()?.errorText ?? 'запрос не выполнен').slice(0, 200)
+    }))
+    page.on('pageerror', (err) => pushConsole({ level: 'error', text: String(err.message).slice(0, 2000), at: Date.now() }))
+    return id
   }
 
   /**

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { isBrowserSessionLostCode } from '@shared/browserErrors'
 import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
@@ -121,6 +122,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // поправил» иначе разорван — запись здесь, прогон на доске.
   const [stepResults, setStepResults] = useState<Record<string, { ok: boolean; detail: string }>>({})
   const [running, setRunning] = useState(false)
+  /** Просьба остановить прогон: проверяется между шагами. */
+  const stopReplay = useRef(false)
   /** Длительность последнего прогона: по ней прикидывают бюджет этапа. */
   const [replayMs, setReplayMs] = useState<number | null>(null)
   /** Имя записываемого сценария: в наборе их нечем различать. */
@@ -134,6 +137,20 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // Флаг актуальности: смена разговора или размонтирование отменяет поздние ответы.
   const alive = useRef(0)
 
+  /**
+   * Сессии больше нет: её убрал сборщик простоя (полчаса в скрытой вкладке) или
+   * раннер перезапускался. Раньше это глоталось вместе с пропущенным кадром —
+   * панель показывала старый кадр и «Готово», а каждая команда падала с
+   * «not_found». Теперь она честно переходит в ошибку с кнопкой перезапуска.
+   */
+  const sessionLost = useCallback((err: unknown): boolean => {
+    if (!isBrowserSessionLostCode((err as { code?: unknown })?.code)) return false
+    incarnation.current = null
+    setPhase('error')
+    setMessage(err instanceof Error ? err.message : 'Сессия Chromium закрыта')
+    return true
+  }, [])
+
   const refreshFrame = useCallback(async (): Promise<void> => {
     if (!browser || !incarnation.current) return
     const generation = alive.current
@@ -142,8 +159,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       // вёрстки; 82 заметно читаемее, а кадр остаётся лёгким.
       const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, format: 'jpeg', quality: 82 })
       if (generation === alive.current) setFrame(shot.dataUrl)
-    } catch { /* один пропущенный кадр не роняет панель */ }
-  }, [browser, conversationId])
+    } catch (err) {
+      // Один пропущенный кадр панель не роняет; потерянная сессия — роняет.
+      if (generation === alive.current) sessionLost(err)
+    }
+  }, [browser, conversationId, sessionLost])
 
   // Старт сессии на монтирование/смену разговора; stop — на уходе.
   useEffect(() => {
@@ -217,6 +237,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       return next
     } catch (err) {
       if (generation === alive.current) {
+        if (sessionLost(err)) return
         setMessage(err instanceof Error ? err.message : 'Команда не выполнена')
         // `BrowserError.retryable` говорит, есть ли смысл в повторе. Раньше он
         // приходил и терялся: человеку показывали текст без выхода.
@@ -227,7 +248,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     } finally {
       if (generation === alive.current) setBusy(false)
     }
-  }, [browser, conversationId, refreshFrame])
+  }, [browser, conversationId, refreshFrame, sessionLost])
 
   /** Координаты клика в системе вьюпорта: кадр показывается вписанным по ширине. */
   const pointFromEvent = (event: { clientX: number; clientY: number }): { x: number; y: number } | null => {
@@ -381,6 +402,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const replay = async (upToId?: string): Promise<void> => {
     if (!steps.length) return
     setRunning(true)
+    stopReplay.current = false
     setStepResults({})
     setReplayMs(null)
     const startedAt = Date.now()
@@ -396,6 +418,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       const limit = upToId ? scenario.steps.findIndex((item) => item.id === upToId) : -1
       const planned = upToId && limit < 0 ? [] : limit >= 0 ? scenario.steps.slice(0, limit + 1) : scenario.steps
       for (const step of planned) {
+        // Остановка проверяется между шагами: идущий шаг доигрывает (у `wait`
+        // это до 30 с), но следующий уже не начинается. Раньше прогон было
+        // нечем прервать, кроме перезапуска всей сессии.
+        if (stopReplay.current) { setMessage('Прогон остановлен'); break }
         const outcome = await runScenarioStep(step, (command) => {
           // Мост панели не принимает `screenshot` — у него отдельный роут.
           // Сценарий его и не порождает, но тип об этом не знает.
@@ -419,6 +445,9 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     return <section className="playwright-browser-pane" aria-label="Browser session">
       <div className="playwright-reader-header"><strong>Playwright Reader</strong></div>
       <div className="webpreview-empty" role={phase === 'error' ? 'alert' : 'status'}>{message || 'Изолированный Chromium недоступен'}</div>
+      {/* Из ошибки раньше был один выход — уйти с экрана и вернуться: сессию,
+          убранную сборщиком, иначе не поднять. */}
+      {phase === 'error' && browser && <Button size="sm" variant="secondary" onClick={restartSession}>Перезапустить</Button>}
     </section>
   }
 
@@ -615,6 +644,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           <Button size="sm" disabled={running || !runnableSteps} onClick={() => void replay()}>
             {running ? 'Прогоняю…' : 'Прогнать сценарий'}
           </Button>
+          {running && <Button size="sm" variant="ghost" onClick={() => { stopReplay.current = true }}>Остановить прогон</Button>}
           <Button size="sm" variant="ghost" onClick={() => { setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : []); lastStepAt.current = Date.now(); setStepResults({}); setRecording(true) }}>
             Начать заново
           </Button>
@@ -717,7 +747,13 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         )}
         {diagnostics.network.length > 0 && (
           <ul className="playwright-reader-diagnostics__list">
-            {diagnostics.network.map((entry, index) => <li key={`n${index}`} data-kind="network"><code>{entry.status}</code> {entry.method} {entry.url}</li>)}
+            {/* Запрос без ответа (DNS, отказ, запрет политикой) показывается
+                причиной, а не нулём: статуса у него нет. */}
+            {diagnostics.network.map((entry, index) => (
+              <li key={`n${index}`} data-kind="network">
+                <code>{entry.error ? 'нет ответа' : entry.status}</code> {entry.method} {entry.url}{entry.error ? ` — ${entry.error}` : ''}
+              </li>
+            ))}
           </ul>
         )}
       </div>
