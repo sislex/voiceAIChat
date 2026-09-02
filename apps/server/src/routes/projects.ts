@@ -976,6 +976,8 @@ export function registerProjectRoutes(
       const conversationId = req.body?.conversationId
       if (!conversationId) return badReq(reply, 'conversationId required')
       try {
+        const userId = uid(req)
+        db.assertTaskDesignSource(userId, req.params.id, req.params.taskId, conversationId)
         if (req.body?.mode === 'files') {
           if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
           const requested = req.body.paths ?? []
@@ -983,7 +985,7 @@ export function registerProjectRoutes(
           const missing = requested.find((path) => !existing.has(path))
           if (missing) throw new Error(`Make-проект ${conversationId}: файл ${missing} не найден`)
         }
-        const links = db.linkTaskDesign(uid(req), req.params.id, req.params.taskId, {
+        const links = db.linkTaskDesign(userId, req.params.id, req.params.taskId, {
           conversationId,
           mode: req.body?.mode,
           paths: req.body?.paths,
