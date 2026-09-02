@@ -42,7 +42,7 @@ import { PersonalizationPage } from './components/SettingsPage'
 import type { TaskUpdateFields } from './components/kanban/TaskModal'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
-import { KanbanAssistant, ProjectAssistantChatSelector } from './components/KanbanAssistant'
+import { KanbanAssistant } from './components/KanbanAssistant'
 import { CiCommands } from './components/ci/CiCommands'
 import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
@@ -2529,12 +2529,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
             mode={segments[2] === 'assistant' ? 'page' : 'embedded'}
             storageKey="voicechat.kanbanAssistantWidth"
-            assistantHeader={<ProjectAssistantChatSelector
-              projectId={routeProjectId!}
-              api={api}
-              selectedId={assistantConversationId}
-              onSelect={setAssistantConversationId}
-            />}
+            hideHeader
             widget={routeCode && projectFeatures.git ? (
                 routeCodeWorkspace
                   ? <GitPane
@@ -2692,6 +2687,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 api={api}
                 llmEngines={settingsState.llmEngines}
                 conversationId={assistantConversationId}
+                onSelectConversation={setAssistantConversationId}
+                onClose={() => { if (segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(false) }}
                 onOpenTask={(taskId) => navigate(`/projects/${routeProjectId}/task/${taskId}`)}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)
