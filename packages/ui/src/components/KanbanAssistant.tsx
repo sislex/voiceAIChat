@@ -107,6 +107,8 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
   const [effective, setEffective] = useState<{ llmEngineId: string | null; provider: 'claude' | 'codex'; model: string; inherited: boolean } | null>(null)
   const [proposal, setProposal] = useState<{ command: WidgetAssistantProposal; turnId: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [partial, setPartial] = useState('')
   const [plans, setPlans] = useState<Orchestration[]>([])
   // Завершённый план остаётся на виду до явного «Скрыть»: иначе результат
@@ -115,15 +117,24 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
   const liveContext = useRef(context)
   useEffect(() => { liveContext.current = context }, [context])
   const reload = async (): Promise<void> => {
-    const data = await api['kanbanAssistant:get']({ projectId, ...(conversationId ? { conversationId } : {}) })
-    setConversation(data.conversation); setMessages(data.messages); setEffective(data.effectiveLlm)
+    try {
+      const data = await api['kanbanAssistant:get']({ projectId, ...(conversationId ? { conversationId } : {}) })
+      setConversation(data.conversation); setMessages(data.messages); setEffective(data.effectiveLlm); setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить разговор')
+    } finally {
+      setLoading(false)
+    }
   }
   useEffect(() => {
     let current = true
-    setConversation(null); setMessages([]); setPartial(''); setBusy(false); setProposal(null)
+    setConversation(null); setMessages([]); setPartial(''); setBusy(false); setProposal(null); setError(null); setLoading(true)
     void api['kanbanAssistant:get']({ projectId, ...(conversationId ? { conversationId } : {}) }).then((data) => {
       if (!current) return
-      setConversation(data.conversation); setMessages(data.messages); setEffective(data.effectiveLlm)
+      setConversation(data.conversation); setMessages(data.messages); setEffective(data.effectiveLlm); setLoading(false)
+    }, (err: unknown) => {
+      if (!current) return
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить разговор'); setLoading(false)
     })
     return () => { current = false }
   }, [api, projectId, conversationId])
@@ -155,7 +166,10 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
       const parsed = parseWidgetAssistantReply(event.text)
       for (const command of parsed.commands) void runCommand(command, event.message?.id)
     })
-    const error = transport.onError((event) => { if (event.conversationId === conversation.id) { setBusy(false); setPartial(''); void reload() } })
+    const error = transport.onError((event) => {
+      if (event.conversationId !== conversation.id) return
+      setBusy(false); setPartial(''); setError(event.message || 'Не удалось получить ответ ассистента')
+    })
     return () => { done(); error() }
   }, [transport, conversation?.id])
 
@@ -204,6 +218,7 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
     if (!text || busy) return
     if (input === draft) setDraft('')
     if (!conversation || !transport) return
+    setError(null)
     setBusy(true)
     try {
       const message = await api['messages:add']({ conversationId: conversation.id, role: 'u0', text, time: new Date().toTimeString().slice(0, 5) })
@@ -217,8 +232,9 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
       })
       setMessages((items) => [...items, message])
       transport.send({ conversationId: conversation.id, segments: [{ speakerId: 0, text, start: 0, end: 0 }], verbose: true, execTarget: 'none', assistantContext: { ...liveContext.current, toolResults: { query } } })
-    } catch {
+    } catch (err) {
       setBusy(false)
+      setError(err instanceof Error ? err.message : 'Не удалось отправить сообщение')
     }
   }
   const visiblePlans = plans
@@ -229,6 +245,9 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
     : message)
   const aiLabel = effective?.provider === 'codex' ? 'Codex' : 'Claude'
   const assistantHeader = <div>
+    <div className="kanban-assistant-status" data-state={loading ? 'loading' : error ? 'error' : !transport ? 'unavailable' : messages.length === 0 ? 'empty' : busy ? 'streaming' : 'active'} role={error || !transport ? 'alert' : 'status'}>
+      {loading ? <><span className="kanban-assistant-spinner" aria-hidden="true" />Загружаем разговор…</> : error ? <><span>{error}</span><button type="button" onClick={() => { setLoading(true); void reload() }}>Повторить</button></> : !transport ? 'Ассистент временно недоступен: транспорт не подключён.' : messages.length === 0 ? 'С чего начнём? Опишите задачу — я помогу спланировать работу.' : busy ? 'Ассистент готовит ответ…' : 'Готов к работе'}
+    </div>
     <div className="kanban-assistant-context" data-testid="kanban-assistant-context">
       <span>{context.project?.name ?? 'Без проекта'}</span>
       <span>{context.selection?.openTask?.title ?? 'Доска'}</span>

@@ -46,7 +46,7 @@ describe('App — machine-required guard', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByRole('dialog', { name: 'Подключить устройство' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Скачать приложение' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Открыть приложение' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Подключить текущее устройство' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Создать разговор' })).not.toBeInTheDocument()
   })
 
@@ -83,7 +83,7 @@ describe('App — machine-required guard', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByRole('dialog', { name: 'Подключить устройство' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Открыть приложение' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Подключить текущее устройство' }))
 
     await waitFor(() => expect(api._state.settings.defaultAgentId).toBe(currentMac.id), { timeout: 2_000 })
     expect(await screen.findByRole('button', { name: 'Создать разговор' })).toBeInTheDocument()

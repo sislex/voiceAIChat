@@ -1299,6 +1299,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
     const root = record(value)
     if (!root) throw new Error('Модель вернула неполную структуру готовности: корень должен быть JSON-объектом')
+    // Совместимость ограничена однозначными представлениями: смысл и фактическая
+    // доступность источника никогда не выводятся и не подменяются.
+    const normalizeBoolean = (input: Record<string, unknown>, key: string): void => {
+      if (input[key] === 'true') input[key] = true
+      if (input[key] === 'false') input[key] = false
+    }
+    if (root.schemaVersion === '2') root.schemaVersion = 2
+    normalizeBoolean(root, 'acceptanceCriteriaConflict')
     if (root.schemaVersion !== 2) issues.push('schemaVersion должен быть равен 2')
     requireString(root, 'functionalRequirements')
     requireString(root, 'acceptanceCriteria')
@@ -1316,6 +1324,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       for (const key of ['id', 'title', 'description', 'preconditions', 'testData', 'steps', 'expectedResult', 'testType', 'notAutomatedReason', 'alternativeManualVerification', 'comments']) {
         requireString(testCase, key, `${path}.${key}`)
       }
+      normalizeBoolean(testCase, 'required')
+      normalizeBoolean(testCase, 'automatable')
       requireBoolean(testCase, 'required', `${path}.required`)
       requireBoolean(testCase, 'automatable', `${path}.automatable`)
       for (const [linkIndex, link] of requireArray(testCase, 'automationLinks', `${path}.automationLinks`).entries()) {
@@ -1388,6 +1398,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const kindAliases: Record<string, string> = { knowledge_base: 'knowledge', 'knowledge-base': 'knowledge', 'knowledge-base-gap': 'knowledge', 'code-search': 'code' }
         if (typeof source.kind === 'string' && kindAliases[source.kind]) source.kind = kindAliases[source.kind]
         if (typeof source.refs === 'string') source.refs = [source.refs]
+        normalizeBoolean(source, 'critical')
+        if (typeof source.status === 'string') {
+          const canonicalStatus = source.status.trim().toLowerCase()
+          if (['available', 'absent', 'unavailable'].includes(canonicalStatus)) source.status = canonicalStatus
+        }
         for (const key of ['id', 'kind', 'status', 'summary']) requireString(source, key, `${path}.${key}`)
         if (typeof source.kind === 'string' && !['knowledge', 'hierarchy', 'related_tasks', 'code', 'tests', 'storybook'].includes(source.kind)) issues.push(`${path}.kind имеет недопустимое значение: ${String(source.kind)}`)
         if (typeof source.status === 'string' && !['available', 'absent', 'unavailable'].includes(source.status)) issues.push(`${path}.status имеет недопустимое значение`)
@@ -1493,7 +1508,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 2. Затем через read-only remote-инструменты найди релевантные файлы внутри настроенной рабочей директории проекта и прочитай фактические API-контракты, общие типы, клиентские компоненты и тесты. Код — источник истины при расхождении с БЗ.
 3. Не вызывай edit, deploy, package managers, сборки, тесты и любые команды, меняющие файлы, процессы, данные или окружение. Разрешены read/grep/machines и bash только для ls/find/git status/log/diff.
 4. Бюджет исследования: не более 12 вызовов инструментов суммарно, не более 8 файлов, не более 24 000 символов полезных выдержек; один вызов — не дольше 120 секунд. Исследуй только рабочую директорию проекта и docs/kb.
-5. В sources перечисли только фактически прочитанные источники, с точным refs и status available|absent|unavailable. Конкретную причину недоступности запиши в summary. Подтверждённое расхождение БЗ и кода запиши как закрытое решение в decisions (contradictions оставь только для неразрешённых противоречий) и опирайся на код.
+5. В sources перечисли только фактически прочитанные источники, с точным refs и фактическим status available|absent|unavailable. Никогда не меняй absent/unavailable на available. critical=true ставь только если без источника нельзя определить требования самого brief; источник, нужный лишь для последующей визуальной реализации или приёмки, сохраняй unavailable и помечай critical=false, явно оставляя его проверку в scope/testCases. Конкретную причину недоступности запиши в summary. Подтверждённое расхождение БЗ и кода запиши как закрытое решение в decisions (contradictions оставь только для неразрешённых противоречий) и опирайся на код.
 6. Не спрашивай доступ к машине или репозиторию: они определены конфигурацией ниже. Вопрос допустим только после исследования, если критичный источник реально недоступен, требования существенно противоречат друг другу либо нужно продуктовое решение.
 7. Если БЗ неполна, не изменяй её сейчас: зафиксируй подтверждённый пробел в финальном блоке kb-gaps для последующего безопасного этапа актуализации.
 

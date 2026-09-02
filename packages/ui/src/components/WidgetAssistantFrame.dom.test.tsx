@@ -37,7 +37,8 @@ describe('WidgetAssistantFrame', () => {
     await api['conversations:setProject']({ id: selected.id, projectId: 'p1' })
     await api['messages:add']({ conversationId: selected.id, role: 'ai', text: 'История выбранного', time: '10:00' })
     const send = vi.fn()
-    const transport = { send, onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
+    let emitError!: (event: { conversationId: string; message: string }) => void
+    const transport = { send, onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn((callback) => { emitError = callback; return () => {} }) } as any
     const onCommand = vi.fn()
     const view = render(<KanbanAssistant projectId="p1" conversationId={selected.id} context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
     const next = { ...context, selection: { board: { projectId: 'p1', columns: [], revision: '9', tasks: [{ id: 't2', type: 'epic', title: 'UI', updatedAt: 9 }] }, openTask: { id: 't2', title: 'Current' }, selectedField: 'description' } }
@@ -51,6 +52,9 @@ describe('WidgetAssistantFrame', () => {
     expect(send.mock.calls[0]?.[0].assistantContext.selection.selectedField).toBe('description')
     expect(send.mock.calls[0]?.[0].assistantContext.toolResults.query).toMatchObject({ source: 'ui', revision: '9', items: [{ id: 't2', kind: 'epic', title: 'UI' }] })
     expect(send.mock.calls[0]?.[0].conversationId).toBe(selected.id)
+    emitError({ conversationId: selected.id, message: 'Модель временно недоступна' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Модель временно недоступна')
+    expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeEnabled()
     expect(await api['kanbanAssistant:get']({ projectId: 'p1', conversationId: selected.id })).toMatchObject({ messages: [{ text: 'История выбранного' }, { role: 'u0', text: 'UI' }] })
   })
 
@@ -75,6 +79,23 @@ describe('WidgetAssistantFrame', () => {
     const createdId = select.mock.calls[2]?.[0]
     expect((await api['conversations:get']({ id: createdId }))?.conversation.projectId).toBe('p1')
     expect(projectAssistantChatSource({ assistantKind: 'browser' } as any)).toBe('browser')
+  })
+
+  it('различает загрузку, пустой диалог, ошибку и отсутствие транспорта', async () => {
+    const api = createFakeApi()
+    let resolveLoad!: (value: Awaited<ReturnType<typeof api['kanbanAssistant:get']>>) => void
+    const original = api['kanbanAssistant:get']
+    api['kanbanAssistant:get'] = vi.fn(() => new Promise((resolve) => { resolveLoad = resolve })) as typeof api['kanbanAssistant:get']
+    const view = render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={undefined} onCommand={vi.fn()} />)
+    expect(screen.getByText('Загружаем разговор…')).toBeInTheDocument()
+    resolveLoad(await original({ projectId: 'p1' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('транспорт не подключён')
+
+    const failing = createFakeApi()
+    failing['kanbanAssistant:get'] = vi.fn(async () => { throw new Error('Модель временно недоступна') }) as typeof failing['kanbanAssistant:get']
+    view.rerender(<KanbanAssistant projectId="p2" context={context as any} api={failing} llmEngines={[]} transport={undefined} onCommand={vi.fn()} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Модель временно недоступна')
+    expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument()
   })
 
   it('never applies a proposal until confirmation and cancellation is inert', async () => {
