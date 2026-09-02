@@ -160,6 +160,8 @@ describe('синхронизация общей базовой ветки пер
 
     expect(script).toContain('worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"')
     expect(script).not.toMatch(/(?:^|\n)status=/)
+    expect(script).toContain('origin "refs/heads/${base}:refs/remotes/origin/${base}"')
+    expect(script).not.toContain('$base:refs')
     expect(script.indexOf(' fetch --no-tags origin ')).toBeLessThan(script.indexOf(' merge --ff-only '))
     expect(script).toContain('merge --ff-only "refs/remotes/origin/$base"')
     expect(script).toContain('test "$local_sha" = "$remote_sha"')
