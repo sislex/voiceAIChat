@@ -507,6 +507,27 @@ describe('TaskModal — панель CI-рана', () => {
     expect(onStartCi).not.toHaveBeenCalled()
   })
 
+  it('для queued-рана показывает только «Параллельно», а running и awaiting_input защищены', () => {
+    const onStartCiParallel = vi.fn()
+    const view = render(<TaskModal {...props({
+      ciSummary: mkSummary({ status: 'queued', modelActive: false }),
+      onStartCi: vi.fn(),
+      onStartCiParallel
+    })} />)
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Параллельно' }))
+    expect(onStartCiParallel).toHaveBeenCalledWith('t1')
+
+    for (const status of ['running', 'awaiting_input'] as const) {
+      view.rerender(<TaskModal {...props({
+        ciSummary: mkSummary({ status, awaitingInput: status === 'awaiting_input' }),
+        onStartCi: vi.fn(),
+        onStartCiParallel
+      })} />)
+      expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+    }
+  })
+
   it('после завершения рана «В очередь» снова доступна', () => {
     const onStartCi = vi.fn()
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }), onOpenCiRun: vi.fn(), onStartCi })} />)

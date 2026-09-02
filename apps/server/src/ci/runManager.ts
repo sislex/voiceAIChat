@@ -10,7 +10,7 @@ import type {
   CiRunMode, CiInteraction, CiInteractionAnswer, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand, managedCiWorkspacePaths } from '@voicechat/shared'
-import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, resolveCiStageModel } from '@voicechat/shared'
+import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
@@ -396,33 +396,70 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (taskColumn?.semanticType === 'backlog' || taskColumn?.semanticType === 'preparation') {
       return { error: 'Development-run нельзя запускать из TODO или Подготовки к разработке' }
     }
-    // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
-    // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
-    if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     // null у задачи — динамическое наследование текущего project default.
-    // Результат вычисляется на каждом запуске; персональный default инициатора
-    // в цепочку задач не входит.
+    // Для parallel незакреплённая задача выбирает доступную online-машину с
+    // учётом текущей загрузки. Выбор завершается до продвижения queued-рана:
+    // ошибка машины не должна вынимать его из FIFO.
+    const usableAgents = deps.db.listUsableAgents(userId, projectId)
     let agentId: string | null = null
-    let agentSelectionSource: 'explicit' | 'task_pinned' | 'project_default'
+    let agentSelectionSource: 'explicit' | 'task_pinned' | 'project_default' | 'fallback'
     if (launchOptions?.agentId) {
       agentId = launchOptions.agentId
       agentSelectionSource = 'explicit'
     } else if (task.agentId) {
       agentId = task.agentId
       agentSelectionSource = 'task_pinned'
+    } else if (launch === 'parallel') {
+      const onlineAgentIds = usableAgents
+        .filter((agent) => !deps.isAgentOnline || deps.isAgentOnline(agent.id))
+        .map((agent) => agent.id)
+      agentId = pickCiRunAgent(onlineAgentIds, project.defaultAgentId, deps.db.countActiveCiRunsByAgent())
+      agentSelectionSource = agentId === project.defaultAgentId ? 'project_default' : 'fallback'
     } else {
       agentId = project.defaultAgentId
       agentSelectionSource = 'project_default'
     }
-    if (!agentId) return { error: 'машина проекта по умолчанию не задана. Выберите машину задачи или настройте проект' }
+    if (!agentId) {
+      return { error: launch === 'parallel'
+        ? 'Нет доступной online-машины для параллельного запуска'
+        : 'машина проекта по умолчанию не задана. Выберите машину задачи или настройте проект' }
+    }
     if (!deps.db.canUseAgent(userId, agentId, projectId)) {
       return { error: 'Выбранная машина больше недоступна для этой задачи' }
     }
-    const selectedAgent = deps.db.listUsableAgents(userId, projectId).find((agent) => agent.id === agentId)
+    const selectedAgent = usableAgents.find((agent) => agent.id === agentId)
     if (!selectedAgent) return { error: 'Выбранная машина удалена или доступ к ней отозван' }
     if (deps.isAgentOnline && !deps.isAgentOnline(agentId)) {
       return { error: 'Выбранная машина offline. CI не ожидает подключения: выберите online-машину' }
     }
+
+    // Parallel может атомарно продвинуть существующий queued-run. Проверка
+    // статуса, извлечение waiter и его пробуждение синхронны: конкурирующий
+    // запрос увидит уже bypass/running и не создаст второй ран.
+    if (launch === 'parallel') {
+      for (const [id, activeRun] of active) {
+        if (activeRun.taskId !== taskId || isClosingRun(id, activeRun)) continue
+        const row = deps.db.getCiRunRaw(id)
+        if (row?.status === 'queued' && promoteQueuedRun(id, agentId)) {
+          deps.db.updateCiRun(id, { agentSelectionSource })
+          deps.db.addCiEvent({
+            projectId,
+            runId: id,
+            type: 'run.promoted_parallel',
+            actorType: 'user',
+            actorId: userId,
+            payload: { agentId, bypassQueue: true }
+          })
+          const promoted = deps.db.getCiRunRaw(id)!
+          emitRun(promoted, activeRun.userId)
+          return { run: promoted }
+        }
+        return { error: 'Для этой задачи уже выполняется ран' }
+      }
+    }
+    // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
+    // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
+    if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
     const role = deps.db.getUser(userId)?.role ?? 'developer'
