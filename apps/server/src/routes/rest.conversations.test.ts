@@ -1177,6 +1177,49 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('перечисляет хинты CLI в «чего в тексте нет» с размерами из shared', async () => {
+    // Исполнитель приклеивает к промпту свои системные хинты (БЗ, превью, Make,
+    // канбан). Их условия сервер знает, тексты части хинтов лежат в shared —
+    // «полный просмотр» обязан хотя бы назвать их и размер.
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
+    const omittedOf = async (id: string): Promise<string[]> =>
+      (await inj({ method: 'GET', url: `/api/conversations/${id}/context-snapshot` })).json().promptPreview.omitted
+    const plainOmitted = await omittedOf(plain.id)
+    expect(plainOmitted.some((line) => line.includes('Хинт CLI про инструменты базы знаний') && line.includes('токенов'))).toBe(true)
+    expect(plainOmitted.some((line) => line.includes('Хинт CLI про браузер превью'))).toBe(true)
+    expect(plainOmitted.some((line) => line.includes('shell-команды этому ходу запрещены'))).toBe(true)
+    // Хинт Make в обычном чате не обещается.
+    expect(plainOmitted.some((line) => line.includes('ассистента Make'))).toBe(false)
+
+    const make = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make' } })).json()
+    const makeOmitted = await omittedOf(make.id)
+    expect(makeOmitted.some((line) => line.includes('Хинт CLI ассистента Make') && line.includes('токенов'))).toBe(true)
+    expect(makeOmitted.some((line) => line.includes('браузер превью'))).toBe(false)
+  })
+
+  it('называет движок-исполнитель и предупреждает о его замене', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Исполнитель' } })).json()
+    const snap = async (): Promise<{ details?: Record<string, unknown>; warnings: Array<{ text: string }> }> => {
+      const value = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return {
+        details: value.groups.flatMap((group: { items: Array<{ id: string; details?: Record<string, unknown> }> }) => group.items).find((item: { id: string }) => item.id === 'llm')?.details,
+        warnings: value.warnings
+      }
+    }
+    // Реестра исполнителей нет — честный ответ «встроенный запуск», без замен.
+    const before = await snap()
+    expect(before.details?.['Исполнитель']).toBe('встроенный запуск CLI на сервере')
+    expect(before.warnings.some((entry) => entry.text.includes('движок-исполнитель'))).toBe(false)
+
+    // Закрепляем движок, недоступный роли admin, — ход молча взял бы другой
+    // раннер, и снимок обязан предупредить об этом до отправки.
+    const engine = db.createLlmEngine({ name: 'Только тестировщики', kind: 'claude', baseUrl: 'http://runner', token: 't', enabled: true, allowedRoles: ['tester'], isDefault: false })
+    db.setConversationExecTarget(U, created.id, null, null, undefined, null, null, null, engine.id)
+    const after = await snap()
+    expect(after.details?.['Замена движка']).toBeTruthy()
+    expect(after.warnings.some((entry) => entry.text.includes('Закреплённый движок-исполнитель недоступен'))).toBe(true)
+  })
+
   it('движок показывается с учётом прав пользователя, а модель — алиасом меню', async () => {
     // Ход берёт первый разрешённый движок, если выбранный пользователю закрыт
     // (`turns.ts`: permittedProvider). Снимок обязан показывать то же, иначе
