@@ -216,6 +216,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Связи карточек с дизайнами Make (см. мосты `tasks:*Design`). */
   const designLinks: TaskDesignLink[] = []
   const projectSyncLinks: Array<import('@shared/make').MakeProjectLinkInfo> = []
+  const taskActivityStore = new Map<string, import('@shared/projects').TaskActivity>()
+  const activityOf = (taskId: string): import('@shared/projects').TaskActivity => {
+    if (!taskActivityStore.has(taskId)) taskActivityStore.set(taskId, { comments: [], worklog: [], history: [], totalMinutes: 0 })
+    return taskActivityStore.get(taskId)!
+  }
   const summary = (p: FProject): ProjectSummary => ({
     id: p.id,
     name: p.name,
@@ -1486,6 +1491,44 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       .filter((c) => c.assistantKind === 'make' && c.projectId === id)
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
     // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
+    'tasks:activity': async ({ taskId }) => activityOf(taskId),
+    'tasks:commentAdd': async ({ taskId, text }) => {
+      const activity = activityOf(taskId)
+      const comment = { id: `c-${activity.comments.length + 1}`, taskId, author: 'admin', via: 'user' as const, text, createdAt: Date.now(), updatedAt: null }
+      activity.comments.push(comment)
+      return comment
+    },
+    'tasks:commentUpdate': async ({ taskId, commentId, text }) => {
+      const comment = activityOf(taskId).comments.find((entry) => entry.id === commentId)!
+      comment.text = text; comment.updatedAt = Date.now()
+      return comment
+    },
+    'tasks:commentDelete': async ({ taskId, commentId }) => {
+      const activity = activityOf(taskId)
+      activity.comments = activity.comments.filter((entry) => entry.id !== commentId)
+      return { ok: true as const }
+    },
+    'tasks:worklogAdd': async ({ taskId, minutes, comment }) => {
+      const activity = activityOf(taskId)
+      const entry = { id: `w-${activity.worklog.length + 1}`, taskId, author: 'admin', minutes, comment: comment ?? '', startedAt: Date.now(), createdAt: Date.now(), updatedAt: null }
+      activity.worklog.push(entry)
+      activity.totalMinutes += minutes
+      return entry
+    },
+    'tasks:worklogUpdate': async ({ taskId, entryId, minutes }) => {
+      const activity = activityOf(taskId)
+      const entry = activity.worklog.find((item) => item.id === entryId)!
+      if (minutes !== undefined) { activity.totalMinutes += minutes - entry.minutes; entry.minutes = minutes }
+      entry.updatedAt = Date.now()
+      return entry
+    },
+    'tasks:worklogDelete': async ({ taskId, entryId }) => {
+      const activity = activityOf(taskId)
+      const entry = activity.worklog.find((item) => item.id === entryId)
+      if (entry) activity.totalMinutes -= entry.minutes
+      activity.worklog = activity.worklog.filter((item) => item.id !== entryId)
+      return { ok: true as const }
+    },
     'make:projectFiles': async ({ path }) => (path
       ? [{ name: 'Button.jsx', path: `${path}/Button.jsx`, kind: 'file' as const, size: 120 }]
       : [
