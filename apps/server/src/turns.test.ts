@@ -117,6 +117,36 @@ describe('turns: канбан-ассистент', () => {
     db.close()
   })
 
+  it('канбан-ход без машины: инструменты доски без ro=1, Claude — не в native plan и без встроенных инструментов', async () => {
+    const db = freshDb()
+    const project = db.createProject(U, { name: 'Board' })
+    const conv = db.ensureKanbanAssistantConversation(U, project.id)!
+    const context = { version: 1 as const, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: null, selection: null, recentActions: [] }
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, codex: rec.client, kanbanMcpBaseUrl: 'http://127.0.0.1:8787/mcp/kanban?k=secret' })
+    const run = async (): Promise<void> => new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Создай задачу' }], assistantContext: context, execTarget: 'none' })
+    })
+    await run()
+    expect(rec.last()?.kanbanMcpUrl).toContain('conv=')
+    expect(rec.last()?.kanbanMcpUrl).not.toContain('ro=1')
+    expect(rec.last()?.permissionMode).toBe('default')
+    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Edit', 'Write', 'Read']))
+
+    // Codex остаётся в plan (read-only sandbox), но доска по-прежнему не read-only.
+    db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex' })
+    await run()
+    expect(rec.last()?.permissionMode).toBe('plan')
+    expect(rec.last()?.kanbanMcpUrl).not.toContain('ro=1')
+
+    // Явный «План» этого разговора — единственное, что делает доску read-only.
+    db.setConversationExecTarget(U, conv.id, 'none', undefined, undefined, undefined, undefined, 'plan')
+    await run()
+    expect(rec.last()?.kanbanMcpUrl).toContain('ro=1')
+    db.close()
+  })
+
   it('без базы MCP канбан-ход остаётся в режиме предложений', async () => {
     const db = freshDb()
     const project = db.createProject(U, { name: 'Board' })
