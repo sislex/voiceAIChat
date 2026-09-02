@@ -211,6 +211,12 @@ export const REST = {
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
   makeShare: (id: string) => `/api/make/${encodeURIComponent(id)}/share`,
   /** Обратная связь Make → доска: задачи, ссылающиеся на проект (или его страницу). */
+  // Обмен с репозиторием проекта: листинг машины, копирование в мастерскую,
+  // статусы связей и возврат правок в проект.
+  makeProjectFiles: (id: string) => `/api/make/${encodeURIComponent(id)}/project-files`,
+  makeProjectLinks: (id: string) => `/api/make/${encodeURIComponent(id)}/project-links`,
+  makeProjectPull: (id: string) => `/api/make/${encodeURIComponent(id)}/project-pull`,
+  makeProjectPush: (id: string) => `/api/make/${encodeURIComponent(id)}/project-push`,
   makeTaskLinks: (id: string) => `/api/make/${encodeURIComponent(id)}/task-links`,
   makeTaskLink: (id: string, linkId: string) => `/api/make/${encodeURIComponent(id)}/task-links/${encodeURIComponent(linkId)}`,
   makeShareGrants: (id: string) => `/api/make/${encodeURIComponent(id)}/share/grants`,
