@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-02
-checked: 1222584c
+updated: 2026-09-03
+checked: 722c56fe
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -660,3 +660,19 @@ Make-контекст приклеиваются к сообщению **каж�
 Правило на будущее: добавляешь в ход блок или условие — клади его в
 `contextBlocks.ts`/`shared` и зови из обоих мест. Иначе инспектор перестаёт
 отвечать на вопрос, ради которого сделан.
+
+## Генерация картинок для студии (2026-09-03)
+
+`apps/server/src/llm/imageStudioGenerator.ts` — один ход codex без сессии.
+Три обязательных условия, без любого из них модель отвечает текстом и ран
+падает «AI не вернул файл изображения» (сниппет ответа уходит в лог сервера с
+префиксом `[image-studio]`): (1) исполнение разрешено —
+`permissionMode: 'acceptEdits'` (sandbox workspace-write), потому что CLI-модель
+рисует PNG только скриптом (Pillow/ImageMagick); `executionDisabled` здесь
+нельзя — с ним codex честно отказывается создавать файл; (2) `cwd` =
+`profileHome(userId)` — модель просят сохранить результат в текущей директории
+и назвать абсолютный путь, а `readGenerated` читает его через
+`runnerFs.readFile`/`readUserFile` с корнем в профиле; (3) в промпте —
+`IMAGE_HINT` из shared: формат fenced-блока ```image модель сама не знает и
+без подсказки вставляет markdown-ссылку, которую `parseImages` не берёт.
+Правка выбранной картинки — тот же ход с вложением исходника (attachments).

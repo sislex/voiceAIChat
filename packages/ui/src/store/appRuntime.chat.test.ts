@@ -2112,6 +2112,19 @@ describe('voiceStore — машинные утилиты', () => {
     expect(store.getState().utility).toEqual({ kind: 'explorer', agentId: 'm1', path: '/work', dir: true })
   })
 
+  it('newConversation("images") создаёт «Картинки N» и кладёт их в imageStudioConversations', async () => {
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
+    await store.actions.init()
+    await store.actions.newConversation('images')
+    await store.actions.newConversation('images')
+    const titles = store.getState().imageStudioConversations.map((c) => c.title).sort()
+    expect(titles).toEqual(['Картинки 1', 'Картинки 2'])
+    expect(store.getState().imageStudioConversations.every((c) => c.assistantKind === 'images')).toBe(true)
+    // Студийные чаты не подмешиваются в обычный список и в списки ридеров.
+    expect(store.getState().conversations.map((c) => c.assistantKind)).not.toContain('images')
+    expect(store.getState().makeConversations).toEqual([])
+  })
+
   it('newConversation("make") создаёт проект «Проект N» и кладёт его в makeConversations', async () => {
     const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     await store.actions.init()
