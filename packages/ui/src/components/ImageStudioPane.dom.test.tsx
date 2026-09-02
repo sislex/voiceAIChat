@@ -66,6 +66,39 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(screen.queryByText('лого.png')).not.toBeInTheDocument())
   })
 
+  it('Cmd+Enter в промпте запускает рисование, пресет размера дописывается в промпт', async () => {
+    const { api, generate } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const promptField = await screen.findByRole('textbox', { name: 'Промпт для изображения' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Размер изображения' }), { target: { value: '1024×1024' } })
+    fireEvent.change(promptField, { target: { value: 'закат' } })
+    fireEvent.keyDown(promptField, { key: 'Enter', metaKey: true })
+    await waitFor(() => expect(generate).toHaveBeenCalledWith({ conversationId: 'c1', prompt: 'закат\nРазмер изображения: 1024x1024' }))
+  })
+
+  it('перетаскивание файлов загружает их все разом', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+    const drop = [new File(['a'], 'а.png', { type: 'image/png' }), new File(['b'], 'б.png', { type: 'image/png' })]
+    // В jsdom у File нет arrayBuffer — доопределяем, поведение браузера от этого не меняется.
+    for (const file of drop) Object.defineProperty(file, 'arrayBuffer', { value: async () => new Uint8Array([1]).buffer })
+    fireEvent.drop(zone, { dataTransfer: { files: drop, types: ['Files'] } })
+    await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText(/Файлов: 2/)).toBeInTheDocument()
+  })
+
+  it('ошибка генерации остаётся баннером в панели, а не только тостом', async () => {
+    const { api } = makeApi()
+    api['imgstudio:generate'].mockRejectedValueOnce(new Error('AI не вернул файл изображения'))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'кот' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    // Тост исчезнет сам, баннер должен остаться в панели.
+    await waitFor(() => expect(screen.getAllByText('AI не вернул файл изображения').length).toBeGreaterThan(0))
+    expect(document.querySelector('.image-studio .vc-state--error')).not.toBeNull()
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
