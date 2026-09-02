@@ -10,7 +10,7 @@ import type {
   CiRunMode, CiInteraction, CiInteractionAnswer, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand, managedCiWorkspacePaths } from '@voicechat/shared'
-import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, resolveCiStageModel } from '@voicechat/shared'
+import { extractImprovementFiles, isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
@@ -2216,6 +2216,7 @@ fi`
       ['failed','timeout','cancelled'].includes(step.status) || step.fixedByModel || step.attempt > 1
     )
     const candidates = anomalous.length ? anomalous : detail.run.status === 'success' ? [] : [null]
+    const logLines = candidates.some(Boolean) ? deps.db.getCiRunLog(userId, runId) : []
     for (const step of candidates) {
       const problem = step
         ? step.fixedByModel
@@ -2248,11 +2249,19 @@ fi`
         '## Способ проверки', 'Повторить штатный авторан на чистом окружении и убедиться, что шаг проходит с первой попытки без fix-loop.'
       ].join('\n\n')
       const key = (step?.commandId ?? step?.title ?? `run-${detail.run.status}`).toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '-').slice(0, 120)
+      // Критерии приёмки и файлы — для карточки в очереди «Улучшения»: из неё
+      // задача создаётся одной кнопкой, поэтому текст должен быть готов заранее.
+      const acceptanceCriteria = [
+        step ? `Шаг «${step.title}» проходит с первой попытки: без повторов, таймаута и fix-loop.` : `Автоматический ран завершается успешно без ручного вмешательства.`,
+        ...(step?.fixedByModel ? ['Обходное исправление модели заменено постоянным изменением кода или конфигурации.'] : []),
+        'Повторный штатный авторан на чистом окружении подтверждает исправление.'
+      ].join('\n')
+      const stepLog = step ? logLines.filter((line) => line.stepId === step.id).map((line) => line.chunk).join('\n') : ''
       deps.db.upsertTaskImprovement({
         projectId: detail.run.projectId, taskId: detail.run.taskId, runId, stepId: step?.id ?? null,
         source: 'development', title: step?.fixedByModel ? `Устранить обходное исправление: ${step.title}` : `Стабилизировать: ${step?.title ?? 'автоматический ран'}`,
         description, fingerprint: `development:${key}:${step?.fixedByModel ? 'workaround' : step?.status ?? detail.run.status}`,
-        evidence: [fact], suggestedAction
+        evidence: [fact], files: extractImprovementFiles(stepLog), acceptanceCriteria, suggestedAction
       })
     }
   }

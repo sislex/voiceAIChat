@@ -127,7 +127,7 @@ describe('TaskModal — создание задачи из улучшения', 
   const improvement: TaskImprovement = {
     id: 'i1', taskId: 't1', projectId: 'p1', runId: null, stepId: null, source: 'development',
     status: 'new', title: 'Улучшить ретраи', description: 'Подробности', acceptanceCriteria: 'Ошибка видима',
-    createdTaskId: null, fingerprint: 'retry', evidence: [], occurrences: 1,
+    createdTaskId: null, fingerprint: 'retry', evidence: [], files: [], occurrences: 1,
     suggestedAction: 'create_chatai_task', isNew: true, createdAt: 1, updatedAt: 1
   }
 
@@ -135,8 +135,8 @@ describe('TaskModal — создание задачи из улучшения', 
     const ci = createFakeCi()
     ci.listTaskImprovements = vi.fn(async () => [improvement])
     ci.createTaskFromImprovement = vi.fn(async (_id, input) => ({
-      created: true,
-      task: mkTask({ id: 'created', columnId: input.columnId, title: input.title, description: input.description, acceptanceCriteria: input.acceptanceCriteria, sourceTaskId: 't1' }),
+      created: true, preparationStarted: false, preparationError: null,
+      task: mkTask({ id: 'created', columnId: input.columnId ?? '', title: input.title ?? '', description: input.description ?? '', acceptanceCriteria: input.acceptanceCriteria ?? '', sourceTaskId: 't1' }),
       improvement: { ...improvement, status: 'implemented' as const, createdTaskId: 'created', isNew: false }
     }))
     window.ci = ci
