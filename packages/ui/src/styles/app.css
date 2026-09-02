@@ -3810,6 +3810,15 @@ button.conscmd:hover {
 .image-studio-toolbar { display: grid; gap: 8px; }
 .image-studio-toolbar textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--panel, #fff); color: inherit; font: inherit; resize: vertical; }
 .image-studio-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.image-studio-filename { font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); width: 170px; min-width: 0; }
+.image-studio-grid--dense { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.image-studio-fresh { position: absolute; top: 6px; right: 6px; font-size: 10px; line-height: 1; padding: 3px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); }
+.image-studio-thumb { position: relative; }
+@media (max-width: 720px) {
+  .image-studio-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+  .image-studio-actions { flex-wrap: wrap; }
+  .image-studio-filename { width: 100%; }
+}
 .image-studio-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .image-studio-chip { font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-dim); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .image-studio-chip:hover { background: var(--surface-hover); color: var(--text); }

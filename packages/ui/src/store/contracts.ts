@@ -49,6 +49,10 @@ export const MAKE_FORMAT_ON_SAVE_KEY = 'vc.make.formatOnSave'
 export const MAKE_SPLIT_KEY = 'vc.make.split'
 export const MAKE_SPLIT_PCT_KEY = 'vc.make.splitPct'
 
+/** Ключи студии картинок: плотность сетки и недавние промпты (на разговор). */
+export const IMAGE_STUDIO_DENSE_KEY = 'vc.imgstudio.dense'
+export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
+
 /**
  * Все ключи предпочтений интерфейса в одном месте — реестр для стража
  * `preferenceKeys.test.ts`. Он не даёт разъехаться двум вещам: одинаковому
@@ -69,7 +73,8 @@ export const PREFERENCE_KEYS = [
   MAKE_AUTOSAVE_KEY,
   MAKE_FORMAT_ON_SAVE_KEY,
   MAKE_SPLIT_KEY,
-  MAKE_SPLIT_PCT_KEY
+  MAKE_SPLIT_PCT_KEY,
+  IMAGE_STUDIO_DENSE_KEY
 ] as const
 
 /**
