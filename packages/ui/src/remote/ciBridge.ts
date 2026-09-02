@@ -29,6 +29,7 @@ import type {
   CiTaskMachines,
   CiStageLlmSnapshot,
   TaskImprovement,
+  ProjectImprovement,
   ImprovementStatus,
   CreateTaskFromImprovementInput,
   CreateTaskFromImprovementResult
@@ -125,8 +126,12 @@ export interface RendererCiRest {
   getTaskTimeline(projectId: string, taskId: string): Promise<TaskTimeline>
   listTaskImprovements(projectId: string, taskId: string): Promise<TaskImprovement[]>
   listProjectImprovementTasks(projectId: string): Promise<Array<{ taskId: string; count: number; improvementId: string }>>
+  /** Очередь «Улучшения»: актуальные предложения проекта, по одному на карточку. */
+  listProjectImprovements(projectId: string): Promise<ProjectImprovement[]>
   updateImprovementStatus(id: string, status: ImprovementStatus): Promise<TaskImprovement>
   createTaskFromImprovement(id: string, input: CreateTaskFromImprovementInput): Promise<CreateTaskFromImprovementResult>
+  /** «Отмена» предложения в очереди: запись удаляется. */
+  deleteImprovement(id: string): Promise<{ ok: boolean }>
   cancelRun(runId: string): Promise<{ ok: boolean }>
   /** Убрать только ожидающий ран; результат сообщает о гонке с его стартом. */
   dequeueRun(runId: string): Promise<CiQueueRemovalResult>
