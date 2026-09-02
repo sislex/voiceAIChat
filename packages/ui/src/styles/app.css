@@ -3810,6 +3810,11 @@ button.conscmd:hover {
 .image-studio-toolbar { display: grid; gap: 8px; }
 .image-studio-toolbar textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--panel, #fff); color: inherit; font: inherit; resize: vertical; }
 .image-studio-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.image-studio--drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.image-studio-actions select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
+.image-studio-progress { margin: 6px 0 0; font-size: 12px; color: var(--text-dim); }
+.image-studio-quota { margin: 10px 0 0; font-size: 12px; color: var(--text-dim); }
+.image-studio-full { max-width: 100%; max-height: 100%; object-fit: contain; }
 .image-studio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 .image-studio-card { display: grid; gap: 6px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); padding: 8px; }
 .image-studio-card--selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
