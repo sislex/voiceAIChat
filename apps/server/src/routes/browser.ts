@@ -51,7 +51,9 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   const fail = (reply: FastifyReply, err: unknown): unknown => {
     const known = err instanceof BrowserRunnerError ? err : new BrowserRunnerError(502, 'Browser Runner недоступен')
-    return reply.code(known.status).send({ error: 'browser_runner', message: known.message })
+    // `code` — машинный код раннера: по нему панель понимает, что сессии больше
+    // нет, и предлагает перезапуск вместо голого текста ошибки.
+    return reply.code(known.status).send({ error: 'browser_runner', message: known.message, ...(known.code ? { code: known.code } : {}) })
   }
 
   app.post<{ Params: { id: string }; Body: { viewport?: unknown } }>('/api/browser/:id/start', async (req, reply) => {

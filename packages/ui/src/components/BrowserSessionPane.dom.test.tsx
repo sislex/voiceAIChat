@@ -205,7 +205,10 @@ describe('Playwright Reader как инструмент автотестов (к
         ? { ok: true, console: [{ level: 'error', text: 'TypeError: x is not a function', at: 1 }] }
         : { ok: true, network: [
             { method: 'GET', url: 'http://site/api/board', status: 500, ok: false, at: 2 },
-            { method: 'GET', url: 'http://site/ok', status: 200, ok: true, at: 3 }
+            { method: 'GET', url: 'http://site/ok', status: 200, ok: true, at: 3 },
+            // Запрос без ответа: раньше раннер его не записывал вовсе, а панель
+            // показала бы «0» вместо причины.
+            { method: 'GET', url: 'http://site/api/blocked', status: 0, ok: false, at: 4, error: 'net::ERR_BLOCKED_BY_CLIENT' }
           ] }
     })
     render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
@@ -214,7 +217,10 @@ describe('Playwright Reader как инструмент автотестов (к
     expect(await screen.findByText('TypeError: x is not a function')).toBeInTheDocument()
     expect(screen.getByText(/api\/board/)).toBeInTheDocument()
     expect(screen.queryByText(/site\/ok/)).not.toBeInTheDocument()
-    expect(screen.getByText('Ошибки страницы: 1 · Неуспешные запросы: 1')).toBeInTheDocument()
+    expect(screen.getByText('Ошибки страницы: 1 · Неуспешные запросы: 2')).toBeInTheDocument()
+    const blocked = screen.getByText(/api\/blocked/)
+    expect(blocked.textContent).toContain('нет ответа')
+    expect(blocked.textContent).toContain('ERR_BLOCKED_BY_CLIENT')
   })
 
   it('«страница не жаловалась» — отдельное состояние, а не пустой блок', async () => {
@@ -711,5 +717,65 @@ describe('честные предупреждения и прогон до ша�
       .slice(commandsBefore)
       .filter(([, req]) => (req as { command: { type: string; action?: { kind?: string } } }).command.action?.kind === 'click')
     expect(clicks).toHaveLength(1)
+  })
+})
+
+describe('потерянная сессия и остановка прогона (круг 30)', () => {
+  it('сессию убрал сборщик — панель уходит в ошибку с кнопкой перезапуска, а не показывает старый кадр как «Готово»', async () => {
+    // Раньше 404 «not_found» глотался вместе с пропущенным кадром: старый кадр,
+    // статус «Готово», и каждая команда падала с голым кодом.
+    const lost = Object.assign(new Error('Сессия Chromium закрыта: её убрал сборщик простоя. Перезапустите панель.'), { code: 'not_found' })
+    const browser = fakeBrowser({ command: vi.fn(async () => { throw lost }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Сессия Chromium закрыта/)
+    expect(screen.queryByAltText('Кадр Chromium')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Перезапустить' }))
+    await waitFor(() => expect(browser.start).toHaveBeenCalledTimes(2))
+    expect(await screen.findByAltText('Кадр Chromium')).toBeInTheDocument()
+  })
+
+  it('обычная ошибка команды (без кода потери) сессию не роняет', async () => {
+    const browser = fakeBrowser({ command: vi.fn(async () => { throw new Error('Страница не открылась: имя сайта не разрешается') }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/имя сайта не разрешается/)
+    expect(screen.getByAltText('Кадр Chromium')).toBeInTheDocument()
+  })
+
+  it('«Остановить прогон» не даёт начаться следующему шагу', async () => {
+    // Прогон с ожиданиями по 30 с раньше было нечем прервать, кроме перезапуска
+    // всей сессии.
+    let releaseFirst: (() => void) | null = null
+    const selectors: string[] = []
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'https://a.b/' })),
+      command: vi.fn(async (_id, request) => {
+        if (request.command.type === 'selector' && request.command.action.kind === 'click') {
+          selectors.push(request.command.action.selector ?? '')
+          if (request.command.action.selector === '#one') await new Promise<void>((resolve) => { releaseFirst = resolve })
+          return { ok: true }
+        }
+        return meta({ currentUrl: 'https://a.b/' })
+      })
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} savedScenarios={[{
+      name: 'Два клика', startUrl: 'https://a.b/',
+      steps: [
+        { id: 'step-2', title: 'Первый', action: { kind: 'click', selector: '#one' } },
+        { id: 'step-3', title: 'Второй', action: { kind: 'click', selector: '#two' } }
+      ]
+    }]} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Прогнать сценарий' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Остановить прогон' }))
+    await waitFor(() => expect(selectors).toEqual(['#one']))
+    releaseFirst!()
+    expect(await screen.findByText('Прогон остановлен')).toBeInTheDocument()
+    expect(selectors).toEqual(['#one'])
+    expect(screen.queryByRole('button', { name: 'Остановить прогон' })).not.toBeInTheDocument()
   })
 })

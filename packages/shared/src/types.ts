@@ -262,7 +262,13 @@ export type BrowserInspectAction =
   | { kind: 'evaluate'; code: string }
 
 export interface BrowserConsoleEntry { level: string; text: string; at: number }
-export interface BrowserNetworkEntry { method: string; url: string; status: number; ok: boolean; at: number }
+/**
+ * Запись сетевого журнала. `error` заполнен у запроса, который не дошёл до
+ * ответа (DNS, отказ в соединении, запрет политикой раннера): у него нет
+ * статуса, и раньше он в журнал не попадал вовсе — а именно такие запросы и
+ * ищут, открывая «Ошибки страницы».
+ */
+export interface BrowserNetworkEntry { method: string; url: string; status: number; ok: boolean; at: number; error?: string }
 
 export interface BrowserInspectResult {
   ok: boolean

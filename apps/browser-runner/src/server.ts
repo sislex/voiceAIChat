@@ -54,6 +54,12 @@ async function defaultProbe(): Promise<BrowserProbe> {
   return cachedProbe
 }
 
+/** MIME снимка по запрошенному формату; всё, что не jpeg/webp, — png. */
+export function screenshotMimeType(command: BrowserCommandRequest['command'] | undefined): string {
+  const format = command?.type === 'screenshot' ? command.format : undefined
+  return format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png'
+}
+
 /** Через сколько простоя сессия считается брошенной. */
 const DEFAULT_IDLE_MS = 30 * 60_000
 const SWEEP_EVERY_MS = 5 * 60_000
@@ -87,7 +93,9 @@ export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Pr
   app.post<{ Params: { id: string }; Body: BrowserCommandRequest }>('/v1/sessions/:id/commands', async (request, reply) => {
     try {
       const result = await sessions.command(request.params.id, request.body)
-      if (Buffer.isBuffer(result)) return reply.type('image/png').send(result)
+      // Тип ответа — тот формат, который просили: панель берёт jpeg ради лёгкого
+      // кадра, а заголовок говорил «png», и data-URL врал о содержимом.
+      if (Buffer.isBuffer(result)) return reply.type(screenshotMimeType(request.body.command)).send(result)
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : 'internal'

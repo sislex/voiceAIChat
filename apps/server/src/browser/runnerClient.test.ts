@@ -31,9 +31,11 @@ describe('createBrowserRunnerClient', () => {
     expect(shot.buffer.equals(png)).toBe(true)
   })
 
-  it('маппит статусы: 404 → 404, stale (409) → 409, 503 → 503', async () => {
+  it('маппит статусы: 404 → 404, stale (409) → 409, 503 → 503, ошибка команды (422) → 422, прочее → 502', async () => {
+    // 422 — раннер не принял саму команду (адрес не открылся): раньше уходило
+    // 502 «плохой шлюз», и по нему шли искать беду в инфраструктуре.
     const make = (status: number): typeof fetch => (vi.fn(async () => jsonResponse(status, { error: 'x', message: 'boom' })) as unknown as typeof fetch)
-    for (const [status, expected] of [[404, 404], [409, 409], [503, 503], [422, 502]] as const) {
+    for (const [status, expected] of [[404, 404], [409, 409], [503, 503], [422, 422], [500, 502]] as const) {
       const client = createBrowserRunnerClient({ baseUrl: 'http://r', token: 't', fetchImpl: make(status) })
       await expect(client.command('c1', { requestId: 'r', incarnation: 'i', actor: 'user', command: { type: 'reload' } }))
         .rejects.toMatchObject({ status: expected })
@@ -77,5 +79,22 @@ describe('отмена и таймаут (круг 29)', () => {
     controller.abort()
     await expect(call).rejects.toMatchObject({ status: 499 })
     expect(seen?.aborted).toBe(true)
+  })
+
+  it('код раннера переводится словами и сохраняется отдельно: «not_found» панель печатала буквально', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(404, { error: 'not_found' })) as unknown as typeof fetch
+    const client = createBrowserRunnerClient({ baseUrl: 'http://r', token: 't', fetchImpl })
+    const error = await client.command('c1', { requestId: 'r', incarnation: 'i', actor: 'user', command: { type: 'reload' } }).catch((e: BrowserRunnerError) => e)
+    expect(error).toBeInstanceOf(BrowserRunnerError)
+    expect((error as BrowserRunnerError).code).toBe('not_found')
+    expect((error as BrowserRunnerError).message).toMatch(/Сессия Chromium закрыта/)
+  })
+
+  it('текст ошибки команды (не код) остаётся текстом и кода не получает', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(422, { error: 'Страница не открылась: имя сайта не разрешается' })) as unknown as typeof fetch
+    const client = createBrowserRunnerClient({ baseUrl: 'http://r', token: 't', fetchImpl })
+    const error = await client.command('c1', { requestId: 'r', incarnation: 'i', actor: 'user', command: { type: 'reload' } }).catch((e: BrowserRunnerError) => e)
+    expect((error as BrowserRunnerError).code).toBeUndefined()
+    expect((error as BrowserRunnerError).message).toBe('Страница не открылась: имя сайта не разрешается')
   })
 })

@@ -7,6 +7,7 @@
 // conversationId. Раннер сверяет пару при повторном старте (identity mismatch).
 
 import type { BrowserCommandRequest, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserViewport } from '@voicechat/shared'
+import { describeBrowserRunnerCode } from '@voicechat/shared'
 
 export interface BrowserRunnerClientOptions {
   baseUrl: string
@@ -19,9 +20,14 @@ export interface BrowserRunnerClientOptions {
 /** Что возвращает раннер на команду — зависит от её типа. */
 export type BrowserRunnerCommandResult = BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult
 
-/** Ошибка вызова раннера с кодом, пригодным для маппинга в HTTP-статус роута. */
+/**
+ * Ошибка вызова раннера с кодом, пригодным для маппинга в HTTP-статус роута.
+ * `code` — машинный код раннера (`not_found`, `stale_incarnation`, `stale_tab`),
+ * если он был: по нему панель отличает потерянную сессию от разовой ошибки.
+ * Текст при этом человеческий — код в `message` панель печатала буквально.
+ */
 export class BrowserRunnerError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly code?: string) {
     super(message)
     this.name = 'BrowserRunnerError'
   }
@@ -87,14 +93,21 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
 
   async function asError(res: Response): Promise<BrowserRunnerError> {
     let message = `Browser Runner ответил ${res.status}`
+    let code: string | undefined
     try {
       const data = await res.json() as { message?: unknown; error?: unknown }
       const detail = typeof data.message === 'string' ? data.message : typeof data.error === 'string' ? data.error : null
       if (detail) message = detail
+      // Раннер кладёт свой код в `error` (`not_found`, `stale_tab`…); текст
+      // ошибки команды (навигация, невалидный селектор) кодом не является.
+      if (typeof data.error === 'string' && /^[a-z_]+$/.test(data.error)) code = data.error
     } catch { /* тело не JSON */ }
     // stale_* — конфликт состояния (409), not_found — 404, старт-провал — 503.
-    const status = res.status === 404 ? 404 : res.status === 409 ? 409 : res.status === 503 ? 503 : 502
-    return new BrowserRunnerError(status, message)
+    // 422 — раннер не принял саму команду (адрес не открылся, действие не
+    // выполнилось): это ошибка запроса, а не «плохой шлюз», как отвечалось
+    // раньше — по 502 шли искать беду в инфраструктуре.
+    const status = res.status === 404 ? 404 : res.status === 409 ? 409 : res.status === 503 ? 503 : res.status === 422 ? 422 : 502
+    return new BrowserRunnerError(status, describeBrowserRunnerCode(code) ?? message, code)
   }
 
   return {
