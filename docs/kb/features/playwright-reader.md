@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-08-30
-checked: 318c94ac
+updated: 2026-09-03
+checked: d09b8f16
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -98,26 +98,11 @@ service-токен), screencast (поллинг кадров) и пользов�
 confirmation gates опасных действий, метрики и настоящий health-probe,
 idle-timeout и retention профилей.
 
-## Тип разговора и сервер
+## Тип разговора, scope и legacy-миграция
 
-Добавлено значение `assistantKind: 'playwright-reader'` (константа
-`PLAYWRIGHT_READER_KIND` и union `AssistantKind = 'web-recorder' |
-'playwright-reader' | 'kanban'` в `packages/shared/src/types.ts`; поле
-`Conversation.assistantKind` из `string | null` сужено до `AssistantKind | null`).
-Схема SQLite не менялась — значение ложится в существующую колонку
-`conversations.assistant_kind`.
+Playwright Reader использует `assistantKind: 'playwright-reader'` и обязательный `scope='playwright-reader'`. Список, поиск и получение истории запрашивают эту область отдельно, поэтому Playwright-разговор не появляется в обычном чате или другой мастерской и не принимается по URL чужого маршрута. Актуальные типы `AssistantKind` и `ConversationScope` находятся в `packages/shared/src/types.ts`, транспортные аргументы — в `packages/shared/src/ipc.ts`, фильтрация — в `apps/server/src/db/database.ts` и `apps/server/src/routes/rest.ts`.
 
-В `apps/server/src/db/database.ts` тип принимает `createConversation`, оба запроса
-списка/поиска разговоров пропускают его наравне с `web-recorder`
-(`assistant_kind IS NULL OR assistant_kind IN ('web-recorder',
-'playwright-reader')`), а маппер строки признаёт третье значение. Поэтому
-Playwright-чаты приходят в обычный `conversations:list`, и отдельного серверного
-списка для них нет. `setConversationProject` теперь сначала читает разговор и
-возвращает `null`, если это Playwright Reader, а `projectId` не `null`: привязка к
-проекту запрещена контрактом режима. `POST /api/conversations`
-(`apps/server/src/routes/rest.ts`) принимает `assistantKind` из двух значений,
-любое другое молча даёт обычный разговор; та же пара разрешена в IPC-аргументе
-`conversations:create` (`packages/shared/src/ipc.ts`).
+При добавлении колонки `conversations.scope` миграция детерминированно использует только достоверные старые признаки. Разговор с `task_id` и `project_id`, а также `assistant_kind='kanban'` с `project_id`, становится `kanban`; `make` становится `make`, `console-reader` — `console`, `playwright-reader` — `playwright-reader`, `web-recorder` — `web-reader`. Пустой или неизвестный `assistant_kind` и kanban без `project_id` становятся безопасным обычным `chat`. SQL миграции находится рядом со схемными апгрейдами в `apps/server/src/db/database.ts`; новый schema constraint — в `apps/server/src/db/schema.ts`.
 
 ## Shared-контракты браузерной сессии
 
