@@ -1177,6 +1177,37 @@ describe('REST: conversations/messages/settings', () => {
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
   })
 
+  it('чат задачи с макетом показывает read-only источники make_design', async () => {
+    // Свежая фича хода (turns.ts, buildTaskMakeSources по task_designs): чат
+    // задачи читает файлы привязанного Make-макета. Инспектор обязан это
+    // показывать — иначе «что сможет модель» снова отвечает неполно.
+    const project = db.createProject(U, { name: 'Проект макета' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'По макету' })!
+    const makeChat = db.createConversation(U, 'Макет', 'make', project.id)!
+    db.linkTaskDesign(U, project.id, task.id, { conversationId: makeChat.id })
+    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+
+    const item = async (id: string): Promise<{ available: boolean; toggleable: boolean; lockReason?: string | null } | undefined> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${chat.id}/context-snapshot` })).json()
+      return snapshot.groups
+        .flatMap((group: { items: Array<{ id: string; available: boolean; toggleable: boolean; lockReason?: string | null }> }) => group.items)
+        .find((entry: { id: string }) => entry.id === id)
+    }
+    const design = await item('mcp-make-design')
+    expect(design?.available).toBe(true)
+    // Тумблера нет: источник даёт привязка задачи, ход disabledContext не читает.
+    expect(design?.toggleable).toBe(false)
+    expect(design?.lockReason).toBe('kind')
+    expect((await inj({ method: 'POST', url: `/api/conversations/${chat.id}/context/mcp-make-design`, payload: { enabled: false } })).statusCode).toBe(400)
+
+    // Обычный чат без задачи честно говорит, что источник появится в чате задачи.
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${plain.id}/context-snapshot` })).json()
+    const plainDesign = snapshot.groups.flatMap((group: { items: Array<{ id: string; available: boolean }> }) => group.items).find((entry: { id: string }) => entry.id === 'mcp-make-design')
+    expect(plainDesign?.available).toBe(false)
+  })
+
   it('в режиме планирования инструменты вида чата честно обещают только чтение', async () => {
     // Ход подключает консоль, Make и канбан с &ro=1 в режиме «Только
     // планирование» (turns.ts): чтение работает, запись отклоняется. Пункт
