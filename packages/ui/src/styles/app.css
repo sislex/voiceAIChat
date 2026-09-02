@@ -6503,8 +6503,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split--chat .webpreview, .chat-split--preview .chat-split-chat { display: none; }
 }
 
-/* Universal widget + assistant split. The shell is intentionally widget-neutral. */
-.widget-assistant { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+/* Universal widget + assistant split. Visual tokens mirror Make «Проект 14». */
+.widget-assistant {
+  --assistant-bg: #f7faf6; --assistant-surface: #fff; --assistant-soft: #f1f6ef;
+  --assistant-hover: #eaf2e8; --assistant-text: #17231a; --assistant-muted: #627065;
+  --assistant-primary: #246c3b; --assistant-primary-soft: #dcebdc;
+  --assistant-border: #d7e3d5; --assistant-border-strong: #bfd1bd;
+  --assistant-status-bg: #fff7d9; --assistant-status-text: #765600;
+  --assistant-danger-bg: #fbe9e5; --assistant-danger: #a33f38;
+  display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%; overflow: hidden;
+  background: var(--assistant-bg); color: var(--assistant-text);
+}
 .widget-assistant--page { position: fixed; inset: 0; z-index: 40; width: 100vw; height: 100dvh; background: var(--bg); }
 .widget-assistant-widget { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
 .widget-assistant-widget > * { flex: 1 1 auto; min-width: 0; }
@@ -6553,7 +6562,23 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .widget-proposal ins { color: var(--text); text-decoration: none; }
 .widget-proposal-actions { display: flex; gap: 8px; margin-top: 10px; }
 .project-assistant-toggle[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
-@media (max-width: 768px) {
+.widget-assistant-panel { background: var(--assistant-surface); border-color: var(--assistant-border); }
+.widget-assistant-panel > header { min-height: 64px; padding: 11px 16px; border-color: var(--assistant-border); background: color-mix(in srgb, var(--assistant-surface) 92%, var(--assistant-soft)); }
+.project-assistant-chat-selector select { min-height: 40px; border-color: var(--assistant-border); border-radius: 11px; background: var(--assistant-surface); color: var(--assistant-text); }
+.project-assistant-chat-selector button { min-height: 40px; padding: 0 13px; border: 0; border-radius: 11px; background: var(--assistant-primary); color: #fff; font-weight: 700; }
+.kanban-assistant { overflow: hidden; background: var(--assistant-surface); color: var(--assistant-text); }
+.kanban-assistant-status { min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--assistant-border); color: var(--assistant-muted); font-size: 12px; }
+.kanban-assistant-status[data-state='active'] { color: var(--assistant-status-text); background: var(--assistant-status-bg); }
+.kanban-assistant-status[data-state='empty'] { padding: 18px; background: var(--assistant-soft); color: var(--assistant-text); font-size: 14px; line-height: 1.45; }
+.kanban-assistant-status[data-state='error'], .kanban-assistant-status[data-state='unavailable'] { background: var(--assistant-danger-bg); color: var(--assistant-danger); }
+.kanban-assistant-status > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.kanban-assistant-status button { margin-left: auto; border: 1px solid currentColor; border-radius: 9px; padding: 5px 9px; background: transparent; color: inherit; cursor: pointer; }
+.kanban-assistant-spinner { width: 13px; height: 13px; flex: none; border: 2px solid var(--assistant-border); border-top-color: var(--assistant-primary); border-radius: 50%; animation: assistant-spin .8s linear infinite; }
+.kanban-assistant-context { border-color: var(--assistant-border); }
+.kanban-assistant-context span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--assistant-primary-soft); color: var(--assistant-primary); }
+@keyframes assistant-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .kanban-assistant-spinner { animation: none; } }
+@media (max-width: 820px) {
   .widget-assistant { flex-direction: column; }
   .widget-assistant-tabs { display: block; flex: none; padding: 6px; border-bottom: 1px solid var(--border); background: var(--panel); }
   .widget-assistant-tabs > div { display: grid; grid-template-columns: 1fr 1fr; }
