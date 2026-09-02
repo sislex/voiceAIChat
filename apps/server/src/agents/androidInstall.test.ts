@@ -11,10 +11,13 @@ describe('buildAndroidInstallScript', () => {
   it('срезает хвостовой слэш', () => {
     expect(buildAndroidInstallScript('https://example.com/')).toContain('SERVER="https://example.com"')
   })
-  it('настраивает автозапуск и wake-lock', () => {
+  it('настраивает автозапуск и готовит Termux API без дублирования wake-lock в run.sh', () => {
     const s = buildAndroidInstallScript('http://h')
     expect(s).toContain('.termux/boot')
-    expect(s).toContain('termux-wake-lock')
+    expect(s).toContain('pkg install -y termux-api')
+    expect(s).toContain('Установите пакет termux-api и приложение Termux:API')
+    const runScript = s.slice(s.indexOf("<<'RUN'"), s.indexOf('\nRUN', s.indexOf("<<'RUN'")))
+    expect(runScript).not.toContain('termux-wake-lock')
     expect(s).toContain('--connection')
   })
   it('готовит Termux для нативных npm-модулей и проверяет better-sqlite3', () => {

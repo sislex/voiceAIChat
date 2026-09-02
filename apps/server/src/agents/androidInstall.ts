@@ -56,6 +56,13 @@ SMOKE_DIR="\$(mktemp -d "\$AGENT_DIR/native-smoke.XXXXXX")"
   node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('select 1').get(); db.close()"
 ) || { echo "Тестовая сборка better-sqlite3 не удалась"; exit 1; }
 echo "  better-sqlite3 успешно установлен и загружен"
+# CLI-команды даёт пакет termux-api, а системный provider — отдельное приложение Termux:API.
+if ! command -v termux-wake-lock >/dev/null 2>&1 || ! command -v termux-wake-unlock >/dev/null 2>&1; then
+  pkg install -y termux-api >/dev/null 2>&1 || true
+fi
+if ! command -v termux-wake-lock >/dev/null 2>&1 || ! command -v termux-wake-unlock >/dev/null 2>&1; then
+  echo "  Предупреждение: wake lock недоступен. Установите пакет termux-api и приложение Termux:API."
+fi
 
 echo "[3/7] Скачиваю агента…"
 curl -fsSLk "\$SERVER/api/agents/script" -o "\$AGENT_DIR/voicechat-agent.new.cjs"
@@ -91,8 +98,7 @@ chmod 600 "\$AGENT_DIR/connection"
 echo "[6/7] Готовлю запуск и автозапуск (Termux:Boot)…"
 cat > "\$AGENT_DIR/run.sh" <<'RUN'
 #!/data/data/com.termux/files/usr/bin/bash
-# Держим CPU включённым, чтобы Android не усыпил агента.
-termux-wake-lock 2>/dev/null || true
+# Wake lock принадлежит lifecycle агента: он сам делает lock/unlock.
 # Сервер за Caddy с самоподписанным сертификатом — доверяем ему.
 export VC_AGENT_INSECURE_TLS=1
 cd "\$HOME/voicechat-agent"
