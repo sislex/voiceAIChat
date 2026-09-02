@@ -247,6 +247,29 @@ export function taskPreparationFailure(provider: LlmProvider, userId: string, me
     : `${head} завершилась ошибкой: ${message}`
 }
 
+/**
+ * Обновляет общую базовую ветку до origin только fast-forward. Имя переменной
+ * worktree_status намеренно не сокращается до status: в zsh status — read-only.
+ */
+export function projectMainRefreshScript(path: string, branch: string): string {
+  const repo = shellQuote(path)
+  const base = shellQuote(branch)
+  return `set -eu
+repo=${repo}
+base=${base}
+test -d "$repo/.git" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
+worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
+test -z "$worktree_status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
+current="$(git -C "$repo" branch --show-current)"
+test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
+git -C "$repo" fetch --no-tags origin "refs/heads/$base:refs/remotes/origin/$base"
+git -C "$repo" merge --ff-only "refs/remotes/origin/$base"
+local_sha="$(git -C "$repo" rev-parse HEAD)"
+remote_sha="$(git -C "$repo" rev-parse "refs/remotes/origin/$base")"
+test "$local_sha" = "$remote_sha" || { echo "Локальная ветка $base не совпадает с origin/$base после fast-forward" >&2; exit 68; }
+printf 'BASE_SHA=%s\\n' "$local_sha"`
+}
+
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   // Толерантный JSON-парсер: пустое тело (напр. DELETE с Content-Type) → undefined,
@@ -326,22 +349,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const activeRefresh = projectMainRefreshes.get(key)
     if (activeRefresh) return activeRefresh
     const operation = (async () => {
-    const repo = shellQuote(args.path)
-    const branch = shellQuote(args.branch)
-    const script = `set -eu
-repo=${repo}
-base=${branch}
-test -d "$repo/.git" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
-status="$(git -C "$repo" status --porcelain --untracked-files=all)"
-test -z "$status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
-current="$(git -C "$repo" branch --show-current)"
-test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
-git -C "$repo" fetch --no-tags origin "refs/heads/$base:refs/remotes/origin/$base"
-git -C "$repo" merge --ff-only "refs/remotes/origin/$base"
-local_sha="$(git -C "$repo" rev-parse HEAD)"
-remote_sha="$(git -C "$repo" rev-parse "refs/remotes/origin/$base")"
-test "$local_sha" = "$remote_sha" || { echo "Локальная ветка $base не совпадает с origin/$base после fast-forward" >&2; exit 68; }
-printf 'BASE_SHA=%s\\n' "$local_sha"`
+    const script = projectMainRefreshScript(args.path, args.branch)
     const result = await agentRegistry.exec(args.agentId, script, 120_000, undefined, { userId: args.userId, conversationId: args.conversationId, source: 'system' })
     if (result.timedOut) throw new Error('Синхронизация с origin завершилась по таймауту')
     if (result.exitCode !== 0) throw new Error(result.output.trim() || `Синхронизация с origin завершилась с кодом ${result.exitCode ?? 'unknown'}`)
