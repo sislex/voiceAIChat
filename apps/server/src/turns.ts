@@ -818,8 +818,20 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // там остаётся план (ограничение задокументировано в KB).
     const makeOnlyExecution = conv?.assistantKind === 'make' && provider === 'claude' && !executionDisabled
       && role !== 'admin' && !remote && permissionMode !== 'plan'
+    // Канбан-ассистент: «План» для его инструментов — только явный выбор
+    // пользователя в этом разговоре. Ход панели идёт без машины, и принудительный
+    // plan ниже раньше делал канбан read-only (ro=1): ассистент не мог ни создать
+    // карточку, ни запустить план, хотя политику изменений держит сам MCP
+    // (автопилот / подтверждения). Инцидент 2026-09-02.
+    const kanbanExplicitPlan = conv?.permissionMode === 'plan'
     if (executionDisabled || (role !== 'admin' && !remote && !makeOnlyExecution)) permissionMode = 'plan'
     if (makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
+    // Claude в нативном plan глушит MCP, поэтому ход канбан-ассистента без машины
+    // идёт в default с запретом встроенных инструментов — как Make без машины.
+    // Codex остаётся в plan (read-only sandbox): его MCP работает благодаря
+    // default_tools_approval_mode в раннере.
+    const kanbanMcpOnly = Boolean(kanbanMcpUrl) && provider === 'claude' && !remote && !kanbanExplicitPlan && permissionMode === 'plan'
+    if (kanbanMcpOnly) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db
@@ -871,7 +883,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // запускаем CLI в default, но remote-мост получает ro=1 и отклоняет любые
     // изменения; так в план-фазе доступны только чтение файлов и БЗ.
     const readOnlyRemote = permissionMode === 'plan' && Boolean(remote)
-    const executionPermissionMode = readOnlyRemote ? 'default' : permissionMode
+    const executionPermissionMode = readOnlyRemote || kanbanMcpOnly ? 'default' : permissionMode
     const executionRemote = readOnlyRemote && remote
       ? { ...remote, mcpUrl: `${remote.mcpUrl}&ro=1` }
       : remote
@@ -891,8 +903,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
         ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {}),
         ...(makeSources.length ? { makeSources } : {}),
-        // В режиме «План» канбан read-only: карточки и настройки не меняются (&ro=1).
-        ...(kanbanMcpUrl ? { kanbanMcpUrl: permissionMode === 'plan' ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
+        // Канбан read-only (&ro=1) только при явном «Плане» этого разговора; принудительный
+        // plan хода без машины инструментов доски не касается — см. kanbanExplicitPlan.
+        ...(kanbanMcpUrl ? { kanbanMcpUrl: kanbanExplicitPlan ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
       },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
