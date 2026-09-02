@@ -451,6 +451,38 @@ describe('projects REST: доска', () => {
   })
 })
 
+describe('автосвязь задачи с Make-проектом источника', () => {
+  // Ошибка, с которой начался фикс: задача создавалась из Make-чата без связи
+  // task_designs, подготовка не получала файлы макета и блокировалась вопросом
+  // «критичный источник истины недоступен» про опубликованный URL.
+  it('задача из Make-чата получает whole_project-связь, из обычного чата — нет', async () => {
+    const project = await createProject('Автосвязь')
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
+    const column = board.columns[0]!
+    const makeChat = db.createConversation('admin', 'Проект 14', 'make', project.id)!
+    const plainChat = db.createConversation('admin', 'Обычный', null, project.id)!
+
+    const linked = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: {
+      columnId: column.id, title: 'Карточка из Make', sourceConversationId: makeChat.id
+    } })).json() as Task
+    expect(linked.designs?.map((design) => [design.conversationId, design.mode])).toEqual([[makeChat.id, 'whole_project']])
+
+    // Обычный чат — источник без макета: задача создаётся без связи и без ошибки.
+    const plain = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: {
+      columnId: column.id, title: 'Карточка из чата', sourceConversationId: plainChat.id
+    } })).json() as Task
+    expect(plain.designs ?? []).toEqual([])
+
+    // Make-чат чужого проекта тоже не даёт связи: линк проверяет принадлежность.
+    const other = await createProject('Чужой')
+    const foreignMake = db.createConversation('admin', 'Чужой Make', 'make', other.id)!
+    const foreign = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: {
+      columnId: column.id, title: 'Карточка с чужим Make', sourceConversationId: foreignMake.id
+    } })).json() as Task
+    expect(foreign.designs ?? []).toEqual([])
+  })
+})
+
 describe('projects REST: поля Jira-доски', () => {
   it('метки, стори-поинты, срок, флаг и сквозной номер задачи', async () => {
     const p = await createProject()
