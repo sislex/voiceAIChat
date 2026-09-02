@@ -81,6 +81,8 @@ describe('ChatColumn — копирование сообщений', () => {
     renderCol({ messages: [makeUserMessage({ id: 'u-copy', text, meta: { previewElement } })] })
 
     const button = screen.getByRole('button', { name: 'Копировать вопрос' })
+    expect(button.tagName).toBe('BUTTON')
+    expect(button).toHaveClass('copymsg')
     expect(button).toHaveAttribute('title', 'Копировать вопрос')
     await userEvent.click(button)
     expect(writeText).toHaveBeenCalledTimes(1)

@@ -718,6 +718,46 @@ describe('ci: создание задачи из предложения улуч
     expect(db.listProjectImprovementTaskIds('alice', p.id)).toEqual([])
   })
 
+  it('очередь проекта отдаёт каждое предложение с исходной задачей, файлами и критериями', () => {
+    const { p, col, task } = project()
+    const first = db.upsertTaskImprovement({
+      projectId: p.id, taskId: task.id, runId: null, stepId: null, source: 'development',
+      title: 'Стабилизировать: npm test', description: 'Подробности', fingerprint: 'npm-test',
+      evidence: ['Статус шага: failed'], files: ['apps/server/src/turns.ts', ' apps/server/src/turns.ts '],
+      acceptanceCriteria: 'Шаг проходит с первой попытки.', suggestedAction: 'create_chatai_task'
+    })
+    expect(first).toMatchObject({ files: ['apps/server/src/turns.ts'], acceptanceCriteria: 'Шаг проходит с первой попытки.' })
+    // Повтор того же наблюдения объединяет файлы и не создаёт дубликат.
+    const again = db.upsertTaskImprovement({
+      projectId: p.id, taskId: task.id, runId: null, stepId: null, source: 'development',
+      title: 'Стабилизировать: npm test', description: 'Подробности', fingerprint: 'npm-test',
+      evidence: ['Статус шага: timeout'], files: ['packages/ui/src/App.tsx'], suggestedAction: 'create_chatai_task'
+    })
+    expect(again).toMatchObject({ id: first.id, occurrences: 2, files: ['apps/server/src/turns.ts', 'packages/ui/src/App.tsx'] })
+    const queue = db.listProjectImprovements('alice', p.id)
+    expect(queue).toEqual([expect.objectContaining({ id: first.id, taskTitle: 'T1', taskSeq: task.seq, taskColumnId: col.id })])
+    expect(db.listProjectImprovements('bob', p.id)).toEqual([])
+  })
+
+  it('без columnId задача создаётся в единственной колонке backlog с текстом предложения', () => {
+    const { p, col, item } = improvement()
+    expect(col.semanticType).toBe('backlog')
+    const result = db.createTaskFromImprovement('alice', item.id, {})!
+    expect(result.created).toBe(true)
+    expect(result.task).toMatchObject({ columnId: col.id, title: 'Улучшить ретраи', description: 'Подробности', acceptanceCriteria: 'Ошибка видима пользователю' })
+    expect(db.listProjectImprovements('alice', p.id)).toEqual([])
+  })
+
+  it('удаление убирает предложение из очереди; чужой пользователь удалить не может', () => {
+    const { p, item } = improvement()
+    expect(db.deleteTaskImprovement('bob', item.id)).toBe(false)
+    expect(db.improvementProjectId(item.id)).toBe(p.id)
+    expect(db.deleteTaskImprovement('alice', item.id)).toBe(true)
+    expect(db.deleteTaskImprovement('alice', item.id)).toBe(false)
+    expect(db.listProjectImprovements('alice', p.id)).toEqual([])
+    expect(db.improvementProjectId(item.id)).toBeNull()
+  })
+
   it('проверяет матрицу переходов и откатывает недопустимое создание', () => {
     const { p, task, item } = improvement()
     expect(db.updateTaskImprovementStatus('alice', item.id, 'accepted')!.status).toBe('accepted')

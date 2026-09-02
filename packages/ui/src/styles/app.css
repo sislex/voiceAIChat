@@ -838,7 +838,7 @@
   background: #edf1fb;
   border: 1px solid #dce4f6;
   border-bottom-right-radius: 4px;
-  /* Кнопка копирования всегда видна у вопроса, поэтому тексту нужен свой слот. */
+  /* Слот под кнопку сохраняет геометрию текста при hover, focus и copied. */
   padding-right: 52px;
 }
 .ai .bub {
@@ -4624,6 +4624,18 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcol-head--over { background: var(--ci-removed-bg); border-radius: 8px 8px 0 0; }
 /* Перенос колонки: поднятая колонка гаснет, колонка-цель обведена. */
 .jcol--drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
+/* Очередь «Улучшения»: вычисляемая колонка, визуально отделена от статусных пунктиром. */
+.jcol--improvements { outline: 1px dashed var(--accent); outline-offset: -1px; }
+.jcard--improvement { text-align: left; font: inherit; color: inherit; }
+.jcard--improvement > span { font-size: 12px; color: var(--text-dim); }
+.improvement-modal { display: flex; flex-direction: column; gap: var(--space-150); }
+.improvement-modal__meta { display: flex; align-items: center; gap: var(--space-100); flex-wrap: wrap; }
+.improvement-modal__dim { color: var(--text-dim); }
+.improvement-modal__section h3 { margin: 0 0 var(--space-050); font-size: 14px; }
+.improvement-modal__section ul { margin: 0; padding-left: 1.25em; }
+.improvement-modal__files code { font-size: 12px; }
+.improvement-modal__footer { display: flex; align-items: center; gap: var(--space-100); width: 100%; flex-wrap: wrap; }
+.improvement-modal__spacer { flex: 1; }
 .jcol-head--drop { background: var(--accent-soft); border-radius: 8px 8px 0 0; }
 .jcol-head--lifted { opacity: 0.5; }
 /* Счётчик и бейджи остаются в строке с названием (`nowrap`), а переносится и
@@ -7905,9 +7917,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    раскладки. Блоки возвращены в том виде, в каком были до мержа; правила
    инспектора контекста (`.context-*`) намеренно НЕ возвращены — их разметку
    убрал коммит «simplify context inspector». */
-/* Копия сообщения: у вопроса действие видно постоянно, у ответа модели —
-   раскрывается наведением/фокусом, как раньше. Интерактивная область 32×32 px
-   остаётся внутри пузыря и не перекрывает зарезервированный справа текст. */
+/* Копия сообщения скрыта в покое и раскрывается при наведении на пузырь,
+   собственном клавиатурном фокусе или после успешного копирования.
+   Интерактивная область 32×32 px остаётся внутри пузыря и не перекрывает
+   зарезервированный справа текст. */
 .copymsg {
   position: absolute;
   top: 6px;
@@ -7928,7 +7941,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background-color 0.12s, border-color 0.12s;
 }
-.me .copymsg,
+.me .bub:hover .copymsg,
 .ai .bub:hover .copymsg,
 .copymsg:focus-visible,
 .copymsg--copied {

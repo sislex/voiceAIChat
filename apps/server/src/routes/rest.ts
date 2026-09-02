@@ -34,6 +34,10 @@ import {
   toolNameForContextId,
   sanitizeSettingsPatch,
   claudeModelAlias,
+  kbToolHint,
+  previewToolHint,
+  MAKE_ASSISTANT_HINT,
+  KANBAN_ASSISTANT_HINT,
   firstAllowedProvider,
   isProviderAllowed,
   CLAUDE_MODELS,
@@ -156,6 +160,14 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const selectedModel = conversation.llmProvider === provider
     ? conversation.llmModel
     : (projectLlm && projectLlm.provider === provider ? projectLlm.model : null)
+  /**
+   * Движок-исполнитель — по правилам хода (`turns.ts`): закреплённый в
+   * разговоре/проекте движок, недоступный роли пользователя, молча заменяется
+   * дефолтным. Пока снимок об этом молчал, «какой раннер исполнит ход» было
+   * видно только по факту исполнения.
+   */
+  const wantedEngineId = conversation.llmEngineId ?? projectLlm?.llmEngineId ?? settings.llmEngineId ?? null
+  const engineResolution = db.resolveLlmEngine(wantedEngineId, provider, role)
   // Модель Claude приводится к алиасу меню тем же `claudeModelAlias`, что и в
   // ходе: сохранённое старое значение («opus») исполнитель резолвит в «opus[1m]»,
   // и показывать сырое значение значит называть не ту модель.
@@ -197,6 +209,10 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
   const linkedTask = conversation.taskId && conversation.projectId ? db.getCiTask(userId, conversation.projectId, conversation.taskId) : null
   const makeSources = taskMakeSources(linkedTask?.designs ?? [])
+  /** Связи макета задачи: по ним ход подключает read-only Make-источники. */
+  const taskDesigns = conversation.taskId && conversation.projectId
+    ? (db.getCiTask(userId, conversation.projectId, conversation.taskId)?.designs ?? [])
+    : []
   const taskContext = (() => {
     if (!conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
     const tc = db.getTaskChatContext(userId, conversationId, isOnline)
@@ -257,7 +273,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const autonomy = conversation.assistantAutonomy ?? 'auto'
   const kindTools = [
     {
-      id: 'mcp-browser-preview', title: 'browser:* (веб-превью)', source: 'Вид чата: превью страницы',
+      id: 'mcp-browser-preview', title: 'browser:* (веб-превью)', source: 'Вид чата: превью страницы', readOnlyInPlan: false,
       scope: 'Браузер пользователя', tools: ['mcp__browser__*'],
       description: 'Клики, ввод и чтение страницы в браузере пользователя.',
       available: conversation.assistantKind !== 'make',
@@ -265,7 +281,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       whenUnavailable: 'В Make-чате браузерные инструменты не подключаются: панель — iframe проекта, и модель упиралась в таймауты.'
     },
     {
-      id: 'mcp-console-pty', title: 'console:* (живой терминал)', source: 'Вид чата: консоль с ассистентом',
+      id: 'mcp-console-pty', title: 'console:* (живой терминал)', source: 'Вид чата: консоль с ассистентом', readOnlyInPlan: true,
       scope: 'PTY-сессия чата', tools: ['mcp__console__*'],
       description: 'Пишет команды в открытую справа PTY-сессию.',
       available: conversation.assistantKind === 'console-reader',
@@ -273,7 +289,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       whenUnavailable: 'Появится только в чате «Консоль с ассистентом».'
     },
     {
-      id: 'mcp-make-files', title: 'make:* (файлы проекта)', source: 'Вид чата: Make',
+      id: 'mcp-make-files', title: 'make:* (файлы проекта)', source: 'Вид чата: Make', readOnlyInPlan: true,
       scope: 'Проект Make этого чата', tools: ['mcp__make__*'],
       description: 'Читает и пишет файлы проекта Make.',
       available: conversation.assistantKind === 'make',
@@ -281,7 +297,18 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       whenUnavailable: 'Появится только в чате Make.'
     },
     {
-      id: 'mcp-kanban-board', title: 'kanban:* (доска проекта)', source: 'Панель ассистента проекта',
+      // Read-only источники макета в чате задачи (turns.ts: buildTaskMakeSources
+      // по task_designs связанной задачи). Появились отдельно от Make-чата:
+      // модель читает файлы макета, не будучи Make-ассистентом.
+      id: 'mcp-make-design', title: 'make_design:* (макет задачи, только чтение)', source: 'Привязка задачи к макету Make', readOnlyInPlan: false,
+      scope: taskDesigns.length ? `${taskDesigns.length} связь(и) с Make` : 'Задача без макета', tools: ['mcp__make_design_*__make_list_files', 'mcp__make_design_*__make_read_file'],
+      description: 'Чтение файлов Make-проекта, привязанного к задаче этого чата.',
+      available: taskDesigns.length > 0,
+      whenAvailable: 'Подключается в чате задачи с привязанным макетом: инструменты только читают файлы, записи нет ни в каком режиме.',
+      whenUnavailable: conversation.taskId ? 'У задачи этого чата нет привязанного Make-макета.' : 'Появится в чате задачи с привязанным Make-макетом.'
+    },
+    {
+      id: 'mcp-kanban-board', title: 'kanban:* (доска проекта)', source: 'Панель ассистента проекта', readOnlyInPlan: true,
       scope: project?.name ?? 'Проект чата', tools: ['mcp__kanban__*'],
       description: 'Читает доску, задачи и открытый экран пользователя.',
       available: Boolean(conversation.projectId),
@@ -356,7 +383,11 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         ...(conversation.llmProvider
           ? { overriddenFrom: `${projectLlm?.provider ?? settings.llmProvider} · ${projectLlm?.model ?? ((settings.llmProvider === 'codex' ? settings.codexModel : settings.model) || 'модель из конфигурации CLI')}` }
           : { inheritedFrom: projectLlm ? 'настройки проекта' : 'общие настройки пользователя' })
-      } }),
+      },
+        details: {
+          'Исполнитель': engineResolution.engine ? engineResolution.engine.name : 'встроенный запуск CLI на сервере',
+          ...(engineResolution.substituted ? { 'Замена движка': 'закреплённый исполнитель недоступен вашей роли или выключен — взят доступный по умолчанию' } : {})
+        } }),
       // Политика машины — часть ответа «что модель сможет сделать»: каталоги и
       // запрещённые команды ограничивают её сильнее, чем режим прав.
       contextItem({ id: 'machine', type: 'Настройка разговора', source: resolution?.source === 'explicit' ? 'Разговор' : 'Резолвер сервера', scope: agent?.name ?? resolution?.agentId ?? 'Сервер', priority: '7 · конфигурация', title: 'Машина выполнения', description: agent?.name ?? 'Доступной машины нет', explanation: resolution?.error ? `Недоступна: ${resolution.error}.` : `Источник: ${resolution?.source ?? 'none'}.`, configured: conversation.execTarget !== null, available: machineAvailable, includedInNextTurn: machineAvailable, details: agent
@@ -397,9 +428,13 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       // в чате с превью модель ходит браузером, а в Make правит файлы проекта.
       ...kindTools.map((tool) => contextItem({ id: tool.id, type: 'MCP-инструмент', source: tool.source, scope: tool.scope, priority: 'Возможность',
         title: tool.title, description: tool.description,
-        explanation: tool.available ? tool.whenAvailable : tool.whenUnavailable,
+        // Режим «Только планирование» подключает консоль, Make и канбан с
+        // &ro=1 (`turns.ts`): чтение работает, запись отклоняется. Без этой
+        // фразы пункт обещал полноценный инструмент, которого в плане нет.
+        explanation: (tool.available ? tool.whenAvailable : tool.whenUnavailable)
+          + (tool.available && tool.readOnlyInPlan && permissionMode === 'plan' ? ' Режим «Только планирование»: инструмент подключается только на чтение — запись отклоняется.' : ''),
         configured: true, available: tool.available, includedInNextTurn: tool.available,
-        details: { 'Инструменты': tool.tools, 'Подключает': tool.source } })),
+        details: { 'Инструменты': tool.tools, 'Подключает': tool.source, ...(tool.readOnlyInPlan ? { 'В режиме планирования': 'только чтение' } : {}) } })),
       ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } }))
     ] },
     { id: 'knowledge', order: 7, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
@@ -607,6 +642,16 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     })
     warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
   }
+  // Закреплённый движок-исполнитель недоступен: ход пойдёт через другой раннер,
+  // и человек должен узнать об этом до отправки, а не по логам исполнения.
+  if (engineResolution.substituted) {
+    warnings.push({
+      itemId: 'llm',
+      level: 'notice',
+      text: `Закреплённый движок-исполнитель недоступен (роль или выключен) — ход выполнит «${engineResolution.engine?.name ?? 'встроенный запуск CLI'}».`
+    })
+    warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+  }
   // История больше половины хода: выключать источники в таком чате бессмысленно
   // — место занимают сообщения, а не настройки, и совет должен быть другим.
   if (!resumeId && historyText.length > previewText.length && approxTokens(historyText.length) > CONTEXT_HISTORY_TOKENS_NOTICE) {
@@ -691,6 +736,28 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         .filter((entry): entry is { model: string; costUsd: number } => entry.costUsd !== null),
       omitted: [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
+        // Системные хинты, которые к промпту приклеивает сам исполнитель CLI.
+        // Их условия сервер знает (машина, режим БЗ, вид чата), а тексты для
+        // части хинтов лежат в shared — тогда называем и размер. Без этих строк
+        // «полный просмотр» молчал о заметной части того, что читает модель.
+        ...(machineAvailable
+          ? ['Хинт CLI про машину: встроенный Bash отключён, команды и файлы идут через mcp__remote__* (текст живёт в исполнителе).']
+          : ['Хинт CLI: машина не выбрана — shell-команды этому ходу запрещены (текст живёт в исполнителе).']),
+        ...(kbMode !== 'off'
+          ? [`Хинт CLI про инструменты базы знаний (режим «${kbMode}»): ≈${approxTokens(kbToolHint(kbMode).length)} токенов.`]
+          : []),
+        ...(conversation.assistantKind !== 'make'
+          ? [`Хинт CLI про браузер превью: ≈${approxTokens(previewToolHint().length)} токенов (в чатах с поверхностью превью).`]
+          : []),
+        ...(conversation.assistantKind === 'make'
+          ? [`Хинт CLI ассистента Make: ≈${approxTokens(MAKE_ASSISTANT_HINT.length)} токенов.`]
+          : []),
+        ...(conversation.assistantKind === 'console-reader'
+          ? ['Хинт CLI про живую консоль: работа в PTY-сессии пользователя (текст живёт в исполнителе).']
+          : []),
+        ...(conversation.projectId
+          ? [`Хинт CLI канбан-ассистента (только ходы из панели): ≈${approxTokens(KANBAN_ASSISTANT_HINT.length)} токенов.`]
+          : []),
         // Эти блоки собираются в момент хода из того, что происходит на экране
         // или из режима запуска: показать их «как будет» снимок не может, но
         // молчать о них тоже нельзя — человек видит их следы в ответах.

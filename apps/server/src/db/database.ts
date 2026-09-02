@@ -183,6 +183,7 @@ import {
   type CiWorkspaceReportItem,
   type CiCommandSuggestion,
   type TaskImprovement,
+  type ProjectImprovement,
   type ImprovementStatus,
   type CiRunSummary,
   type CiCommandMetric,
@@ -981,6 +982,7 @@ export class VoiceChatDb {
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE task_improvements ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'created_task_id')) this.db.exec(`ALTER TABLE task_improvements ADD COLUMN created_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
+    if (improvementCols.length && !improvementCols.some((column) => column.name === 'files_json')) this.db.exec(`ALTER TABLE task_improvements ADD COLUMN files_json TEXT NOT NULL DEFAULT '[]'`)
     if (improvementCols.length) this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_improvements_created_task ON task_improvements(created_task_id) WHERE created_task_id IS NOT NULL`)
 
     const preparationCols = this.db.prepare(`PRAGMA table_info(task_preparation_runs)`).all() as Array<{ name: string }>
@@ -5480,11 +5482,21 @@ export class VoiceChatDb {
     return this.taskDesigns(taskId)
   }
 
+  /** Проверяет, что новую дизайн-связь создаёт владелец Make-проекта. */
+  assertTaskDesignSource(userId: string, projectId: string, taskId: string, conversationId: string): void {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    if (!this.getTask(projectId, taskId)) throw new Error('Задача не найдена в проекте')
+    const conv = this.db
+      .prepare(`SELECT id, assistant_kind, project_id, user_id FROM conversations WHERE id = ?`)
+      .get(conversationId) as { id: string; assistant_kind: string | null; project_id: string | null; user_id: string | null } | undefined
+    if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
+    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    if (conv.user_id !== userId) throw new Error('Можно связать только свой Make-проект')
+  }
+
   /**
-   * Связывает карточку со страницей Make-проекта. Источник обязан быть привязан
-   * к тому же проекту: иначе участники увидели бы в карточке дизайн, к которому
-   * у них нет доступа, — привязка Make-проекта к проекту и есть акт, открывающий
-   * его команде на чтение (см. `access` в routes/make.ts).
+   * Связывает карточку с принадлежащим пользователю Make-проектом, который
+   * привязан к тому же обычному проекту.
    */
   linkTaskDesign(
     userId: string,
@@ -5492,14 +5504,7 @@ export class VoiceChatDb {
     taskId: string,
     args: { conversationId: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string }
   ): TaskDesignLink[] {
-    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
-    const task = this.getTask(projectId, taskId)
-    if (!task) throw new Error('Задача не найдена в проекте')
-    const conv = this.db
-      .prepare(`SELECT id, assistant_kind, project_id FROM conversations WHERE id = ?`)
-      .get(args.conversationId) as { id: string; assistant_kind: string | null; project_id: string | null } | undefined
-    if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
-    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    this.assertTaskDesignSource(userId, projectId, taskId, args.conversationId)
     const legacyPath = (args.path ?? '').trim()
     const mode = args.mode ?? (legacyPath ? 'files' : 'whole_project')
     const inputPaths = args.paths ?? (legacyPath ? [legacyPath] : [])
@@ -5528,15 +5533,15 @@ export class VoiceChatDb {
     return this.taskDesigns(taskId)
   }
 
-  /** Make-проекты, привязанные к проекту: то, из чего карточка выбирает дизайн. */
+  /** Собственные Make-проекты пользователя, привязанные к проекту. */
   projectDesignSources(userId: string, projectId: string): ProjectDesignSource[] | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const rows = this.db
       .prepare(
         `SELECT id, title, user_id, updated_at FROM conversations
-          WHERE project_id = ? AND assistant_kind = ? ORDER BY updated_at DESC`
+          WHERE project_id = ? AND assistant_kind = ? AND user_id = ? ORDER BY updated_at DESC`
       )
-      .all(projectId, MAKE_KIND) as Array<{ id: string; title: string; user_id: string | null; updated_at: number }>
+      .all(projectId, MAKE_KIND, userId) as Array<{ id: string; title: string; user_id: string | null; updated_at: number }>
     return rows.map((r) => ({
       conversationId: r.id,
       title: r.title,
@@ -7216,25 +7221,30 @@ export class VoiceChatDb {
 
   // --- Предложения улучшений авторанов ---
 
-  upsertTaskImprovement(args: Omit<TaskImprovement, 'id' | 'status' | 'isNew' | 'occurrences' | 'createdAt' | 'updatedAt' | 'acceptanceCriteria' | 'createdTaskId'>): TaskImprovement {
+  upsertTaskImprovement(args: Omit<TaskImprovement, 'id' | 'status' | 'isNew' | 'occurrences' | 'createdAt' | 'updatedAt' | 'acceptanceCriteria' | 'createdTaskId' | 'files'> & { acceptanceCriteria?: string; files?: string[] }): TaskImprovement {
     const redact = (value: string): string => value
       .replace(/\b(?:sk|ghp|github_pat|xox[baprs])[-_A-Za-z0-9]{12,}\b/gi, '[REDACTED]')
       .replace(/((?:token|password|secret|authorization|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
       .slice(0, 20_000)
     const evidence = [...new Set(args.evidence.map(redact).filter(Boolean))].slice(-30)
+    const files = [...new Set((args.files ?? []).map((file) => file.trim()).filter(Boolean))].slice(0, 30)
+    // Критерии по умолчанию — подтверждённые данные: так было до появления
+    // явных критериев у анализатора, и старые вызовы продолжают работать.
+    const acceptanceCriteria = redact(args.acceptanceCriteria?.trim() || evidence.join('\n'))
     const existing = this.db.prepare('SELECT * FROM task_improvements WHERE task_id=? AND fingerprint=?').get(args.taskId, args.fingerprint) as any
     const at = this.now()
     if (existing) {
       const merged = [...new Set([...(JSON.parse(existing.evidence_json || '[]') as string[]), ...evidence])].slice(-30)
-      this.db.prepare(`UPDATE task_improvements SET run_id=?, step_id=?, source=?, description=?, evidence_json=?, occurrences=occurrences+1, updated_at=? WHERE id=?`)
-        .run(args.runId, args.stepId, args.source, redact(args.description), JSON.stringify(merged), at, existing.id)
+      const mergedFiles = [...new Set([...(JSON.parse(existing.files_json || '[]') as string[]), ...files])].slice(0, 30)
+      this.db.prepare(`UPDATE task_improvements SET run_id=?, step_id=?, source=?, description=?, acceptance_criteria=?, evidence_json=?, files_json=?, occurrences=occurrences+1, updated_at=? WHERE id=?`)
+        .run(args.runId, args.stepId, args.source, redact(args.description), acceptanceCriteria, JSON.stringify(merged), JSON.stringify(mergedFiles), at, existing.id)
       return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(existing.id) as any)
     }
     const id = this.newId()
     this.db.prepare(`INSERT INTO task_improvements
-      (id,project_id,task_id,run_id,step_id,source,status,title,description,acceptance_criteria,fingerprint,evidence_json,occurrences,suggested_action,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,'new',?,?,?,?,?,1,?,?,?)`)
-      .run(id,args.projectId,args.taskId,args.runId,args.stepId,args.source,redact(args.title),redact(args.description),evidence.join('\n'),args.fingerprint,JSON.stringify(evidence),args.suggestedAction,at,at)
+      (id,project_id,task_id,run_id,step_id,source,status,title,description,acceptance_criteria,fingerprint,evidence_json,files_json,occurrences,suggested_action,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,'new',?,?,?,?,?,?,1,?,?,?)`)
+      .run(id,args.projectId,args.taskId,args.runId,args.stepId,args.source,redact(args.title),redact(args.description),acceptanceCriteria,args.fingerprint,JSON.stringify(evidence),JSON.stringify(files),args.suggestedAction,at,at)
     return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any)
   }
 
@@ -7252,6 +7262,31 @@ export class VoiceChatDb {
       .map((row) => ({ taskId: row.task_id, count: Number(row.count), improvementId: row.improvement_id }))
   }
 
+  /**
+   * Очередь «Улучшения» проекта: каждое актуальное (`new`/`accepted`) предложение
+   * отдельной записью вместе с исходной задачей — колонка рисует карточку на
+   * предложение, а не на задачу.
+   */
+  listProjectImprovements(userId: string, projectId: string): ProjectImprovement[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT i.*, t.title task_title, t.seq task_seq, t.column_id task_column_id
+      FROM task_improvements i JOIN tasks t ON t.id = i.task_id
+      WHERE i.project_id=? AND i.status IN ('new','accepted') ORDER BY i.updated_at DESC`).all(projectId) as any[])
+      .map((row) => ({ ...this.mapTaskImprovement(row), taskTitle: row.task_title, taskSeq: Number(row.task_seq), taskColumnId: row.task_column_id }))
+  }
+
+  /** Проект предложения — чтобы после удаления известить доску. */
+  improvementProjectId(id: string): string | null {
+    return (this.db.prepare('SELECT project_id FROM task_improvements WHERE id=?').get(id) as { project_id: string } | undefined)?.project_id ?? null
+  }
+
+  /** «Отмена» предложения в очереди: запись удаляется, а не помечается — очередь должна пустеть. */
+  deleteTaskImprovement(userId: string, id: string): boolean {
+    const row = this.db.prepare('SELECT project_id FROM task_improvements WHERE id=?').get(id) as { project_id: string } | undefined
+    if (!row || !this.isProjectMember(userId, row.project_id)) return false
+    return this.db.prepare('DELETE FROM task_improvements WHERE id=?').run(id).changes > 0
+  }
+
   updateTaskImprovementStatus(userId: string, id: string, status: ImprovementStatus): TaskImprovement | null {
     const row = this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any
     if (!row || !this.isProjectMember(userId, row.project_id)) return null
@@ -7264,7 +7299,13 @@ export class VoiceChatDb {
     return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any)
   }
 
-  createTaskFromImprovement(userId: string, id: string, args: import('@voicechat/shared').CreateTaskFromImprovementInput): import('@voicechat/shared').CreateTaskFromImprovementResult | null {
+  /**
+   * Задача из предложения. Без `columnId` берётся единственная колонка `backlog`
+   * (TODO): очередь улучшений обслуживается одной кнопкой, без выбора колонки.
+   * Подготовку запускает вызывающий код (`startPreparation` у маршрута) — у БД
+   * нет доступа к LLM-раннеру.
+   */
+  createTaskFromImprovement(userId: string, id: string, args: import('@voicechat/shared').CreateTaskFromImprovementInput): Omit<import('@voicechat/shared').CreateTaskFromImprovementResult, 'preparationStarted' | 'preparationError'> | null {
     return this.db.transaction(() => {
       const row = this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any
       if (!row || !this.isProjectMember(userId, row.project_id)) return null
@@ -7276,9 +7317,18 @@ export class VoiceChatDb {
       if (row.suggested_action !== 'create_chatai_task') throw new Error('Предложение не поддерживает создание задачи ChatAI')
       if (row.status !== 'new' && row.status !== 'accepted') throw new Error('Предложение уже обработано')
       if (!this.getTask(row.project_id, row.task_id)) throw new Error('Исходная задача не найдена')
-      if (!this.columnInProject(row.project_id, args.columnId)) throw new Error('Выбранная колонка недоступна')
-      if (!args.title.trim()) throw new Error('Название задачи обязательно')
-      const task = this.createTask(userId, row.project_id, { columnId: args.columnId, title: args.title.trim(), description: args.description, acceptanceCriteria: args.acceptanceCriteria, type: 'task', source: 'improvement' })
+      let columnId = args.columnId
+      if (!columnId) {
+        const backlog = (this.getBoard(userId, row.project_id)?.columns ?? []).filter((column) => column.semanticType === 'backlog')
+        if (backlog.length !== 1) throw new Error(backlog.length === 0 ? 'В проекте нет колонки TODO (semantic type backlog)' : 'В проекте несколько колонок TODO: выберите колонку явно')
+        columnId = backlog[0].id
+      }
+      if (!this.columnInProject(row.project_id, columnId)) throw new Error('Выбранная колонка недоступна')
+      const title = (args.title ?? row.title).trim()
+      if (!title) throw new Error('Название задачи обязательно')
+      const description = args.description ?? row.description
+      const acceptanceCriteria = args.acceptanceCriteria ?? (row.acceptance_criteria || '')
+      const task = this.createTask(userId, row.project_id, { columnId, title, description, acceptanceCriteria, type: 'task', source: 'improvement' })
       if (!task) throw new Error('Не удалось создать задачу')
       this.db.prepare('UPDATE tasks SET source_task_id=? WHERE id=?').run(row.task_id, task.id)
       const at = this.now()
@@ -7294,7 +7344,7 @@ export class VoiceChatDb {
       id: row.id, projectId: row.project_id, taskId: row.task_id, runId: row.run_id, stepId: row.step_id,
       source: row.source, status: row.status, title: row.title, description: row.description,
       acceptanceCriteria: row.acceptance_criteria || '', createdTaskId: row.created_task_id ?? null,
-      fingerprint: row.fingerprint, evidence: JSON.parse(row.evidence_json || '[]'), occurrences: row.occurrences,
+      fingerprint: row.fingerprint, evidence: JSON.parse(row.evidence_json || '[]'), files: JSON.parse(row.files_json || '[]'), occurrences: row.occurrences,
       suggestedAction: row.suggested_action, isNew: row.status === 'new', createdAt: row.created_at, updatedAt: row.updated_at
     }
   }

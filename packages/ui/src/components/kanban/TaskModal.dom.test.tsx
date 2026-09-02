@@ -127,7 +127,7 @@ describe('TaskModal — создание задачи из улучшения', 
   const improvement: TaskImprovement = {
     id: 'i1', taskId: 't1', projectId: 'p1', runId: null, stepId: null, source: 'development',
     status: 'new', title: 'Улучшить ретраи', description: 'Подробности', acceptanceCriteria: 'Ошибка видима',
-    createdTaskId: null, fingerprint: 'retry', evidence: [], occurrences: 1,
+    createdTaskId: null, fingerprint: 'retry', evidence: [], files: [], occurrences: 1,
     suggestedAction: 'create_chatai_task', isNew: true, createdAt: 1, updatedAt: 1
   }
 
@@ -135,8 +135,8 @@ describe('TaskModal — создание задачи из улучшения', 
     const ci = createFakeCi()
     ci.listTaskImprovements = vi.fn(async () => [improvement])
     ci.createTaskFromImprovement = vi.fn(async (_id, input) => ({
-      created: true,
-      task: mkTask({ id: 'created', columnId: input.columnId, title: input.title, description: input.description, acceptanceCriteria: input.acceptanceCriteria, sourceTaskId: 't1' }),
+      created: true, preparationStarted: false, preparationError: null,
+      task: mkTask({ id: 'created', columnId: input.columnId ?? '', title: input.title ?? '', description: input.description ?? '', acceptanceCriteria: input.acceptanceCriteria ?? '', sourceTaskId: 't1' }),
       improvement: { ...improvement, status: 'implemented' as const, createdTaskId: 'created', isNew: false }
     }))
     window.ci = ci
@@ -505,6 +505,27 @@ describe('TaskModal — панель CI-рана', () => {
     // Ран идёт — повторный запуск недоступен.
     expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
     expect(onStartCi).not.toHaveBeenCalled()
+  })
+
+  it('для queued-рана показывает только «Параллельно», а running и awaiting_input защищены', () => {
+    const onStartCiParallel = vi.fn()
+    const view = render(<TaskModal {...props({
+      ciSummary: mkSummary({ status: 'queued', modelActive: false }),
+      onStartCi: vi.fn(),
+      onStartCiParallel
+    })} />)
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Параллельно' }))
+    expect(onStartCiParallel).toHaveBeenCalledWith('t1')
+
+    for (const status of ['running', 'awaiting_input'] as const) {
+      view.rerender(<TaskModal {...props({
+        ciSummary: mkSummary({ status, awaitingInput: status === 'awaiting_input' }),
+        onStartCi: vi.fn(),
+        onStartCiParallel
+      })} />)
+      expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+    }
   })
 
   it('после завершения рана «В очередь» снова доступна', () => {

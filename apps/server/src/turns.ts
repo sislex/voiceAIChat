@@ -137,7 +137,7 @@ export interface TurnManagerDeps {
   /** Привязка чата к хранилищу машины по умолчанию (ChatAI), если её ещё нет. */
   ensureChatStorage?: (userId: string, conversationId: string, machineId: string) => Promise<ChatStorageBinding | null>
   /** Системный preflight общей main-копии проекта перед запуском модели. */
-  ensureProjectMainCurrent?: (args: { userId: string; projectId: string; conversationId: string; agentId: string; path: string; branch: string }) => Promise<{ baseSha: string }>
+  ensureProjectMainCurrent?: (args: { userId: string; projectId: string; conversationId: string; agentId: string; path: string; branch: string; gitUrl?: string | null }) => Promise<{ baseSha: string }>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -671,22 +671,25 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       && conv.assistantKind !== 'make' && conv.workspace?.mode !== 'task_workspace') {
       const projectMachine = deps.db.getProjectMachine(conv.projectId, target)
       const projectPath = projectMachine?.directories?.projectWorkdir.path || projectMachine?.path || ''
+      // Машина хода унаследована чатом, но к проекту не привязана (свежий проект,
+      // машина по умолчанию пользователя): проверять нечего — на ней нет общей копии
+      // проекта. Блокировать такой чат нельзя, иначе Git-проект без привязок вообще
+      // не отвечает; модель лишь предупреждается, что копия не проверялась.
       if (!projectPath) {
-        starting.delete(conversationId)
-        broadcast({ t: 'claude.error', conversationId, message: 'Не настроена рабочая директория проекта: ход на устаревшем checkout запрещён.' }, userId)
-        return
-      }
-      try {
-        const snapshot = await deps.ensureProjectMainCurrent({
-          userId, projectId: conv.projectId, conversationId, agentId: target,
-          path: projectPath, branch: projectContext.ciBaseBranch || 'main'
-        })
-        prompt = `${prompt}\n\nАктуальная базовая ветка: ${projectContext.ciBaseBranch || 'main'} @ ${snapshot.baseSha}. Системный preflight подтвердил совпадение с origin.`
-      } catch (error) {
-        starting.delete(conversationId)
-        const detail = error instanceof Error ? error.message : String(error)
-        broadcast({ t: 'claude.error', conversationId, message: `Не удалось синхронизировать проект с origin: ${detail}` }, userId)
-        return
+        prompt = `${prompt}\n\nМашина «${deps.agents?.nameOf(target) ?? target}» не привязана к проекту: общая копия репозитория на ней не проверялась, актуальность относительно origin/${projectContext.ciBaseBranch || 'main'} не подтверждена.`
+      } else {
+        try {
+          const snapshot = await deps.ensureProjectMainCurrent({
+            userId, projectId: conv.projectId, conversationId, agentId: target,
+            path: projectPath, branch: projectContext.ciBaseBranch || 'main', gitUrl: projectContext.gitUrl
+          })
+          prompt = `${prompt}\n\nАктуальная базовая ветка: ${projectContext.ciBaseBranch || 'main'} @ ${snapshot.baseSha}. Системный preflight подтвердил совпадение с origin.`
+        } catch (error) {
+          starting.delete(conversationId)
+          const detail = error instanceof Error ? error.message : String(error)
+          broadcast({ t: 'claude.error', conversationId, message: `Не удалось синхронизировать проект с origin: ${detail}` }, userId)
+          return
+        }
       }
     }
     // Клиент рисует шапку ответа сразу: движок/модель/машина известны уже здесь.

@@ -79,6 +79,59 @@ describe('REST: задачи из предложений улучшений', ()
     const invalid = await inj({ method: 'PATCH', url: `/api/improvements/${improvement.id}`, payload: { status: 'accepted' } })
     expect(invalid.statusCode).toBe(409)
   })
+
+  it('очередь проекта, создание одной кнопкой в backlog и удаление предложения', async () => {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+    const source = db.createTask(U, project.id, { columnId: backlog.id, title: 'Source' })!
+    const improvement = db.upsertTaskImprovement({
+      projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
+      title: 'Стабилизировать: npm test', description: 'Подробности', fingerprint: 'rest-queue',
+      evidence: ['Статус шага: failed'], files: ['apps/server/src/turns.ts'], acceptanceCriteria: 'Шаг проходит.', suggestedAction: 'create_chatai_task'
+    })
+    const queue = await inj({ method: 'GET', url: `/api/projects/${project.id}/improvements` })
+    expect(queue.statusCode).toBe(200)
+    expect(queue.json()).toEqual([expect.objectContaining({ id: improvement.id, taskTitle: 'Source', taskColumnId: backlog.id, files: ['apps/server/src/turns.ts'] })])
+
+    // Тело пустое: колонка — backlog проекта, текст — из предложения.
+    const created = await inj({ method: 'POST', url: `/api/improvements/${improvement.id}/create-task`, payload: {} })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({ created: true, preparationStarted: false, preparationError: null, task: { columnId: backlog.id, title: 'Стабилизировать: npm test', acceptanceCriteria: 'Шаг проходит.' } })
+    expect((await inj({ method: 'GET', url: `/api/projects/${project.id}/improvements` })).json()).toEqual([])
+
+    const badBody = await inj({ method: 'POST', url: `/api/improvements/${improvement.id}/create-task`, payload: { title: 42 } })
+    expect(badBody.statusCode).toBe(400)
+
+    const second = db.upsertTaskImprovement({
+      projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
+      title: 'Второе', description: 'D', fingerprint: 'rest-queue-2', evidence: [], suggestedAction: 'create_chatai_task'
+    })
+    const removed = await inj({ method: 'DELETE', url: `/api/improvements/${second.id}` })
+    expect(removed.statusCode).toBe(200)
+    expect(removed.json()).toEqual({ ok: true })
+    expect((await inj({ method: 'DELETE', url: `/api/improvements/${second.id}` })).statusCode).toBe(404)
+  })
+
+  it('«создать и подготовить»: отказ подготовки не откатывает созданную задачу', async () => {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+    // Пользователю закрыты оба провайдера: запуск подготовки детерминированно
+    // отказывает ещё до обращения к CLI, а тест не порождает процессов.
+    db.setUserLlmAccess(U, [{ provider: 'claude', modelId: '*' }, { provider: 'codex', modelId: '*' }])
+    const source = db.createTask(U, project.id, { columnId: backlog.id, title: 'Source' })!
+    const improvement = db.upsertTaskImprovement({
+      projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
+      title: 'Третье', description: 'D', fingerprint: 'rest-prepare', evidence: [], suggestedAction: 'create_chatai_task'
+    })
+    const res = await inj({ method: 'POST', url: `/api/improvements/${improvement.id}/create-task`, payload: { startPreparation: true } })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body).toMatchObject({ created: true, preparationStarted: false, task: { columnId: backlog.id } })
+    expect(String(body.preparationError)).toMatch(/недоступен/)
+    expect(db.getBoard(U, project.id)!.tasks.some((task) => task.id === body.task.id)).toBe(true)
+  })
 })
 
 describe('REST: машины настроек разговора', () => {

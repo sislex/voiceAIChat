@@ -608,6 +608,14 @@ export function canStartCiRun(summary: { status: CiStatus } | null | undefined):
   return summary == null || !isActiveCiStatus(summary.status)
 }
 
+/**
+ * Доступно ли действие «Параллельно». В отличие от создания нового рана оно
+ * умеет продвинуть queued-run, но running и awaiting_input остаются защищены.
+ */
+export function canStartParallelCiRun(summary: { status: CiStatus } | null | undefined): boolean {
+  return summary?.status === 'queued' || canStartCiRun(summary)
+}
+
 // --- Способ запуска и распределение по машинам -----------------------------
 
 /**
@@ -1112,6 +1120,8 @@ export interface TaskImprovement {
   createdTaskId: string | null
   fingerprint: string
   evidence: string[]
+  /** Файлы репозитория, упомянутые в логе шага: подсказка, куда смотреть при реализации. */
+  files: string[]
   occurrences: number
   suggestedAction: ImprovementAction
   isNew: boolean
@@ -1119,17 +1129,52 @@ export interface TaskImprovement {
   updatedAt: number
 }
 
+/** Предложение в проектной очереди «Улучшения»: вместе с исходной задачей. */
+export interface ProjectImprovement extends TaskImprovement {
+  taskTitle: string
+  taskSeq: number
+  taskColumnId: string
+}
+
+/**
+ * Поля необязательны: без них задача берёт название, описание и критерии из
+ * самого предложения, а колонку — единственную с семантикой `backlog` (TODO).
+ */
 export interface CreateTaskFromImprovementInput {
-  columnId: string
-  title: string
-  description: string
-  acceptanceCriteria: string
+  columnId?: string
+  title?: string
+  description?: string
+  acceptanceCriteria?: string
+  /** Сразу перевести созданную задачу в «Подготовку к выполнению» и запустить её. */
+  startPreparation?: boolean
 }
 
 export interface CreateTaskFromImprovementResult {
   task: import('./projects.js').Task
   improvement: TaskImprovement
   created: boolean
+  /** Подготовка запущена (только при `startPreparation`). */
+  preparationStarted: boolean
+  /** Почему подготовку не удалось запустить; задача при этом создана. */
+  preparationError: string | null
+}
+
+const IMPROVEMENT_FILE_PATTERN = /(?:^|[\s"'`(\[<])((?:apps|packages|src|docs|scripts|tests?|lib|config|public)\/[\w@%+.-]+(?:\/[\w@%+.-]+)*\.[A-Za-z][A-Za-z0-9]{0,7})(?=$|[\s"'`):\]>,;])/gm
+
+/**
+ * Файлы репозитория из текста лога: относительные пути под известными
+ * каталогами с расширением. Сознательно без «голых» имён (`package.json` без
+ * каталога) — вывод npm и тестов забил бы список шумом.
+ */
+export function extractImprovementFiles(text: string, limit = 20): string[] {
+  const found = new Set<string>()
+  for (const match of text.matchAll(IMPROVEMENT_FILE_PATTERN)) {
+    const path = match[1].replace(/[.,;:]+$/, '')
+    if (path.includes('node_modules/') || path.includes('..')) continue
+    found.add(path)
+    if (found.size >= limit) break
+  }
+  return [...found]
 }
 
 export interface CiCommandSuggestion {

@@ -2,6 +2,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   canStartCiRun,
+  canStartParallelCiRun,
+  extractImprovementFiles,
   canTransitionTestGroup,
   blockedGroupsAfterFailure,
   mayMarkGroupNotApplicable,
@@ -146,6 +148,16 @@ describe('canStartCiRun', () => {
 
   it('покрыты все статусы: запуск закрыт ровно на активных', () => {
     for (const s of CI_STATUSES) expect(canStartCiRun({ status: s })).toBe(!isActiveCiStatus(s))
+  })
+})
+
+describe('canStartParallelCiRun', () => {
+  it('разрешает отсутствие, терминальный и queued-ран, но защищает выполняющийся и ожидающий ответа', () => {
+    expect(canStartParallelCiRun(null)).toBe(true)
+    expect(canStartParallelCiRun({ status: 'success' })).toBe(true)
+    expect(canStartParallelCiRun({ status: 'queued' })).toBe(true)
+    expect(canStartParallelCiRun({ status: 'running' })).toBe(false)
+    expect(canStartParallelCiRun({ status: 'awaiting_input' })).toBe(false)
   })
 })
 
@@ -756,5 +768,24 @@ describe('test fix cycle domain', () => {
     ['rm -rf workspace', false]
   ])('валидирует точечную команду %s', (command, expected) => {
     expect(isSafeTargetedTestCommand(command)).toBe(expected)
+  })
+})
+
+describe('extractImprovementFiles', () => {
+  it('собирает относительные пути репозитория и отбрасывает шум', () => {
+    const log = [
+      'FAIL apps/server/src/turns.test.ts > turns: старт',
+      '  at packages/ui/src/components/kanban/KanbanBoard.tsx:1650:12',
+      'npm warn deprecated glob@10.5.0: see https://example.test/docs/x.md',
+      'node_modules/vitest/dist/index.js',
+      'cannot read ../outside/file.ts',
+      'again apps/server/src/turns.test.ts, done.'
+    ].join('\n')
+    expect(extractImprovementFiles(log)).toEqual(['apps/server/src/turns.test.ts', 'packages/ui/src/components/kanban/KanbanBoard.tsx'])
+  })
+
+  it('ограничивает число файлов', () => {
+    const log = Array.from({ length: 30 }, (_, i) => `src/file${i}.ts`).join(' ')
+    expect(extractImprovementFiles(log, 5)).toHaveLength(5)
   })
 })
