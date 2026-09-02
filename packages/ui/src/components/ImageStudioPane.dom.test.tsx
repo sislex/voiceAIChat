@@ -99,6 +99,40 @@ describe('ImageStudioPane', () => {
     expect(document.querySelector('.image-studio .vc-state--error')).not.toBeNull()
   })
 
+  it('вариация и дубликат работают с карточки без промпта', async () => {
+    const { api, edit } = makeApi([{ path: 'кот.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Нарисовать вариацию кот.png' }))
+    await waitFor(() => expect(edit).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот.png' })))
+    expect(edit.mock.calls[0]![0].prompt).toMatch(/вариант/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Дублировать кот.png' }))
+    await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот-копия.png' })))
+  })
+
+  it('при большой галерее появляются фильтр и сортировка', async () => {
+    const { api } = makeApi(Array.from({ length: 8 }, (_, index) => ({ path: `файл-${index}.png` })))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    const filterField = await screen.findByRole('textbox', { name: 'Фильтр по имени файла' })
+    fireEvent.change(filterField, { target: { value: 'файл-3' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    fireEvent.change(filterField, { target: { value: 'нет такого' } })
+    expect(await screen.findByText('Ничего не нашлось')).toBeInTheDocument()
+  })
+
+  it('использованный промпт остаётся чипом и подставляется кликом', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const promptField = await screen.findByRole('textbox', { name: 'Промпт для изображения' })
+    fireEvent.change(promptField, { target: { value: 'кот в сапогах' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await waitFor(() => expect((promptField as HTMLTextAreaElement).value).toBe(''))
+    fireEvent.click(await screen.findByRole('button', { name: 'кот в сапогах' }))
+    expect((promptField as HTMLTextAreaElement).value).toBe('кот в сапогах')
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
