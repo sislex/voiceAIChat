@@ -50,7 +50,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementSource, type ImprovementStatus } from '@shared/ci'
+import { canStartCiRun, canStartParallelCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementSource, type ImprovementStatus } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
@@ -523,7 +523,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const qaStageVisible = (stage: QaRunStage): boolean => qaStageRuns[stage]?.length ? true : currentWorkflowIndex >= workflowOrder.indexOf(stage)
   // Пока ран задачи идёт запуск недоступен; в семантическом «Готово» новый
   // запуск также запрещён — задача завершена, даже если старый ран терминальный.
-  const canStartCi = column?.semanticType !== 'done' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && canStartCiRun(props.ciSummary)
+  const ciLaunchStage = column?.semanticType !== 'done' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation'
+  const canStartCi = ciLaunchStage && canStartCiRun(props.ciSummary)
+  const canStartParallelCi = ciLaunchStage && canStartParallelCiRun(props.ciSummary)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
   const children = board.tasks.filter((t) => t.parentId === task.id)
   // Готовность подзадач считается по семантике колонки, а не по её названию:
@@ -1389,7 +1391,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     onClick={() => void launchCi('queue')}
                   >{launching === 'queue' ? 'Добавляем в очередь…' : 'В очередь'}</Button>
                 )}
-                {props.onStartCiParallel && canStartCi && (
+                {props.onStartCiParallel && canStartParallelCi && (
                   <Button
                     size="sm"
                     loading={launching === 'parallel'}
