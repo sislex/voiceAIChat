@@ -49,6 +49,21 @@ import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
 import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
 import { testStages } from '../ci/testStages.js'
+
+export const TASK_COMMIT_COMMAND_NAME = 'Закоммитить работу в ветку задачи'
+export const TASK_COMMIT_COMMAND_SCRIPT = `set -eu
+cd -- "$SLUG"
+git config user.name "voicechat-ci"
+git config user.email "ci@voicechat.local"
+# Ветка задачи: модель обычно уже на ней, иначе поднимаем её на текущем HEAD.
+git checkout -B "$BRANCH"
+git add -A
+if git diff --cached --quiet; then
+  echo "Нет незакоммиченных изменений — коммит не нужен"
+  exit 0
+fi
+git commit -q -m "$TASK_KEY: работа CI-рана"
+git --no-pager log --oneline -1`
 import {
   DEFAULT_SETTINGS,
   normalizeChatInstructions,
@@ -1448,6 +1463,13 @@ export class VoiceChatDb {
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
     const ciCmdCols = this.db.prepare(`PRAGMA table_info(ci_commands)`).all() as Array<{ name: string }>
     if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'builtin')) this.db.exec(`ALTER TABLE ci_commands ADD COLUMN builtin TEXT`)
+    // Обязательный системный commit-step хранится в данных. Старый сокращённый
+    // скрипт (`git add -A`) оставлял ветку/коммит на усмотрение fix-модели, поэтому
+    // обновляем запись по её стабильному имени; условие сохраняет идемпотентность.
+    this.db.prepare(`UPDATE ci_commands
+      SET script = ?, version = version + 1, updated_at = ?
+      WHERE name = ? AND deleted_at IS NULL AND script <> ?`)
+      .run(TASK_COMMIT_COMMAND_SCRIPT, Date.now(), TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT)
     if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'is_test')) {
       this.db.exec(`ALTER TABLE ci_commands ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0`)
       // Бэкфилл: гейт в уже заведённых справочниках помечаем сами — иначе после
