@@ -11,6 +11,7 @@ import { Button, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useTo
 import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { ToolFrame } from './ToolFrame'
+import { IMAGE_STUDIO_DENSE_KEY, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
@@ -29,6 +30,12 @@ const SIZE_PRESETS = ['', '512×512', '1024×1024', '1920×1080'] as const
 const RECENT_LIMIT = 4
 /** Фильтр по имени появляется, когда глазами искать уже неудобно. */
 const FILTER_THRESHOLD = 7
+/** Примеры для пустой галереи: первый промпт проще подсмотреть, чем придумать. */
+const PROMPT_EXAMPLES = [
+  'Логотип-щит с молнией, плоский стиль, два цвета',
+  'Акварельный пейзаж: горы на рассвете',
+  'Иконка папки с фотографиями, минимализм'
+] as const
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',').replace(',0', '')} МБ`
@@ -36,13 +43,9 @@ function formatBytes(bytes: number): string {
   return `${bytes} Б`
 }
 
-function recentKey(conversationId: string): string {
-  return `vc.imgstudio.prompts.${conversationId}`
-}
-
 function loadRecent(conversationId: string): string[] {
   try {
-    const raw = localStorage.getItem(recentKey(conversationId))
+    const raw = localStorage.getItem(imageStudioPromptsKey(conversationId))
     const parsed: unknown = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
   } catch {
@@ -79,6 +82,19 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
   const [filter, setFilter] = useState('')
   const [order, setOrder] = useState<'new' | 'name'>('new')
   const [recent, setRecent] = useState<string[]>(() => loadRecent(conversationId))
+  /** Имя нового файла (опционально) — иначе сервер назовёт «изображение.png». */
+  const [fileName, setFileName] = useState('')
+  /** Плотность сетки: крупные карточки для рассматривания, мелкие для обзора. */
+  const [dense, setDense] = useState<boolean>(() => {
+    try { return localStorage.getItem(IMAGE_STUDIO_DENSE_KEY) === '1' } catch { return false }
+  })
+  /** Пути файлов, появившихся без действий панели (ход ассистента), — бейдж «новое». */
+  const [fresh, setFresh] = useState<Set<string>>(new Set())
+  /** Превью, которые не удалось прочитать: плитка с ретраем вместо вечного «…». */
+  const [broken, setBroken] = useState<Set<string>>(new Set())
+  /** Объявление для скринридера о завершении операции. */
+  const [announce, setAnnounce] = useState('')
+  const knownPaths = useRef<Set<string> | null>(null)
   const uploadRef = useRef<HTMLInputElement | null>(null)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const renameRef = useRef<HTMLInputElement | null>(null)
@@ -93,6 +109,16 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
       const list = await api['imgstudio:list']({ conversationId })
       setFiles(list)
       setFailed(false)
+      // Новое, что появилось не из наших действий (ход ассистента в чате),
+      // подсвечиваем бейджем — иначе пополнение галереи легко проглядеть.
+      if (knownPaths.current) {
+        const appeared = list.filter((file) => !knownPaths.current!.has(file.path)).map((file) => file.path)
+        if (appeared.length) {
+          setFresh((prev) => new Set([...prev, ...appeared]))
+          setTimeout(() => setFresh((prev) => { const next = new Set(prev); for (const path of appeared) next.delete(path); return next }), 15000)
+        }
+      }
+      knownPaths.current = new Set(list.map((file) => file.path))
       // Превью тянем только для новых или изменившихся файлов: base64 каждой
       // картинки на каждый поллинг разорил бы вкладку.
       for (const file of list) {
@@ -105,7 +131,12 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
             if (prev[file.path]) URL.revokeObjectURL(prev[file.path]!)
             return { ...prev, [file.path]: url }
           })
-        }).catch(() => undefined)
+          setBroken((prev) => { if (!prev.has(file.path)) return prev; const next = new Set(prev); next.delete(file.path); return next })
+        }).catch(() => {
+          // Пометить битым и забыть ключ, чтобы ретрай перечитал файл заново.
+          delete previewKeys.current[file.path]
+          setBroken((prev) => new Set(prev).add(file.path))
+        })
       }
     } catch {
       setFailed(true)
@@ -134,7 +165,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
     try {
       await action()
       await reload()
-      if (success) toast.success(success)
+      if (success) { toast.success(success); setAnnounce(success) }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setLastError(message)
@@ -148,7 +179,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
   const rememberPrompt = (text: string): void => {
     setRecent((prev) => {
       const next = [text, ...prev.filter((item) => item !== text)].slice(0, RECENT_LIMIT)
-      try { localStorage.setItem(recentKey(conversationId), JSON.stringify(next)) } catch { /* приватный режим */ }
+      try { localStorage.setItem(imageStudioPromptsKey(conversationId), JSON.stringify(next)) } catch { /* приватный режим */ }
       return next
     })
   }
@@ -164,8 +195,9 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
       // Выбрана картинка — правим её; нет — рисуем новую. Один промпт на
       // оба действия: так работает голова пользователя, а не наша схема.
       if (selected) await api['imgstudio:edit']({ conversationId, path: selected, prompt: fullPrompt })
-      else await api['imgstudio:generate']({ conversationId, prompt: fullPrompt })
+      else await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(fileName.trim() ? { name: fileName.trim() } : {}) })
       setPrompt('')
+      setFileName('')
       promptRef.current?.focus()
     }, selected ? 'Правка готова — результат рядом с оригиналом' : 'Изображение готово',
       selected ? `Модель правит «${selected}»` : 'Модель рисует')
@@ -180,6 +212,28 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
     )
   }
 
+  /** Файл больше лимита пробуем ужать канвасом (jpeg), а не отфутболивать 413-й. */
+  const shrinkOversized = async (file: File): Promise<{ name: string; blob: Blob } | null> => {
+    if (file.size <= IMAGE_STUDIO_LIMITS.maxFileBytes) return { name: file.name, blob: file }
+    if (typeof createImageBitmap !== 'function') return null
+    try {
+      const bitmap = await createImageBitmap(file)
+      // Даунскейлим по площади: байты примерно пропорциональны ей.
+      const scale = Math.sqrt((IMAGE_STUDIO_LIMITS.maxFileBytes * 0.8) / file.size)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+      if (!blob || blob.size > IMAGE_STUDIO_LIMITS.maxFileBytes) return null
+      const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'
+      toast.info(`«${file.name}» больше лимита — сжато до ${Math.round(blob.size / 1024)} КБ (${name})`)
+      return { name, blob }
+    } catch {
+      return null
+    }
+  }
+
   const upload = (list: FileList | File[]): void => {
     const items = Array.from(list)
     const bad = items.find((file) => !isImageStudioPath(file.name))
@@ -190,11 +244,13 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
     if (!items.length) return
     void run(async () => {
       for (const file of items) {
-        const buffer = await file.arrayBuffer()
+        const shrunk = await shrinkOversized(file)
+        if (!shrunk) throw new Error(`«${file.name}» слишком большой (лимит ${formatBytes(IMAGE_STUDIO_LIMITS.maxFileBytes)}), и сжать его не вышло`)
+        const buffer = await shrunk.blob.arrayBuffer()
         let binary = ''
         const bytes = new Uint8Array(buffer)
         for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!)
-        await api['imgstudio:upload']({ conversationId, path: file.name, dataBase64: btoa(binary) })
+        await api['imgstudio:upload']({ conversationId, path: shrunk.name, dataBase64: btoa(binary) })
       }
     }, items.length === 1 ? `Загружено: ${items[0]!.name}` : `Загружено файлов: ${items.length}`)
   }
@@ -284,6 +340,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
         {!selected && <select aria-label="Размер изображения" value={size} disabled={busy} onChange={(event) => setSize(event.target.value)}>
           {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset}</option>)}
         </select>}
+        {!selected && <input className="image-studio-filename" aria-label="Имя нового файла" placeholder="имя.png (не обязательно)" value={fileName} disabled={busy} onChange={(event) => setFileName(event.target.value)} />}
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => uploadRef.current?.click()}>Загрузить…</Button>
         {selected && <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>Снять выбор</Button>}
         <input ref={uploadRef} type="file" accept="image/*,.svg" multiple hidden aria-label="Файл изображения" onChange={(event) => { if (event.target.files?.length) upload(event.target.files); event.target.value = '' }} />
@@ -291,6 +348,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
       {progress && <p className="image-studio-progress" role="status">
         {progress.label}… {progress.seconds} с. Обычно это занимает до минуты.
       </p>}
+      <span className="vc-sr-only" role="status">{announce}</span>
       {lastError && !busy && <ErrorState compact message={lastError} />}
     </div>
 
@@ -300,14 +358,20 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
         {order === 'new' ? 'Сначала новые' : 'По имени'}
       </Button>
       <Button size="sm" variant="ghost" disabled={busy || !shown.length} onClick={() => downloadAll(shown)}>Скачать все</Button>
+      <IconButton size="sm" aria-label={dense ? 'Крупные карточки' : 'Мелкие карточки'} title={dense ? 'Крупнее' : 'Мельче'} onClick={() => setDense((prev) => { const next = !prev; try { localStorage.setItem(IMAGE_STUDIO_DENSE_KEY, next ? '1' : '0') } catch { /* приватный режим */ } return next })}>{dense ? '▦' : '▤'}</IconButton>
     </div>}
 
     {files.length === 0
-      ? <EmptyState title="Галерея пуста — нарисуйте первую картинку" description="Опишите её в поле выше, перетащите файлы сюда или попросите ассистента в чате слева: всё нарисованное попадает сюда." />
+      ? <div>
+          <EmptyState title="Галерея пуста — нарисуйте первую картинку" description="Опишите её в поле выше, перетащите файлы сюда или попросите ассистента в чате слева: всё нарисованное попадает сюда." />
+          <div className="image-studio-recent image-studio-examples" aria-label="Примеры промптов">
+            {PROMPT_EXAMPLES.map((example) => <button key={example} type="button" className="image-studio-chip" onClick={() => { setPrompt(example); promptRef.current?.focus() }}>{example}</button>)}
+          </div>
+        </div>
       : shown.length === 0
         ? <EmptyState compact title="Ничего не нашлось" description="Уточните фильтр или очистите его, чтобы увидеть всю галерею." />
         : <>
-          <div className="image-studio-grid" role="list" aria-label="Галерея изображений">
+          <div className={`image-studio-grid${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label="Галерея изображений">
             {shown.map((file) => <div role="listitem" key={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
             <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} title={selected === file.path ? 'Снять выбор' : 'Выбрать для правки'}>
               {previews[file.path]
@@ -315,8 +379,12 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
                     const img = event.currentTarget
                     if (img.naturalWidth) setDimensions((prev) => prev[file.path] === `${img.naturalWidth}×${img.naturalHeight}` ? prev : { ...prev, [file.path]: `${img.naturalWidth}×${img.naturalHeight}` })
                   }} />
-                : <span className="image-studio-thumb-loading" role="status">…</span>}
+                : broken.has(file.path)
+                  ? <span className="image-studio-thumb-loading" role="status">превью не загрузилось</span>
+                  : <span className="image-studio-thumb-loading" role="status">…</span>}
+              {fresh.has(file.path) && <span className="image-studio-fresh" aria-label="Новая картинка">новое</span>}
             </button>
+            {broken.has(file.path) && <Button size="sm" variant="ghost" onClick={() => void reload()}>Перечитать превью</Button>}
             {renaming?.from === file.path
               ? <div className="image-studio-rename">
                   <input
