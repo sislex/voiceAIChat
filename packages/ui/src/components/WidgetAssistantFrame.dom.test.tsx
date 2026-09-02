@@ -39,16 +39,16 @@ describe('WidgetAssistantFrame', () => {
 
   it('persists a message and sends the latest safe context through the normal LLM transport', async () => {
     const api = createFakeApi()
-    const selected = await api['conversations:create']({ title: 'Выбранный' })
-    await api['conversations:setProject']({ id: selected.id, projectId: 'p1' })
+    const project = await api['projects:create']({ name: 'p1' })
+    const selected = await api['conversations:create']({ title: 'Выбранный', scope: 'kanban', projectId: project.id })
     await api['messages:add']({ conversationId: selected.id, role: 'ai', text: 'История выбранного', time: '10:00' })
     const send = vi.fn()
     let emitError!: (event: { conversationId: string; message: string }) => void
     const transport = { send, onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn((callback) => { emitError = callback; return () => {} }) } as any
     const onCommand = vi.fn()
-    const view = render(<KanbanAssistant projectId="p1" conversationId={selected.id} context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
+    const view = render(<KanbanAssistant projectId={project.id} conversationId={selected.id} context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
     const next = { ...context, selection: { board: { projectId: 'p1', columns: [], revision: '9', tasks: [{ id: 't2', type: 'epic', title: 'UI', updatedAt: 9 }] }, openTask: { id: 't2', title: 'Current' }, selectedField: 'description' } }
-    view.rerender(<KanbanAssistant projectId="p1" conversationId={selected.id} context={next as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
+    view.rerender(<KanbanAssistant projectId={project.id} conversationId={selected.id} context={next as any} api={api} llmEngines={[]} transport={transport} onCommand={onCommand} />)
     expect(await screen.findByText('История выбранного')).toBeInTheDocument()
     await vi.waitFor(() => expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeEnabled())
     await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'UI')
@@ -61,36 +61,36 @@ describe('WidgetAssistantFrame', () => {
     emitError({ conversationId: selected.id, message: 'Модель временно недоступна' })
     expect(await screen.findByRole('alert')).toHaveTextContent('Модель временно недоступна')
     expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeEnabled()
-    expect(await api['kanbanAssistant:get']({ projectId: 'p1', conversationId: selected.id })).toMatchObject({ messages: [{ text: 'История выбранного' }, { role: 'u0', text: 'UI' }] })
+    expect(await api['kanbanAssistant:get']({ projectId: project.id, conversationId: selected.id })).toMatchObject({ messages: [{ text: 'История выбранного' }, { role: 'u0', text: 'UI' }] })
   })
 
   it('список чатов проекта: статусы, выбор с сохранением, создание, поиск и удаление', async () => {
     const api = createFakeApi()
-    const regular = await api['conversations:create']({ title: 'Обычный чат' })
-    await api['conversations:setProject']({ id: regular.id, projectId: 'p1' })
-    await api['kanbanAssistant:get']({ projectId: 'p1' })
-    localStorage.setItem('voicechat.projectAssistantChat.p1', regular.id)
+    const project = await api['projects:create']({ name: 'p1' })
+    const regular = await api['conversations:create']({ title: 'Обычный чат', scope: 'kanban', projectId: project.id })
+    await api['kanbanAssistant:get']({ projectId: project.id })
+    localStorage.setItem(`voicechat.projectAssistantChat.${project.id}`, regular.id)
     const select = vi.fn()
-    const view = render(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={null} onSelect={select} projectName="ChatAI" />)
+    const view = render(<ProjectAssistantChatSelector projectId={project.id} api={api} selectedId={null} onSelect={select} projectName="ChatAI" />)
 
     const list = await screen.findByRole('navigation', { name: 'Чаты канбана' })
     expect(await within(list).findByRole('button', { name: /^Обычный чат/ })).toBeInTheDocument()
-    expect(within(list).getByRole('button', { name: /^Ассистент · p1/ })).toHaveTextContent('Ассистент доски')
+    expect(within(list).getByRole('button', { name: new RegExp(`^Ассистент · ${project.id}`) })).toHaveTextContent('Ассистент доски')
     expect(screen.getByText('Проект · ChatAI')).toBeInTheDocument()
     // Сохранённый выбор восстанавливается при загрузке.
     expect(select).toHaveBeenCalledWith(regular.id)
-    view.rerender(<ProjectAssistantChatSelector projectId="p1" api={api} selectedId={regular.id} onSelect={select} projectName="ChatAI" />)
+    view.rerender(<ProjectAssistantChatSelector projectId={project.id} api={api} selectedId={regular.id} onSelect={select} projectName="ChatAI" />)
     expect(within(list).getByRole('button', { name: /^Обычный чат/ })).toHaveAttribute('aria-current', 'true')
 
     await userEvent.type(screen.getByRole('searchbox', { name: 'Найти чат' }), 'Обычный')
-    expect(within(list).queryByRole('button', { name: /^Ассистент · p1/ })).not.toBeInTheDocument()
+    expect(within(list).queryByRole('button', { name: new RegExp(`^Ассистент · ${project.id}`) })).not.toBeInTheDocument()
     await userEvent.clear(screen.getByRole('searchbox', { name: 'Найти чат' }))
 
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     await vi.waitFor(() => expect(select).toHaveBeenCalledTimes(2))
     const createdId = select.mock.calls[1]?.[0]
-    expect((await api['conversations:get']({ id: createdId }))?.conversation.projectId).toBe('p1')
-    expect(localStorage.getItem('voicechat.projectAssistantChat.p1')).toBe(createdId)
+    expect((await api['conversations:get']({ id: createdId, scope: 'kanban', projectId: project.id }))?.conversation.projectId).toBe(project.id)
+    expect(localStorage.getItem(`voicechat.projectAssistantChat.${project.id}`)).toBe(createdId)
 
     // Чат ассистента удалить нельзя, обычный — можно; удалённый текущий уступает место ассистенту.
     expect(within(list).queryByRole('button', { name: /Удалить Ассистент/ })).not.toBeInTheDocument()

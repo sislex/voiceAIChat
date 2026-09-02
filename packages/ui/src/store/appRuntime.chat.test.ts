@@ -111,7 +111,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     const id = await store.actions.createConversation({ title: 'Проектный чат', projectId: project.id })
 
     expect(create).toHaveBeenCalledOnce()
-    expect(create).toHaveBeenCalledWith({ title: 'Проектный чат', projectId: project.id })
+    expect(create).toHaveBeenCalledWith({ title: 'Проектный чат', scope: 'chat', projectId: project.id })
     expect(setProject).not.toHaveBeenCalled()
     expect(store.getState().activeId).toBe(id)
     expect(store.getState().conversations.find((item) => item.id === id)?.projectId).toBe(project.id)

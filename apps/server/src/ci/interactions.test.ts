@@ -102,7 +102,7 @@ describe('уточняющие вопросы модели', () => {
 
     // Вопрос виден в связанном чате как обычное AI-сообщение с блоком questions.
     expect(pending.conversationId).toBeTruthy()
-    const chat = (await inj({ method: 'GET', url: `/api/conversations/${pending.conversationId}` })).json()
+    const chat = (await inj({ method: 'GET', url: `/api/conversations/${pending.conversationId}?scope=kanban&projectId=${encodeURIComponent(projectId)}` })).json()
     const asked = chat.messages.find((m: { role: string }) => m.role === 'ai')
     expect(asked.text).toContain('```questions')
     expect(asked.meta.ciInteraction).toEqual({ runId, interactionId: pending.id })
@@ -118,7 +118,7 @@ describe('уточняющие вопросы модели', () => {
     expect(requests[1].sessionId).toBe('sess-1')
     expect(requests[1].prompt).toContain('SQLite')
     // Ответ продублирован в чат репликой пользователя.
-    const chat2 = (await inj({ method: 'GET', url: `/api/conversations/${pending.conversationId}` })).json()
+    const chat2 = (await inj({ method: 'GET', url: `/api/conversations/${pending.conversationId}?scope=kanban&projectId=${encodeURIComponent(projectId)}` })).json()
     expect(chat2.messages.some((m: { role: string; text: string }) => m.role === 'u1' && m.text === 'SQLite')).toBe(true)
   })
 

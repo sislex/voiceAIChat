@@ -751,6 +751,7 @@ describe('VoiceChatDb — миграции', () => {
         kb_context_mode TEXT NOT NULL DEFAULT 'auto',
         project_id TEXT,
         task_id TEXT,
+        assistant_kind TEXT,
         status TEXT NOT NULL DEFAULT 'developing'
       );
       CREATE TABLE messages (
@@ -789,11 +790,27 @@ describe('VoiceChatDb — миграции', () => {
       );
     `)
     raw.prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES ('admin', 'x', 'admin', 0, 1)`).run()
-    raw.prepare(`INSERT INTO conversations (id, title, created_at, updated_at, user_id, skill_names, kb_context_mode, status) VALUES ('c1', 'legacy', 1, 2, 'admin', '[]', 'auto', 'developing')`).run()
+    const insert = raw.prepare(`INSERT INTO conversations (id, title, created_at, updated_at, user_id, skill_names, kb_context_mode, assistant_kind, project_id, status) VALUES (?, ?, 1, 2, 'admin', '[]', 'auto', ?, ?, 'developing')`)
+    insert.run('c1', 'legacy', null, null)
+    insert.run('c2', 'make', 'make', null)
+    insert.run('c3', 'console', 'console-reader', null)
+    insert.run('c4', 'web', 'web-recorder', null)
+    insert.run('c5', 'unknown', 'future-kind', null)
+    insert.run('c6', 'kanban-invalid', 'kanban', null)
+    insert.run('c7', 'kanban-valid', 'kanban', 'p1')
     raw.close()
     const db = new VoiceChatDb(file)
     try {
-      expect(db.getConversation('admin', 'c1')?.title).toBe('legacy')
+      expect(db.getConversation('admin', 'c1')).toMatchObject({ title: 'legacy', scope: 'chat' })
+      expect(db.getConversation('admin', 'c2')?.scope).toBe('make')
+      expect(db.getConversation('admin', 'c3')?.scope).toBe('console')
+      expect(db.getConversation('admin', 'c4')?.scope).toBe('web-reader')
+      expect(db.getConversation('admin', 'c5')?.scope).toBe('chat')
+      expect(db.getConversation('admin', 'c6')?.scope).toBe('chat')
+      expect(db.getConversation('admin', 'c7')?.scope).toBe('kanban')
+      expect(db.listConversations('admin', { scope: 'make' }).map((item) => item.id)).toEqual(['c2'])
+      expect(db.listConversations('admin', { scope: 'kanban', projectId: 'p1' }).map((item) => item.id)).toEqual(['c7'])
+      expect(db.listConversations('admin', { scope: 'kanban', projectId: 'p2' })).toEqual([])
       expect(db.listLlmEngines()).toEqual([])
     } finally {
       db.close()

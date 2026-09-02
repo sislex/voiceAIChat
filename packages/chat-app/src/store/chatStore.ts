@@ -512,8 +512,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     try {
       const includeCompleted = getState().showDoneTaskChats
       const all = q
-        ? await client['conversations:search']({ query: q, includeCompleted })
-        : await client['conversations:list']({ includeCompleted })
+        ? await client['conversations:search']({ query: q, scope: 'chat', includeCompleted })
+        : await client['conversations:list']({ scope: 'chat', includeCompleted })
       if (core.disposed() || seq !== conversationsSeq) return
       if (keepActiveListed) {
         const activeId = getState().activeId
@@ -529,16 +529,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       setState({
         conversations,
         conversationsStatus: 'ready',
-        conversationsError: null,
-        // Reader-чаты берём из полного ответа, до фильтра проекта.
-        ...(q
-          ? {}
-          : {
-              readerConversations: all.filter(isReaderConversation),
-              playwrightReaderConversations: all.filter(isPlaywrightReaderConversation),
-              consoleReaderConversations: all.filter(isConsoleReaderConversation),
-              makeConversations: all.filter(isMakeConversation)
-            })
+        conversationsError: null
       })
       void loadTaskChatBadges()
     } catch (err) {
@@ -687,7 +678,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   }
 
   function activeConversation(): Conversation | undefined {
-    return getState().conversations.find((c) => c.id === getState().activeId)
+    const state = getState()
+    return [...state.conversations, ...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations]
+      .find((c) => c.id === state.activeId)
   }
 
   function activeConversationExecTarget(): string | null {
@@ -874,7 +867,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       : 'Web Reader'
     let number = 1
     while (readerList.some((item) => item.title === `${prefix} ${number}`)) number++
-    const conversation = await client['conversations:create']({ title: `${prefix} ${number}`, assistantKind })
+    const scope = assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind
+    const conversation = await client['conversations:create']({ title: `${prefix} ${number}`, scope, assistantKind })
     setState({
       activeId: conversation.id,
       readerConversations:
@@ -903,6 +897,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     await newConversation()
     const conversation = await client['conversations:create']({
       title: input.title.trim() || 'Новый разговор',
+      scope: 'chat',
       projectId: input.projectId ?? null
     })
     setState({
@@ -922,7 +917,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ ...chatSwitchReset(), loadingMessages: true })
     let opened: Conversation | null = null
     try {
-      const res = await client['conversations:get']({ id })
+      const state = getState()
+      const known = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.conversations].find((item) => item.id === id)
+      const res = await client['conversations:get']({ id, scope: known?.scope ?? 'chat', ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {}) })
       // Пока ответ летел, выбрали другой чат — этот ответ отбрасываем молча.
       if (token !== selectToken || core.disposed()) return false
       if (res) {
@@ -1526,13 +1523,20 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       async loadConversationIndex() {
         setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
         try {
-          const conversations = await client['conversations:list']({ includeCompleted: getState().showDoneTaskChats })
+          const includeCompleted = getState().showDoneTaskChats
+          const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations] = await Promise.all([
+            client['conversations:list']({ scope: 'chat', includeCompleted }),
+            client['conversations:list']({ scope: 'web-reader', includeCompleted }),
+            client['conversations:list']({ scope: 'playwright-reader', includeCompleted }),
+            client['conversations:list']({ scope: 'console', includeCompleted }),
+            client['conversations:list']({ scope: 'make', includeCompleted })
+          ])
           setState({
             conversations: filterBySidebarProjects(conversations),
-            readerConversations: conversations.filter(isReaderConversation),
-            playwrightReaderConversations: conversations.filter(isPlaywrightReaderConversation),
-            consoleReaderConversations: conversations.filter(isConsoleReaderConversation),
-            makeConversations: conversations.filter(isMakeConversation),
+            readerConversations,
+            playwrightReaderConversations,
+            consoleReaderConversations,
+            makeConversations,
             conversationsStatus: 'ready',
             conversationsError: null
           })
@@ -1923,7 +1927,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       async reloadActiveMessages() {
         const activeId = getState().activeId
         if (!activeId) return
-        const res = await client['conversations:get']({ id: activeId }).catch(() => null)
+        const state = getState()
+        const active = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.conversations].find((item) => item.id === activeId)
+        const res = await client['conversations:get']({ id: activeId, scope: active?.scope ?? 'chat', ...(active?.scope === 'kanban' && active.projectId ? { projectId: active.projectId } : {}) }).catch(() => null)
         if (res && res.conversation.id === getState().activeId) setState({ messages: res.messages })
       },
       loadTaskChatContext,
