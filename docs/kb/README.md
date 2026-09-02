@@ -13,35 +13,35 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 228 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-02 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-01 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-01 | ⚠ 14 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-01 | ⚠ 16 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 53 коммит(ов) в areas после сверки: da8849ab fix(assistant): канбан-ассистент снова меняет доску; планы по событиям колонок … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-02 | ⚠ 10 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 91 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 4 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 189 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-03 | ✓ |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 93 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 6 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 191 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 132 коммит(ов) в areas после сверки: d09f0ae8 Merge remote-tracking branch 'origin/main' into feat/task-activity … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 219 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 237 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1083 коммит(ов) в areas после сверки: d09f0ae8 Merge remote-tracking branch 'origin/main' into feat/task-activity … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 146 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 186 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 100 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-02 | ⚠ 20 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 221 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 239 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 2 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1086 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 148 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 188 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 102 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-02 | ⚠ 22 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 217 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 5 коммит(ов) в areas после сверки: e088f12a Merge task 5d3391f3-18ec-43e5-8555-50619f1245c5 … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-02 | ⚠ 3 коммит(ов) в areas после сверки: d09f0ae8 Merge remote-tracking branch 'origin/main' into feat/task-activity … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ⚠ 4 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ⚠ 6 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 182 коммит(ов) в areas после сверки: 649b4525 feat(assistant): панель канбан-ассистента повторяет Make-макет «Проект 14» (CHAT-391, итерация 2) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 2 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-02 | ⚠ 10 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 96 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 98 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 137 коммит(ов) в areas после сверки: da8849ab fix(assistant): канбан-ассистент снова меняет доску; планы по событиям колонок … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-01 | ⚠ 4 коммит(ов) в areas после сверки: e4b8c534 feat: add standalone machine login application … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 89 коммит(ов) в areas после сверки: da8849ab fix(assistant): канбан-ассистент снова меняет доску; планы по событиям колонок … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-02 | ⚠ 17 коммит(ов) в areas после сверки: c182cc54 feat: isolate conversations by scope … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-02 | ⚠ 19 коммит(ов) в areas после сверки: 35e55a22 Merge task 8071f772-fa69-4256-beed-33d63b497781 … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-02, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 535. Последние:
+Всего записей: 536. Последние:
 
+- [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-conversation-scope-isolation.md](log/2026-09-03-alexeys-macbook-air-2-conversation-scope-isolation.md) — conversation-scope-isolation
 - [2026-09-02-macbook-air-user-queued-parallel-promotion.md](log/2026-09-02-macbook-air-user-queued-parallel-promotion.md) — queued-parallel-promotion
 - [2026-09-02-macbook-air-user-own-make-design-sources.md](log/2026-09-02-macbook-air-user-own-make-design-sources.md) — own-make-design-sources
@@ -72,7 +73,6 @@
 - [2026-09-02-alexeys-macbook-air-2-task-make-design-link.md](log/2026-09-02-alexeys-macbook-air-2-task-make-design-link.md) — 2026-09-02-alexeys-macbook-air-2-task-make-design-link
 - [2026-09-02-alexeys-macbook-air-2-task-activity.md](log/2026-09-02-alexeys-macbook-air-2-task-activity.md) — 2026-09-02-alexeys-macbook-air-2-task-activity
 - [2026-09-02-alexeys-macbook-air-2-project-settings-tab-routes.md](log/2026-09-02-alexeys-macbook-air-2-project-settings-tab-routes.md) — project-settings-tab-routes
-- [2026-09-02-alexeys-macbook-air-2-project-main-preflight-bootstrap.md](log/2026-09-02-alexeys-macbook-air-2-project-main-preflight-bootstrap.md) — project-main-preflight-bootstrap
 
 ## Исторические планы
 
