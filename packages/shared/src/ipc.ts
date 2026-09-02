@@ -691,6 +691,7 @@ export interface IpcInvokeMap {
   'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
   'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
   'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
   'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
@@ -1467,6 +1468,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'imgstudio:rename',
   'imgstudio:generate',
   'imgstudio:edit',
+  'imgstudio:cancel',
   'make:projectFiles',
   'make:projectLinks',
   'make:projectPull',

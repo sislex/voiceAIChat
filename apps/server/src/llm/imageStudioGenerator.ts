@@ -6,7 +6,7 @@ import type { LlmClient } from '../claude/types.js'
 import { IMAGE_HINT, parseImages, type LlmAttachment } from '@voicechat/shared'
 
 export interface ImageStudioGenerator {
-  (input: { prompt: string; source?: Buffer; sourceName?: string }): Promise<Buffer>
+  (input: { prompt: string; source?: Buffer; sourceName?: string; onCancel?: (cancel: () => void) => void }): Promise<Buffer>
 }
 
 export function llmImageStudioGenerator(opts: {
@@ -17,7 +17,7 @@ export function llmImageStudioGenerator(opts: {
   cwd?: string
   readGenerated(path: string): Promise<{ dataBase64: string } | null>
 }): ImageStudioGenerator {
-  return async ({ prompt, source, sourceName }) => {
+  return async ({ prompt, source, sourceName, onCancel }) => {
     const attachments: LlmAttachment[] = source
       ? [{ serverPath: `/studio/${sourceName ?? 'source.png'}`, runnerName: sourceName ?? 'source.png', dataBase64: source.toString('base64') }]
       : []
@@ -36,7 +36,7 @@ export function llmImageStudioGenerator(opts: {
           IMAGE_HINT
         ]
     const fullText = await new Promise<string>((resolve, reject) => {
-      opts.client.send({
+      const handle = opts.client.send({
         userId: opts.userId,
         prompt: lines.join('\n'),
         sessionId: null,
@@ -46,6 +46,9 @@ export function llmImageStudioGenerator(opts: {
         ...(opts.cwd ? { cwd: opts.cwd } : {}),
         ...(attachments.length ? { attachments } : {})
       }, { onDelta: () => {}, onSession: () => {}, onDone: resolve, onError: reject })
+      // cancel() у CLI-клиентов молчит (finished=true глушит onDone/onError),
+      // поэтому промис реджектим сами — иначе ран отмены не дождётся никогда.
+      onCancel?.(() => { handle.cancel(); reject(new Error('Генерация отменена')) })
     })
     const image = parseImages(fullText).images[0]
     if (!image) {
