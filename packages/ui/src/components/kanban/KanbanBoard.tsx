@@ -20,7 +20,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import type { Board, BoardView, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { DEFAULT_BOARD_VIEW, sanitizeBoardView } from '@shared/projects'
 import { compareTasksInColumn, TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
-import type { CiRunSummary } from '@shared/ci'
+import type { CiRunSummary, ProjectImprovement } from '@shared/ci'
 import type { ModifierPrompt } from '@shared/types'
 import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -28,6 +28,7 @@ import type { LlmEngineOption } from '@shared/admin'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
+import { ImprovementModal } from './ImprovementModal'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
@@ -293,12 +294,17 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const compact = useMediaQuery(MOBILE_QUERY)
   const { loading, members } = props
   const confirm = useConfirm()
-  const [improvementTasks, setImprovementTasks] = useState<Array<{ taskId: string; count: number; improvementId: string }>>([])
-  useEffect(() => {
-    const projectId = props.board?.tasks[0]?.projectId
-    if (!projectId || !window.ci?.listProjectImprovementTasks) { setImprovementTasks([]); return }
-    void window.ci.listProjectImprovementTasks(projectId).then(setImprovementTasks).catch(() => {})
-  }, [props.board, props.ciSummaries])
+  // Очередь «Улучшения»: по одной карточке на предложение. Перечитывается вместе
+  // с доской — сервер шлёт board.changed после создания задачи и удаления.
+  const [improvements, setImprovements] = useState<ProjectImprovement[]>([])
+  const [openImprovementId, setOpenImprovementId] = useState<string | null>(null)
+  const improvementsProjectId = props.board?.columns[0]?.projectId ?? props.board?.tasks[0]?.projectId
+  const reloadImprovements = (): void => {
+    if (!improvementsProjectId || !window.ci?.listProjectImprovements) { setImprovements([]); return }
+    void window.ci.listProjectImprovements(improvementsProjectId).then(setImprovements).catch(() => {})
+  }
+  useEffect(reloadImprovements, [props.board, props.ciSummaries, improvementsProjectId])
+  const openImprovement = openImprovementId ? improvements.find((item) => item.id === openImprovementId) ?? null : null
   const [showHidden, setShowHidden] = useState(false)
   const [internalShowCompleted, setInternalShowCompleted] = useState(false)
   const showCompleted = props.showCompleted ?? internalShowCompleted
@@ -1647,9 +1653,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   {composer(col)}
                 </section>
               ))}
-              {improvementTasks.length > 0 && <section className="jcol jcol--improvements" data-testid="kanban-improvements-column" aria-label={`Колонка «Улучшения», ${improvementTasks.length} задач`}>
-                <header className="jcol-head"><h2>Улучшения</h2><span className="jcol-count">{improvementTasks.length}</span></header>
-                <div className="jcol-body">{improvementTasks.map((entry) => { const task = allTasks.find((item) => item.id === entry.taskId); return task ? <button key={task.id} className="jcard" onClick={() => setOpenTaskId(task.id, 'improvements')}><strong>{issueKey(props.projectName, task)} · {task.title}</strong><span>{entry.count} актуальных предложений · исходный статус: {columnName(task.columnId)}</span></button> : null })}</div>
+              {improvements.length > 0 && <section className="jcol jcol--improvements" data-testid="kanban-improvements-column" aria-label={`Колонка «Улучшения», ${improvements.length} предложений`}>
+                <header className="jcol-head"><h2>Улучшения</h2><span className="jcol-count">{improvements.length}</span></header>
+                <div className="jcol-body">{improvements.map((item) => (
+                  <button key={item.id} type="button" className="jcard jcard--improvement" data-testid="improvement-card" onClick={() => setOpenImprovementId(item.id)}>
+                    <strong>{item.title}</strong>
+                    <span>из {issueKey(props.projectName, { seq: item.taskSeq })} · {item.taskTitle}</span>
+                    <span className="improvement-modal__dim">{item.occurrences > 1 ? `замечено ${item.occurrences} раз · ` : ''}{columnName(item.taskColumnId)}</span>
+                  </button>
+                ))}</div>
               </section>}
               {addColumnBox}
             </div>
@@ -1739,6 +1751,24 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           </div>
         )
       })()}
+      {openImprovement && board && (
+        <ImprovementModal
+          improvement={openImprovement}
+          projectName={props.projectName}
+          board={board}
+          onCreateTask={async (id, startPreparation) => {
+            const result = await window.ci!.createTaskFromImprovement(id, { startPreparation })
+            reloadImprovements()
+            return result
+          }}
+          onDelete={async (id) => {
+            await window.ci!.deleteImprovement(id)
+            setImprovements((all) => all.filter((item) => item.id !== id))
+          }}
+          onCreated={(result) => setOpenTaskId(result.task.id, result.preparationStarted ? 'preparation' : undefined)}
+          onClose={() => setOpenImprovementId(null)}
+        />
+      )}
       {openTask && board && (
         <TaskModal
           task={openTask}

@@ -1107,6 +1107,7 @@ CREATE TABLE IF NOT EXISTS task_improvements (
   created_task_id TEXT,
   fingerprint TEXT NOT NULL,
   evidence_json TEXT NOT NULL DEFAULT '[]',
+  files_json TEXT NOT NULL DEFAULT '[]',
   occurrences INTEGER NOT NULL DEFAULT 1,
   suggested_action TEXT NOT NULL,
   created_at INTEGER NOT NULL,
