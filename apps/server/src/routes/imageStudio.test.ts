@@ -83,3 +83,75 @@ describe('студия картинок: роуты', () => {
     expect((await app.inject({ method: 'GET', url: `/api/image-studio/${plain}/files` })).statusCode).toBe(404)
   })
 })
+
+describe('студия картинок: параллельность, отмена и происхождение', () => {
+  it('второй ран по тому же разговору — 409, после завершения снова можно', async () => {
+    // Генератор, который завершится по нашей команде.
+    let finish: ((data: Buffer) => void) | undefined
+    const slowApp = Fastify()
+    slowApp.decorateRequest('user', null)
+    slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
+    registerImageStudioRoutes(slowApp, {
+      db, store,
+      generator: () => () => new Promise((resolve) => { finish = resolve })
+    })
+    await slowApp.ready()
+
+    // inject без await ленивый — .then заставляет запрос уйти прямо сейчас.
+    const first = slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'кот' } }).then((res) => res)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const second = await slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'пёс' } })
+    expect(second.statusCode).toBe(409)
+    expect(second.json().error).toMatch(/уже идёт/)
+
+    finish!(Buffer.from('png'))
+    expect((await first).statusCode).toBe(200)
+    // Слот освободился: третий ран принимается (и тоже ждёт «медленную» модель).
+    const third = slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'ещё' } }).then((res) => res)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    finish!(Buffer.from('png2'))
+    expect((await third).statusCode).toBe(200)
+    await slowApp.close()
+  })
+
+  it('cancel останавливает ран: клиент получает 410, генератору дёрнули cancel', async () => {
+    let cancelCalls = 0
+    const slowApp = Fastify()
+    slowApp.decorateRequest('user', null)
+    slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
+    registerImageStudioRoutes(slowApp, {
+      db, store,
+      generator: () => ({ onCancel }) => new Promise((_, reject) => {
+        onCancel?.(() => { cancelCalls += 1; reject(new Error('cancelled')) })
+      })
+    })
+    await slowApp.ready()
+
+    const running = slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'долгий кот' } }).then((res) => res)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const cancel = await slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/cancel` })
+    expect(cancel.json()).toEqual({ cancelled: true })
+    const result = await running
+    expect(result.statusCode).toBe(410)
+    expect(result.json().error).toMatch(/отменена/)
+    expect(cancelCalls).toBe(1)
+    // Без активного рана отмена честно говорит «нечего отменять».
+    expect((await slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/cancel` })).json()).toEqual({ cancelled: false })
+    await slowApp.close()
+  })
+
+  it('generate/edit пишут происхождение, rename его переносит', async () => {
+    const gen = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'синий кит', name: 'кит.png' } })
+    expect(gen.json().file.prompt).toBe('синий кит')
+
+    const edit = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/edit`, payload: { path: 'кит.png', prompt: 'добавь фонтан' } })
+    expect(edit.json().file).toMatchObject({ path: 'кит-2.png', prompt: 'добавь фонтан', source: 'кит.png' })
+
+    await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/rename`, payload: { from: 'кит-2.png', to: 'кит-фонтан.png' } })
+    const list = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/files` })).json() as Array<{ path: string; prompt?: string; source?: string }>
+    const renamed = list.find((file) => file.path === 'кит-фонтан.png')
+    expect(renamed).toMatchObject({ prompt: 'добавь фонтан', source: 'кит.png' })
+    // Служебный sidecar не отдаётся списком.
+    expect(list.some((file) => file.path.includes('.studio-meta'))).toBe(false)
+  })
+})

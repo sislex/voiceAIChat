@@ -26,6 +26,8 @@ function safeName(raw: string): string {
   return name
 }
 
+interface StudioMeta { prompt?: string; source?: string }
+
 export class ImageStudioStore {
   constructor(private readonly rootDir: string) {}
 
@@ -33,14 +35,47 @@ export class ImageStudioStore {
     return join(this.rootDir, conversationId)
   }
 
+  /** Происхождение файлов: скрытый sidecar в папке галереи, наружу не отдаётся. */
+  private metaPath(conversationId: string): string {
+    return join(this.dirOf(conversationId), '.studio-meta.json')
+  }
+
+  private async readMeta(conversationId: string): Promise<Record<string, StudioMeta>> {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(this.metaPath(conversationId), 'utf8'))
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, StudioMeta> : {}
+    } catch {
+      return {}
+    }
+  }
+
+  private async writeMeta(conversationId: string, meta: Record<string, StudioMeta>): Promise<void> {
+    await mkdir(this.dirOf(conversationId), { recursive: true })
+    await writeFile(this.metaPath(conversationId), JSON.stringify(meta))
+  }
+
+  /** Запомнить происхождение файла (промпт и, для правок, исходник). */
+  async setMeta(conversationId: string, rawPath: string, entry: StudioMeta): Promise<void> {
+    const name = safeName(rawPath)
+    const meta = await this.readMeta(conversationId)
+    meta[name] = entry
+    await this.writeMeta(conversationId, meta)
+  }
+
   async list(conversationId: string): Promise<ImageStudioFile[]> {
     const dir = this.dirOf(conversationId)
     if (!existsSync(dir)) return []
     const out: ImageStudioFile[] = []
+    const meta = await this.readMeta(conversationId)
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (!entry.isFile() || entry.name.startsWith('.')) continue
       const st = await stat(join(dir, entry.name))
-      out.push({ path: entry.name, size: st.size, updatedAt: Math.round(st.mtimeMs) })
+      const origin = meta[entry.name]
+      out.push({
+        path: entry.name, size: st.size, updatedAt: Math.round(st.mtimeMs),
+        ...(origin?.prompt ? { prompt: origin.prompt } : {}),
+        ...(origin?.source ? { source: origin.source } : {})
+      })
     }
     // Свежие сверху: студия — про «что я только что нарисовал».
     return out.sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path, 'ru'))
@@ -90,6 +125,8 @@ export class ImageStudioStore {
     const abs = join(this.dirOf(conversationId), name)
     if (!existsSync(abs)) throw new ImageStudioError('not_found', `«${name}» не найден`)
     await rm(abs)
+    const meta = await this.readMeta(conversationId)
+    if (meta[name]) { delete meta[name]; await this.writeMeta(conversationId, meta) }
   }
 
   async rename(conversationId: string, rawFrom: string, rawTo: string): Promise<void> {
@@ -99,5 +136,7 @@ export class ImageStudioStore {
     if (!existsSync(join(dir, from))) throw new ImageStudioError('not_found', `«${from}» не найден`)
     if (existsSync(join(dir, to))) throw new ImageStudioError('exists', `«${to}» уже есть в галерее`)
     await rename(join(dir, from), join(dir, to))
+    const meta = await this.readMeta(conversationId)
+    if (meta[from]) { meta[to] = meta[from]; delete meta[from]; await this.writeMeta(conversationId, meta) }
   }
 }
