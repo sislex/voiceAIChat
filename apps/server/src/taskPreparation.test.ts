@@ -2,6 +2,8 @@
 // запускается в профиле нажавшего кнопку. Клиенты обоих движков — фейковые:
 // реальный CLI в тестах не стартует.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { execFileSync, execSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -165,6 +167,70 @@ describe('синхронизация общей базовой ветки пер
     expect(script.indexOf(' fetch --no-tags origin ')).toBeLessThan(script.indexOf(' merge --ff-only '))
     expect(script).toContain('merge --ff-only "refs/remotes/origin/$base"')
     expect(script).toContain('test "$local_sha" = "$remote_sha"')
+  })
+
+  it('обновляет реальную локальную main из origin/main без склеенной ссылки', () => {
+    const root = mkdtempSync(join(tmpdir(), 'vc-main-sync-'))
+    const origin = join(root, 'origin.git')
+    const seed = join(root, 'seed')
+    const checkout = join(root, 'checkout')
+    const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim()
+    try {
+      git('init', '--bare', origin)
+      git('init', '-b', 'main', seed)
+      git('-C', seed, 'config', 'user.email', 'test@example.com')
+      git('-C', seed, 'config', 'user.name', 'Test')
+      writeFileSync(join(seed, 'value.txt'), 'one\n')
+      git('-C', seed, 'add', 'value.txt')
+      git('-C', seed, 'commit', '-m', 'first')
+      git('-C', seed, 'remote', 'add', 'origin', origin)
+      git('-C', seed, 'push', '-u', 'origin', 'main')
+      git('clone', '--branch', 'main', origin, checkout)
+
+      writeFileSync(join(seed, 'value.txt'), 'two\n')
+      git('-C', seed, 'commit', '-am', 'second')
+      git('-C', seed, 'push', 'origin', 'main')
+      const remoteHead = git('-C', seed, 'rev-parse', 'HEAD')
+
+      execSync(projectMainRefreshScript(checkout, 'main'), { shell: '/bin/sh', stdio: 'pipe' })
+
+      expect(git('-C', checkout, 'rev-parse', 'HEAD')).toBe(remoteHead)
+      expect(git('-C', checkout, 'rev-parse', 'refs/remotes/origin/main')).toBe(remoteHead)
+      expect(git('-C', checkout, 'for-each-ref', '--format=%(refname)')).not.toContain('refs/heads/mainefs/remotes/origin/main')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('DELETE /api/agents/:id', () => {
+  it('удаляет машину с RESTRICT-связью, а повторно отвечает not found', async () => {
+    const machine = db.createAgent('admin', 'MacBook')
+    const storage = db.saveMachineStorage('admin', machine.id, '/Users/admin/ChatAI', 1)
+    const conversation = db.createConversation('admin', 'Storage')
+    db.saveChatStorageBinding('admin', {
+      conversationId: conversation.id,
+      machineId: machine.id,
+      storageId: storage.id,
+      relativePath: 'chats/chat-1'
+    })
+
+    const first = await inj(adminTok, { method: 'DELETE', url: `/api/agents/${machine.id}` })
+    expect(first.statusCode).toBe(200)
+    expect(first.json()).toEqual({ ok: true })
+
+    const repeated = await inj(adminTok, { method: 'DELETE', url: `/api/agents/${machine.id}` })
+    expect(repeated.statusCode).toBe(404)
+    expect(repeated.json()).toEqual({ error: 'not found' })
+  })
+
+  it('не раскрывает и не удаляет чужую машину', async () => {
+    const machine = db.createAgent('admin', 'MacBook')
+    const response = await inj(bobTok, { method: 'DELETE', url: `/api/agents/${machine.id}` })
+
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toEqual({ error: 'not found' })
+    expect(db.listAgents('admin')).toHaveLength(1)
   })
 })
 
