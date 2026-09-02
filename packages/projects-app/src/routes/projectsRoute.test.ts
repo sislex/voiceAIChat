@@ -4,6 +4,8 @@ const routes: ProjectsRoute[] = [
   { kind: 'index' },
   { kind: 'board', projectId: 'p 1' },
   { kind: 'settings', projectId: 'p1' },
+  { kind: 'settings', projectId: 'p1', tab: 'llm' },
+  { kind: 'settings', projectId: 'p1', tab: 'general' },
   { kind: 'releases', projectId: 'p1' },
   { kind: 'code', projectId: 'p1' },
   { kind: 'code', projectId: 'p1', workspaceId: 'ws:ws 1' },
@@ -18,6 +20,10 @@ describe('projects route', () => {
     expect(parseProjectsRoute('#/projects/p1/task/t1')).toEqual({ kind: 'task', projectId: 'p1', taskId: 't1' })
     expect(parseProjectsRoute('/chat/c1')).toBeNull()
     expect(parseProjectsRoute('/projects/p1/settings/nope')).toBeNull()
+    // Вкладка настроек — один сегмент из известного списка; без него — «Общее».
+    expect(parseProjectsRoute('/projects/p1/settings')).toEqual({ kind: 'settings', projectId: 'p1' })
+    expect(parseProjectsRoute('/projects/p1/settings/members')).toEqual({ kind: 'settings', projectId: 'p1', tab: 'members' })
+    expect(parseProjectsRoute('/projects/p1/settings/members/extra')).toBeNull()
     // У раздела «Код» второй сегмент — id рабочей копии; третьего сегмента нет.
     expect(parseProjectsRoute('/projects/p1/code')).toEqual({ kind: 'code', projectId: 'p1' })
     expect(parseProjectsRoute('/projects/p1/code/ws%3Aws-1')).toEqual({ kind: 'code', projectId: 'p1', workspaceId: 'ws:ws-1' })

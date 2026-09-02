@@ -1,6 +1,7 @@
 // Раздел «Настройки» страницы проекта (шапку и переключатель разделов рисует
 // ProjectPage, здесь — только содержимое).
 import { CiProjectDefaults } from './ci/CiProjectDefaults'
+import type { ProjectSettingsTab } from '@voicechat/projects-app'
 import { AutomatedQaScenarioEditor } from './AutomatedQaScenarioEditor'
 import type { AutomatedQaMode, AutomatedQaScenario } from '@shared/qa'
 import { formatDate, isoDate } from '../lib/dateFormat'
@@ -26,6 +27,16 @@ import { DEFAULT_PROJECT_COMMAND_POLICY, type ProjectCommandPolicy } from '@shar
 import { ALL_PROJECT_FEATURES, PROJECT_FEATURE_LABELS, PROJECT_FEATURES, projectTypeChainLabel, resolveProjectTypeFeatures, type ProjectTypeNode } from '@shared/projectTypes'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
+  /**
+   * Активная вкладка из адреса (`/projects/:id/settings/:tab`). Без неё компонент
+   * хранит вкладку сам — так живут сториз и тесты без роутера.
+   */
+  activeTab?: ProjectSettingsTab
+  /**
+   * Смена вкладки — хост пишет её в адрес. `replace` — когда вкладку меняем не
+   * по клику, а потому что её отключил тип проекта: иначе «Назад» упирается в редирект.
+   */
+  onTabChange?: (tab: ProjectSettingsTab, opts?: { replace?: boolean }) => void
   /** Каталог типов для селекта; пусто — селект не показываем. */
   projectTypes?: ProjectTypeNode[]
   /** «Сохранить проект как подтип»; нет обработчика — кнопки нет. */
@@ -159,8 +170,12 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
     setNewMember('')
   }
   const [confirmDel, setConfirmDel] = useState(false)
-  type SettingsTab = 'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [localTab, setLocalTab] = useState<ProjectSettingsTab>('general')
+  const activeTab = props.activeTab ?? localTab
+  const setActiveTab = (tab: ProjectSettingsTab, opts?: { replace?: boolean }): void => {
+    if (props.activeTab === undefined) setLocalTab(tab)
+    props.onTabChange?.(tab, opts)
+  }
   const confirm = useConfirm()
   const [inviteRole, setInviteRole] = useState<ProjectRole>('member')
   const [deriveOpen, setDeriveOpen] = useState(false)
@@ -209,7 +224,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   ]).filter((tab) => !tab.feature || features[tab.feature]).map(({ id, label }) => ({ id, label }))
   // Тип могли сменить, пока открыта вкладка выключенной подсистемы.
   useEffect(() => {
-    if (!tabs.some((tab) => tab.id === activeTab)) setActiveTab('general')
+    if (!tabs.some((tab) => tab.id === activeTab)) setActiveTab('general', { replace: true })
   }, [tabs.map((t) => t.id).join(','), activeTab])
   const [selectedGitMachineId, setSelectedGitMachineId] = useState('')
   const [machineTab, setMachineTab] = useState<'settings' | 'git'>('settings')
@@ -285,7 +300,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
       <SettingsPage
         ariaLabel="Разделы настроек проекта"
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => setActiveTab(tab)}
         tabs={tabs}
       />
       {activeTab === 'general' && <>
