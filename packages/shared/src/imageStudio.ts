@@ -12,6 +12,10 @@ export function isImageStudioConversation(value: { assistantKind?: string | null
 }
 
 export interface ImageStudioFile {
+  /** Промпт, которым нарисован/поправлен файл (нет у загруженных руками). */
+  prompt?: string
+  /** Имя исходника, если файл — результат правки другой картинки. */
+  source?: string
   /** Имя файла в галерее (плоское, без каталогов). */
   path: string
   size: number
