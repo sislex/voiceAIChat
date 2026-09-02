@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-01 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-01 | ⚠ 9 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 44 коммит(ов) в areas после сверки: c567ccf1 feat: scope task Make designs to selected files … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-02 | ⚠ 2 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-02 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 83 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-08-31 | ⚠ 57 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 169 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 202 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 220 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 111 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1047 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1048 коммит(ов) в areas после сверки: d36f2147 docs(kb): update after merge 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 125 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 164 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 81 коммит(ов) в areas после сверки: 9122dcc2 Merge task 6f58c609-a806-4075-a40f-4a052a4fab10 … |
@@ -61,9 +61,10 @@
 
 ## Журнал сессий
 
-Всего записей: 516. Последние:
+Всего записей: 517. Последние:
 
 - [2026-09-02-alexeys-macbook-air-2-task-preparation-zsh-refspec.md](log/2026-09-02-alexeys-macbook-air-2-task-preparation-zsh-refspec.md) — task-preparation-zsh-refspec
+- [2026-09-02-alexeys-macbook-air-2-task-make-design-link.md](log/2026-09-02-alexeys-macbook-air-2-task-make-design-link.md) — 2026-09-02-alexeys-macbook-air-2-task-make-design-link
 - [2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md](log/2026-09-02-alexeys-macbook-air-2-machine-delete-sync.md) — machine-delete-sync
 - [2026-09-02-alexeys-macbook-air-2-exact-make-files.md](log/2026-09-02-alexeys-macbook-air-2-exact-make-files.md) — exact-make-files
 - [2026-09-01-macbook-air-user-user-message-copy.md](log/2026-09-01-macbook-air-user-user-message-copy.md) — user-message-copy
@@ -72,7 +73,6 @@
 - [2026-09-01-macbook-air-user-invite-link-copy.md](log/2026-09-01-macbook-air-user-invite-link-copy.md) — invite-link-copy
 - [2026-09-01-alexeys-macbook-air-2-task-preparation-main-sync-zsh.md](log/2026-09-01-alexeys-macbook-air-2-task-preparation-main-sync-zsh.md) — task-preparation-main-sync-zsh
 - [2026-09-01-alexeys-macbook-air-2-task-make-readonly.md](log/2026-09-01-alexeys-macbook-air-2-task-make-readonly.md) — task-make-readonly
-- [2026-09-01-alexeys-macbook-air-2-sidebar-project-menu-layer.md](log/2026-09-01-alexeys-macbook-air-2-sidebar-project-menu-layer.md) — sidebar-project-menu-layer
 
 ## Исторические планы
 
