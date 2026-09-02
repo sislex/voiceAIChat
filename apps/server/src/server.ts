@@ -1911,7 +1911,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   // UI: очередь, изоляция директорий и проверки готовности живут в менеджерах.
   const kanbanRunLaunchers: KanbanRunLaunchers = {
     startCi: (userId, projectId, taskId, options) =>
-      ciRunManager.start(userId, projectId, taskId, { launch: options.launch, ...(options.agentId ? { agentId: options.agentId } : {}) }),
+      ciRunManager.start(userId, projectId, taskId, {
+        launch: options.launch,
+        ...(options.agentId ? { agentId: options.agentId } : {}),
+        ...(options.provider ? { provider: options.provider } : {}),
+        ...(options.model ? { model: options.model } : {})
+      }),
     cancelCi: (userId, runId) => ciRunManager.cancel(userId, runId),
     previewOperate: (userId, projectId, taskId, operation, options) =>
       featurePreviews.operate(userId, projectId, taskId, operation, options),

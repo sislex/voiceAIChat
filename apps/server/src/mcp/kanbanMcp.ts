@@ -53,7 +53,7 @@ export interface KanbanRunLaunchers {
   /** Релизная ветка и выкладка в production; и то, и другое — только с подтверждением. */
   createReleaseBranch?(userId: string, projectId: string, branch: string, baseBranch?: string): Promise<{ id?: string; branch?: string; status?: string }>
   deployRelease?(userId: string, projectId: string, branch: string): Promise<{ id?: string; status?: string }>
-  startCi(userId: string, projectId: string, taskId: string, options: { launch: 'queue' | 'parallel'; agentId?: string }): { run: { id: string; status: string; agentId: string | null } } | { error: string }
+  startCi(userId: string, projectId: string, taskId: string, options: { launch: 'queue' | 'parallel'; agentId?: string; provider?: 'claude' | 'codex'; model?: string }): { run: { id: string; status: string; agentId: string | null } } | { error: string }
   cancelCi(userId: string, runId: string): boolean
   startMerge(userId: string, projectId: string, taskId: string, agentId: string | null): Promise<{ id: string; status: string }>
   startQa(userId: string, projectId: string, taskId: string, stage: 'component_qa' | 'integration_tests' | 'automated_qa'): Promise<{ id: string; status: string }>
@@ -861,11 +861,11 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         // --- Оркестрация: план работ, который ассистент ведёт сам -------
 
         const PLAN_ITEMS = z.array(z.object({
-          kind: z.enum(['create_task', 'run_ci', 'run_qa', 'run_merge', 'wait_merge', 'run_preview']),
+          kind: z.enum(['create_task', 'run_preparation', 'run_ci', 'run_qa', 'run_merge', 'wait_merge', 'wait_column', 'run_preview']),
           title: z.string().min(1).describe('Что делает шаг — это увидит пользователь'),
           taskId: z.string().optional().describe('Задача шага; не нужен, если шаг зависит от create_task'),
           dependsOn: z.array(z.number().int().min(0)).optional().describe('Индексы шагов этого плана (с нуля), которые должны завершиться раньше'),
-          payload: z.record(z.string(), z.unknown()).optional().describe('create_task: title/description/acceptanceCriteria/columnId/autoPilot; run_ci: launch/agentId; run_qa: stage; run_preview: operation/scenario; любой шаг: retries (0–3) — сколько раз перезапустить после падения')
+          payload: z.record(z.string(), z.unknown()).optional().describe('create_task: title/description/acceptanceCriteria/columnId/autoPilot; run_preparation: без параметров (подготовка задачи; по её успеху карточка сама уходит в колонку ready); run_ci: launch (queue|parallel), agentId (машина), provider (claude|codex), model; run_qa: stage; wait_column: semantic (backlog|preparation|ready|development|…|done) или columnId — ждать, пока карточка не окажется в этой колонке; run_preview: operation/scenario; любой шаг: retries (0–3) — сколько раз перезапустить после падения')
         })).min(1).max(40)
 
         const planSummary = (plan: Orchestration): unknown => ({
@@ -887,7 +887,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         })
 
         server.registerTool('orchestration_start', {
-          description: 'Запустить план работ: сервер сам создаст задачи, запустит разработку и проверки, дождётся merge и продолжит — план переживает закрытие вкладки и рестарт. Шаг wait_merge держит зависящие шаги, пока ветка задачи не влита: так пересекающиеся задачи не идут одновременно. Итог плана придёт сообщением в этот чат.',
+          description: 'Запустить план работ: сервер сам создаст задачи, запустит подготовку, разработку и проверки, дождётся merge и продолжит — план переживает закрытие вкладки и рестарт. Шаг wait_merge держит зависящие шаги, пока ветка задачи не влита: так пересекающиеся задачи не идут одновременно. Шаг wait_column ждёт перехода карточки в колонку (например ready после подготовки) — так план реагирует на события доски. Итог плана придёт сообщением в этот чат.',
           inputSchema: { title: z.string().min(1), items: PLAN_ITEMS }
         }, async (args) => mutating('orchestration_start', args, async () => {
           const manager = deps.orchestration?.()
