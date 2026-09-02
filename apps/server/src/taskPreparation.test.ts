@@ -562,6 +562,33 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(1)
   })
 
+  it('сохраняет unavailable некритичного источника и нормализует только однозначные значения', async () => {
+    const { project, task } = await taskInBacklog()
+    const normalized = JSON.parse(compatibleReadiness())
+    normalized.schemaVersion = '2'
+    normalized.acceptanceCriteriaConflict = 'false'
+    normalized.sources.push({ id: 'S-10', kind: 'code', status: ' UNAVAILABLE ', summary: 'index.html нужен на этапе реализации', refs: 'index.html', critical: 'false' })
+    claudeAnswer = () => ({ text: JSON.stringify(normalized) })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(run.readiness?.schemaVersion).toBe(2)
+    expect(run.readiness?.sources?.find((source) => source.id === 'S-10')).toMatchObject({ status: 'unavailable', critical: false, refs: ['index.html'] })
+  })
+
+  it('не подменяет неоднозначный статус источника на available', async () => {
+    const { project, task } = await taskInBacklog()
+    const malformed = JSON.parse(compatibleReadiness())
+    malformed.sources[0].status = 'ready'
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify(malformed) : compatibleReadiness() })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(claudeCalls[1].prompt).toContain('sources[0].status имеет недопустимое значение')
+  })
+
   it('после двух невалидных ответов выполняет recovery той же проектной моделью', async () => {
     const { project, task } = await taskInBacklog()
     const broken = JSON.stringify({ ...JSON.parse(compatibleReadiness()), functionalRequirements: ['сломанный тип'] })
