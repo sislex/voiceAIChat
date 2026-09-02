@@ -104,7 +104,7 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
   // Связанные с задачей Make-проекты: независимые read-only MCP-серверы.
   for (const source of req.makeSources ?? []) {
     args.push('-c', `mcp_servers.${source.name}.url="${source.mcpUrl}"`)
-    const start = source.paths.includes('') ? 'проект целиком' : `стартовые пути: ${source.paths.join(', ')}`
+    const start = source.mode === 'whole_project' ? 'проект целиком' : `разрешённые файлы: ${source.paths.join(', ')}`
     prompt = `Read-only Make-источник ${source.name} (${source.conversationId}), ${start}. Начни с указанных путей, но make_list_files/make_read_file читают весь проект. Ошибку связывай с ${source.name} и ${source.conversationId}; не проси id или index.html.\n\n${prompt}`
   }
 

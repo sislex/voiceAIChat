@@ -60,6 +60,18 @@ describe('дизайны карточки', () => {
     expect(db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: '  ' })[0].path).toBe('')
   })
 
+  it('нормализует детерминированный набор, дедуплицирует и атомарно заменяет его', () => {
+    const { projectId, taskId, makeId } = scene()
+    let links = db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, mode: 'files', paths: ['src/App.tsx', 'index.html', 'src/App.tsx'] })
+    expect(links[0]).toMatchObject({ mode: 'files', paths: ['index.html', 'src/App.tsx'] })
+    links = db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, mode: 'whole_project', paths: [] })
+    expect(links).toHaveLength(1)
+    expect(links[0]).toMatchObject({ mode: 'whole_project', paths: [] })
+    expect(() => db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, mode: 'files', paths: [] })).toThrow('хотя бы один')
+    expect(() => db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, mode: 'whole_project', paths: ['index.html'] })).toThrow('несовместим')
+    expect(() => db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, mode: 'files', paths: ['/index.html'] })).toThrow('каноническим')
+  })
+
   it('связь видна другому участнику проекта, а посторонний не получает ни списка, ни привязки', () => {
     const { projectId, taskId, makeId } = scene()
     db.linkTaskDesign('bob', projectId, taskId, { conversationId: makeId, path: 'index.html' })

@@ -973,6 +973,11 @@ export class VoiceChatDb {
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'auto_pilot')) this.db.exec(`ALTER TABLE tasks ADD COLUMN auto_pilot INTEGER NOT NULL DEFAULT 0`)
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'auto_pilot_fix_cycles')) this.db.exec(`ALTER TABLE tasks ADD COLUMN auto_pilot_fix_cycles INTEGER NOT NULL DEFAULT 0`)
+    const taskDesignCols = this.db.prepare(`PRAGMA table_info(task_designs)`).all() as Array<{ name: string }>
+    if (taskDesignCols.length && !taskDesignCols.some((column) => column.name === 'mode')) this.db.exec(`ALTER TABLE task_designs ADD COLUMN mode TEXT NOT NULL DEFAULT 'whole_project'`)
+    if (taskDesignCols.length && !taskDesignCols.some((column) => column.name === 'paths_json')) this.db.exec(`ALTER TABLE task_designs ADD COLUMN paths_json TEXT NOT NULL DEFAULT '[]'`)
+    // Legacy: пустой path = whole_project, конкретный path = файловый режим.
+    this.db.exec(`UPDATE task_designs SET mode = CASE WHEN path = '' THEN 'whole_project' ELSE 'files' END, paths_json = CASE WHEN path = '' THEN '[]' ELSE json_array(path) END WHERE paths_json = '[]' AND path <> ''`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE task_improvements ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'created_task_id')) this.db.exec(`ALTER TABLE task_improvements ADD COLUMN created_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
@@ -5432,27 +5437,41 @@ export class VoiceChatDb {
   taskDesigns(taskId: string): TaskDesignLink[] {
     const rows = this.db
       .prepare(
-        `SELECT d.id, d.task_id, d.conversation_id, d.path, d.label, d.created_at, d.created_by,
+        `SELECT d.id, d.task_id, d.conversation_id, d.path, d.mode, d.paths_json, d.label, d.created_at, d.created_by,
                 c.title AS conversation_title, c.user_id AS conversation_owner
            FROM task_designs d JOIN conversations c ON c.id = d.conversation_id
           WHERE d.task_id = ?
           ORDER BY d.created_at ASC`
       )
       .all(taskId) as Array<{
-        id: string; task_id: string; conversation_id: string; path: string; label: string
+        id: string; task_id: string; conversation_id: string; path: string; mode: string; paths_json: string; label: string
         created_at: number; created_by: string | null; conversation_title: string; conversation_owner: string | null
       }>
-    return rows.map((r) => ({
-      id: r.id,
-      taskId: r.task_id,
-      conversationId: r.conversation_id,
-      conversationTitle: r.conversation_title,
-      conversationOwner: r.conversation_owner,
-      path: r.path,
-      label: r.label,
-      createdAt: r.created_at,
-      createdBy: r.created_by
-    }))
+    const grouped = new Map<string, TaskDesignLink>()
+    for (const r of rows) {
+      const rowMode = r.mode === 'files' ? 'files' : 'whole_project'
+      const rowPaths = rowMode === 'files' ? (JSON.parse(r.paths_json) as string[]) : []
+      const current = grouped.get(r.conversation_id)
+      if (current) {
+        if (current.mode === 'whole_project' || rowMode === 'whole_project') {
+          current.mode = 'whole_project'
+          current.paths = []
+          current.path = ''
+        } else {
+          current.paths = [...new Set([...current.paths, ...rowPaths])].sort((a, b) => a.localeCompare(b))
+          current.path = current.paths[0] ?? ''
+        }
+        if (!current.label && r.label) current.label = r.label
+        continue
+      }
+      grouped.set(r.conversation_id, {
+        id: r.id, taskId: r.task_id, conversationId: r.conversation_id,
+        conversationTitle: r.conversation_title, conversationOwner: r.conversation_owner,
+        mode: rowMode, paths: rowPaths, path: rowMode === 'files' ? rowPaths[0] ?? r.path : '',
+        label: r.label, createdAt: r.created_at, createdBy: r.created_by
+      })
+    }
+    return [...grouped.values()].sort((a, b) => a.conversationId.localeCompare(b.conversationId))
   }
 
   listTaskDesigns(userId: string, projectId: string, taskId: string): TaskDesignLink[] | null {
@@ -5471,7 +5490,7 @@ export class VoiceChatDb {
     userId: string,
     projectId: string,
     taskId: string,
-    args: { conversationId: string; path?: string; label?: string }
+    args: { conversationId: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string }
   ): TaskDesignLink[] {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
     const task = this.getTask(projectId, taskId)
@@ -5481,22 +5500,22 @@ export class VoiceChatDb {
       .get(args.conversationId) as { id: string; assistant_kind: string | null; project_id: string | null } | undefined
     if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
     if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
-    // Пустой путь — «проект целиком»; иначе путь нормализуется тем же правилом,
-    // что и файлы Make, чтобы ссылка не увела за пределы проекта.
-    const raw = (args.path ?? '').trim()
-    const path = raw ? normalizeMakePath(raw) : ''
-    if (path === null) throw new Error('Недопустимый путь страницы дизайна')
+    const legacyPath = (args.path ?? '').trim()
+    const mode = args.mode ?? (legacyPath ? 'files' : 'whole_project')
+    const inputPaths = args.paths ?? (legacyPath ? [legacyPath] : [])
+    if (mode === 'whole_project' && inputPaths.length) throw new Error('Режим всего проекта несовместим с отдельными файлами')
+    if (mode === 'files' && inputPaths.length === 0) throw new Error('Выберите хотя бы один файл Make-проекта')
+    const normalized = inputPaths.map((value) => normalizeMakePath(value))
+    if (normalized.some((value, index) => value === null || value !== inputPaths[index])) throw new Error('Путь файла дизайна должен быть каноническим относительным путём')
+    const paths = [...new Set(normalized as string[])].sort((a, b) => a.localeCompare(b))
+    const path = mode === 'files' ? paths[0]! : ''
     const label = (args.label ?? '').trim().slice(0, 120)
-    const existing = this.db
-      .prepare(`SELECT id FROM task_designs WHERE task_id = ? AND conversation_id = ? AND path = ?`)
-      .get(taskId, args.conversationId, path) as { id: string } | undefined
-    if (existing) {
-      if (label) this.db.prepare(`UPDATE task_designs SET label = ? WHERE id = ?`).run(label, existing.id)
-    } else {
-      this.db
-        .prepare(`INSERT INTO task_designs (id, task_id, conversation_id, path, label, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(this.newId(), taskId, args.conversationId, path, label, userId, this.now())
-    }
+    const replace = this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM task_designs WHERE task_id = ? AND conversation_id = ?`).run(taskId, args.conversationId)
+      this.db.prepare(`INSERT INTO task_designs (id, task_id, conversation_id, path, mode, paths_json, label, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(this.newId(), taskId, args.conversationId, path, mode, JSON.stringify(paths), label, userId, this.now())
+    })
+    replace()
     this.touchProject(projectId, this.now())
     return this.taskDesigns(taskId)
   }
