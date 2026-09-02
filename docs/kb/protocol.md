@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-01
-checked: 1f612c2a
+updated: 2026-09-02
+checked: 37702dce
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -87,6 +87,13 @@ URL руками. Параметризованные пути — функции
 (`POST /api/conversations/:id/context-copy` — перенос выключений из другого
 разговора: источник передаётся телом, потому что это данные операции, а не
 адрес). Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
+
+Обмен Make с репозиторием проекта: `GET /api/make/:id/project-files?path=`
+(листинг машины), `GET …/project-links` (статусы связей),
+`POST …/project-pull` `{paths}` и `POST …/project-push` `{paths?, force?}`
+(409 + `conflicts` без force при чужой правке). Мосты `make:projectFiles`,
+`make:projectLinks`, `make:projectPull`, `make:projectPush`. Разбор —
+[ui.md](ui.md#make-компоненты-и-стили-из-репозитория-проекта--туда-и-обратно).
 
 `warnings` снимка считает сервер, и порогов там три разного смысла.
 `CONTEXT_PREVIEW_TOKENS_NOTICE` (4000 токенов) — абсолютный: «постоянная часть
