@@ -1499,6 +1499,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
     // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
     // Студия картинок: галерея в замыкании фейка.
+    'imgstudio:cancel': async () => ({ cancelled: false }),
     'imgstudio:list': async ({ conversationId }) => (studioFiles.get(conversationId) ?? []).map(({ dataBase64: _b64, ...file }) => file),
     'imgstudio:read': async ({ conversationId, path }) => {
       const file = (studioFiles.get(conversationId) ?? []).find((entry) => entry.path === path)

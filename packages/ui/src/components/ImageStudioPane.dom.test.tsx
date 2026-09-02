@@ -17,9 +17,11 @@ function makeApi(initial: Array<{ path: string }> = []) {
     files = [file, ...files]
     return { file, files: [...files] }
   })
+  const cancel = vi.fn(async () => ({ cancelled: true }))
   return {
-    generate, edit,
+    generate, edit, cancel,
     api: {
+      'imgstudio:cancel': cancel,
       'imgstudio:list': vi.fn(async () => [...files]),
       'imgstudio:read': vi.fn(async ({ path }: { path: string }) => ({ path, dataBase64: btoa('img') })),
       'imgstudio:upload': vi.fn(async ({ path }: { path: string }) => { files = [{ path, size: 3, updatedAt: Date.now() }, ...files]; return [...files] }),
@@ -147,6 +149,27 @@ describe('ImageStudioPane', () => {
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
     fireEvent.click(await screen.findByRole('button', { name: /Логотип-щит/ }))
     expect((screen.getByRole('textbox', { name: 'Промпт для изображения' }) as HTMLTextAreaElement).value).toMatch(/Логотип-щит/)
+  })
+
+  it('кнопка «Отменить» у секундомера дёргает imgstudio:cancel', async () => {
+    const { api, cancel } = makeApi()
+    let finish: (() => void) | undefined
+    ;(api['imgstudio:generate'] as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve({ file: { path: 'x.png', size: 1, updatedAt: 1 }, files: [] }) }))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'кот' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Отменить' }))
+    expect(cancel).toHaveBeenCalledWith({ conversationId: 'c1' })
+    finish?.()
+  })
+
+  it('переименование без расширения дописывает исходное', async () => {
+    const { api } = makeApi([{ path: 'логотип.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Переименовать логотип.png' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Новое имя файла' }), { target: { value: 'лого' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ок' }))
+    await waitFor(() => expect(api['imgstudio:rename']).toHaveBeenCalledWith({ conversationId: 'c1', from: 'логотип.png', to: 'лого.png' }))
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {

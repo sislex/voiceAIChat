@@ -104,6 +104,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:create': ({ title, scope, projectId, assistantKind }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, scope: scope ?? (assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'make' ? 'make' : assistantKind === 'images' ? 'images' : 'chat'), projectId, assistantKind }) }),
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
+    'imgstudio:cancel': ({ conversationId }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/cancel`, { method: 'POST', body: '{}' }),
     'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
     'imgstudio:read': async ({ conversationId, path }) => {
       // Байты картинки — через авторизованный fetch: <img src> без токена

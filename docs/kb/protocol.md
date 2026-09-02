@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-03
-checked: 722c56fe
+checked: 38a52e0b
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -516,7 +516,12 @@ mime, POST принимает `{path,dataBase64}` под bodyLimit 20 МБ), `PO
 .../rename`, `POST .../generate` `{prompt,name?}`, `POST .../edit`
 `{path,prompt}` — правка пишет НОВЫЙ файл (`freeName`), оригинал цел. Ошибки
 хранилища мапятся кодами: 413 `too_big|quota`, 400 `bad_name|empty_prompt`,
-404, 502 от генератора. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+404, 502 от генератора. Итерация 4: на разговор допускается один активный ран
+generate/edit (второй — 409); `POST .../cancel` отменяет его (ран отвечает
+410 «Генерация отменена»); у файлов есть происхождение `prompt?`/`source?`
+(sidecar `.studio-meta.json` в папке галереи; rename переносит, delete
+удаляет). Важно: `handle.cancel()` CLI-клиентов глушит onDone/onError
+(finished=true), поэтому генератор реджектит свой промис сам. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
 web-клиенте — авторизованный fetch → base64 (см. ui.md). POST
 `/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
 и CHECK по scope расширены (см. data-auth.md).

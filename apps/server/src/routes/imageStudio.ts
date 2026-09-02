@@ -26,6 +26,23 @@ function sendStudioError(reply: FastifyReply, error: unknown): FastifyReply {
 export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudioRoutesDeps): void {
   const { db, store } = deps
   const uid = (req: { user?: { name: string } | null }): string => req.user?.name ?? ''
+  // Один ран на разговор: параллельные генерации дерутся за имена и квоту, а
+  // пользователю всё равно нужен один результат. Здесь же живёт ручка отмены.
+  const activeRuns = new Map<string, { cancel: () => void; cancelled: boolean }>()
+
+  const withRun = async (conversationId: string, reply: FastifyReply, body: (run: { cancel: () => void; cancelled: boolean; onCancel: (fn: () => void) => void }) => Promise<FastifyReply | object>): Promise<FastifyReply | object> => {
+    if (activeRuns.has(conversationId)) return reply.code(409).send({ error: 'По этому чату уже идёт генерация — дождитесь её или отмените' })
+    const entry = { cancel: () => { entry.cancelled = true }, cancelled: false, onCancel: (fn: () => void) => { entry.cancel = () => { entry.cancelled = true; fn() } } }
+    activeRuns.set(conversationId, entry)
+    try {
+      return await body(entry)
+    } catch (error) {
+      if (entry.cancelled) return reply.code(410).send({ error: 'Генерация отменена' })
+      return sendStudioError(reply, error)
+    } finally {
+      activeRuns.delete(conversationId)
+    }
+  }
 
   /** Разговор пользователя вида «студия картинок», иначе 404. */
   const own = (userId: string, id: string, reply: FastifyReply): boolean => {
@@ -81,12 +98,13 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что нарисовать' })
     if (!deps.generator) return reply.code(503).send({ error: 'Генерация изображений недоступна в этой конфигурации' })
-    try {
-      const data = await deps.generator(userId)({ prompt })
+    return withRun(req.params.id, reply, async (run) => {
+      const data = await deps.generator!(userId)({ prompt, onCancel: run.onCancel })
       const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
       const file = await store.writeBuffer(req.params.id, name, data)
-      return { file, files: await store.list(req.params.id) }
-    } catch (error) { return sendStudioError(reply, error) }
+      await store.setMeta(req.params.id, name, { prompt })
+      return { file: { ...file, prompt }, files: await store.list(req.params.id) }
+    })
   })
 
   app.post<{ Params: { id: string }; Body: { path?: string; prompt?: string } }>('/api/image-studio/:id/edit', async (req, reply) => {
@@ -95,15 +113,25 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что изменить' })
     if (!deps.generator) return reply.code(503).send({ error: 'Правка изображений недоступна в этой конфигурации' })
-    try {
-      const source = await store.readBuffer(req.params.id, req.body?.path ?? '')
+    const sourcePath = req.body?.path ?? ''
+    return withRun(req.params.id, reply, async (run) => {
+      const source = await store.readBuffer(req.params.id, sourcePath)
       if (!source) return reply.code(404).send({ error: 'файл не найден' })
-      const data = await deps.generator(userId)({ prompt, source, sourceName: req.body?.path ?? 'source.png' })
+      const data = await deps.generator!(userId)({ prompt, source, sourceName: sourcePath || 'source.png', onCancel: run.onCancel })
       // Правка не затирает оригинал: результат — новый файл рядом. Откат — это
       // просто удаление новой версии, истории снимков студии не нужно.
-      const name = await store.freeName(req.params.id, req.body?.path ?? 'правка.png')
+      const name = await store.freeName(req.params.id, sourcePath || 'правка.png')
       const file = await store.writeBuffer(req.params.id, name, data)
-      return { file, files: await store.list(req.params.id) }
-    } catch (error) { return sendStudioError(reply, error) }
+      await store.setMeta(req.params.id, name, { prompt, source: sourcePath })
+      return { file: { ...file, prompt, source: sourcePath }, files: await store.list(req.params.id) }
+    })
+  })
+
+  app.post<{ Params: { id: string } }>('/api/image-studio/:id/cancel', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    const run = activeRuns.get(req.params.id)
+    if (!run) return { cancelled: false }
+    run.cancel()
+    return { cancelled: true }
   })
 }

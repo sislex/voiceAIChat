@@ -15,7 +15,7 @@ import { IMAGE_STUDIO_DENSE_KEY, imageStudioPromptsKey } from '../store/contract
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
-  'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit'>
+  'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel'>
 
 interface Props {
   conversationId: string
@@ -347,6 +347,8 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
       </div>
       {progress && <p className="image-studio-progress" role="status">
         {progress.label}… {progress.seconds} с. Обычно это занимает до минуты.
+        {' '}
+        <button type="button" className="image-studio-cancel" onClick={() => void api['imgstudio:cancel']({ conversationId }).catch(() => undefined)}>Отменить</button>
       </p>}
       <span className="vc-sr-only" role="status">{announce}</span>
       {lastError && !busy && <ErrorState compact message={lastError} />}
@@ -394,17 +396,21 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
                     onChange={(event) => setRenaming({ from: file.path, to: event.target.value })}
                     onKeyDown={(event) => { if (event.key === 'Escape') setRenaming(null) }}
                   />
-                  <Button size="sm" disabled={busy || !renaming.to.trim() || !isImageStudioPath(renaming.to.trim())}
-                    title={renaming.to.trim() && !isImageStudioPath(renaming.to.trim()) ? 'Имя должно оканчиваться на .png, .jpg, .webp, .gif или .svg' : 'Переименовать'}
+                  <Button size="sm" disabled={busy || !renaming.to.trim()}
+                    title="Переименовать"
                     onClick={() => void run(async () => {
-                      await api['imgstudio:rename']({ conversationId, from: file.path, to: renaming.to.trim() })
+                      // Пользователь стёр расширение — дописываем исходное, а не
+                      // заставляем вспоминать, что имя должно быть картинкой.
+                      const typed = renaming.to.trim()
+                      const to = isImageStudioPath(typed) ? typed : `${typed}${file.path.slice(file.path.lastIndexOf('.'))}`
+                      await api['imgstudio:rename']({ conversationId, from: file.path, to })
                       setRenaming(null)
-                      if (selected === file.path) setSelected(renaming.to.trim())
+                      if (selected === file.path) setSelected(to)
                     }, 'Переименовано')}>Ок</Button>
                   <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>Отмена</Button>
                 </div>
               : <div className="image-studio-meta">
-                  <span className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}`}>
+                  <span className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${file.source ? `\nИз: ${file.source}` : ''}`}>
                     {file.path}
                     {dimensions[file.path] && <small className="image-studio-dim"> {dimensions[file.path]}</small>}
                   </span>
@@ -441,6 +447,13 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
         {previews[viewing]
           ? <img className="image-studio-full" src={previews[viewing]} alt={viewing} />
           : <p className="imgerr" role="alert">Превью ещё не загрузилось</p>}
+        {(() => {
+          const meta = files.find((file) => file.path === viewing)
+          if (!meta?.prompt && !meta?.source) return null
+          return <p className="imgcap image-studio-origin">
+            {meta.source ? `Из «${meta.source}» · ` : ''}{meta.prompt ? `промпт: ${meta.prompt}` : ''}
+          </p>
+        })()}
       </div>
     </ToolFrame>}
   </div>
