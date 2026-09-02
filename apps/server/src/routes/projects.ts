@@ -637,9 +637,27 @@ export function registerProjectRoutes(
 
   // --- Задачи (любой участник) -----------------------------------------
 
+  /**
+   * Автосвязь дизайна: задача, созданная из Make-чата, сразу получает
+   * whole_project-связь с ним (task_designs). Без связи подготовка и
+   * разработка не получают инструменты make_* и файлы макета — модель
+   * упирается в недоступный публичный URL и задаёт вопрос про «источник
+   * истины». Ошибки глотаются осознанно: источник может быть обычным чатом
+   * или Make-проектом чужого проекта — тогда задача создаётся без связи,
+   * как и раньше, а связать можно вручную из панели Make.
+   */
+  const tryLinkMakeDesign = (userId: string, projectId: string, taskId: string, conversationId?: string): void => {
+    if (!conversationId?.trim()) return
+    try {
+      db.linkTaskDesign(userId, projectId, taskId, { conversationId })
+    } catch {
+      // не Make-чат или чат другого проекта — это штатный случай, не ошибка
+    }
+  }
+
   app.post<{
     Params: { id: string }
-    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; createdBy?: unknown; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
+    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; sourceConversationId?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; createdBy?: unknown; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
   }>('/api/projects/:id/tasks', taskCreateGuard, async (req, reply): Promise<Task | FastifyReply> => {
     const b = req.body ?? {}
     const title = (b.title ?? '').trim()
@@ -665,8 +683,10 @@ export function registerProjectRoutes(
       })
 
       if (!task) return nf(reply)
+      tryLinkMakeDesign(uid(req), req.params.id, task.id, b.sourceConversationId)
       boardHub.emit(req.params.id)
-      return task
+      // Задачу отдаём со свежими связями: клиент показывает карточку сразу.
+      return db.getCiTask(uid(req), req.params.id, task.id) ?? task
     } catch (err) {
       return badReq(reply, errMessage(err))
     }
@@ -674,7 +694,7 @@ export function registerProjectRoutes(
 
   app.post<{
     Params: { id: string }
-    Body: { proposalId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; selection?: TaskPreparationLlmSelection }
+    Body: { proposalId?: string; title?: string; description?: string; acceptanceCriteria?: string; sourceConversationId?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; selection?: TaskPreparationLlmSelection }
   }>('/api/projects/:id/task-launch/preparation', taskCreateGuard, async (req, reply): Promise<TaskLaunchResult | FastifyReply> => {
     const b = req.body ?? {}
     const proposalId = b.proposalId?.trim(), title = b.title?.trim()
@@ -686,6 +706,9 @@ export function registerProjectRoutes(
         type: b.type, parentId: b.parentId, priority: b.priority, assignee: b.assignee ?? null,
         labels: b.labels, skills: b.skills, storyPoints: b.storyPoints, dueDate: b.dueDate
       })
+      // Связь с Make — до запуска подготовки: makeSources собираются при старте
+      // рана, и связь, созданная позже, в этот ран уже не попадёт.
+      tryLinkMakeDesign(uid(req), req.params.id, result.taskId, b.sourceConversationId)
       if (result.type === 'preparation' && result.status === 'success') {
         const actual = db.getTaskPreparationRun(uid(req), result.runId)
         if (actual && (actual.status === 'running' || actual.status === 'success')) return result

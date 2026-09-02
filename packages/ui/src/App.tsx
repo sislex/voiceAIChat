@@ -1002,6 +1002,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     projectId: string
     messageId: string
     proposalId: string
+    /** Чат, из которого пришло предложение: Make-чат даст задаче связь с макетом. */
+    sourceConversationId: string
     board: Board
     projectName: string
     members: ProjectMember[]
@@ -1753,6 +1755,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       projectId,
       messageId,
       proposalId: request.id,
+      sourceConversationId: activeConversation.id,
       board,
       projectName: detail?.name ?? project?.name ?? 'Проект',
       members: detail?.members ?? [],
@@ -1823,6 +1826,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         await api['tasks:create']({
           projectId: taskProposal.projectId,
           columnId: column.id,
+          sourceConversationId: taskProposal.sourceConversationId,
           title: task.title,
           description: task.description,
           acceptanceCriteria: task.acceptanceCriteria,
@@ -1837,7 +1841,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         })
         toast.success('Задача создана в TODO')
       } else if (mode === 'preparation') {
-        const result = await projectsActions.createTaskFromProposalInPreparation(taskProposal.projectId, `${taskProposal.messageId}:${taskProposal.proposalId}:preparation`, { ...task, selection: { provider: taskProposal.provider, model: taskProposal.model } })
+        const result = await projectsActions.createTaskFromProposalInPreparation(taskProposal.projectId, `${taskProposal.messageId}:${taskProposal.proposalId}:preparation`, { ...task, sourceConversationId: taskProposal.sourceConversationId, selection: { provider: taskProposal.provider, model: taskProposal.model } })
         await chatActions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, 'created', result)
         chatActions.setDraft('Пользователь выбрал: создать предложенную задачу в подготовке к разработке')
         await chatActions.submitText()
