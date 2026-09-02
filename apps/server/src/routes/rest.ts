@@ -209,6 +209,10 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
   const linkedTask = conversation.taskId && conversation.projectId ? db.getCiTask(userId, conversation.projectId, conversation.taskId) : null
   const makeSources = taskMakeSources(linkedTask?.designs ?? [])
+  /** Связи макета задачи: по ним ход подключает read-only Make-источники. */
+  const taskDesigns = conversation.taskId && conversation.projectId
+    ? (db.getCiTask(userId, conversation.projectId, conversation.taskId)?.designs ?? [])
+    : []
   const taskContext = (() => {
     if (!conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
     const tc = db.getTaskChatContext(userId, conversationId, isOnline)
@@ -291,6 +295,17 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       available: conversation.assistantKind === 'make',
       whenAvailable: 'Подключается в Make-чате: правка файлов проекта и есть задача такого чата.',
       whenUnavailable: 'Появится только в чате Make.'
+    },
+    {
+      // Read-only источники макета в чате задачи (turns.ts: buildTaskMakeSources
+      // по task_designs связанной задачи). Появились отдельно от Make-чата:
+      // модель читает файлы макета, не будучи Make-ассистентом.
+      id: 'mcp-make-design', title: 'make_design:* (макет задачи, только чтение)', source: 'Привязка задачи к макету Make', readOnlyInPlan: false,
+      scope: taskDesigns.length ? `${taskDesigns.length} связь(и) с Make` : 'Задача без макета', tools: ['mcp__make_design_*__make_list_files', 'mcp__make_design_*__make_read_file'],
+      description: 'Чтение файлов Make-проекта, привязанного к задаче этого чата.',
+      available: taskDesigns.length > 0,
+      whenAvailable: 'Подключается в чате задачи с привязанным макетом: инструменты только читают файлы, записи нет ни в каком режиме.',
+      whenUnavailable: conversation.taskId ? 'У задачи этого чата нет привязанного Make-макета.' : 'Появится в чате задачи с привязанным Make-макетом.'
     },
     {
       id: 'mcp-kanban-board', title: 'kanban:* (доска проекта)', source: 'Панель ассистента проекта', readOnlyInPlan: true,
