@@ -133,6 +133,22 @@ describe('ImageStudioPane', () => {
     expect((promptField as HTMLTextAreaElement).value).toBe('кот в сапогах')
   })
 
+  it('имя нового файла уходит в generate, пустое — не передаётся', async () => {
+    const { api, generate } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Имя нового файла' }), { target: { value: 'логотип.png' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'щит' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledWith({ conversationId: 'c1', prompt: 'щит', name: 'логотип.png' }))
+  })
+
+  it('пример промпта из пустой галереи подставляется в поле', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Логотип-щит/ }))
+    expect((screen.getByRole('textbox', { name: 'Промпт для изображения' }) as HTMLTextAreaElement).value).toMatch(/Логотип-щит/)
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)

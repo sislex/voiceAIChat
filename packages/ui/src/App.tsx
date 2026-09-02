@@ -1214,6 +1214,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       openMachineConsole: (agentId) =>
         agentId ? operationsActions.openUtility('console', agentId) : operationsActions.openUtilityForActiveChat('console'),
       openKnowledgeBase: () => navigate('/kb'),
+      openImageStudio: session.authRequired ? () => navigate('/images') : null,
       openKbUsage: runtime.openKbUsage,
       logout: () => void runtime.logout(),
       openPalette: () => setPaletteOpen(true),
