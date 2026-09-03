@@ -43,7 +43,7 @@ function safeName(raw: string): string {
   return name
 }
 
-interface StudioMeta { prompt?: string; source?: string }
+interface StudioMeta { prompt?: string; source?: string; tookMs?: number }
 
 interface StudioPublication { token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null; days?: Record<string, number> }
 
@@ -222,7 +222,8 @@ export class ImageStudioStore {
       out.push({
         path: entry.name, size: st.size, updatedAt: Math.round(st.mtimeMs),
         ...(origin?.prompt ? { prompt: origin.prompt } : {}),
-        ...(origin?.source ? { source: origin.source } : {})
+        ...(origin?.source ? { source: origin.source } : {}),
+        ...(origin?.tookMs !== undefined ? { tookMs: origin.tookMs } : {})
       })
     }
     // Свежие сверху: студия — про «что я только что нарисовал».
