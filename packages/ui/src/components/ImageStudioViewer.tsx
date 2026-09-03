@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ImageStudioFile } from '@shared/imageStudio'
 import type { CropRect } from '../lib/imageTransform'
 import { ANNOTATE_COLORS, ANNOTATE_TOOLS, arrowHead, type AnnotateShape, type AnnotateTool } from '../lib/imageAnnotate'
+import { versionChain } from '../lib/imageVersions'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 
@@ -245,6 +246,19 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           onCrop(viewing, rect)
         }}>Вырезать выделенное</button>
       </p>}
+      {(() => {
+        const chain = versionChain(files, viewing)
+        if (chain.length < 2) return null
+        return <p className="image-studio-origin image-studio-versions">
+          <span className="image-studio-dim">Версии:</span>{' '}
+          {chain.map((step, index) => <span key={step}>
+            {index > 0 && ' → '}
+            {step === viewing
+              ? <strong>{step}</strong>
+              : <button type="button" className="image-studio-cancel" onClick={() => { onCompareChange(false); onView(step) }}>{step}</button>}
+          </span>)}
+        </p>
+      })()}
       {meta && <p className="imgcap image-studio-origin">
         <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
         {meta.source ? (sourceInGallery

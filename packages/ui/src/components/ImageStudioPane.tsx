@@ -442,7 +442,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       const buffer = new Uint8Array(await result.arrayBuffer())
       let binary = ''
       for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
-      await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
+      await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: file.path })
       setToolsFor(null)
     }, `Готово: ${kind.label.toLowerCase()}`)
   }
@@ -451,7 +451,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     void run(async () => {
       const dataBase64 = await readBase64(file.path)
       const name = copyName(file.path, new Set((files ?? []).map((item) => item.path)))
-      await api['imgstudio:upload']({ conversationId, path: name, dataBase64 })
+      await api['imgstudio:upload']({ conversationId, path: name, dataBase64, source: file.path })
     }, 'Копия создана')
   }
 
@@ -461,7 +461,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const usedBytes = files.reduce((sum, file) => sum + file.size, 0)
   const shown = files
     .filter((file) => !filter.trim() || file.path.toLowerCase().includes(filter.trim().toLowerCase()))
-    .sort((left, right) => order === 'name' ? left.path.localeCompare(right.path, 'ru') : order === 'size' ? right.size - left.size : right.updatedAt - left.updatedAt)
+    .sort((left, right) => order === 'name' ? left.path.localeCompare(right.path, 'ru', { numeric: true }) : order === 'size' ? right.size - left.size : right.updatedAt - left.updatedAt)
   const paged = shown.slice(0, visibleCount)
   const viewingIndex = viewing ? shown.findIndex((file) => file.path === viewing) : -1
   const viewStep = (delta: number): void => {
@@ -518,6 +518,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           if (event.key === 'Escape' && selected) { event.preventDefault(); setSelected(null) }
         }}
       />
+      {selected && <p className="image-studio-selected-chip">
+        {previews[selected] && <img src={previews[selected]} alt="" />}
+        <span>правим: {selected}</span>
+        <button type="button" className="image-studio-cancel" aria-label="Снять выбор картинки" onClick={() => setSelected(null)}>×</button>
+      </p>}
       {prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars * 0.2 && <p className={`image-studio-progress${prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars ? ' image-studio-quota--warn' : ''}`}>
         {prompt.length} / {IMAGE_STUDIO_LIMITS.maxPromptChars}{prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars ? ' — промпт слишком длинный' : ''}
       </p>}
@@ -744,6 +749,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           {shown.length > visibleCount && <Button size="sm" variant="ghost" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
             Показать ещё ({shown.length - visibleCount})
           </Button>}
+          <div className="image-studio-quota-bar" role="presentation" aria-hidden="true">
+            <span style={{ width: `${Math.min(100, Math.round(usedBytes / IMAGE_STUDIO_LIMITS.maxConversationBytes * 100))}%` }} className={usedBytes > IMAGE_STUDIO_LIMITS.maxConversationBytes * 0.8 ? 'image-studio-quota-bar--warn' : undefined} />
+          </div>
           <p className={`image-studio-quota${usedBytes > IMAGE_STUDIO_LIMITS.maxConversationBytes * 0.8 ? ' image-studio-quota--warn' : ''}`}>
             {files.length === 1 ? '1 файл' : `Файлов: ${files.length}`} · занято {formatBytes(usedBytes)} из {formatBytes(IMAGE_STUDIO_LIMITS.maxConversationBytes)}
             {usedBytes > IMAGE_STUDIO_LIMITS.maxConversationBytes * 0.8 && ' — место кончается, удалите ненужное'}
@@ -787,7 +795,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         const buffer = new Uint8Array(await result.arrayBuffer())
         let binary = ''
         for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
-        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
+        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: path })
         setViewing(name)
       }, 'Кроп сохранён новым файлом')}
       onAnnotate={(path, strokes, displaySize) => void run(async () => {
@@ -797,7 +805,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         const buffer = new Uint8Array(await result.arrayBuffer())
         let binary = ''
         for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
-        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
+        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: path })
         setViewing(name)
       }, 'Разметка сохранена новым файлом')}
       position={viewingIndex >= 0 ? { index: viewingIndex, total: shown.length } : undefined}

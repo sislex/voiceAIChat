@@ -686,7 +686,7 @@ export interface IpcInvokeMap {
   /** Студия картинок: галерея разговора, генерация и правка по промпту. */
   'imgstudio:list': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:read': { arg: { conversationId: string; path: string }; result: { path: string; dataBase64: string } }
-  'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string; source?: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:delete': { arg: { conversationId: string; path: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
