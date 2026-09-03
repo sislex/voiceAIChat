@@ -11,7 +11,7 @@ import { Button, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useTo
 import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
-import { ToolFrame } from './ToolFrame'
+import { ImageStudioViewer } from './ImageStudioViewer'
 import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
@@ -125,8 +125,6 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Объявление для скринридера о завершении операции. */
   const [announce, setAnnounce] = useState('')
   const knownPaths = useRef<Set<string> | null>(null)
-  /** Начальная точка свайпа в лайтбоксе (телефон). */
-  const touchX = useRef<number | null>(null)
   const uploadRef = useRef<HTMLInputElement | null>(null)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const renameRef = useRef<HTMLInputElement | null>(null)
@@ -253,8 +251,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     const launch = (): Promise<void> => run(async () => {
       // Выбрана картинка — правим её; нет — рисуем новую. Один промпт на
       // оба действия: так работает голова пользователя, а не наша схема.
-      if (target) await api['imgstudio:edit']({ conversationId, path: target, prompt: fullPrompt })
-      else await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(name ? { name } : {}) })
+      const result = target
+        ? await api['imgstudio:edit']({ conversationId, path: target, prompt: fullPrompt })
+        : await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(name ? { name } : {}) })
+      // Готовый файл может уехать вниз при сортировке по имени — показываем его.
+      const created = result.file.path
+      setTimeout(() => document.querySelector(`[data-path="${CSS.escape(created)}"]`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }), 150)
       setPrompt('')
       setFileName('')
       try { localStorage.removeItem(imageStudioDraftKey(conversationId)) } catch { /* приватный режим */ }
@@ -514,7 +516,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
               <div className="image-studio-thumb image-studio-thumb--ghost"><Skeleton item="block" height={120} /></div>
               <span className="image-studio-name">{progress.label}…</span>
             </div>}
-            {paged.map((file) => <div role="listitem" key={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
+            {paged.map((file) => <div role="listitem" key={file.path} data-path={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
             <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} onDoubleClick={() => setViewing(file.path)} title={selected === file.path ? 'Снять выбор (двойной клик — на весь экран)' : 'Выбрать для правки (двойной клик — на весь экран)'}>
               {previews[file.path]
                 ? <img loading="lazy" src={previews[file.path]} alt="" onLoad={(event) => {
@@ -540,7 +542,19 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                     aria-label="Новое имя файла"
                     value={renaming.to}
                     onChange={(event) => setRenaming({ from: file.path, to: event.target.value })}
-                    onKeyDown={(event) => { if (event.key === 'Escape') setRenaming(null) }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') setRenaming(null)
+                      if (event.key === 'Enter' && renaming.to.trim()) {
+                        event.preventDefault()
+                        const typed = renaming.to.trim()
+                        const to = isImageStudioPath(typed) ? typed : `${typed}${file.path.slice(file.path.lastIndexOf('.'))}`
+                        void run(async () => {
+                          await api['imgstudio:rename']({ conversationId, from: file.path, to })
+                          setRenaming(null)
+                          if (selected === file.path) setSelected(to)
+                        }, 'Переименовано')
+                      }
+                    }}
                   />
                   <Button size="sm" disabled={busy || !renaming.to.trim()}
                     title="Переименовать"
@@ -589,57 +603,28 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           </p>
         </>}
 
-    {viewing && <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : viewing} onClose={() => { setViewing(null); setCompare(false) }} className="util-embed--img" testId="image-studio-viewer"
-      actions={<>
-        {(() => {
-          const meta = files.find((file) => file.path === viewing)
-          const sourceAvailable = meta?.source && files.some((file) => file.path === meta.source)
-          return sourceAvailable ? <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => setCompare((prev) => !prev)}>⇄</IconButton> : null
-        })()}
-        {shown.length > 1 && <>
-          <IconButton size="sm" aria-label="Предыдущая картинка" title="Предыдущая (←)" onClick={() => { setCompare(false); viewStep(-1) }}>‹</IconButton>
-          <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { setCompare(false); viewStep(1) }}>›</IconButton>
-        </>}
-      </>}>
-      <div className="imgbody" onKeyDown={(event) => {
-        if (event.key === 'ArrowLeft') viewStep(-1)
-        if (event.key === 'ArrowRight') viewStep(1)
-      }} tabIndex={-1}
-        onTouchStart={(event) => { touchX.current = event.touches[0]?.clientX ?? null }}
-        onTouchEnd={(event) => {
-          if (touchX.current === null) return
-          const delta = (event.changedTouches[0]?.clientX ?? touchX.current) - touchX.current
-          touchX.current = null
-          if (Math.abs(delta) > 48) { setCompare(false); viewStep(delta > 0 ? -1 : 1) }
-        }}>
-        {(() => {
-          const sourcePath = compare ? files.find((file) => file.path === viewing)?.source : undefined
-          if (sourcePath && previews[sourcePath] && previews[viewing]) {
-            return <div className="image-studio-compare">
-              <figure><img className="image-studio-full" src={previews[sourcePath]} alt={`Исходник: ${sourcePath}`} /><figcaption>{sourcePath}</figcaption></figure>
-              <figure><img className="image-studio-full" src={previews[viewing]} alt={viewing} /><figcaption>{viewing}</figcaption></figure>
-            </div>
-          }
-          return previews[viewing]
-            ? <img className="image-studio-full" src={previews[viewing]} alt={viewing} />
-            : <p className="imgerr" role="alert">Превью ещё не загрузилось</p>
-        })()}
-        {(() => {
-          const meta = files.find((file) => file.path === viewing)
-          if (!meta) return null
-          const sourceInGallery = meta.source && files.some((file) => file.path === meta.source)
-          return <p className="imgcap image-studio-origin">
-            <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
-            {meta.source ? (sourceInGallery
-              ? <>Из <button type="button" className="image-studio-cancel" onClick={() => { setCompare(false); setViewing(meta.source!) }}>«{meta.source}»</button> · </>
-              : `Из «${meta.source}» · `) : ''}{meta.prompt ? `промпт: ${meta.prompt}` : ''}
-            {meta.prompt && <>
-              {' '}
-              <button type="button" className="image-studio-cancel" onClick={() => { setPrompt(meta.prompt!); setViewing(null); promptRef.current?.focus() }}>Использовать промпт</button>
-            </>}
-          </p>
-        })()}
-      </div>
-    </ToolFrame>}
+    {viewing && <ImageStudioViewer
+      viewing={viewing}
+      files={files}
+      previews={previews}
+      dimensions={dimensions}
+      compare={compare}
+      formatBytes={formatBytes}
+      canStep={shown.length > 1}
+      onCompareChange={setCompare}
+      onView={setViewing}
+      onStep={viewStep}
+      onUsePrompt={(text) => { setPrompt(text); setViewing(null); promptRef.current?.focus() }}
+      onDownload={(path) => void download(path)}
+      onDelete={(path) => void (async () => {
+        if (!(await confirm({ title: `Удалить «${path}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return
+        // После удаления открываем соседний файл, а не пустой лайтбокс.
+        const rest = shown.filter((file) => file.path !== path)
+        setViewing(rest[Math.min(viewingIndex, rest.length - 1)]?.path ?? null)
+        if (selected === path) setSelected(null)
+        await run(() => api['imgstudio:delete']({ conversationId, path }), 'Удалено')
+      })()}
+      onClose={() => { setViewing(null); setCompare(false) }}
+    />}
   </div>
 }
