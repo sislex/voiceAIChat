@@ -1,7 +1,7 @@
 // Лайтбокс студии картинок: полный размер, листание (кнопки, стрелки, свайп),
 // сравнение с исходником и действия над открытым файлом. Состояние — у панели:
 // вьюер только показывает и дёргает колбэки.
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ImageStudioFile } from '@shared/imageStudio'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
@@ -29,6 +29,8 @@ interface Props {
 }
 
 export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onDownload, onDelete, onClose }: Props): JSX.Element {
+  /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
+  const [wipe, setWipe] = useState(50)
   /** Начальная точка свайпа (телефон). */
   const touchX = useRef<number | null>(null)
   // Стрелки листают из любого места вьюера: фокус после открытия стоит на
@@ -73,9 +75,15 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
       {(() => {
         const sourcePath = compare ? meta?.source : undefined
         if (sourcePath && previews[sourcePath] && previews[viewing]) {
-          return <div className="image-studio-compare">
-            <figure><img className="image-studio-full" src={previews[sourcePath]} alt={`Исходник: ${sourcePath}`} /><figcaption>{sourcePath}</figcaption></figure>
-            <figure><img className="image-studio-full" src={previews[viewing]} alt={viewing} /><figcaption>{viewing}</figcaption></figure>
+          // Шторка: обе картинки в стеке, результат обрезается слева по слайдеру.
+          return <div className="image-studio-wipe">
+            <div className="image-studio-wipe-stage">
+              <img src={previews[sourcePath]} alt={`Исходник: ${sourcePath}`} />
+              <img src={previews[viewing]} alt={viewing} style={{ clipPath: `inset(0 0 0 ${wipe}%)` }} />
+              <span className="image-studio-wipe-line" style={{ left: `${wipe}%` }} aria-hidden="true" />
+            </div>
+            <input type="range" min={0} max={100} value={wipe} aria-label="Шторка сравнения: левее — исходник, правее — результат" onChange={(event) => setWipe(Number(event.target.value))} />
+            <p className="image-studio-origin"><span className="image-studio-dim">← {sourcePath} · {viewing} →</span></p>
           </div>
         }
         return previews[viewing]

@@ -366,6 +366,17 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(api['imgstudio:publish']).toHaveBeenCalledWith({ conversationId: 'c1', password: null }))
   })
 
+  it('мультивыбор + промпт рисуют с референсами', async () => {
+    const { api, generate } = makeApi(Array.from({ length: 3 }, (_, index) => ({ path: `с-${index}.png` })))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'плакат в этом стиле' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать с-0.png' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать с-1.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать с референсами (2)' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'плакат в этом стиле', references: expect.arrayContaining(['с-0.png', 'с-1.png']) })))
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)

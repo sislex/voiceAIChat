@@ -3831,6 +3831,12 @@ button.conscmd:hover {
 .image-studio-card--ghost { opacity: 0.75; }
 .image-studio-thumb--ghost { display: block; }
 .image-studio-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); padding: 4px 2px 0; cursor: pointer; }
+.image-studio-wipe { display: grid; gap: 8px; }
+.image-studio-wipe-stage { position: relative; }
+.image-studio-wipe-stage img { display: block; width: 100%; max-height: 60vh; object-fit: contain; background: var(--surface); border-radius: var(--radius-medium); }
+.image-studio-wipe-stage img + img { position: absolute; inset: 0; }
+.image-studio-wipe-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
+.image-studio-wipe input[type='range'] { width: 100%; }
 .image-studio-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .image-studio-compare figure { margin: 0; min-width: 0; }
 .image-studio-compare figcaption { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -6,7 +6,7 @@ import type { LlmClient } from '../claude/types.js'
 import { IMAGE_HINT, parseImages, type LlmAttachment } from '@voicechat/shared'
 
 export interface ImageStudioGenerator {
-  (input: { prompt: string; source?: Buffer; sourceName?: string; onCancel?: (cancel: () => void) => void }): Promise<Buffer>
+  (input: { prompt: string; source?: Buffer; sourceName?: string; references?: Array<{ name: string; data: Buffer }>; onCancel?: (cancel: () => void) => void }): Promise<Buffer>
 }
 
 export function llmImageStudioGenerator(opts: {
@@ -17,10 +17,11 @@ export function llmImageStudioGenerator(opts: {
   cwd?: string
   readGenerated(path: string): Promise<{ dataBase64: string } | null>
 }): ImageStudioGenerator {
-  return async ({ prompt, source, sourceName, onCancel }) => {
-    const attachments: LlmAttachment[] = source
-      ? [{ serverPath: `/studio/${sourceName ?? 'source.png'}`, runnerName: sourceName ?? 'source.png', dataBase64: source.toString('base64') }]
-      : []
+  return async ({ prompt, source, sourceName, references, onCancel }) => {
+    const attachments: LlmAttachment[] = [
+      ...(source ? [{ serverPath: `/studio/${sourceName ?? 'source.png'}`, runnerName: sourceName ?? 'source.png', dataBase64: source.toString('base64') }] : []),
+      ...(references ?? []).map((ref, index) => ({ serverPath: `/studio/reference-${index + 1}-${ref.name}`, runnerName: `reference-${index + 1}-${ref.name}`, dataBase64: ref.data.toString('base64') }))
+    ]
     const lines = source
       ? [
           `Отредактируй приложенное изображение ${sourceName ?? 'source.png'} строго по промпту ниже, сохранив его размер и общий стиль, если промпт не требует иного.`,
@@ -31,6 +32,7 @@ export function llmImageStudioGenerator(opts: {
         ]
       : [
           'Нарисуй изображение строго по промпту ниже: напиши и выполни скрипт (например, Python/Pillow или ImageMagick), который его отрисует.',
+          ...(references?.length ? ['Приложенные файлы reference-*.png — визуальные референсы: повтори их стиль, палитру и настроение, не копируя композицию буквально.'] : []),
           'Сохрани результат отдельным PNG в текущей директории и обязательно укажи его абсолютный путь через штатный fenced-блок image.',
           `Промпт пользователя: ${prompt}`,
           IMAGE_HINT
