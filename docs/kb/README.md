@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 223 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 242 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 7 коммит(ов) в areas после сверки: c112bf21 feat: студия картинок — итерация улучшений 10 (вьюер и навигация) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1098 коммит(ов) в areas после сверки: c112bf21 feat: студия картинок — итерация улучшений 10 (вьюер и навигация) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1099 коммит(ов) в areas после сверки: 8837b351 fix: гонка публикации Make + студия картинок, итерация 11 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 155 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 196 коммит(ов) в areas после сверки: c112bf21 feat: студия картинок — итерация улучшений 10 (вьюер и навигация) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 104 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
@@ -34,8 +34,8 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ⚠ 12 коммит(ов) в areas после сверки: c112bf21 feat: студия картинок — итерация улучшений 10 (вьюер и навигация) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 186 коммит(ов) в areas после сверки: c112bf21 feat: студия картинок — итерация улучшений 10 (вьюер и навигация) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 10 коммит(ов) в areas после сверки: c112bf21 feat: студия картинок — итерация улучшений 10 (вьюер и навигация) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: a4284163 feat: студия картинок — итерация улучшений 8 (валидация и черновики) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: 8837b351 fix: гонка публикации Make + студия картинок, итерация 11 |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 3 коммит(ов) в areas после сверки: a4284163 feat: студия картинок — итерация улучшений 8 (валидация и черновики) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 139 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 548. Последние:
+Всего записей: 549. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md](log/2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md) — make-publish-lock-studio-11

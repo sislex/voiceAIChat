@@ -16,7 +16,8 @@ import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, 
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
-  'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel'> &
+  'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel' |
+  'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish'> &
   Partial<Pick<RendererApi, 'prompt:suggest'>>
 
 interface Props {
@@ -104,6 +105,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   /** Последний неудавшийся запуск — для кнопки «Повторить» в баннере. */
   const [lastAttempt, setLastAttempt] = useState<(() => void) | null>(null)
+  /** Публичная ссылка галереи (null — не опубликована, undefined — грузится). */
+  const [shareUrl, setShareUrl] = useState<string | null | undefined>(undefined)
   const [filter, setFilter] = useState('')
   const [order, setOrder] = useState<'new' | 'name' | 'size'>(() => {
     try {
@@ -177,6 +180,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   }, [api, conversationId])
 
   useEffect(() => { void reload() }, [reload])
+  useEffect(() => {
+    let alive = true
+    void api['imgstudio:publication']({ conversationId }).then(({ url }) => { if (alive) setShareUrl(url) }).catch(() => { if (alive) setShareUrl(null) })
+    return () => { alive = false }
+  }, [api, conversationId])
   // Панель закрыли или сменили разговор — blob-URL превью иначе живут до
   // конца вкладки (насосать их можно на сотни мегабайт).
   useEffect(() => () => {
@@ -490,6 +498,21 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         void navigator.clipboard?.writeText(text).then(() => toast.success('Промпты скопированы')).catch(() => toast.error('Буфер обмена недоступен'))
       }}>Промпты в буфер</Button>}
       <IconButton size="sm" aria-label={dense ? 'Крупные карточки' : 'Мелкие карточки'} title={dense ? 'Крупнее' : 'Мельче'} onClick={() => setDense((prev) => { const next = !prev; try { localStorage.setItem(IMAGE_STUDIO_DENSE_KEY, next ? '1' : '0') } catch { /* приватный режим */ } return next })}>{dense ? '▦' : '▤'}</IconButton>
+      {shareUrl === null && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void api['imgstudio:publish']({ conversationId }).then(({ url }) => {
+        setShareUrl(url)
+        const absolute = `${location.origin}${url}`
+        void navigator.clipboard?.writeText(absolute).then(() => toast.success('Опубликовано — ссылка в буфере')).catch(() => toast.success(`Опубликовано: ${absolute}`))
+      }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))}>Поделиться</Button>}
+      {typeof shareUrl === 'string' && <>
+        <Button size="sm" variant="ghost" onClick={() => {
+          const absolute = `${location.origin}${shareUrl}`
+          void navigator.clipboard?.writeText(absolute).then(() => toast.success('Ссылка в буфере')).catch(() => toast.info(absolute))
+        }}>Ссылка на галерею</Button>
+        <Button size="sm" variant="ghost" onClick={() => void (async () => {
+          if (!(await confirm({ title: 'Снять публикацию галереи?', message: 'Публичная ссылка перестанет открываться.', confirmLabel: 'Снять' }))) return
+          await api['imgstudio:unpublish']({ conversationId }).then(() => { setShareUrl(null); toast.success('Публикация снята') }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+        })()}>Снять публикацию</Button>
+      </>}
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && multi.size > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={() => void (async () => {
         if (!(await confirm({ title: `Удалить ${multi.size} файл(ов)?`, message: 'Восстановить изображения будет нельзя.', confirmLabel: 'Удалить' }))) return
