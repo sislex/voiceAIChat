@@ -131,6 +131,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   /** Последний неудавшийся запуск — для кнопки «Повторить» в баннере. */
   const [lastAttempt, setLastAttempt] = useState<(() => void) | null>(null)
+  /** Только что созданный файл: баннер с отменой (файл уедет в корзину). */
+  const [lastCreated, setLastCreated] = useState<string | null>(null)
   /** Публичная ссылка галереи (null — не опубликована, undefined — грузится). */
   const [shareUrl, setShareUrl] = useState<string | null | undefined>(undefined)
   const [shareViews, setShareViews] = useState<number | null>(null)
@@ -293,6 +295,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(progress)])
+  // Баннер «Отменить» живёт недолго: дальше файл проще удалить руками.
+  useEffect(() => {
+    if (!lastCreated) return
+    const timer = setTimeout(() => setLastCreated(null), 12000)
+    return () => clearTimeout(timer)
+  }, [lastCreated])
   // Секундомер генерации: немой спиннер на минуту читается как «зависло».
   useEffect(() => {
     if (!progress) return
@@ -359,6 +367,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         : await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(name ? { name } : {}) })
       // Готовый файл может уехать вниз при сортировке по имени — показываем его.
       const created = result.file.path
+      setLastCreated(created)
       setTimeout(() => document.querySelector(`[data-path="${CSS.escape(created)}"]`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }), 150)
       setPrompt('')
       setFileName('')
@@ -482,6 +491,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       let binary = ''
       for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
       await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: file.path })
+      setLastCreated(name)
       setToolsFor(null)
     }, `Готово: ${kind.label.toLowerCase()}`)
   }
@@ -620,6 +630,14 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         <button type="button" className="image-studio-cancel" onClick={() => void api['imgstudio:cancel']({ conversationId }).catch(() => undefined)}>Отменить</button>
       </p>}
       <span className="vc-sr-only" role="status">{announce}</span>
+      {lastCreated && !busy && <p className="image-studio-progress" role="status">
+        Создано: {lastCreated}{' '}
+        <button type="button" className="image-studio-cancel" onClick={() => {
+          const path = lastCreated
+          setLastCreated(null)
+          void run(() => api['imgstudio:delete']({ conversationId, path }), `«${path}» отменён (лежит в корзине)`)
+        }}>Отменить</button>
+      </p>}
       {lastError && !busy && <ErrorState compact message={lastError} {...(lastAttempt ? { onRetry: () => { setLastError(null); lastAttempt() } } : {})} />}
     </div>
 
@@ -660,6 +678,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       }}>Корзина…</Button>
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.map((file) => file.path)))}>Выбрать все</Button>}
+      {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.filter((file) => !multi.has(file.path)).map((file) => file.path)))}>Инвертировать</Button>}
+      {multi && <span className="image-studio-dim" role="status">Выбрано {multi.size} из {shown.length}</span>}
       {multi && multi.size > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => downloadAll(shown.filter((file) => multi.has(file.path)))}>Скачать выбранные ({multi.size})</Button>}
       {multi && multi.size > 0 && multi.size <= 4 && <Button size="sm" variant="ghost" disabled={busy} title="Нарисовать новую картинку по промпту, используя выбранные как образцы стиля" onClick={() => {
         const cleaned = prompt.trim()
