@@ -11,7 +11,7 @@ import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, useConfir
 import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
-import { applyImageTransform, IMAGE_TRANSFORMS, transformName } from '../lib/imageTransform'
+import { applyImageTransform, cropImage, IMAGE_TRANSFORMS, transformName } from '../lib/imageTransform'
 import { ImageStudioViewer } from './ImageStudioViewer'
 import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
 
@@ -621,7 +621,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           </div>
         </div>
       : shown.length === 0
-        ? <EmptyState compact title="Ничего не нашлось" description="Уточните фильтр или очистите его, чтобы увидеть всю галерею." />
+        ? <EmptyState compact title="Ничего не нашлось" description="Уточните фильтр или очистите его, чтобы увидеть всю галерею." actionLabel="Показать все" onAction={() => setFilter('')} />
         : <>
           <div className={`image-studio-grid${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label="Галерея изображений" aria-busy={busy || undefined}>
             {progress && <div role="listitem" className="image-studio-card image-studio-card--ghost" aria-hidden="true">
@@ -749,6 +749,17 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       onPickForEdit={(path) => { setSelected(path); setViewing(null); setCompare(false); promptRef.current?.focus() }}
       onVariate={(path) => { setViewing(null); setCompare(false); variate(files.find((file) => file.path === path) ?? { path, size: 0, updatedAt: 0 }) }}
       onDownload={(path) => void download(path)}
+      onCrop={(path, rect) => void run(async () => {
+        const blob = await blobOf(path)
+        const result = await cropImage(blob, rect)
+        const name = transformName(path, 'кроп', new Set((files ?? []).map((item) => item.path)))
+        const buffer = new Uint8Array(await result.arrayBuffer())
+        let binary = ''
+        for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
+        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
+        setViewing(name)
+      }, 'Кроп сохранён новым файлом')}
+      position={viewingIndex >= 0 ? { index: viewingIndex, total: shown.length } : undefined}
       onDelete={(path) => void (async () => {
         if (!(await confirm({ title: `Удалить «${path}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return
         // После удаления открываем соседний файл, а не пустой лайтбокс.
