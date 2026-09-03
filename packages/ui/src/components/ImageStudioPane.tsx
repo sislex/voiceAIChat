@@ -14,6 +14,7 @@ import { buildZip } from '../lib/zipStore'
 import { applyImageTransform, cropImage, IMAGE_TRANSFORMS, transformName } from '../lib/imageTransform'
 import { annotateImage } from '../lib/imageAnnotate'
 import { ImageStudioViewer } from './ImageStudioViewer'
+import { ImageStudioToolsRow } from './ImageStudioToolsRow'
 import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
@@ -485,6 +486,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     }}
     onKeyDown={(event) => {
       // Delete на выбранной карточке — то же удаление, что и крестиком.
+      if (event.key === 'Escape' && multi) { setMulti(null); return }
       if ((event.key === 'Delete' || event.key === 'Backspace') && selected && !renaming && (event.target as HTMLElement).tagName !== 'TEXTAREA' && (event.target as HTMLElement).tagName !== 'INPUT') {
         event.preventDefault()
         void (async () => {
@@ -604,6 +606,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           await api['imgstudio:unpublish']({ conversationId }).then(() => { setShareUrl(null); toast.success('Публикация снята') }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
         })()}>Снять публикацию</Button>
       </>}
+      <IconButton size="sm" aria-label="Обновить галерею" title="Обновить" onClick={() => void reload()}>↻</IconButton>
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.map((file) => file.path)))}>Выбрать все</Button>}
       {multi && multi.size > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => downloadAll(shown.filter((file) => multi.has(file.path)))}>Скачать выбранные ({multi.size})</Button>}
@@ -721,29 +724,20 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                     })()}>✕</IconButton>
                   </span>
                 </div>}
-            {toolsFor === file.path && !renaming && <div className="image-studio-tools" role="group" aria-label={`Действия и обработка ${file.path}`}>
-              <Button size="sm" variant="ghost" onClick={() => void download(file.path)}>Скачать</Button>
-              <Button size="sm" variant="ghost" onClick={() => copy(file)}>Копировать</Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => duplicate(file)}>Дубликат</Button>
-              {IMAGE_TRANSFORMS.map((kind) => <Button key={kind.kind} size="sm" variant="ghost" disabled={busy} onClick={() => transform(file, kind)}>{kind.label}</Button>)}
-              {(otherChats ?? []).length > 0 && <select aria-label={`Перенести или скопировать ${file.path} в другой чат`} disabled={busy} value="" onChange={(event) => {
-                const [mode, target] = event.target.value.split(':', 2)
-                if (!target) return
-                void run(async () => {
-                  await api['imgstudio:transfer']({ conversationId, path: file.path, to: target, copy: mode === 'copy' })
-                  if (mode === 'move' && selected === file.path) setSelected(null)
-                  setToolsFor(null)
-                }, mode === 'copy' ? 'Скопировано в другой чат' : 'Перенесено в другой чат')
-              }}>
-                <option value="">В другой чат…</option>
-                <optgroup label="Переместить в">
-                  {(otherChats ?? []).map((chatItem) => <option key={`move:${chatItem.id}`} value={`move:${chatItem.id}`}>{chatItem.title}</option>)}
-                </optgroup>
-                <optgroup label="Скопировать в">
-                  {(otherChats ?? []).map((chatItem) => <option key={`copy:${chatItem.id}`} value={`copy:${chatItem.id}`}>{chatItem.title}</option>)}
-                </optgroup>
-              </select>}
-            </div>}
+            {toolsFor === file.path && !renaming && <ImageStudioToolsRow
+              file={file}
+              busy={busy}
+              otherChats={otherChats ?? []}
+              onDownload={(path) => void download(path)}
+              onCopy={copy}
+              onDuplicate={duplicate}
+              onTransform={transform}
+              onTransfer={(item, to, copyMode) => void run(async () => {
+                await api['imgstudio:transfer']({ conversationId, path: item.path, to, copy: copyMode })
+                if (!copyMode && selected === item.path) setSelected(null)
+                setToolsFor(null)
+              }, copyMode ? 'Скопировано в другой чат' : 'Перенесено в другой чат')}
+            />}
             </div>)}
           </div>
           {shown.length > visibleCount && <Button size="sm" variant="ghost" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
