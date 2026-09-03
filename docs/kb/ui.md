@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-03
-checked: debd6fa5
+checked: b7bc606b
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -2727,3 +2727,9 @@ Enter в поле переименования подтверждает (Escape 
 карточка результата прокручивается в вид (`data-path` + scrollIntoView);
 `#/images` без id открывает последний открытый чат студии
 (`vc.imgstudio.last`), а не первый в списке.
+
+Итерация 11 (2026-09-03): стрелки ←/→ листают лайтбокс из любого фокуса
+(keydown на window, поля ввода исключены) — локальный onKeyDown тела не
+доставал, пока фокус стоял на кнопках шапки; во вьюере появились «Править по
+промпту» (закрывает и выбирает файл) и «Вариация»; у вьюера свои сториз
+(`ImageStudioViewer.stories.tsx`: Default/Compare/OpensCompare с play).

@@ -290,6 +290,20 @@ describe('ImageStudioPane', () => {
     expect(api['imgstudio:delete']).toHaveBeenCalledWith({ conversationId: 'c1', path: 'а.png' })
   })
 
+  it('стрелки листают лайтбокс без фокуса в теле, «Править» выбирает файл', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть а.png в полный размер' }))
+    const viewer = await screen.findByTestId('image-studio-viewer')
+    // Стрелка вправо — со «свободным» фокусом (после открытия он на кнопках шапки).
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    await waitFor(() => expect(within(screen.getByTestId('image-studio-viewer')).queryByRole('button', { name: 'Править б.png по промпту' })).not.toBeNull())
+    fireEvent.click(within(screen.getByTestId('image-studio-viewer')).getByRole('button', { name: 'Править б.png по промпту' }))
+    await waitFor(() => expect(screen.queryByTestId('image-studio-viewer')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Изменить выбранную' })).toBeInTheDocument()
+    expect(viewer).not.toBeInTheDocument()
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
