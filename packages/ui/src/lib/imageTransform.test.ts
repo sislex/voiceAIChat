@@ -10,3 +10,14 @@ describe('imageTransform', () => {
     expect(transformName('кот.png', 'зеркало', taken)).toBe('кот-зеркало-3.png')
   })
 })
+
+import { clampCrop } from './imageTransform'
+
+describe('clampCrop', () => {
+  it('прижимает рамку к границам и отбрасывает слишком мелкую', () => {
+    expect(clampCrop({ x: -10, y: -10, w: 50, h: 50 }, 100, 100)).toEqual({ x: 0, y: 0, w: 50, h: 50 })
+    expect(clampCrop({ x: 80, y: 90, w: 50, h: 50 }, 100, 100)).toEqual({ x: 80, y: 90, w: 20, h: 10 })
+    expect(clampCrop({ x: 10, y: 10, w: 4, h: 40 }, 100, 100)).toBeNull()
+    expect(clampCrop({ x: 99, y: 0, w: 50, h: 50 }, 100, 100)).toBeNull()
+  })
+})

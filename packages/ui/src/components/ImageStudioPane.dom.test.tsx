@@ -409,6 +409,30 @@ describe('ImageStudioPane', () => {
     }
   })
 
+  it('кроп из лайтбокса сохраняет вырез новым файлом', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }])
+    const cropped = new Blob([new Uint8Array([7])], { type: 'image/png' })
+    Object.defineProperty(cropped, 'arrayBuffer', { value: async () => new Uint8Array([7]).buffer })
+    const lib = await import('../lib/imageTransform')
+    const spy = vi.spyOn(lib, 'cropImage').mockResolvedValue(cropped)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Открыть кот.png в полный размер' }))
+      const viewer = await screen.findByTestId('image-studio-viewer')
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Обрезать кот.png' }))
+      // Рисуем рамку на сцене кропа.
+      const stage = viewer.querySelector('.image-studio-crop-stage') as HTMLElement
+      stage.setPointerCapture = () => undefined
+      fireEvent.pointerDown(stage, { clientX: 10, clientY: 10, pointerId: 1 })
+      fireEvent.pointerMove(stage, { clientX: 60, clientY: 50, pointerId: 1 })
+      fireEvent.pointerUp(stage, { pointerId: 1 })
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Вырезать выделенное' }))
+      await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот-кроп.png' })))
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)

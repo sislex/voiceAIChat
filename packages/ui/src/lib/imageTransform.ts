@@ -62,3 +62,35 @@ export async function applyImageTransform(source: Blob, kind: ImageTransformKind
     bitmap.close?.()
   }
 }
+
+export interface CropRect { x: number; y: number; w: number; h: number }
+
+/** Прижимает выделение к границам картинки; слишком мелкое (<8px) — null. */
+export function clampCrop(rect: CropRect, width: number, height: number): CropRect | null {
+  const x = Math.max(0, Math.min(Math.round(rect.x), width - 1))
+  const y = Math.max(0, Math.min(Math.round(rect.y), height - 1))
+  const w = Math.min(Math.round(rect.w), width - x)
+  const h = Math.min(Math.round(rect.h), height - y)
+  if (w < 8 || h < 8) return null
+  return { x, y, w, h }
+}
+
+/** Вырезает прямоугольник (в натуральных пикселях картинки); отдаёт PNG-blob. */
+export async function cropImage(source: Blob, rect: CropRect): Promise<Blob> {
+  const bitmap = await createImageBitmap(source)
+  try {
+    const safe = clampCrop(rect, bitmap.width, bitmap.height)
+    if (!safe) throw new Error('Выделение слишком маленькое')
+    const canvas = document.createElement('canvas')
+    canvas.width = safe.w
+    canvas.height = safe.h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas недоступен в этом браузере')
+    ctx.drawImage(bitmap, safe.x, safe.y, safe.w, safe.h, 0, 0, safe.w, safe.h)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) throw new Error('Не удалось сохранить кроп')
+    return blob
+  } finally {
+    bitmap.close?.()
+  }
+}
