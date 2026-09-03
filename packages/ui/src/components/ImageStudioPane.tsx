@@ -12,7 +12,7 @@ import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
 import { ImageStudioViewer } from './ImageStudioViewer'
-import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPromptsKey } from '../store/contracts'
+import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
@@ -120,6 +120,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     } catch { return 'new' }
   })
   const [recent, setRecent] = useState<string[]>(() => loadRecent(conversationId))
+  const [pinned, setPinned] = useState<string[]>(() => {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(imageStudioPinnedKey(conversationId)) ?? '[]')
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+    } catch { return [] }
+  })
   /** Имя нового файла (опционально) — иначе сервер назовёт «изображение.png». */
   const [fileName, setFileName] = useState('')
   /** Плотность сетки: крупные карточки для рассматривания, мелкие для обзора. */
@@ -272,6 +278,14 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     })
   }
 
+  const togglePin = (text: string): void => {
+    setPinned((prev) => {
+      const next = prev.includes(text) ? prev.filter((item) => item !== text) : [...prev, text].slice(-8)
+      try { localStorage.setItem(imageStudioPinnedKey(conversationId), JSON.stringify(next)) } catch { /* приватный режим */ }
+      return next
+    })
+  }
+
   const generate = (): void => {
     if (busy || !prompt.trim()) return
     const cleaned = prompt.trim()
@@ -386,6 +400,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           const dataBase64 = await readBase64(file.path)
           entries.push({ name: file.path, data: Uint8Array.from(atob(dataBase64), (char) => char.charCodeAt(0)) })
         }
+        // Промпты — текстом рядом с картинками: архив самодостаточен.
+        const promptLines = list.filter((file) => file.prompt).map((file) => `${file.path}: ${file.prompt}`)
+        if (promptLines.length) entries.push({ name: 'prompts.txt', data: new TextEncoder().encode(promptLines.join('\n')) })
         const url = URL.createObjectURL(buildZip(entries))
         const link = document.createElement('a')
         link.href = url
@@ -479,9 +496,16 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       {prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars * 0.2 && <p className={`image-studio-progress${prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars ? ' image-studio-quota--warn' : ''}`}>
         {prompt.length} / {IMAGE_STUDIO_LIMITS.maxPromptChars}{prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars ? ' — промпт слишком длинный' : ''}
       </p>}
-      {recent.length > 0 && !prompt && <div className="image-studio-recent" aria-label="Недавние промпты">
-        {recent.map((text) => <button key={text} type="button" className="image-studio-chip" title={text} onClick={() => { setPrompt(text); promptRef.current?.focus() }}>{text.length > 42 ? `${text.slice(0, 42)}…` : text}</button>)}
-        <button type="button" className="image-studio-chip" aria-label="Очистить историю промптов" title="Очистить историю" onClick={() => { setRecent([]); try { localStorage.removeItem(imageStudioPromptsKey(conversationId)) } catch { /* приватный режим */ } }}>×</button>
+      {(pinned.length > 0 || recent.length > 0) && !prompt && <div className="image-studio-recent" aria-label="Недавние промпты">
+        {pinned.map((text) => <span key={`pin-${text}`} className="image-studio-chip image-studio-chip--pinned">
+          <button type="button" className="image-studio-chip-text" title={text} onClick={() => { setPrompt(text); promptRef.current?.focus() }}>★ {text.length > 36 ? `${text.slice(0, 36)}…` : text}</button>
+          <button type="button" className="image-studio-chip-pin" aria-label={`Открепить промпт: ${text.slice(0, 40)}`} title="Открепить" onClick={() => togglePin(text)}>×</button>
+        </span>)}
+        {recent.filter((text) => !pinned.includes(text)).map((text) => <span key={text} className="image-studio-chip">
+          <button type="button" className="image-studio-chip-text" title={text} onClick={() => { setPrompt(text); promptRef.current?.focus() }}>{text.length > 36 ? `${text.slice(0, 36)}…` : text}</button>
+          <button type="button" className="image-studio-chip-pin" aria-label={`Закрепить промпт: ${text.slice(0, 40)}`} title="Закрепить" onClick={() => togglePin(text)}>☆</button>
+        </span>)}
+        {recent.length > 0 && <button type="button" className="image-studio-chip" aria-label="Очистить историю промптов" title="Очистить историю" onClick={() => { setRecent([]); try { localStorage.removeItem(imageStudioPromptsKey(conversationId)) } catch { /* приватный режим */ } }}>×</button>}
       </div>}
       <div className="image-studio-actions">
         <Button size="sm" disabled={busy || !prompt.trim() || prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars} loading={busy} title="⌘Enter / Ctrl+Enter" onClick={generate}>

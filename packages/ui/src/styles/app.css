@@ -3822,6 +3822,10 @@ button.conscmd:hover {
 .image-studio-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .image-studio-chip { font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-dim); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .image-studio-chip:hover { background: var(--surface-hover); color: var(--text); }
+.image-studio-chip { display: inline-flex; align-items: center; gap: 4px; }
+.image-studio-chip--pinned { border-color: var(--accent); color: var(--text); }
+.image-studio-chip-text, .image-studio-chip-pin { font: inherit; background: none; border: none; color: inherit; cursor: pointer; padding: 0; }
+.image-studio-chip-pin:hover { color: var(--accent); }
 .image-studio-filter { display: flex; gap: 8px; align-items: center; margin: 10px 0 0; }
 .image-studio-filter input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
 .image-studio-dim { color: var(--text-dim); font-size: 11px; }

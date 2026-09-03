@@ -111,6 +111,11 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
       const file = await store.writeBuffer(req.params.id, name, data)
       await store.setMeta(req.params.id, name, { prompt })
+      // Первый успешный промпт даёт чату говорящее имя вместо «Картинки N».
+      const conversation = db.getConversation(userId, req.params.id)
+      if (conversation && /^Картинки \d+$/.test(conversation.title)) {
+        db.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
+      }
       return { file: { ...file, prompt }, files: await store.list(req.params.id) }
     })
   })
