@@ -233,3 +233,38 @@ describe('студия картинок: статус рана', () => {
     await slowApp.close()
   })
 })
+
+describe('студия картинок: пароль публикации', () => {
+  it('страница и файлы закрыты формой, верный пароль открывает cookie-гейтом', async () => {
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: 'секрет' } })).json() as { url: string; passwordProtected: boolean }
+    expect(pub.passwordProtected).toBe(true)
+
+    const gated = await app.inject({ method: 'GET', url: pub.url })
+    expect(gated.statusCode).toBe(401)
+    expect(gated.body).toContain('защищена паролем')
+    expect((await app.inject({ method: 'GET', url: `${pub.url}file?path=${encodeURIComponent('кот.png')}` })).statusCode).toBe(401)
+
+    const wrong = await app.inject({ method: 'POST', url: `${pub.url}__auth__`, payload: 'password=нет', headers: { 'content-type': 'application/x-www-form-urlencoded' } })
+    expect(wrong.headers.location).toContain('wrong=1')
+
+    const ok = await app.inject({ method: 'POST', url: `${pub.url}__auth__`, payload: `password=${encodeURIComponent('секрет')}`, headers: { 'content-type': 'application/x-www-form-urlencoded' } })
+    const cookie = String(ok.headers['set-cookie']).split(';')[0]!
+    expect((await app.inject({ method: 'GET', url: pub.url, headers: { cookie } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: `${pub.url}file?path=${encodeURIComponent('кот.png')}`, headers: { cookie } })).statusCode).toBe(200)
+
+    // Снятие пароля повторной публикацией: страница снова открыта всем, ссылка та же.
+    const open = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: null } })).json() as { url: string; passwordProtected: boolean }
+    expect(open.url).toBe(pub.url)
+    expect(open.passwordProtected).toBe(false)
+    expect((await app.inject({ method: 'GET', url: pub.url })).statusCode).toBe(200)
+  })
+
+  it('короткий пароль отклоняется, заголовок страницы — название чата', async () => {
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: '123' } })).statusCode).toBe(400)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url })
+    expect(page.body).toContain('Студия')
+  })
+})

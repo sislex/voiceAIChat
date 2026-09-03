@@ -106,8 +106,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
     'imgstudio:cancel': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/cancel`, { method: 'POST', body: '{}' }),
-    'imgstudio:publish': ({ conversationId }) =>
-      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: '{}' }),
+    'imgstudio:publish': ({ conversationId, password }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(password !== undefined ? { password } : {}) }),
     'imgstudio:publication': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/publication`),
     'imgstudio:unpublish': ({ conversationId }) =>

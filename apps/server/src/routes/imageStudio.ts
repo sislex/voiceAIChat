@@ -2,7 +2,7 @@
 // переименование, удаление и два действия модели — «нарисовать по промпту» и
 // «поправить выбранную по промпту». Доступ — владелец разговора; чужой и
 // несуществующий неотличимы (404), как везде в Make/чатах.
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { ImageStudioError, type ImageStudioStore } from '../images/studio.js'
@@ -129,16 +129,20 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     })
   })
 
-  app.post<{ Params: { id: string } }>('/api/image-studio/:id/publish', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
-    const raw = await store.publish(req.params.id)
-    return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views }
+  app.post<{ Params: { id: string }; Body: { password?: string | null } | undefined }>('/api/image-studio/:id/publish', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    try {
+      const title = db.getConversation(userId, req.params.id)?.title ?? null
+      const raw = await store.publish(req.params.id, { title, ...(req.body?.password !== undefined ? { password: req.body.password } : {}) })
+      return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, passwordProtected: Boolean(raw.passwordHash) }
+    } catch (error) { return sendStudioError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/publication', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     const raw = await store.publication(req.params.id)
-    return raw ? { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views } : { url: null }
+    return raw ? { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, passwordProtected: Boolean(raw.passwordHash) } : { url: null }
   })
 
   app.delete<{ Params: { id: string } }>('/api/image-studio/:id/publish', async (req, reply) => {
@@ -149,15 +153,48 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   // Публичная страница галереи: без авторизации, по непубличному токену.
   // Только чтение и только картинки; noindex, чтобы ссылку не съели роботы.
-  app.get<{ Params: { token: string } }>('/g/:token/', async (req, reply) => {
+  const gateCookieName = (token: string): string => `vc_gal_${token}`
+  const cookieValue = (req: FastifyRequest, name: string): string | null => {
+    const m = (req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(`${name}=`))
+    return m ? decodeURIComponent(m.slice(name.length + 1)) : null
+  }
+  const passwordPage = (action: string, wrong: boolean): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
+<body><form method="post" action="${action}"><h1>Галерея защищена паролем</h1>${wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
+
+  if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
+    app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+      try { done(null, Object.fromEntries(new URLSearchParams(String(body)))) } catch (e) { done(e as Error, undefined) }
+    })
+  }
+
+  app.post<{ Params: { token: string }; Body: { password?: string } }>('/g/:token/__auth__', async (req, reply) => {
     const conversationId = await store.publishedTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
+    if (!(await store.verifyPublicPassword(conversationId, req.body?.password ?? ''))) return reply.redirect(`/g/${req.params.token}/?wrong=1`)
+    const gate = await store.publicGate(conversationId)
+    return reply
+      .header('set-cookie', `${gateCookieName(req.params.token)}=${gate ?? ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`)
+      .redirect(`/g/${req.params.token}/`)
+  })
+
+  app.get<{ Params: { token: string }; Querystring: { wrong?: string } }>('/g/:token/', async (req, reply) => {
+    const conversationId = await store.publishedTarget(req.params.token)
+    if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
+    const gate = await store.publicGate(conversationId)
+    if (gate && cookieValue(req, gateCookieName(req.params.token)) !== gate) {
+      return reply.code(401).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
+        .send(passwordPage(`/g/${req.params.token}/__auth__`, req.query.wrong === '1'))
+    }
     void store.countView(conversationId)
+    const publication = await store.publication(conversationId)
     const files = await store.list(conversationId)
     const esc = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     const cards = files.map((file) => `<figure><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
-    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Галерея</title><style>
+    const title = publication?.title?.trim() || 'Галерея'
+    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><style>
       body{margin:0;padding:24px;font:14px/1.4 system-ui,sans-serif;background:#111;color:#eee}
+      @media (prefers-color-scheme: light){body{background:#f6f7fb;color:#1a1d23}figure{background:#fff !important}figcaption small{color:#666 !important}}
       h1{font-size:18px;margin:0 0 16px}
       .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
       figure{margin:0;background:#1c1c1c;border-radius:10px;padding:10px}
@@ -165,13 +202,15 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       figcaption{margin-top:8px;word-break:break-word}
       figcaption small{display:block;color:#999;margin-top:2px}
       .dl{color:#8ab4f8;text-decoration:none;font-size:12px;margin-left:6px}
-    </style></head><body><h1>Галерея · ${files.length} файл(ов)</h1><div class="grid">${cards}</div></body></html>`
+    </style></head><body><h1>${esc(title)} · ${files.length} файл(ов)</h1><div class="grid">${cards}</div></body></html>`
     return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex').send(html)
   })
 
   app.get<{ Params: { token: string }; Querystring: { path?: string } }>('/g/:token/file', async (req, reply) => {
     const conversationId = await store.publishedTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
+    const gate = await store.publicGate(conversationId)
+    if (gate && cookieValue(req, gateCookieName(req.params.token)) !== gate) return reply.code(401).type('text/plain; charset=utf-8').send('Галерея защищена паролем')
     try {
       const data = await store.readBuffer(conversationId, req.query.path ?? '')
       if (!data) return reply.code(404).send({ error: 'файл не найден' })
