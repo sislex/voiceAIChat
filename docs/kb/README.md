@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 224 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 248 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 15 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1120 коммит(ов) в areas после сверки: 57bab991 feat: студия картинок — итерация улучшений 32 (undo и выбор) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1121 коммит(ов) в areas после сверки: e90e5f49 feat: студия картинок — итерация улучшений 33 (пакетная обработка) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 165 коммит(ов) в areas после сверки: 31ac2853 feat: студия картинок — итерация улучшений 30 (шахматка, фильтры, пипетка) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 210 коммит(ов) в areas после сверки: 31ac2853 feat: студия картинок — итерация улучшений 30 (шахматка, фильтры, пипетка) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 105 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 570. Последние:
+Всего записей: 571. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md](log/2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md) — make-publish-lock-studio-11
@@ -72,7 +72,7 @@
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md) — image-studio-improvements-6
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-5.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-5.md) — image-studio-improvements-5
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-4.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-4.md) — image-studio-improvements-4
-- [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-33.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-33.md) — image-studio-improvements-33
+- [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-34.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-34.md) — image-studio-improvements-34
 
 ## Исторические планы
 

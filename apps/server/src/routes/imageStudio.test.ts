@@ -150,6 +150,9 @@ describe('студия картинок: параллельность, отме�
   it('generate/edit пишут происхождение, rename его переносит', async () => {
     const gen = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'синий кит', name: 'кит.png' } })
     expect(gen.json().file.prompt).toBe('синий кит')
+    // Длительность рана — в мете и в списке.
+    const listed = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/files` })).json() as Array<{ path: string; tookMs?: number }>
+    expect(listed.find((file) => file.path === 'кит.png')?.tookMs).toBeGreaterThanOrEqual(0)
 
     const edit = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/edit`, payload: { path: 'кит.png', prompt: 'добавь фонтан' } })
     expect(edit.json().file).toMatchObject({ path: 'кит-2.png', prompt: 'добавь фонтан', source: 'кит.png' })
