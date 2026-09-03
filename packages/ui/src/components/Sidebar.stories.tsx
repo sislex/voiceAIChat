@@ -54,7 +54,11 @@ export const MixedExpanded: Story = {
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Более старые 2' }))
   }
 }
-export const Empty: Story = { args: { conversations: [] } }
+export const Empty: Story = { args: { conversations: [], mode: 'chats', onModeChange: () => {}, onToggleCollapse: () => {} } }
+export const EmptyProjects: Story = {
+  args: { conversations: [], projects: [], mode: 'projects', onModeChange: () => {}, onCreateProject: () => {}, onToggleCollapse: () => {}, open: true },
+  parameters: { viewport: { defaultViewport: 'mobile1' } }
+}
 export const Loading: Story = { args: { conversations: [], conversationsStatus: 'loading' } }
 export const Error: Story = { args: { conversations: [], conversationsStatus: 'error', conversationsError: 'Сервер недоступен' } }
 export const StaleError: Story = { args: { conversationsStatus: 'error', conversationsError: 'Не удалось обновить список' } }
