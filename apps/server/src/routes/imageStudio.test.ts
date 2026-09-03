@@ -268,3 +268,29 @@ describe('студия картинок: пароль публикации', () 
     expect(page.body).toContain('Студия')
   })
 })
+
+describe('студия картинок: референсы генерации', () => {
+  it('generate с references читает выбранные файлы и передаёт их генератору', async () => {
+    await store.writeBuffer(convId, 'стиль-1.png', Buffer.concat([PNG_BYTES, Buffer.from('a')]))
+    await store.writeBuffer(convId, 'стиль-2.png', Buffer.concat([PNG_BYTES, Buffer.from('b')]))
+    let seenRefs: string[] = []
+    const refApp = Fastify()
+    refApp.decorateRequest('user', null)
+    refApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
+    registerImageStudioRoutes(refApp, {
+      db, store,
+      generator: () => async ({ references }) => {
+        seenRefs = (references ?? []).map((ref) => ref.name)
+        return PNG_BYTES
+      }
+    })
+    await refApp.ready()
+    const res = await refApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'плакат', references: ['стиль-1.png', 'стиль-2.png'] } })
+    expect(res.statusCode).toBe(200)
+    expect(seenRefs).toEqual(['стиль-1.png', 'стиль-2.png'])
+    // Несуществующий референс — честный 404, а не молчаливый пропуск.
+    const missing = await refApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'плакат', references: ['нет.png'] } })
+    expect(missing.statusCode).toBe(404)
+    await refApp.close()
+  })
+})
