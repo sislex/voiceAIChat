@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ImageStudioFile } from '@shared/imageStudio'
 import type { CropRect } from '../lib/imageTransform'
-import { ANNOTATE_COLORS, type AnnotateStroke } from '../lib/imageAnnotate'
+import { ANNOTATE_COLORS, ANNOTATE_TOOLS, arrowHead, type AnnotateShape, type AnnotateTool } from '../lib/imageAnnotate'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 
@@ -27,8 +27,8 @@ interface Props {
   onVariate: (path: string) => void
   /** Обрезка: rect в натуральных пикселях картинки. */
   onCrop: (path: string, rect: CropRect) => void
-  /** Разметка: штрихи в CSS-пикселях + размер, в котором рисовали. */
-  onAnnotate: (path: string, strokes: AnnotateStroke[], displaySize: { width: number; height: number }) => void
+  /** Разметка: фигуры в CSS-пикселях + размер, в котором рисовали. */
+  onAnnotate: (path: string, shapes: AnnotateShape[], displaySize: { width: number; height: number }) => void
   /** Позиция открытого файла в отфильтрованной сетке: «N из M». */
   position?: { index: number; total: number }
   onDownload: (path: string) => void
@@ -43,9 +43,11 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const [cropping, setCropping] = useState(false)
   /** Режим разметки: freehand-штрихи поверх картинки. */
   const [annotating, setAnnotating] = useState(false)
-  const [strokes, setStrokes] = useState<AnnotateStroke[]>([])
+  const [strokes, setStrokes] = useState<AnnotateShape[]>([])
   const [penColor, setPenColor] = useState<string>(ANNOTATE_COLORS[0])
   const [penWidth, setPenWidth] = useState<3 | 8>(3)
+  const [tool, setTool] = useState<AnnotateTool>('pen')
+  const [labelText, setLabelText] = useState('')
   const drawing = useRef(false)
   const [cropBox, setCropBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
@@ -113,8 +115,17 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           return <div className="image-studio-crop-stage image-studio-annotate"
             onPointerDown={(event) => {
               const box = event.currentTarget.getBoundingClientRect()
+              const point = { x: event.clientX - box.left, y: event.clientY - box.top }
+              if (tool === 'text') {
+                // Метка ставится кликом; текст берётся из поля панели.
+                if (labelText.trim()) setStrokes((prev) => [...prev, { kind: 'text', color: penColor, x: point.x, y: point.y, text: labelText.trim(), size: penWidth === 3 ? 18 : 28 }])
+                return
+              }
               drawing.current = true
-              setStrokes((prev) => [...prev, { color: penColor, width: penWidth, points: [{ x: event.clientX - box.left, y: event.clientY - box.top }] }])
+              setStrokes((prev) => [...prev,
+                tool === 'pen'
+                  ? { kind: 'pen', color: penColor, width: penWidth, points: [point] }
+                  : { kind: tool, color: penColor, width: penWidth, from: point, to: point }])
               event.currentTarget.setPointerCapture(event.pointerId)
             }}
             onPointerMove={(event) => {
@@ -124,13 +135,26 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
               setStrokes((prev) => {
                 const last = prev[prev.length - 1]
                 if (!last) return prev
-                return [...prev.slice(0, -1), { ...last, points: [...last.points, point] }]
+                if (last.kind === 'pen') return [...prev.slice(0, -1), { ...last, points: [...last.points, point] }]
+                if (last.kind === 'arrow' || last.kind === 'rect') return [...prev.slice(0, -1), { ...last, to: point }]
+                return prev
               })
             }}
             onPointerUp={() => { drawing.current = false }}>
             <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
             <svg className="image-studio-annotate-layer" aria-hidden="true">
-              {strokes.map((stroke, index) => <polyline key={index} points={stroke.points.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={stroke.color} strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />)}
+              {strokes.map((shape, index) => {
+                if (shape.kind === 'pen') return <polyline key={index} points={shape.points.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={shape.color} strokeWidth={shape.width} strokeLinecap="round" strokeLinejoin="round" />
+                if (shape.kind === 'rect') return <rect key={index} x={Math.min(shape.from.x, shape.to.x)} y={Math.min(shape.from.y, shape.to.y)} width={Math.abs(shape.to.x - shape.from.x)} height={Math.abs(shape.to.y - shape.from.y)} fill="none" stroke={shape.color} strokeWidth={shape.width} />
+                if (shape.kind === 'arrow') {
+                  const [left, right] = arrowHead(shape.from, shape.to, Math.max(10, shape.width * 4))
+                  return <g key={index} stroke={shape.color} strokeWidth={shape.width} fill="none" strokeLinecap="round">
+                    <line x1={shape.from.x} y1={shape.from.y} x2={shape.to.x} y2={shape.to.y} />
+                    <polyline points={`${left.x},${left.y} ${shape.to.x},${shape.to.y} ${right.x},${right.y}`} />
+                  </g>
+                }
+                return <text key={index} x={shape.x} y={shape.y} fill={shape.color} stroke="#fff" strokeWidth={2} paintOrder="stroke" fontWeight="bold" fontSize={shape.size} fontFamily="system-ui, sans-serif">{shape.text}</text>
+              })}
             </svg>
           </div>
         }
@@ -156,6 +180,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         </div>
       })()}
       {annotating && <p className="image-studio-origin image-studio-annotate-controls">
+        {ANNOTATE_TOOLS.map((item) => <button key={item.tool} type="button" className="image-studio-cancel" aria-pressed={tool === item.tool} style={tool === item.tool ? { fontWeight: 700 } : undefined} onClick={() => setTool(item.tool)}>{item.label}</button>)}
+        {tool === 'text' && <input className="image-studio-filename" aria-label="Текст метки" placeholder="Текст метки — затем кликните по картинке" value={labelText} onChange={(event) => setLabelText(event.target.value)} />}
         {ANNOTATE_COLORS.map((color) => <button key={color} type="button" className={`image-studio-pen${penColor === color ? ' image-studio-pen--active' : ''}`} style={{ background: color }} aria-label={`Цвет ${color}`} aria-pressed={penColor === color} title={`Цвет ${color}`} onClick={() => setPenColor(color)} />)}
         <button type="button" className="image-studio-cancel" aria-pressed={penWidth === 8} onClick={() => setPenWidth(penWidth === 3 ? 8 : 3)}>{penWidth === 3 ? 'Тонкая линия' : 'Толстая линия'}</button>
         <button type="button" className="image-studio-cancel" disabled={!strokes.length} onClick={() => setStrokes((prev) => prev.slice(0, -1))}>Отменить штрих</button>
