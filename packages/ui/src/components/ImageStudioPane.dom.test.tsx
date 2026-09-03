@@ -222,6 +222,23 @@ describe('ImageStudioPane', () => {
     await expectNoViolations()
   }, 20000)
 
+  it('черновик промпта переживает перемонтирование панели', async () => {
+    const { api } = makeApi()
+    const first = render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'недописанный кит' } })
+    first.unmount()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    expect((await screen.findByRole('textbox', { name: 'Промпт для изображения' }) as HTMLTextAreaElement).value).toBe('недописанный кит')
+  })
+
+  it('промпт сверх лимита блокирует кнопку и показывает счётчик', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'а'.repeat(4001) } })
+    expect(screen.getByRole('button', { name: 'Нарисовать' })).toBeDisabled()
+    expect(screen.getByText(/промпт слишком длинный/)).toBeInTheDocument()
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
