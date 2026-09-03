@@ -8716,3 +8716,31 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .gitpane-commit-meta { flex: none; color: var(--text-dim); font-size: 11px; }
 .gitpane-commit-files { list-style: none; margin: 0 0 0 var(--space-3, 12px); padding: 0; }
 .gitpane-commit-more { padding: 2px 6px; color: var(--text-dim); font-size: 11px; }
+
+/* Подключение текущего устройства — компактный Make-dialog в общей оболочке. */
+.machine-connect-dialog.vc-dialog--md { max-width: 850px; border-radius: 18px; }
+.machine-connect-dialog .vc-dialog-head { min-height: 96px; padding-inline: 24px; }
+.machine-connect-dialog .vc-dialog-body { padding: 40px 24px 24px; }
+.machine-connect-content > p:first-child {
+  margin: 0 0 22px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.35;
+}
+.machine-connect-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.machine-connect-actions .vc-btn { min-height: 34px; }
+.machine-connect-feedback {
+  min-height: 18px;
+  margin: 11px 0 0;
+  color: var(--success, #287754);
+  font-size: 13px;
+}
+.machine-connect-feedback--error { color: var(--danger); }
+
+@media (max-width: 700px) {
+  .machine-connect-dialog .vc-dialog-head { min-height: 72px; padding-inline: 18px; }
+  .machine-connect-dialog .vc-dialog-body { padding: 28px 18px 20px; }
+  .machine-connect-content > p:first-child { font-size: 18px; }
+  .machine-connect-actions { flex-direction: column; }
+  .machine-connect-actions .vc-btn { width: 100%; min-height: 42px; }
+}
