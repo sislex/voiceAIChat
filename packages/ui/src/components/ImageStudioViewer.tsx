@@ -1,13 +1,14 @@
 // Лайтбокс студии картинок: полный размер, листание (кнопки, стрелки, свайп),
 // сравнение с исходником и действия над открытым файлом. Состояние — у панели:
 // вьюер только показывает и дёргает колбэки.
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ImageStudioFile } from '@shared/imageStudio'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 
 interface Props {
   viewing: string
+  busy?: boolean
   files: ImageStudioFile[]
   previews: Record<string, string>
   dimensions: Record<string, string>
@@ -19,20 +20,37 @@ interface Props {
   onView: (path: string) => void
   onStep: (delta: number) => void
   onUsePrompt: (prompt: string) => void
+  /** Закрыть вьюер и выбрать файл для правки (фокус уйдёт в промпт). */
+  onPickForEdit: (path: string) => void
+  onVariate: (path: string) => void
   onDownload: (path: string) => void
   onDelete: (path: string) => void
   onClose: () => void
 }
 
-export function ImageStudioViewer({ viewing, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onDownload, onDelete, onClose }: Props): JSX.Element {
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onDownload, onDelete, onClose }: Props): JSX.Element {
   /** Начальная точка свайпа (телефон). */
   const touchX = useRef<number | null>(null)
+  // Стрелки листают из любого места вьюера: фокус после открытия стоит на
+  // кнопках шапки, и локальный onKeyDown тела до него не дотягивается.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      const tag = (event.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      onStep(event.key === 'ArrowLeft' ? -1 : 1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onStep])
   const meta = files.find((file) => file.path === viewing)
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
 
   return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : viewing} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
     actions={<>
       {sourceInGallery && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
+      <IconButton size="sm" aria-label={`Править ${viewing} по промпту`} title="Править по промпту" onClick={() => onPickForEdit(viewing)}>✎</IconButton>
+      <IconButton size="sm" aria-label={`Нарисовать вариацию ${viewing}`} title="Вариация" disabled={busy} onClick={() => onVariate(viewing)}>✦</IconButton>
       <IconButton size="sm" aria-label={`Скачать ${viewing}`} title="Скачать" onClick={() => onDownload(viewing)}>⇩</IconButton>
       <IconButton size="sm" aria-label={`Удалить ${viewing}`} title="Удалить" onClick={() => onDelete(viewing)}>🗑</IconButton>
       {canStep && <>
