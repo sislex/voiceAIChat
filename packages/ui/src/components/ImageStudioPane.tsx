@@ -31,7 +31,7 @@ interface Props {
 }
 
 /** Пресеты размера: пустой — модель решает сама. */
-const SIZE_PRESETS = ['', '512×512', '1024×1024', '1920×1080'] as const
+const SIZE_PRESETS = ['', '512×512', '1024×1024', '1920×1080', '1200×630', '1080×1080', '1280×720'] as const
 /** Сколько последних промптов помним на разговор. */
 const RECENT_LIMIT = 4
 /** Фильтр по имени появляется, когда глазами искать уже неудобно. */
@@ -429,7 +429,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     void run(async () => {
       const blob = await blobOf(file.path)
       const result = await applyImageTransform(blob, kind.kind)
-      const name = transformName(file.path, kind.suffix, new Set((files ?? []).map((item) => item.path)))
+      const name = transformName(file.path, kind.suffix, new Set((files ?? []).map((item) => item.path)), kind.ext ?? 'png')
       const buffer = new Uint8Array(await result.arrayBuffer())
       let binary = ''
       for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
@@ -528,7 +528,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           {selected ? 'Изменить выбранную' : 'Нарисовать'}
         </Button>
         {!selected && <select aria-label="Размер изображения" value={size} disabled={busy} onChange={(event) => { setSize(event.target.value); try { localStorage.setItem(IMAGE_STUDIO_SIZE_KEY, event.target.value) } catch { /* приватный режим */ } }}>
-          {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset}</option>)}
+          {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset === '1200×630' ? '1200×630 (OG-превью)' : preset === '1080×1080' ? '1080×1080 (пост)' : preset === '1280×720' ? '1280×720 (обложка)' : preset}</option>)}
         </select>}
         {!selected && <input className="image-studio-filename" aria-label="Имя нового файла" placeholder="имя.png (не обязательно)" value={fileName} disabled={busy} onChange={(event) => setFileName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); generate() } }} />}
         {api['prompt:suggest'] && <IconButton size="sm" aria-label="Улучшить промпт с помощью AI" title="Улучшить промпт" disabled={busy || !prompt.trim()} onClick={() => void (async () => {
@@ -692,12 +692,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                   <span className="image-studio-card-actions">
                     <IconButton size="sm" aria-label={`Открыть ${file.path} в полный размер`} title="В полный размер" onClick={() => setViewing(file.path)}>⛶</IconButton>
                     <IconButton size="sm" aria-label={`Нарисовать вариацию ${file.path}`} title="Вариация" disabled={busy} onClick={() => variate(file)}>✦</IconButton>
-                    <IconButton size="sm" aria-label={`Дублировать ${file.path}`} title="Дубликат" disabled={busy} onClick={() => duplicate(file)}>⎘</IconButton>
-                    <IconButton size="sm" aria-label={`Копировать ${file.path} в буфер`} title="Копировать" onClick={() => copy(file)}>⧉</IconButton>
+
                     {onAttachToChat && <IconButton size="sm" aria-label={`Прикрепить ${file.path} к сообщению`} title="В сообщение чата" onClick={() => void blobOf(file.path).then((blob) => { onAttachToChat(new File([blob], file.path, { type: blob.type })); toast.success(`«${file.path}» прикреплена к сообщению`) }).catch(() => toast.error('Не удалось прочитать файл'))}>📎</IconButton>}
                     <IconButton size="sm" aria-label={`Инструменты обработки ${file.path}`} title="Обработка (поворот, зеркало…)" aria-expanded={toolsFor === file.path} onClick={() => setToolsFor(toolsFor === file.path ? null : file.path)}>🛠</IconButton>
                     <IconButton size="sm" aria-label={`Переименовать ${file.path}`} title="Переименовать" onClick={() => setRenaming({ from: file.path, to: file.path })}>✎</IconButton>
-                    <IconButton size="sm" aria-label={`Скачать ${file.path}`} title="Скачать" onClick={() => void download(file.path)}>⇩</IconButton>
                     <IconButton size="sm" aria-label={`Удалить ${file.path}`} title="Удалить" onClick={() => void (async () => {
                       if (!(await confirm({ title: `Удалить «${file.path}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return
                       await run(() => api['imgstudio:delete']({ conversationId, path: file.path }), 'Удалено')
@@ -705,7 +703,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                     })()}>✕</IconButton>
                   </span>
                 </div>}
-            {toolsFor === file.path && !renaming && <div className="image-studio-tools" role="group" aria-label={`Обработка ${file.path}`}>
+            {toolsFor === file.path && !renaming && <div className="image-studio-tools" role="group" aria-label={`Действия и обработка ${file.path}`}>
+              <Button size="sm" variant="ghost" onClick={() => void download(file.path)}>Скачать</Button>
+              <Button size="sm" variant="ghost" onClick={() => copy(file)}>Копировать</Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => duplicate(file)}>Дубликат</Button>
               {IMAGE_TRANSFORMS.map((kind) => <Button key={kind.kind} size="sm" variant="ghost" disabled={busy} onClick={() => transform(file, kind)}>{kind.label}</Button>)}
             </div>}
             </div>)}
