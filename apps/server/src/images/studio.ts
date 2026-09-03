@@ -270,6 +270,19 @@ export class ImageStudioStore {
     if (meta[name]) { delete meta[name]; await this.writeMeta(conversationId, meta) }
   }
 
+  /** Копирует или переносит файл в галерею другого разговора (имя — freeName). */
+  async transfer(fromConversationId: string, rawPath: string, toConversationId: string, mode: 'move' | 'copy'): Promise<string> {
+    const name = safeName(rawPath)
+    const data = await this.readBuffer(fromConversationId, name)
+    if (!data) throw new ImageStudioError('not_found', `«${name}» не найден`)
+    const target = await this.freeName(toConversationId, name)
+    await this.writeBuffer(toConversationId, target, data)
+    const meta = await this.readMeta(fromConversationId)
+    if (meta[name]) await this.setMeta(toConversationId, target, meta[name]!)
+    if (mode === 'move') await this.delete(fromConversationId, name)
+    return target
+  }
+
   async rename(conversationId: string, rawFrom: string, rawTo: string): Promise<void> {
     const from = safeName(rawFrom)
     const to = safeName(rawTo)

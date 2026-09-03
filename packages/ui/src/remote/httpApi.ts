@@ -114,6 +114,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'DELETE' }),
     'imgstudio:run': ({ conversationId }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/run`),
+    'imgstudio:transfer': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/transfer`, { method: 'POST', body: JSON.stringify(b) }),
     'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
     'imgstudio:read': async ({ conversationId, path }) => {
       // Байты картинки — через авторизованный fetch: <img src> без токена
