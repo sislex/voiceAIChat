@@ -34,6 +34,8 @@ const SIZE_PRESETS = ['', '512×512', '1024×1024', '1920×1080'] as const
 const RECENT_LIMIT = 4
 /** Фильтр по имени появляется, когда глазами искать уже неудобно. */
 const FILTER_THRESHOLD = 7
+/** Сколько карточек рендерим сразу; дальше — «Показать ещё». */
+const PAGE_SIZE = 60
 /** Примеры для пустой галереи: первый промпт проще подсмотреть, чем придумать. */
 const PROMPT_EXAMPLES = [
   'Логотип-щит с молнией, плоский стиль, два цвета',
@@ -99,6 +101,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Режим множественного выбора: чекбоксы вместо выбора-для-правки. */
   const [multi, setMulti] = useState<Set<string> | null>(null)
   const [compare, setCompare] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  /** Последний неудавшийся запуск — для кнопки «Повторить» в баннере. */
+  const [lastAttempt, setLastAttempt] = useState<(() => void) | null>(null)
   const [filter, setFilter] = useState('')
   const [order, setOrder] = useState<'new' | 'name' | 'size'>(() => {
     try {
@@ -120,6 +125,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Объявление для скринридера о завершении операции. */
   const [announce, setAnnounce] = useState('')
   const knownPaths = useRef<Set<string> | null>(null)
+  /** Начальная точка свайпа в лайтбоксе (телефон). */
+  const touchX = useRef<number | null>(null)
   const uploadRef = useRef<HTMLInputElement | null>(null)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const renameRef = useRef<HTMLInputElement | null>(null)
@@ -234,26 +241,28 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     // Пресет размера — просто добавка к промпту: модель рисует скриптом и
     // размер для неё такой же текст, как и всё остальное.
     const fullPrompt = size && !selected ? `${cleaned}\nРазмер изображения: ${size.replace('×', 'x')}` : cleaned
+    const typedName = fileName.trim()
+    const name = typedName
+      ? (!isImageStudioPath(typedName) ? `${typedName}.png` : typedName)
+      // Имя не задано — «синий-кит.png» из промпта читается лучше «изображение-7.png».
+      : nameFromPrompt(cleaned)
+    const target = selected
     rememberPrompt(cleaned)
-    void run(async () => {
+    // Запуск захватывает все аргументы: «Повторить» из баннера ошибки гоняет
+    // ровно тот же ран, а не то, что успело поменяться в полях.
+    const launch = (): Promise<void> => run(async () => {
       // Выбрана картинка — правим её; нет — рисуем новую. Один промпт на
       // оба действия: так работает голова пользователя, а не наша схема.
-      if (selected) await api['imgstudio:edit']({ conversationId, path: selected, prompt: fullPrompt })
-      else {
-        // Пользователь ввёл «арт» — дописываем .png, а не возвращаем bad_name.
-        const typedName = fileName.trim()
-        const name = typedName
-          ? (!isImageStudioPath(typedName) ? `${typedName}.png` : typedName)
-          // Имя не задано — «синий-кит.png» из промпта читается лучше «изображение-7.png».
-          : nameFromPrompt(cleaned)
-        await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(name ? { name } : {}) })
-      }
+      if (target) await api['imgstudio:edit']({ conversationId, path: target, prompt: fullPrompt })
+      else await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(name ? { name } : {}) })
       setPrompt('')
       setFileName('')
       try { localStorage.removeItem(imageStudioDraftKey(conversationId)) } catch { /* приватный режим */ }
       promptRef.current?.focus()
-    }, selected ? 'Правка готова — результат рядом с оригиналом' : 'Изображение готово',
-      selected ? `Модель правит «${selected}»` : 'Модель рисует')
+    }, target ? 'Правка готова — результат рядом с оригиналом' : 'Изображение готово',
+      target ? `Модель правит «${target}»` : 'Модель рисует')
+    setLastAttempt(() => launch)
+    void launch()
   }
 
   /** Вариация: та же картинка-исходник, промпт фиксированный. */
@@ -370,6 +379,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const shown = files
     .filter((file) => !filter.trim() || file.path.toLowerCase().includes(filter.trim().toLowerCase()))
     .sort((left, right) => order === 'name' ? left.path.localeCompare(right.path, 'ru') : order === 'size' ? right.size - left.size : right.updatedAt - left.updatedAt)
+  const paged = shown.slice(0, visibleCount)
   const viewingIndex = viewing ? shown.findIndex((file) => file.path === viewing) : -1
   const viewStep = (delta: number): void => {
     if (viewingIndex < 0 || !shown.length) return
@@ -458,20 +468,25 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         <input ref={uploadRef} type="file" accept="image/*,.svg" multiple hidden aria-label="Файл изображения" onChange={(event) => { if (event.target.files?.length) upload(event.target.files); event.target.value = '' }} />
       </div>
       {progress && <p className="image-studio-progress" role="status">
-        {progress.label}… {progress.seconds} с. Обычно это занимает до минуты.
+        {progress.label}… {progress.seconds} с. {progress.seconds > 90 ? 'Дольше обычного — можно отменить и упростить промпт.' : 'Обычно это занимает до минуты.'}
         {' '}
         <button type="button" className="image-studio-cancel" onClick={() => void api['imgstudio:cancel']({ conversationId }).catch(() => undefined)}>Отменить</button>
       </p>}
       <span className="vc-sr-only" role="status">{announce}</span>
-      {lastError && !busy && <ErrorState compact message={lastError} />}
+      {lastError && !busy && <ErrorState compact message={lastError} {...(lastAttempt ? { onRetry: () => { setLastError(null); lastAttempt() } } : {})} />}
     </div>
 
     {files.length >= 2 && <div className="image-studio-filter">
-      {files.length >= FILTER_THRESHOLD && <input aria-label="Фильтр по имени файла" placeholder="Найти по имени…" value={filter} onChange={(event) => setFilter(event.target.value)} />}
+      {files.length >= FILTER_THRESHOLD && <input aria-label="Фильтр по имени файла" placeholder="Найти по имени…" value={filter} onChange={(event) => { setFilter(event.target.value); setVisibleCount(PAGE_SIZE) }} />}
+      {filter.trim() && <span className="image-studio-dim">Найдено: {shown.length}</span>}
       <Button size="sm" variant="ghost" onClick={() => { const next = order === 'new' ? 'name' : order === 'name' ? 'size' : 'new'; setOrder(next); try { localStorage.setItem(IMAGE_STUDIO_ORDER_KEY, next) } catch { /* приватный режим */ } }}>
         {order === 'new' ? 'Сначала новые' : order === 'name' ? 'По имени' : 'По размеру'}
       </Button>
       <Button size="sm" variant="ghost" disabled={busy || !shown.length} onClick={() => downloadAll(shown)}>Скачать архивом</Button>
+      {shown.some((file) => file.prompt) && <Button size="sm" variant="ghost" onClick={() => {
+        const text = shown.filter((file) => file.prompt).map((file) => `${file.path}: ${file.prompt}`).join('\n')
+        void navigator.clipboard?.writeText(text).then(() => toast.success('Промпты скопированы')).catch(() => toast.error('Буфер обмена недоступен'))
+      }}>Промпты в буфер</Button>}
       <IconButton size="sm" aria-label={dense ? 'Крупные карточки' : 'Мелкие карточки'} title={dense ? 'Крупнее' : 'Мельче'} onClick={() => setDense((prev) => { const next = !prev; try { localStorage.setItem(IMAGE_STUDIO_DENSE_KEY, next ? '1' : '0') } catch { /* приватный режим */ } return next })}>{dense ? '▦' : '▤'}</IconButton>
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && multi.size > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={() => void (async () => {
@@ -494,12 +509,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       : shown.length === 0
         ? <EmptyState compact title="Ничего не нашлось" description="Уточните фильтр или очистите его, чтобы увидеть всю галерею." />
         : <>
-          <div className={`image-studio-grid${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label="Галерея изображений">
+          <div className={`image-studio-grid${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label="Галерея изображений" aria-busy={busy || undefined}>
             {progress && <div role="listitem" className="image-studio-card image-studio-card--ghost" aria-hidden="true">
               <div className="image-studio-thumb image-studio-thumb--ghost"><Skeleton item="block" height={120} /></div>
               <span className="image-studio-name">{progress.label}…</span>
             </div>}
-            {shown.map((file) => <div role="listitem" key={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
+            {paged.map((file) => <div role="listitem" key={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
             <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} onDoubleClick={() => setViewing(file.path)} title={selected === file.path ? 'Снять выбор (двойной клик — на весь экран)' : 'Выбрать для правки (двойной клик — на весь экран)'}>
               {previews[file.path]
                 ? <img loading="lazy" src={previews[file.path]} alt="" onLoad={(event) => {
@@ -565,6 +580,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                 </div>}
             </div>)}
           </div>
+          {shown.length > visibleCount && <Button size="sm" variant="ghost" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+            Показать ещё ({shown.length - visibleCount})
+          </Button>}
           <p className={`image-studio-quota${usedBytes > IMAGE_STUDIO_LIMITS.maxConversationBytes * 0.8 ? ' image-studio-quota--warn' : ''}`}>
             {files.length === 1 ? '1 файл' : `Файлов: ${files.length}`} · занято {formatBytes(usedBytes)} из {formatBytes(IMAGE_STUDIO_LIMITS.maxConversationBytes)}
             {usedBytes > IMAGE_STUDIO_LIMITS.maxConversationBytes * 0.8 && ' — место кончается, удалите ненужное'}
@@ -586,7 +604,14 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       <div className="imgbody" onKeyDown={(event) => {
         if (event.key === 'ArrowLeft') viewStep(-1)
         if (event.key === 'ArrowRight') viewStep(1)
-      }} tabIndex={-1}>
+      }} tabIndex={-1}
+        onTouchStart={(event) => { touchX.current = event.touches[0]?.clientX ?? null }}
+        onTouchEnd={(event) => {
+          if (touchX.current === null) return
+          const delta = (event.changedTouches[0]?.clientX ?? touchX.current) - touchX.current
+          touchX.current = null
+          if (Math.abs(delta) > 48) { setCompare(false); viewStep(delta > 0 ? -1 : 1) }
+        }}>
         {(() => {
           const sourcePath = compare ? files.find((file) => file.path === viewing)?.source : undefined
           if (sourcePath && previews[sourcePath] && previews[viewing]) {
@@ -601,9 +626,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         })()}
         {(() => {
           const meta = files.find((file) => file.path === viewing)
-          if (!meta?.prompt && !meta?.source) return null
+          if (!meta) return null
           const sourceInGallery = meta.source && files.some((file) => file.path === meta.source)
           return <p className="imgcap image-studio-origin">
+            <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
             {meta.source ? (sourceInGallery
               ? <>Из <button type="button" className="image-studio-cancel" onClick={() => { setCompare(false); setViewing(meta.source!) }}>«{meta.source}»</button> · </>
               : `Из «${meta.source}» · `) : ''}{meta.prompt ? `промпт: ${meta.prompt}` : ''}
