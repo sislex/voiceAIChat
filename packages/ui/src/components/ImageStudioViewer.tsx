@@ -66,14 +66,15 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   // кнопках шапки, и локальный onKeyDown тела до него не дотягивается.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
       const tag = (event.target as HTMLElement | null)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      onStep(event.key === 'ArrowLeft' ? -1 : 1)
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { onStep(event.key === 'ArrowLeft' ? -1 : 1); return }
+      // Delete — то же удаление с confirm, что и кнопкой корзины.
+      if (event.key === 'Delete' || event.key === 'Backspace') onDelete(viewing)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onStep])
+  }, [onStep, onDelete, viewing])
   const meta = files.find((file) => file.path === viewing)
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
 
@@ -281,6 +282,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           </span>)}
         </p>
       })()}
+      <p className="image-studio-origin"><span className="image-studio-dim">← → — листать · Delete — удалить · Esc — закрыть</span></p>
       {meta && <p className="imgcap image-studio-origin">
         <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
         {meta.source ? (sourceInGallery
