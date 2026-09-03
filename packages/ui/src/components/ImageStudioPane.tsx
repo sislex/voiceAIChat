@@ -681,6 +681,26 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.filter((file) => !multi.has(file.path)).map((file) => file.path)))}>Инвертировать</Button>}
       {multi && <span className="image-studio-dim" role="status">Выбрано {multi.size} из {shown.length}</span>}
       {multi && multi.size > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => downloadAll(shown.filter((file) => multi.has(file.path)))}>Скачать выбранные ({multi.size})</Button>}
+      {multi && multi.size > 0 && <select aria-label="Обработать выбранные" disabled={busy} value="" onChange={(event) => {
+        const kind = IMAGE_TRANSFORMS.find((item) => item.kind === event.target.value)
+        if (!kind) return
+        const targets = shown.filter((file) => multi.has(file.path))
+        void run(async () => {
+          for (const file of targets) {
+            const blob = await blobOf(file.path)
+            const result = await applyImageTransform(blob, kind.kind)
+            const name = transformName(file.path, kind.suffix, new Set((files ?? []).map((item) => item.path).concat(targets.map((item) => item.path))), kind.ext ?? 'png')
+            const buffer = new Uint8Array(await result.arrayBuffer())
+            let binary = ''
+            for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
+            await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: file.path })
+          }
+          setMulti(new Set())
+        }, `Обработано файлов: ${targets.length} (${kind.label.toLowerCase()})`)
+      }}>
+        <option value="">Обработать выбранные…</option>
+        {IMAGE_TRANSFORMS.map((kind) => <option key={kind.kind} value={kind.kind}>{kind.label}</option>)}
+      </select>}
       {multi && multi.size > 0 && multi.size <= 4 && <Button size="sm" variant="ghost" disabled={busy} title="Нарисовать новую картинку по промпту, используя выбранные как образцы стиля" onClick={() => {
         const cleaned = prompt.trim()
         if (!cleaned) { toast.info('Сначала опишите в поле промпта, что нарисовать'); promptRef.current?.focus(); return }
