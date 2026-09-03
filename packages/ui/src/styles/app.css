@@ -3835,6 +3835,7 @@ button.conscmd:hover {
 .image-studio-card--ghost { opacity: 0.75; }
 .image-studio-thumb--ghost { display: block; }
 .image-studio-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); padding: 4px 2px 0; cursor: pointer; }
+.image-studio-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 2px 0; }
 .image-studio-wipe { display: grid; gap: 8px; }
 .image-studio-wipe-stage { position: relative; }
 .image-studio-wipe-stage img { display: block; width: 100%; max-height: 60vh; object-fit: contain; background: var(--surface); border-radius: var(--radius-medium); }

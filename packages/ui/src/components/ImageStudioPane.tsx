@@ -11,6 +11,7 @@ import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, useConfir
 import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
+import { applyImageTransform, IMAGE_TRANSFORMS, transformName } from '../lib/imageTransform'
 import { ImageStudioViewer } from './ImageStudioViewer'
 import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
 
@@ -97,6 +98,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Последняя ошибка операции — баннером в панели, тост живёт только момент. */
   const [lastError, setLastError] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null)
+  /** Карточка с раскрытой строкой инструментов обработки (canvas, без модели). */
+  const [toolsFor, setToolsFor] = useState<string | null>(null)
   const [viewing, setViewing] = useState<string | null>(null)
   const [dropActive, setDropActive] = useState(false)
   /** Режим множественного выбора: чекбоксы вместо выбора-для-правки. */
@@ -422,6 +425,19 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       .then((ok) => (ok ? toast.success('Скопировано в буфер') : toast.error('Не удалось скопировать — браузер не разрешил доступ к буферу')))
   }
 
+  const transform = (file: ImageStudioFile, kind: (typeof IMAGE_TRANSFORMS)[number]): void => {
+    void run(async () => {
+      const blob = await blobOf(file.path)
+      const result = await applyImageTransform(blob, kind.kind)
+      const name = transformName(file.path, kind.suffix, new Set((files ?? []).map((item) => item.path)))
+      const buffer = new Uint8Array(await result.arrayBuffer())
+      let binary = ''
+      for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
+      await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
+      setToolsFor(null)
+    }, `Готово: ${kind.label.toLowerCase()}`)
+  }
+
   const duplicate = (file: ImageStudioFile): void => {
     void run(async () => {
       const dataBase64 = await readBase64(file.path)
@@ -679,6 +695,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                     <IconButton size="sm" aria-label={`Дублировать ${file.path}`} title="Дубликат" disabled={busy} onClick={() => duplicate(file)}>⎘</IconButton>
                     <IconButton size="sm" aria-label={`Копировать ${file.path} в буфер`} title="Копировать" onClick={() => copy(file)}>⧉</IconButton>
                     {onAttachToChat && <IconButton size="sm" aria-label={`Прикрепить ${file.path} к сообщению`} title="В сообщение чата" onClick={() => void blobOf(file.path).then((blob) => { onAttachToChat(new File([blob], file.path, { type: blob.type })); toast.success(`«${file.path}» прикреплена к сообщению`) }).catch(() => toast.error('Не удалось прочитать файл'))}>📎</IconButton>}
+                    <IconButton size="sm" aria-label={`Инструменты обработки ${file.path}`} title="Обработка (поворот, зеркало…)" aria-expanded={toolsFor === file.path} onClick={() => setToolsFor(toolsFor === file.path ? null : file.path)}>🛠</IconButton>
                     <IconButton size="sm" aria-label={`Переименовать ${file.path}`} title="Переименовать" onClick={() => setRenaming({ from: file.path, to: file.path })}>✎</IconButton>
                     <IconButton size="sm" aria-label={`Скачать ${file.path}`} title="Скачать" onClick={() => void download(file.path)}>⇩</IconButton>
                     <IconButton size="sm" aria-label={`Удалить ${file.path}`} title="Удалить" onClick={() => void (async () => {
@@ -688,6 +705,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                     })()}>✕</IconButton>
                   </span>
                 </div>}
+            {toolsFor === file.path && !renaming && <div className="image-studio-tools" role="group" aria-label={`Обработка ${file.path}`}>
+              {IMAGE_TRANSFORMS.map((kind) => <Button key={kind.kind} size="sm" variant="ghost" disabled={busy} onClick={() => transform(file, kind)}>{kind.label}</Button>)}
+            </div>}
             </div>)}
           </div>
           {shown.length > visibleCount && <Button size="sm" variant="ghost" onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>

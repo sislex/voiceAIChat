@@ -391,6 +391,24 @@ describe('ImageStudioPane', () => {
     expect((promptField as HTMLTextAreaElement).value).toBe('кит в шляпе')
   })
 
+  it('инструменты обработки создают новый файл через upload', async () => {
+    // canvas в jsdom нет — стабим конвейер трансформации.
+    const { api } = makeApi([{ path: 'кот.png' }])
+    const transformed = new Blob([new Uint8Array([9, 9])], { type: 'image/png' })
+    Object.defineProperty(transformed, 'arrayBuffer', { value: async () => new Uint8Array([9, 9]).buffer })
+    const lib = await import('../lib/imageTransform')
+    const spy = vi.spyOn(lib, 'applyImageTransform').mockResolvedValue(transformed)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Инструменты обработки кот.png' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Повернуть на 90°' }))
+      await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот-повёрнуто.png' })))
+      expect(spy).toHaveBeenCalledWith(expect.anything(), 'rotate90')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
