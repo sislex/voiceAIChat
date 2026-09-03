@@ -45,7 +45,7 @@ function safeName(raw: string): string {
 
 interface StudioMeta { prompt?: string; source?: string }
 
-interface StudioPublication { token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null }
+interface StudioPublication { token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null; days?: Record<string, number> }
 
 const PUBLISH_FILE = '.studio-publish.json'
 const TRASH_DIR = '.trash'
@@ -167,7 +167,11 @@ export class ImageStudioStore {
       try {
         const raw = await this.readPublication(conversationId)
         if (!raw) return
-        await this.writePublication(conversationId, { ...raw, views: (raw.views ?? 0) + 1 })
+        // День в UTC; храним хвост в 30 дней — этого хватает на сводку недели.
+        const day = new Date().toISOString().slice(0, 10)
+        const days = { ...(raw.days ?? {}), [day]: ((raw.days ?? {})[day] ?? 0) + 1 }
+        const trimmed = Object.fromEntries(Object.entries(days).sort(([a], [b]) => a.localeCompare(b)).slice(-30))
+        await this.writePublication(conversationId, { ...raw, views: (raw.views ?? 0) + 1, days: trimmed })
       } catch {
         // Статистика не стоит ошибки: галерею могли снять/удалить между чтением
         // и записью (в тестах — rmSync каталога), просмотр просто теряется.

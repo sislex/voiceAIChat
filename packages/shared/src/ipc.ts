@@ -693,7 +693,7 @@ export interface IpcInvokeMap {
   'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
   'imgstudio:publish': { arg: { conversationId: string; password?: string | null }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
-  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; passwordProtected?: boolean } }
+  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean } }
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
