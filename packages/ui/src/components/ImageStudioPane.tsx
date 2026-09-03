@@ -14,7 +14,7 @@ import { buildZip } from '../lib/zipStore'
 import { applyImageTransform, cropImage, IMAGE_TRANSFORMS, transformName } from '../lib/imageTransform'
 import { annotateImage } from '../lib/imageAnnotate'
 import { ImageStudioViewer } from './ImageStudioViewer'
-import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
+import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
@@ -88,6 +88,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [selected, setSelected] = useState<string | null>(null)
   const [prompt, setPrompt] = useState(() => {
     try { return localStorage.getItem(imageStudioDraftKey(conversationId)) ?? '' } catch { return '' }
+  })
+  /** «Без текста на картинке»: модели любят вписывать надписи — глушим явно. */
+  const [noText, setNoText] = useState<boolean>(() => {
+    try { return localStorage.getItem(IMAGE_STUDIO_NO_TEXT_KEY) === '1' } catch { return false }
   })
   const [size, setSize] = useState<string>(() => {
     try {
@@ -297,7 +301,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     const cleaned = prompt.trim()
     // Пресет размера — просто добавка к промпту: модель рисует скриптом и
     // размер для неё такой же текст, как и всё остальное.
-    const fullPrompt = size && !selected ? `${cleaned}\nРазмер изображения: ${size.replace('×', 'x')}` : cleaned
+    const withSize = size && !selected ? `${cleaned}\nРазмер изображения: ${size.replace('×', 'x')}` : cleaned
+    const fullPrompt = noText ? `${withSize}\nНе добавляй на изображение никакой текст, надписи и водяные знаки.` : withSize
     const typedName = fileName.trim()
     const name = typedName
       ? (!isImageStudioPath(typedName) ? `${typedName}.png` : typedName)
@@ -375,7 +380,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!)
         await api['imgstudio:upload']({ conversationId, path: shrunk.name, dataBase64: btoa(binary) })
       }
-    }, items.length === 1 ? `Загружено: ${items[0]!.name}` : `Загружено файлов: ${items.length}`)
+    }, items.length === 1 ? `Загружено: ${items[0]!.name}` : `Загружено файлов: ${items.length}`,
+      items.length > 1 ? `Загружаем ${items.length} файла(ов)` : undefined)
   }
 
   const readBase64 = (path: string): Promise<string> =>
@@ -533,6 +539,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         {!selected && <select aria-label="Размер изображения" value={size} disabled={busy} onChange={(event) => { setSize(event.target.value); try { localStorage.setItem(IMAGE_STUDIO_SIZE_KEY, event.target.value) } catch { /* приватный режим */ } }}>
           {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset === '1200×630' ? '1200×630 (OG-превью)' : preset === '1080×1080' ? '1080×1080 (пост)' : preset === '1280×720' ? '1280×720 (обложка)' : preset}</option>)}
         </select>}
+        <label className="image-studio-check" title="Дописывает к промпту запрет на надписи">
+          <input type="checkbox" checked={noText} onChange={(event) => { setNoText(event.target.checked); try { localStorage.setItem(IMAGE_STUDIO_NO_TEXT_KEY, event.target.checked ? '1' : '0') } catch { /* приватный режим */ } }} />
+          без текста
+        </label>
         {!selected && <input className="image-studio-filename" aria-label="Имя нового файла" placeholder="имя.png (не обязательно)" value={fileName} disabled={busy} onChange={(event) => setFileName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); generate() } }} />}
         {api['prompt:suggest'] && <IconButton size="sm" aria-label="Улучшить промпт с помощью AI" title="Улучшить промпт" disabled={busy || !prompt.trim()} onClick={() => void (async () => {
           const current = prompt.trim()

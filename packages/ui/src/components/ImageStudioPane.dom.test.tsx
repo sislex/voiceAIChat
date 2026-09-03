@@ -471,6 +471,16 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'кот.png' })).toBeNull())
   })
 
+  it('чекбокс «без текста» дописывает запрет надписей в промпт', async () => {
+    const { api, generate } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'без текста' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'плакат' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await waitFor(() => expect(generate).toHaveBeenCalled())
+    expect((generate.mock.calls[0]![0] as { prompt: string }).prompt).toContain('Не добавляй на изображение никакой текст')
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
