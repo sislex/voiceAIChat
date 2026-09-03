@@ -42,6 +42,30 @@ async function seededApi(): Promise<Seeded> {
   return { api, gifts: gifts.id, lisbon: lisbon.id }
 }
 
+describe('App — пустая главная страница чатов', () => {
+  it('показывает Make-состояние и открывает существующее создание разговора', async () => {
+    const api = createFakeApi([])
+    api['agents:list'] = async () => [{
+      id: 'test-mac',
+      name: 'Test Mac',
+      online: true,
+      createdAt: 1,
+      lastSeen: 1,
+      policy: DEFAULT_AGENT_POLICY
+    }]
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+
+    render(<App api={api} delays={SLOW} />)
+
+    const page = await screen.findByTestId('chats-empty')
+    expect(screen.getByRole('heading', { name: 'Чаты' })).toBeInTheDocument()
+    expect(page).toHaveTextContent('Новых чатов пока нет')
+    expect(page).toHaveTextContent('Новый разговор появится здесь после создания.')
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить новый чат' }))
+    expect(await screen.findByRole('button', { name: 'Создать разговор' })).toBeInTheDocument()
+  })
+})
+
 describe('App — machine-required guard', () => {
   it('при отсутствии online-машины приостанавливает создание чата и показывает единый web-диалог', async () => {
     const api = createFakeApi([])
