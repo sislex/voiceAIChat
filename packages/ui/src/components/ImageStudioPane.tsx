@@ -12,6 +12,7 @@ import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
 import { applyImageTransform, cropImage, IMAGE_TRANSFORMS, transformName } from '../lib/imageTransform'
+import { annotateImage } from '../lib/imageAnnotate'
 import { ImageStudioViewer } from './ImageStudioViewer'
 import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
 
@@ -760,6 +761,16 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
         setViewing(name)
       }, 'Кроп сохранён новым файлом')}
+      onAnnotate={(path, strokes, displaySize) => void run(async () => {
+        const blob = await blobOf(path)
+        const result = await annotateImage(blob, strokes, displaySize)
+        const name = transformName(path, 'разметка', new Set((files ?? []).map((item) => item.path)))
+        const buffer = new Uint8Array(await result.arrayBuffer())
+        let binary = ''
+        for (let index = 0; index < buffer.length; index += 1) binary += String.fromCharCode(buffer[index]!)
+        await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
+        setViewing(name)
+      }, 'Разметка сохранена новым файлом')}
       position={viewingIndex >= 0 ? { index: viewingIndex, total: shown.length } : undefined}
       onDelete={(path) => void (async () => {
         if (!(await confirm({ title: `Удалить «${path}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return
