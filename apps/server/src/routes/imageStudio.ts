@@ -232,7 +232,11 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     const esc = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     const cards = files.map((file) => `<figure><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
     const title = publication?.title?.trim() || 'Галерея'
-    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><style>
+    // OG-мета: мессенджеры делают fetch по ссылке и показывают карточку с
+    // первой картинкой — «глухая» ссылка выглядит хуже.
+    const origin = `${req.protocol}://${req.headers.host ?? ''}`
+    const ogImage = files[0] ? `${origin}/g/${req.params.token}/file?path=${encodeURIComponent(files[0].path)}` : null
+    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Галерея из ${files.length} файл(ов)">${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}<style>
       body{margin:0;padding:24px;font:14px/1.4 system-ui,sans-serif;background:#111;color:#eee}
       @media (prefers-color-scheme: light){body{background:#f6f7fb;color:#1a1d23}figure{background:#fff !important}figcaption small{color:#666 !important}}
       h1{font-size:18px;margin:0 0 16px}

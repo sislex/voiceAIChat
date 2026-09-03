@@ -530,6 +530,16 @@ describe('ImageStudioPane', () => {
     expect((generate.mock.calls[0]![0] as { prompt: string }).prompt).toContain('Стиль: акварель.')
   })
 
+  it('в мультирежиме Cmd+A выбирает все видимые, селект переносит их разом', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} otherChats={[{ id: 'c2', title: 'Картинки 2' }]} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.keyDown(screen.getByTestId('image-studio'), { key: 'a', metaKey: true })
+    const moveSelect = await screen.findByRole('combobox', { name: 'Перенести выбранные в другой чат' })
+    fireEvent.change(moveSelect, { target: { value: 'c2' } })
+    await waitFor(() => expect(api['imgstudio:transfer']).toHaveBeenCalledTimes(3))
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
