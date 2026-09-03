@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-01 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: e00e5c8c feat: студия картинок — сплит «чат + галерея» с генерацией и правкой через LLM |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 56 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-03 | ⚠ 21 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-03 | ⚠ 22 коммит(ов) в areas после сверки: 31ac2853 feat: студия картинок — итерация улучшений 30 (шахматка, фильтры, пипетка) … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 94 коммит(ов) в areas после сверки: e00e5c8c feat: студия картинок — сплит «чат + галерея» с генерацией и правкой через LLM … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 21 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 198 коммит(ов) в areas после сверки: 4a4ef918 feat: студия картинок — итерация улучшений 22 (перенос между чатами) … |
@@ -23,9 +23,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 224 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 248 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 15 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1117 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 164 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 209 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1118 коммит(ов) в areas после сверки: 31ac2853 feat: студия картинок — итерация улучшений 30 (шахматка, фильтры, пипетка) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 165 коммит(ов) в areas после сверки: 31ac2853 feat: студия картинок — итерация улучшений 30 (шахматка, фильтры, пипетка) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 210 коммит(ов) в areas после сверки: 31ac2853 feat: студия картинок — итерация улучшений 30 (шахматка, фильтры, пипетка) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 105 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-02 | ⚠ 37 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 229 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
@@ -33,7 +33,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-03 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ⚠ 20 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 187 коммит(ов) в areas после сверки: 4a4ef918 feat: студия картинок — итерация улучшений 22 (перенос между чатами) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 23 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 24 коммит(ов) в areas после сверки: 31ac2853 feat: студия картинок — итерация улучшений 30 (шахматка, фильтры, пипетка) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ⚠ 3 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 11 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 11 коммит(ов) в areas после сверки: 10fac719 feat: студия картинок — итерация улучшений 29 (статистика и доступность) … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 567. Последние:
+Всего записей: 568. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md](log/2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md) — make-publish-lock-studio-11
@@ -72,7 +72,7 @@
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md) — image-studio-improvements-6
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-5.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-5.md) — image-studio-improvements-5
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-4.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-4.md) — image-studio-improvements-4
-- [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-30.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-30.md) — image-studio-improvements-30
+- [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-31.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-31.md) — image-studio-improvements-31
 
 ## Исторические планы
 
