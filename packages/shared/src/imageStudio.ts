@@ -16,6 +16,8 @@ export interface ImageStudioFile {
   prompt?: string
   /** Имя исходника, если файл — результат правки другой картинки. */
   source?: string
+  /** Сколько миллисекунд занял ран генерации/правки. */
+  tookMs?: number
   /** Имя файла в галерее (плоское, без каталогов). */
   path: string
   size: number
