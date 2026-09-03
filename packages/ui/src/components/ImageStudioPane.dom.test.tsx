@@ -481,6 +481,18 @@ describe('ImageStudioPane', () => {
     expect((generate.mock.calls[0]![0] as { prompt: string }).prompt).toContain('Не добавляй на изображение никакой текст')
   })
 
+  it('Esc закрывает мультирежим, ↻ перезагружает галерею', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0)
+    fireEvent.keyDown(screen.getByTestId('image-studio'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryAllByRole('checkbox', { name: /Выбрать [аб]\.png/ })).toHaveLength(0))
+    const listCalls = (api['imgstudio:list'] as ReturnType<typeof vi.fn>).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить галерею' }))
+    await waitFor(() => expect((api['imgstudio:list'] as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(listCalls))
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
