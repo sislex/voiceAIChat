@@ -23,6 +23,9 @@ function makeApi(initial: Array<{ path: string }> = []) {
     generate, edit, cancel,
     api: {
       'imgstudio:cancel': cancel,
+      'imgstudio:publish': vi.fn(async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0 })),
+      'imgstudio:publication': vi.fn(async () => ({ url: null })),
+      'imgstudio:unpublish': vi.fn(async () => ({ url: null })),
       'imgstudio:list': vi.fn(async () => [...files]),
       'imgstudio:read': vi.fn(async ({ path }: { path: string }) => ({ path, dataBase64: btoa('img') })),
       'imgstudio:upload': vi.fn(async ({ path }: { path: string }) => { files = [{ path, size: 3, updatedAt: Date.now() }, ...files]; return [...files] }),
@@ -302,6 +305,22 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(screen.queryByTestId('image-studio-viewer')).toBeNull())
     expect(screen.getByRole('button', { name: 'Изменить выбранную' })).toBeInTheDocument()
     expect(viewer).not.toBeInTheDocument()
+  })
+
+  it('«Поделиться» публикует галерею и переключает кнопки на ссылку/снятие', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => undefined) } })
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Поделиться' }))
+    await waitFor(() => expect(api['imgstudio:publish']).toHaveBeenCalledWith({ conversationId: 'c1' }))
+    expect(await screen.findByRole('button', { name: 'Ссылка на галерею' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Снять публикацию' }))
+    const confirmText = await screen.findByText('Снять публикацию галереи?')
+    const overlay = confirmText.closest('.vc-dialog-overlay') as HTMLElement
+    fireEvent.click(within(overlay).getByRole('button', { name: 'Снять' }))
+    await waitFor(() => expect(api['imgstudio:unpublish']).toHaveBeenCalled())
+    expect(await screen.findByRole('button', { name: 'Поделиться' })).toBeInTheDocument()
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {

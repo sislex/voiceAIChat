@@ -162,3 +162,51 @@ describe('студия картинок: параллельность, отме�
     expect(list.some((file) => file.path.includes('.studio-meta'))).toBe(false)
   })
 })
+
+describe('студия картинок: публикация галереи', () => {
+  it('публикация выдаёт ссылку, страница и файлы отдаются без авторизации, снятие гасит', async () => {
+    await store.writeBuffer(convId, 'кот.png', Buffer.concat([PNG_BYTES, Buffer.from('кот')]))
+    await store.setMeta(convId, 'кот.png', { prompt: 'рыжий кот' })
+
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    expect(pub.url).toMatch(/^\/g\/[0-9a-f]{32}\/$/)
+    // Повторная публикация не ротирует ссылку.
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json().url).toBe(pub.url)
+
+    const page = await app.inject({ method: 'GET', url: pub.url })
+    expect(page.statusCode).toBe(200)
+    expect(page.headers['x-robots-tag']).toBe('noindex')
+    expect(page.body).toContain('кот.png')
+    expect(page.body).toContain('рыжий кот')
+
+    const file = await app.inject({ method: 'GET', url: `${pub.url}file?path=${encodeURIComponent('кот.png')}` })
+    expect(file.statusCode).toBe(200)
+    expect(file.headers['content-type']).toMatch(/image\/png/)
+
+    // Статистика просмотров дошла до владельца.
+    const info = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/publication` })).json() as { views: number }
+    expect(info.views).toBeGreaterThanOrEqual(1)
+
+    await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/publish` })
+    expect((await app.inject({ method: 'GET', url: pub.url })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'GET', url: `${pub.url}file?path=${encodeURIComponent('кот.png')}` })).statusCode).toBe(404)
+  })
+
+  it('чужой или не-студийный чат публиковать нельзя', async () => {
+    const plain = db.createConversation(U, 'Обычный')
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${plain.id}/publish` })).statusCode).toBe(404)
+  })
+
+  it('переопубликация после снятия не воскрешается фоновым счётчиком', async () => {
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    for (let round = 0; round < 10; round += 1) {
+      const first = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+      void store.countView(convId)
+      await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/publish` })
+      const second = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+      expect(second.url).not.toBe(first.url)
+      expect((await app.inject({ method: 'GET', url: second.url })).statusCode).toBe(200)
+      await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/publish` })
+    }
+  })
+})

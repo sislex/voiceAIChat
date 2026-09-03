@@ -692,6 +692,9 @@ export interface IpcInvokeMap {
   'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
+  'imgstudio:publish': { arg: { conversationId: string }; result: { url: string; publishedAt: number; views: number } }
+  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number } }
+  'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
   'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
   'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
@@ -1469,6 +1472,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'imgstudio:generate',
   'imgstudio:edit',
   'imgstudio:cancel',
+  'imgstudio:publish',
+  'imgstudio:publication',
+  'imgstudio:unpublish',
   'make:projectFiles',
   'make:projectLinks',
   'make:projectPull',
