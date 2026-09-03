@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-03
-checked: ecaa8cd7
+checked: ca15c4fc
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -526,7 +526,17 @@ generate/edit (второй — 409); `POST .../cancel` отменяет его 
 SVG-текст) — мусор под видом картинки получает 400 `bad_media`; промпт
 generate/edit ограничен `IMAGE_STUDIO_LIMITS.maxPromptChars` (4000, 400 с
 текстом); в тестах студии сеются валидные PNG-байты (см. PNG_BYTES/png()
-в тест-файлах) — Buffer.from('строка') sniffing не пройдёт. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+в тест-файлах) — Buffer.from('строка') sniffing не пройдёт.
+
+Публикация галереи (итерация 12, 2026-09-03): `POST|GET|DELETE
+/api/image-studio/:id/publish|publication` (владелец); публичная страница —
+`GET /g/<token>/` (готовый HTML, noindex, счётчик просмотров под локом — урок
+Make) и `GET /g/<token>/file?path=`. Токен и просмотры — sidecar
+`.studio-publish.json` + индекс `<root>/.published/<token>.json`; повторный
+publish не ротирует ссылку, unpublish гасит страницу и файлы. Auth-hook
+закрывает только `/api/*`, поэтому `/g/` публичен без правок auth. Мосты
+`imgstudio:publish|publication|unpublish`. В dev vite-прокси проксирует
+`/p/`, `/g/`, `/s/` на бэкенд — иначе публичные ссылки на порту Vite были 404. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
 web-клиенте — авторизованный fetch → base64 (см. ui.md). POST
 `/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
 и CHECK по scope расширены (см. data-auth.md).
