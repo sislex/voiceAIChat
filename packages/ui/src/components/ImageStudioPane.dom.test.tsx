@@ -581,6 +581,24 @@ describe('ImageStudioPane', () => {
     expect((screen.getByRole('checkbox', { name: 'Выбрать а.png' }) as HTMLInputElement).checked).toBe(false)
   })
 
+  it('пакетная обработка применяет операцию ко всем выбранным', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    const done = new Blob([new Uint8Array([1])], { type: 'image/png' })
+    Object.defineProperty(done, 'arrayBuffer', { value: async () => new Uint8Array([1]).buffer })
+    const lib = await import('../lib/imageTransform')
+    const spy = vi.spyOn(lib, 'applyImageTransform').mockResolvedValue(done)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+      fireEvent.keyDown(screen.getByTestId('image-studio'), { key: 'a', metaKey: true })
+      fireEvent.change(await screen.findByRole('combobox', { name: 'Обработать выбранные' }), { target: { value: 'grayscale' } })
+      await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledTimes(2))
+      expect(spy).toHaveBeenCalledTimes(2)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
