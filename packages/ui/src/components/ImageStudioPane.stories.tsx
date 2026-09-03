@@ -7,7 +7,7 @@ import { ImageStudioPane } from './ImageStudioPane'
 import { STUDIO_FILES, STUDIO_PIXEL_BASE64 } from '../test/fixtures/imageStudio'
 import type { ImageStudioFile } from '@shared/imageStudio'
 
-function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: boolean; published?: boolean; passwordProtected?: boolean } = {}) {
+function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: boolean; published?: boolean; passwordProtected?: boolean; trash?: Array<{ name: string; deletedAt: number }> } = {}) {
   let files = [...initial]
   return {
     'imgstudio:list': async () => {
@@ -21,6 +21,10 @@ function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: 
     'imgstudio:generate': async ({ prompt }: { prompt: string }) => { const file = { path: 'новая.png', size: prompt.length, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
     'imgstudio:edit': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-2.png'), size: 10, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
     'imgstudio:cancel': async () => ({ cancelled: false }),
+    'imgstudio:trash': async () => ({ items: opts.trash ?? [] }),
+    'imgstudio:restore': async ({ name }: { name: string }) => ({ name, files: [] }),
+    'imgstudio:run': async () => ({ active: false }),
+    'imgstudio:transfer': async ({ path }: { path: string }) => ({ name: path, files: [] }),
     'imgstudio:publish': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0, passwordProtected: false }),
     'imgstudio:publication': async () => (opts.published ? { url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 12, passwordProtected: Boolean(opts.passwordProtected) } : { url: null }),
     'imgstudio:unpublish': async () => ({ url: null })
@@ -60,3 +64,13 @@ export const Published: Story = { args: { api: storyApi(STUDIO_FILES, { publishe
 
 /** Публикация под паролем: кнопка показывает замок. */
 export const PublishedWithPassword: Story = { args: { api: storyApi(STUDIO_FILES, { published: true, passwordProtected: true }) as never } }
+
+/** Корзина с удалёнными: список и восстановление. */
+export const WithTrash: Story = {
+  args: { api: storyApi(STUDIO_FILES, { trash: [{ name: 'старый-кот.png', deletedAt: 1 }] }) as never },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: /Корзина…/ }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: 'Восстановить старый-кот.png' }) })
+  }
+}

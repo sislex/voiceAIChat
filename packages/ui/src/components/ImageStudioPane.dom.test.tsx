@@ -610,6 +610,18 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
   })
 
+  it('загрузка с занятым именем спрашивает: отмена сохраняет копией', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+    const dup = new File(['x'], 'кот.png', { type: 'image/png' })
+    fireEvent.drop(zone, { dataTransfer: { files: [dup], types: ['Files'] } })
+    const confirmText = await screen.findByText('«кот.png» уже есть — заменить?')
+    const overlay = confirmText.closest('.vc-dialog-overlay') as HTMLElement
+    fireEvent.click(within(overlay).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот-копия.png' })))
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
