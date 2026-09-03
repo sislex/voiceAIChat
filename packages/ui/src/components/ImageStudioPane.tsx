@@ -17,7 +17,7 @@ import { getCachedPreview, putCachedPreview } from '../lib/previewCache'
 import { playStopCue } from '../lib/cues'
 import { ImageStudioViewer } from './ImageStudioViewer'
 import { ImageStudioToolsRow } from './ImageStudioToolsRow'
-import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, IMAGE_STUDIO_STYLE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
+import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, IMAGE_STUDIO_STYLE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey, imageStudioStarsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
@@ -142,6 +142,14 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [passwordDialog, setPasswordDialog] = useState(false)
   const [viewerPassword, setViewerPassword] = useState('')
   const [filter, setFilter] = useState('')
+  /** Избранные файлы (локально, на разговор) и режим «только избранные». */
+  const [stars, setStars] = useState<Set<string>>(() => {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(imageStudioStarsKey(conversationId)) ?? '[]')
+      return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [])
+    } catch { return new Set() }
+  })
+  const [starsOnly, setStarsOnly] = useState(false)
   const [order, setOrder] = useState<'new' | 'name' | 'size'>(() => {
     try {
       const saved = localStorage.getItem(IMAGE_STUDIO_ORDER_KEY)
@@ -333,6 +341,16 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     }
   }
 
+  const toggleStar = (path: string): void => {
+    setStars((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      try { localStorage.setItem(imageStudioStarsKey(conversationId), JSON.stringify([...next])) } catch { /* приватный режим */ }
+      return next
+    })
+  }
+
   const rememberPrompt = (text: string): void => {
     setRecent((prev) => {
       const next = [text, ...prev.filter((item) => item !== text)].slice(0, RECENT_LIMIT)
@@ -470,6 +488,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         // Промпты — текстом рядом с картинками: архив самодостаточен.
         const promptLines = list.filter((file) => file.prompt).map((file) => `${file.path}: ${file.prompt}`)
         if (promptLines.length) entries.push({ name: 'prompts.txt', data: new TextEncoder().encode(promptLines.join('\n')) })
+        // Полные метаданные — для программной обработки архива.
+        entries.push({ name: 'metadata.json', data: new TextEncoder().encode(JSON.stringify(list, null, 2)) })
         const url = URL.createObjectURL(buildZip(entries))
         const link = document.createElement('a')
         link.href = url
@@ -516,6 +536,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
 
   const usedBytes = files.reduce((sum, file) => sum + file.size, 0)
   const shown = files
+    .filter((file) => !starsOnly || stars.has(file.path))
     .filter((file) => !filter.trim() || file.path.toLowerCase().includes(filter.trim().toLowerCase()))
     .sort((left, right) => order === 'name' ? left.path.localeCompare(right.path, 'ru', { numeric: true }) : order === 'size' ? right.size - left.size : right.updatedAt - left.updatedAt)
   const paged = shown.slice(0, visibleCount)
@@ -677,6 +698,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           await api['imgstudio:unpublish']({ conversationId }).then(() => { setShareUrl(null); toast.success('Публикация снята') }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
         })()}>Снять публикацию</Button>
       </>}
+      <IconButton size="sm" aria-label={starsOnly ? 'Показать все файлы' : 'Показать только избранные'} title={starsOnly ? 'Все файлы' : 'Только избранные'} aria-pressed={starsOnly} onClick={() => setStarsOnly((prev) => !prev)}>{starsOnly ? '★' : '☆'}</IconButton>
       <IconButton size="sm" aria-label="Обновить галерею" title="Обновить" onClick={() => void reload()}>↻</IconButton>
       <Button size="sm" variant="ghost" aria-expanded={trashOpen} onClick={() => {
         const next = !trashOpen
@@ -840,6 +862,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                     {file.source && <small className="image-studio-dim image-studio-source"> из {file.source}</small>}
                   </span>
                   <span className="image-studio-card-actions">
+                    <IconButton size="sm" aria-label={stars.has(file.path) ? `Убрать ${file.path} из избранного` : `В избранное ${file.path}`} title={stars.has(file.path) ? 'Убрать из избранного' : 'В избранное'} aria-pressed={stars.has(file.path)} onClick={() => toggleStar(file.path)}>{stars.has(file.path) ? '★' : '☆'}</IconButton>
                     <IconButton size="sm" aria-label={`Открыть ${file.path} в полный размер`} title="В полный размер" onClick={() => setViewing(file.path)}>⛶</IconButton>
                     <IconButton size="sm" aria-label={`Нарисовать вариацию ${file.path}`} title="Вариация" disabled={busy} onClick={() => variate(file)}>✦</IconButton>
 

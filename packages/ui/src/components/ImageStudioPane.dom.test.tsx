@@ -599,6 +599,17 @@ describe('ImageStudioPane', () => {
     }
   })
 
+  it('избранное фильтрует галерею и переживает перерисовку', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'В избранное а.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Показать только избранные' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'а.png' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Показать все файлы' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)

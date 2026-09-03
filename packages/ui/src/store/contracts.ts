@@ -59,6 +59,8 @@ export const IMAGE_STUDIO_LAST_KEY = 'vc.imgstudio.last'
 export const IMAGE_STUDIO_NO_TEXT_KEY = 'vc.imgstudio.noText'
 export const IMAGE_STUDIO_STYLE_KEY = 'vc.imgstudio.style'
 export const imageStudioPinnedKey = (conversationId: string): string => `vc.imgstudio.pinned.${conversationId}`
+/** Избранные файлы галереи (звёздочка на карточке). */
+export const imageStudioStarsKey = (conversationId: string): string => `vc.imgstudio.stars.${conversationId}`
 export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
 
 /**
