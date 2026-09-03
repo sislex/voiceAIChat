@@ -144,6 +144,19 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     })
   })
 
+  app.get<{ Params: { id: string } }>('/api/image-studio/:id/trash', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    return { items: await store.listTrash(req.params.id) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/image-studio/:id/restore', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try {
+      const name = await store.restore(req.params.id, req.body?.name ?? '')
+      return { name, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
   app.post<{ Params: { id: string }; Body: { path?: string; to?: string; copy?: boolean } }>('/api/image-studio/:id/transfer', async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply
