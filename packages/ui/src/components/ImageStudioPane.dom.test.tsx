@@ -124,7 +124,9 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(edit).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот.png' })))
     expect(edit.mock.calls[0]![0].prompt).toMatch(/вариант/)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Дублировать кот.png' }))
+    // «Дубликат» теперь живёт в раскрываемой строке 🛠.
+    fireEvent.click(screen.getByRole('button', { name: 'Инструменты обработки кот.png' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Дубликат' }))
     await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот-копия.png' })))
   })
 
