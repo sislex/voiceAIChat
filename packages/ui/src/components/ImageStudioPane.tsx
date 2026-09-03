@@ -443,18 +443,34 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       return
     }
     if (!items.length) return
-    void run(async () => {
-      for (const file of items) {
-        const shrunk = await shrinkOversized(file)
-        if (!shrunk) throw new Error(`«${file.name}» слишком большой (лимит ${formatBytes(IMAGE_STUDIO_LIMITS.maxFileBytes)}), и сжать его не вышло`)
-        const buffer = await shrunk.blob.arrayBuffer()
-        let binary = ''
-        const bytes = new Uint8Array(buffer)
-        for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!)
-        await api['imgstudio:upload']({ conversationId, path: shrunk.name, dataBase64: btoa(binary) })
+    void (async () => {
+      // Совпадение имён — вопрос ДО начала загрузки: молчаливая перезапись
+      // уничтожила бы существующий файл без корзины.
+      const taken = new Set((files ?? []).map((item) => item.path))
+      const clashes = items.filter((file) => taken.has(file.name))
+      let replace = false
+      if (clashes.length) {
+        replace = await confirm({
+          title: clashes.length === 1 ? `«${clashes[0]!.name}» уже есть — заменить?` : `${clashes.length} имён уже заняты — заменить файлы?`,
+          message: '«Заменить» перезапишет существующие; «Отмена» сохранит загружаемые копиями с номером.',
+          confirmLabel: 'Заменить'
+        })
       }
-    }, items.length === 1 ? `Загружено: ${items[0]!.name}` : `Загружено файлов: ${items.length}`,
-      items.length > 1 ? `Загружаем ${items.length} файла(ов)` : undefined)
+      await run(async () => {
+        for (const file of items) {
+          const shrunk = await shrinkOversized(file)
+          if (!shrunk) throw new Error(`«${file.name}» слишком большой (лимит ${formatBytes(IMAGE_STUDIO_LIMITS.maxFileBytes)}), и сжать его не вышло`)
+          const name = !replace && taken.has(shrunk.name) ? copyName(shrunk.name, taken) : shrunk.name
+          taken.add(name)
+          const buffer = await shrunk.blob.arrayBuffer()
+          let binary = ''
+          const bytes = new Uint8Array(buffer)
+          for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!)
+          await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary) })
+        }
+      }, items.length === 1 ? `Загружено: ${items[0]!.name}` : `Загружено файлов: ${items.length}`,
+        items.length > 1 ? `Загружаем ${items.length} файла(ов)` : undefined)
+    })()
   }
 
   const readBase64 = (path: string): Promise<string> =>
@@ -704,7 +720,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         const next = !trashOpen
         setTrashOpen(next)
         if (next) void api['imgstudio:trash']({ conversationId }).then(({ items }) => setTrash(items)).catch(() => setTrash([]))
-      }}>Корзина…</Button>
+      }}>Корзина…{trashOpen && trash.length ? ` (${trash.length})` : ''}</Button>
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.map((file) => file.path)))}>Выбрать все</Button>}
       {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.filter((file) => !multi.has(file.path)).map((file) => file.path)))}>Инвертировать</Button>}
