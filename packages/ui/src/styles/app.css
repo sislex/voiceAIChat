@@ -3814,6 +3814,11 @@ button.conscmd:hover {
 .image-studio-grid--dense { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 .image-studio-fresh { position: absolute; top: 6px; right: 6px; font-size: 10px; line-height: 1; padding: 3px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); }
 .image-studio-thumb { position: relative; }
+/* Шахматка под превью: прозрачность PNG видна, а не сливается с фоном. */
+.image-studio-thumb img, .image-studio-full {
+  background-image: conic-gradient(var(--surface-hover) 25%, transparent 25% 50%, var(--surface-hover) 50% 75%, transparent 75%);
+  background-size: 16px 16px;
+}
 @media (max-width: 720px) {
   .image-studio-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
   .image-studio-actions { flex-wrap: wrap; }
