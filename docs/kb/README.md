@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 224 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 246 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 11 коммит(ов) в areas после сверки: a153ce17 feat: студия картинок — итерация улучшений 15 (референсы и шторка) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1108 коммит(ов) в areas после сверки: 31bf1a84 feat: студия картинок — итерация улучшений 20 (разметка поверх картинки) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1109 коммит(ов) в areas после сверки: 95212483 feat: студия картинок — итерация улучшений 21 (разметка 2.0) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 160 коммит(ов) в areas после сверки: 31bf1a84 feat: студия картинок — итерация улучшений 20 (разметка поверх картинки) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 204 коммит(ов) в areas после сверки: 31bf1a84 feat: студия картинок — итерация улучшений 20 (разметка поверх картинки) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 105 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
@@ -34,7 +34,7 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ⚠ 16 коммит(ов) в areas после сверки: a153ce17 feat: студия картинок — итерация улучшений 15 (референсы и шторка) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 186 коммит(ов) в areas после сверки: c112bf21 feat: студия картинок — итерация улучшений 10 (вьюер и навигация) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 18 коммит(ов) в areas после сверки: 31bf1a84 feat: студия картинок — итерация улучшений 20 (разметка поверх картинки) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ⚠ 3 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 6 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 7 коммит(ов) в areas после сверки: a153ce17 feat: студия картинок — итерация улучшений 15 (референсы и шторка) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 140 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 558. Последние:
+Всего записей: 559. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md](log/2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md) — make-publish-lock-studio-11

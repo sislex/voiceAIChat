@@ -309,3 +309,27 @@ describe('студия картинок: автоназвание чата', () 
     expect(db.getConversation(U, named.id)?.title).toBe('Мой альбом')
   })
 })
+
+describe('студия картинок: перенос между чатами', () => {
+  it('move уносит файл с метой, copy оставляет оригинал; чужой чат — 404', async () => {
+    const target = db.createConversation(U, 'Картинки 9', 'images')
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    await store.setMeta(convId, 'кот.png', { prompt: 'рыжий кот' })
+
+    const moved = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/transfer`, payload: { path: 'кот.png', to: target.id } })
+    expect(moved.statusCode).toBe(200)
+    expect((moved.json() as { files: unknown[] }).files).toEqual([])
+    const inTarget = await store.list(target.id)
+    expect(inTarget).toHaveLength(1)
+    expect(inTarget[0]).toMatchObject({ path: 'кот.png', prompt: 'рыжий кот' })
+
+    // copy: файл остаётся, в целевом — второй экземпляр со свободным именем.
+    const back = await app.inject({ method: 'POST', url: `/api/image-studio/${target.id}/transfer`, payload: { path: 'кот.png', to: convId, copy: true } })
+    expect(back.statusCode).toBe(200)
+    expect(await store.list(target.id)).toHaveLength(1)
+    expect((await store.list(convId)).map((f) => f.path)).toContain('кот.png')
+
+    const plain = db.createConversation(U, 'Обычный')
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/transfer`, payload: { path: 'кот.png', to: plain.id } })).statusCode).toBe(404)
+  })
+})

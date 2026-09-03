@@ -24,6 +24,7 @@ function makeApi(initial: Array<{ path: string }> = []) {
     api: {
       'imgstudio:cancel': cancel,
       'imgstudio:run': vi.fn(async () => ({ active: false })),
+      'imgstudio:transfer': vi.fn(async ({ path }: { path: string }) => { files = files.filter((file) => file.path !== path); return { name: path, files: [...files] } }),
       'imgstudio:publish': vi.fn(async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0, passwordProtected: false })),
       'imgstudio:publication': vi.fn(async () => ({ url: null })),
       'imgstudio:unpublish': vi.fn(async () => ({ url: null })),
@@ -459,6 +460,15 @@ describe('ImageStudioPane', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+
+  it('перенос в другой чат уходит мостом transfer и убирает файл из сетки', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} otherChats={[{ id: 'c2', title: 'Картинки 2' }]} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Инструменты обработки кот.png' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Перенести или скопировать кот.png в другой чат' }), { target: { value: 'move:c2' } })
+    await waitFor(() => expect(api['imgstudio:transfer']).toHaveBeenCalledWith({ conversationId: 'c1', path: 'кот.png', to: 'c2', copy: false }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'кот.png' })).toBeNull())
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {
