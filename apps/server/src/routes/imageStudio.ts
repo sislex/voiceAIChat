@@ -110,10 +110,11 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
         if (!data) return reply.code(404).send({ error: `Референс «${name}» не найден` })
         references.push({ name, data })
       }
+      const startedAt = Date.now()
       const data = await deps.generator!(userId)({ prompt, ...(references.length ? { references } : {}), onCancel: run.onCancel })
       const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
       const file = await store.writeBuffer(req.params.id, name, data)
-      await store.setMeta(req.params.id, name, { prompt })
+      await store.setMeta(req.params.id, name, { prompt, tookMs: Date.now() - startedAt })
       // Первый успешный промпт даёт чату говорящее имя вместо «Картинки N».
       const conversation = db.getConversation(userId, req.params.id)
       if (conversation && /^Картинки \d+$/.test(conversation.title)) {
@@ -134,12 +135,13 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     return withRun(req.params.id, reply, async (run) => {
       const source = await store.readBuffer(req.params.id, sourcePath)
       if (!source) return reply.code(404).send({ error: 'файл не найден' })
+      const startedAt = Date.now()
       const data = await deps.generator!(userId)({ prompt, source, sourceName: sourcePath || 'source.png', onCancel: run.onCancel })
       // Правка не затирает оригинал: результат — новый файл рядом. Откат — это
       // просто удаление новой версии, истории снимков студии не нужно.
       const name = await store.freeName(req.params.id, sourcePath || 'правка.png')
       const file = await store.writeBuffer(req.params.id, name, data)
-      await store.setMeta(req.params.id, name, { prompt, source: sourcePath })
+      await store.setMeta(req.params.id, name, { prompt, source: sourcePath, tookMs: Date.now() - startedAt })
       return { file: { ...file, prompt, source: sourcePath }, files: await store.list(req.params.id) }
     })
   })

@@ -177,6 +177,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Пиксельные размеры превью — узнаём при загрузке картинки в <img>. */
   const [dimensions, setDimensions] = useState<Record<string, string>>({})
   const previewKeys = useRef<Record<string, number>>({})
+  /** Файлы, уже получившие один автоповтор чтения превью. */
+  const retriedOnce = useRef<Set<string>>(new Set())
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -218,8 +220,13 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
             void putCachedPreview(conversationId, file.path, file.updatedAt, blob)
           })
         }).catch(() => {
-          // Пометить битым и забыть ключ, чтобы ретрай перечитал файл заново.
           delete previewKeys.current[file.path]
+          // Один автоповтор через 2 с: сетевые обрывы чаще всего мгновенные.
+          if (!retriedOnce.current.has(file.path)) {
+            retriedOnce.current.add(file.path)
+            setTimeout(() => void reload(), 2000)
+            return
+          }
           setBroken((prev) => new Set(prev).add(file.path))
         })
       }
@@ -593,7 +600,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         {recent.length > 0 && <button type="button" className="image-studio-chip" aria-label="Очистить историю промптов" title="Очистить историю" onClick={() => { setRecent([]); try { localStorage.removeItem(imageStudioPromptsKey(conversationId)) } catch { /* приватный режим */ } }}>×</button>}
       </div>}
       <div className="image-studio-actions">
-        <Button size="sm" disabled={busy || !prompt.trim() || prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars} loading={busy} title="⌘Enter / Ctrl+Enter" onClick={generate}>
+        <Button size="sm" disabled={busy || !prompt.trim() || prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars} loading={busy} title={`⌘Enter / Ctrl+Enter${prompt.trim() ? `\nУйдёт модели:\n${prompt.trim()}${style && !selected ? `\nСтиль: ${style}.` : ''}${size && !selected ? `\nРазмер изображения: ${size.replace('×', 'x')}` : ''}${noText ? '\nНе добавляй на изображение никакой текст…' : ''}` : ''}`} onClick={generate}>
           {selected ? 'Изменить выбранную' : 'Нарисовать'}
         </Button>
         {!selected && <select aria-label="Стиль изображения" value={style} disabled={busy} onChange={(event) => { setStyle(event.target.value); try { localStorage.setItem(IMAGE_STUDIO_STYLE_KEY, event.target.value) } catch { /* приватный режим */ } }}>
@@ -825,7 +832,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                   <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>Отмена</Button>
                 </div>
               : <div className="image-studio-meta">
-                  <span role="button" tabIndex={0} aria-label={`Скопировать имя ${file.path}`} className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}\nОбновлён: ${new Date(file.updatedAt).toLocaleString('ru-RU')}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${file.source ? `\nИз: ${file.source}` : ''}\nКлик — скопировать имя`}
+                  <span role="button" tabIndex={0} aria-label={`Скопировать имя ${file.path}`} className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}\nОбновлён: ${new Date(file.updatedAt).toLocaleString('ru-RU')}${file.tookMs ? `\nСгенерировано за ${Math.round(file.tookMs / 1000)} с` : ''}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${file.source ? `\nИз: ${file.source}` : ''}\nКлик — скопировать имя`}
                     onClick={() => { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) }}
                     onKeyDown={(event) => { if (event.key === 'Enter') { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) } }}>
                     {file.path}
