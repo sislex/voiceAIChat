@@ -182,7 +182,11 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/publication', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     const raw = await store.publication(req.params.id)
-    return raw ? { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, passwordProtected: Boolean(raw.passwordHash) } : { url: null }
+    if (!raw) return { url: null }
+    // Сводка недели — по дням из sidecar; сами дни наружу не нужны.
+    const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10)
+    const views7 = Object.entries(raw.days ?? {}).filter(([day]) => day >= weekAgo).reduce((sum, [, count]) => sum + count, 0)
+    return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, views7, passwordProtected: Boolean(raw.passwordHash) }
   })
 
   app.delete<{ Params: { id: string } }>('/api/image-studio/:id/publish', async (req, reply) => {
@@ -199,7 +203,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     return m ? decodeURIComponent(m.slice(name.length + 1)) : null
   }
   const passwordPage = (action: string, wrong: boolean): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}@media (prefers-color-scheme: dark){body{background:#111;color:#eee}form{background:#1c1c1c !important;box-shadow:none !important}input{background:#111;border-color:#333;color:#eee}}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
 <body><form method="post" action="${action}"><h1>Галерея защищена паролем</h1>${wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
 
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {

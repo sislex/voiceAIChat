@@ -344,6 +344,20 @@ describe('студия картинок: перенос между чатами'
   })
 })
 
+describe('студия картинок: статистика просмотров', () => {
+  it('просмотры пишутся по дням, publication отдаёт сводку за 7 дней', async () => {
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    await app.inject({ method: 'GET', url: pub.url })
+    await app.inject({ method: 'GET', url: pub.url })
+    // countView — фоновый: дождаться очереди лока.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const info = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/publication` })).json() as { views: number; views7: number }
+    expect(info.views).toBeGreaterThanOrEqual(2)
+    expect(info.views7).toBeGreaterThanOrEqual(2)
+  })
+})
+
 describe('студия картинок: OG-мета публичной страницы', () => {
   it('страница несёт og:title и og:image первой картинки', async () => {
     await store.writeBuffer(convId, 'обложка.png', PNG_BYTES)

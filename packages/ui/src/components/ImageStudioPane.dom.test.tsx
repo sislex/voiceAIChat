@@ -540,6 +540,14 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(api['imgstudio:transfer']).toHaveBeenCalledTimes(3))
   })
 
+  it('открытый лайтбокс без нарушений доступности (axe)', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть кот.png в полный размер' }))
+    await screen.findByTestId('image-studio-viewer')
+    await expectNoViolations()
+  }, 20000)
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
