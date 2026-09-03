@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 223 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 242 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 6 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1096 коммит(ов) в areas после сверки: a4284163 feat: студия картинок — итерация улучшений 8 (валидация и черновики) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1097 коммит(ов) в areas после сверки: 301e0461 feat: студия картинок — итерация улучшений 9 (масштаб галереи и устойчивость) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 155 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 195 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 104 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 546. Последние:
+Всего записей: 547. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-image-studio.md](log/2026-09-03-alexeys-macbook-air-2-image-studio.md) — image-studio
