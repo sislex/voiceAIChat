@@ -696,6 +696,7 @@ export interface IpcInvokeMap {
   'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; passwordProtected?: boolean } }
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
+  'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
   'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
   'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
   'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
@@ -1477,6 +1478,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'imgstudio:publication',
   'imgstudio:unpublish',
   'imgstudio:run',
+  'imgstudio:transfer',
   'make:projectFiles',
   'make:projectLinks',
   'make:projectPull',
