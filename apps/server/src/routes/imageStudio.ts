@@ -92,15 +92,22 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     } catch (error) { return sendStudioError(reply, error) }
   })
 
-  app.post<{ Params: { id: string }; Body: { prompt?: string; name?: string } }>('/api/image-studio/:id/generate', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { prompt?: string; name?: string; references?: string[] } }>('/api/image-studio/:id/generate', async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что нарисовать' })
     if (prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: `Промпт длиннее ${IMAGE_STUDIO_LIMITS.maxPromptChars} символов — сократите` })
     if (!deps.generator) return reply.code(503).send({ error: 'Генерация изображений недоступна в этой конфигурации' })
+    const referenceNames = (req.body?.references ?? []).slice(0, 4)
     return withRun(req.params.id, reply, async (run) => {
-      const data = await deps.generator!(userId)({ prompt, onCancel: run.onCancel })
+      const references: Array<{ name: string; data: Buffer }> = []
+      for (const name of referenceNames) {
+        const data = await store.readBuffer(req.params.id, name)
+        if (!data) return reply.code(404).send({ error: `Референс «${name}» не найден` })
+        references.push({ name, data })
+      }
+      const data = await deps.generator!(userId)({ prompt, ...(references.length ? { references } : {}), onCancel: run.onCancel })
       const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
       const file = await store.writeBuffer(req.params.id, name, data)
       await store.setMeta(req.params.id, name, { prompt })

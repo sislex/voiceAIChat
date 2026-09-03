@@ -689,7 +689,7 @@ export interface IpcInvokeMap {
   'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:delete': { arg: { conversationId: string; path: string }; result: import('./imageStudio').ImageStudioFile[] }
   'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
-  'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
   'imgstudio:publish': { arg: { conversationId: string; password?: string | null }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }

@@ -539,6 +539,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           const absolute = `${location.origin}${shareUrl}`
           void navigator.clipboard?.writeText(absolute).then(() => toast.success('Ссылка в буфере')).catch(() => toast.info(absolute))
         }}>Ссылка на галерею{shareViews ? ` · ${shareViews} 👁` : ''}</Button>
+        <Button size="sm" variant="ghost" onClick={() => window.open(shareUrl!, '_blank', 'noopener')}>Открыть страницу</Button>
         <Button size="sm" variant="ghost" title={shareProtected ? 'Пароль установлен — изменить или снять' : 'Закрыть галерею паролем для зрителей'} onClick={() => { setViewerPassword(''); setPasswordDialog(true) }}>{shareProtected ? 'Пароль 🔒' : 'Пароль…'}</Button>
         <Button size="sm" variant="ghost" onClick={() => void (async () => {
           if (!(await confirm({ title: 'Снять публикацию галереи?', message: 'Публичная ссылка перестанет открываться.', confirmLabel: 'Снять' }))) return
@@ -548,6 +549,20 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.map((file) => file.path)))}>Выбрать все</Button>}
       {multi && multi.size > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => downloadAll(shown.filter((file) => multi.has(file.path)))}>Скачать выбранные ({multi.size})</Button>}
+      {multi && multi.size > 0 && multi.size <= 4 && <Button size="sm" variant="ghost" disabled={busy} title="Нарисовать новую картинку по промпту, используя выбранные как образцы стиля" onClick={() => {
+        const cleaned = prompt.trim()
+        if (!cleaned) { toast.info('Сначала опишите в поле промпта, что нарисовать'); promptRef.current?.focus(); return }
+        const refs = [...multi]
+        rememberPrompt(cleaned)
+        const launch = (): Promise<void> => run(async () => {
+          await api['imgstudio:generate']({ conversationId, prompt: cleaned, references: refs, ...(nameFromPrompt(cleaned) ? { name: nameFromPrompt(cleaned) } : {}) })
+          setPrompt('')
+          try { localStorage.removeItem(imageStudioDraftKey(conversationId)) } catch { /* приватный режим */ }
+          setMulti(null)
+        }, 'Изображение готово', `Модель рисует по ${refs.length} референс(ам)`)
+        setLastAttempt(() => launch)
+        void launch()
+      }}>Нарисовать с референсами ({multi.size})</Button>}
       {multi && multi.size > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={() => void (async () => {
         if (!(await confirm({ title: `Удалить ${multi.size} файл(ов)?`, message: 'Восстановить изображения будет нельзя.', confirmLabel: 'Удалить' }))) return
         await run(async () => {
@@ -627,7 +642,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                   <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>Отмена</Button>
                 </div>
               : <div className="image-studio-meta">
-                  <span role="button" tabIndex={0} aria-label={`Скопировать имя ${file.path}`} className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${file.source ? `\nИз: ${file.source}` : ''}\nКлик — скопировать имя`}
+                  <span role="button" tabIndex={0} aria-label={`Скопировать имя ${file.path}`} className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}\nОбновлён: ${new Date(file.updatedAt).toLocaleString('ru-RU')}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${file.source ? `\nИз: ${file.source}` : ''}\nКлик — скопировать имя`}
                     onClick={() => { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) }}
                     onKeyDown={(event) => { if (event.key === 'Enter') { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) } }}>
                     {file.path}
