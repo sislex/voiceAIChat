@@ -2280,13 +2280,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           <p>{machineConnectStatus}</p>
           <div className="dialog-actions">
             <button type="button" onClick={() => {
+              const generation = machineConnectGeneration.current
               void api['loginApplication:artifacts']({ platform: 'macos', arch: 'arm64' }).then(([artifact]) => {
+                if (generation !== machineConnectGeneration.current) return
                 if (!artifact?.available || !artifact.downloadUrl) {
                   setMachineConnectStatus('Сборка macOS ARM64 сейчас недоступна.')
                   return
                 }
                 window.location.href = artifact.downloadUrl
-              }).catch((error) => setMachineConnectStatus(error instanceof Error ? error.message : String(error)))
+              }).catch((error) => {
+                if (generation !== machineConnectGeneration.current) return
+                setMachineConnectStatus(error instanceof Error ? error.message : String(error))
+              })
             }}>Скачать приложение</button>
             <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
               {machineConnectBusy ? 'Ожидаем подключение…' : 'Подключить текущее устройство'}
