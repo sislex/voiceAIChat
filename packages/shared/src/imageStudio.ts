@@ -31,6 +31,8 @@ export function isImageStudioPath(path: string): boolean {
 }
 
 export const IMAGE_STUDIO_LIMITS = {
+  /** Длиннее — это уже ТЗ, а не промпт; модель теряет фокус, ран дорожает. */
+  maxPromptChars: 4000,
   /** Файл больше — это уже не картинка для макета, а исходник видео. */
   maxFileBytes: 12 * 1024 * 1024,
   /** Квота галереи одного разговора. */

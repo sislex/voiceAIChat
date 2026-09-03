@@ -12,7 +12,7 @@ import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
 import { ToolFrame } from './ToolFrame'
-import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioPromptsKey } from '../store/contracts'
+import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
@@ -79,7 +79,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [files, setFiles] = useState<ImageStudioFile[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(() => {
+    try { return localStorage.getItem(imageStudioDraftKey(conversationId)) ?? '' } catch { return '' }
+  })
   const [size, setSize] = useState<string>(() => {
     try {
       const saved = localStorage.getItem(IMAGE_STUDIO_SIZE_KEY) ?? ''
@@ -248,6 +250,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       }
       setPrompt('')
       setFileName('')
+      try { localStorage.removeItem(imageStudioDraftKey(conversationId)) } catch { /* приватный режим */ }
       promptRef.current?.focus()
     }, selected ? 'Правка готова — результат рядом с оригиналом' : 'Изображение готово',
       selected ? `Модель правит «${selected}»` : 'Модель рисует')
@@ -408,25 +411,35 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         rows={2}
         placeholder={selected ? `Что изменить в «${selected}»…` : 'Что нарисовать…'}
         value={prompt}
-        onChange={(event) => setPrompt(event.target.value)}
+        onChange={(event) => {
+          setPrompt(event.target.value)
+          // Черновик переживает переключение чатов — как в композере.
+          try {
+            if (event.target.value) localStorage.setItem(imageStudioDraftKey(conversationId), event.target.value)
+            else localStorage.removeItem(imageStudioDraftKey(conversationId))
+          } catch { /* приватный режим */ }
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); generate() }
           // Esc — «выйти из режима правки», не покидая поля.
           if (event.key === 'Escape' && selected) { event.preventDefault(); setSelected(null) }
         }}
       />
+      {prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars * 0.2 && <p className={`image-studio-progress${prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars ? ' image-studio-quota--warn' : ''}`}>
+        {prompt.length} / {IMAGE_STUDIO_LIMITS.maxPromptChars}{prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars ? ' — промпт слишком длинный' : ''}
+      </p>}
       {recent.length > 0 && !prompt && <div className="image-studio-recent" aria-label="Недавние промпты">
         {recent.map((text) => <button key={text} type="button" className="image-studio-chip" title={text} onClick={() => { setPrompt(text); promptRef.current?.focus() }}>{text.length > 42 ? `${text.slice(0, 42)}…` : text}</button>)}
         <button type="button" className="image-studio-chip" aria-label="Очистить историю промптов" title="Очистить историю" onClick={() => { setRecent([]); try { localStorage.removeItem(imageStudioPromptsKey(conversationId)) } catch { /* приватный режим */ } }}>×</button>
       </div>}
       <div className="image-studio-actions">
-        <Button size="sm" disabled={busy || !prompt.trim()} loading={busy} title="⌘Enter / Ctrl+Enter" onClick={generate}>
+        <Button size="sm" disabled={busy || !prompt.trim() || prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars} loading={busy} title="⌘Enter / Ctrl+Enter" onClick={generate}>
           {selected ? 'Изменить выбранную' : 'Нарисовать'}
         </Button>
         {!selected && <select aria-label="Размер изображения" value={size} disabled={busy} onChange={(event) => { setSize(event.target.value); try { localStorage.setItem(IMAGE_STUDIO_SIZE_KEY, event.target.value) } catch { /* приватный режим */ } }}>
           {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset}</option>)}
         </select>}
-        {!selected && <input className="image-studio-filename" aria-label="Имя нового файла" placeholder="имя.png (не обязательно)" value={fileName} disabled={busy} onChange={(event) => setFileName(event.target.value)} />}
+        {!selected && <input className="image-studio-filename" aria-label="Имя нового файла" placeholder="имя.png (не обязательно)" value={fileName} disabled={busy} onChange={(event) => setFileName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); generate() } }} />}
         {api['prompt:suggest'] && <IconButton size="sm" aria-label="Улучшить промпт с помощью AI" title="Улучшить промпт" disabled={busy || !prompt.trim()} onClick={() => void (async () => {
           const current = prompt.trim()
           try {
@@ -528,9 +541,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                   <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>Отмена</Button>
                 </div>
               : <div className="image-studio-meta">
-                  <span className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${file.source ? `\nИз: ${file.source}` : ''}`}>
+                  <span role="button" tabIndex={0} aria-label={`Скопировать имя ${file.path}`} className="image-studio-name" title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${file.source ? `\nИз: ${file.source}` : ''}\nКлик — скопировать имя`}
+                    onClick={() => { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) }}
+                    onKeyDown={(event) => { if (event.key === 'Enter') { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) } }}>
                     {file.path}
                     {dimensions[file.path] && <small className="image-studio-dim"> {dimensions[file.path]}</small>}
+                    {file.source && <small className="image-studio-dim image-studio-source"> из {file.source}</small>}
                   </span>
                   <span className="image-studio-card-actions">
                     <IconButton size="sm" aria-label={`Открыть ${file.path} в полный размер`} title="В полный размер" onClick={() => setViewing(file.path)}>⛶</IconButton>
@@ -586,8 +602,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         {(() => {
           const meta = files.find((file) => file.path === viewing)
           if (!meta?.prompt && !meta?.source) return null
+          const sourceInGallery = meta.source && files.some((file) => file.path === meta.source)
           return <p className="imgcap image-studio-origin">
-            {meta.source ? `Из «${meta.source}» · ` : ''}{meta.prompt ? `промпт: ${meta.prompt}` : ''}
+            {meta.source ? (sourceInGallery
+              ? <>Из <button type="button" className="image-studio-cancel" onClick={() => { setCompare(false); setViewing(meta.source!) }}>«{meta.source}»</button> · </>
+              : `Из «${meta.source}» · `) : ''}{meta.prompt ? `промпт: ${meta.prompt}` : ''}
             {meta.prompt && <>
               {' '}
               <button type="button" className="image-studio-cancel" onClick={() => { setPrompt(meta.prompt!); setViewing(null); promptRef.current?.focus() }}>Использовать промпт</button>

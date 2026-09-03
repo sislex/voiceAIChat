@@ -8,9 +8,25 @@ import { join } from 'node:path'
 import { IMAGE_STUDIO_LIMITS, isImageStudioPath, type ImageStudioFile } from '@voicechat/shared'
 
 export class ImageStudioError extends Error {
-  constructor(readonly code: 'bad_path' | 'not_found' | 'too_big' | 'quota' | 'exists', message: string) {
+  constructor(readonly code: 'bad_path' | 'bad_media' | 'not_found' | 'too_big' | 'quota' | 'exists', message: string) {
     super(message)
   }
+}
+
+/**
+ * Байты обязаны быть картинкой заявленного типа: расширению верить нельзя —
+ * «кот.png» с чем угодно внутри засорил бы галерею и уехал бы в промпт правки.
+ */
+function assertImageBytes(name: string, data: Buffer): void {
+  const ext = name.toLowerCase().split('.').pop() ?? ''
+  const ok =
+    ext === 'png' ? data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    : ext === 'jpg' || ext === 'jpeg' ? data[0] === 0xff && data[1] === 0xd8
+    : ext === 'gif' ? data.subarray(0, 3).toString('latin1') === 'GIF'
+    : ext === 'webp' ? data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP'
+    : ext === 'svg' ? /^\s*(<\?xml|<svg|<!--|<!DOCTYPE svg)/i.test(data.subarray(0, 256).toString('utf8'))
+    : false
+  if (!ok) throw new ImageStudioError('bad_media', `Содержимое «${name}» не похоже на ${ext.toUpperCase()}`)
 }
 
 /**
@@ -92,6 +108,7 @@ export class ImageStudioStore {
 
   async writeBuffer(conversationId: string, rawPath: string, data: Buffer): Promise<ImageStudioFile> {
     const name = safeName(rawPath)
+    assertImageBytes(name, data)
     if (data.byteLength > IMAGE_STUDIO_LIMITS.maxFileBytes) {
       throw new ImageStudioError('too_big', `Файл больше ${Math.round(IMAGE_STUDIO_LIMITS.maxFileBytes / 1024 / 1024)} МБ`)
     }

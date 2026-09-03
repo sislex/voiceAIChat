@@ -3,7 +3,7 @@
 // «поправить выбранную по промпту». Доступ — владелец разговора; чужой и
 // несуществующий неотличимы (404), как везде в Make/чатах.
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
+import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { ImageStudioError, type ImageStudioStore } from '../images/studio.js'
 import type { ImageStudioGenerator } from '../llm/imageStudioGenerator.js'
@@ -97,6 +97,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     if (!own(userId, req.params.id, reply)) return reply
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что нарисовать' })
+    if (prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: `Промпт длиннее ${IMAGE_STUDIO_LIMITS.maxPromptChars} символов — сократите` })
     if (!deps.generator) return reply.code(503).send({ error: 'Генерация изображений недоступна в этой конфигурации' })
     return withRun(req.params.id, reply, async (run) => {
       const data = await deps.generator!(userId)({ prompt, onCancel: run.onCancel })
@@ -112,6 +113,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     if (!own(userId, req.params.id, reply)) return reply
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что изменить' })
+    if (prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: `Промпт длиннее ${IMAGE_STUDIO_LIMITS.maxPromptChars} символов — сократите` })
     if (!deps.generator) return reply.code(503).send({ error: 'Правка изображений недоступна в этой конфигурации' })
     const sourcePath = req.body?.path ?? ''
     return withRun(req.params.id, reply, async (run) => {
