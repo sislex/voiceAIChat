@@ -6631,6 +6631,74 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split-chat > .main { flex: 1 1 auto; min-height: 0; height: auto; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
+/* Console Reader follows Make «Проект 18»: product chat and PTY stay mounted,
+   while this wrapper owns only their adaptive geometry and accessible splitter. */
+.console-reader-workshop { position: relative; background: var(--bg); }
+.console-reader-workshop > .chat-split-chat {
+  flex: 0 0 var(--console-chat-width, 42%);
+  width: var(--console-chat-width, 42%);
+  min-width: 360px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.console-reader-console-host {
+  flex: 1 1 auto;
+  min-width: 320px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  background: var(--panel);
+}
+.console-reader-console-host > .console-browser-pane { flex: 1 1 auto; width: 100%; height: 100%; }
+.console-reader-divider {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 12px;
+  align-self: stretch;
+  border: 0;
+  outline: none;
+  cursor: col-resize;
+  touch-action: none;
+}
+.console-reader-divider::before {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+  content: '';
+  transform: translateX(-50%);
+  transition: width 100ms ease, background-color 100ms ease;
+}
+.console-reader-divider__handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 100ms ease;
+}
+.console-reader-divider:hover::before,
+.console-reader-divider:focus-visible::before,
+.console-reader-workshop[data-resizing='true'] .console-reader-divider::before { width: 2px; background: var(--accent); }
+.console-reader-divider:hover .console-reader-divider__handle,
+.console-reader-divider:focus-visible .console-reader-divider__handle,
+.console-reader-workshop[data-resizing='true'] .console-reader-divider__handle { opacity: 1; }
+.console-reader-divider:focus-visible .console-reader-divider__handle { outline: 2px solid var(--focus-ring, var(--accent)); outline-offset: 2px; }
+.console-reader-drag-shield { position: fixed; z-index: 100; inset: 0; display: none; cursor: col-resize; touch-action: none; }
+.console-reader-workshop[data-resizing='true'] { cursor: col-resize; user-select: none; }
+.console-reader-workshop[data-resizing='true'] .console-reader-drag-shield { display: block; }
+@media (max-width: 1100px) and (min-width: 769px) {
+  .console-reader-selector > strong { overflow: hidden; width: 9px; color: transparent; }
+  .console-reader-selector > strong::before { color: var(--text); content: '●'; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .console-reader-divider::before, .console-reader-divider__handle { transition: none; }
+}
 .webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .webpreview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
 .webpreview-address { flex: 1; min-width: 0; }
@@ -6660,9 +6728,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split-tabs { display: grid; grid-template-columns: 1fr 1fr; flex: none; padding: 6px; gap: 4px; border-bottom: 1px solid var(--border); background: var(--panel); }
   .chat-split-tabs button { padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); font: inherit; }
   .chat-split-tabs button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); font-weight: 700; }
-  .chat-split-divider { display: none; }
-  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
-  .chat-split--chat .webpreview, .chat-split--preview .chat-split-chat { display: none; }
+  .chat-split-divider, .console-reader-divider, .console-reader-drag-shield { display: none !important; }
+  .chat-split-chat, .webpreview, .console-reader-console-host { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
+  .chat-split--chat .webpreview, .chat-split--chat .console-reader-console-host, .chat-split--preview .chat-split-chat { display: none; }
+  .console-reader-workshop > .chat-split-chat { width: 100%; min-width: 0; }
+  .chat-split-tabs button:focus-visible { outline: 2px solid var(--focus-ring, var(--accent)); outline-offset: 1px; }
 }
 
 /* Universal widget + assistant split. Visual tokens mirror Make «Проект 14» (index.html + styles.css). */
