@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 223 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 242 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 6 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1094 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1095 коммит(ов) в areas после сверки: a1ae1014 feat: студия картинок — итерация улучшений 7 (архив, AI-промпт, витрина) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 155 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 195 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 104 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
@@ -34,7 +34,7 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ⚠ 11 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 185 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 9 коммит(ов) в areas после сверки: 8213b2b9 feat: студия картинок — итерация улучшений 6 (буфер, сравнение, мультивыбор) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: faaa7acf feat: студия картинок — итерация улучшений 4 (ран-контроль и происхождение) |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 101 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 2 коммит(ов) в areas после сверки: faaa7acf feat: студия картинок — итерация улучшений 4 (ран-контроль и происхождение) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 139 коммит(ов) в areas после сверки: 4dcf5664 feat: студия картинок — итерация улучшений 5 (контекст чата и хвост хода) … |
@@ -61,10 +61,11 @@
 
 ## Журнал сессий
 
-Всего записей: 544. Последние:
+Всего записей: 545. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-image-studio.md](log/2026-09-03-alexeys-macbook-air-2-image-studio.md) — image-studio
+- [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-8.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-8.md) — image-studio-improvements-8
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-7.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-7.md) — image-studio-improvements-7
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md) — image-studio-improvements-6
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-5.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-5.md) — image-studio-improvements-5
@@ -72,7 +73,6 @@
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-3.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-3.md) — image-studio-improvements-3
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-2.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-2.md) — image-studio-improvements-2
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-1.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-1.md) — image-studio-improvements-1
-- [2026-09-03-alexeys-macbook-air-2-conversation-scope-isolation.md](log/2026-09-03-alexeys-macbook-air-2-conversation-scope-isolation.md) — conversation-scope-isolation
 
 ## Исторические планы
 

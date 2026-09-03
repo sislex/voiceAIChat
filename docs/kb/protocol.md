@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-03
-checked: 38a52e0b
+checked: ecaa8cd7
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -521,7 +521,12 @@ generate/edit (второй — 409); `POST .../cancel` отменяет его 
 410 «Генерация отменена»); у файлов есть происхождение `prompt?`/`source?`
 (sidecar `.studio-meta.json` в папке галереи; rename переносит, delete
 удаляет). Важно: `handle.cancel()` CLI-клиентов глушит onDone/onError
-(finished=true), поэтому генератор реджектит свой промис сам. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+(finished=true), поэтому генератор реджектит свой промис сам. Итерация 8:
+запись в хранилище проверяет магические байты содержимого (PNG/JPEG/GIF/WebP/
+SVG-текст) — мусор под видом картинки получает 400 `bad_media`; промпт
+generate/edit ограничен `IMAGE_STUDIO_LIMITS.maxPromptChars` (4000, 400 с
+текстом); в тестах студии сеются валидные PNG-байты (см. PNG_BYTES/png()
+в тест-файлах) — Buffer.from('строка') sniffing не пройдёт. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
 web-клиенте — авторизованный fetch → base64 (см. ui.md). POST
 `/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
 и CHECK по scope расширены (см. data-auth.md).
