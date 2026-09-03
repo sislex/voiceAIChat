@@ -294,3 +294,18 @@ describe('студия картинок: референсы генерации',
     await refApp.close()
   })
 })
+
+describe('студия картинок: автоназвание чата', () => {
+  it('первый промпт переименовывает дефолтные «Картинки N», своё имя не трогается', async () => {
+    const auto = db.createConversation(U, 'Картинки 3', 'images')
+    await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'синий кит в облаках' } })
+    expect(db.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
+    // Повторная генерация не перезатирает уже говорящее имя.
+    await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'другое' } })
+    expect(db.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
+
+    const named = db.createConversation(U, 'Мой альбом', 'images')
+    await app.inject({ method: 'POST', url: `/api/image-studio/${named.id}/generate`, payload: { prompt: 'кот' } })
+    expect(db.getConversation(U, named.id)?.title).toBe('Мой альбом')
+  })
+})

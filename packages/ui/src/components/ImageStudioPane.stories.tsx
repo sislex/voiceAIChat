@@ -7,7 +7,7 @@ import { ImageStudioPane } from './ImageStudioPane'
 import { STUDIO_FILES, STUDIO_PIXEL_BASE64 } from '../test/fixtures/imageStudio'
 import type { ImageStudioFile } from '@shared/imageStudio'
 
-function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: boolean } = {}) {
+function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: boolean; published?: boolean; passwordProtected?: boolean } = {}) {
   let files = [...initial]
   return {
     'imgstudio:list': async () => {
@@ -22,7 +22,7 @@ function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: 
     'imgstudio:edit': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-2.png'), size: 10, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
     'imgstudio:cancel': async () => ({ cancelled: false }),
     'imgstudio:publish': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0, passwordProtected: false }),
-    'imgstudio:publication': async () => ({ url: null }),
+    'imgstudio:publication': async () => (opts.published ? { url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 12, passwordProtected: Boolean(opts.passwordProtected) } : { url: null }),
     'imgstudio:unpublish': async () => ({ url: null })
   }
 }
@@ -54,3 +54,9 @@ export const MultiSelect: Story = {
 
 /** Галерея недоступна: ошибка с повтором вместо пустого экрана. */
 export const LoadError: Story = { args: { api: storyApi([], { failList: true }) as never } }
+
+/** Опубликованная галерея: ссылка со счётчиком просмотров, пароль, снятие. */
+export const Published: Story = { args: { api: storyApi(STUDIO_FILES, { published: true }) as never } }
+
+/** Публикация под паролем: кнопка показывает замок. */
+export const PublishedWithPassword: Story = { args: { api: storyApi(STUDIO_FILES, { published: true, passwordProtected: true }) as never } }

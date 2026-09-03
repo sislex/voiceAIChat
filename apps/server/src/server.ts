@@ -1211,7 +1211,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         try {
           const file = await (runnerFs ? runnerFs.readFile(userId, image.path) : Promise.resolve(readUserFile(image.path, [profileHome(userId)])).then((r) => r.ok ? r.file : null))
           if (!file?.dataBase64) continue
-          const name = await imageStudioStore.freeName(conversationId, image.path.split('/').pop() ?? 'изображение.png')
+          const original = image.path.split('/').pop() ?? 'изображение.png'
+          // Технические имена ранов («exec-<uuid>.png») в галерее нечитаемы.
+          const readable = /^exec-[0-9a-f-]{20,}\./i.test(original) ? `из-чата${original.slice(original.lastIndexOf('.'))}` : original
+          const name = await imageStudioStore.freeName(conversationId, readable)
           await imageStudioStore.writeBuffer(conversationId, name, Buffer.from(file.dataBase64, 'base64'))
         } catch {
           // не-картинка, квота или чтение не удалось — ход это не ломает
