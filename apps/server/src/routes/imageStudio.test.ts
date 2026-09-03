@@ -210,3 +210,26 @@ describe('студия картинок: публикация галереи', (
     }
   })
 })
+
+describe('студия картинок: статус рана', () => {
+  it('/run показывает активный ран и его завершение', async () => {
+    let finish: ((data: Buffer) => void) | undefined
+    const slowApp = Fastify()
+    slowApp.decorateRequest('user', null)
+    slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
+    registerImageStudioRoutes(slowApp, {
+      db, store,
+      generator: () => () => new Promise((resolve) => { finish = resolve })
+    })
+    await slowApp.ready()
+
+    expect((await slowApp.inject({ method: 'GET', url: `/api/image-studio/${convId}/run` })).json()).toEqual({ active: false })
+    const running = slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'кот' } }).then((res) => res)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await slowApp.inject({ method: 'GET', url: `/api/image-studio/${convId}/run` })).json()).toEqual({ active: true })
+    finish!(PNG_BYTES)
+    await running
+    expect((await slowApp.inject({ method: 'GET', url: `/api/image-studio/${convId}/run` })).json()).toEqual({ active: false })
+    await slowApp.close()
+  })
+})

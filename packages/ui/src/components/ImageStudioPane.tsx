@@ -17,7 +17,7 @@ import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
   'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel' |
-  'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish'> &
+  'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish' | 'imgstudio:run'> &
   Partial<Pick<RendererApi, 'prompt:suggest'>>
 
 interface Props {
@@ -107,6 +107,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [lastAttempt, setLastAttempt] = useState<(() => void) | null>(null)
   /** Публичная ссылка галереи (null — не опубликована, undefined — грузится). */
   const [shareUrl, setShareUrl] = useState<string | null | undefined>(undefined)
+  const [shareViews, setShareViews] = useState<number | null>(null)
   const [filter, setFilter] = useState('')
   const [order, setOrder] = useState<'new' | 'name' | 'size'>(() => {
     try {
@@ -182,9 +183,35 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   useEffect(() => { void reload() }, [reload])
   useEffect(() => {
     let alive = true
-    void api['imgstudio:publication']({ conversationId }).then(({ url }) => { if (alive) setShareUrl(url) }).catch(() => { if (alive) setShareUrl(null) })
+    void api['imgstudio:publication']({ conversationId }).then((info) => { if (alive) { setShareUrl(info.url); setShareViews(info.views ?? null) } }).catch(() => { if (alive) setShareUrl(null) })
     return () => { alive = false }
   }, [api, conversationId])
+  // Перезагрузили страницу во время генерации — ран живёт на сервере; панель
+  // обязана это показать, иначе результат «появится когда-нибудь молча».
+  useEffect(() => {
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const poll = async (): Promise<void> => {
+      try {
+        const { active } = await api['imgstudio:run']({ conversationId })
+        if (!alive) return
+        if (active) {
+          setBusy(true)
+          setProgress((prev) => prev ?? { label: 'Модель рисует (ран продолжается после перезагрузки)', seconds: 0 })
+          timer = setTimeout(() => void poll(), 3000)
+        } else {
+          // Ран кончился (или его не было): вернуть панель и добрать галерею.
+          setBusy((was) => {
+            if (was) void reload()
+            return false
+          })
+          setProgress((prev) => prev && prev.label.includes('после перезагрузки') ? null : prev)
+        }
+      } catch { /* сервер недоступен — обычные пути покажут ошибку */ }
+    }
+    void poll()
+    return () => { alive = false; if (timer) clearTimeout(timer) }
+  }, [api, conversationId, reload])
   // Панель закрыли или сменили разговор — blob-URL превью иначе живут до
   // конца вкладки (насосать их можно на сотни мегабайт).
   useEffect(() => () => {
@@ -504,16 +531,18 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         void navigator.clipboard?.writeText(absolute).then(() => toast.success('Опубликовано — ссылка в буфере')).catch(() => toast.success(`Опубликовано: ${absolute}`))
       }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))}>Поделиться</Button>}
       {typeof shareUrl === 'string' && <>
-        <Button size="sm" variant="ghost" onClick={() => {
+        <Button size="sm" variant="ghost" title={shareViews !== null ? `Просмотров: ${shareViews}` : 'Скопировать ссылку'} onClick={() => {
           const absolute = `${location.origin}${shareUrl}`
           void navigator.clipboard?.writeText(absolute).then(() => toast.success('Ссылка в буфере')).catch(() => toast.info(absolute))
-        }}>Ссылка на галерею</Button>
+        }}>Ссылка на галерею{shareViews ? ` · ${shareViews} 👁` : ''}</Button>
         <Button size="sm" variant="ghost" onClick={() => void (async () => {
           if (!(await confirm({ title: 'Снять публикацию галереи?', message: 'Публичная ссылка перестанет открываться.', confirmLabel: 'Снять' }))) return
           await api['imgstudio:unpublish']({ conversationId }).then(() => { setShareUrl(null); toast.success('Публикация снята') }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
         })()}>Снять публикацию</Button>
       </>}
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
+      {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.map((file) => file.path)))}>Выбрать все</Button>}
+      {multi && multi.size > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => downloadAll(shown.filter((file) => multi.has(file.path)))}>Скачать выбранные ({multi.size})</Button>}
       {multi && multi.size > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={() => void (async () => {
         if (!(await confirm({ title: `Удалить ${multi.size} файл(ов)?`, message: 'Восстановить изображения будет нельзя.', confirmLabel: 'Удалить' }))) return
         await run(async () => {
