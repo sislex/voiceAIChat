@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ImageStudioFile } from '@shared/imageStudio'
 import type { CropRect } from '../lib/imageTransform'
+import { ANNOTATE_COLORS, type AnnotateStroke } from '../lib/imageAnnotate'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 
@@ -26,6 +27,8 @@ interface Props {
   onVariate: (path: string) => void
   /** Обрезка: rect в натуральных пикселях картинки. */
   onCrop: (path: string, rect: CropRect) => void
+  /** Разметка: штрихи в CSS-пикселях + размер, в котором рисовали. */
+  onAnnotate: (path: string, strokes: AnnotateStroke[], displaySize: { width: number; height: number }) => void
   /** Позиция открытого файла в отфильтрованной сетке: «N из M». */
   position?: { index: number; total: number }
   onDownload: (path: string) => void
@@ -33,11 +36,17 @@ interface Props {
   onClose: () => void
 }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onDownload, onDelete, onClose, position }: Props): JSX.Element {
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
   /** Режим обрезки: рамка в координатах отображаемой картинки (CSS-пиксели). */
   const [cropping, setCropping] = useState(false)
+  /** Режим разметки: freehand-штрихи поверх картинки. */
+  const [annotating, setAnnotating] = useState(false)
+  const [strokes, setStrokes] = useState<AnnotateStroke[]>([])
+  const [penColor, setPenColor] = useState<string>(ANNOTATE_COLORS[0])
+  const [penWidth, setPenWidth] = useState<3 | 8>(3)
+  const drawing = useRef(false)
   const [cropBox, setCropBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
@@ -62,7 +71,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : `${viewing}${positionLabel}`} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
     actions={<>
       {sourceInGallery && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
-      <IconButton size="sm" aria-label={cropping ? 'Выйти из режима обрезки' : `Обрезать ${viewing}`} title={cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'} aria-pressed={cropping} onClick={() => { setCropping((prev) => !prev); setCropBox(null); onCompareChange(false) }}>✂</IconButton>
+      <IconButton size="sm" aria-label={annotating ? 'Выйти из режима разметки' : `Разметить ${viewing}`} title={annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'} aria-pressed={annotating} onClick={() => { setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>✏️</IconButton>
+      <IconButton size="sm" aria-label={cropping ? 'Выйти из режима обрезки' : `Обрезать ${viewing}`} title={cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'} aria-pressed={cropping} onClick={() => { setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>✂</IconButton>
       <IconButton size="sm" aria-label={`Править ${viewing} по промпту`} title="Править по промпту" onClick={() => onPickForEdit(viewing)}>✎</IconButton>
       <IconButton size="sm" aria-label={`Нарисовать вариацию ${viewing}`} title="Вариация" disabled={busy} onClick={() => onVariate(viewing)}>✦</IconButton>
       <IconButton size="sm" aria-label={`Скачать ${viewing}`} title="Скачать" onClick={() => onDownload(viewing)}>⇩</IconButton>
@@ -99,6 +109,31 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           </div>
         }
         if (!previews[viewing]) return <p className="imgerr" role="alert">Превью ещё не загрузилось</p>
+        if (annotating) {
+          return <div className="image-studio-crop-stage image-studio-annotate"
+            onPointerDown={(event) => {
+              const box = event.currentTarget.getBoundingClientRect()
+              drawing.current = true
+              setStrokes((prev) => [...prev, { color: penColor, width: penWidth, points: [{ x: event.clientX - box.left, y: event.clientY - box.top }] }])
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }}
+            onPointerMove={(event) => {
+              if (!drawing.current) return
+              const box = event.currentTarget.getBoundingClientRect()
+              const point = { x: event.clientX - box.left, y: event.clientY - box.top }
+              setStrokes((prev) => {
+                const last = prev[prev.length - 1]
+                if (!last) return prev
+                return [...prev.slice(0, -1), { ...last, points: [...last.points, point] }]
+              })
+            }}
+            onPointerUp={() => { drawing.current = false }}>
+            <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
+            <svg className="image-studio-annotate-layer" aria-hidden="true">
+              {strokes.map((stroke, index) => <polyline key={index} points={stroke.points.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={stroke.color} strokeWidth={stroke.width} strokeLinecap="round" strokeLinejoin="round" />)}
+            </svg>
+          </div>
+        }
         if (!cropping) return <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} />
         return <div className="image-studio-crop-stage"
           onPointerDown={(event) => {
@@ -120,6 +155,19 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           <p className="image-studio-origin"><span className="image-studio-dim">Выделите область мышью и нажмите «Вырезать».</span></p>
         </div>
       })()}
+      {annotating && <p className="image-studio-origin image-studio-annotate-controls">
+        {ANNOTATE_COLORS.map((color) => <button key={color} type="button" className={`image-studio-pen${penColor === color ? ' image-studio-pen--active' : ''}`} style={{ background: color }} aria-label={`Цвет ${color}`} aria-pressed={penColor === color} title={`Цвет ${color}`} onClick={() => setPenColor(color)} />)}
+        <button type="button" className="image-studio-cancel" aria-pressed={penWidth === 8} onClick={() => setPenWidth(penWidth === 3 ? 8 : 3)}>{penWidth === 3 ? 'Тонкая линия' : 'Толстая линия'}</button>
+        <button type="button" className="image-studio-cancel" disabled={!strokes.length} onClick={() => setStrokes((prev) => prev.slice(0, -1))}>Отменить штрих</button>
+        <button type="button" className="image-studio-cancel" disabled={!strokes.length || busy} onClick={() => {
+          const img = imgRef.current
+          if (!img || !strokes.length) return
+          const size = { width: img.clientWidth, height: img.clientHeight }
+          setAnnotating(false)
+          onAnnotate(viewing, strokes, size)
+          setStrokes([])
+        }}>Сохранить разметку</button>
+      </p>}
       {cropping && <p className="image-studio-origin">
         <button type="button" className="image-studio-cancel" disabled={!cropBox || busy} onClick={() => {
           const img = imgRef.current
