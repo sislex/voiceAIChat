@@ -343,3 +343,21 @@ describe('студия картинок: перенос между чатами'
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/transfer`, payload: { path: 'кот.png', to: plain.id } })).statusCode).toBe(404)
   })
 })
+
+describe('студия картинок: корзина', () => {
+  it('удаление уводит в корзину, restore возвращает со свободным именем', async () => {
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/file?path=${encodeURIComponent('кот.png')}` })
+    expect(await store.list(convId)).toEqual([])
+
+    const trash = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/trash` })).json() as { items: Array<{ name: string }> }
+    expect(trash.items.map((item) => item.name)).toEqual(['кот.png'])
+
+    // Пока файл в корзине, место занято уже новым «кот.png» — restore не затирает.
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    const restored = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/restore`, payload: { name: 'кот.png' } })
+    expect(restored.json().name).toBe('кот-2.png')
+    expect((await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/trash` })).json().items).toEqual([])
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/restore`, payload: { name: 'кот.png' } })).statusCode).toBe(404)
+  })
+})

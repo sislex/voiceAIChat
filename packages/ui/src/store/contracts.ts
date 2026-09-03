@@ -57,6 +57,7 @@ export const imageStudioDraftKey = (conversationId: string): string => `vc.imgst
 /** Последний открытый чат студии — на него возвращается #/images без id. */
 export const IMAGE_STUDIO_LAST_KEY = 'vc.imgstudio.last'
 export const IMAGE_STUDIO_NO_TEXT_KEY = 'vc.imgstudio.noText'
+export const IMAGE_STUDIO_STYLE_KEY = 'vc.imgstudio.style'
 export const imageStudioPinnedKey = (conversationId: string): string => `vc.imgstudio.pinned.${conversationId}`
 export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
 
@@ -85,7 +86,8 @@ export const PREFERENCE_KEYS = [
   IMAGE_STUDIO_SIZE_KEY,
   IMAGE_STUDIO_ORDER_KEY,
   IMAGE_STUDIO_LAST_KEY,
-  IMAGE_STUDIO_NO_TEXT_KEY
+  IMAGE_STUDIO_NO_TEXT_KEY,
+  IMAGE_STUDIO_STYLE_KEY
 ] as const
 
 /**

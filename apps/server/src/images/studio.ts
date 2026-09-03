@@ -48,6 +48,10 @@ interface StudioMeta { prompt?: string; source?: string }
 interface StudioPublication { token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null }
 
 const PUBLISH_FILE = '.studio-publish.json'
+const TRASH_DIR = '.trash'
+const TRASH_SEP = '__'
+/** Корзина — страховка от промаха, а не архив: неделя и чистим. */
+const TRASH_TTL_MS = 7 * 24 * 3600 * 1000
 const PUBLISHED_INDEX_DIR = '.published'
 const TOKEN_RE = /^[0-9a-f]{32}$/
 
@@ -261,13 +265,59 @@ export class ImageStudioStore {
     }
   }
 
+  private trashDir(conversationId: string): string {
+    return join(this.dirOf(conversationId), TRASH_DIR)
+  }
+
+  /** Удаление — мягкое: файл уезжает в корзину галереи и живёт там 7 дней. */
   async delete(conversationId: string, rawPath: string): Promise<void> {
     const name = safeName(rawPath)
     const abs = join(this.dirOf(conversationId), name)
     if (!existsSync(abs)) throw new ImageStudioError('not_found', `«${name}» не найден`)
-    await rm(abs)
+    await mkdir(this.trashDir(conversationId), { recursive: true })
+    await rename(abs, join(this.trashDir(conversationId), `${Date.now()}${TRASH_SEP}${name}`))
     const meta = await this.readMeta(conversationId)
     if (meta[name]) { delete meta[name]; await this.writeMeta(conversationId, meta) }
+  }
+
+  /** Содержимое корзины (свежие сверху); заодно чистит записи старше TTL. */
+  async listTrash(conversationId: string): Promise<Array<{ name: string; deletedAt: number }>> {
+    const dir = this.trashDir(conversationId)
+    if (!existsSync(dir)) return []
+    const out: Array<{ name: string; deletedAt: number; entry: string }> = []
+    for (const entry of await readdir(dir)) {
+      const sep = entry.indexOf(TRASH_SEP)
+      if (sep <= 0) continue
+      const deletedAt = Number(entry.slice(0, sep))
+      const name = entry.slice(sep + TRASH_SEP.length)
+      if (!Number.isFinite(deletedAt) || !isImageStudioPath(name)) continue
+      if (Date.now() - deletedAt > TRASH_TTL_MS) {
+        await rm(join(dir, entry), { force: true })
+        continue
+      }
+      out.push({ name, deletedAt, entry })
+    }
+    return out.sort((a, b) => b.deletedAt - a.deletedAt).map(({ name, deletedAt }) => ({ name, deletedAt }))
+  }
+
+  /** Возвращает последний удалённый экземпляр `name` обратно в галерею. */
+  async restore(conversationId: string, rawName: string): Promise<string> {
+    const name = safeName(rawName)
+    const dir = this.trashDir(conversationId)
+    const entries = existsSync(dir) ? await readdir(dir) : []
+    const candidates = entries
+      .filter((entry) => entry.slice(entry.indexOf(TRASH_SEP) + TRASH_SEP.length) === name)
+      .sort()
+      .reverse()
+    const entry = candidates[0]
+    if (!entry) throw new ImageStudioError('not_found', `«${name}» нет в корзине`)
+    const target = await this.freeName(conversationId, name)
+    // Через writeBuffer нельзя (лимиты уже соблюдены при первичной записи), но
+    // квоту уважить надо — восстановление тоже занимает место.
+    const data = await readFile(join(dir, entry))
+    const restored = await this.writeBuffer(conversationId, target, data)
+    await rm(join(dir, entry), { force: true })
+    return restored.path
   }
 
   /** Копирует или переносит файл в галерею другого разговора (имя — freeName). */

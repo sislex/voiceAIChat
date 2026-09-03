@@ -25,6 +25,8 @@ function makeApi(initial: Array<{ path: string }> = []) {
       'imgstudio:cancel': cancel,
       'imgstudio:run': vi.fn(async () => ({ active: false })),
       'imgstudio:transfer': vi.fn(async ({ path }: { path: string }) => { files = files.filter((file) => file.path !== path); return { name: path, files: [...files] } }),
+      'imgstudio:trash': vi.fn(async () => ({ items: [] as Array<{ name: string; deletedAt: number }> })),
+      'imgstudio:restore': vi.fn(async ({ name }: { name: string }) => { files = [{ path: name, size: 1, updatedAt: Date.now() }, ...files]; return { name, files: [...files] } }),
       'imgstudio:publish': vi.fn(async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0, passwordProtected: false })),
       'imgstudio:publication': vi.fn(async () => ({ url: null })),
       'imgstudio:unpublish': vi.fn(async () => ({ url: null })),
@@ -504,6 +506,28 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(document.title).toContain('⏳'))
     finish?.()
     await waitFor(() => expect(document.title).toBe(original))
+  })
+
+  it('корзина показывает удалённое и восстанавливает', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    ;(api['imgstudio:trash'] as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ items: [{ name: 'старый.png', deletedAt: 1 }] })
+      .mockResolvedValue({ items: [] })
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Корзина…' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Восстановить старый.png' }))
+    await waitFor(() => expect(api['imgstudio:restore']).toHaveBeenCalledWith({ conversationId: 'c1', name: 'старый.png' }))
+    expect(await screen.findByText(/Корзина пуста/)).toBeInTheDocument()
+  })
+
+  it('пресет стиля дописывается в промпт', async () => {
+    const { api, generate } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Стиль изображения' }), { target: { value: 'акварель' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'кит' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await waitFor(() => expect(generate).toHaveBeenCalled())
+    expect((generate.mock.calls[0]![0] as { prompt: string }).prompt).toContain('Стиль: акварель.')
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {
