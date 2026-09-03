@@ -239,6 +239,29 @@ describe('ImageStudioPane', () => {
     expect(screen.getByText(/промпт слишком длинный/)).toBeInTheDocument()
   })
 
+  it('большая галерея рендерится страницами с кнопкой «Показать ещё»', async () => {
+    const { api } = makeApi(Array.from({ length: 70 }, (_, index) => ({ path: `к-${String(index).padStart(2, '0')}.png` })))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    await screen.findByRole('list', { name: 'Галерея изображений' })
+    expect(screen.getAllByRole('listitem')).toHaveLength(60)
+    fireEvent.click(screen.getByRole('button', { name: 'Показать ещё (10)' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(70))
+  })
+
+  it('«Повторить» из баннера ошибки перезапускает тот же ран', async () => {
+    const { api, generate } = makeApi()
+    api['imgstudio:generate'].mockRejectedValueOnce(new Error('AI не вернул файл изображения'))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'упрямый кит' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    // Текст появляется и в баннере, и в тосте — ждём именно баннер.
+    await screen.findAllByText('AI не вернул файл изображения')
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledTimes(2))
+    // Второй вызов — ровно с теми же аргументами.
+    expect(generate.mock.calls[1]).toEqual(generate.mock.calls[0])
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
