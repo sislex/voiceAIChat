@@ -126,6 +126,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Режим множественного выбора: чекбоксы вместо выбора-для-правки. */
   const [multi, setMulti] = useState<Set<string> | null>(null)
   const [compare, setCompare] = useState(false)
+  /** Пара «сравнить выбранные» из мультирежима (второй файл шторки). */
+  const [compareWith, setCompareWith] = useState<string | null>(null)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   /** Последний неудавшийся запуск — для кнопки «Повторить» в баннере. */
   const [lastAttempt, setLastAttempt] = useState<(() => void) | null>(null)
@@ -673,6 +675,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         setLastAttempt(() => launch)
         void launch()
       }}>Нарисовать с референсами ({multi.size})</Button>}
+      {multi && multi.size === 2 && <Button size="sm" variant="ghost" onClick={() => {
+        const [a, b] = [...multi]
+        setCompareWith(a!)
+        setViewing(b!)
+        setCompare(true)
+      }}>Сравнить выбранные</Button>}
       {multi && multi.size > 0 && (otherChats ?? []).length > 0 && <select aria-label="Перенести выбранные в другой чат" disabled={busy} value="" onChange={(event) => {
         const target = event.target.value
         if (!target) return
@@ -847,6 +855,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       previews={previews}
       dimensions={dimensions}
       compare={compare}
+      compareWith={compareWith}
       formatBytes={formatBytes}
       canStep={shown.length > 1}
       onCompareChange={setCompare}
@@ -885,7 +894,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         if (selected === path) setSelected(null)
         await run(() => api['imgstudio:delete']({ conversationId, path }), 'Удалено')
       })()}
-      onClose={() => { setViewing(null); setCompare(false) }}
+      onClose={() => { setViewing(null); setCompare(false); setCompareWith(null) }}
     />}
   </div>
 }

@@ -16,6 +16,8 @@ interface Props {
   previews: Record<string, string>
   dimensions: Record<string, string>
   compare: boolean
+  /** Явная пара для шторки (из мультирежима); имеет приоритет над meta.source. */
+  compareWith?: string | null
   formatBytes: (bytes: number) => string
   /** Листать можно, когда в отфильтрованной сетке больше одного файла. */
   canStep: boolean
@@ -37,7 +39,7 @@ interface Props {
   onClose: () => void
 }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onDelete, onClose, position }: Props): JSX.Element {
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
   /** Режим обрезки: рамка в координатах отображаемой картинки (CSS-пиксели). */
@@ -51,6 +53,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const [labelText, setLabelText] = useState('')
   const drawing = useRef(false)
   const [cropBox, setCropBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  /** Фиксированные пропорции рамки кропа; 0 — свободная. */
+  const [cropRatio, setCropRatio] = useState(0)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   /** Зум простого просмотра: колесо масштабирует, drag двигает, dblclick сброс. */
@@ -77,7 +81,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const positionLabel = position && position.total > 1 ? ` · ${position.index + 1} из ${position.total}` : ''
   return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : `${viewing}${positionLabel}`} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
     actions={<>
-      {sourceInGallery && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
+      {(sourceInGallery || compareWith) && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
       <IconButton size="sm" aria-label={annotating ? 'Выйти из режима разметки' : `Разметить ${viewing}`} title={annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'} aria-pressed={annotating} onClick={() => { setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>✏️</IconButton>
       <IconButton size="sm" aria-label={cropping ? 'Выйти из режима обрезки' : `Обрезать ${viewing}`} title={cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'} aria-pressed={cropping} onClick={() => { setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>✂</IconButton>
       <IconButton size="sm" aria-label={`Править ${viewing} по промпту`} title="Править по промпту" onClick={() => onPickForEdit(viewing)}>✎</IconButton>
@@ -107,11 +111,14 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         if (Math.abs(delta) > 48) { onCompareChange(false); onStep(delta > 0 ? -1 : 1) }
       }}>
       {(() => {
-        const sourcePath = compare ? meta?.source : undefined
+        const sourcePath = compare ? (compareWith ?? meta?.source) : undefined
         if (sourcePath && previews[sourcePath] && previews[viewing]) {
           // Шторка: обе картинки в стеке, результат обрезается слева по слайдеру.
           return <div className="image-studio-wipe">
-            <div className="image-studio-wipe-stage">
+            <div className="image-studio-wipe-stage" onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect()
+              setWipe(Math.round((event.clientX - box.left) / box.width * 100))
+            }}>
               <img src={previews[sourcePath]} alt={`Исходник: ${sourcePath}`} />
               <img src={previews[viewing]} alt={viewing} style={{ clipPath: `inset(0 0 0 ${wipe}%)` }} />
               <span className="image-studio-wipe-line" style={{ left: `${wipe}%` }} aria-hidden="true" />
@@ -207,7 +214,13 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
             const box = event.currentTarget.getBoundingClientRect()
             const x = event.clientX - box.left
             const y = event.clientY - box.top
-            setCropBox({ x: Math.min(x, dragStart.current.x), y: Math.min(y, dragStart.current.y), w: Math.abs(x - dragStart.current.x), h: Math.abs(y - dragStart.current.y) })
+            const w = Math.abs(x - dragStart.current.x)
+            // Фиксированное соотношение: высота следует за шириной.
+            const h = cropRatio > 0 ? w / cropRatio : Math.abs(y - dragStart.current.y)
+            const top = cropRatio > 0
+              ? (y >= dragStart.current.y ? dragStart.current.y : dragStart.current.y - h)
+              : Math.min(y, dragStart.current.y)
+            setCropBox({ x: Math.min(x, dragStart.current.x), y: top, w, h })
           }}
           onPointerUp={() => { dragStart.current = null }}>
           <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
@@ -231,6 +244,10 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         }}>Сохранить разметку</button>
       </p>}
       {cropping && <p className="image-studio-origin">
+        {[{ r: 0, label: 'Свободно' }, { r: 1, label: '1:1' }, { r: 16 / 9, label: '16:9' }, { r: 4 / 3, label: '4:3' }].map((item) => (
+          <button key={item.label} type="button" className="image-studio-cancel" aria-pressed={cropRatio === item.r} style={cropRatio === item.r ? { fontWeight: 700 } : undefined} onClick={() => { setCropRatio(item.r); setCropBox(null) }}>{item.label}</button>
+        ))}
+        {' '}
         <button type="button" className="image-studio-cancel" disabled={!cropBox || busy} onClick={() => {
           const img = imgRef.current
           if (!img || !cropBox) return
