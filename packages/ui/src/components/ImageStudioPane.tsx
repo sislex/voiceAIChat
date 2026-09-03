@@ -22,6 +22,8 @@ interface Props {
   api: StudioApi
   /** Ход ассистента идёт — после него в галерее могут появиться картинки. */
   turnActive?: boolean
+  /** Прикрепить файл к следующему сообщению чата слева (композер). */
+  onAttachToChat?: (file: File) => void
 }
 
 /** Пресеты размера: пустой — модель решает сама. */
@@ -53,6 +55,12 @@ function loadRecent(conversationId: string): string[] {
   }
 }
 
+/** Автоимя из промпта: первые три слова, безопасные для имени файла. */
+function nameFromPrompt(prompt: string): string {
+  const words = prompt.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').split(/\s+/).filter(Boolean).slice(0, 3)
+  return words.length ? `${words.join('-').slice(0, 48)}.png` : ''
+}
+
 /** Свободное имя копии: «кот.png» → «кот-копия.png», дальше с номером. */
 function copyName(path: string, taken: Set<string>): string {
   const dot = path.lastIndexOf('.')
@@ -63,7 +71,7 @@ function copyName(path: string, taken: Set<string>): string {
   return candidate
 }
 
-export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX.Element {
+export function ImageStudioPane({ conversationId, api, turnActive, onAttachToChat }: Props): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [files, setFiles] = useState<ImageStudioFile[] | null>(null)
@@ -84,8 +92,11 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null)
   const [viewing, setViewing] = useState<string | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  /** Режим множественного выбора: чекбоксы вместо выбора-для-правки. */
+  const [multi, setMulti] = useState<Set<string> | null>(null)
+  const [compare, setCompare] = useState(false)
   const [filter, setFilter] = useState('')
-  const [order, setOrder] = useState<'new' | 'name'>('new')
+  const [order, setOrder] = useState<'new' | 'name' | 'size'>('new')
   const [recent, setRecent] = useState<string[]>(() => loadRecent(conversationId))
   /** Имя нового файла (опционально) — иначе сервер назовёт «изображение.png». */
   const [fileName, setFileName] = useState('')
@@ -222,7 +233,10 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
       else {
         // Пользователь ввёл «арт» — дописываем .png, а не возвращаем bad_name.
         const typedName = fileName.trim()
-        const name = typedName && !isImageStudioPath(typedName) ? `${typedName}.png` : typedName
+        const name = typedName
+          ? (!isImageStudioPath(typedName) ? `${typedName}.png` : typedName)
+          // Имя не задано — «синий-кит.png» из промпта читается лучше «изображение-7.png».
+          : nameFromPrompt(cleaned)
         await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(name ? { name } : {}) })
       }
       setPrompt('')
@@ -331,7 +345,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
   const usedBytes = files.reduce((sum, file) => sum + file.size, 0)
   const shown = files
     .filter((file) => !filter.trim() || file.path.toLowerCase().includes(filter.trim().toLowerCase()))
-    .sort((left, right) => order === 'name' ? left.path.localeCompare(right.path, 'ru') : right.updatedAt - left.updatedAt)
+    .sort((left, right) => order === 'name' ? left.path.localeCompare(right.path, 'ru') : order === 'size' ? right.size - left.size : right.updatedAt - left.updatedAt)
   const viewingIndex = viewing ? shown.findIndex((file) => file.path === viewing) : -1
   const viewStep = (delta: number): void => {
     if (viewingIndex < 0 || !shown.length) return
@@ -345,6 +359,25 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
     onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDropActive(true) } }}
     onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false) }}
     onDrop={(event) => { event.preventDefault(); setDropActive(false); if (event.dataTransfer.files.length) upload(event.dataTransfer.files) }}
+    onPaste={(event) => {
+      const images = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'))
+      if (!images.length) return
+      event.preventDefault()
+      // У скриншота из буфера имя «image.png» — даём времязависимое, чтобы не плодить «-2».
+      upload(images.map((file, index) => new File([file], file.name && file.name !== 'image.png' ? file.name : `вставка-${Date.now()}${index ? `-${index}` : ''}.png`, { type: file.type })))
+    }}
+    onKeyDown={(event) => {
+      // Delete на выбранной карточке — то же удаление, что и крестиком.
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected && !renaming && (event.target as HTMLElement).tagName !== 'TEXTAREA' && (event.target as HTMLElement).tagName !== 'INPUT') {
+        event.preventDefault()
+        void (async () => {
+          if (!(await confirm({ title: `Удалить «${selected}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return
+          const path = selected
+          setSelected(null)
+          await run(() => api['imgstudio:delete']({ conversationId, path }), 'Удалено')
+        })()
+      }
+    }}
   >
     <div className="image-studio-toolbar">
       <textarea
@@ -384,13 +417,22 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
       {lastError && !busy && <ErrorState compact message={lastError} />}
     </div>
 
-    {files.length >= FILTER_THRESHOLD && <div className="image-studio-filter">
-      <input aria-label="Фильтр по имени файла" placeholder="Найти по имени…" value={filter} onChange={(event) => setFilter(event.target.value)} />
-      <Button size="sm" variant="ghost" onClick={() => setOrder(order === 'new' ? 'name' : 'new')}>
-        {order === 'new' ? 'Сначала новые' : 'По имени'}
+    {files.length >= 2 && <div className="image-studio-filter">
+      {files.length >= FILTER_THRESHOLD && <input aria-label="Фильтр по имени файла" placeholder="Найти по имени…" value={filter} onChange={(event) => setFilter(event.target.value)} />}
+      <Button size="sm" variant="ghost" onClick={() => setOrder(order === 'new' ? 'name' : order === 'name' ? 'size' : 'new')}>
+        {order === 'new' ? 'Сначала новые' : order === 'name' ? 'По имени' : 'По размеру'}
       </Button>
       <Button size="sm" variant="ghost" disabled={busy || !shown.length} onClick={() => downloadAll(shown)}>Скачать все</Button>
       <IconButton size="sm" aria-label={dense ? 'Крупные карточки' : 'Мелкие карточки'} title={dense ? 'Крупнее' : 'Мельче'} onClick={() => setDense((prev) => { const next = !prev; try { localStorage.setItem(IMAGE_STUDIO_DENSE_KEY, next ? '1' : '0') } catch { /* приватный режим */ } return next })}>{dense ? '▦' : '▤'}</IconButton>
+      <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
+      {multi && multi.size > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={() => void (async () => {
+        if (!(await confirm({ title: `Удалить ${multi.size} файл(ов)?`, message: 'Восстановить изображения будет нельзя.', confirmLabel: 'Удалить' }))) return
+        await run(async () => {
+          for (const path of multi) await api['imgstudio:delete']({ conversationId, path })
+        }, `Удалено файлов: ${multi.size}`)
+        setMulti(new Set())
+        if (selected && multi.has(selected)) setSelected(null)
+      })()}>Удалить выбранные ({multi.size})</Button>}
     </div>}
 
     {files.length === 0
@@ -404,6 +446,10 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
         ? <EmptyState compact title="Ничего не нашлось" description="Уточните фильтр или очистите его, чтобы увидеть всю галерею." />
         : <>
           <div className={`image-studio-grid${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label="Галерея изображений">
+            {progress && <div role="listitem" className="image-studio-card image-studio-card--ghost" aria-hidden="true">
+              <div className="image-studio-thumb image-studio-thumb--ghost"><Skeleton item="block" height={120} /></div>
+              <span className="image-studio-name">{progress.label}…</span>
+            </div>}
             {shown.map((file) => <div role="listitem" key={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
             <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} onDoubleClick={() => setViewing(file.path)} title={selected === file.path ? 'Снять выбор (двойной клик — на весь экран)' : 'Выбрать для правки (двойной клик — на весь экран)'}>
               {previews[file.path]
@@ -416,6 +462,12 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
                   : <span className="image-studio-thumb-loading" role="status">…</span>}
               {fresh.has(file.path) && <span className="image-studio-fresh" aria-label="Новая картинка">новое</span>}
             </button>
+            {multi && <label className="image-studio-check">
+              <input type="checkbox" aria-label={`Выбрать ${file.path}`} checked={multi.has(file.path)} onChange={(event) => {
+                setMulti((prev) => { const next = new Set(prev); if (event.target.checked) next.add(file.path); else next.delete(file.path); return next })
+              }} />
+              выбрать
+            </label>}
             {broken.has(file.path) && <Button size="sm" variant="ghost" onClick={() => void reload()}>Перечитать превью</Button>}
             {renaming?.from === file.path
               ? <div className="image-studio-rename">
@@ -449,6 +501,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
                     <IconButton size="sm" aria-label={`Нарисовать вариацию ${file.path}`} title="Вариация" disabled={busy} onClick={() => variate(file)}>✦</IconButton>
                     <IconButton size="sm" aria-label={`Дублировать ${file.path}`} title="Дубликат" disabled={busy} onClick={() => duplicate(file)}>⎘</IconButton>
                     <IconButton size="sm" aria-label={`Копировать ${file.path} в буфер`} title="Копировать" onClick={() => copy(file)}>⧉</IconButton>
+                    {onAttachToChat && <IconButton size="sm" aria-label={`Прикрепить ${file.path} к сообщению`} title="В сообщение чата" onClick={() => void blobOf(file.path).then((blob) => { onAttachToChat(new File([blob], file.path, { type: blob.type })); toast.success(`«${file.path}» прикреплена к сообщению`) }).catch(() => toast.error('Не удалось прочитать файл'))}>📎</IconButton>}
                     <IconButton size="sm" aria-label={`Переименовать ${file.path}`} title="Переименовать" onClick={() => setRenaming({ from: file.path, to: file.path })}>✎</IconButton>
                     <IconButton size="sm" aria-label={`Скачать ${file.path}`} title="Скачать" onClick={() => void download(file.path)}>⇩</IconButton>
                     <IconButton size="sm" aria-label={`Удалить ${file.path}`} title="Удалить" onClick={() => void (async () => {
@@ -466,18 +519,34 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
           </p>
         </>}
 
-    {viewing && <ToolFrame title={viewing} onClose={() => setViewing(null)} className="util-embed--img" testId="image-studio-viewer"
-      actions={shown.length > 1 ? <>
-        <IconButton size="sm" aria-label="Предыдущая картинка" title="Предыдущая (←)" onClick={() => viewStep(-1)}>‹</IconButton>
-        <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => viewStep(1)}>›</IconButton>
-      </> : undefined}>
+    {viewing && <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : viewing} onClose={() => { setViewing(null); setCompare(false) }} className="util-embed--img" testId="image-studio-viewer"
+      actions={<>
+        {(() => {
+          const meta = files.find((file) => file.path === viewing)
+          const sourceAvailable = meta?.source && files.some((file) => file.path === meta.source)
+          return sourceAvailable ? <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => setCompare((prev) => !prev)}>⇄</IconButton> : null
+        })()}
+        {shown.length > 1 && <>
+          <IconButton size="sm" aria-label="Предыдущая картинка" title="Предыдущая (←)" onClick={() => { setCompare(false); viewStep(-1) }}>‹</IconButton>
+          <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { setCompare(false); viewStep(1) }}>›</IconButton>
+        </>}
+      </>}>
       <div className="imgbody" onKeyDown={(event) => {
         if (event.key === 'ArrowLeft') viewStep(-1)
         if (event.key === 'ArrowRight') viewStep(1)
       }} tabIndex={-1}>
-        {previews[viewing]
-          ? <img className="image-studio-full" src={previews[viewing]} alt={viewing} />
-          : <p className="imgerr" role="alert">Превью ещё не загрузилось</p>}
+        {(() => {
+          const sourcePath = compare ? files.find((file) => file.path === viewing)?.source : undefined
+          if (sourcePath && previews[sourcePath] && previews[viewing]) {
+            return <div className="image-studio-compare">
+              <figure><img className="image-studio-full" src={previews[sourcePath]} alt={`Исходник: ${sourcePath}`} /><figcaption>{sourcePath}</figcaption></figure>
+              <figure><img className="image-studio-full" src={previews[viewing]} alt={viewing} /><figcaption>{viewing}</figcaption></figure>
+            </div>
+          }
+          return previews[viewing]
+            ? <img className="image-studio-full" src={previews[viewing]} alt={viewing} />
+            : <p className="imgerr" role="alert">Превью ещё не загрузилось</p>
+        })()}
         {(() => {
           const meta = files.find((file) => file.path === viewing)
           if (!meta?.prompt && !meta?.source) return null

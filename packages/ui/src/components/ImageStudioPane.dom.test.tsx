@@ -36,6 +36,12 @@ function makeApi(initial: Array<{ path: string }> = []) {
 describe('ImageStudioPane', () => {
   // Пресет размера и недавние промпты персистятся — между тестами их надо чистить.
   beforeEach(() => localStorage.clear())
+  // В jsdom у File/Blob нет arrayBuffer, а компонент пересоздаёт File при вставке.
+  beforeEach(() => {
+    if (!File.prototype.arrayBuffer) {
+      Object.defineProperty(File.prototype, 'arrayBuffer', { configurable: true, value: async function (this: File) { return new Uint8Array([1]).buffer } })
+    }
+  })
 
   it('промпт без выбора рисует новую картинку, с выбором — правит выбранную', async () => {
     const { api, generate, edit } = makeApi([{ path: 'кот.png' }])
@@ -43,7 +49,8 @@ describe('ImageStudioPane', () => {
 
     fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'пёс в шляпе' } })
     fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
-    await waitFor(() => expect(generate).toHaveBeenCalledWith({ conversationId: 'c1', prompt: 'пёс в шляпе' }))
+    // Имя не задано — оно собирается из промпта автоматически.
+    await waitFor(() => expect(generate).toHaveBeenCalledWith({ conversationId: 'c1', prompt: 'пёс в шляпе', name: 'пёс-в-шляпе.png' }))
 
     // Выбор картинки переключает то же поле в режим правки.
     // Кнопок с именем файла несколько (превью + переименовать/скачать/удалить):
@@ -78,7 +85,7 @@ describe('ImageStudioPane', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Размер изображения' }), { target: { value: '1024×1024' } })
     fireEvent.change(promptField, { target: { value: 'закат' } })
     fireEvent.keyDown(promptField, { key: 'Enter', metaKey: true })
-    await waitFor(() => expect(generate).toHaveBeenCalledWith({ conversationId: 'c1', prompt: 'закат\nРазмер изображения: 1024x1024' }))
+    await waitFor(() => expect(generate).toHaveBeenCalledWith({ conversationId: 'c1', prompt: 'закат\nРазмер изображения: 1024x1024', name: 'закат.png' }))
   })
 
   it('перетаскивание файлов загружает их все разом', async () => {
@@ -173,6 +180,38 @@ describe('ImageStudioPane', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Новое имя файла' }), { target: { value: 'лого' } })
     fireEvent.click(screen.getByRole('button', { name: 'Ок' }))
     await waitFor(() => expect(api['imgstudio:rename']).toHaveBeenCalledWith({ conversationId: 'c1', from: 'логотип.png', to: 'лого.png' }))
+  })
+
+  it('вставка картинки из буфера загружает её в галерею', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+    const pasted = new File(['x'], 'image.png', { type: 'image/png' })
+    Object.defineProperty(pasted, 'arrayBuffer', { value: async () => new Uint8Array([1]).buffer })
+    fireEvent.paste(zone, { clipboardData: { files: [pasted] } })
+    await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: expect.stringMatching(/^вставка-/) })))
+  })
+
+  it('мультивыбор удаляет несколько файлов одним действием', async () => {
+    const { api } = makeApi(Array.from({ length: 8 }, (_, index) => ({ path: `ф-${index}.png` })))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать ф-1.png' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать ф-2.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить выбранные (2)' }))
+    const confirmText = await screen.findByText('Удалить 2 файл(ов)?')
+    const overlay = confirmText.closest('.vc-dialog-overlay') as HTMLElement
+    fireEvent.click(within(overlay).getByRole('button', { name: 'Удалить' }))
+    await waitFor(() => expect(api['imgstudio:delete']).toHaveBeenCalledTimes(2))
+  })
+
+  it('кнопка 📎 отдаёт файл в композер чата', async () => {
+    const attach = vi.fn()
+    const { api } = makeApi([{ path: 'кот.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} onAttachToChat={attach} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Прикрепить кот.png к сообщению' }))
+    await waitFor(() => expect(attach).toHaveBeenCalled())
+    expect((attach.mock.calls[0]![0] as File).name).toBe('кот.png')
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {
