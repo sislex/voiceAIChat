@@ -68,10 +68,13 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     } catch (error) { return sendStudioError(reply, error) }
   })
 
-  app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string } }>('/api/image-studio/:id/file', { bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string; source?: string } }>('/api/image-studio/:id/file', { bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try {
       await store.writeBuffer(req.params.id, req.body?.path ?? '', Buffer.from(req.body?.dataBase64 ?? '', 'base64'))
+      // Клиентские обработки (кроп, разметка, поворот…) сообщают исходник —
+      // без этого цепочка версий рвётся на первом же локальном действии.
+      if (req.body?.source) await store.setMeta(req.params.id, req.body.path ?? '', { source: req.body.source })
       return store.list(req.params.id)
     } catch (error) { return sendStudioError(reply, error) }
   })
