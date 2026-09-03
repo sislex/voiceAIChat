@@ -52,6 +52,9 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const [cropBox, setCropBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
+  /** Зум простого просмотра: колесо масштабирует, drag двигает, dblclick сброс. */
+  const [zoom, setZoom] = useState<{ scale: number; x: number; y: number }>({ scale: 1, x: 0, y: 0 })
+  const panStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
   /** Начальная точка свайпа (телефон). */
   const touchX = useRef<number | null>(null)
   // Стрелки листают из любого места вьюера: фокус после открытия стоит на
@@ -69,6 +72,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const meta = files.find((file) => file.path === viewing)
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
 
+  useEffect(() => { setZoom({ scale: 1, x: 0, y: 0 }) }, [viewing])
   const positionLabel = position && position.total > 1 ? ` · ${position.index + 1} из ${position.total}` : ''
   return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : `${viewing}${positionLabel}`} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
     actions={<>
@@ -158,7 +162,33 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
             </svg>
           </div>
         }
-        if (!cropping) return <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} />
+        if (!cropping) {
+          return <div className="image-studio-zoom-stage"
+            onWheel={(event) => {
+              event.preventDefault()
+              setZoom((prev) => {
+                const scale = Math.min(4, Math.max(1, prev.scale * Math.exp(-event.deltaY / 300)))
+                return scale === 1 ? { scale: 1, x: 0, y: 0 } : { ...prev, scale }
+              })
+            }}
+            onDoubleClick={() => setZoom({ scale: 1, x: 0, y: 0 })}
+            onPointerDown={(event) => {
+              if (zoom.scale === 1) return
+              panStart.current = { x: event.clientX, y: event.clientY, ox: zoom.x, oy: zoom.y }
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }}
+            onPointerMove={(event) => {
+              if (!panStart.current) return
+              const start = panStart.current
+              setZoom((prev) => ({ ...prev, x: start.ox + (event.clientX - start.x), y: start.oy + (event.clientY - start.y) }))
+            }}
+            onPointerUp={() => { panStart.current = null }}
+            role="presentation"
+            title={zoom.scale > 1 ? 'Двойной клик — сбросить масштаб' : 'Колесо мыши — масштаб'}>
+            <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false}
+              style={zoom.scale > 1 ? { transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`, cursor: 'grab' } : undefined} data-zoom={zoom.scale > 1 ? zoom.scale.toFixed(2) : undefined} />
+          </div>
+        }
         return <div className="image-studio-crop-stage"
           onPointerDown={(event) => {
             const box = event.currentTarget.getBoundingClientRect()
