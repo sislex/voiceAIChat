@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 224 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 247 коммит(ов) в areas после сверки: 4a4ef918 feat: студия картинок — итерация улучшений 22 (перенос между чатами) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 13 коммит(ов) в areas после сверки: fa5bfe72 feat: студия картинок — итерация улучшений 24 (цепочка версий) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1112 коммит(ов) в areas после сверки: fa5bfe72 feat: студия картинок — итерация улучшений 24 (цепочка версий) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1113 коммит(ов) в areas после сверки: ee562bd4 refactor: студия картинок — итерация улучшений 25 (структура и мелочи) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 162 коммит(ов) в areas после сверки: fa5bfe72 feat: студия картинок — итерация улучшений 24 (цепочка версий) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 207 коммит(ов) в areas после сверки: fa5bfe72 feat: студия картинок — итерация улучшений 24 (цепочка версий) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 105 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 562. Последние:
+Всего записей: 563. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md](log/2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md) — make-publish-lock-studio-11

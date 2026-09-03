@@ -493,6 +493,19 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect((api['imgstudio:list'] as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(listCalls))
   })
 
+  it('во время генерации заголовок вкладки показывает прогресс', async () => {
+    const { api } = makeApi()
+    let finish: (() => void) | undefined
+    ;(api['imgstudio:generate'] as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve({ file: { path: 'x.png', size: 1, updatedAt: 1 }, files: [] }) }))
+    const original = document.title
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'кот' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await waitFor(() => expect(document.title).toContain('⏳'))
+    finish?.()
+    await waitFor(() => expect(document.title).toBe(original))
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
