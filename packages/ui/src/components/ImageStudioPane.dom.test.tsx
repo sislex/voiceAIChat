@@ -548,6 +548,18 @@ describe('ImageStudioPane', () => {
     await expectNoViolations()
   }, 20000)
 
+  it('при двух выбранных «Сравнить выбранные» открывает шторку пары', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать а.png' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать б.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сравнить выбранные' }))
+    const viewer = await screen.findByTestId('image-studio-viewer')
+    // Шторка: слайдер сравнения на месте.
+    await waitFor(() => expect(within(viewer).getByRole('slider', { name: /Шторка сравнения/ })).toBeInTheDocument())
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
