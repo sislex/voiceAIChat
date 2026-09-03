@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { ImageStudioFile } from '@shared/imageStudio'
 import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioPath } from '@shared/imageStudio'
-import { Button, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useToast } from '@voicechat/ui-kit'
+import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useToast } from '@voicechat/ui-kit'
 import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
@@ -108,6 +108,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Публичная ссылка галереи (null — не опубликована, undefined — грузится). */
   const [shareUrl, setShareUrl] = useState<string | null | undefined>(undefined)
   const [shareViews, setShareViews] = useState<number | null>(null)
+  const [shareProtected, setShareProtected] = useState(false)
+  /** Открыт диалог пароля публикации; поле — новый пароль зрителей (не логин). */
+  const [passwordDialog, setPasswordDialog] = useState(false)
+  const [viewerPassword, setViewerPassword] = useState('')
   const [filter, setFilter] = useState('')
   const [order, setOrder] = useState<'new' | 'name' | 'size'>(() => {
     try {
@@ -183,7 +187,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   useEffect(() => { void reload() }, [reload])
   useEffect(() => {
     let alive = true
-    void api['imgstudio:publication']({ conversationId }).then((info) => { if (alive) { setShareUrl(info.url); setShareViews(info.views ?? null) } }).catch(() => { if (alive) setShareUrl(null) })
+    void api['imgstudio:publication']({ conversationId }).then((info) => { if (alive) { setShareUrl(info.url); setShareViews(info.views ?? null); setShareProtected(Boolean(info.passwordProtected)) } }).catch(() => { if (alive) setShareUrl(null) })
     return () => { alive = false }
   }, [api, conversationId])
   // Перезагрузили страницу во время генерации — ран живёт на сервере; панель
@@ -535,6 +539,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           const absolute = `${location.origin}${shareUrl}`
           void navigator.clipboard?.writeText(absolute).then(() => toast.success('Ссылка в буфере')).catch(() => toast.info(absolute))
         }}>Ссылка на галерею{shareViews ? ` · ${shareViews} 👁` : ''}</Button>
+        <Button size="sm" variant="ghost" title={shareProtected ? 'Пароль установлен — изменить или снять' : 'Закрыть галерею паролем для зрителей'} onClick={() => { setViewerPassword(''); setPasswordDialog(true) }}>{shareProtected ? 'Пароль 🔒' : 'Пароль…'}</Button>
         <Button size="sm" variant="ghost" onClick={() => void (async () => {
           if (!(await confirm({ title: 'Снять публикацию галереи?', message: 'Публичная ссылка перестанет открываться.', confirmLabel: 'Снять' }))) return
           await api['imgstudio:unpublish']({ conversationId }).then(() => { setShareUrl(null); toast.success('Публикация снята') }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
@@ -655,6 +660,20 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           </p>
         </>}
 
+    {passwordDialog && <Dialog title="Пароль для зрителей" onClose={() => setPasswordDialog(false)} size="sm" actions={<>
+      {shareProtected && <Button variant="ghost" onClick={() => void api['imgstudio:publish']({ conversationId, password: null }).then(() => { setShareProtected(false); setPasswordDialog(false); toast.success('Пароль снят') }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))}>Снять пароль</Button>}
+      <Button disabled={viewerPassword.trim().length < 4} onClick={() => void api['imgstudio:publish']({ conversationId, password: viewerPassword.trim() }).then(() => { setShareProtected(true); setPasswordDialog(false); toast.success('Пароль установлен') }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))}>Сохранить</Button>
+    </>}>
+      <p className="image-studio-dim">Зрители по ссылке увидят форму пароля. Это пароль публикации, не ваш пароль от аккаунта.</p>
+      <input
+        className="image-studio-filename"
+        style={{ width: '100%' }}
+        aria-label="Пароль для зрителей галереи"
+        placeholder="Минимум 4 символа"
+        value={viewerPassword}
+        onChange={(event) => setViewerPassword(event.target.value)}
+      />
+    </Dialog>}
     {viewing && <ImageStudioViewer
       viewing={viewing}
       busy={busy}
