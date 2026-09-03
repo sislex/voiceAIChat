@@ -141,6 +141,18 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     })
   })
 
+  app.post<{ Params: { id: string }; Body: { path?: string; to?: string; copy?: boolean } }>('/api/image-studio/:id/transfer', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    const to = req.body?.to ?? ''
+    // Целевой чат — тоже студия этого же пользователя, иначе 404 без деталей.
+    if (to === req.params.id || !own(userId, to, reply)) return reply
+    try {
+      const name = await store.transfer(req.params.id, req.body?.path ?? '', to, req.body?.copy ? 'copy' : 'move')
+      return { name, files: await store.list(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
   app.post<{ Params: { id: string }; Body: { password?: string | null } | undefined }>('/api/image-studio/:id/publish', async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply

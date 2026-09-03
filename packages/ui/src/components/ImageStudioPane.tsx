@@ -19,7 +19,7 @@ import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
   'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel' |
-  'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish' | 'imgstudio:run'> &
+  'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish' | 'imgstudio:run' | 'imgstudio:transfer'> &
   Partial<Pick<RendererApi, 'prompt:suggest'>>
 
 interface Props {
@@ -29,6 +29,8 @@ interface Props {
   turnActive?: boolean
   /** Прикрепить файл к следующему сообщению чата слева (композер). */
   onAttachToChat?: (file: File) => void
+  /** Другие студийные чаты пользователя — цели переноса/копии картинок. */
+  otherChats?: Array<{ id: string; title: string }>
 }
 
 /** Пресеты размера: пустой — модель решает сама. */
@@ -78,7 +80,7 @@ function copyName(path: string, taken: Set<string>): string {
   return candidate
 }
 
-export function ImageStudioPane({ conversationId, api, turnActive, onAttachToChat }: Props): JSX.Element {
+export function ImageStudioPane({ conversationId, api, turnActive, onAttachToChat, otherChats }: Props): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [files, setFiles] = useState<ImageStudioFile[] | null>(null)
@@ -709,6 +711,23 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
               <Button size="sm" variant="ghost" onClick={() => copy(file)}>Копировать</Button>
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => duplicate(file)}>Дубликат</Button>
               {IMAGE_TRANSFORMS.map((kind) => <Button key={kind.kind} size="sm" variant="ghost" disabled={busy} onClick={() => transform(file, kind)}>{kind.label}</Button>)}
+              {(otherChats ?? []).length > 0 && <select aria-label={`Перенести или скопировать ${file.path} в другой чат`} disabled={busy} value="" onChange={(event) => {
+                const [mode, target] = event.target.value.split(':', 2)
+                if (!target) return
+                void run(async () => {
+                  await api['imgstudio:transfer']({ conversationId, path: file.path, to: target, copy: mode === 'copy' })
+                  if (mode === 'move' && selected === file.path) setSelected(null)
+                  setToolsFor(null)
+                }, mode === 'copy' ? 'Скопировано в другой чат' : 'Перенесено в другой чат')
+              }}>
+                <option value="">В другой чат…</option>
+                <optgroup label="Переместить в">
+                  {(otherChats ?? []).map((chatItem) => <option key={`move:${chatItem.id}`} value={`move:${chatItem.id}`}>{chatItem.title}</option>)}
+                </optgroup>
+                <optgroup label="Скопировать в">
+                  {(otherChats ?? []).map((chatItem) => <option key={`copy:${chatItem.id}`} value={`copy:${chatItem.id}`}>{chatItem.title}</option>)}
+                </optgroup>
+              </select>}
             </div>}
             </div>)}
           </div>
