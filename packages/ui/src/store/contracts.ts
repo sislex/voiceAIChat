@@ -53,6 +53,7 @@ export const MAKE_SPLIT_PCT_KEY = 'vc.make.splitPct'
 export const IMAGE_STUDIO_DENSE_KEY = 'vc.imgstudio.dense'
 export const IMAGE_STUDIO_SIZE_KEY = 'vc.imgstudio.size'
 export const IMAGE_STUDIO_ORDER_KEY = 'vc.imgstudio.order'
+export const imageStudioDraftKey = (conversationId: string): string => `vc.imgstudio.draft.${conversationId}`
 export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
 
 /**

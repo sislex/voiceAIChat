@@ -10,6 +10,13 @@ import { VoiceChatDb } from '../db/database.js'
 import { ImageStudioStore } from '../images/studio.js'
 import { registerImageStudioRoutes } from './imageStudio.js'
 
+
+/** Байты валидного однопиксельного PNG — sniffing в store пропускает только настоящие картинки. */
+const PNG_BYTES = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from('фикстура-остаток')
+])
+
 const U = 'admin'
 let app: FastifyInstance
 let db: VoiceChatDb
@@ -32,7 +39,7 @@ beforeEach(async () => {
     db, store,
     generator: () => async ({ prompt, source }) => {
       generated.push({ prompt, hasSource: Boolean(source) })
-      return Buffer.from(`png:${prompt}`)
+      return Buffer.concat([PNG_BYTES, Buffer.from(prompt)])
     }
   })
   await app.ready()
@@ -45,13 +52,13 @@ afterEach(async () => {
 
 describe('студия картинок: роуты', () => {
   it('галерея: загрузка, чтение с mime, переименование, удаление', async () => {
-    const up = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/file`, payload: { path: 'логотип.png', dataBase64: Buffer.from('img').toString('base64') } })
+    const up = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/file`, payload: { path: 'логотип.png', dataBase64: PNG_BYTES.toString('base64') } })
     expect(up.statusCode).toBe(200)
     expect(up.json().map((file: { path: string }) => file.path)).toEqual(['логотип.png'])
 
     const read = await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/file?path=${encodeURIComponent('логотип.png')}` })
     expect(read.headers['content-type']).toContain('image/png')
-    expect(read.body).toBe('img')
+    expect(read.rawPayload.equals(PNG_BYTES)).toBe(true)
 
     await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/rename`, payload: { from: 'логотип.png', to: 'лого.png' } })
     const del = await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/file?path=${encodeURIComponent('лого.png')}` })
@@ -59,21 +66,21 @@ describe('студия картинок: роуты', () => {
   })
 
   it('generate рисует по промпту и не затирает существующие имена', async () => {
-    await store.writeBuffer(convId, 'изображение.png', Buffer.from('старое'))
+    await store.writeBuffer(convId, 'изображение.png', Buffer.concat([PNG_BYTES, Buffer.from('старое')]))
     const res = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'кот в очках' } })
     expect(res.statusCode).toBe(200)
     // Имя по умолчанию занято — новая картинка получила суффикс, старая цела.
     expect(res.json().file.path).toBe('изображение-2.png')
-    expect((await store.readBuffer(convId, 'изображение.png'))!.toString()).toBe('старое')
+    expect((await store.readBuffer(convId, 'изображение.png'))!.toString()).toContain('старое')
     expect(generated).toEqual([{ prompt: 'кот в очках', hasSource: false }])
   })
 
   it('edit правит по промпту в новый файл, оригинал не трогается', async () => {
-    await store.writeBuffer(convId, 'кот.png', Buffer.from('оригинал'))
+    await store.writeBuffer(convId, 'кот.png', Buffer.concat([PNG_BYTES, Buffer.from('оригинал')]))
     const res = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/edit`, payload: { path: 'кот.png', prompt: 'добавь шляпу' } })
     expect(res.statusCode).toBe(200)
     expect(res.json().file.path).toBe('кот-2.png')
-    expect((await store.readBuffer(convId, 'кот.png'))!.toString()).toBe('оригинал')
+    expect((await store.readBuffer(convId, 'кот.png'))!.toString()).toContain('оригинал')
     expect(generated).toEqual([{ prompt: 'добавь шляпу', hasSource: true }])
   })
 
@@ -104,12 +111,12 @@ describe('студия картинок: параллельность, отме�
     expect(second.statusCode).toBe(409)
     expect(second.json().error).toMatch(/уже идёт/)
 
-    finish!(Buffer.from('png'))
+    finish!(PNG_BYTES)
     expect((await first).statusCode).toBe(200)
     // Слот освободился: третий ран принимается (и тоже ждёт «медленную» модель).
     const third = slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'ещё' } }).then((res) => res)
     await new Promise((resolve) => setTimeout(resolve, 20))
-    finish!(Buffer.from('png2'))
+    finish!(PNG_BYTES)
     expect((await third).statusCode).toBe(200)
     await slowApp.close()
   })
