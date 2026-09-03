@@ -10,12 +10,14 @@ import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioPath } from '@shared
 import { Button, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useToast } from '@voicechat/ui-kit'
 import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
+import { buildZip } from '../lib/zipStore'
 import { ToolFrame } from './ToolFrame'
-import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioPromptsKey } from '../store/contracts'
+import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
-  'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel'>
+  'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel'> &
+  Partial<Pick<RendererApi, 'prompt:suggest'>>
 
 interface Props {
   conversationId: string
@@ -96,7 +98,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [multi, setMulti] = useState<Set<string> | null>(null)
   const [compare, setCompare] = useState(false)
   const [filter, setFilter] = useState('')
-  const [order, setOrder] = useState<'new' | 'name' | 'size'>('new')
+  const [order, setOrder] = useState<'new' | 'name' | 'size'>(() => {
+    try {
+      const saved = localStorage.getItem(IMAGE_STUDIO_ORDER_KEY)
+      return saved === 'name' || saved === 'size' ? saved : 'new'
+    } catch { return 'new' }
+  })
   const [recent, setRecent] = useState<string[]>(() => loadRecent(conversationId))
   /** Имя нового файла (опционально) — иначе сервер назовёт «изображение.png». */
   const [fileName, setFileName] = useState('')
@@ -319,8 +326,22 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
 
   const downloadAll = (list: ImageStudioFile[]): void => {
     void (async () => {
-      if (list.length > 10 && !(await confirm({ title: `Скачать ${list.length} файлов?`, message: 'Браузер запустит скачивание каждого файла по очереди.', confirmLabel: 'Скачать' }))) return
-      for (const file of list) await download(file.path)
+      try {
+        // Один ZIP вместо лавины скачиваний: браузеру и пользователю так проще.
+        const entries = [] as Array<{ name: string; data: Uint8Array }>
+        for (const file of list) {
+          const dataBase64 = await readBase64(file.path)
+          entries.push({ name: file.path, data: Uint8Array.from(atob(dataBase64), (char) => char.charCodeAt(0)) })
+        }
+        const url = URL.createObjectURL(buildZip(entries))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = 'галерея.zip'
+        link.click()
+        URL.revokeObjectURL(url)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error))
+      }
     })()
   }
 
@@ -339,7 +360,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     }, 'Копия создана')
   }
 
-  if (failed) return <div className="image-studio"><ErrorState message="Не удалось загрузить галерею" onRetry={() => void reload()} /></div>
+  if (failed) return <div className="image-studio"><ErrorState message="Не удалось загрузить галерею — чат недоступен или удалён" onRetry={() => void reload()} /></div>
   if (!files) return <div className="image-studio"><Skeleton variant="list" count={3} item="block" height={96} gap={10} /></div>
 
   const usedBytes = files.reduce((sum, file) => sum + file.size, 0)
@@ -375,6 +396,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           const path = selected
           setSelected(null)
           await run(() => api['imgstudio:delete']({ conversationId, path }), 'Удалено')
+          promptRef.current?.focus()
         })()
       }
     }}
@@ -395,6 +417,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       />
       {recent.length > 0 && !prompt && <div className="image-studio-recent" aria-label="Недавние промпты">
         {recent.map((text) => <button key={text} type="button" className="image-studio-chip" title={text} onClick={() => { setPrompt(text); promptRef.current?.focus() }}>{text.length > 42 ? `${text.slice(0, 42)}…` : text}</button>)}
+        <button type="button" className="image-studio-chip" aria-label="Очистить историю промптов" title="Очистить историю" onClick={() => { setRecent([]); try { localStorage.removeItem(imageStudioPromptsKey(conversationId)) } catch { /* приватный режим */ } }}>×</button>
       </div>}
       <div className="image-studio-actions">
         <Button size="sm" disabled={busy || !prompt.trim()} loading={busy} title="⌘Enter / Ctrl+Enter" onClick={generate}>
@@ -404,6 +427,19 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset}</option>)}
         </select>}
         {!selected && <input className="image-studio-filename" aria-label="Имя нового файла" placeholder="имя.png (не обязательно)" value={fileName} disabled={busy} onChange={(event) => setFileName(event.target.value)} />}
+        {api['prompt:suggest'] && <IconButton size="sm" aria-label="Улучшить промпт с помощью AI" title="Улучшить промпт" disabled={busy || !prompt.trim()} onClick={() => void (async () => {
+          const current = prompt.trim()
+          try {
+            const { variants } = await api['prompt:suggest']!({ prompt: current, modifiers: [{ id: 'image-studio', title: 'Промпт для картинки', text: 'Сделай из этого детальный промпт для генерации изображения: композиция, стиль, цвета, фон. Верни только сам промпт, одним абзацем, по-русски.', enabled: true }] })
+            const improved = variants[0]?.text.trim()
+            if (!improved) { toast.info('AI не предложил вариант'); return }
+            rememberPrompt(current) // прежний промпт остаётся чипом — «отмена» в один клик
+            setPrompt(improved)
+            promptRef.current?.focus()
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : String(error))
+          }
+        })()}>✨</IconButton>}
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => uploadRef.current?.click()}>Загрузить…</Button>
         {selected && <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>Снять выбор</Button>}
         <input ref={uploadRef} type="file" accept="image/*,.svg" multiple hidden aria-label="Файл изображения" onChange={(event) => { if (event.target.files?.length) upload(event.target.files); event.target.value = '' }} />
@@ -419,10 +455,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
 
     {files.length >= 2 && <div className="image-studio-filter">
       {files.length >= FILTER_THRESHOLD && <input aria-label="Фильтр по имени файла" placeholder="Найти по имени…" value={filter} onChange={(event) => setFilter(event.target.value)} />}
-      <Button size="sm" variant="ghost" onClick={() => setOrder(order === 'new' ? 'name' : order === 'name' ? 'size' : 'new')}>
+      <Button size="sm" variant="ghost" onClick={() => { const next = order === 'new' ? 'name' : order === 'name' ? 'size' : 'new'; setOrder(next); try { localStorage.setItem(IMAGE_STUDIO_ORDER_KEY, next) } catch { /* приватный режим */ } }}>
         {order === 'new' ? 'Сначала новые' : order === 'name' ? 'По имени' : 'По размеру'}
       </Button>
-      <Button size="sm" variant="ghost" disabled={busy || !shown.length} onClick={() => downloadAll(shown)}>Скачать все</Button>
+      <Button size="sm" variant="ghost" disabled={busy || !shown.length} onClick={() => downloadAll(shown)}>Скачать архивом</Button>
       <IconButton size="sm" aria-label={dense ? 'Крупные карточки' : 'Мелкие карточки'} title={dense ? 'Крупнее' : 'Мельче'} onClick={() => setDense((prev) => { const next = !prev; try { localStorage.setItem(IMAGE_STUDIO_DENSE_KEY, next ? '1' : '0') } catch { /* приватный режим */ } return next })}>{dense ? '▦' : '▤'}</IconButton>
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && multi.size > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={() => void (async () => {
@@ -453,7 +489,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
             {shown.map((file) => <div role="listitem" key={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
             <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} onDoubleClick={() => setViewing(file.path)} title={selected === file.path ? 'Снять выбор (двойной клик — на весь экран)' : 'Выбрать для правки (двойной клик — на весь экран)'}>
               {previews[file.path]
-                ? <img src={previews[file.path]} alt="" onLoad={(event) => {
+                ? <img loading="lazy" src={previews[file.path]} alt="" onLoad={(event) => {
                     const img = event.currentTarget
                     if (img.naturalWidth) setDimensions((prev) => prev[file.path] === `${img.naturalWidth}×${img.naturalHeight}` ? prev : { ...prev, [file.path]: `${img.naturalWidth}×${img.naturalHeight}` })
                   }} />

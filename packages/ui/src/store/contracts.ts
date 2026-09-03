@@ -52,6 +52,7 @@ export const MAKE_SPLIT_PCT_KEY = 'vc.make.splitPct'
 /** Ключи студии картинок: плотность сетки и недавние промпты (на разговор). */
 export const IMAGE_STUDIO_DENSE_KEY = 'vc.imgstudio.dense'
 export const IMAGE_STUDIO_SIZE_KEY = 'vc.imgstudio.size'
+export const IMAGE_STUDIO_ORDER_KEY = 'vc.imgstudio.order'
 export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
 
 /**
@@ -76,7 +77,8 @@ export const PREFERENCE_KEYS = [
   MAKE_SPLIT_KEY,
   MAKE_SPLIT_PCT_KEY,
   IMAGE_STUDIO_DENSE_KEY,
-  IMAGE_STUDIO_SIZE_KEY
+  IMAGE_STUDIO_SIZE_KEY,
+  IMAGE_STUDIO_ORDER_KEY
 ] as const
 
 /**

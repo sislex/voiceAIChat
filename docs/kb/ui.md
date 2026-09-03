@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-03
-checked: 333f9b32
+checked: a8c06a59
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -2688,3 +2688,14 @@ figure, если source ещё в галерее); режим «Выбрать �
 слаг первых трёх слов промпта (nameFromPrompt); Delete/Backspace удаляет
 выбранную (с confirm); кнопка 📎 отдаёт файл в композер чата через проп
 `onAttachToChat` (App → chatActions.addAttachment).
+
+Итерация 7 (2026-09-03): «Скачать архивом» собирает один ZIP на клиенте —
+`lib/zipStore.ts`, минимальный упаковщик без сжатия (stored, UTF-8 имена,
+CRC-32 с тест-вектором); ✨ «Улучшить промпт» переиспользует мост
+`prompt:suggest` (модификатор «детальный промпт для генерации», прежний текст
+остаётся чипом — отмена в один клик); порядок сортировки персистится
+(`vc.imgstudio.order`); история промптов чистится крестиком; превью грузятся
+`loading="lazy"`; у панели есть сториз (`ImageStudioPane.stories.tsx`:
+Default/Empty/MultiSelect/LoadError) и axe-проверка в dom-тесте; фикстуры
+данных галереи — `src/test/fixtures/imageStudio.ts` (мосты сториз и тестов
+собирают сами: тестам нужен vi.fn, витрине нельзя тянуть vitest).

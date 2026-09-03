@@ -1,6 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
+import { expectNoViolations } from '../test/a11y'
 import { ImageStudioPane } from './ImageStudioPane'
 import type { ImageStudioFile } from '@shared/imageStudio'
 
@@ -213,6 +214,13 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(attach).toHaveBeenCalled())
     expect((attach.mock.calls[0]![0] as File).name).toBe('кот.png')
   })
+
+  it('панель без нарушений доступности (axe)', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    await screen.findByRole('list', { name: 'Галерея изображений' })
+    await expectNoViolations()
+  }, 20000)
 
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
