@@ -3,6 +3,7 @@
 // вьюер только показывает и дёргает колбэки.
 import { useEffect, useRef, useState } from 'react'
 import type { ImageStudioFile } from '@shared/imageStudio'
+import type { CropRect } from '../lib/imageTransform'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 
@@ -23,14 +24,23 @@ interface Props {
   /** Закрыть вьюер и выбрать файл для правки (фокус уйдёт в промпт). */
   onPickForEdit: (path: string) => void
   onVariate: (path: string) => void
+  /** Обрезка: rect в натуральных пикселях картинки. */
+  onCrop: (path: string, rect: CropRect) => void
+  /** Позиция открытого файла в отфильтрованной сетке: «N из M». */
+  position?: { index: number; total: number }
   onDownload: (path: string) => void
   onDelete: (path: string) => void
   onClose: () => void
 }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onDownload, onDelete, onClose }: Props): JSX.Element {
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onDownload, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
+  /** Режим обрезки: рамка в координатах отображаемой картинки (CSS-пиксели). */
+  const [cropping, setCropping] = useState(false)
+  const [cropBox, setCropBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const dragStart = useRef<{ x: number; y: number } | null>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
   /** Начальная точка свайпа (телефон). */
   const touchX = useRef<number | null>(null)
   // Стрелки листают из любого места вьюера: фокус после открытия стоит на
@@ -48,9 +58,11 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const meta = files.find((file) => file.path === viewing)
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
 
-  return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : viewing} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
+  const positionLabel = position && position.total > 1 ? ` · ${position.index + 1} из ${position.total}` : ''
+  return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : `${viewing}${positionLabel}`} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
     actions={<>
       {sourceInGallery && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
+      <IconButton size="sm" aria-label={cropping ? 'Выйти из режима обрезки' : `Обрезать ${viewing}`} title={cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'} aria-pressed={cropping} onClick={() => { setCropping((prev) => !prev); setCropBox(null); onCompareChange(false) }}>✂</IconButton>
       <IconButton size="sm" aria-label={`Править ${viewing} по промпту`} title="Править по промпту" onClick={() => onPickForEdit(viewing)}>✎</IconButton>
       <IconButton size="sm" aria-label={`Нарисовать вариацию ${viewing}`} title="Вариация" disabled={busy} onClick={() => onVariate(viewing)}>✦</IconButton>
       <IconButton size="sm" aria-label={`Скачать ${viewing}`} title="Скачать" onClick={() => onDownload(viewing)}>⇩</IconButton>
@@ -86,10 +98,49 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
             <p className="image-studio-origin"><span className="image-studio-dim">← {sourcePath} · {viewing} →</span></p>
           </div>
         }
-        return previews[viewing]
-          ? <img className="image-studio-full" src={previews[viewing]} alt={viewing} />
-          : <p className="imgerr" role="alert">Превью ещё не загрузилось</p>
+        if (!previews[viewing]) return <p className="imgerr" role="alert">Превью ещё не загрузилось</p>
+        if (!cropping) return <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} />
+        return <div className="image-studio-crop-stage"
+          onPointerDown={(event) => {
+            const box = event.currentTarget.getBoundingClientRect()
+            dragStart.current = { x: event.clientX - box.left, y: event.clientY - box.top }
+            setCropBox(null)
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }}
+          onPointerMove={(event) => {
+            if (!dragStart.current) return
+            const box = event.currentTarget.getBoundingClientRect()
+            const x = event.clientX - box.left
+            const y = event.clientY - box.top
+            setCropBox({ x: Math.min(x, dragStart.current.x), y: Math.min(y, dragStart.current.y), w: Math.abs(x - dragStart.current.x), h: Math.abs(y - dragStart.current.y) })
+          }}
+          onPointerUp={() => { dragStart.current = null }}>
+          <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
+          {cropBox && <span className="image-studio-crop-box" style={{ left: cropBox.x, top: cropBox.y, width: cropBox.w, height: cropBox.h }} aria-hidden="true" />}
+          <p className="image-studio-origin"><span className="image-studio-dim">Выделите область мышью и нажмите «Вырезать».</span></p>
+        </div>
       })()}
+      {cropping && <p className="image-studio-origin">
+        <button type="button" className="image-studio-cancel" disabled={!cropBox || busy} onClick={() => {
+          const img = imgRef.current
+          if (!img || !cropBox) return
+          // Рамка в CSS-пикселях → натуральные пиксели картинки. object-fit:
+          // contain держит картинку прижатой к левому верхнему углу stage? Нет —
+          // stage обёрнут вокруг самой картинки, offsetLeft внутри равен нулю,
+          // масштаб один по обеим осям не гарантирован — пересчитываем по факту.
+          const scaleX = img.naturalWidth / img.clientWidth
+          const scaleY = img.naturalHeight / img.clientHeight
+          const rect = {
+            x: (cropBox.x - img.offsetLeft) * scaleX,
+            y: (cropBox.y - img.offsetTop) * scaleY,
+            w: cropBox.w * scaleX,
+            h: cropBox.h * scaleY
+          }
+          setCropping(false)
+          setCropBox(null)
+          onCrop(viewing, rect)
+        }}>Вырезать выделенное</button>
+      </p>}
       {meta && <p className="imgcap image-studio-origin">
         <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
         {meta.source ? (sourceInGallery
