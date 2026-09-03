@@ -522,6 +522,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     onKeyDown={(event) => {
       // Delete на выбранной карточке — то же удаление, что и крестиком.
       if (event.key === 'Escape' && multi) { setMulti(null); return }
+      if (multi && event.key.toLowerCase() === 'a' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        setMulti(new Set(shown.map((file) => file.path)))
+        return
+      }
       if ((event.key === 'Delete' || event.key === 'Backspace') && selected && !renaming && (event.target as HTMLElement).tagName !== 'TEXTAREA' && (event.target as HTMLElement).tagName !== 'INPUT') {
         event.preventDefault()
         void (async () => {
@@ -667,6 +672,19 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         setLastAttempt(() => launch)
         void launch()
       }}>Нарисовать с референсами ({multi.size})</Button>}
+      {multi && multi.size > 0 && (otherChats ?? []).length > 0 && <select aria-label="Перенести выбранные в другой чат" disabled={busy} value="" onChange={(event) => {
+        const target = event.target.value
+        if (!target) return
+        const moved = [...multi]
+        void run(async () => {
+          for (const path of moved) await api['imgstudio:transfer']({ conversationId, path, to: target, copy: false })
+          if (selected && multi.has(selected)) setSelected(null)
+          setMulti(new Set())
+        }, `Перенесено файлов: ${moved.length}`)
+      }}>
+        <option value="">Перенести выбранные в…</option>
+        {(otherChats ?? []).map((chatItem) => <option key={chatItem.id} value={chatItem.id}>{chatItem.title}</option>)}
+      </select>}
       {multi && multi.size > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={() => void (async () => {
         if (!(await confirm({ title: `Удалить ${multi.size} файл(ов)?`, message: 'Восстановить изображения будет нельзя.', confirmLabel: 'Удалить' }))) return
         await run(async () => {

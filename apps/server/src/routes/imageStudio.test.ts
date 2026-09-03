@@ -344,6 +344,16 @@ describe('студия картинок: перенос между чатами'
   })
 })
 
+describe('студия картинок: OG-мета публичной страницы', () => {
+  it('страница несёт og:title и og:image первой картинки', async () => {
+    await store.writeBuffer(convId, 'обложка.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url, headers: { host: 'studio.test' } })
+    expect(page.body).toContain('property="og:title"')
+    expect(page.body).toContain(`og:image" content="http://studio.test${pub.url}file?path=`)
+  })
+})
+
 describe('студия картинок: корзина', () => {
   it('удаление уводит в корзину, restore возвращает со свободным именем', async () => {
     await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
