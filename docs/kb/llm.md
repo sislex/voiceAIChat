@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-09-03
-checked: 59db0e62
+checked: 604e3314
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -675,7 +675,10 @@ Make-контекст приклеиваются к сообщению **каж�
 `runnerFs.readFile`/`readUserFile` с корнем в профиле; (3) в промпте —
 `IMAGE_HINT` из shared: формат fenced-блока ```image модель сама не знает и
 без подсказки вставляет markdown-ссылку, которую `parseImages` не берёт.
-Правка выбранной картинки — тот же ход с вложением исходника (attachments).
+Правка выбранной картинки — тот же ход с вложением исходника (attachments);
+генерация может получить до 4 референсов (`references` в generate) — файлы
+галереи уходят вложениями reference-N-<имя> с подсказкой «повтори стиль и
+палитру, не копируя композицию».
 Обычный ход чата студии (assistantKind `images`) получает блок «Студия
 картинок» через `deps.studioContext` в turns.ts: список галереи (до 30 файлов
 с промптами) и правило «покажи результат fenced-блоком image с абсолютным
