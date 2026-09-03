@@ -310,6 +310,16 @@ describe('студия картинок: автоназвание чата', () 
   })
 })
 
+describe('студия картинок: происхождение клиентских обработок', () => {
+  it('upload с source пишет мету — цепочка версий не рвётся', async () => {
+    await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
+    const up = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/file`, payload: { path: 'кот-кроп.png', dataBase64: PNG_BYTES.toString('base64'), source: 'кот.png' } })
+    expect(up.statusCode).toBe(200)
+    const list = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/files` })).json() as Array<{ path: string; source?: string }>
+    expect(list.find((file) => file.path === 'кот-кроп.png')).toMatchObject({ source: 'кот.png' })
+  })
+})
+
 describe('студия картинок: перенос между чатами', () => {
   it('move уносит файл с метой, copy оставляет оригинал; чужой чат — 404', async () => {
     const target = db.createConversation(U, 'Картинки 9', 'images')
