@@ -605,6 +605,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
 
     {viewing && <ImageStudioViewer
       viewing={viewing}
+      busy={busy}
       files={files}
       previews={previews}
       dimensions={dimensions}
@@ -615,6 +616,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       onView={setViewing}
       onStep={viewStep}
       onUsePrompt={(text) => { setPrompt(text); setViewing(null); promptRef.current?.focus() }}
+      onPickForEdit={(path) => { setSelected(path); setViewing(null); setCompare(false); promptRef.current?.focus() }}
+      onVariate={(path) => { setViewing(null); setCompare(false); variate(files.find((file) => file.path === path) ?? { path, size: 0, updatedAt: 0 }) }}
       onDownload={(path) => void download(path)}
       onDelete={(path) => void (async () => {
         if (!(await confirm({ title: `Удалить «${path}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return

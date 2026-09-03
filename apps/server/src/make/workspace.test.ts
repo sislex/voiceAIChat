@@ -29,6 +29,23 @@ describe('MakeWorkspaces', () => {
     expect((await ws.state(CONV)).published).toBeFalsy()
   })
 
+  it('переопубликация не воскрешает старый токен от фонового счётчика', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    // Гонка из гейта: countView (fire-and-forget из маршрута отдачи) читал
+    // состояние ДО unpublish и писал его обратно ПОСЛЕ повторного publish —
+    // publish-файл возвращался к старому токену, а publishedTarget нового
+    // отвечал null (у пользователя — 404 на свежей ссылке).
+    for (let round = 0; round < 15; round += 1) {
+      await ws.publish(CONV)
+      void ws.countView(CONV, null)
+      await ws.unpublish(CONV)
+      const republished = (await ws.publish(CONV)).published!.token
+      expect(await ws.publishedTarget(republished)).toBe(CONV)
+      await ws.unpublish(CONV)
+    }
+  })
+
   it('нечитаемый файл публикации всё равно снимается', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
