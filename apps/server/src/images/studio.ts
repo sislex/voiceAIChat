@@ -4,7 +4,7 @@
 // запись, переименование и удаление, остальное — работа модели и панели.
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { IMAGE_STUDIO_LIMITS, isImageStudioPath, type ImageStudioFile } from '@voicechat/shared'
 
@@ -45,7 +45,7 @@ function safeName(raw: string): string {
 
 interface StudioMeta { prompt?: string; source?: string }
 
-interface StudioPublication { token: string; publishedAt: number; views: number }
+interface StudioPublication { token: string; publishedAt: number; views: number; passwordHash?: string | null; title?: string | null }
 
 const PUBLISH_FILE = '.studio-publish.json'
 const PUBLISHED_INDEX_DIR = '.published'
@@ -86,19 +86,54 @@ export class ImageStudioStore {
     return this.readPublication(conversationId)
   }
 
-  /** Публикует галерею (повторный вызов возвращает ту же ссылку). */
-  async publish(conversationId: string): Promise<StudioPublication> {
+  /**
+   * Публикует галерею (повторный вызов не ротирует ссылку, но обновляет
+   * пароль/название). password: undefined — не трогать, null/'' — снять,
+   * строка — задать; сам пароль не хранится, только хэш с солью.
+   */
+  async publish(conversationId: string, options: { password?: string | null; title?: string | null } = {}): Promise<StudioPublication> {
     return this.withPublishLock(conversationId, async () => {
       const existing = await this.readPublication(conversationId)
-      if (existing) return existing
-      const token = randomUUID().replace(/-/g, '')
-      const indexDir = join(this.rootDir, PUBLISHED_INDEX_DIR)
-      await mkdir(indexDir, { recursive: true })
-      await writeFile(join(indexDir, `${token}.json`), JSON.stringify({ conversationId }), 'utf8')
-      const raw = { token, publishedAt: Date.now(), views: 0 }
+      let token = existing?.token
+      if (!token) {
+        token = randomUUID().replace(/-/g, '')
+        const indexDir = join(this.rootDir, PUBLISHED_INDEX_DIR)
+        await mkdir(indexDir, { recursive: true })
+        await writeFile(join(indexDir, `${token}.json`), JSON.stringify({ conversationId }), 'utf8')
+      }
+      let passwordHash = existing?.passwordHash ?? null
+      if (options.password !== undefined) {
+        if (!options.password) passwordHash = null
+        else {
+          if (options.password.length < 4) throw new ImageStudioError('bad_path', 'Пароль — не короче 4 символов')
+          const salt = randomUUID().replace(/-/g, '')
+          passwordHash = `${salt}:${createHash('sha256').update(`${salt}:${options.password}`).digest('hex')}`
+        }
+      }
+      const raw: StudioPublication = {
+        token,
+        publishedAt: existing?.publishedAt ?? Date.now(),
+        views: existing?.views ?? 0,
+        passwordHash,
+        title: options.title !== undefined ? options.title : existing?.title ?? null
+      }
       await this.writePublication(conversationId, raw)
       return raw
     })
+  }
+
+  /** Гейт-значение для cookie: живо, пока не сменили пароль. */
+  async publicGate(conversationId: string): Promise<string | null> {
+    const raw = await this.readPublication(conversationId)
+    if (!raw?.passwordHash) return null
+    return createHash('sha256').update(`gate:${raw.token}:${raw.passwordHash}`).digest('hex')
+  }
+
+  async verifyPublicPassword(conversationId: string, password: string): Promise<boolean> {
+    const raw = await this.readPublication(conversationId)
+    if (!raw?.passwordHash) return true
+    const [salt, hash] = raw.passwordHash.split(':')
+    return createHash('sha256').update(`${salt}:${password}`).digest('hex') === hash
   }
 
   async unpublish(conversationId: string): Promise<void> {
@@ -125,9 +160,14 @@ export class ImageStudioStore {
   /** Счётчик просмотров публичной страницы; гонки терпимы, но пишем под локом. */
   async countView(conversationId: string): Promise<void> {
     return this.withPublishLock(conversationId, async () => {
-      const raw = await this.readPublication(conversationId)
-      if (!raw) return
-      await this.writePublication(conversationId, { ...raw, views: (raw.views ?? 0) + 1 })
+      try {
+        const raw = await this.readPublication(conversationId)
+        if (!raw) return
+        await this.writePublication(conversationId, { ...raw, views: (raw.views ?? 0) + 1 })
+      } catch {
+        // Статистика не стоит ошибки: галерею могли снять/удалить между чтением
+        // и записью (в тестах — rmSync каталога), просмотр просто теряется.
+      }
     })
   }
 

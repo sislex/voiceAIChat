@@ -24,7 +24,7 @@ function makeApi(initial: Array<{ path: string }> = []) {
     api: {
       'imgstudio:cancel': cancel,
       'imgstudio:run': vi.fn(async () => ({ active: false })),
-      'imgstudio:publish': vi.fn(async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0 })),
+      'imgstudio:publish': vi.fn(async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0, passwordProtected: false })),
       'imgstudio:publication': vi.fn(async () => ({ url: null })),
       'imgstudio:unpublish': vi.fn(async () => ({ url: null })),
       'imgstudio:list': vi.fn(async () => [...files]),
@@ -349,6 +349,21 @@ describe('ImageStudioPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Скачать выбранные (3)' }))
     // Архив собирается из байтов всех трёх файлов.
     await waitFor(() => expect(api['imgstudio:read']).toHaveBeenCalledTimes(3 + 3)) // 3 превью + 3 в архив
+  })
+
+  it('диалог пароля публикации ставит и снимает пароль зрителей', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    ;(api['imgstudio:publication'] as ReturnType<typeof vi.fn>).mockResolvedValue({ url: '/g/x/', views: 0, passwordProtected: false })
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Пароль…' }))
+    const field = await screen.findByRole('textbox', { name: 'Пароль для зрителей галереи' })
+    fireEvent.change(field, { target: { value: 'секрет' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(api['imgstudio:publish']).toHaveBeenCalledWith({ conversationId: 'c1', password: 'секрет' }))
+    // Кнопка сменилась на «Пароль 🔒», снятие шлёт password: null.
+    fireEvent.click(await screen.findByRole('button', { name: 'Пароль 🔒' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Снять пароль' }))
+    await waitFor(() => expect(api['imgstudio:publish']).toHaveBeenCalledWith({ conversationId: 'c1', password: null }))
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {
