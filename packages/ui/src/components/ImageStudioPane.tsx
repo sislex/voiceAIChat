@@ -17,12 +17,13 @@ import { getCachedPreview, putCachedPreview } from '../lib/previewCache'
 import { playStopCue } from '../lib/cues'
 import { ImageStudioViewer } from './ImageStudioViewer'
 import { ImageStudioToolsRow } from './ImageStudioToolsRow'
-import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
+import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, IMAGE_STUDIO_STYLE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
   'imgstudio:rename' | 'imgstudio:generate' | 'imgstudio:edit' | 'imgstudio:cancel' |
-  'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish' | 'imgstudio:run' | 'imgstudio:transfer'> &
+  'imgstudio:publish' | 'imgstudio:publication' | 'imgstudio:unpublish' | 'imgstudio:run' | 'imgstudio:transfer' |
+  'imgstudio:trash' | 'imgstudio:restore'> &
   Partial<Pick<RendererApi, 'prompt:suggest'>>
 
 interface Props {
@@ -35,6 +36,9 @@ interface Props {
   /** Другие студийные чаты пользователя — цели переноса/копии картинок. */
   otherChats?: Array<{ id: string; title: string }>
 }
+
+/** Пресеты стиля: пустой — модель решает сама. */
+const STYLE_PRESETS = ['', 'акварель', 'флэт-иллюстрация', 'пиксель-арт', 'скетч карандашом', 'фотореализм'] as const
 
 /** Пресеты размера: пустой — модель решает сама. */
 const SIZE_PRESETS = ['', '512×512', '1024×1024', '1920×1080', '1200×630', '1080×1080', '1280×720'] as const
@@ -112,6 +116,13 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [toolsFor, setToolsFor] = useState<string | null>(null)
   const [viewing, setViewing] = useState<string | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  /** Корзина: содержимое подгружается при раскрытии. */
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [trash, setTrash] = useState<Array<{ name: string; deletedAt: number }>>([])
+  /** Пресет стиля — добавка к промпту, как размер. */
+  const [style, setStyle] = useState<string>(() => {
+    try { return localStorage.getItem(IMAGE_STUDIO_STYLE_KEY) ?? '' } catch { return '' }
+  })
   /** Режим множественного выбора: чекбоксы вместо выбора-для-правки. */
   const [multi, setMulti] = useState<Set<string> | null>(null)
   const [compare, setCompare] = useState(false)
@@ -325,7 +336,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     const cleaned = prompt.trim()
     // Пресет размера — просто добавка к промпту: модель рисует скриптом и
     // размер для неё такой же текст, как и всё остальное.
-    const withSize = size && !selected ? `${cleaned}\nРазмер изображения: ${size.replace('×', 'x')}` : cleaned
+    const withStyle = style && !selected ? `${cleaned}\nСтиль: ${style}.` : cleaned
+    const withSize = size && !selected ? `${withStyle}\nРазмер изображения: ${size.replace('×', 'x')}` : withStyle
     const fullPrompt = noText ? `${withSize}\nНе добавляй на изображение никакой текст, надписи и водяные знаки.` : withSize
     const typedName = fileName.trim()
     const name = typedName
@@ -566,6 +578,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         <Button size="sm" disabled={busy || !prompt.trim() || prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars} loading={busy} title="⌘Enter / Ctrl+Enter" onClick={generate}>
           {selected ? 'Изменить выбранную' : 'Нарисовать'}
         </Button>
+        {!selected && <select aria-label="Стиль изображения" value={style} disabled={busy} onChange={(event) => { setStyle(event.target.value); try { localStorage.setItem(IMAGE_STUDIO_STYLE_KEY, event.target.value) } catch { /* приватный режим */ } }}>
+          {STYLE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Стиль: авто' : preset}</option>)}
+        </select>}
         {!selected && <select aria-label="Размер изображения" value={size} disabled={busy} onChange={(event) => { setSize(event.target.value); try { localStorage.setItem(IMAGE_STUDIO_SIZE_KEY, event.target.value) } catch { /* приватный режим */ } }}>
           {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset === '1200×630' ? '1200×630 (OG-превью)' : preset === '1080×1080' ? '1080×1080 (пост)' : preset === '1280×720' ? '1280×720 (обложка)' : preset}</option>)}
         </select>}
@@ -630,6 +645,11 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         })()}>Снять публикацию</Button>
       </>}
       <IconButton size="sm" aria-label="Обновить галерею" title="Обновить" onClick={() => void reload()}>↻</IconButton>
+      <Button size="sm" variant="ghost" aria-expanded={trashOpen} onClick={() => {
+        const next = !trashOpen
+        setTrashOpen(next)
+        if (next) void api['imgstudio:trash']({ conversationId }).then(({ items }) => setTrash(items)).catch(() => setTrash([]))
+      }}>Корзина…</Button>
       <Button size="sm" variant="ghost" onClick={() => setMulti(multi ? null : new Set())}>{multi ? 'Готово' : 'Выбрать несколько'}</Button>
       {multi && <Button size="sm" variant="ghost" onClick={() => setMulti(new Set(shown.map((file) => file.path)))}>Выбрать все</Button>}
       {multi && multi.size > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => downloadAll(shown.filter((file) => multi.has(file.path)))}>Скачать выбранные ({multi.size})</Button>}
@@ -657,6 +677,18 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       })()}>Удалить выбранные ({multi.size})</Button>}
     </div>}
 
+    {trashOpen && <div className="image-studio-trash" role="group" aria-label="Корзина галереи">
+      {trash.length === 0
+        ? <span className="image-studio-dim">Корзина пуста — удалённое хранится здесь 7 дней.</span>
+        : trash.map((item) => <span key={`${item.name}-${item.deletedAt}`} className="image-studio-chip">
+            <span className="image-studio-chip-text">{item.name}</span>
+            <button type="button" className="image-studio-chip-pin" aria-label={`Восстановить ${item.name}`} title="Восстановить" onClick={() => void run(async () => {
+              await api['imgstudio:restore']({ conversationId, name: item.name })
+              const { items } = await api['imgstudio:trash']({ conversationId })
+              setTrash(items)
+            }, `«${item.name}» восстановлен`)}>↩</button>
+          </span>)}
+    </div>}
     {files.length === 0
       ? <div>
           <EmptyState title="Галерея пуста — нарисуйте первую картинку" description="Опишите её в поле выше, перетащите файлы сюда или попросите ассистента в чате слева: всё нарисованное попадает сюда." />
