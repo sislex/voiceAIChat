@@ -107,6 +107,8 @@ export interface TurnManagerDeps {
   makeHub?: { turnSnapshot(turn: string): string | undefined }
   /** Контекст проекта Make для промпта: дизайн-токены и открытые комментарии (roadmap-2 п.9). */
   makeContext?: (conversationId: string) => Promise<string>
+  /** Контекст студии картинок: список галереи + правило показа результата. */
+  studioContext?: (conversationId: string) => Promise<string>
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
   previewTool?: {
     register(token: string, entry: { userId: string; conversationId: string }): void
@@ -634,7 +636,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext && !disabledContext.has('make-context')
       ? await deps.makeContext(conversationId).catch(() => '')
       : ''
-    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
+    // Чат студии картинок: модель должна знать, что уже лежит в галерее, и
+    // что нарисованное надо показать fenced-блоком — иначе оно туда не попадёт.
+    const studioContextBlock = conv?.assistantKind === 'images' && deps.studioContext
+      ? await deps.studioContext(conversationId).catch(() => '')
+      : ''
+    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase

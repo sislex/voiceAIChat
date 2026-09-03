@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import { ImageStudioPane } from './ImageStudioPane'
@@ -34,6 +34,9 @@ function makeApi(initial: Array<{ path: string }> = []) {
 }
 
 describe('ImageStudioPane', () => {
+  // Пресет размера и недавние промпты персистятся — между тестами их надо чистить.
+  beforeEach(() => localStorage.clear())
+
   it('промпт без выбора рисует новую картинку, с выбором — правит выбранную', async () => {
     const { api, generate, edit } = makeApi([{ path: 'кот.png' }])
     render(<ImageStudioPane conversationId="c1" api={api as never} />)

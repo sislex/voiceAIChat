@@ -11,7 +11,7 @@ import { Button, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useTo
 import { usePolling } from '../lib/usePolling'
 import { copyImage } from '../lib/clipboard'
 import { ToolFrame } from './ToolFrame'
-import { IMAGE_STUDIO_DENSE_KEY, imageStudioPromptsKey } from '../store/contracts'
+import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioPromptsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
@@ -70,7 +70,12 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
   const [failed, setFailed] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
-  const [size, setSize] = useState<string>('')
+  const [size, setSize] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(IMAGE_STUDIO_SIZE_KEY) ?? ''
+      return (SIZE_PRESETS as readonly string[]).includes(saved) ? saved : ''
+    } catch { return '' }
+  })
   const [busy, setBusy] = useState(false)
   /** Пока модель рисует/правит — что именно и сколько секунд уже идёт. */
   const [progress, setProgress] = useState<{ label: string; seconds: number } | null>(null)
@@ -100,6 +105,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
   const renameRef = useRef<HTMLInputElement | null>(null)
   /** blob-URL превью по имени файла; пересоздаются при смене updatedAt. */
   const [previews, setPreviews] = useState<Record<string, string>>({})
+  const previewsRef = useRef<Record<string, string>>({})
   /** Пиксельные размеры превью — узнаём при загрузке картинки в <img>. */
   const [dimensions, setDimensions] = useState<Record<string, string>>({})
   const previewKeys = useRef<Record<string, number>>({})
@@ -129,7 +135,9 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
           const url = URL.createObjectURL(new Blob([bytes], { type: imageStudioMime(file.path) }))
           setPreviews((prev) => {
             if (prev[file.path]) URL.revokeObjectURL(prev[file.path]!)
-            return { ...prev, [file.path]: url }
+            const next = { ...prev, [file.path]: url }
+            previewsRef.current = next
+            return next
           })
           setBroken((prev) => { if (!prev.has(file.path)) return prev; const next = new Set(prev); next.delete(file.path); return next })
         }).catch(() => {
@@ -144,8 +152,24 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
   }, [api, conversationId])
 
   useEffect(() => { void reload() }, [reload])
+  // Панель закрыли или сменили разговор — blob-URL превью иначе живут до
+  // конца вкладки (насосать их можно на сотни мегабайт).
+  useEffect(() => () => {
+    for (const url of Object.values(previewsRef.current)) URL.revokeObjectURL(url)
+  }, [])
   // Во время хода ассистента картинки появляются без действий панели.
   usePolling(() => void reload(), { enabled: Boolean(turnActive), intervalMs: 4000 })
+  // Хвост хода: captureStudioImages дописывает галерею уже после done, и
+  // последний поллинг его не застаёт — добираем одним отложенным reload.
+  const wasTurnActive = useRef(false)
+  useEffect(() => {
+    if (wasTurnActive.current && !turnActive) {
+      const timer = setTimeout(() => void reload(), 1500)
+      return () => clearTimeout(timer)
+    }
+    wasTurnActive.current = Boolean(turnActive)
+    return undefined
+  }, [turnActive, reload])
   // Промпт — главное действие панели: открыли студию → сразу можно печатать.
   useEffect(() => { promptRef.current?.focus() }, [conversationId])
   // Поле переименования открывается кнопкой ✎ — фокус руками, autoFocus в
@@ -195,7 +219,12 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
       // Выбрана картинка — правим её; нет — рисуем новую. Один промпт на
       // оба действия: так работает голова пользователя, а не наша схема.
       if (selected) await api['imgstudio:edit']({ conversationId, path: selected, prompt: fullPrompt })
-      else await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(fileName.trim() ? { name: fileName.trim() } : {}) })
+      else {
+        // Пользователь ввёл «арт» — дописываем .png, а не возвращаем bad_name.
+        const typedName = fileName.trim()
+        const name = typedName && !isImageStudioPath(typedName) ? `${typedName}.png` : typedName
+        await api['imgstudio:generate']({ conversationId, prompt: fullPrompt, ...(name ? { name } : {}) })
+      }
       setPrompt('')
       setFileName('')
       promptRef.current?.focus()
@@ -276,6 +305,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
 
   const downloadAll = (list: ImageStudioFile[]): void => {
     void (async () => {
+      if (list.length > 10 && !(await confirm({ title: `Скачать ${list.length} файлов?`, message: 'Браузер запустит скачивание каждого файла по очереди.', confirmLabel: 'Скачать' }))) return
       for (const file of list) await download(file.path)
     })()
   }
@@ -337,7 +367,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
         <Button size="sm" disabled={busy || !prompt.trim()} loading={busy} title="⌘Enter / Ctrl+Enter" onClick={generate}>
           {selected ? 'Изменить выбранную' : 'Нарисовать'}
         </Button>
-        {!selected && <select aria-label="Размер изображения" value={size} disabled={busy} onChange={(event) => setSize(event.target.value)}>
+        {!selected && <select aria-label="Размер изображения" value={size} disabled={busy} onChange={(event) => { setSize(event.target.value); try { localStorage.setItem(IMAGE_STUDIO_SIZE_KEY, event.target.value) } catch { /* приватный режим */ } }}>
           {SIZE_PRESETS.map((preset) => <option key={preset} value={preset}>{preset === '' ? 'Размер: авто' : preset}</option>)}
         </select>}
         {!selected && <input className="image-studio-filename" aria-label="Имя нового файла" placeholder="имя.png (не обязательно)" value={fileName} disabled={busy} onChange={(event) => setFileName(event.target.value)} />}
@@ -375,7 +405,7 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
         : <>
           <div className={`image-studio-grid${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label="Галерея изображений">
             {shown.map((file) => <div role="listitem" key={file.path} className={`image-studio-card${selected === file.path ? ' image-studio-card--selected' : ''}`}>
-            <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} title={selected === file.path ? 'Снять выбор' : 'Выбрать для правки'}>
+            <button type="button" className="image-studio-thumb" aria-label={file.path} aria-pressed={selected === file.path} onClick={() => setSelected(selected === file.path ? null : file.path)} onDoubleClick={() => setViewing(file.path)} title={selected === file.path ? 'Снять выбор (двойной клик — на весь экран)' : 'Выбрать для правки (двойной клик — на весь экран)'}>
               {previews[file.path]
                 ? <img src={previews[file.path]} alt="" onLoad={(event) => {
                     const img = event.currentTarget
@@ -430,8 +460,9 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
                 </div>}
             </div>)}
           </div>
-          <p className="image-studio-quota">
+          <p className={`image-studio-quota${usedBytes > IMAGE_STUDIO_LIMITS.maxConversationBytes * 0.8 ? ' image-studio-quota--warn' : ''}`}>
             {files.length === 1 ? '1 файл' : `Файлов: ${files.length}`} · занято {formatBytes(usedBytes)} из {formatBytes(IMAGE_STUDIO_LIMITS.maxConversationBytes)}
+            {usedBytes > IMAGE_STUDIO_LIMITS.maxConversationBytes * 0.8 && ' — место кончается, удалите ненужное'}
           </p>
         </>}
 
@@ -452,6 +483,10 @@ export function ImageStudioPane({ conversationId, api, turnActive }: Props): JSX
           if (!meta?.prompt && !meta?.source) return null
           return <p className="imgcap image-studio-origin">
             {meta.source ? `Из «${meta.source}» · ` : ''}{meta.prompt ? `промпт: ${meta.prompt}` : ''}
+            {meta.prompt && <>
+              {' '}
+              <button type="button" className="image-studio-cancel" onClick={() => { setPrompt(meta.prompt!); setViewing(null); promptRef.current?.focus() }}>Использовать промпт</button>
+            </>}
           </p>
         })()}
       </div>
