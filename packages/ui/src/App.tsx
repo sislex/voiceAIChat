@@ -27,7 +27,7 @@ import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
-import { KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY } from './store/contracts'
+import { IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY } from './store/contracts'
 import { Sidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -1363,9 +1363,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const routed = chats.find((item) => item.id === routeImageStudioChatId)
     if (routed) {
       if (routed.id !== chat.activeId) void chatActions.selectConversation(routed.id)
+      try { localStorage.setItem(IMAGE_STUDIO_LAST_KEY, routed.id) } catch { /* приватный режим */ }
       return
     }
-    const fallback = chats[0]
+    // Без id в адресе возвращаемся в последний открытый чат студии, а не в первый.
+    let last: string | null = null
+    try { last = localStorage.getItem(IMAGE_STUDIO_LAST_KEY) } catch { /* приватный режим */ }
+    const fallback = chats.find((item) => item.id === last) ?? chats[0]
     if (fallback) { navigate(`/images/${fallback.id}`, { replace: true }); return }
     createImageStudioChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps

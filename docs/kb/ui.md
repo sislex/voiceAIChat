@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-03
-checked: f590d112
+checked: debd6fa5
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -2719,3 +2719,11 @@ Default/Empty/MultiSelect/LoadError) и axe-проверка в dom-тесте; 
 state было бы устаревшим); у сетки aria-busy на время операций. Десктоп
 Electron мостов не требует: renderer ставит те же installRemoteBridges, что и
 web, — студия работает там из коробки.
+
+Итерация 10 (2026-09-03): лайтбокс вынесен в `ImageStudioViewer.tsx`
+(состояние остаётся у панели, вьюер только колбэки) и получил «Скачать» и
+«Удалить» (после удаления открывается соседний файл, а не пустая рамка);
+Enter в поле переименования подтверждает (Escape отменяет); после генерации
+карточка результата прокручивается в вид (`data-path` + scrollIntoView);
+`#/images` без id открывает последний открытый чат студии
+(`vc.imgstudio.last`), а не первый в списке.
