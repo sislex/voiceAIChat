@@ -1195,6 +1195,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ensureChatStorage,
     ensureProjectMainCurrent,
     // Студия картинок: изображения из ответа складываются в галерею разговора.
+    studioContext: async (conversationId) => {
+      const files = await imageStudioStore.list(conversationId)
+      const listing = files.slice(0, 30).map((file) => `- ${file.path}${file.prompt ? ` (промпт: ${file.prompt.slice(0, 80)})` : ''}`).join('\n')
+      return [
+        '## Студия картинок',
+        'Это чат студии картинок: пользователь собирает галерею изображений этого разговора.',
+        'Когда рисуешь или правишь картинку — сохрани файл и обязательно покажи его штатным fenced-блоком image с абсолютным путём: только так он попадает в галерею.',
+        listing ? `Сейчас в галерее:\n${listing}` : 'Галерея пока пуста.'
+      ].join('\n')
+    },
     captureStudioImages: async (userId, conversationId, finalText) => {
       const { parseImages } = await import('@voicechat/shared')
       for (const image of parseImages(finalText).images.slice(0, 10)) {
