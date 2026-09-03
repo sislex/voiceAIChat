@@ -155,7 +155,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     void store.countView(conversationId)
     const files = await store.list(conversationId)
     const esc = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    const cards = files.map((file) => `<figure><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)}${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
+    const cards = files.map((file) => `<figure><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
     const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Галерея</title><style>
       body{margin:0;padding:24px;font:14px/1.4 system-ui,sans-serif;background:#111;color:#eee}
       h1{font-size:18px;margin:0 0 16px}
@@ -164,6 +164,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       img{width:100%;height:200px;object-fit:contain;background:#fff;border-radius:6px}
       figcaption{margin-top:8px;word-break:break-word}
       figcaption small{display:block;color:#999;margin-top:2px}
+      .dl{color:#8ab4f8;text-decoration:none;font-size:12px;margin-left:6px}
     </style></head><body><h1>Галерея · ${files.length} файл(ов)</h1><div class="grid">${cards}</div></body></html>`
     return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex').send(html)
   })
@@ -176,6 +177,11 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       if (!data) return reply.code(404).send({ error: 'файл не найден' })
       return reply.header('content-type', imageStudioMime(req.query.path ?? '')).header('cache-control', 'no-store').send(data)
     } catch (error) { return sendStudioError(reply, error) }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/image-studio/:id/run', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    return { active: activeRuns.has(req.params.id) }
   })
 
   app.post<{ Params: { id: string } }>('/api/image-studio/:id/cancel', async (req, reply) => {

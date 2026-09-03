@@ -23,6 +23,7 @@ function makeApi(initial: Array<{ path: string }> = []) {
     generate, edit, cancel,
     api: {
       'imgstudio:cancel': cancel,
+      'imgstudio:run': vi.fn(async () => ({ active: false })),
       'imgstudio:publish': vi.fn(async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0 })),
       'imgstudio:publication': vi.fn(async () => ({ url: null })),
       'imgstudio:unpublish': vi.fn(async () => ({ url: null })),
@@ -321,6 +322,33 @@ describe('ImageStudioPane', () => {
     fireEvent.click(within(overlay).getByRole('button', { name: 'Снять' }))
     await waitFor(() => expect(api['imgstudio:unpublish']).toHaveBeenCalled())
     expect(await screen.findByRole('button', { name: 'Поделиться' })).toBeInTheDocument()
+  })
+
+  it('после перезагрузки активный серверный ран показывается прогрессом', async () => {
+    const { api } = makeApi([{ path: 'а.png' }])
+    let active = true
+    ;(api['imgstudio:run'] as ReturnType<typeof vi.fn>).mockImplementation(async () => ({ active }))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    // Текст живёт и в строке статуса, и в карточке-призраке — ждём любой.
+    expect((await screen.findAllByText(/ран продолжается после перезагрузки/)).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Нарисовать' })).toBeDisabled()
+    active = false
+    // Следующий опрос (3 с) снимает busy и возвращает панель.
+    await waitFor(() => expect(screen.queryByText(/ран продолжается/)).toBeNull(), { timeout: 8000 })
+    expect(screen.getByRole('button', { name: 'Нарисовать' })).toBeInTheDocument()
+  }, 15000)
+
+  it('мультирежим умеет «Выбрать все» и «Скачать выбранные»', async () => {
+    URL.createObjectURL = vi.fn().mockReturnValue('blob:zip')
+    URL.revokeObjectURL = vi.fn()
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать все' }))
+    expect(await screen.findByRole('button', { name: 'Скачать выбранные (3)' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать выбранные (3)' }))
+    // Архив собирается из байтов всех трёх файлов.
+    await waitFor(() => expect(api['imgstudio:read']).toHaveBeenCalledTimes(3 + 3)) // 3 превью + 3 в архив
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {
