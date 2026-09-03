@@ -2,7 +2,7 @@
 // дополнение до квадрата. Всё на canvas — без модели и без сервера; результат
 // сохраняется новым файлом рядом с исходником.
 
-export type ImageTransformKind = 'rotate90' | 'flipH' | 'downscale512' | 'upscale2x' | 'padSquare' | 'toJpeg'
+export type ImageTransformKind = 'rotate90' | 'flipH' | 'downscale512' | 'upscale2x' | 'padSquare' | 'toJpeg' | 'brighten' | 'contrast' | 'grayscale'
 
 export const IMAGE_TRANSFORMS: Array<{ kind: ImageTransformKind; label: string; suffix: string; ext?: 'jpg' }> = [
   { kind: 'rotate90', label: 'Повернуть на 90°', suffix: 'повёрнуто' },
@@ -10,7 +10,10 @@ export const IMAGE_TRANSFORMS: Array<{ kind: ImageTransformKind; label: string; 
   { kind: 'downscale512', label: 'Уменьшить до 512', suffix: '512' },
   { kind: 'upscale2x', label: 'Увеличить ×2', suffix: 'x2' },
   { kind: 'padSquare', label: 'Дополнить до квадрата', suffix: 'квадрат' },
-  { kind: 'toJpeg', label: 'В JPEG (меньше вес)', suffix: 'jpeg', ext: 'jpg' }
+  { kind: 'toJpeg', label: 'В JPEG (меньше вес)', suffix: 'jpeg', ext: 'jpg' },
+  { kind: 'brighten', label: 'Ярче', suffix: 'ярче' },
+  { kind: 'contrast', label: 'Контраст+', suffix: 'контраст' },
+  { kind: 'grayscale', label: 'Чёрно-белое', suffix: 'чб' }
 ]
 
 /** Имя результата: «кот.png» + «повёрнуто» → «кот-повёрнуто.png»; занято — с номером. */
@@ -39,6 +42,10 @@ export async function applyImageTransform(source: Blob, kind: ImageTransformKind
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas недоступен в этом браузере')
     ctx.imageSmoothingQuality = 'high'
+    // Коррекции — через ctx.filter (поддержан во всех целевых браузерах).
+    if (kind === 'brighten') ctx.filter = 'brightness(1.15)'
+    if (kind === 'contrast') ctx.filter = 'contrast(1.2)'
+    if (kind === 'grayscale') ctx.filter = 'grayscale(1)'
     switch (kind) {
       case 'rotate90':
         ctx.translate(width, 0)
@@ -52,6 +59,9 @@ export async function applyImageTransform(source: Blob, kind: ImageTransformKind
         break
       case 'downscale512':
       case 'upscale2x':
+      case 'brighten':
+      case 'contrast':
+      case 'grayscale':
         ctx.drawImage(bitmap, 0, 0, width, height)
         break
       case 'toJpeg':
