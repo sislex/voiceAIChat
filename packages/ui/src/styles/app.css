@@ -3835,6 +3835,11 @@ button.conscmd:hover {
 .image-studio-card--ghost { opacity: 0.75; }
 .image-studio-thumb--ghost { display: block; }
 .image-studio-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); padding: 4px 2px 0; cursor: pointer; }
+.image-studio-annotate-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.image-studio-annotate img { user-select: none; }
+.image-studio-annotate-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.image-studio-pen { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.image-studio-pen--active { border-color: var(--text); }
 .image-studio-crop-stage { position: relative; cursor: crosshair; touch-action: none; }
 .image-studio-crop-stage img { user-select: none; }
 .image-studio-crop-box { position: absolute; border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); pointer-events: none; }
