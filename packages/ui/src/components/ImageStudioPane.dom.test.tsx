@@ -377,6 +377,20 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(generate).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'плакат в этом стиле', references: expect.arrayContaining(['с-0.png', 'с-1.png']) })))
   })
 
+  it('промпт можно закрепить звёздочкой — закреп переживает очистку истории', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const promptField = await screen.findByRole('textbox', { name: 'Промпт для изображения' })
+    fireEvent.change(promptField, { target: { value: 'кит в шляпе' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await waitFor(() => expect((promptField as HTMLTextAreaElement).value).toBe(''))
+    fireEvent.click(await screen.findByRole('button', { name: /Закрепить промпт: кит в шляпе/ }))
+    // Чистим историю — закреп остаётся и подставляется кликом.
+    fireEvent.click(screen.getByRole('button', { name: 'Очистить историю промптов' }))
+    fireEvent.click(await screen.findByRole('button', { name: '★ кит в шляпе' }))
+    expect((promptField as HTMLTextAreaElement).value).toBe('кит в шляпе')
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
