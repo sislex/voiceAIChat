@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 224 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 248 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 14 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1115 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1116 коммит(ов) в areas после сверки: 8c7a1957 feat: студия картинок — итерация улучшений 28 (OG-мета и пакетный перенос) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 163 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 208 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 105 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
@@ -34,8 +34,8 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-02 | ⚠ 19 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 187 коммит(ов) в areas после сверки: 4a4ef918 feat: студия картинок — итерация улучшений 22 (перенос между чатами) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 22 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 9 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-03 | ⚠ 2 коммит(ов) в areas после сверки: 8c7a1957 feat: студия картинок — итерация улучшений 28 (OG-мета и пакетный перенос) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 10 коммит(ов) в areas после сверки: 8c7a1957 feat: студия картинок — итерация улучшений 28 (OG-мета и пакетный перенос) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 10 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 140 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 565. Последние:
+Всего записей: 566. Последние:
 
 - [2026-09-03-alexeys-macbook-air-2-task-commit-step.md](log/2026-09-03-alexeys-macbook-air-2-task-commit-step.md) — task-commit-step
 - [2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md](log/2026-09-03-alexeys-macbook-air-2-make-publish-lock-studio-11.md) — make-publish-lock-studio-11
