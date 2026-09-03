@@ -133,19 +133,26 @@ export function ProjectPage({ projectName, section, features, typeLabel, onSecti
  * Проектов нет вообще. Формы создания на странице нет — проект создаётся в
  * сайдбаре, поэтому подсказка ведёт туда.
  */
-export function ProjectsEmptyPage({ invitationCount = 0 }: { invitationCount?: number } = {}): JSX.Element {
+export function ProjectsEmptyPage({ invitationCount = 0, onCreateProject, onToggleSidebar, sidebarExpanded = true }: { invitationCount?: number; onCreateProject?: () => void; onToggleSidebar?: () => void; sidebarExpanded?: boolean } = {}): JSX.Element {
   // Если есть приглашение, «создайте первый проект» — неверный следующий шаг:
   // человека уже позвали, ему надо принять, а не заводить своё.
   const invited = invitationCount > 0
   return (
-    <ToolFrame title="Проекты" variant="page" testId="projects-empty">
+    <ToolFrame
+      title="Проекты"
+      variant="page"
+      testId="projects-empty"
+      className="shell-empty-page"
+      leading={onToggleSidebar ? <SidebarToggle className="sidebar-toggle" expanded={sidebarExpanded} onToggle={onToggleSidebar} /> : undefined}
+    >
       <div className="proj-page-state">
         <EmptyState
           icon="🗂"
           title={invited ? 'Вас пригласили в проект' : 'Проектов пока нет'}
           description={invited
-            ? `Приглашений: ${invitationCount}. Примите их в списке слева — проект появится здесь. Или создайте свой кнопкой «+ Новый проект».`
-            : 'Создайте первый в сайдбаре — кнопка «+ Новый проект». Внутри проекта появятся доска, задачи и CI.'}
+            ? `Приглашений: ${invitationCount}. Примите их в списке слева — проект появится здесь.`
+            : 'Новый проект появится здесь после создания.'}
+          {...(!invited && onCreateProject ? { actionLabel: 'Добавить новый проект', onAction: onCreateProject } : {})}
         />
       </div>
     </ToolFrame>

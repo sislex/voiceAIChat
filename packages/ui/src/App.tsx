@@ -46,11 +46,12 @@ import { KanbanAssistant } from './components/KanbanAssistant'
 import { CiCommands } from './components/ci/CiCommands'
 import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
+import { SidebarToggle } from './components/ui/IconButton'
 import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
-import { Button, Dialog, IconButton } from '@voicechat/ui-kit'
+import { Button, Dialog, EmptyState, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
 import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
@@ -2040,6 +2041,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     )
   }
 
+  const openCreateProject = (): void => requireMachine(() => {
+    setSidebarOpen(false)
+    setNewProjectOpen(true)
+    setProjectQuota(null)
+    void api['projects:quota']().then(setProjectQuota).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+    void projectsActions.loadProjectTypes()
+  })
+  const openCreateChat = (): void => requireMachine(() => {
+    setCreateChatError(null)
+    setCreateChatTitle('Новый разговор')
+    setCreateChatProjectId('')
+    setCreateChatPath('')
+    setCreateChatOpen(true)
+  })
+
   return (
     <div
       className={[
@@ -2140,13 +2156,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             : [])
         ]}
         now={now ? now() : Date.now()}
-        onNew={() => requireMachine(() => {
-          setCreateChatError(null)
-          setCreateChatTitle('Новый разговор')
-          setCreateChatProjectId('')
-          setCreateChatPath('')
-          setCreateChatOpen(true)
-        })}
+        onNew={openCreateChat}
         onPick={(id) => {
           setSidebarOpen(false)
           navigate(`/chat/${id}`)
@@ -2243,14 +2253,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           if (projectId) navigate(`/projects/${projectId}`)
         }}
         onDeclineInvitation={(invitation) => { void projectsActions.declineInvitation(invitation.id) }}
-        onCreateProject={() => requireMachine(() => {
-          setSidebarOpen(false)
-          setNewProjectOpen(true)
-          setProjectQuota(null)
-          void api['projects:quota']().then(setProjectQuota).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
-          // Каталог типов нужен окну сразу; повторное открытие обновит список.
-          void projectsActions.loadProjectTypes()
-        })}
+        onCreateProject={openCreateProject}
         onOpenCommandPalette={() => {
           setSidebarOpen(false)
           setPaletteOpen(true)
@@ -2356,7 +2359,26 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         </Suspense>
       )}
 
-      {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && (
+      {inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0 && (
+        <ToolFrame
+          title="Чаты"
+          variant="page"
+          testId="chats-empty"
+          className="shell-empty-page"
+          leading={<SidebarToggle className="sidebar-toggle" expanded={sidebarExpanded} onToggle={toggleSidebar} />}
+        >
+          <div className="shell-empty-content">
+            <EmptyState
+              icon="💬"
+              title="Новых чатов пока нет"
+              description="Новый разговор появится здесь после создания."
+              actionLabel="Добавить новый чат"
+              onAction={openCreateChat}
+            />
+          </div>
+        </ToolFrame>
+      )}
+      {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && !(inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0) && (
       <div className={inSplit ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inSplit ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
       {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
       <div className="chat-split-chat">
@@ -2536,7 +2558,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
 
       {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}
-      {inProjects && !routeProjectId && firstProjectId === null && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectsEmptyPage invitationCount={projects.myInvitations.length} /></Suspense>}
+      {inProjects && !routeProjectId && firstProjectId === null && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectsEmptyPage invitationCount={projects.myInvitations.length} onCreateProject={openCreateProject} onToggleSidebar={toggleSidebar} sidebarExpanded={sidebarExpanded} /></Suspense>}
 
       {inProjects && routeProjectId && projectMissing && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectNotFoundPage /></Suspense>}
 
