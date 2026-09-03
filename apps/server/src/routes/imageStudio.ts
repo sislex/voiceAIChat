@@ -129,6 +129,55 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     })
   })
 
+  app.post<{ Params: { id: string } }>('/api/image-studio/:id/publish', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    const raw = await store.publish(req.params.id)
+    return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/image-studio/:id/publication', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    const raw = await store.publication(req.params.id)
+    return raw ? { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views } : { url: null }
+  })
+
+  app.delete<{ Params: { id: string } }>('/api/image-studio/:id/publish', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    await store.unpublish(req.params.id)
+    return { url: null }
+  })
+
+  // Публичная страница галереи: без авторизации, по непубличному токену.
+  // Только чтение и только картинки; noindex, чтобы ссылку не съели роботы.
+  app.get<{ Params: { token: string } }>('/g/:token/', async (req, reply) => {
+    const conversationId = await store.publishedTarget(req.params.token)
+    if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
+    void store.countView(conversationId)
+    const files = await store.list(conversationId)
+    const esc = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    const cards = files.map((file) => `<figure><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)}${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
+    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Галерея</title><style>
+      body{margin:0;padding:24px;font:14px/1.4 system-ui,sans-serif;background:#111;color:#eee}
+      h1{font-size:18px;margin:0 0 16px}
+      .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+      figure{margin:0;background:#1c1c1c;border-radius:10px;padding:10px}
+      img{width:100%;height:200px;object-fit:contain;background:#fff;border-radius:6px}
+      figcaption{margin-top:8px;word-break:break-word}
+      figcaption small{display:block;color:#999;margin-top:2px}
+    </style></head><body><h1>Галерея · ${files.length} файл(ов)</h1><div class="grid">${cards}</div></body></html>`
+    return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex').send(html)
+  })
+
+  app.get<{ Params: { token: string }; Querystring: { path?: string } }>('/g/:token/file', async (req, reply) => {
+    const conversationId = await store.publishedTarget(req.params.token)
+    if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
+    try {
+      const data = await store.readBuffer(conversationId, req.query.path ?? '')
+      if (!data) return reply.code(404).send({ error: 'файл не найден' })
+      return reply.header('content-type', imageStudioMime(req.query.path ?? '')).header('cache-control', 'no-store').send(data)
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
   app.post<{ Params: { id: string } }>('/api/image-studio/:id/cancel', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     const run = activeRuns.get(req.params.id)

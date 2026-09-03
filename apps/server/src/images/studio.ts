@@ -4,6 +4,7 @@
 // запись, переименование и удаление, остальное — работа модели и панели.
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { IMAGE_STUDIO_LIMITS, isImageStudioPath, type ImageStudioFile } from '@voicechat/shared'
 
@@ -44,8 +45,91 @@ function safeName(raw: string): string {
 
 interface StudioMeta { prompt?: string; source?: string }
 
+interface StudioPublication { token: string; publishedAt: number; views: number }
+
+const PUBLISH_FILE = '.studio-publish.json'
+const PUBLISHED_INDEX_DIR = '.published'
+const TOKEN_RE = /^[0-9a-f]{32}$/
+
 export class ImageStudioStore {
   constructor(private readonly rootDir: string) {}
+
+  // Мутации файла публикации — последовательно на разговор: урок Make, где
+  // фоновый счётчик просмотров воскрешал снятую публикацию (lost-update).
+  private publishChains = new Map<string, Promise<unknown>>()
+
+  private withPublishLock<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.publishChains.get(conversationId) ?? Promise.resolve()
+    const next = prev.then(fn, fn)
+    this.publishChains.set(conversationId, next.then(() => undefined, () => undefined))
+    return next
+  }
+
+  private async readPublication(conversationId: string): Promise<StudioPublication | null> {
+    try {
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PUBLISH_FILE), 'utf8')) as StudioPublication
+      return raw.token && TOKEN_RE.test(raw.token) ? raw : null
+    } catch {
+      return null
+    }
+  }
+
+  private async writePublication(conversationId: string, raw: StudioPublication): Promise<void> {
+    await mkdir(this.dirOf(conversationId), { recursive: true })
+    const file = join(this.dirOf(conversationId), PUBLISH_FILE)
+    const temporary = `${file}.${randomUUID()}.tmp`
+    await writeFile(temporary, JSON.stringify(raw), 'utf8')
+    await rename(temporary, file)
+  }
+
+  async publication(conversationId: string): Promise<StudioPublication | null> {
+    return this.readPublication(conversationId)
+  }
+
+  /** Публикует галерею (повторный вызов возвращает ту же ссылку). */
+  async publish(conversationId: string): Promise<StudioPublication> {
+    return this.withPublishLock(conversationId, async () => {
+      const existing = await this.readPublication(conversationId)
+      if (existing) return existing
+      const token = randomUUID().replace(/-/g, '')
+      const indexDir = join(this.rootDir, PUBLISHED_INDEX_DIR)
+      await mkdir(indexDir, { recursive: true })
+      await writeFile(join(indexDir, `${token}.json`), JSON.stringify({ conversationId }), 'utf8')
+      const raw = { token, publishedAt: Date.now(), views: 0 }
+      await this.writePublication(conversationId, raw)
+      return raw
+    })
+  }
+
+  async unpublish(conversationId: string): Promise<void> {
+    return this.withPublishLock(conversationId, async () => {
+      const existing = await this.readPublication(conversationId)
+      if (existing) await rm(join(this.rootDir, PUBLISHED_INDEX_DIR, `${existing.token}.json`), { force: true })
+      await rm(join(this.dirOf(conversationId), PUBLISH_FILE), { force: true })
+    })
+  }
+
+  /** Разговор по токену публикации; null — ссылка снята или не существовала. */
+  async publishedTarget(token: string): Promise<string | null> {
+    if (!TOKEN_RE.test(token)) return null
+    try {
+      const raw = JSON.parse(await readFile(join(this.rootDir, PUBLISHED_INDEX_DIR, `${token}.json`), 'utf8')) as { conversationId?: string }
+      if (!raw.conversationId) return null
+      const current = await this.readPublication(raw.conversationId)
+      return current?.token === token ? raw.conversationId : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Счётчик просмотров публичной страницы; гонки терпимы, но пишем под локом. */
+  async countView(conversationId: string): Promise<void> {
+    return this.withPublishLock(conversationId, async () => {
+      const raw = await this.readPublication(conversationId)
+      if (!raw) return
+      await this.writePublication(conversationId, { ...raw, views: (raw.views ?? 0) + 1 })
+    })
+  }
 
   private dirOf(conversationId: string): string {
     return join(this.rootDir, conversationId)
