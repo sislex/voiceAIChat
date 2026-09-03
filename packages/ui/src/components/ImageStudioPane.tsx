@@ -132,6 +132,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Публичная ссылка галереи (null — не опубликована, undefined — грузится). */
   const [shareUrl, setShareUrl] = useState<string | null | undefined>(undefined)
   const [shareViews, setShareViews] = useState<number | null>(null)
+  const [shareViews7, setShareViews7] = useState<number | null>(null)
   const [shareProtected, setShareProtected] = useState(false)
   /** Открыт диалог пароля публикации; поле — новый пароль зрителей (не логин). */
   const [passwordDialog, setPasswordDialog] = useState(false)
@@ -226,7 +227,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   useEffect(() => { void reload() }, [reload])
   useEffect(() => {
     let alive = true
-    void api['imgstudio:publication']({ conversationId }).then((info) => { if (alive) { setShareUrl(info.url); setShareViews(info.views ?? null); setShareProtected(Boolean(info.passwordProtected)) } }).catch(() => { if (alive) setShareUrl(null) })
+    void api['imgstudio:publication']({ conversationId }).then((info) => { if (alive) { setShareUrl(info.url); setShareViews(info.views ?? null); setShareViews7(info.views7 ?? null); setShareProtected(Boolean(info.passwordProtected)) } }).catch(() => { if (alive) setShareUrl(null) })
     return () => { alive = false }
   }, [api, conversationId])
   // Перезагрузили страницу во время генерации — ран живёт на сервере; панель
@@ -638,7 +639,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         void navigator.clipboard?.writeText(absolute).then(() => toast.success('Опубликовано — ссылка в буфере')).catch(() => toast.success(`Опубликовано: ${absolute}`))
       }).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))}>Поделиться</Button>}
       {typeof shareUrl === 'string' && <>
-        <Button size="sm" variant="ghost" title={shareViews !== null ? `Просмотров: ${shareViews}` : 'Скопировать ссылку'} onClick={() => {
+        <Button size="sm" variant="ghost" title={shareViews !== null ? `Просмотров всего: ${shareViews}${shareViews7 !== null ? ` · за 7 дней: ${shareViews7}` : ''}` : 'Скопировать ссылку'} onClick={() => {
           const absolute = `${location.origin}${shareUrl}`
           void navigator.clipboard?.writeText(absolute).then(() => toast.success('Ссылка в буфере')).catch(() => toast.info(absolute))
         }}>Ссылка на галерею{shareViews ? ` · ${shareViews} 👁` : ''}</Button>
