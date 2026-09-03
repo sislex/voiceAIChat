@@ -906,10 +906,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [machineConnectOpen, setMachineConnectOpen] = useState(false)
   const [machineConnectStatus, setMachineConnectStatus] = useState('Подключите устройство, чтобы продолжить действие.')
   const [machineConnectBusy, setMachineConnectBusy] = useState(false)
+  const [machineDownloadBusy, setMachineDownloadBusy] = useState(false)
   const machineConnectGeneration = useRef(0)
   const machineActionGuard = useRef(createMachineRequiredGuard(() => setMachineConnectOpen(true)))
   const requireMachine = useCallback((action: () => void): void => {
-    setMachineConnectStatus('Подключите устройство, чтобы продолжить действие.')
+    setMachineConnectStatus('Откройте приложение подключения или добавьте новое устройство по ссылке.')
+    setMachineDownloadBusy(false)
     machineActionGuard.current.require(operations.agents.some((agent) => agent.online), action)
   }, [operations.agents])
   const finishPendingMachineAction = useCallback(async (generation: number, agentId?: string): Promise<boolean> => {
@@ -2274,31 +2276,56 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
       {machineConnectOpen && (
-        <Dialog title="Подключить устройство" onClose={() => {
+        <Dialog title="Подключить устройство" className="machine-connect-dialog" onClose={() => {
           machineConnectGeneration.current += 1
           machineActionGuard.current.cancel()
           setMachineConnectOpen(false)
           setMachineConnectBusy(false)
+          setMachineDownloadBusy(false)
         }} padded>
-          <p>{machineConnectStatus}</p>
-          <div className="dialog-actions">
-            <button type="button" onClick={() => {
-              const generation = machineConnectGeneration.current
-              void api['loginApplication:artifacts']({ platform: 'macos', arch: 'arm64' }).then(([artifact]) => {
-                if (generation !== machineConnectGeneration.current) return
-                if (!artifact?.available || !artifact.downloadUrl) {
-                  setMachineConnectStatus('Сборка macOS ARM64 сейчас недоступна.')
-                  return
-                }
-                window.location.href = artifact.downloadUrl
-              }).catch((error) => {
-                if (generation !== machineConnectGeneration.current) return
-                setMachineConnectStatus(error instanceof Error ? error.message : String(error))
-              })
-            }}>Скачать приложение</button>
-            <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
-              {machineConnectBusy ? 'Ожидаем подключение…' : 'Подключить текущее устройство'}
-            </button>
+          <div className="machine-connect-content">
+            <p>Откройте приложение подключения или добавьте новое устройство по ссылке.</p>
+            <div className="machine-connect-actions">
+              <button
+                className="vc-btn vc-btn--primary"
+                type="button"
+                disabled={machineDownloadBusy || machineConnectBusy}
+                aria-disabled={machineDownloadBusy || machineConnectBusy}
+                onClick={() => {
+                  const generation = machineConnectGeneration.current
+                  setMachineDownloadBusy(true)
+                  setMachineConnectStatus('Скачиваем приложение…')
+                  void api['loginApplication:artifacts']({ platform: 'macos', arch: 'arm64' }).then(([artifact]) => {
+                    if (generation !== machineConnectGeneration.current) return
+                    if (!artifact?.available || !artifact.downloadUrl) {
+                      setMachineConnectStatus('Сборка macOS ARM64 сейчас недоступна. Попробуйте ещё раз позже.')
+                      return
+                    }
+                    window.location.href = artifact.downloadUrl
+                    setMachineConnectStatus('Загрузка приложения началась. После установки повторите подключение по ссылке.')
+                  }).catch((error) => {
+                    if (generation !== machineConnectGeneration.current) return
+                    setMachineConnectStatus('Не удалось скачать приложение: ' + (error instanceof Error ? error.message : String(error)))
+                  }).finally(() => {
+                    if (generation === machineConnectGeneration.current) setMachineDownloadBusy(false)
+                  })
+                }}
+              >{machineDownloadBusy ? 'Скачиваем приложение…' : 'Скачать и открыть приложение'}</button>
+              <button
+                className="vc-btn vc-btn--secondary"
+                type="button"
+                disabled={machineConnectBusy || machineDownloadBusy}
+                aria-disabled={machineConnectBusy || machineDownloadBusy}
+                onClick={() => void openLoginApplication()}
+              >
+                {machineConnectBusy ? 'Создаём ссылку…' : 'Добавить новое устройство по ссылке'}
+              </button>
+            </div>
+            <p
+              className={`machine-connect-feedback${/не удалось|ошибка|недоступна|истекла/i.test(machineConnectStatus) ? ' machine-connect-feedback--error' : ''}`}
+              role={/не удалось|ошибка|недоступна|истекла/i.test(machineConnectStatus) ? 'alert' : 'status'}
+              aria-live="polite"
+            >{machineConnectStatus}</p>
           </div>
         </Dialog>
       )}
