@@ -848,10 +848,11 @@ export function Sidebar({
             <EmptyState
               compact
               icon="🗂"
-              title={projects.length ? 'Ничего не найдено' : 'Проектов пока нет'}
+              title={projects.length ? 'Ничего не найдено' : 'Пока нет проектов — создайте первый'}
               description={projects.length
                 ? 'Измените запрос — поиск идёт по имени и типу проекта.'
-                : 'Создайте первый — доска, задачи и CI появятся внутри него.'}
+                : 'Проект появится в этом списке и объединит связанные чаты и задачи.'}
+              {...(!projects.length && onCreateProject ? { actionLabel: 'Новый проект', onAction: onCreateProject } : {})}
             />
           )}
           {visibleProjects.map((p) => (
