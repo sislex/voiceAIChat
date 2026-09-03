@@ -560,6 +560,27 @@ describe('ImageStudioPane', () => {
     await waitFor(() => expect(within(viewer).getByRole('slider', { name: /Шторка сравнения/ })).toBeInTheDocument())
   })
 
+  it('после генерации баннер «Создано» умеет отменить файл в корзину', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'кот' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await screen.findByText(/Создано: изображение.png/)
+    fireEvent.click(screen.getByRole('button', { name: 'Отменить' }))
+    await waitFor(() => expect(api['imgstudio:delete']).toHaveBeenCalledWith({ conversationId: 'c1', path: 'изображение.png' }))
+  })
+
+  it('мультирежим показывает сводку и умеет инвертировать выбор', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать а.png' }))
+    expect(screen.getByText('Выбрано 1 из 3')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Инвертировать' }))
+    expect(await screen.findByText('Выбрано 2 из 3')).toBeInTheDocument()
+    expect((screen.getByRole('checkbox', { name: 'Выбрать а.png' }) as HTMLInputElement).checked).toBe(false)
+  })
+
   it('пустая галерея объясняет следующий шаг', async () => {
     const { api } = makeApi()
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
