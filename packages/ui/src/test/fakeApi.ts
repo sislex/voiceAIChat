@@ -1505,6 +1505,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'imgstudio:unpublish': async () => ({ url: null }),
     'imgstudio:run': async () => ({ active: false }),
     'imgstudio:transfer': async ({ path }) => ({ name: path, files: [] }),
+    'imgstudio:trash': async () => ({ items: [] }),
+    'imgstudio:restore': async ({ name }) => ({ name, files: [] }),
     'imgstudio:list': async ({ conversationId }) => (studioFiles.get(conversationId) ?? []).map(({ dataBase64: _b64, ...file }) => file),
     'imgstudio:read': async ({ conversationId, path }) => {
       const file = (studioFiles.get(conversationId) ?? []).find((entry) => entry.path === path)
