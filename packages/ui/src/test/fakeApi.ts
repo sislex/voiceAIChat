@@ -1500,7 +1500,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
     // Студия картинок: галерея в замыкании фейка.
     'imgstudio:cancel': async () => ({ cancelled: false }),
-    'imgstudio:publish': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: Date.now(), views: 0 }),
+    'imgstudio:publish': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: Date.now(), views: 0, passwordProtected: false }),
     'imgstudio:publication': async () => ({ url: null }),
     'imgstudio:unpublish': async () => ({ url: null }),
     'imgstudio:run': async () => ({ active: false }),

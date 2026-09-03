@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-03
-checked: ca15c4fc
+checked: 74264568
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -536,7 +536,13 @@ Make) и `GET /g/<token>/file?path=`. Токен и просмотры — sidec
 publish не ротирует ссылку, unpublish гасит страницу и файлы. Auth-hook
 закрывает только `/api/*`, поэтому `/g/` публичен без правок auth. Мосты
 `imgstudio:publish|publication|unpublish`. В dev vite-прокси проксирует
-`/p/`, `/g/`, `/s/` на бэкенд — иначе публичные ссылки на порту Vite были 404. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+`/p/`, `/g/`, `/s/` на бэкенд — иначе публичные ссылки на порту Vite были 404.
+Итерация 14: публикация принимает `password` (undefined — не трогать, null —
+снять, строка ≥4 симв. — задать; хранится только хэш с солью) и снимок
+`title` чата (заголовок публичной страницы); страница и файлы под паролем
+отвечают 401 с формой (`POST /g/<token>/__auth__`, cookie-гейт
+`vc_gal_<token>` = sha256(gate:token:hash), Max-Age 30 дней — смена пароля
+разлогинивает всех); publication/publish отдают `passwordProtected`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
 web-клиенте — авторизованный fetch → base64 (см. ui.md). POST
 `/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
 и CHECK по scope расширены (см. data-auth.md).
