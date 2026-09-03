@@ -13,6 +13,8 @@ import { copyImage } from '../lib/clipboard'
 import { buildZip } from '../lib/zipStore'
 import { applyImageTransform, cropImage, IMAGE_TRANSFORMS, transformName } from '../lib/imageTransform'
 import { annotateImage } from '../lib/imageAnnotate'
+import { getCachedPreview, putCachedPreview } from '../lib/previewCache'
+import { playStopCue } from '../lib/cues'
 import { ImageStudioViewer } from './ImageStudioViewer'
 import { ImageStudioToolsRow } from './ImageStudioToolsRow'
 import { IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, imageStudioDraftKey, imageStudioPinnedKey, imageStudioPromptsKey } from '../store/contracts'
@@ -180,9 +182,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       for (const file of list) {
         if (previewKeys.current[file.path] === file.updatedAt) continue
         previewKeys.current[file.path] = file.updatedAt
-        void api['imgstudio:read']({ conversationId, path: file.path }).then(({ dataBase64 }) => {
-          const bytes = Uint8Array.from(atob(dataBase64), (char) => char.charCodeAt(0))
-          const url = URL.createObjectURL(new Blob([bytes], { type: imageStudioMime(file.path) }))
+        const applyBlob = (blob: Blob): void => {
+          const url = URL.createObjectURL(blob)
           setPreviews((prev) => {
             if (prev[file.path]) URL.revokeObjectURL(prev[file.path]!)
             const next = { ...prev, [file.path]: url }
@@ -190,6 +191,16 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
             return next
           })
           setBroken((prev) => { if (!prev.has(file.path)) return prev; const next = new Set(prev); next.delete(file.path); return next })
+        }
+        // Сначала IndexedDB-кэш (мгновенно и без трафика), затем сеть.
+        void getCachedPreview(conversationId, file.path, file.updatedAt).then((cached) => {
+          if (cached) { applyBlob(cached); return }
+          return api['imgstudio:read']({ conversationId, path: file.path }).then(({ dataBase64 }) => {
+            const bytes = Uint8Array.from(atob(dataBase64), (char) => char.charCodeAt(0))
+            const blob = new Blob([bytes], { type: imageStudioMime(file.path) })
+            applyBlob(blob)
+            void putCachedPreview(conversationId, file.path, file.updatedAt, blob)
+          })
         }).catch(() => {
           // Пометить битым и забыть ключ, чтобы ретрай перечитал файл заново.
           delete previewKeys.current[file.path]
@@ -256,6 +267,18 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   // Поле переименования открывается кнопкой ✎ — фокус руками, autoFocus в
   // React 18 с порталами срабатывает не всегда (видели живьём в браузере).
   useEffect(() => { if (renaming) renameRef.current?.focus() }, [renaming?.from])
+  // Фоновая вкладка: заголовок показывает, что модель рисует, а завершение
+  // отбивается коротким сигналом — не сидеть же и смотреть на секундомер.
+  useEffect(() => {
+    if (!progress) return
+    const original = document.title
+    document.title = `⏳ ${progress.label}…`
+    return () => {
+      document.title = original
+      if (document.hidden) playStopCue()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(progress)])
   // Секундомер генерации: немой спиннер на минуту читается как «зависло».
   useEffect(() => {
     if (!progress) return
