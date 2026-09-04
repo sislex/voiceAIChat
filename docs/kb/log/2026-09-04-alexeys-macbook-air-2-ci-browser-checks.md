@@ -34,10 +34,13 @@ author: alexeyrozhnov
 - **Ход CI-рана не проходит через `turns.ts`.** `modelHooks.ts` собирает
   `LlmRequest` сам, поэтому все MCP-поверхности ему нужно подключать отдельно;
   preview там не было подключено вовсе.
-- **`browser-runner` не блокирует внутренние имена хостов.**
-  `validatePublicUrl` режет `localhost`, `*.local`, `*.localhost` и приватные
-  IP, но `voicechat:8787` — обычное имя, поэтому адрес сервера в сети compose
-  открывается без операторских алиасов `VC_BROWSER_HOST_ALIASES`.
+- **Гейт `browser-runner` смотрит резолвленный адрес, а не литерал.**
+  Сначала я решил, что имени `voicechat:8787` достаточно (`validatePublicUrl`
+  режет только `localhost`, `*.local` и приватные IP). Живой прогон это
+  опроверг: после DNS-резолва адрес внутренней сети получает
+  `route.abort('blockedbyclient')`, и Chromium показывает белый экран с
+  `ERR_BLOCKED_BY_CLIENT`. Поэтому добавлен `VC_BROWSER_PREVIEW_ORIGIN` —
+  доверенный origin сервера в `allowedTargets` раннера.
 - **`/api/preview` авторизуется Bearer или preview-cookie**, а cookie читается
   только на точном пути прокси (`previewSession` в `auth.ts`) — на этом же
   свойстве построен ключ `vc_preview_run`.
@@ -57,6 +60,28 @@ author: alexeyrozhnov
 - docs/kb/ui.md — секция настройки в карточке задачи
 - docs/kb/data-auth.md — ключ `vc_preview_run`
 - docs/plans/ci-browser-checks.md — план и его чек-лист
+
+## Живой прогон (04.09.2026)
+
+Стенд: сервер на 8799 с `VC_BROWSER_PREVIEW_BASE=http://voicechat:8799`,
+компаньон-агент на этой же машине, `browser-runner` в Docker с
+`--add-host=voicechat:host-gateway` и `VC_BROWSER_PREVIEW_ORIGIN`, страница
+«Счётчик задачи» на `127.0.0.1:5173`, задача с `mode: chromium` и единственным
+включённым этапом `model_work`.
+
+- Первый прогон нашёл баг гейта раннера (см. выше): модель дошла до Chromium,
+  кадр и ссылка в ленте появились, но страница не загрузилась.
+- Второй прогон после починки: `open` → `read` → `wait` → `screenshot` →
+  `click` → `read` → `errors` → `evaluate`, вывод модели «значение изменилось с
+  0 на 1», два кадра в `ci-browser-shots/<runId>/`, ссылки в логе рана,
+  REST-отдача 200 `image/png`, без авторизации 401.
+- Заодно проверено: прокси превью доставляет страницу с машины (HTML
+  переписан), а без Bearer и с поддельным `vc_preview_run` отвечает 401.
+- Ход модели шёл на Codex: локальный профиль CLI Claude в `<dataDir>/cli-users`
+  сеется из `~/.claude/.credentials.json`, а на macOS авторизация лежит в
+  Keychain — файла нет, и профиль стенда остаётся незалогиненным
+  (`Not logged in · Please run /login`). Для локальных стендов это означает
+  либо отдельный `/login` в профиль стенда, либо движок Codex.
 
 ## Открытые вопросы / что осталось
 

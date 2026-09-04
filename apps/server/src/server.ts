@@ -345,9 +345,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Ключи Chromium к прокси превью: изолированный браузер открывает dev-сервер
   // машины от лица владельца задачи, а Bearer-заголовка у навигации нет.
   const previewRunKeys = new PreviewRunKeys()
-  // Адрес сервера, видимый из контейнеров-исполнителей (в compose — http://voicechat:8787);
+  // Адрес сервера, видимый из контейнера browser-runner (в compose — http://voicechat:8787);
   // без него остаёмся на loopback dev-сервера, где раннер и сервер — один хост.
-  const runnerFacingBase = opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
+  const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
   const previewRunCookie = (userId: string): { name: string; value: string; url: string } =>
     ({ name: PREVIEW_RUN_COOKIE, value: previewRunKeys.issue(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` })
   registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
