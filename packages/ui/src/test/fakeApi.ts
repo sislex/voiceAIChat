@@ -16,7 +16,7 @@ import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, TaskDesignLink, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, TaskAttachment, TaskDesignLink, TaskReworkCycle, WorkItemDefaultSkills } from '@shared/projects'
 import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS, DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@shared/projects'
 
 
@@ -215,6 +215,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const tasks: Task[] = []
   /** Связи карточек с дизайнами Make (см. мосты `tasks:*Design`). */
   const designLinks: TaskDesignLink[] = []
+  const reworkCycles: TaskReworkCycle[] = []
+  const taskAttachments: TaskAttachment[] = []
   const projectSyncLinks: Array<import('@shared/make').MakeProjectLinkInfo> = []
   const studioFiles = new Map<string, { path: string; size: number; updatedAt: number; dataBase64: string }[]>()
   const taskActivityStore = new Map<string, import('@shared/projects').TaskActivity>()
@@ -1497,6 +1499,20 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:designSources': async ({ id }) => conversations
       .filter((c) => c.assistantKind === 'make' && c.projectId === id)
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
+    'tasks:reworkCycles': async ({ taskId }) => reworkCycles.filter((cycle) => cycle.taskId === taskId),
+    'tasks:createReworkCycle': async ({ taskId, input }) => {
+      const task = tasks.find((item) => item.id === taskId)!
+      const cycle: TaskReworkCycle = { id: `cycle-${reworkCycles.length + 1}`, taskId, sequence: reworkCycles.filter((item) => item.taskId === taskId).length + 1, description: input.description, criteria: input.criteria, makeSources: input.makeSources.map((source) => ({ ...source, title: source.conversationId, owner: 'me' })), attachments: taskAttachments.filter((item) => input.attachmentIds.includes(item.id)).map((item) => ({ ...item, scope: 'rework_cycle' })), createdBy: 'me', createdAt: nowMs, preparationRunId: null }
+      reworkCycles.push(cycle)
+      return { cycle, task, replayed: false }
+    },
+    'tasks:attachments': async ({ taskId, scope = 'source' }) => taskAttachments.filter((item) => item.taskId === taskId && item.scope === scope),
+    'tasks:uploadAttachment': async ({ taskId, scope, name, mimeType = 'application/octet-stream', dataBase64 }) => {
+      const item: TaskAttachment = { id: `attachment-${taskAttachments.length + 1}`, taskId, scope, name, mimeType, size: dataBase64.length, checksum: '', status: 'ready', createdBy: 'me', createdAt: nowMs }
+      taskAttachments.push(item); return item
+    },
+    'tasks:deleteAttachment': async ({ attachmentId }) => { const index = taskAttachments.findIndex((item) => item.id === attachmentId); if (index >= 0) taskAttachments.splice(index, 1); return { deleted: index >= 0 } },
+    'tasks:reworkMakeFiles': async () => [],
     // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
     // Студия картинок: галерея в замыкании фейка.
     'imgstudio:cancel': async () => ({ cancelled: false }),

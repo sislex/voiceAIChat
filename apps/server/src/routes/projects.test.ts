@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -908,6 +908,51 @@ describe('дизайны карточки: REST', () => {
 
     const alien = await inj(bobTok, { method: 'GET', url: `/api/projects/${project.id}/tasks/${taskId}/designs` })
     expect(alien.statusCode).toBe(404)
+  })
+
+  // @testCase TC-API-1
+  it('атомарно создаёт неизменяемый цикл и переводит задачу в preparation', async () => {
+    const { project, taskId, makeId } = await designScene()
+    const before = db.getTaskDetail('admin', project.id, taskId)!
+    const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${taskId}/rework-cycles`, headers: { 'idempotency-key': 'cycle-one' }, payload: { description: 'Уточнить экран', criteria: ['Новый критерий'], makeSources: [{ conversationId: makeId, mode: 'whole_project', paths: [] }], attachmentIds: [] } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ cycle: { sequence: 1, description: 'Уточнить экран', createdBy: 'admin' }, replayed: false })
+    expect(db.getTaskDetail('admin', project.id, taskId)).toMatchObject({ description: before.description, acceptanceCriteria: before.acceptanceCriteria, columnId: db.getColumnIdBySemantic(project.id, 'preparation') })
+  })
+
+  // @testCase TC-API-2
+  it('идемпотентный ключ не создаёт дубль, разные ключи получают разные sequence', async () => {
+    const { project, taskId } = await designScene()
+    const url = `/api/projects/${project.id}/tasks/${taskId}/rework-cycles`
+    const payload = { description: 'Ещё правка', criteria: [], makeSources: [], attachmentIds: [] }
+    const first = await inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'same' }, payload })
+    const replay = await inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'same' }, payload })
+    const second = await inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'other' }, payload })
+    expect(replay.json()).toMatchObject({ cycle: { id: first.json().cycle.id, sequence: 1 }, replayed: true })
+    expect(second.json()).toMatchObject({ cycle: { sequence: 2 } })
+  })
+
+  // @testCase TC-NEG-1
+  it('отклоняет цикл при активном ране и не перемещает задачу', async () => {
+    const { project, taskId } = await designScene()
+    const before = db.getTaskDetail('admin', project.id, taskId)!
+    vi.spyOn(db, 'latestTaskRunResult').mockReturnValue({ outcome: 'active' } as never)
+    const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${taskId}/rework-cycles`, headers: { 'idempotency-key': 'active' }, payload: { description: 'x' } })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({ error: 'task_active_run' })
+    expect(db.getTaskDetail('admin', project.id, taskId)!.columnId).toBe(before.columnId)
+  })
+
+  // @testCase TC-NEG-2
+  it('цикл повторно проверяет владельца Make и существование выбранного файла', async () => {
+    const { project, taskId, makeId } = await designScene()
+    db.addMember('admin', project.id, 'bob')
+    const url = `/api/projects/${project.id}/tasks/${taskId}/rework-cycles`
+    const foreign = await inj(bobTok, { method: 'POST', url, headers: { 'idempotency-key': 'foreign' }, payload: { description: 'x', makeSources: [{ conversationId: makeId, mode: 'whole_project', paths: [] }] } })
+    expect(foreign.statusCode).toBe(400)
+    const missing = await inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'missing' }, payload: { description: 'x', makeSources: [{ conversationId: makeId, mode: 'files', paths: ['missing.tsx'] }] } })
+    expect(missing.statusCode).toBe(400)
+    expect(db.taskReworkCycles('admin', project.id, taskId)).toEqual([])
   })
 
   it('панель Make видит связанные карточки и связывает новую со своей страницей', async () => {

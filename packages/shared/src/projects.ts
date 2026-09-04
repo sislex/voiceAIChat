@@ -817,6 +817,69 @@ export interface ProjectDesignSource {
   updatedAt: number
 }
 
+export type TaskAttachmentScope = 'source' | 'rework_draft' | 'rework_cycle'
+
+export interface TaskAttachment {
+  id: string
+  taskId: string
+  scope: TaskAttachmentScope
+  name: string
+  size: number
+  mimeType: string
+  checksum: string
+  status: 'ready' | 'missing'
+  createdBy: string
+  createdAt: number
+}
+
+export interface TaskReworkMakeSource {
+  conversationId: string
+  title: string
+  owner: string | null
+  mode: 'whole_project' | 'files'
+  paths: string[]
+  fileStatuses?: Array<{ path: string; available: boolean; error?: string }>
+}
+
+export interface TaskReworkCycle {
+  id: string
+  taskId: string
+  sequence: number
+  description: string
+  criteria: string[]
+  makeSources: TaskReworkMakeSource[]
+  attachments: TaskAttachment[]
+  createdBy: string
+  createdAt: number
+  preparationRunId: string | null
+}
+
+export interface CreateTaskReworkCycle {
+  description: string
+  criteria: string[]
+  makeSources: Array<{ conversationId: string; mode: 'whole_project' | 'files'; paths: string[] }>
+  attachmentIds: string[]
+}
+
+/** Детерминированный накопительный контекст повторной подготовки. */
+export function taskReworkContext(
+  task: Pick<Task, 'description' | 'acceptanceCriteria'>,
+  cycles: TaskReworkCycle[],
+  sourceAttachments: TaskAttachment[]
+): string {
+  const attachments = (items: TaskAttachment[]) => [...items].sort((a, b) => a.id.localeCompare(b.id))
+    .map((item) => `- ${item.name} [${item.status}]`).join('\n') || '- нет'
+  const blocks = [
+    `# Исходная постановка\n${task.description}\n\n## Исходные критерии\n${task.acceptanceCriteria}\n\n## Вложения исходной задачи\n${attachments(sourceAttachments)}`
+  ]
+  for (const cycle of [...cycles].sort((a, b) => a.sequence - b.sequence)) {
+    const make = [...cycle.makeSources].sort((a, b) => a.conversationId.localeCompare(b.conversationId))
+      .map((source) => `- ${source.title} (${source.conversationId}): ${source.mode === 'whole_project' ? 'проект целиком' : [...source.paths].sort().join(', ')}`).join('\n') || '- нет'
+    blocks.push(`# Цикл ${cycle.sequence}\n${cycle.description}\n\n## Критерии цикла\n${cycle.criteria.join('\n')}\n\n## Make-источники\n${make}\n\n## Вложения цикла\n${attachments(cycle.attachments)}`)
+  }
+  return blocks.join('\n\n')
+}
+
 /** Карточка проекта для выбора в диалоге «Связать с задачей» панели Make. */
 export interface MakeLinkableTask {
   taskId: string

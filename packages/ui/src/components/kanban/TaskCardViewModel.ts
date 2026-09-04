@@ -1,4 +1,4 @@
-import type { KanbanColumnSemanticType, TaskRunResultOutcome } from '@shared/projects'
+import type { KanbanColumnSemanticType, ProjectDesignSource, TaskRunResultOutcome } from '@shared/projects'
 
 export type TaskCardVersion = 'new' | 'legacy'
 export type TaskCardTab = 'overview' | 'workflow' | 'runs' | 'files' | 'history'
@@ -86,6 +86,7 @@ export interface TaskReworkDraft {
   criteria: string[]
   makeMode: TaskCardMakeMode
   makePaths: string[]
+  makeSources?: Array<{ conversationId: string; mode: TaskCardMakeMode; paths: string[] }>
   attachments: TaskCardFileViewModel[]
 }
 
@@ -98,4 +99,14 @@ export interface TaskCardCallbacks {
   onChangeReworkDraft(draft: TaskReworkDraft): void
   onSubmitRework(draft: TaskReworkDraft, idempotencyKey: string): void | Promise<void>
   onCancelRework(): void
+  onRetryMakeSources?(): void
+  onLoadMakeFiles?(conversationId: string): Promise<string[]>
+  onUploadAttachment?(scope: 'source' | 'rework_draft', file: File): Promise<void>
+  onDeleteAttachment?(attachmentId: string): Promise<void>
+}
+
+export interface TaskReworkSourcesState {
+  state: TaskCardLoadState
+  items: ProjectDesignSource[]
+  error?: string
 }

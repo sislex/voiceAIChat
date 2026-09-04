@@ -683,6 +683,12 @@ export interface IpcInvokeMap {
   'tasks:unlinkDesign': { arg: { projectId: string; taskId: string; linkId: string }; result: import('./projects').TaskDesignLink[] }
   /** Make-проекты, привязанные к проекту: выбор источника дизайна в карточке. */
   'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
+  'tasks:reworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
+  'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; idempotencyKey: string; input: import('./projects').CreateTaskReworkCycle }; result: { cycle: import('./projects').TaskReworkCycle; task: import('./projects').Task; replayed: boolean } }
+  'tasks:attachments': { arg: { projectId: string; taskId: string; scope?: 'source' | 'rework_draft' }; result: import('./projects').TaskAttachment[] }
+  'tasks:uploadAttachment': { arg: { projectId: string; taskId: string; scope: 'source' | 'rework_draft'; name: string; mimeType?: string; dataBase64: string }; result: import('./projects').TaskAttachment }
+  'tasks:deleteAttachment': { arg: { projectId: string; taskId: string; attachmentId: string }; result: { deleted: boolean } }
+  'tasks:reworkMakeFiles': { arg: { projectId: string; taskId: string; conversationId: string }; result: Array<{ path: string }> }
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
   /** Студия картинок: галерея разговора, генерация и правка по промпту. */
@@ -1474,6 +1480,12 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:linkDesign',
   'tasks:unlinkDesign',
   'projects:designSources',
+  'tasks:reworkCycles',
+  'tasks:createReworkCycle',
+  'tasks:attachments',
+  'tasks:uploadAttachment',
+  'tasks:deleteAttachment',
+  'tasks:reworkMakeFiles',
   'imgstudio:list',
   'imgstudio:read',
   'imgstudio:upload',
