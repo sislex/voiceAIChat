@@ -745,6 +745,7 @@ CREATE TABLE IF NOT EXISTS task_attachments (
   size INTEGER NOT NULL,
   mime_type TEXT NOT NULL,
   storage_key TEXT NOT NULL UNIQUE,
+  content BLOB NOT NULL,
   checksum TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'ready',
   created_by TEXT NOT NULL,

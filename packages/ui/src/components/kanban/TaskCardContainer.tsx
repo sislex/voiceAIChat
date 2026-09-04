@@ -16,6 +16,15 @@ const LABELS: Record<KanbanColumnSemanticType, string> = {
 const POST_DEVELOPMENT = new Set<KanbanColumnSemanticType>(['component_qa', 'integration_tests', 'automated_qa', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge', 'decision_required', 'done'])
 const EMPTY_DRAFT: TaskReworkDraft = { description: '', criteria: [], makeSources: [], attachments: [] }
 
+function fileBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать файл'))
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '')
+    reader.readAsDataURL(file)
+  })
+}
+
 export interface TaskCardContainerProps extends TaskModalProps {
   initialVersion?: TaskCardVersion
   reworkCycles?: TaskReworkCycleViewModel[]
@@ -31,7 +40,7 @@ function runStatus(status: string | undefined, awaiting = false): TaskCardRunSta
   return 'failed'
 }
 
-export function buildTaskCardViewModel(props: TaskCardContainerProps, cycles: TaskReworkCycleViewModel[]): TaskCardViewModel {
+export function buildTaskCardViewModel(props: TaskCardContainerProps, cycles: TaskReworkCycleViewModel[], sourceAttachments: TaskCardViewModel['source']['attachments'] = []): TaskCardViewModel {
   const column = props.board.columns.find((item) => item.id === props.task.columnId)
   const semanticType = column?.semanticType ?? 'custom'
   const workflowIndex = QA_WORKFLOW.indexOf(semanticType)
@@ -79,7 +88,7 @@ export function buildTaskCardViewModel(props: TaskCardContainerProps, cycles: Ta
     labels: props.task.labels,
     workflow: QA_WORKFLOW.map((step, index) => ({ id: step, semanticType: step, label: LABELS[step], state: step === semanticType ? 'current' as const : workflowIndex >= 0 && index < workflowIndex ? 'passed' as const : 'upcoming' as const })),
     runs,
-    source: { description: props.task.description, acceptanceCriteria: props.task.acceptanceCriteria, attachments: [] },
+    source: { description: props.task.description, acceptanceCriteria: props.task.acceptanceCriteria, attachments: sourceAttachments },
     makeSources,
     cycles,
     loadState: 'ready',
@@ -106,15 +115,19 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [makeState, setMakeState] = useState<TaskCardLoadState>('loading')
   const [makeSources, setMakeSources] = useState<import('@shared/projects').ProjectDesignSource[]>([])
+  const [sourceAttachments, setSourceAttachments] = useState<TaskCardViewModel['source']['attachments']>([])
+  const [draftKey] = useState(() => `rework-draft-${props.task.id}-${crypto.randomUUID()}`)
   const loadPersistent = (): void => {
     if (!window.api) return
     setMakeState('loading')
     void Promise.all([
       window.api['projects:designSources']({ id: props.task.projectId }),
-      window.api['tasks:reworkCycles']({ projectId: props.task.projectId, taskId: props.task.id })
-    ]).then(([sources, saved]) => {
+      window.api['tasks:reworkCycles']({ projectId: props.task.projectId, taskId: props.task.id }),
+      window.api['tasks:attachments']({ projectId: props.task.projectId, taskId: props.task.id })
+    ]).then(([sources, saved, attachments]) => {
       setMakeSources(sources)
       setMakeState(sources.length ? 'ready' : 'empty')
+      setSourceAttachments(attachments.map((file) => ({ id: file.id, name: file.name, size: file.size, mimeType: file.mimeType, status: file.status })))
       setCycles(saved.map((cycle) => ({
         ...cycle,
         makeSources: cycle.makeSources.map((source) => ({ id: source.conversationId, title: source.title, conversationId: source.conversationId, mode: source.mode, paths: source.paths.map((path) => ({ path, available: true })) })),
@@ -126,7 +139,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     })
   }
   useEffect(() => { if (version === 'new') loadPersistent() }, [version, props.task.id, props.task.projectId])
-  const model = useMemo(() => buildTaskCardViewModel(props, cycles), [props, cycles])
+  const model = useMemo(() => buildTaskCardViewModel(props, cycles, sourceAttachments), [props, cycles, sourceAttachments])
   if (version === 'legacy') return <TaskModal {...props} headerExtra={<div className="task-version-switch" role="group" aria-label="Версия карточки"><Button size="sm" variant="ghost" aria-pressed={false} onClick={() => setVersion('new')}>Новая</Button><Button size="sm" variant="primary" aria-pressed>Старая</Button></div>} />
   return <NewTaskCardView
     model={model}
@@ -148,6 +161,26 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
       onStartRework: () => { setError(null); setReworkOpen(true) },
       onChangeReworkDraft: setDraft,
       onCancelRework: () => setReworkOpen(false),
+      onUploadAttachment: async (file, target) => {
+        const optimistic = { id: `upload-${crypto.randomUUID()}`, name: file.name, size: file.size, mimeType: file.type, status: 'uploading' as const }
+        if (target === 'task') setSourceAttachments((all) => [...all, optimistic])
+        else setDraft((current) => ({ ...current, attachments: [...current.attachments, optimistic] }))
+        try {
+          const saved = await window.api['tasks:uploadAttachment']({ projectId: props.task.projectId, taskId: props.task.id, input: { name: file.name, mimeType: file.type, dataBase64: await fileBase64(file), ...(target === 'rework' ? { draftKey } : {}) } })
+          const ready = { id: saved.id, name: saved.name, size: saved.size, mimeType: saved.mimeType, status: saved.status }
+          if (target === 'task') setSourceAttachments((all) => all.map((item) => item.id === optimistic.id ? ready : item))
+          else setDraft((current) => ({ ...current, attachments: current.attachments.map((item) => item.id === optimistic.id ? ready : item) }))
+        } catch (cause) {
+          const failed = { ...optimistic, status: 'error' as const, error: cause instanceof Error ? cause.message : 'Не удалось загрузить файл.' }
+          if (target === 'task') setSourceAttachments((all) => all.map((item) => item.id === optimistic.id ? failed : item))
+          else setDraft((current) => ({ ...current, attachments: current.attachments.map((item) => item.id === optimistic.id ? failed : item) }))
+        }
+      },
+      onDeleteAttachment: async (attachmentId, target) => {
+        await window.api['tasks:deleteAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId })
+        if (target === 'task') setSourceAttachments((all) => all.filter((item) => item.id !== attachmentId))
+        else setDraft((current) => ({ ...current, attachments: current.attachments.filter((item) => item.id !== attachmentId) }))
+      },
       onSubmitRework: async (next, key) => {
         if (model.actions.hasActiveRun || pending) return
         if (!next.description.trim()) { setError('Опишите, что нужно доработать.'); return }

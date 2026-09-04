@@ -683,6 +683,9 @@ export interface IpcInvokeMap {
   'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
   'projects:designSourceFiles': { arg: { projectId: string; conversationId: string }; result: Array<{ path: string }> }
   'tasks:reworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
+  'tasks:attachments': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskAttachment[] }
+  'tasks:uploadAttachment': { arg: { projectId: string; taskId: string; input: import('./projects').CreateTaskAttachmentInput }; result: import('./projects').TaskAttachment }
+  'tasks:deleteAttachment': { arg: { projectId: string; taskId: string; attachmentId: string }; result: { deleted: boolean } }
   'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; idempotencyKey: string; input: import('./projects').CreateTaskReworkCycleInput }; result: import('./projects').TaskReworkCycle }
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
@@ -1477,6 +1480,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:designSources',
   'projects:designSourceFiles',
   'tasks:reworkCycles',
+  'tasks:attachments',
+  'tasks:uploadAttachment',
+  'tasks:deleteAttachment',
   'tasks:createReworkCycle',
   'imgstudio:list',
   'imgstudio:read',

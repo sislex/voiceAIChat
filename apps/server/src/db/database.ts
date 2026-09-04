@@ -5530,6 +5530,48 @@ export class VoiceChatDb {
       size: row.size, mimeType: row.mime_type, checksum: row.checksum, status: row.status, createdBy: row.created_by, createdAt: row.created_at }))
   }
 
+  listTaskAttachments(userId: string, projectId: string, taskId: string) {
+    if (!this.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    return this.taskAttachments(taskId, null)
+  }
+
+  createTaskAttachment(userId: string, projectId: string, taskId: string, input: {
+    name: string; mimeType?: string; dataBase64: string; draftKey?: string
+  }) {
+    if (!this.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) throw new Error('Задача не найдена')
+    const name = input.name.trim().split(/[\\/]/).pop()?.trim() || 'file'
+    const data = Buffer.from(input.dataBase64, 'base64')
+    if (!data.length || data.length > 20 * 1024 * 1024) throw new Error('Размер вложения должен быть от 1 байта до 20 МБ')
+    if (data.toString('base64').replace(/=+$/, '') !== input.dataBase64.replace(/\s/g, '').replace(/=+$/, '')) throw new Error('Некорректные данные вложения')
+    const draftKey = input.draftKey?.trim() || null
+    const id = this.newId()
+    const checksum = createHash('sha256').update(data).digest('hex')
+    this.db.prepare(`INSERT INTO task_attachments
+      (id, task_id, rework_cycle_id, draft_key, name, size, mime_type, storage_key, content, checksum, status, created_by, created_at)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)`)
+      .run(id, taskId, draftKey, name, data.length, input.mimeType?.trim() || 'application/octet-stream', this.newId(), data, checksum, userId, this.now())
+    return draftKey
+      ? { ...this.taskAttachmentById(id)!, reworkCycleId: null }
+      : this.taskAttachments(taskId, null).find((file) => file.id === id)!
+  }
+
+  private taskAttachmentById(id: string) {
+    const row = this.db.prepare(`SELECT id, task_id, rework_cycle_id, name, size, mime_type, checksum, status, created_by, created_at
+      FROM task_attachments WHERE id = ?`).get(id) as {
+      id: string; task_id: string; rework_cycle_id: string | null; name: string; size: number; mime_type: string
+      checksum: string; status: 'ready' | 'missing'; created_by: string; created_at: number
+    } | undefined
+    return row && { id: row.id, taskId: row.task_id, reworkCycleId: row.rework_cycle_id, name: row.name,
+      size: row.size, mimeType: row.mime_type, checksum: row.checksum, status: row.status, createdBy: row.created_by, createdAt: row.created_at }
+  }
+
+  deleteTaskAttachment(userId: string, projectId: string, taskId: string, attachmentId: string): boolean {
+    if (!this.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) throw new Error('Задача не найдена')
+    const result = this.db.prepare(`DELETE FROM task_attachments
+      WHERE id = ? AND task_id = ? AND created_by = ? AND rework_cycle_id IS NULL`).run(attachmentId, taskId, userId)
+    return result.changes > 0
+  }
+
   createTaskReworkCycle(userId: string, projectId: string, taskId: string, idempotencyKey: string, input: {
     description: string; criteria?: string[]; makeSources?: Array<{ conversationId: string; mode: 'whole_project' | 'files'; paths?: string[] }>; attachmentIds?: string[]
   }): TaskReworkCycle {
@@ -5578,6 +5620,7 @@ export class VoiceChatDb {
     return [
       `Исходное ТЗ:\n${task.description}`,
       `Исходные критерии:\n${task.acceptanceCriteria}`,
+      ...this.taskAttachments(taskId, null).map((file) => `Вложение исходной задачи: ${file.name} [${file.status}]`),
       ...cycles.flatMap((cycle) => [
         `Цикл ${cycle.sequence}: ${cycle.description}`,
         ...(cycle.criteria.length ? [`Критерии цикла:\n${cycle.criteria.map((item) => `- ${item}`).join('\n')}`] : []),

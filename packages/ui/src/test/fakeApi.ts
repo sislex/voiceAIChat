@@ -1499,6 +1499,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
     'projects:designSourceFiles': async () => [],
     'tasks:reworkCycles': async () => [],
+    'tasks:attachments': async () => [],
+    'tasks:uploadAttachment': async ({ taskId, input }) => ({ id: `attachment-${Date.now()}`, taskId, reworkCycleId: null, name: input.name, size: Math.ceil(input.dataBase64.length * 0.75), mimeType: input.mimeType ?? 'application/octet-stream', checksum: 'test', status: 'ready', createdBy: 'test', createdAt: Date.now() }),
+    'tasks:deleteAttachment': async () => ({ deleted: true }),
     'tasks:createReworkCycle': async ({ taskId, input }) => ({
       id: 'rework-1', taskId, sequence: 1, description: input.description, criteria: input.criteria ?? [],
       makeSources: [], attachments: [], createdBy: 'me', createdAt: nowMs, preparationRunId: null

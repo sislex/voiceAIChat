@@ -821,6 +821,14 @@ export interface TaskAttachment {
   createdAt: number
 }
 
+export interface CreateTaskAttachmentInput {
+  name: string
+  mimeType?: string
+  dataBase64: string
+  /** Присутствует только у вложения черновика нового цикла. */
+  draftKey?: string
+}
+
 export interface TaskReworkMakeSource {
   conversationId: string
   title: string
