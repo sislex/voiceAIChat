@@ -150,6 +150,7 @@ import {
   type CiBrowserCheck,
   type CiProcessStage,
   CI_PROCESS_STAGES,
+  QA_CRITERION_TEST_TYPES,
   DEFAULT_CI_BROWSER_CHECK,
   normalizeCiBrowserCheck,
   normalizeCiProcessStages,
@@ -1123,6 +1124,20 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'status')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
     }
+    // Make-чат к машине не ходит (`turns.ts`: makeChat), поэтому оставшиеся с
+    // прежних времён привязки — мусор, который вводит в заблуждение: панель
+    // показывала машину и каталог, которых ход не использует. Явное «без машины»
+    // (`none`) сохраняем: это осознанный выбор пользователя, совпадающий с новым
+    // поведением. Идемпотентно — второй запуск не находит строк.
+    if (convCols.some((c) => c.name === 'assistant_kind')) {
+      this.db.exec(`
+        UPDATE conversations
+        SET exec_target = CASE WHEN exec_target = 'none' THEN exec_target ELSE NULL END,
+            workdir = NULL
+        WHERE assistant_kind = 'make'
+          AND ((exec_target IS NOT NULL AND exec_target <> 'none') OR workdir IS NOT NULL)
+      `)
+    }
     // Проекты (итерация 2): папка на машину + машина по умолчанию.
     const projCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (projCols.length && !projCols.some((c) => c.name === 'default_agent_id')) {
@@ -1858,11 +1873,15 @@ export class VoiceChatDb {
     permissionMode?: PermissionMode | null,
     llmEngineId?: string | null
   ): Conversation | null {
+    // Make-чату машина не назначается: ход её всё равно игнорирует, а запись
+    // в БД возвращала бы мусор, который чистит миграция. Явное «none» проходит.
+    const makeChat = (this.db.prepare(`SELECT assistant_kind FROM conversations WHERE id = ? AND user_id = ?`).get(id, userId) as { assistant_kind: string | null } | undefined)?.assistant_kind === 'make'
+    const target = makeChat && execTarget !== 'none' ? null : execTarget
     const fields = ['exec_target = ?']
-    const values: unknown[] = [execTarget]
+    const values: unknown[] = [target]
     if (workdir !== undefined) {
       fields.push('workdir = ?')
-      values.push(workdir)
+      values.push(makeChat ? null : workdir)
     }
     if (skillNames !== undefined) {
       fields.push('skill_names = ?')
@@ -9623,7 +9642,10 @@ interface QaIssueRow { id:string;result_id:string;classification:string;severity
 interface QaAttachmentRow { id:string;result_id:string;upload_id:string;name:string;mime_type:string;size:number;width:number|null;height:number|null;caption:string;author:string;created_at:number;commit_sha:string }
 
 function qaSnapshot(value:AcceptanceCriterionSnapshot):AcceptanceCriterionSnapshot {
-  const testType=value.testType==='automated'||value.testType==='mixed'||value.testType==='not_testable_in_app'?value.testType:'manual'
+  // Список типов один — общий контракт QA. Пока здесь была тройка legacy-значений,
+  // актуальные ui|api|integration|negative|regression молча превращались в manual,
+  // и сценарий, по которому запускается Component QA, терял свой тип при сохранении.
+  const testType=QA_CRITERION_TEST_TYPES.includes(value.testType)?value.testType:'manual'
   return {title:value.title.trim(),description:value.description.trim(),preconditions:value.preconditions.trim(),steps:value.steps.trim(),testData:value.testData.trim(),expectedResult:value.expectedResult.trim(),required:value.required!==false,testType}
 }
 function mapTaskRepository(r: Record<string, unknown>): TaskRepository {

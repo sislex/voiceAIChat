@@ -47,6 +47,13 @@ export interface MergeTestFixContext {
 }
 export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; testFix?(ctx:MergeTestFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; repositoriesChanged?(projectId:string,taskId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
+
+/**
+ * Лимит одной команды гейта. Прежние 30 минут не покрывали полный гейт монорепо
+ * на занятой машине: у CHAT-408 «Проверки проекта» упёрлись в лимит на 34-й
+ * минуте, когда параллельно с ними шёл модельный шаг актуализации БЗ.
+ */
+const GATE_COMMAND_TIMEOUT_MS = 3_600_000
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
 /** Канонизирует Git URL до host/owner/repo: SSH- и HTTPS-формы одного
@@ -416,7 +423,13 @@ exit 0`,repo,30000)
         if(!installed.exitCode&&!installed.timedOut){
           tested={exitCode:0 as number|null,timedOut:false,output:installed.output}
           for(const command of gateCommands){
-            const result=await this.cmd(run,command,workdir,1800000)
+            // Полный гейт монорепо на занятой машине идёт десятки минут, а его
+            // вывод приходит порциями: без этих отметок 30 минут тишины в логе
+            // не отличить от зависшего рана.
+            const commandStarted=this.now()
+            this.log(run.id,`[${name}] запускаю: ${command}`)
+            const result=await this.cmd(run,command,workdir,GATE_COMMAND_TIMEOUT_MS)
+            this.log(run.id,`[${name}] ${command} — ${result.timedOut?`превысил лимит ${Math.round(GATE_COMMAND_TIMEOUT_MS/60000)} мин`:`код ${result.exitCode}`} за ${this.now()-commandStarted} мс`)
             tested={...result,output:tested.output+result.output}
             if(result.exitCode||result.timedOut)break
           }
@@ -458,6 +471,9 @@ exit 0`,repo,30000)
         this.deps.db.updateMergeRun(id,{checks:[check]})
         this.stage(id,'testing',check.status==='passed'?'passed':'failed',`Проверки ${check.status==='passed'?'прошли':'не прошли'} за ${check.durationMs} мс; параллельный участок ${parallelDuration} мс`)
         if(check.status==='failed'){
+          // Параллельный шаг БЗ снят тем же abort, что и проверки: закрываем его
+          // этап сразу, а не оставляем «running» до конца рана.
+          this.stage(id,'kb_update','failed','Актуализация БЗ снята: проверки проекта не прошли')
           const failure=check.timedOut?'Проверки превысили timeout':`Проверки упали (exit ${check.exitCode})`
           if(!fixAllowed)throw new Error(failure)
           fixAllowed=false
@@ -561,7 +577,12 @@ exit 0`,repo,30000)
     if(!outcome.ok){ this.log(id,`Автоисправление отклонено: ${outcome.message}`); return null }
     // Проверка результата до коммита: тот же HEAD (модель не коммитила и не
     // переключала ветку), непустой diff и никаких конфликтных маркеров.
-    const inspected=await this.cmd(run,`printf 'HEAD=%s\n' "$(git rev-parse HEAD)"\nprintf 'DIRTY\n'\ngit status --porcelain\nprintf 'MARKERS\n'\ngit grep -l -e '<<<<<<<' -e '>>>>>>>' -- . || true`,workdir,120000)
+    // Маркеры ищем ТОЛЬКО в том, что тронула модель. Раньше `git grep` шёл по
+    // всему дереву и находил легальные вхождения в самом merge-раннере, в
+    // резолвере конфликтов и в статьях БЗ про маркеры — из-за чего любое
+    // автоисправление в этом репозитории отклонялось всегда, независимо от
+    // содержимого правок.
+    const inspected=await this.cmd(run,`printf 'HEAD=%s\n' "$(git rev-parse HEAD)"\nprintf 'DIRTY\n'\ngit status --porcelain\nprintf 'MARKERS\n'\n{ git diff --name-only -z HEAD; git ls-files -z --others --exclude-standard; } | xargs -0 -r grep -I -l -e '<<<<<<<' -e '>>>>>>>' -- || true`,workdir,120000)
     const head=inspected.output.match(/HEAD=([0-9a-f]{40})/i)?.[1]
     const dirty=(inspected.output.split(/DIRTY\r?\n/)[1]??'').split(/MARKERS\r?\n/)[0]?.trim()??''
     const markers=(inspected.output.split(/MARKERS\r?\n/)[1]??'').trim()
@@ -578,7 +599,19 @@ exit 0`,repo,30000)
 
   private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'merge'|'decision_required'):void {
     const run=this.deps.db.getMergeRunRaw(id); if(!run||terminal.has(run.status))return
-    this.deps.db.updateMergeRun(id,{status,stage:status,finishedAt:this.now(),error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
+    const at=this.now()
+    // Незакрытые этапы закрываем здесь — в единственной точке терминального
+    // исхода. Лента считает длительность незавершённого этапа от `startedAt` до
+    // «сейчас», поэтому у упавшего рана этап продолжал тикать: у CHAT-408
+    // «База знаний» показывала 95+ минут спустя часы после остановки, хотя
+    // модельный шаг давно был снят по abort вместе с проверками.
+    const stages=run.stages.map(item=>{
+      if(item.status!=='running'&&item.status!=='queued')return item
+      const closing:MergeStageRecord['status']=status==='success'?'skipped':status==='cancelled'?'skipped':'failed'
+      const note=status==='cancelled'?'этап снят вместе с отменённым раном':'этап остановлен вместе с раном'
+      return {...item,status:closing,finishedAt:at,durationMs:item.startedAt?at-item.startedAt:0,message:item.message?`${item.message} — ${note}`:note}
+    })
+    this.deps.db.updateMergeRun(id,{status,stage:status,stages,finishedAt:at,error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
   }
   /** Закрытие задачи: удаляет все активные копии её репозиториев на доступных
    *  машинах; недоступная машина оставляет запись до следующей очистки.

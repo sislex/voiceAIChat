@@ -159,6 +159,8 @@ export interface TaskModalProps {
   footer?: ReactNode
   /** Дополнительные проектные настройки черновика (например, движок и модель). */
   detailsExtra?: ReactNode
+  /** Нейтральные UI-действия в шапке, например переключатель new/legacy. */
+  headerExtra?: ReactNode
 }
 
 function toDateInput(ms: number | null): string {
@@ -770,7 +772,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       onEscape={requestClose}
       testId="task-modal"
       className="jmodal-frame"
-      actions={headActions}
+      actions={<>{props.headerExtra}{headActions}</>}
       footer={props.footer}
     >
       {!props.draft && <nav

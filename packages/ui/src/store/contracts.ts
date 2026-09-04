@@ -53,6 +53,10 @@ export const MAKE_SPLIT_PCT_KEY = 'vc.make.splitPct'
 export const IMAGE_STUDIO_DENSE_KEY = 'vc.imgstudio.dense'
 export const IMAGE_STUDIO_SIZE_KEY = 'vc.imgstudio.size'
 export const IMAGE_STUDIO_ORDER_KEY = 'vc.imgstudio.order'
+/** Панель рисования свёрнута: разбор галереи и рисование — разные занятия. */
+export const IMAGE_STUDIO_COMPOSER_KEY = 'vc.imgstudio.composer'
+/** Сколько карточек показывать страницей сетки: 60 (по умолчанию), 120 или 300. */
+export const IMAGE_STUDIO_PAGE_KEY = 'vc.imgstudio.page'
 export const imageStudioDraftKey = (conversationId: string): string => `vc.imgstudio.draft.${conversationId}`
 /** Последний открытый чат студии — на него возвращается #/images без id. */
 export const IMAGE_STUDIO_LAST_KEY = 'vc.imgstudio.last'
@@ -87,6 +91,25 @@ export const imageStudioScrollKey = (conversationId: string): string => `vc.imgs
 export const imageStudioSeenKey = (conversationId: string): string => `vc.imgstudio.seen.${conversationId}`
 /** Наборы (подборки) файлов галереи: имя → список имён файлов. */
 export const imageStudioSetsKey = (conversationId: string): string => `vc.imgstudio.sets.${conversationId}`
+/** Готовность картинки: имя файла → 'draft' | 'ready' (локально, на разговор). */
+export const imageStudioStatusKey = (conversationId: string): string => `vc.imgstudio.status.${conversationId}`
+/**
+ * Свёрнутые группы «по датам». sessionStorage: сворачивание — приём на время
+ * работы, между запусками браузера его возвращать незачем.
+ */
+export const imageStudioFoldedKey = (conversationId: string): string => `vc.imgstudio.folded.${conversationId}`
+/**
+ * Пресеты запроса под именем: стиль, размер, негатив и «без текста». Отдельно
+ * от видов галереи: те про отбор готового, эти — про то, что рисовать.
+ */
+export const imageStudioRecipesKey = (conversationId: string): string => `vc.imgstudio.recipes.${conversationId}`
+/**
+ * Шаблоны промптов с переменными: «{объект} в стиле акварели». Отдельно от
+ * пресетов запроса — те про стиль и размер, эти про сам текст.
+ */
+export const imageStudioTemplatesKey = (conversationId: string): string => `vc.imgstudio.templates.${conversationId}`
+/** Сохранённые виды галереи: фильтры плюс сортировка под именем. */
+export const imageStudioViewsKey = (conversationId: string): string => `vc.imgstudio.views.${conversationId}`
 export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
 
 /**
@@ -113,6 +136,8 @@ export const PREFERENCE_KEYS = [
   IMAGE_STUDIO_DENSE_KEY,
   IMAGE_STUDIO_SIZE_KEY,
   IMAGE_STUDIO_ORDER_KEY,
+  IMAGE_STUDIO_PAGE_KEY,
+  IMAGE_STUDIO_COMPOSER_KEY,
   IMAGE_STUDIO_LAST_KEY,
   IMAGE_STUDIO_NO_TEXT_KEY,
   IMAGE_STUDIO_STYLE_KEY,

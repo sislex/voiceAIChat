@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-09-04
-checked: fbfb9464
+checked: 5bd7df1b
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1045,6 +1045,9 @@ legacy merge-шага всегда переходит в колонку с seman
 интеграционные и ручные проверки больше не подменяются development-run.
 Development-run нельзя запустить из `backlog` или `preparation`. Наличие
 успешного legacy merge-шага по-прежнему переводит старый workflow в `done`.
+Если целевой semantic type отсутствует в проекте, `settleTaskColumn` не двигает
+карточку; успешный перенос фиксируется событием `run.component_qa` или
+`run.task_done` (`apps/server/src/ci/runManager.ts`).
 Ошибка, отмена или таймаут могут вернуть карточку в `prev_column_id`
 через `rollbackTask`, только пока она остаётся в `run_column_id` этого рана и
 нет более нового активного рана. Ручной перенос после запуска имеет приоритет;

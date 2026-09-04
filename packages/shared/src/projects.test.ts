@@ -22,6 +22,9 @@ describe('QA workflow semantics', () => {
     expect(canTransitionWorkflow('awaiting_merge', 'merge', 'automation')).toBe(true)
     expect(canTransitionWorkflow('merge', 'done', 'automation')).toBe(true)
     expect(canTransitionWorkflow('awaiting_merge', 'done', 'automation')).toBe(false)
+    expect(canTransitionWorkflow('component_qa', 'preparation', 'user')).toBe(true)
+    expect(canTransitionWorkflow('done', 'preparation', 'user')).toBe(true)
+    expect(canTransitionWorkflow('cancelled', 'preparation', 'user')).toBe(false)
   })
 })
 

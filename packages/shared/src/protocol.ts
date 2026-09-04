@@ -216,7 +216,6 @@ export const REST = {
   makeProjectFiles: (id: string) => `/api/make/${encodeURIComponent(id)}/project-files`,
   makeProjectLinks: (id: string) => `/api/make/${encodeURIComponent(id)}/project-links`,
   makeProjectPull: (id: string) => `/api/make/${encodeURIComponent(id)}/project-pull`,
-  makeProjectPush: (id: string) => `/api/make/${encodeURIComponent(id)}/project-push`,
   makeTaskLinks: (id: string) => `/api/make/${encodeURIComponent(id)}/task-links`,
   makeTaskLink: (id: string, linkId: string) => `/api/make/${encodeURIComponent(id)}/task-links/${encodeURIComponent(linkId)}`,
   makeShareGrants: (id: string) => `/api/make/${encodeURIComponent(id)}/share/grants`,
