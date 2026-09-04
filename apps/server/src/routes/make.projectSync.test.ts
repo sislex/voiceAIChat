@@ -1,7 +1,7 @@
-// Обмен мастерской с репозиторием проекта: копирование компонентов и стилей
-// из рабочей директории машины (pull), правка в Make и возврат обратно (push).
-// Машина — фейковый файловый мост: важно поведение сервера (пути, хеши,
-// конфликты), а не транспорт агента.
+// Чтение мастерской из репозитория проекта: копирование компонентов и стилей
+// из рабочей директории машины (pull) и правка их в Make. Обратной записи нет —
+// Make в репозиторий не пишет, и фейковый файловый мост здесь намеренно
+// доступен только на чтение: важно поведение сервера (пути, хеши, статусы).
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -21,7 +21,6 @@ let dataDir: string
 let convId: string
 /** «Диск машины»: путь → содержимое. Абсолютные пути от корня /repo. */
 let machineDisk: Map<string, string>
-let machineWrites: Array<{ path: string; content: string }>
 let online = true
 
 function fakeMachineFs() {
@@ -45,12 +44,6 @@ function fakeMachineFs() {
       if (content === undefined) throw new Error(`нет файла ${path}`)
       return { root: '/repo', cwd: path, dataBase64: Buffer.from(content, 'utf8').toString('base64') }
     },
-    async write(_agentId: string, path: string, dataBase64: string) {
-      const content = Buffer.from(dataBase64, 'base64').toString('utf8')
-      machineDisk.set(path, content)
-      machineWrites.push({ path, content })
-      return { root: '/repo', cwd: path }
-    },
     isOnline: () => online
   }
 }
@@ -66,7 +59,6 @@ beforeEach(async () => {
     ['/repo/styles/theme.css', ':root { --accent: #06c; }'],
     ['/repo/README.md', 'readme']
   ])
-  machineWrites = []
   online = true
 
   const project = db.createProject(U, { name: 'Проект' })
@@ -115,36 +107,30 @@ describe('make: обмен с репозиторием проекта', () => {
     expect(copied.content).toContain('export const Button')
   })
 
-  it('правка в Make делает edited_in_make; push возвращает файл и обновляет хеш', async () => {
+  it('правка в Make видна статусом, а расхождение в репозитории — своим', async () => {
     await app.inject({ method: 'POST', url: `/api/make/${convId}/project-pull`, payload: { paths: ['styles/theme.css'] } })
     await workspaces.write(convId, 'styles/theme.css', ':root { --accent: #f00; }')
 
     const links = (await app.inject({ method: 'GET', url: `/api/make/${convId}/project-links` })).json()
     expect(links[0]).toMatchObject({ path: 'styles/theme.css', status: 'edited_in_make' })
 
-    const push = await app.inject({ method: 'POST', url: `/api/make/${convId}/project-push`, payload: {} })
-    expect(push.statusCode).toBe(200)
-    expect(push.json().pushed).toEqual(['styles/theme.css'])
-    // Файл на машине заменён правкой из Make…
-    expect(machineDisk.get('/repo/styles/theme.css')).toContain('#f00')
-    // …и связь снова «совпадает»: хеш обновлён на возвращённое содержимое.
-    expect(push.json().links[0].status).toBe('same')
+    // Кто-то поменял файл в репозитории — статус становится «разошлись обе стороны».
+    machineDisk.set('/repo/styles/theme.css', ':root { --accent: #0c6; } /* чужая правка */')
+    const both = (await app.inject({ method: 'GET', url: `/api/make/${convId}/project-links` })).json()
+    expect(both[0]).toMatchObject({ path: 'styles/theme.css', status: 'both' })
   })
 
-  it('push без force отклоняется, если файл в проекте изменился после копирования', async () => {
+  it('обратной записи в репозиторий у Make нет: маршрут project-push отсутствует', async () => {
+    // Общая копия проекта принадлежит git-потоку (задачи, CI, релизы). Файл,
+    // положенный туда мимо коммита, оставлял её dirty и ломал системную
+    // синхронизацию с origin — поэтому пути записи здесь нет вовсе.
     await app.inject({ method: 'POST', url: `/api/make/${convId}/project-pull`, payload: { paths: ['styles/theme.css'] } })
     await workspaces.write(convId, 'styles/theme.css', ':root { --accent: #f00; }')
-    // Кто-то поменял файл в репозитории.
-    machineDisk.set('/repo/styles/theme.css', ':root { --accent: #0c6; } /* чужая правка */')
 
-    const blocked = await app.inject({ method: 'POST', url: `/api/make/${convId}/project-push`, payload: {} })
-    expect(blocked.statusCode).toBe(409)
-    expect(blocked.json().conflicts).toEqual(['styles/theme.css'])
-    expect(machineWrites).toEqual([]) // ничего не записано
-
-    const forced = await app.inject({ method: 'POST', url: `/api/make/${convId}/project-push`, payload: { force: true } })
-    expect(forced.statusCode).toBe(200)
-    expect(machineDisk.get('/repo/styles/theme.css')).toContain('#f00')
+    const push = await app.inject({ method: 'POST', url: `/api/make/${convId}/project-push`, payload: {} })
+    expect(push.statusCode).toBe(404)
+    // Файл в репозитории не тронут.
+    expect(machineDisk.get('/repo/styles/theme.css')).toBe(':root { --accent: #06c; }')
   })
 
   it('пути с .. и абсолютные отклоняются, офлайн-машина — честная ошибка', async () => {

@@ -6,7 +6,7 @@
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
 import { createHash } from 'node:crypto'
-import type { MakeProjectFileEntry, MakeProjectLink, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectPullResult, MakeProjectPushResult } from '@voicechat/shared'
+import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectPullResult } from '@voicechat/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '../make/rateLimit.js'
 import { MAKE_PROJECT_SYNC_MAX_FILES, MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_COMMENTS_PAGE, MAKE_SNAPSHOT_PREVIEW, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
@@ -31,14 +31,14 @@ export interface MakeRoutesDeps {
   importUrlLimiter?: SlidingWindowLimiter
   passwordLimiter?: SlidingWindowLimiter
   /**
-   * Файловая система машины проекта (реестр агентов живёт в server.ts).
-   * Пути абсолютные на машине; политику (allowWrite, allowedDirs) агент
-   * проверяет сам — сервер не решает за машину, что ей можно.
+   * Файловая система машины проекта, только чтение (реестр агентов живёт в
+   * server.ts). Пути абсолютные на машине. Записи здесь намеренно нет: Make
+   * копирует файлы репозитория к себе, но обратно в общую копию проекта не
+   * пишет — она принадлежит git-потоку, а файл мимо коммита оставлял её dirty.
    */
   machineFs?: {
     list(agentId: string, path: string): Promise<import('@voicechat/shared').FsResult>
     read(agentId: string, path: string): Promise<import('@voicechat/shared').FsResult>
-    write(agentId: string, path: string, dataBase64: string): Promise<import('@voicechat/shared').FsResult>
     isOnline(agentId: string): boolean
   }
 }
@@ -491,50 +491,6 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) {
       if (error instanceof MakeError) return sendError(reply, error)
       return reply.code(502).send({ error: `Копирование не удалось: ${error instanceof Error ? error.message : String(error)}` })
-    }
-  })
-
-  app.post<{ Params: { id: string }; Body: { paths?: string[]; force?: boolean } }>('/api/make/:id/project-push', async (req, reply) => {
-    const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
-    const machine = projectMachine(userId, req.params.id)
-    if ('error' in machine) return reply.code(409).send({ error: machine.error })
-    const links = await workspaces.projectLinks(req.params.id)
-    const wanted = Array.isArray(req.body?.paths) && req.body.paths.length
-      ? links.filter((link) => req.body.paths!.includes(link.path))
-      : links
-    if (!wanted.length) return reply.code(400).send({ error: 'Возвращать нечего: связанных файлов нет' })
-    try {
-      // Конфликты считаем до записи: возврат — это замена файлов в репозитории,
-      // и молча перезаписывать то, что изменилось после копирования, нельзя.
-      const conflicts: string[] = []
-      const payload: Array<{ link: MakeProjectLink; data: Buffer }> = []
-      for (const link of wanted) {
-        const local = await workspaces.readBuffer(req.params.id, link.path)
-        if (!local) return reply.code(404).send({ error: `«${link.path}» отсутствует в мастерской` })
-        let remoteHash: string | null = null
-        try {
-          const result = await deps.machineFs!.read(machine.agentId, `${machine.root}/${link.path}`)
-          remoteHash = result.dataBase64 !== undefined ? sha256(Buffer.from(result.dataBase64, 'base64')) : null
-        } catch { remoteHash = null }
-        if (remoteHash !== null && remoteHash !== link.importedHash && !req.body?.force) conflicts.push(link.path)
-        payload.push({ link, data: local.data })
-      }
-      if (conflicts.length) {
-        return reply.code(409).send({ error: 'Файлы в проекте изменились после копирования', conflicts })
-      }
-      const pushed: string[] = []
-      const now = Date.now()
-      const byPath = new Map(links.map((link) => [link.path, link]))
-      for (const { link, data } of payload) {
-        await deps.machineFs!.write(machine.agentId, `${machine.root}/${link.path}`, data.toString('base64'))
-        byPath.set(link.path, { path: link.path, importedHash: sha256(data), importedAt: now })
-        pushed.push(link.path)
-      }
-      await workspaces.saveProjectLinks(req.params.id, [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path, 'ru')))
-      return { pushed, conflicts: [], links: await linkInfos(req.params.id, machine) } satisfies MakeProjectPushResult
-    } catch (error) {
-      return reply.code(502).send({ error: `Возврат не удался: ${error instanceof Error ? error.message : String(error)}` })
     }
   })
 
