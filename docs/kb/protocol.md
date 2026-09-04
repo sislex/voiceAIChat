@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-04
-checked: c16a3777
+checked: a487f302
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -288,6 +288,19 @@ WS дозванивается только при наличии токена с
 `admin:deleteLlmEngine`, `admin:checkLlmEngineHealth` объявлены в
 `packages/shared/src/ipc.ts`, web-мост проксирует их в `REST.adminLlmEngines*`.
 Health-check — обычный REST-запрос, а не отдельный WS-канал.
+
+### Заголовки моста собирает только `authHeaders()`
+
+Любой мост, который сам зовёт `fetch`, обязан брать заголовки из
+`authHeaders()` (`packages/ui/src/remote/session.ts`): она кладёт и Bearer, и
+`x-vc-csrf`. Своя сборка заголовков — источник тихой поломки: в вебе после
+перезагрузки страницы Bearer живёт только в памяти, запрос авторизует
+cookie-сессия, и без `x-vc-csrf` сервер отвечает 403 `{ error: 'csrf' }` на
+каждую мутацию. Так были сломаны все действия панелей QA (`qaBridge`) и
+тестовых окружений (`featurePreviewBridge`): кнопка «Запустить» интеграционных
+автотестов на проде давала «Не удалось обновить интеграционные автотесты -
+csrf», а `POST …/qa/integration/runs` — 403. Регрессия закреплена в
+`packages/ui/src/remote/remote.test.ts` рядом с таким же тестом для проводника.
 
 ## Сервер↔машина (`/agent`)
 
