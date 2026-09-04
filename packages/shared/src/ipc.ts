@@ -699,6 +699,8 @@ export interface IpcInvokeMap {
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
   'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number }> } }
   'imgstudio:restore': { arg: { conversationId: string; name: string }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
+  /** Очистка корзины: без `name` — вся, с `name` — только этот файл. */
+  'imgstudio:purge': { arg: { conversationId: string; name?: string }; result: { removed: number; items: Array<{ name: string; deletedAt: number }> } }
   'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
   'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
   'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
@@ -741,6 +743,8 @@ export interface IpcSendMap {
     verbose?: boolean
     /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
     execTarget?: string | null
+    /** Ход-исправление грязной копии проекта: системный preflight пропускается. */
+    skipProjectSync?: boolean
     /** Неперсистентный безопасный контекст служебного ассистента виджета. */
     assistantContext?: import('./widgetAssistant').WidgetAssistantContext
   }
@@ -827,7 +831,8 @@ export interface IpcEventMap {
     message?: Message
   }
   /** Ошибка при запросе к Claude. */
-  'claude:error': { conversationId: string; message: string }
+  /** Ошибка хода; `fix` — готовое исправление для кнопки в баннере. */
+  'claude:error': { conversationId: string; message: string; fix?: { label: string; prompt: string; skipProjectSync?: boolean } }
   /** Запись активности агента (режим консоли). */
   'claude:log': { conversationId: string; entry: ClaudeLogEntry }
 
@@ -1483,6 +1488,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'imgstudio:transfer',
   'imgstudio:trash',
   'imgstudio:restore',
+  'imgstudio:purge',
   'make:projectFiles',
   'make:projectLinks',
   'make:projectPull',

@@ -50,7 +50,7 @@ export interface RealtimeHandlers {
   modelDownloadError(message: string): void
   turnToken(delta: string, conversationId?: string): void
   turnDone(text: string, meta?: TurnMeta, engine?: LlmProvider, message?: Message, conversationId?: string): void
-  turnError(message: string, conversationId?: string): void
+  turnError(message: string, conversationId?: string, fix?: { label: string; prompt: string; skipProjectSync?: boolean }): void
   turnActive(turns: ActiveTurn[]): void
   turnStart(target: TurnTarget, conversationId: string): void
   turnQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message, removedMessageIds?: string[]): void
@@ -254,7 +254,12 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     turnToken: (delta, conversationId) => chat.actions.applyClaudeToken(delta, conversationId),
     turnDone: (text, meta, engine, message, conversationId) =>
       void chat.actions.applyClaudeDone(text, meta, engine, message, conversationId),
-    turnError: (message, conversationId) => chat.actions.applyClaudeError(message, conversationId),
+    turnError: (message, conversationId, fix) => {
+      chat.actions.applyClaudeError(message, conversationId)
+      // Предложение исправления живёт рядом с баннером ошибки оболочки: сам
+      // текст ошибки уже показал chatStore через порт setError.
+      shell.actions.setErrorFix(fix ?? null)
+    },
     turnActive: (turns) => chat.actions.applyClaudeActive(turns),
     turnStart: (target, conversationId) => chat.actions.applyClaudeStart(target, conversationId),
     turnQueue: (conversationId, items, paused, published, removedMessageIds) =>

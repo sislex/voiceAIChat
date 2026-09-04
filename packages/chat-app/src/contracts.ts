@@ -21,7 +21,8 @@ export interface LiveSegment { speakerId: number; text: string }
 
 export interface ChatTurnPort {
   enabled: boolean
-  send?(conversationId: string, segments: SttSegmentWire[], attachments?: string[], verbose?: boolean, execTarget?: string | null, messageId?: string): void
+  /** `skipProjectSync` — ход-исправление грязной копии проекта: preflight пропускается. */
+  send?(conversationId: string, segments: SttSegmentWire[], attachments?: string[], verbose?: boolean, execTarget?: string | null, messageId?: string, skipProjectSync?: boolean): void
   cancel?(conversationId?: string): void
   editQueued?(conversationId: string, id: string, text: string): void
   deleteQueued?(conversationId: string, id: string): void

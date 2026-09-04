@@ -278,7 +278,14 @@ fi
 toplevel="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
 test -n "$toplevel" && test "$toplevel" = "$(cd "$repo" && pwd -P)" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
 worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
-test -z "$worktree_status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
+test -z "$worktree_status" || {
+  # Сообщение называет виновников: одно «содержит локальные изменения» не
+  # подсказывает, что чинить, и человек шёл смотреть status руками.
+  dirty_count="$(printf '%s\n' "$worktree_status" | grep -c . || true)"
+  dirty_head="$(printf '%s\n' "$worktree_status" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
+  echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена. Копия: $repo. Изменено записей: $dirty_count. Первые: $dirty_head. Закоммитьте нужное или уберите лишнее в этой копии и повторите." >&2
+  exit 66
+}
 current="$(git -C "$repo" branch --show-current)"
 test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
 git -C "$repo" fetch --no-tags origin "refs/heads/\${base}:refs/remotes/origin/\${base}"
@@ -1891,7 +1898,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(() => { try { agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
   watchdogTimer?.unref?.()
   app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
-  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)
   registerInvitationRoutes(app, db, { mailer, publicUrl: opts.config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard,

@@ -346,6 +346,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   attemptFix: CiFixHook
   kbUpdate: CiKbUpdateHook
   conflictFixForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; conflicts: string[]; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
+  testFixForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; check: import('@voicechat/shared').MergeCheck; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
   kbUpdateForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
 } {
   const now = deps.now ?? (() => Date.now())
@@ -1188,6 +1189,55 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     }
   }
 
+  /**
+   * Автоисправление упавших обязательных проверок merge-рана. Модель работает
+   * в проверочном worktree (зависимости уже установлены) и **не** коммитит:
+   * коммит, повторный гейт и решение о публикации остаются за сервером.
+   */
+  const testFixForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; check: import('@voicechat/shared').MergeCheck; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
+    const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const llm = { llmEngineId:args.run.llmEngineId, provider:args.run.llmProvider, model:args.run.llmModel }
+    if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для исправления проверок недоступен', llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
+    const noop = (): never => { throw new Error('Операция development CI недоступна в merge test_fix') }
+    const ctx = {
+      runId:development.id, agentId:args.run.agentId, workspacePath:args.repo,
+      env:{BASE_BRANCH:'main'}, signal:args.signal, addStep:noop, finishStep:noop,
+      log:(_stepId:string,_stream:'stdout'|'stderr'|'system',chunk:string)=>args.log(chunk),
+      runCommandById:noop, setModelSessionId:()=>{}, recordFix:noop, suggest:noop,
+      askUser:noop, askPlanApproval:noop,
+      run:{...development,llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model},
+      task, project, parentStepId:'merge-test-fix'
+    } as unknown as CiModelContext
+    // Хвост вывода: полный лог гейта может быть в мегабайтах, а причина почти
+    // всегда в последних строках.
+    const tail = args.check.output.split(/\r?\n/).slice(-120).join('\n')
+    const request=(model:string):LlmRequest=>({
+      userId:args.run.triggeredBy,
+      prompt:[
+        'Дополнительный шаг merge: обязательные проверки слитого дерева упали. Исправь причину в этой рабочей копии.',
+        `Задача: ${task.title}`,
+        task.description?`Описание: ${task.description}`:'',
+        `Команда проверок: ${args.check.command}`,
+        `Код возврата: ${args.check.exitCode ?? 'нет'}${args.check.timedOut?' (timeout)':''}`,
+        'Хвост вывода:',
+        tail,
+        'Правь минимально и по причине ошибки, а не подгоняй тесты под код: удалять и ослаблять проверки нельзя.',
+        'Не выполняй git commit, push, reset, checkout, stash и не удаляй рабочую копию — коммит сделает сервер сам.',
+        'Перед завершением прогони упавшую команду локально и убедись, что она проходит.'
+      ].filter(Boolean).join('\n'),
+      sessionId:null, model, permissionMode:'acceptEdits',
+      remote:{mcpUrl:`${deps.mcpBaseUrl}&agent=${encodeURIComponent(args.run.agentId)}&cwd=${encodeURIComponent(args.repo)}`,agentName:deps.agentNameOf(args.run.agentId)??args.run.agentId}
+    })
+    try {
+      const turn=await stageRunner(ctx,'fix','merge-test-fix')(request,(_stream,chunk)=>args.log(chunk),args.signal,'Исправление проверок остановлено.\n')
+      return {llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model,ok:turn.ok&&!turn.cancelled,message:turn.ok?'Дополнительный шаг исправления проверок завершён':'Модель не смогла исправить проверки'}
+    } catch(error) {
+      return {llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model,ok:false,message:`Шаг исправления проверок не выполнен: ${error instanceof Error?error.message:String(error)}`}
+    }
+  }
+
   const kbUpdateForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
     const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
     const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
@@ -1226,5 +1276,5 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     return { ...result, llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
   }
 
-  return { modelWork, modelSummary, attemptFix, kbUpdate, conflictFixForMerge, kbUpdateForMerge }
+  return { modelWork, modelSummary, attemptFix, kbUpdate, conflictFixForMerge, testFixForMerge, kbUpdateForMerge }
 }

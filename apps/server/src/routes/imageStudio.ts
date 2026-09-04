@@ -151,6 +151,16 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     return { items: await store.listTrash(req.params.id) }
   })
 
+  // Очистка корзины необратима, поэтому это отдельный метод, а не флаг
+  // удаления: случайно нажать «удалить» и потерять файл совсем нельзя.
+  app.post<{ Params: { id: string }; Body: { name?: string } | undefined }>('/api/image-studio/:id/trash/purge', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try {
+      const removed = await store.purgeTrash(req.params.id, req.body?.name)
+      return { removed, items: await store.listTrash(req.params.id) }
+    } catch (error) { return sendStudioError(reply, error) }
+  })
+
   app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/image-studio/:id/restore', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try {

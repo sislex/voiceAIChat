@@ -6,6 +6,7 @@ import type { ImageStudioFile } from '@shared/imageStudio'
 import type { CropRect } from '../lib/imageTransform'
 import { ANNOTATE_COLORS, ANNOTATE_TOOLS, arrowHead, type AnnotateShape, type AnnotateTool } from '../lib/imageAnnotate'
 import { versionChain } from '../lib/imageVersions'
+import { IMAGE_STUDIO_VIEWER_BG_KEY } from '../store/contracts'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
 
@@ -18,6 +19,8 @@ interface Props {
   compare: boolean
   /** Явная пара для шторки (из мультирежима); имеет приоритет над meta.source. */
   compareWith?: string | null
+  /** Три и более выбранных — сравниваем сеткой, шторка тут не поможет. */
+  compareGrid?: string[]
   formatBytes: (bytes: number) => string
   /** Листать можно, когда в отфильтрованной сетке больше одного файла. */
   canStep: boolean
@@ -35,13 +38,35 @@ interface Props {
   /** Позиция открытого файла в отфильтрованной сетке: «N из M». */
   position?: { index: number; total: number }
   onDownload: (path: string) => void
+  /** Положить открытую картинку в буфер обмена (панель читает файл сама). */
+  onCopy: (path: string) => void
+  /** Заметка к открытой картинке (локальная, хранит панель). */
+  note?: string
+  onNoteChange?: (path: string, note: string) => void
+  /** Достать доминирующие цвета открытой картинки (панель читает файл сама). */
+  onPalette?: (path: string) => Promise<string[]>
+  /** Столбики гистограммы яркости в процентах высоты. */
+  onHistogram?: (path: string) => Promise<number[]>
   onDelete: (path: string) => void
   onClose: () => void
 }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onDelete, onClose, position }: Props): JSX.Element {
+/** Шаг слайдшоу: меньше — не успеваешь рассмотреть, больше — уже не показ. */
+const SLIDESHOW_MS = 3000
+/** Фоны подложки: прозрачный PNG читается по-разному на каждом из них. */
+const VIEWER_BACKGROUNDS = ['checker', 'light', 'dark'] as const
+type ViewerBackground = (typeof VIEWER_BACKGROUNDS)[number]
+const BACKGROUND_LABELS: Record<ViewerBackground, string> = { checker: 'шахматка', light: 'светлый', dark: 'тёмный' }
+
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
+  /**
+   * Наложение вместо шторки: картинки складываются в режиме разницы, и
+   * совпадающие пиксели становятся чёрными. Так видно даже сдвиг на пиксель,
+   * который шторкой не поймать.
+   */
+  const [blend, setBlend] = useState(false)
   /** Режим обрезки: рамка в координатах отображаемой картинки (CSS-пиксели). */
   const [cropping, setCropping] = useState(false)
   /** Режим разметки: freehand-штрихи поверх картинки. */
@@ -62,6 +87,39 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const panStart = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
   /** Начальная точка свайпа (телефон). */
   const touchX = useRef<number | null>(null)
+  /** Подложка под картинкой: у прозрачного PNG края видно только на контрасте. */
+  const [background, setBackground] = useState<ViewerBackground>(() => {
+    try {
+      const saved = localStorage.getItem(IMAGE_STUDIO_VIEWER_BG_KEY)
+      return (VIEWER_BACKGROUNDS as readonly string[]).includes(saved ?? '') ? saved as ViewerBackground : 'checker'
+    } catch { return 'checker' }
+  })
+  /** Слайдшоу: сам листает вперёд, пока не выключат или не начнут править. */
+  const [slideshow, setSlideshow] = useState(false)
+  /** Раскрытая панель свойств: полная мета и заметка одним списком. */
+  const [propsOpen, setPropsOpen] = useState(false)
+  /** Доминирующие цвета открытой картинки; null — ещё не считали. */
+  const [palette, setPalette] = useState<string[] | null>(null)
+  /** Гистограмма яркости; null — ещё не считали. */
+  const [histogram, setHistogram] = useState<number[] | null>(null)
+  // Листаем — палитра и гистограмма прежнего кадра к новому отношения не имеют.
+  useEffect(() => { setPalette(null); setHistogram(null) }, [viewing])
+  /** Черновик заметки: пишем в панель по «Сохранить», а не на каждый символ. */
+  const [noteDraft, setNoteDraft] = useState(note ?? '')
+  // Листаем — заметка в поле должна стать заметкой нового файла.
+  useEffect(() => { setNoteDraft(note ?? '') }, [viewing, note])
+  // Любой режим правки останавливает показ: иначе картинка уедет из-под кисти.
+  const stopSlideshow = (): void => setSlideshow(false)
+  useEffect(() => {
+    if (!slideshow || !canStep) return
+    const timer = setInterval(() => onStep(1), SLIDESHOW_MS)
+    return () => clearInterval(timer)
+  }, [slideshow, canStep, onStep])
+  /** Масштаб кнопками: колесо есть не у всех (трекпад, тач, клавиатура). */
+  const zoomBy = (delta: number): void => setZoom((prev) => {
+    const scale = Math.min(4, Math.max(1, Math.round((prev.scale + delta) * 100) / 100))
+    return scale === 1 ? { scale: 1, x: 0, y: 0 } : { ...prev, scale }
+  })
   // Стрелки листают из любого места вьюера: фокус после открытия стоит на
   // кнопках шапки, и локальный onKeyDown тела до него не дотягивается.
   useEffect(() => {
@@ -79,12 +137,13 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
 
   useEffect(() => { setZoom({ scale: 1, x: 0, y: 0 }) }, [viewing])
+  useEffect(() => { if (!compare) setBlend(false) }, [compare])
   const positionLabel = position && position.total > 1 ? ` · ${position.index + 1} из ${position.total}` : ''
   return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : `${viewing}${positionLabel}`} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
     actions={<>
-      {(sourceInGallery || compareWith) && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
-      <IconButton size="sm" aria-label={annotating ? 'Выйти из режима разметки' : `Разметить ${viewing}`} title={annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'} aria-pressed={annotating} onClick={() => { setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>✏️</IconButton>
-      <IconButton size="sm" aria-label={cropping ? 'Выйти из режима обрезки' : `Обрезать ${viewing}`} title={cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'} aria-pressed={cropping} onClick={() => { setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>✂</IconButton>
+      {(sourceInGallery || compareWith || (compareGrid?.length ?? 0) > 2) && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
+      <IconButton size="sm" aria-label={annotating ? 'Выйти из режима разметки' : `Разметить ${viewing}`} title={annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'} aria-pressed={annotating} onClick={() => { stopSlideshow(); setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>✏️</IconButton>
+      <IconButton size="sm" aria-label={cropping ? 'Выйти из режима обрезки' : `Обрезать ${viewing}`} title={cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'} aria-pressed={cropping} onClick={() => { stopSlideshow(); setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>✂</IconButton>
       <IconButton size="sm" aria-label={`Править ${viewing} по промпту`} title="Править по промпту" onClick={() => onPickForEdit(viewing)}>✎</IconButton>
       <IconButton size="sm" aria-label={`Нарисовать вариацию ${viewing}`} title="Вариация" disabled={busy} onClick={() => onVariate(viewing)}>✦</IconButton>
       {'EyeDropper' in globalThis && <IconButton size="sm" aria-label="Пипетка: взять цвет с экрана" title="Пипетка (цвет в буфер)" onClick={() => {
@@ -92,6 +151,19 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         if (!Ctor) return
         void new Ctor().open().then(({ sRGBHex }) => navigator.clipboard?.writeText(sRGBHex)).catch(() => undefined)
       }}>💧</IconButton>}
+      {!compare && !cropping && !annotating && <>
+        <IconButton size="sm" aria-label="Уменьшить масштаб" title="Уменьшить (колесо мыши тоже)" disabled={zoom.scale <= 1} onClick={() => zoomBy(-0.25)}>−</IconButton>
+        <IconButton size="sm" aria-label={`Масштаб ${Math.round(zoom.scale * 100)} процентов, сбросить к 100`} title="Сбросить масштаб" disabled={zoom.scale === 1} onClick={() => setZoom({ scale: 1, x: 0, y: 0 })}>{`${Math.round(zoom.scale * 100)}%`}</IconButton>
+        <IconButton size="sm" aria-label="Увеличить масштаб" title="Увеличить (колесо мыши тоже)" disabled={zoom.scale >= 4} onClick={() => zoomBy(0.25)}>+</IconButton>
+      </>}
+      <IconButton size="sm" aria-label={`Фон подложки: ${BACKGROUND_LABELS[background]} — сменить`} title={`Фон: ${BACKGROUND_LABELS[background]}`} onClick={() => setBackground((prev) => {
+        const next = VIEWER_BACKGROUNDS[(VIEWER_BACKGROUNDS.indexOf(prev) + 1) % VIEWER_BACKGROUNDS.length]!
+        try { localStorage.setItem(IMAGE_STUDIO_VIEWER_BG_KEY, next) } catch { /* приватный режим */ }
+        return next
+      })}>◧</IconButton>
+      {canStep && <IconButton size="sm" aria-label={slideshow ? 'Остановить слайдшоу' : 'Запустить слайдшоу'} title={slideshow ? 'Стоп' : `Слайдшоу (${SLIDESHOW_MS / 1000} с на кадр)`} aria-pressed={slideshow} onClick={() => setSlideshow((prev) => !prev)}>{slideshow ? '⏸' : '▶'}</IconButton>}
+      <IconButton size="sm" aria-label={propsOpen ? 'Скрыть свойства' : `Свойства ${viewing}`} title="Свойства и заметка" aria-pressed={propsOpen} onClick={() => setPropsOpen((prev) => !prev)}>ⓘ</IconButton>
+      <IconButton size="sm" aria-label={`Скопировать ${viewing} в буфер`} title="Копировать в буфер" onClick={() => onCopy(viewing)}>⧉</IconButton>
       <IconButton size="sm" aria-label={`Скачать ${viewing}`} title="Скачать" onClick={() => onDownload(viewing)}>⇩</IconButton>
       <IconButton size="sm" aria-label={`Удалить ${viewing}`} title="Удалить" onClick={() => onDelete(viewing)}>🗑</IconButton>
       {canStep && <>
@@ -99,7 +171,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { onCompareChange(false); onStep(1) }}>›</IconButton>
       </>}
     </>}>
-    <div className="imgbody" tabIndex={-1}
+    <div className={`imgbody image-studio-bg--${background}`} tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key === 'ArrowLeft') onStep(-1)
         if (event.key === 'ArrowRight') onStep(1)
@@ -112,20 +184,39 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         if (Math.abs(delta) > 48) { onCompareChange(false); onStep(delta > 0 ? -1 : 1) }
       }}>
       {(() => {
+        // Сетка сравнения: три-четыре картинки рядом, подписи под каждой.
+        if (compare && compareGrid && compareGrid.length > 2) {
+          return <div className="image-studio-compare-grid" role="group" aria-label={`Сравнение ${compareGrid.length} картинок`}>
+            {compareGrid.map((path) => <figure key={path}>
+              {previews[path] ? <img src={previews[path]} alt={path} /> : <span className="image-studio-dim">превью грузится…</span>}
+              <figcaption>
+                <button type="button" className="image-studio-cancel" onClick={() => { onCompareChange(false); onView(path) }}>{path}</button>
+                {dimensions[path] && <span className="image-studio-dim"> {dimensions[path]}</span>}
+              </figcaption>
+            </figure>)}
+          </div>
+        }
         const sourcePath = compare ? (compareWith ?? meta?.source) : undefined
         if (sourcePath && previews[sourcePath] && previews[viewing]) {
           // Шторка: обе картинки в стеке, результат обрезается слева по слайдеру.
           return <div className="image-studio-wipe">
-            <div className="image-studio-wipe-stage" onClick={(event) => {
+            <div className={`image-studio-wipe-stage${blend ? ' image-studio-wipe-stage--blend' : ''}`} onClick={(event) => {
+              if (blend) return
               const box = event.currentTarget.getBoundingClientRect()
               setWipe(Math.round((event.clientX - box.left) / box.width * 100))
             }}>
               <img src={previews[sourcePath]} alt={`Исходник: ${sourcePath}`} />
-              <img src={previews[viewing]} alt={viewing} style={{ clipPath: `inset(0 0 0 ${wipe}%)` }} />
-              <span className="image-studio-wipe-line" style={{ left: `${wipe}%` }} aria-hidden="true" />
+              <img src={previews[viewing]} alt={viewing} style={blend ? undefined : { clipPath: `inset(0 0 0 ${wipe}%)` }} />
+              {!blend && <span className="image-studio-wipe-line" style={{ left: `${wipe}%` }} aria-hidden="true" />}
             </div>
-            <input type="range" min={0} max={100} value={wipe} aria-label="Шторка сравнения: левее — исходник, правее — результат" onChange={(event) => setWipe(Number(event.target.value))} />
-            <p className="image-studio-origin"><span className="image-studio-dim">← {sourcePath} · {viewing} →</span></p>
+            {!blend && <input type="range" min={0} max={100} value={wipe} aria-label="Шторка сравнения: левее — исходник, правее — результат" onChange={(event) => setWipe(Number(event.target.value))} />}
+            <p className="image-studio-origin">
+              <span className="image-studio-dim">← {sourcePath} · {viewing} →</span>{' '}
+              <button type="button" className="image-studio-cancel" aria-pressed={blend} onClick={() => setBlend((prev) => !prev)}>
+                {blend ? 'Шторкой' : 'Наложением'}
+              </button>
+              {blend && <span className="image-studio-dim"> — совпадающее выглядит чёрным</span>}
+            </p>
           </div>
         }
         if (!previews[viewing]) return <p className="imgerr" role="alert">Превью ещё не загрузилось</p>
@@ -225,6 +316,8 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           }}
           onPointerUp={() => { dragStart.current = null }}>
           <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
+          {/* Правило третей: кадрировать «на глаз» без направляющих неудобно. */}
+          <span className="image-studio-thirds" aria-hidden="true" />
           {cropBox && <span className="image-studio-crop-box" style={{ left: cropBox.x, top: cropBox.y, width: cropBox.w, height: cropBox.h }} aria-hidden="true" />}
           <p className="image-studio-origin"><span className="image-studio-dim">Выделите область мышью и нажмите «Вырезать».</span></p>
         </div>
@@ -245,7 +338,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         }}>Сохранить разметку</button>
       </p>}
       {cropping && <p className="image-studio-origin">
-        {[{ r: 0, label: 'Свободно' }, { r: 1, label: '1:1' }, { r: 16 / 9, label: '16:9' }, { r: 4 / 3, label: '4:3' }].map((item) => (
+        {[{ r: 0, label: 'Свободно' }, { r: 1, label: '1:1' }, { r: 16 / 9, label: '16:9' }, { r: 4 / 3, label: '4:3' }, { r: 9 / 16, label: '9:16' }, { r: 1200 / 630, label: 'OG' }].map((item) => (
           <button key={item.label} type="button" className="image-studio-cancel" aria-pressed={cropRatio === item.r} style={cropRatio === item.r ? { fontWeight: 700 } : undefined} onClick={() => { setCropRatio(item.r); setCropBox(null) }}>{item.label}</button>
         ))}
         {' '}
@@ -282,7 +375,71 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           </span>)}
         </p>
       })()}
-      <p className="image-studio-origin"><span className="image-studio-dim">← → — листать · Delete — удалить · Esc — закрыть</span></p>
+      {propsOpen && meta && <div className="image-studio-props" role="group" aria-label={`Свойства ${viewing}`}>
+        <dl>
+          <dt>Файл</dt><dd>{meta.path}</dd>
+          <dt>Вес</dt><dd>{formatBytes(meta.size)}</dd>
+          {dimensions[meta.path] && <><dt>Пиксели</dt><dd>{dimensions[meta.path]}</dd></>}
+          <dt>Обновлён</dt><dd>{new Date(meta.updatedAt).toLocaleString('ru-RU')}</dd>
+          {meta.tookMs !== undefined && <><dt>Ран</dt><dd>{Math.round(meta.tookMs / 1000)} с</dd></>}
+          {meta.source && <><dt>Исходник</dt><dd>{meta.source}</dd></>}
+          {meta.prompt && <><dt>Промпт</dt><dd>{meta.prompt}</dd></>}
+        </dl>
+        <button type="button" className="image-studio-cancel" onClick={() => {
+          // Сводку удобно вставить в задачу: она объясняет, что это за файл.
+          const lines = [
+            `Файл: ${meta.path}`,
+            `Вес: ${formatBytes(meta.size)}${dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}`,
+            `Обновлён: ${new Date(meta.updatedAt).toLocaleString('ru-RU')}`,
+            meta.source ? `Исходник: ${meta.source}` : '',
+            meta.prompt ? `Промпт: ${meta.prompt}` : '',
+            noteDraft.trim() ? `Заметка: ${noteDraft.trim()}` : ''
+          ].filter(Boolean)
+          void navigator.clipboard?.writeText(lines.join('\n')).catch(() => undefined)
+        }}>Скопировать сводку</button>
+        {onPalette && <span className="image-studio-palette">
+          {palette === null
+            ? <button type="button" className="image-studio-cancel" onClick={() => void onPalette(viewing).then(setPalette).catch(() => setPalette([]))}>Показать палитру</button>
+            : palette.length === 0
+              ? <span className="image-studio-dim">Палитру собрать не удалось</span>
+              : <>
+                  <span className="image-studio-dim">Палитра:</span>
+                  {palette.map((color) => <button
+                    key={color}
+                    type="button"
+                    className="image-studio-swatch"
+                    style={{ background: color }}
+                    aria-label={`Скопировать цвет ${color}`}
+                    title={`${color} — скопировать`}
+                    onClick={() => void navigator.clipboard?.writeText(color).catch(() => undefined)}
+                  />)}
+                  <span className="image-studio-dim">{palette.join(' ')}</span>
+                </>}
+        </span>}
+        {onHistogram && <span className="image-studio-histogram-row">
+          {histogram === null
+            ? <button type="button" className="image-studio-cancel" onClick={() => void onHistogram(viewing).then(setHistogram).catch(() => setHistogram([]))}>Показать гистограмму</button>
+            : histogram.length === 0
+              ? <span className="image-studio-dim">Гистограмму собрать не удалось</span>
+              : <>
+                  <span className="image-studio-dim">Яркость:</span>
+                  <span className="image-studio-histogram" role="img" aria-label={`Гистограмма яркости: ${histogram.length} столбиков, тени слева`}>
+                    {histogram.map((height, index) => <span key={index} style={{ height: `${Math.max(2, height)}%` }} />)}
+                  </span>
+                </>}
+        </span>}
+        {onNoteChange && <span className="image-studio-note">
+          <input
+            aria-label={`Заметка к ${viewing}`}
+            placeholder="Заметка: зачем эта картинка…"
+            value={noteDraft}
+            onChange={(event) => setNoteDraft(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); onNoteChange(viewing, noteDraft) } }}
+          />
+          <button type="button" className="image-studio-cancel" disabled={noteDraft === (note ?? '')} onClick={() => onNoteChange(viewing, noteDraft)}>Сохранить заметку</button>
+        </span>}
+      </div>}
+      <p className="image-studio-origin"><span className="image-studio-dim">← → — листать · Delete — удалить · Esc — закрыть{slideshow ? ' · слайдшоу идёт' : ''}</span></p>
       {meta && <p className="imgcap image-studio-origin">
         <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
         {meta.source ? (sourceInGallery
