@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-04
-checked: 74826e7d
+checked: bbb48616
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -22,6 +22,17 @@ areas:
 # Деплой: Docker, HTTPS, прод-сервер, env
 
 Пошаговый рантайм-гайд — `docs/docker.md`. Здесь то, что важно понимать до правок.
+
+## Браузерные проверки задач: пара переменных
+
+`VC_BROWSER_PREVIEW_BASE` (сервер) и `VC_BROWSER_PREVIEW_ORIGIN` (browser-runner)
+задают один и тот же адрес сервера внутри сети compose (по умолчанию
+`http://voicechat:8787`). Сервер по нему строит адрес прокси превью для
+изолированного Chromium, а раннер по нему доверяет серверу как оркестратору.
+Значения обязаны совпадать: разошлись — и браузерная проверка задачи молча
+показывает белый экран с `ERR_BLOCKED_BY_CLIENT`, потому что SSRF-гейт раннера
+режет адрес после DNS-резолва. Подробности —
+[features/playwright-reader.md](features/playwright-reader.md).
 
 ## Образ
 
