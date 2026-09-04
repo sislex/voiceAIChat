@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 38 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 245 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-01 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-04 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-04 | ⚠ 8 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-04 | ⚠ 42 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
@@ -23,25 +23,25 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1146 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1150 коммит(ов) в areas после сверки: 451ecb87 fix(server): UI-сценарий в фикстуре подготовки к разработке … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 178 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 223 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 111 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 235 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 8 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-04 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 193 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 36 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 20 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 21 коммит(ов) в areas после сверки: 451ecb87 fix(server): UI-сценарий в фикстуре подготовки к разработке … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 17 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 146 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-01 | ⚠ 5 коммит(ов) в areas после сверки: a487f302 fix(browser-runner): доверенный origin сервера для браузерных проверок … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 934b5472 fix(ui): поднять лимит одного теста фронтенда до 60 секунд |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 98 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 2cc9192d Merge remote-tracking branch 'origin/main' into fix/auto-heal-project-sync … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-04, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
