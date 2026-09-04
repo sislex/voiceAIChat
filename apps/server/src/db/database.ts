@@ -147,8 +147,12 @@ import {
   type CiCommandScope,
   type CiSlot,
   type CiSlotConfig,
+  type CiBrowserCheck,
   type CiProcessStage,
   CI_PROCESS_STAGES,
+  QA_CRITERION_TEST_TYPES,
+  DEFAULT_CI_BROWSER_CHECK,
+  normalizeCiBrowserCheck,
   normalizeCiProcessStages,
   type CiLlmConfig,
   DEFAULT_CI_CLAUDE_MODEL,
@@ -6460,6 +6464,19 @@ export class VoiceChatDb {
     return normalized
   }
 
+  /** Браузерная проверка задачи; нет строки — режим «без браузера». */
+  getTaskBrowserCheck(taskId: string): CiBrowserCheck {
+    const row = this.db.prepare(`SELECT check_json FROM ci_task_browser_checks WHERE task_id = ?`).get(taskId) as { check_json: string } | undefined
+    if (!row) return { ...DEFAULT_CI_BROWSER_CHECK }
+    try { return normalizeCiBrowserCheck(JSON.parse(row.check_json)) } catch { return { ...DEFAULT_CI_BROWSER_CHECK } }
+  }
+
+  setTaskBrowserCheck(taskId: string, value: unknown): CiBrowserCheck {
+    const normalized = normalizeCiBrowserCheck(value)
+    this.db.prepare(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`).run(taskId, JSON.stringify(normalized))
+    return normalized
+  }
+
   getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): CiLlmConfig | null {
     const row = this.db.prepare(`SELECT llm_engine_id, provider, model, mode, clarify_level, clarify_max FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as
       | { llm_engine_id: string | null; provider: string; model: string; mode: string; clarify_level: string; clarify_max: number }
@@ -9237,6 +9254,11 @@ export class VoiceChatDb {
     return new Set((this.db.prepare(`SELECT id FROM qa_stage_runs`).all() as Array<{ id: string }>).map((row) => row.id))
   }
 
+  /** Существующие раны CI — для уборки файлов, которые каскад БД не трогает. */
+  ciRunIds(): Set<string> {
+    return new Set((this.db.prepare(`SELECT id FROM ci_runs`).all() as Array<{ id: string }>).map((row) => row.id))
+  }
+
   recoverableAutomatedQaRuns(): Array<{ id: string; userId: string; projectId: string }> {
     return this.db.prepare(`SELECT id,triggered_by AS userId,project_id AS projectId FROM qa_stage_runs WHERE stage='automated_qa' AND status='queued'`).all() as Array<{ id: string; userId: string; projectId: string }>
   }
@@ -9602,7 +9624,10 @@ interface QaIssueRow { id:string;result_id:string;classification:string;severity
 interface QaAttachmentRow { id:string;result_id:string;upload_id:string;name:string;mime_type:string;size:number;width:number|null;height:number|null;caption:string;author:string;created_at:number;commit_sha:string }
 
 function qaSnapshot(value:AcceptanceCriterionSnapshot):AcceptanceCriterionSnapshot {
-  const testType=value.testType==='automated'||value.testType==='mixed'||value.testType==='not_testable_in_app'?value.testType:'manual'
+  // Список типов один — общий контракт QA. Пока здесь была тройка legacy-значений,
+  // актуальные ui|api|integration|negative|regression молча превращались в manual,
+  // и сценарий, по которому запускается Component QA, терял свой тип при сохранении.
+  const testType=QA_CRITERION_TEST_TYPES.includes(value.testType)?value.testType:'manual'
   return {title:value.title.trim(),description:value.description.trim(),preconditions:value.preconditions.trim(),steps:value.steps.trim(),testData:value.testData.trim(),expectedResult:value.expectedResult.trim(),required:value.required!==false,testType}
 }
 function mapTaskRepository(r: Record<string, unknown>): TaskRepository {

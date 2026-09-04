@@ -175,6 +175,58 @@ describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
   })
 })
 
+describe('работа модели: браузерная проверка задачи', () => {
+  const PREVIEW_MCP = 'http://voicechat:8787/mcp/preview?k=secret'
+
+  it('без режима проверки инструментов браузера у хода нет', async () => {
+    const { ctx } = setup()
+    const rec = recorder()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.previewSurface).toBeUndefined()
+  })
+
+  it('режим chromium даёт ходу инструменты и поверхность изолированного браузера', async () => {
+    const { task, ctx } = setup()
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    const rec = recorder()
+    const tokens = broker()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: tokens }).modelWork(ctx)
+    expect(rec.last()?.previewMcpUrl).toContain(`${PREVIEW_MCP}&turn=`)
+    expect(rec.last()?.previewSurface).toBe('chromium')
+    // Токен адресует ход и после него жить не должен.
+    expect(tokens.live()).toEqual([])
+  })
+
+  it('режим user_panel оставляет поверхностью панель пользователя', async () => {
+    const { task, ctx } = setup()
+    db.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
+    const rec = recorder()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    expect(rec.last()?.previewSurface).toBe('panel')
+  })
+
+  it('без чата рана адресовать действия некому — инструментов нет', async () => {
+    const project = db.createProject(U, { name: 'P2' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
+      slotProgress: { done: 0, total: 1, phase: 'В очереди' }
+    })
+    const ctx = {
+      runId: run.id, agentId: null, workspacePath: '/repos/p/1', env: {}, signal: new AbortController().signal,
+      parentStepId: 'step-1', log: () => {}, run, task, project: db.getProject(U, project.id)!,
+      askUser: async () => null, askPlanApproval: async () => null,
+      runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
+    } as unknown as CiModelContext
+    const rec = recorder()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+  })
+})
+
 describe('работа модели: машины проекта', () => {
   it('remote несёт project в mcpUrl и имена других машин проекта', async () => {
     const mac = db.createAgent(U, 'Мак')

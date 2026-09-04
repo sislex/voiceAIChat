@@ -71,6 +71,7 @@
   --warning: var(--ci-progress);
   --warning-soft: var(--surface-warning);
   --danger-soft: var(--surface-danger);
+  --font-ui: Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
   /* Тени: три ступени, которыми app.css уже пользовался. Значения сняты с
      существующих правил файла, чтобы вид не поехал. */
@@ -179,6 +180,7 @@
 
 .app {
   display: grid;
+  font-family: var(--font-ui);
   grid-template-columns: var(--sidebar-width, 264px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   height: 100vh;
@@ -205,6 +207,28 @@
   user-select: none;
 }
 
+/* Пустая домашняя область повторяет Make-shell, не затрагивая состояния
+   загрузки, ошибки и уже открытые разговоры/проекты. */
+.shell-empty-page .toolhead {
+  min-height: 52px;
+  padding: 0 20px;
+  border-bottom-color: var(--border-soft);
+}
+.shell-empty-page .toolhead h1 {
+  font-size: 15px;
+  font-weight: 750;
+}
+.shell-empty-content {
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.shell-empty-content .vc-state { max-width: 360px; }
+
 /* ---- Сайдбар ---- */
 .side {
   background: var(--panel);
@@ -217,7 +241,7 @@
   position: relative;
 }
 .sidehead {
-  padding: 20px 18px 14px 18px;
+  padding: 16px 18px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -511,7 +535,7 @@
 }
 .sidefoot {
   margin-top: auto;
-  padding: 12px;
+  padding: 9px 12px;
   border-top: 1px solid var(--border);
 }
 /* Ряд меню в подвале сайдбара: та же .vc-btn ghost, но во всю ширину и слева.
@@ -3260,13 +3284,14 @@ button.conscmd:hover {
     left: 0;
     bottom: 0;
     height: 100dvh;
-    width: 280px;
-    max-width: 84vw;
+    width: min(86vw, var(--sidebar-width, 264px));
+    max-width: none;
     z-index: 60;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
   }
-  .side-resize { display: none; }
+  .side-resize,
+  .side-collapse { display: none; }
   .side--open {
     transform: translateX(0);
     box-shadow: 0 0 42px rgba(0, 0, 0, 0.35);
@@ -3276,7 +3301,7 @@ button.conscmd:hover {
     position: fixed;
     inset: 0;
     z-index: 50;
-    background: rgba(20, 20, 15, 0.45);
+    background: rgba(28, 27, 24, 0.18);
   }
   .burger {
     display: inline-flex;
@@ -4800,7 +4825,7 @@ button.conscmd:hover {
 
 /* Свёрнутый сайдбар — только десктоп; на мобильном действует выдвижной drawer. */
 @media (min-width: 769px) {
-  .app--sidebar-collapsed { grid-template-columns: 0 1fr; }
+  .app--sidebar-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
   .app--sidebar-collapsed.app--console { grid-template-columns: 0 1fr auto; }
   .app--sidebar-collapsed .side { transform: translateX(-100%); overflow: hidden; }
   .app--sidebar-collapsed .burger { display: inline-flex; }
@@ -5290,10 +5315,21 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 
 /* ===== Сайдбар: переключатель «Чаты | Проекты» и список проектов ========= */
-.side-primary-action { padding: 0 12px 4px; min-width: 0; }
+.side-primary-action { padding: 0 12px 5px; min-width: 0; }
+.side-primary-action .vc-btn {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: none;
+}
+.side-primary-action .vc-btn:hover { background: var(--bg); }
 .side-primary-action .projcreate { width: 100%; margin: 0; }
 .sideswitch { display: flex; gap: 4px; padding: 4px 12px 8px; }
-.sideswitch button { flex: 0 0 auto; min-width: 0; border: none; background: transparent; color: inherit; font-size: 13px; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+.sideswitch button { flex: 0 0 auto; min-width: 0; border: none; background: transparent; color: inherit; font-size: 12px; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
 .sideswitch button.on { flex: 1 1 auto; }
 .sideswitch button:hover { background: var(--surface-hover); }
 .sideswitch button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -5678,6 +5714,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ci-task-stages { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .ci-task-stages label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .ci-task-stages input { margin: 0; }
+/* Проверка в браузере: режим, порт dev-сервера и стартовая страница в одну строку. */
+.ci-task-browser { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-end; }
+.ci-task-browser label { display: inline-flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ci-task-browser input[type="number"] { width: 96px; }
+.ci-task-browser input[type="text"] { width: 200px; }
 .ci-task-save, .ci-defaults .vc-btn { margin-top: var(--space-100); }
 .ci-task-llm-head { margin-top: 14px; }
 .ci-task-llm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -6769,6 +6810,74 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split-chat > .main { flex: 1 1 auto; min-height: 0; height: auto; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
+/* Console Reader follows Make «Проект 18»: product chat and PTY stay mounted,
+   while this wrapper owns only their adaptive geometry and accessible splitter. */
+.console-reader-workshop { position: relative; background: var(--bg); }
+.console-reader-workshop > .chat-split-chat {
+  flex: 0 0 var(--console-chat-width, 42%);
+  width: var(--console-chat-width, 42%);
+  min-width: 360px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.console-reader-console-host {
+  flex: 1 1 auto;
+  min-width: 320px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  background: var(--panel);
+}
+.console-reader-console-host > .console-browser-pane { flex: 1 1 auto; width: 100%; height: 100%; }
+.console-reader-divider {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 12px;
+  align-self: stretch;
+  border: 0;
+  outline: none;
+  cursor: col-resize;
+  touch-action: none;
+}
+.console-reader-divider::before {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+  content: '';
+  transform: translateX(-50%);
+  transition: width 100ms ease, background-color 100ms ease;
+}
+.console-reader-divider__handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 100ms ease;
+}
+.console-reader-divider:hover::before,
+.console-reader-divider:focus-visible::before,
+.console-reader-workshop[data-resizing='true'] .console-reader-divider::before { width: 2px; background: var(--accent); }
+.console-reader-divider:hover .console-reader-divider__handle,
+.console-reader-divider:focus-visible .console-reader-divider__handle,
+.console-reader-workshop[data-resizing='true'] .console-reader-divider__handle { opacity: 1; }
+.console-reader-divider:focus-visible .console-reader-divider__handle { outline: 2px solid var(--accent); outline-offset: 2px; }
+.console-reader-drag-shield { position: fixed; z-index: 100; inset: 0; display: none; cursor: col-resize; touch-action: none; }
+.console-reader-workshop[data-resizing='true'] { cursor: col-resize; user-select: none; }
+.console-reader-workshop[data-resizing='true'] .console-reader-drag-shield { display: block; }
+@media (max-width: 1100px) and (min-width: 769px) {
+  .console-reader-selector > strong { overflow: hidden; width: 9px; color: transparent; }
+  .console-reader-selector > strong::before { color: var(--text); content: '●'; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .console-reader-divider::before, .console-reader-divider__handle { transition: none; }
+}
 .webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .webpreview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
 .webpreview-address { flex: 1; min-width: 0; }
@@ -6798,9 +6907,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split-tabs { display: grid; grid-template-columns: 1fr 1fr; flex: none; padding: 6px; gap: 4px; border-bottom: 1px solid var(--border); background: var(--panel); }
   .chat-split-tabs button { padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); font: inherit; }
   .chat-split-tabs button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); font-weight: 700; }
-  .chat-split-divider { display: none; }
-  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
-  .chat-split--chat .webpreview, .chat-split--preview .chat-split-chat { display: none; }
+  .chat-split-divider, .console-reader-divider, .console-reader-drag-shield { display: none !important; }
+  .chat-split-chat, .webpreview, .console-reader-console-host { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
+  .chat-split--chat .webpreview, .chat-split--chat .console-reader-console-host, .chat-split--preview .chat-split-chat { display: none; }
+  .console-reader-workshop > .chat-split-chat { width: 100%; min-width: 0; }
+  .chat-split-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
 /* Universal widget + assistant split. Visual tokens mirror Make «Проект 14» (index.html + styles.css). */
@@ -6844,7 +6955,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   /* Специфичность выше .ka-icon-button/.ka-sidebar__close: те объявлены позже и задают display. */
   .ka-header .ka-chats-button, .ka-sidebar .ka-sidebar__close { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .ka-sidebar-slot { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .side,
+  .side-controls,
+  .side-resize::after,
+  .ka-sidebar-slot { transition: none; }
+}
 
 .ka-sidebar { height: 100%; padding: 20px 14px 14px; display: flex; flex-direction: column; background: var(--assistant-soft); border-right: 1px solid var(--assistant-border); }
 .ka-sidebar__head { padding: 0 6px 16px; display: flex; align-items: center; justify-content: space-between; }
@@ -8849,3 +8965,31 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .gitpane-commit-meta { flex: none; color: var(--text-dim); font-size: 11px; }
 .gitpane-commit-files { list-style: none; margin: 0 0 0 var(--space-3, 12px); padding: 0; }
 .gitpane-commit-more { padding: 2px 6px; color: var(--text-dim); font-size: 11px; }
+
+/* Подключение текущего устройства — компактный Make-dialog в общей оболочке. */
+.machine-connect-dialog.vc-dialog--md { max-width: 850px; border-radius: 18px; }
+.machine-connect-dialog .vc-dialog-head { min-height: 96px; padding-inline: 24px; }
+.machine-connect-dialog .vc-dialog-body { padding: 40px 24px 24px; }
+.machine-connect-content > p:first-child {
+  margin: 0 0 22px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.35;
+}
+.machine-connect-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.machine-connect-actions .vc-btn { min-height: 34px; }
+.machine-connect-feedback {
+  min-height: 18px;
+  margin: 11px 0 0;
+  color: var(--success, #287754);
+  font-size: 13px;
+}
+.machine-connect-feedback--error { color: var(--danger); }
+
+@media (max-width: 700px) {
+  .machine-connect-dialog .vc-dialog-head { min-height: 72px; padding-inline: 18px; }
+  .machine-connect-dialog .vc-dialog-body { padding: 28px 18px 20px; }
+  .machine-connect-content > p:first-child { font-size: 18px; }
+  .machine-connect-actions { flex-direction: column; }
+  .machine-connect-actions .vc-btn { width: 100%; min-height: 42px; }
+}

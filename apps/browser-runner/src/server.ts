@@ -25,6 +25,8 @@ export interface BuildBrowserRunnerOptions {
   idleMs?: number
   /** Подмена внешнего адреса стенда на внутренний адрес сети compose. */
   hostAliases?: HostAliases
+  /** Доверенный origin сервера (`host:port`); см. `previewOriginTarget`. */
+  previewOrigin?: string | null
 }
 
 /**
@@ -60,7 +62,7 @@ const SWEEP_EVERY_MS = 5 * 60_000
 
 export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
-  const sessions = options.sessions ?? new BrowserSessionManager(options.profilesRoot, options.hostAliases)
+  const sessions = options.sessions ?? new BrowserSessionManager(options.profilesRoot, options.hostAliases, options.previewOrigin ?? null)
   registerRunnerAuth(app, options.token)
 
   // Сессию закрывает явный `stop`, но его никто не зовёт, если пользователь

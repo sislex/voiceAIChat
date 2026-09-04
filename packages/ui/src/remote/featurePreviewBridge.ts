@@ -1,5 +1,5 @@
 import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
-import { getToken } from './session'
+import { authHeaders } from './session'
 
 export interface RendererFeaturePreviewBridge {
   get(projectId: string, taskId: string): Promise<PreviewEnvironment | null>
@@ -14,12 +14,13 @@ export interface RendererFeaturePreviewBridge {
 
 export function createFeaturePreviewRest(httpBase: string, localAgentId: string | null = null): RendererFeaturePreviewBridge {
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    const token = getToken()
+    // Та же причина, что и в qaBridge: без `x-vc-csrf` cookie-сессия не может
+    // выполнить ни одну мутацию окружения.
     const response = await fetch(httpBase + path, {
       ...init,
       headers: {
         ...(init?.body ? { 'content-type': 'application/json' } : {}),
-        ...(token ? { authorization: `Bearer ${token}` } : {})
+        ...authHeaders()
       }
     })
     if (response.status === 404 && (!init || init.method === undefined)) return null as T

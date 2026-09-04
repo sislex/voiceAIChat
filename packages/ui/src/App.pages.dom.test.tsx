@@ -42,7 +42,7 @@ describe('App — утилиты как страницы по URL', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Закрыть' }))
     await waitFor(() => expect(window.location.hash).toBe('#/'))
     expect(page).not.toBeInTheDocument()
-    expect(await screen.findByTestId('scroll')).toBeInTheDocument()
+    expect(await screen.findByTestId('chats-empty')).toBeInTheDocument()
   })
 
   it('#/codex рендерит проводник Codex страницей', async () => {
@@ -79,7 +79,7 @@ describe('App — утилиты как страницы по URL', () => {
     window.location.hash = '#/machines'
     await renderApp()
     await waitFor(() => expect(window.location.hash).toBe('#/'))
-    expect(await screen.findByTestId('scroll')).toBeInTheDocument()
+    expect(await screen.findByTestId('chats-empty')).toBeInTheDocument()
     window.location.hash = '#/users'
     await waitFor(() => expect(window.location.hash).toBe('#/'))
   })

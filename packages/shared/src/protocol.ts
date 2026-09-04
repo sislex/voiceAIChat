@@ -543,6 +543,9 @@ export const REST = {
   ciMetrics: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/metrics`,
   ciRun: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}`,
   ciRunLog: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/log`,
+  /** Кадр браузерной проверки рана: файл на диске, ссылка в строке лога ленты. */
+  ciRunBrowserShot: (runId: string, name: string) =>
+    `/api/ci/runs/${encodeURIComponent(runId)}/browser-shots/${encodeURIComponent(name)}`,
   /** Обращения модели к БЗ внутри одного рана и агрегат по всем ранам задачи. */
   ciRunKbUsage: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/kb-usage`,
   taskKbUsage: (id: string, taskId: string) =>

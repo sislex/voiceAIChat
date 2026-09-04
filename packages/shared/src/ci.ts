@@ -71,6 +71,69 @@ export function normalizeCiProcessStages(value: unknown): CiProcessStage[] {
 }
 
 /**
+ * Браузерная проверка результата на стадии разработки.
+ *
+ * `chromium` — действия модели исполняет изолированный Chromium раннера (тот же,
+ * что у Playwright Reader и этапа Automated QA), `user_panel` — живая панель
+ * Web Reader пользователя. Разница принципиальная: в ране без открытой панели
+ * действие в relay некому выполнить, поэтому режим выбирается заранее, а не
+ * угадывается по наличию клиента.
+ */
+export type CiBrowserCheckMode = 'off' | 'chromium' | 'user_panel'
+export const CI_BROWSER_CHECK_MODES: CiBrowserCheckMode[] = ['off', 'chromium', 'user_panel']
+export const CI_BROWSER_CHECK_MODE_LABELS: Record<CiBrowserCheckMode, string> = {
+  off: 'Без браузера',
+  chromium: 'Изолированный Chromium',
+  user_panel: 'Панель Web Reader'
+}
+
+export interface CiBrowserCheck {
+  mode: CiBrowserCheckMode
+  /** Порт dev-сервера на выбранной машине: страница живёт на её loopback. */
+  devServerPort: number
+  /** Путь первой страницы вместе с query — от корня, без схемы и хоста. */
+  startPath: string
+}
+
+/** Порт по умолчанию — Vite: им поднимается клиент этого монорепо. */
+export const DEFAULT_CI_BROWSER_CHECK: CiBrowserCheck = { mode: 'off', devServerPort: 5173, startPath: '/' }
+
+/**
+ * Нормализация входа: битое значение означает «проверок нет», а не отказ, —
+ * иначе испорченная строка в БД лишала бы задачу возможности запустить ран.
+ */
+export function normalizeCiBrowserCheck(value: unknown): CiBrowserCheck {
+  const raw = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+  const mode = CI_BROWSER_CHECK_MODES.includes(raw.mode as CiBrowserCheckMode)
+    ? raw.mode as CiBrowserCheckMode
+    : DEFAULT_CI_BROWSER_CHECK.mode
+  const port = typeof raw.devServerPort === 'number' && Number.isInteger(raw.devServerPort) && raw.devServerPort >= 1 && raw.devServerPort <= 65535
+    ? raw.devServerPort
+    : DEFAULT_CI_BROWSER_CHECK.devServerPort
+  return { mode, devServerPort: port, startPath: normalizeCiBrowserStartPath(raw.startPath) }
+}
+
+/** Путь стартовой страницы: чужой хост и схему сюда не пускаем — адрес машины собирает сервер. */
+export function normalizeCiBrowserStartPath(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_CI_BROWSER_CHECK.startPath
+  const trimmed = value.trim()
+  if (!trimmed || /[\s\\]/.test(trimmed) || trimmed.startsWith('//')) return DEFAULT_CI_BROWSER_CHECK.startPath
+  const path = trimmed.startsWith('/') ? trimmed : '/' + trimmed
+  if (path.length > 200 || /^\/[a-z][a-z0-9+.-]*:/i.test(path)) return DEFAULT_CI_BROWSER_CHECK.startPath
+  return path
+}
+
+/**
+ * Адрес стартовой страницы проверки — единственный источник для сервера и UI.
+ * Хост в форме `<agentId>.machine.internal`: так его понимают и прокси превью,
+ * и инструмент `open` (см. `previewMcp`).
+ */
+export function ciBrowserCheckUrl(check: CiBrowserCheck, agentId: string | null): string | null {
+  if (check.mode === 'off' || !agentId) return null
+  return `http://${agentId}.machine.internal:${check.devServerPort}${check.startPath}`
+}
+
+/**
  * Шаг, который выполняет не shell на машине, а сам сервер. В справочнике он
  * выглядит обычной командой (его можно двигать внутри слота и убирать из
  * проекта или задачи), но `script` не исполняется: раннер видит `builtin` и
