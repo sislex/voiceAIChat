@@ -309,6 +309,24 @@ describe('createHttpApi', () => {
     expect(calls[0].init?.signal?.aborted).toBe(true)
     expect(calls[1].init?.signal?.aborted).toBe(false)
   })
+
+  it('передаёт ключ идемпотентности при создании цикла доработки', async () => {
+    mockFetch(() => ({ _text: JSON.stringify({ id: 'cycle-1' }) }))
+    const api = createHttpApi('', 'ws://x/agent')
+
+    await api['tasks:createReworkCycle']({
+      projectId: 'project-1',
+      taskId: 'task-1',
+      idempotencyKey: 'request-1',
+      input: { description: 'Уточнить поведение' }
+    })
+
+    expect(calls[0]).toMatchObject({
+      url: '/api/projects/project-1/tasks/task-1/rework-cycles',
+      init: { method: 'POST' }
+    })
+    expect(calls[0].init?.headers).toMatchObject({ 'Idempotency-Key': 'request-1' })
+  })
 })
 
 describe('base64ToArrayBuffer', () => {
