@@ -94,6 +94,10 @@ export function isPlaywrightReaderConversation(conv: Conversation): boolean {
   return conv.assistantKind === 'playwright-reader'
 }
 
+export function isImageStudioConversation(conv: Conversation): boolean {
+  return conv.assistantKind === 'images'
+}
+
 export function isMakeConversation(conv: Conversation): boolean {
   return conv.assistantKind === 'make'
 }
@@ -160,6 +164,7 @@ export interface ChatState {
   consoleReaderConversations: Conversation[]
   /** Разговоры инструмента Make (веб-проект с ассистентом). */
   makeConversations: Conversation[]
+  imageStudioConversations: Conversation[]
   conversationsStatus: LoadStatus
   conversationsError: string | null
   searchQuery: string
@@ -221,7 +226,7 @@ export interface ChatActions {
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
   scheduleConversationsRefresh(): void
   retryConversations(): Promise<void>
-  newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make'): Promise<string | null>
+  newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images'): Promise<string | null>
   /** Создаёт сохранённый чат из явной формы создания и сразу открывает его. */
   createConversation(input: { title: string; projectId?: string | null }): Promise<string>
   selectConversation(id: string): Promise<boolean>
@@ -258,6 +263,8 @@ export interface ChatActions {
   exportConversation(format: 'md' | 'json'): void
   setDraft(value: string): void
   submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean>
+  /** Отправить предложенное сервером исправление (ход пропускает preflight копии). */
+  submitFix(prompt: string): Promise<boolean>
   /** Сохраняет безопасный служебный результат без запуска LLM. */
   publishDiagnosticMessage(conversationId: string, text: string): Promise<void>
   retryAttachment(localId: string): Promise<void>
@@ -345,6 +352,7 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
     playwrightReaderConversations: [],
     consoleReaderConversations: [],
     makeConversations: [],
+    imageStudioConversations: [],
     conversationsStatus: 'loading',
     conversationsError: null,
     searchQuery: '',
@@ -387,6 +395,12 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
 }
 
 export function createChatStore(deps: ChatDeps): ChatStore {
+  /**
+   * Следующий ход — исправление грязной копии проекта: системный preflight
+   * пропускается. Живёт в замыкании, а не в состоянии: флаг одноразовый и
+   * экрану о нём знать нечего.
+   */
+  let nextTurnSkipsProjectSync = false
   const client = deps.chat
   const kbBridge = client.kb
   const turn = client.turn
@@ -512,8 +526,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     try {
       const includeCompleted = getState().showDoneTaskChats
       const all = q
-        ? await client['conversations:search']({ query: q, includeCompleted })
-        : await client['conversations:list']({ includeCompleted })
+        ? await client['conversations:search']({ query: q, scope: 'chat', includeCompleted })
+        : await client['conversations:list']({ scope: 'chat', includeCompleted })
       if (core.disposed() || seq !== conversationsSeq) return
       if (keepActiveListed) {
         const activeId = getState().activeId
@@ -529,16 +543,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       setState({
         conversations,
         conversationsStatus: 'ready',
-        conversationsError: null,
-        // Reader-чаты берём из полного ответа, до фильтра проекта.
-        ...(q
-          ? {}
-          : {
-              readerConversations: all.filter(isReaderConversation),
-              playwrightReaderConversations: all.filter(isPlaywrightReaderConversation),
-              consoleReaderConversations: all.filter(isConsoleReaderConversation),
-              makeConversations: all.filter(isMakeConversation)
-            })
+        conversationsError: null
       })
       void loadTaskChatBadges()
     } catch (err) {
@@ -687,7 +692,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   }
 
   function activeConversation(): Conversation | undefined {
-    return getState().conversations.find((c) => c.id === getState().activeId)
+    const state = getState()
+    return [...state.conversations, ...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.imageStudioConversations]
+      .find((c) => c.id === state.activeId)
   }
 
   function activeConversationExecTarget(): string | null {
@@ -719,14 +726,19 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     segments: SttSegmentWire[],
     attachments: string[] = [],
     execTarget: string | null = activeConversationExecTarget(),
-    messageId?: string
+    messageId?: string,
+    skipProjectSyncArg?: boolean
   ): void {
+    const skipProjectSync = skipProjectSyncArg ?? nextTurnSkipsProjectSync
+    nextTurnSkipsProjectSync = false
     const activeId = getState().activeId
     if (turn.enabled && turn.send && activeId) {
       setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [], liveUsage: null, liveTarget: null })
       voice.beginTurn()
       // verbose=true всегда: активность нужна для живого статуса и подробного вида.
-      if (messageId) turn.send(activeId, segments, attachments, true, execTarget, messageId)
+      // Ход-исправление отдаётся полным вызовом: у него важен последний аргумент.
+      if (skipProjectSync) turn.send(activeId, segments, attachments, true, execTarget, messageId, true)
+      else if (messageId) turn.send(activeId, segments, attachments, true, execTarget, messageId)
       else if (execTarget === null) turn.send(activeId, segments, attachments, true)
       else turn.send(activeId, segments, attachments, true, execTarget)
       return
@@ -844,7 +856,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   // --- Выбор и создание разговора ------------------------------------------
 
-  async function newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make'): Promise<string | null> {
+  async function newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images'): Promise<string | null> {
     selectToken++ // недолетевший ответ прежнего выбора не перетрёт новый чат
     core.clearTimers()
     // Ход текущего разговора не отменяем — он доиграет на сервере.
@@ -867,14 +879,17 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       assistantKind === 'playwright-reader' ? state.playwrightReaderConversations
         : assistantKind === 'console-reader' ? state.consoleReaderConversations
         : assistantKind === 'make' ? state.makeConversations
+        : assistantKind === 'images' ? state.imageStudioConversations
         : state.readerConversations
     const prefix = assistantKind === 'playwright-reader' ? 'Playwright Reader'
       : assistantKind === 'console-reader' ? 'Консоль'
       : assistantKind === 'make' ? 'Проект'
+      : assistantKind === 'images' ? 'Картинки'
       : 'Web Reader'
     let number = 1
     while (readerList.some((item) => item.title === `${prefix} ${number}`)) number++
-    const conversation = await client['conversations:create']({ title: `${prefix} ${number}`, assistantKind })
+    const scope = assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind
+    const conversation = await client['conversations:create']({ title: `${prefix} ${number}`, scope, assistantKind })
     setState({
       activeId: conversation.id,
       readerConversations:
@@ -893,6 +908,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         assistantKind === 'make'
           ? withConversation(getState().makeConversations, conversation)
           : getState().makeConversations,
+      imageStudioConversations:
+        assistantKind === 'images'
+          ? withConversation(getState().imageStudioConversations, conversation)
+          : getState().imageStudioConversations,
       ...common
     })
     await refreshConversations()
@@ -903,6 +922,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     await newConversation()
     const conversation = await client['conversations:create']({
       title: input.title.trim() || 'Новый разговор',
+      scope: 'chat',
       projectId: input.projectId ?? null
     })
     setState({
@@ -922,7 +942,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ ...chatSwitchReset(), loadingMessages: true })
     let opened: Conversation | null = null
     try {
-      const res = await client['conversations:get']({ id })
+      const state = getState()
+      const known = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.imageStudioConversations, ...state.conversations].find((item) => item.id === id)
+      const res = await client['conversations:get']({ id, scope: known?.scope ?? 'chat', ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {}) })
       // Пока ответ летел, выбрали другой чат — этот ответ отбрасываем молча.
       if (token !== selectToken || core.disposed()) return false
       if (res) {
@@ -1155,6 +1177,18 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
+  }
+
+  /**
+   * Отправить готовое исправление из баннера ошибки: текст уходит обычной
+   * репликой (её видно в истории), но ход помечен как исправление, поэтому
+   * системный preflight копии проекта для него пропускается — иначе кнопка
+   * упиралась бы в ту же ошибку, из-за которой и появилась.
+   */
+  function submitFix(prompt: string): Promise<boolean> {
+    nextTurnSkipsProjectSync = true
+    setState({ draft: prompt })
+    return submitText()
   }
 
   function submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
@@ -1526,13 +1560,22 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       async loadConversationIndex() {
         setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
         try {
-          const conversations = await client['conversations:list']({ includeCompleted: getState().showDoneTaskChats })
+          const includeCompleted = getState().showDoneTaskChats
+          const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations, imageStudioConversations] = await Promise.all([
+            client['conversations:list']({ scope: 'chat', includeCompleted }),
+            client['conversations:list']({ scope: 'web-reader', includeCompleted }),
+            client['conversations:list']({ scope: 'playwright-reader', includeCompleted }),
+            client['conversations:list']({ scope: 'console', includeCompleted }),
+            client['conversations:list']({ scope: 'make', includeCompleted }),
+            client['conversations:list']({ scope: 'images', includeCompleted })
+          ])
           setState({
             conversations: filterBySidebarProjects(conversations),
-            readerConversations: conversations.filter(isReaderConversation),
-            playwrightReaderConversations: conversations.filter(isPlaywrightReaderConversation),
-            consoleReaderConversations: conversations.filter(isConsoleReaderConversation),
-            makeConversations: conversations.filter(isMakeConversation),
+            readerConversations,
+            playwrightReaderConversations,
+            consoleReaderConversations,
+            makeConversations,
+            imageStudioConversations,
             conversationsStatus: 'ready',
             conversationsError: null
           })
@@ -1569,7 +1612,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
             readerConversations: getState().readerConversations.filter((c) => c.id !== id),
             playwrightReaderConversations: getState().playwrightReaderConversations.filter((c) => c.id !== id),
             consoleReaderConversations: getState().consoleReaderConversations.filter((c) => c.id !== id),
-            makeConversations: getState().makeConversations.filter((c) => c.id !== id)
+            makeConversations: getState().makeConversations.filter((c) => c.id !== id),
+            imageStudioConversations: getState().imageStudioConversations.filter((c) => c.id !== id)
           })
           const wasActive = getState().activeId === id
           await refreshConversations()
@@ -1733,6 +1777,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         setState({ draft: value })
       },
       submitText,
+      submitFix,
       publishDiagnosticMessage,
       submitVoiceSegments,
       async suggestPrompts(modifiers) {
@@ -1923,7 +1968,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       async reloadActiveMessages() {
         const activeId = getState().activeId
         if (!activeId) return
-        const res = await client['conversations:get']({ id: activeId }).catch(() => null)
+        const state = getState()
+        const active = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.conversations].find((item) => item.id === activeId)
+        const res = await client['conversations:get']({ id: activeId, scope: active?.scope ?? 'chat', ...(active?.scope === 'kanban' && active.projectId ? { projectId: active.projectId } : {}) }).catch(() => null)
         if (res && res.conversation.id === getState().activeId) setState({ messages: res.messages })
       },
       loadTaskChatContext,

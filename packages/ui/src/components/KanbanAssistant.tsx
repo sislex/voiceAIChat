@@ -118,7 +118,7 @@ export function ProjectAssistantChatSelector({ projectId, api, selectedId, onSel
   })
   useEffect(() => {
     let current = true
-    void Promise.all([api['conversations:list']({ includeCompleted: true }), api['kanbanAssistant:get']({ projectId })]).then(([items, assistant]) => {
+    void Promise.all([api['conversations:list']({ scope: 'kanban', projectId, includeCompleted: true }), api['kanbanAssistant:get']({ projectId })]).then(([items, assistant]) => {
       if (!current) return
       const projectChats = items
         .filter((item) => item.projectId === projectId)
@@ -133,8 +133,7 @@ export function ProjectAssistantChatSelector({ projectId, api, selectedId, onSel
   }, [api, projectId])
 
   const createChat = async (): Promise<void> => {
-    const created = await api['conversations:create']({ title: 'Новый разговор' })
-    const chat = await api['conversations:setProject']({ id: created.id, projectId })
+    const chat = await api['conversations:create']({ title: 'Новый разговор', scope: 'kanban', projectId })
     setChats((items) => [toChat(chat), ...items])
     select(chat.id)
     onClose?.()

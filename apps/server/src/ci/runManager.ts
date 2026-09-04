@@ -13,7 +13,7 @@ import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificatio
 import { extractImprovementFiles, isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
+import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
 import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
@@ -1061,7 +1061,16 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     try {
       if (targetError) throw new Error(targetError)
       if (!commandAgentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
-      const res = await deps.executor.run({ agentId: commandAgentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }, onChunk, signal)
+      const request = { agentId: commandAgentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }
+      let res = await deps.executor.run(request, onChunk, signal)
+      // В инциденте CHAT-386 агент не ответил на первый exec до guard-timeout:
+      // Git не запускался, но обязательный идемпотентный commit-step ушёл модели.
+      // После cancel безопасно повторяем именно этот системный шаг внутри той же
+      // попытки. Остальные команды могут быть неидемпотентны и не ретраятся.
+      if (command.name === TASK_COMMIT_COMMAND_NAME && res.timedOut && res.exitCode === null && !signal.aborted) {
+        onChunk('Исполнитель не вернул результат команды коммита — повторяю системный шаг без fix-loop.\n')
+        res = await deps.executor.run(request, onChunk, signal)
+      }
       exitCode = res.exitCode
       timedOut = res.timedOut
     } catch (err) {

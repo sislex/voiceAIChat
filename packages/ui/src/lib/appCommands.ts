@@ -57,6 +57,8 @@ export interface AppCommandDeps {
   openBoard: (projectId: string) => void
   openMachineConsole: (agentId: string | null) => void
   openKnowledgeBase: () => void
+  /** Открыть студию картинок (null — вход не выполнен). */
+  openImageStudio: (() => void) | null
   /** Открыть панель «Использование БЗ» активного чата. */
   openKbUsage: () => void
   logout: () => void
@@ -147,6 +149,14 @@ function baseCommands(deps: AppCommandDeps): Command[] {
       section: 'action',
       keywords: ['kb', 'документация', 'knowledge'],
       run: deps.openKnowledgeBase
+    },
+    {
+      id: 'app.image-studio',
+      title: 'Открыть студию картинок',
+      section: 'action',
+      keywords: ['картинки', 'изображения', 'галерея', 'images', 'студия'],
+      enabled: () => deps.openImageStudio != null,
+      run: () => deps.openImageStudio?.()
     },
     {
       id: 'app.kb-usage',

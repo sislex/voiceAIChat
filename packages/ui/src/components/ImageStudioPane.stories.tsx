@@ -1,0 +1,165 @@
+// Сториз панели студии картинок: галерея с происхождением, пустое состояние,
+// мультивыбор и ошибка загрузки. Мосты — без сети: список из фикстуры, байты —
+// прозрачный пиксель (превью важно фактом, не содержимым).
+import type { Meta, StoryObj } from '@storybook/react'
+import { userEvent, waitFor, within } from '@storybook/test'
+import { ImageStudioPane } from './ImageStudioPane'
+import { STUDIO_FILES, STUDIO_PIXEL_BASE64 } from '../test/fixtures/imageStudio'
+import type { ImageStudioFile } from '@shared/imageStudio'
+
+function storyApi(initial: ImageStudioFile[] = STUDIO_FILES, opts: { failList?: boolean; published?: boolean; passwordProtected?: boolean; trash?: Array<{ name: string; deletedAt: number }> } = {}) {
+  let files = [...initial]
+  return {
+    'imgstudio:list': async () => {
+      if (opts.failList) throw new Error('chat not found')
+      return [...files]
+    },
+    'imgstudio:read': async ({ path }: { path: string }) => ({ path, dataBase64: STUDIO_PIXEL_BASE64 }),
+    'imgstudio:upload': async ({ path }: { path: string }) => { files = [{ path, size: 3, updatedAt: Date.now() }, ...files]; return [...files] },
+    'imgstudio:delete': async ({ path }: { path: string }) => { files = files.filter((file) => file.path !== path); return [...files] },
+    'imgstudio:rename': async ({ from, to }: { from: string; to: string }) => { files = files.map((file) => file.path === from ? { ...file, path: to } : file); return [...files] },
+    'imgstudio:generate': async ({ prompt }: { prompt: string }) => { const file = { path: 'новая.png', size: prompt.length, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:edit': async ({ path }: { path: string }) => { const file = { path: path.replace('.png', '-2.png'), size: 10, updatedAt: Date.now() }; files = [file, ...files]; return { file, files: [...files] } },
+    'imgstudio:cancel': async () => ({ cancelled: false }),
+    'imgstudio:trash': async () => ({ items: opts.trash ?? [] }),
+    'imgstudio:restore': async ({ name }: { name: string }) => ({ name, files: [] }),
+    'imgstudio:purge': async () => ({ removed: (opts.trash ?? []).length, items: [] }),
+    'imgstudio:run': async () => ({ active: false }),
+    'imgstudio:transfer': async ({ path }: { path: string }) => ({ name: path, files: [] }),
+    'imgstudio:publish': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0, passwordProtected: false }),
+    'imgstudio:publication': async () => (opts.published ? { url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 12, passwordProtected: Boolean(opts.passwordProtected) } : { url: null }),
+    'imgstudio:unpublish': async () => ({ url: null })
+  }
+}
+
+const meta: Meta<typeof ImageStudioPane> = {
+  title: 'ImageStudio/ImageStudioPane',
+  component: ImageStudioPane,
+  args: { conversationId: 'story-conv', api: storyApi() as never },
+  decorators: [(Story) => <div style={{ maxWidth: 520, minHeight: 480 }}><Story /></div>]
+}
+export default meta
+type Story = StoryObj<typeof ImageStudioPane>
+
+/** Галерея с правкой, оригиналом и загруженным руками файлом. */
+export const Default: Story = {}
+
+/** Пустая галерея: подсказка следующего шага и чипы-примеры промптов. */
+export const Empty: Story = { args: { api: storyApi([]) as never } }
+
+/** Режим множественного выбора с отмеченным файлом. */
+export const MultiSelect: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Выбрать несколько' }))
+    await userEvent.click(await canvas.findByRole('checkbox', { name: 'Выбрать кот.png' }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: 'Удалить выбранные (1)' }) })
+  }
+}
+
+/** Галерея недоступна: ошибка с повтором вместо пустого экрана. */
+export const LoadError: Story = { args: { api: storyApi([], { failList: true }) as never } }
+
+/** Опубликованная галерея: ссылка со счётчиком просмотров, пароль, снятие. */
+export const Published: Story = { args: { api: storyApi(STUDIO_FILES, { published: true }) as never } }
+
+/** Публикация под паролем: кнопка показывает замок. */
+export const PublishedWithPassword: Story = { args: { api: storyApi(STUDIO_FILES, { published: true, passwordProtected: true }) as never } }
+
+/** Корзина с удалёнными: список и восстановление. */
+export const WithTrash: Story = {
+  args: { api: storyApi(STUDIO_FILES, { trash: [{ name: 'старый-кот.png', deletedAt: 1 }] }) as never },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: /Корзина…/ }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: 'Восстановить старый-кот.png' }) })
+  }
+}
+
+/** Мультивыбор из двух файлов: коллаж, избранное пачкой и шаблон имён. */
+export const BatchActions: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Выбрать несколько' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Выбрать все' }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: /Коллаж \(/ }) })
+  }
+}
+
+/** Корзина с двумя файлами: восстановить всё или очистить навсегда. */
+export const TrashWithPurge: Story = {
+  args: { api: storyApi(STUDIO_FILES, { trash: [{ name: 'старый-кот.png', deletedAt: 1 }, { name: 'старый-пёс.png', deletedAt: 2 }] }) as never },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: /Корзина…/ }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: 'Очистить корзину (2)' }) })
+  }
+}
+
+/** Найденные дубликаты: копии отмечены, самый старый файл оставлен. */
+export const Duplicates: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Найти дубликаты' }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: 'Готово' }) })
+  }
+}
+
+/** Шпаргалка клавиш галереи: комбинация слева, смысл справа. */
+export const KeysCheatSheet: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Горячие клавиши галереи' }))
+    await waitFor(async () => {
+      const body = within(canvasElement.ownerDocument.body)
+      await body.findByText('Клавиши галереи')
+    })
+  }
+}
+
+/** Перенос звёзд и заметок текстом — единственный путь между браузерами. */
+export const MarksTransfer: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Пометки…' }))
+    await waitFor(async () => {
+      const body = within(canvasElement.ownerDocument.body)
+      await body.findByRole('textbox', { name: 'Пометки галереи в формате JSON' })
+    })
+  }
+}
+
+/** Контекстное меню карточки: частые действия без поиска нужной иконки. */
+export const CardMenu: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const thumb = await canvas.findByRole('button', { name: 'кот.png' })
+    const card = thumb.closest('[data-path]') as HTMLElement
+    card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 180, clientY: 220 }))
+    await waitFor(async () => {
+      const body = within(canvasElement.ownerDocument.body)
+      await body.findByRole('menu', { name: 'Действия кот.png' })
+    })
+  }
+}
+
+/** Сетка, разбитая по датам: «Сегодня», «Вчера», «Раньше». */
+export const GroupedByDay: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'По датам' }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: 'Без групп' }) })
+  }
+}
+
+/** Сохранённый набор: чип возвращает прежний выбор одним нажатием. */
+export const SavedSet: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Выбрать несколько' }))
+    await userEvent.click(await canvas.findByRole('checkbox', { name: 'Выбрать кот.png' }))
+    await userEvent.type(await canvas.findByRole('textbox', { name: 'Имя набора' }), 'обложки')
+    await userEvent.click(await canvas.findByRole('button', { name: 'Сохранить набор' }))
+    await waitFor(async () => { await canvas.findByRole('button', { name: /обложки \(1\)/ }) })
+  }
+}

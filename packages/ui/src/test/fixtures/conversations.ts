@@ -26,7 +26,8 @@ export function makeConversation(over: Partial<Conversation> = {}): Conversation
     projectId: null,
     status: 'developing',
     lastExecTarget: null,
-    ...over
+    ...over,
+    scope: over.scope ?? 'chat'
   }
 }
 

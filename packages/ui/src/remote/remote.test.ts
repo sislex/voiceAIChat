@@ -209,14 +209,14 @@ describe('createHttpApi', () => {
     mockFetch(() => ({ _text: JSON.stringify([{ id: 'c1' }]) }))
     const api = createHttpApi('http://srv:8787', 'ws://srv:8787/agent')
     await api['conversations:list']({})
-    expect(calls[0].url).toBe('http://srv:8787/api/conversations')
+    expect(calls[0].url).toBe('http://srv:8787/api/conversations?scope=chat')
   })
 
   it('conversations:get на 404 → null', async () => {
     mockFetch(() => ({ ok: false, status: 404 }))
     const api = createHttpApi('', 'ws://x/agent')
     expect(await api['conversations:get']({ id: 'nope' })).toBeNull()
-    expect(calls[0].url).toBe('/api/conversations/nope')
+    expect(calls[0].url).toBe('/api/conversations/nope?scope=chat')
   })
 
   it('показывает серверную причину HTTP-ошибки', async () => {

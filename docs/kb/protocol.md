@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-02
-checked: 37702dce
+updated: 2026-09-04
+checked: c16a3777
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -503,3 +503,52 @@ ok, result?, error? }`, где `result.surface` — снимок экрана п
 пароля). Мост: `window.session.sessions/logoutAll/revokeSession/renameSession/
 trustSession/endedSessions/panicSessions/onSessionsChanged` — все необязательные, desktop их не реализует, и UI-модуль
 скрывает действия по `store.capabilities`.
+
+## Студия картинок (2026-09-03)
+
+Контракт в `packages/shared/src/imageStudio.ts`: kind/scope `images`,
+`isImageStudioPath` (png/jpg/jpeg/webp/gif/svg), лимиты
+`IMAGE_STUDIO_LIMITS` (12 МБ файл, 128 МБ галерея), `imageStudioMime`.
+REST (`apps/server/src/routes/imageStudio.ts`, все — только владельцу
+разговора с `assistantKind === 'images'`, иначе 404): `GET
+/api/image-studio/:id/files`, `GET|POST|DELETE .../file` (GET отдаёт байты с
+mime, POST принимает `{path,dataBase64}` под bodyLimit 20 МБ), `POST
+.../rename`, `POST .../generate` `{prompt,name?}`, `POST .../edit`
+`{path,prompt}` — правка пишет НОВЫЙ файл (`freeName`), оригинал цел. Ошибки
+хранилища мапятся кодами: 413 `too_big|quota`, 400 `bad_name|empty_prompt`,
+404, 502 от генератора. Итерация 4: на разговор допускается один активный ран
+generate/edit (второй — 409); `POST .../cancel` отменяет его (ран отвечает
+410 «Генерация отменена»); у файлов есть происхождение `prompt?`/`source?`
+(sidecar `.studio-meta.json` в папке галереи; rename переносит, delete
+удаляет). Важно: `handle.cancel()` CLI-клиентов глушит onDone/onError
+(finished=true), поэтому генератор реджектит свой промис сам. Итерация 8:
+запись в хранилище проверяет магические байты содержимого (PNG/JPEG/GIF/WebP/
+SVG-текст) — мусор под видом картинки получает 400 `bad_media`; промпт
+generate/edit ограничен `IMAGE_STUDIO_LIMITS.maxPromptChars` (4000, 400 с
+текстом); в тестах студии сеются валидные PNG-байты (см. PNG_BYTES/png()
+в тест-файлах) — Buffer.from('строка') sniffing не пройдёт.
+
+Публикация галереи (итерация 12, 2026-09-03): `POST|GET|DELETE
+/api/image-studio/:id/publish|publication` (владелец); публичная страница —
+`GET /g/<token>/` (готовый HTML, noindex, счётчик просмотров под локом — урок
+Make) и `GET /g/<token>/file?path=`. Токен и просмотры — sidecar
+`.studio-publish.json` + индекс `<root>/.published/<token>.json`; повторный
+publish не ротирует ссылку, unpublish гасит страницу и файлы. Auth-hook
+закрывает только `/api/*`, поэтому `/g/` публичен без правок auth. Мосты
+`imgstudio:publish|publication|unpublish`. В dev vite-прокси проксирует
+`/p/`, `/g/`, `/s/` на бэкенд — иначе публичные ссылки на порту Vite были 404.
+Итерация 14: публикация принимает `password` (undefined — не трогать, null —
+снять, строка ≥4 симв. — задать; хранится только хэш с солью) и снимок
+`title` чата (заголовок публичной страницы); страница и файлы под паролем
+отвечают 401 с формой (`POST /g/<token>/__auth__`, cookie-гейт
+`vc_gal_<token>` = sha256(gate:token:hash), Max-Age 30 дней — смена пароля
+разлогинивает всех); publication/publish отдают `passwordProtected`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+web-клиенте — авторизованный fetch → base64 (см. ui.md). Корзина: `GET
+/api/image-studio/:id/trash`, `POST .../restore` и (итерация 38, 2026-09-04)
+`POST .../trash/purge` — тело `{}` чистит корзину целиком, `{name}` — один файл;
+ответ `{removed, items}`. Очистка сделана отдельным методом, а не флагом
+удаления: иначе промах по кнопке «удалить» уносил бы файл совсем. Пустая
+корзина — не ошибка (кнопка не обязана знать про гонки), а неизвестное имя даёт
+404. POST
+`/api/conversations` принимает `assistantKind: 'images'`;whitelist строк БД
+и CHECK по scope расширены (см. data-auth.md).

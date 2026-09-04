@@ -49,6 +49,46 @@ export const MAKE_FORMAT_ON_SAVE_KEY = 'vc.make.formatOnSave'
 export const MAKE_SPLIT_KEY = 'vc.make.split'
 export const MAKE_SPLIT_PCT_KEY = 'vc.make.splitPct'
 
+/** Ключи студии картинок: плотность сетки и недавние промпты (на разговор). */
+export const IMAGE_STUDIO_DENSE_KEY = 'vc.imgstudio.dense'
+export const IMAGE_STUDIO_SIZE_KEY = 'vc.imgstudio.size'
+export const IMAGE_STUDIO_ORDER_KEY = 'vc.imgstudio.order'
+export const imageStudioDraftKey = (conversationId: string): string => `vc.imgstudio.draft.${conversationId}`
+/** Последний открытый чат студии — на него возвращается #/images без id. */
+export const IMAGE_STUDIO_LAST_KEY = 'vc.imgstudio.last'
+export const IMAGE_STUDIO_NO_TEXT_KEY = 'vc.imgstudio.noText'
+export const IMAGE_STUDIO_STYLE_KEY = 'vc.imgstudio.style'
+/** Фон лайтбокса студии: шахматка (по умолчанию), светлый или тёмный. */
+export const IMAGE_STUDIO_VIEWER_BG_KEY = 'vc.imgstudio.viewerBg'
+/** Негативный промпт студии: «чего не должно быть на картинке». */
+export const IMAGE_STUDIO_NEGATIVE_KEY = 'vc.imgstudio.negative'
+/** Фон сетки галереи: шахматка, светлый или тёмный. */
+export const IMAGE_STUDIO_GRID_BG_KEY = 'vc.imgstudio.gridBg'
+export const imageStudioPinnedKey = (conversationId: string): string => `vc.imgstudio.pinned.${conversationId}`
+/** Избранные файлы галереи (звёздочка на карточке). */
+export const imageStudioStarsKey = (conversationId: string): string => `vc.imgstudio.stars.${conversationId}`
+/** Заметки к картинкам: имя файла → короткий текст (локально, на разговор). */
+export const imageStudioNotesKey = (conversationId: string): string => `vc.imgstudio.notes.${conversationId}`
+/**
+ * Пресеты запроса на разговор: стиль, размер и негативный промпт. Глобальные
+ * ключи остались как значения по умолчанию для новых чатов — в разных чатах
+ * рисуют разное, и один общий стиль на всю студию только мешал.
+ */
+export const imageStudioStyleKey = (conversationId: string): string => `vc.imgstudio.style.${conversationId}`
+export const imageStudioSizeKey = (conversationId: string): string => `vc.imgstudio.size.${conversationId}`
+export const imageStudioNegativeKey = (conversationId: string): string => `vc.imgstudio.negative.${conversationId}`
+/**
+ * Позиция прокрутки галереи. Живёт в sessionStorage: между запусками браузера
+ * возвращать её незачем, а внутри сеанса переключение чатов не должно кидать
+ * в начало списка.
+ */
+export const imageStudioScrollKey = (conversationId: string): string => `vc.imgstudio.scroll.${conversationId}`
+/** Метка «что уже видели»: максимальный updatedAt на конец прошлого визита. */
+export const imageStudioSeenKey = (conversationId: string): string => `vc.imgstudio.seen.${conversationId}`
+/** Наборы (подборки) файлов галереи: имя → список имён файлов. */
+export const imageStudioSetsKey = (conversationId: string): string => `vc.imgstudio.sets.${conversationId}`
+export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
+
 /**
  * Все ключи предпочтений интерфейса в одном месте — реестр для стража
  * `preferenceKeys.test.ts`. Он не даёт разъехаться двум вещам: одинаковому
@@ -69,7 +109,16 @@ export const PREFERENCE_KEYS = [
   MAKE_AUTOSAVE_KEY,
   MAKE_FORMAT_ON_SAVE_KEY,
   MAKE_SPLIT_KEY,
-  MAKE_SPLIT_PCT_KEY
+  MAKE_SPLIT_PCT_KEY,
+  IMAGE_STUDIO_DENSE_KEY,
+  IMAGE_STUDIO_SIZE_KEY,
+  IMAGE_STUDIO_ORDER_KEY,
+  IMAGE_STUDIO_LAST_KEY,
+  IMAGE_STUDIO_NO_TEXT_KEY,
+  IMAGE_STUDIO_STYLE_KEY,
+  IMAGE_STUDIO_VIEWER_BG_KEY,
+  IMAGE_STUDIO_NEGATIVE_KEY,
+  IMAGE_STUDIO_GRID_BG_KEY
 ] as const
 
 /**

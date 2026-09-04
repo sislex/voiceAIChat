@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-04
-checked: da8849ab
+checked: fbfb9464
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -338,3 +338,15 @@ cookie `vc_preview_run`, а `previewRunUser` в `auth.ts` принимает е�
 `skill`): он говорит, что именно делает тумблер, и второй инвариантный тест
 сверяет объявление с фактом — инструмент обязан попасть в `--disallowedTools`,
 блок промпта — исчезнуть.
+
+## CHECK по scope разговоров и его расширение (2026-09-03)
+
+`conversations.scope` в свежих БД создаётся из `schema.ts` с CHECK-списком
+значений; в старых БД колонку добавлял ALTER **без** CHECK. SQLite не умеет
+менять CHECK через ALTER, поэтому при добавлении нового scope (последний —
+`images`) мало поправить schema.ts: в `migrate()` есть пересборка таблицы —
+если в DDL из `sqlite_master` есть `scope IN (...)` без нового значения,
+создаётся `conversations_new` с тем же DDL и новым списком, данные копируются,
+таблица переименовывается, индексы пересоздаются (под `PRAGMA
+foreign_keys=OFF`). Забыть про это — «CHECK constraint failed» только на
+свежесозданных инсталляциях, старые работают как ни в чём не бывало.

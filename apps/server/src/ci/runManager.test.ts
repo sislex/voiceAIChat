@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
-import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
+import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT, VoiceChatDb } from '../db/database.js'
 import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS, DEFAULT_SETTINGS, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
@@ -24,6 +24,8 @@ let failManagedBootstrap = false
 let lowDisk = false
 let failClaude = false
 let failPush = false
+let commitTransportTimeoutOnce = false
+let commitFailureExitCode: number | null = null
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
 let failStep = false
 let repoMissing = false
@@ -101,6 +103,13 @@ const ciExecutor: CommandExecutor = {
     if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
     // Падение шага «оставляет» в копии правки модели — как в реальном ране.
     if (req.script === 'TOGGLE' && failStep) { dirtyWorkspace = true; return { exitCode: 1, timedOut: false } }
+    if (req.script.includes('git checkout -B "$BRANCH"') && commitTransportTimeoutOnce && n === 1) {
+      return { exitCode: null, timedOut: true }
+    }
+    if (req.script.includes('git checkout -B "$BRANCH"') && commitFailureExitCode !== null) {
+      onChunk('fatal: не удалось переключить ветку\n')
+      return { exitCode: commitFailureExitCode, timedOut: false }
+    }
     if (req.script.includes('git push')) {
       if (!failPush) onChunk(`Ветка отправлена (${'a'.repeat(40)})\n`)
       return { exitCode: failPush ? 1 : 0, timedOut: false }
@@ -119,6 +128,8 @@ beforeEach(async () => {
   lowDisk = false
   failClaude = false
   failPush = false
+  commitTransportTimeoutOnce = false
+  commitFailureExitCode = null
   failStep = false
   repoMissing = false
   emptyModelWork = false
@@ -611,6 +622,45 @@ describe('ci run manager', () => {
     expect(stages).toContain('summary:sonnet')
     await waitRun(runId)
     ws.close()
+  })
+
+  it('таймаут транспорта commit-step повторяется без fix-loop в той же попытке', async () => {
+    const { project, task } = setup()
+    commitTransportTimeoutOnce = true
+    const cmd = db.createCiCommand('admin', {
+      scope: 'project', projectId: project.id, name: TASK_COMMIT_COMMAND_NAME, script: TASK_COMMIT_COMMAND_SCRIPT
+    })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('success')
+    const persisted = db.getCiRun('admin', runId)!
+    expect(persisted.fixAttempts).toHaveLength(0)
+    expect(persisted.steps.find((step) => step.commandId === cmd.id)).toMatchObject({
+      status: 'success', exitCode: 0, attempt: 1, fixedByModel: false
+    })
+    expect(scripts.filter((script) => script === TASK_COMMIT_COMMAND_SCRIPT)).toHaveLength(2)
+  })
+
+  it('реальный отказ commit-step сохраняет stderr и exitCode до fix-loop', async () => {
+    const { project, task } = setup()
+    commitFailureExitCode = 128
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    const cmd = db.createCiCommand('admin', {
+      scope: 'project', projectId: project.id, name: TASK_COMMIT_COMMAND_NAME, script: TASK_COMMIT_COMMAND_SCRIPT
+    })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('failed')
+    const persisted = db.getCiRun('admin', runId)!
+    expect(persisted.steps.find((step) => step.commandId === cmd.id && step.initiatedBy === 'user')).toMatchObject({
+      status: 'failed', exitCode: 128, attempt: 1, fixedByModel: false
+    })
+    expect(persisted.fixAttempts.length).toBeGreaterThan(0)
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((line) => line.chunk.includes('fatal: не удалось переключить ветку'))).toBe(true)
   })
 
   it('упавший слот «после»: резюме всё равно попадает в чат', async () => {

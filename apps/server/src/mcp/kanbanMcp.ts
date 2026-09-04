@@ -624,6 +624,68 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           return applied(projectId, { moved: taskBrief(moved, projectName(), columnName(moved.columnId)) })
         }))
 
+        // --- Комментарии и ворклог карточки (Activity, как в Jira) ---------
+        // Чтение свободное; добавление/правка/удаление идут через политику
+        // автономии (в режиме подтверждений человек одобряет каждое). Записи
+        // модели помечаются via='model' — в ленте видно, кто автор.
+        server.registerTool('task_comments', {
+          description: 'Активность карточки: комментарии, ворклог и история изменений.',
+          inputSchema: { taskId: z.string() }
+        }, async (args) => toolJson(db.taskActivity(userId, projectId, args.taskId)))
+
+        server.registerTool('task_comment_add', {
+          description: 'Добавить комментарий к карточке от имени ассистента.',
+          inputSchema: { taskId: z.string(), text: z.string().describe('Текст комментария') }
+        }, async (args) => mutating('task_comment_add', args, async () => {
+          const gate = await allowMutation('Добавить комментарий к карточке', [{ field: 'comment', after: args.text.slice(0, 200) }])
+          if (!gate.ok) return gate.result
+          try {
+            const comment = db.addTaskComment(userId, projectId, args.taskId, args.text, 'model')
+            if (!comment) return toolText('Карточка не найдена в этом проекте.', true)
+            return applied(projectId, { comment })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('task_comment_update', {
+          description: 'Изменить текст комментария (только комментарии ассистента и автора-пользователя по его просьбе).',
+          inputSchema: { taskId: z.string(), commentId: z.string(), text: z.string() }
+        }, async (args) => mutating('task_comment_update', args, async () => {
+          const gate = await allowMutation('Изменить комментарий карточки', [{ field: 'comment', after: args.text.slice(0, 200) }])
+          if (!gate.ok) return gate.result
+          try {
+            const comment = db.updateTaskComment(userId, projectId, args.commentId, args.text)
+            if (!comment) return toolText('Комментарий не найден.', true)
+            return applied(projectId, { comment })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('task_comment_delete', {
+          description: 'Удалить комментарий карточки. Необратимо — спрашивается всегда.',
+          inputSchema: { taskId: z.string(), commentId: z.string() }
+        }, async (args) => mutating('task_comment_delete', args, async () => {
+          // Удаление необратимо: спрашиваем даже при полной автономии — как
+          // деплой и удаление карточек.
+          const gate = await allowMutation('Удалить комментарий карточки', [{ field: 'commentId', after: args.commentId }], { irreversible: true })
+          if (!gate.ok) return gate.result
+          try {
+            if (!db.deleteTaskComment(userId, projectId, args.commentId)) return toolText('Комментарий не найден.', true)
+            return applied(projectId, { deleted: args.commentId })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('task_worklog_add', {
+          description: 'Записать затраченное время в ворклог карточки (минуты).',
+          inputSchema: { taskId: z.string(), minutes: z.number().describe('Минуты, больше нуля'), comment: z.string().optional() }
+        }, async (args) => mutating('task_worklog_add', args, async () => {
+          const gate = await allowMutation('Записать время в ворклог', [{ field: 'minutes', after: args.minutes }])
+          if (!gate.ok) return gate.result
+          try {
+            const entry = db.addTaskWorklog(userId, projectId, args.taskId, { minutes: args.minutes, ...(args.comment ? { comment: args.comment } : {}) })
+            if (!entry) return toolText('Карточка не найдена в этом проекте.', true)
+            return applied(projectId, { entry })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
         server.registerTool('kanban_column_create', {
           description: 'Создать колонку доски.',
           inputSchema: { name: z.string().min(1) }

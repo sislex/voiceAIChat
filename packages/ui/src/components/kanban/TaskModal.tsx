@@ -45,6 +45,7 @@ import { TaskRunFeed } from '../ci/TaskRunFeed'
 import { TaskDesigns } from './TaskDesigns'
 import { TaskPreparationTab } from './TaskPreparationTab'
 import { TaskTimeline } from './TaskTimeline'
+import { TaskActivityPanel } from './TaskActivityPanel'
 import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
@@ -306,7 +307,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     const current = props.members.find((member) => member.role === 'owner' && member.active !== false)?.username
     if (current) props.onUpdate(task.id, { assignee: current })
   }, [props.draft, props.members, task.id, task.assignee])
-  type TaskTab = 'general' | 'timeline' | 'settings' | 'progress' | TaskModalTab
+  type TaskTab = 'general' | 'timeline' | 'activity' | 'settings' | 'progress' | TaskModalTab
   const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '')
   const defaultTab = (): TaskTab => {
     if (props.initialTab && props.initialTab !== 'preparation') return props.initialTab
@@ -596,6 +597,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // переходе стрелками, а рядом с ним нельзя было поставить пилюлю.
   const tabItems: Array<{ id: TaskTab; label: string; count?: number }> = [
     { id: 'general', label: 'Общее' }, { id: 'timeline', label: 'Временная шкала' },
+    // «Активность» — как в Jira: комментарии, история изменений, ворклог.
+    { id: 'activity' as const, label: 'Активность' },
     ...(preparationVisible && features.ci ? [{ id: 'preparation' as const, label: 'Подготовка к разработке' }] : []),
     { id: 'settings', label: 'Настройки' }, { id: 'progress', label: 'Ход выполнения' },
     ...(features.ci ? [{ id: 'improvements' as const, label: 'Улучшения', count: newImprovements }] : []),
@@ -1079,6 +1082,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         <section className="task-tab-panel" data-testid="task-timeline-panel" {...panelProps('timeline')}>
           <PanelHeading title="Временная шкала" description="Этапы задачи, попытки внутри них и время, потраченное на каждую." />
           {activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}
+        </section>
+        <section className="task-tab-panel" data-testid="task-activity-tab-panel" {...panelProps('activity')}>
+          <PanelHeading title="Активность" description="Комментарии, история изменений и ворклог — как в Jira. Комментарии оставляют и участники, и модель ассистента." />
+          {/* Условный монтаж, как у временной шкалы: сетевые панели грузятся
+              только на своей активной вкладке. */}
+          {activeTab === 'activity' && window.api && <TaskActivityPanel projectId={task.projectId} taskId={task.id} api={window.api} />}
         </section>
         <section className="task-tab-panel" data-testid="task-improvements-panel" {...panelProps('improvements')}>
           <PanelHeading

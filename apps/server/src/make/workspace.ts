@@ -954,6 +954,22 @@ export class MakeWorkspaces {
    * ничего не удалял и возвращал успех, а ссылка оставалась живой. В гейте это
    * же окно давало плавающий провал теста `/p/<token>/` после снятия.
    */
+  /**
+   * Мутации файла публикации — последовательно на разговор. Гонка была живой:
+   * фоновый `countView` (fire-and-forget из маршрута отдачи) читал состояние
+   * ДО `unpublish` и записывал его обратно ПОСЛЕ повторного `publish` —
+   * воскресал старый токен, и `publishedTarget` нового отвечал 404. В гейте
+   * это плавающе роняло тест `/p/<token>/` после переопубликации.
+   */
+  private publishChains = new Map<string, Promise<unknown>>()
+
+  private withPublishLock<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.publishChains.get(conversationId) ?? Promise.resolve()
+    const next = prev.then(fn, fn)
+    this.publishChains.set(conversationId, next.then(() => undefined, () => undefined))
+    return next
+  }
+
   private async writePublishRaw(conversationId: string, raw: PublishRaw): Promise<void> {
     const file = join(this.dirOf(conversationId), PUBLISH_FILE)
     const temporary = `${file}.${randomUUID()}.tmp`
@@ -992,6 +1008,10 @@ export class MakeWorkspaces {
    * (ссылка отдаёт его файлы, пока публикацию не обновят), null — «живая» публикация текущих файлов.
    */
   async publish(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<MakeProjectState> {
+    return this.withPublishLock(conversationId, () => this.publishInner(conversationId, options))
+  }
+
+  private async publishInner(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<MakeProjectState> {
     const existing = await this.publishRaw(conversationId)
     const token = existing?.token ?? randomUUID().replace(/-/g, '')
     if (!existing) {
@@ -1076,6 +1096,10 @@ export class MakeWorkspaces {
 
   /** Счётчик просмотров: +1 на открытие index.html публикации. Гонки терпимы — это статистика, не биллинг. */
   async countView(conversationId: string, referer?: string | null, now = Date.now()): Promise<void> {
+    return this.withPublishLock(conversationId, () => this.countViewInner(conversationId, referer, now))
+  }
+
+  private async countViewInner(conversationId: string, referer?: string | null, now = Date.now()): Promise<void> {
     const raw = await this.publishRaw(conversationId)
     if (!raw) return
     raw.views = (raw.views ?? 0) + 1
@@ -1142,6 +1166,10 @@ export class MakeWorkspaces {
   }
 
   async unpublish(conversationId: string): Promise<MakeProjectState> {
+    return this.withPublishLock(conversationId, () => this.unpublishInner(conversationId))
+  }
+
+  private async unpublishInner(conversationId: string): Promise<MakeProjectState> {
     const indexDir = join(this.rootDir, 'make', PUBLISHED_INDEX_DIR)
     const existing = await this.publishRaw(conversationId)
     if (existing) {

@@ -70,7 +70,12 @@ export default defineConfig({
       '/ws': { target: `ws://127.0.0.1:${API_PORT}`, ws: true },
       // Компаньон-агент подключается по /agent — в dev проксируем на бэкенд,
       // иначе строка подключения указывает на порт Vite, где такого маршрута нет.
-      '/agent': { target: `ws://127.0.0.1:${API_PORT}`, ws: true }
+      '/agent': { target: `ws://127.0.0.1:${API_PORT}`, ws: true },
+      // Публичные ссылки публикаций (Make /p/, галереи студии /g/) живут на
+      // бэкенде: без прокси dev-ссылка с порта Vite отдавала бы 404.
+      '/p/': { target: `http://127.0.0.1:${API_PORT}` },
+      '/g/': { target: `http://127.0.0.1:${API_PORT}` },
+      '/s/': { target: `http://127.0.0.1:${API_PORT}` }
     }
   },
   test: {
