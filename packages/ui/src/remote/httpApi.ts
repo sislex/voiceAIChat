@@ -47,8 +47,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
     // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
-    const headers: Record<string, string> = { ...authHeaders() }
-    if (init?.body != null) headers['content-type'] = 'application/json'
+    const headers: Record<string, string> = { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) }
+    if (init?.body != null && !headers['content-type']) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     const text = await res.text()
     if (res.status === 401) notifyUnauthorized()
@@ -682,8 +682,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
 /** REST телеметрии БЗ: снапшоты по чату и по проекту (инкременты идут по WS). */
 export function createKbUsageRest(httpBase: string): RendererKbRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const headers: Record<string, string> = { ...authHeaders() }
-    if (init?.body != null) headers['content-type'] = 'application/json'
+    const headers: Record<string, string> = { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) }
+    if (init?.body != null && !headers['content-type']) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     return (await res.json()) as T
@@ -697,8 +697,8 @@ export function createKbUsageRest(httpBase: string): RendererKbRest {
 
 export function createCiRest(httpBase: string): RendererCiRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const headers: Record<string, string> = { ...authHeaders() }
-    if (init?.body != null) headers['content-type'] = 'application/json'
+    const headers: Record<string, string> = { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) }
+    if (init?.body != null && !headers['content-type']) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     const text = await res.text()
