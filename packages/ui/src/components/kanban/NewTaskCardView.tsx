@@ -65,7 +65,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         )}
       </nav>
       <main className="new-task-body">
-        {model.loadState === 'loading' && <div aria-label="Карточка загружается"><Skeleton height={120} /><Skeleton height={200} /></div>}
+        {model.loadState === 'loading' && <div role="status" aria-label="Карточка загружается"><Skeleton height={120} /><Skeleton height={200} /></div>}
         {model.loadState === 'error' && <ErrorState message="Не удалось загрузить карточку" detail={model.error ?? 'Повторите попытку позже.'} />}
         {model.loadState === 'empty' && <EmptyState title="Данные задачи отсутствуют" description="Закройте карточку и обновите доску." />}
         {model.loadState === 'ready' && activeTab === 'overview' && <div className="new-task-grid">

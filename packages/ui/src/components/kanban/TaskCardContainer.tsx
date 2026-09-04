@@ -92,7 +92,11 @@ export function buildTaskCardViewModel(props: TaskCardContainerProps, cycles: Ta
 }
 
 export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
-  const [version, setVersion] = useState<TaskCardVersion>(props.initialVersion ?? 'new')
+  // По умолчанию — legacy. Новая карточка вводится рядом со старой и включается
+  // переключателем в шапке: на legacy-разметке стоят и существующие сценарии
+  // доски (`task-modal`, `task-desc-view`), и привычка пользователей. Дефолт
+  // `new` ломал 14 тестов доски и страницы проекта — merge-ран это и поймал.
+  const [version, setVersion] = useState<TaskCardVersion>(props.initialVersion ?? 'legacy')
   const [activeTab, setActiveTab] = useState<TaskCardTab>('overview')
   const [reworkOpen, setReworkOpen] = useState(false)
   const [draft, setDraft] = useState<TaskReworkDraft>(EMPTY_DRAFT)
