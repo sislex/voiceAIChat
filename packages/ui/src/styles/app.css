@@ -3844,6 +3844,14 @@ button.conscmd:hover {
   background-image: conic-gradient(var(--surface-hover) 25%, transparent 25% 50%, var(--surface-hover) 50% 75%, transparent 75%);
   background-size: 16px 16px;
 }
+/* Фон лайтбокса переключаемый: у прозрачного PNG светлые и тёмные края
+   читаются только на контрастной подложке, а шахматка мешает оценить цвет. */
+.image-studio-bg--light .image-studio-full { background-image: none; background-color: #fff; }
+.image-studio-bg--dark .image-studio-full { background-image: none; background-color: #14161a; }
+/* Тот же переключатель — для сетки: сравнивать прозрачные картинки удобнее
+   на одном фоне, а не на шахматке под каждой. */
+.image-studio-bg--light .image-studio-thumb img { background-image: none; background-color: #fff; }
+.image-studio-bg--dark .image-studio-thumb img { background-image: none; background-color: #14161a; }
 @media (max-width: 720px) {
   .image-studio-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
   .image-studio-actions { flex-wrap: wrap; }
@@ -3856,9 +3864,16 @@ button.conscmd:hover {
 .image-studio-chip--pinned { border-color: var(--accent); color: var(--text); }
 .image-studio-chip-text, .image-studio-chip-pin { font: inherit; background: none; border: none; color: inherit; cursor: pointer; padding: 0; }
 .image-studio-chip-pin:hover { color: var(--accent); }
-.image-studio-filter { display: flex; gap: 8px; align-items: center; margin: 10px 0 0; }
-.image-studio-filter input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
+/* Строка фильтра переносится: кнопок в ней больше десятка (сортировка, архив,
+   публикация, корзина, мультивыбор), и без переноса flex сжимал поле поиска до
+   двух десятков пикселей — печатать в нём было нельзя. */
+.image-studio-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; }
+.image-studio-filter input { flex: 1 1 200px; min-width: 160px; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
 .image-studio-dim { color: var(--text-dim); font-size: 11px; }
+/* Подсветка совпадений поиска в имени файла. */
+.image-studio-hit { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+/* Подсветка совпадений поиска в имени файла. */
+.image-studio-hit { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 .image-studio--drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
 .image-studio-actions select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
 .image-studio-progress { margin: 6px 0 0; font-size: 12px; color: var(--text-dim); }
@@ -3875,18 +3890,80 @@ button.conscmd:hover {
 .image-studio-pen--active { border-color: var(--text); }
 .image-studio-crop-stage { position: relative; cursor: crosshair; touch-action: none; }
 .image-studio-crop-stage img { user-select: none; }
+/* Направляющие третей в режиме обрезки: две линии по каждой оси. */
+.image-studio-thirds {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(to right, transparent calc(33.333% - 1px), rgba(255, 255, 255, 0.45) calc(33.333% - 1px) calc(33.333% + 1px), transparent calc(33.333% + 1px)),
+    linear-gradient(to right, transparent calc(66.666% - 1px), rgba(255, 255, 255, 0.45) calc(66.666% - 1px) calc(66.666% + 1px), transparent calc(66.666% + 1px)),
+    linear-gradient(to bottom, transparent calc(33.333% - 1px), rgba(255, 255, 255, 0.45) calc(33.333% - 1px) calc(33.333% + 1px), transparent calc(33.333% + 1px)),
+    linear-gradient(to bottom, transparent calc(66.666% - 1px), rgba(255, 255, 255, 0.45) calc(66.666% - 1px) calc(66.666% + 1px), transparent calc(66.666% + 1px));
+  mix-blend-mode: difference;
+}
 .image-studio-crop-box { position: absolute; border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); pointer-events: none; }
 .image-studio-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 2px 0; }
 .image-studio-wipe { display: grid; gap: 8px; }
 .image-studio-wipe-stage { position: relative; }
 .image-studio-wipe-stage img { display: block; width: 100%; max-height: 60vh; object-fit: contain; background: var(--surface); border-radius: var(--radius-medium); }
 .image-studio-wipe-stage img + img { position: absolute; inset: 0; }
+/* Наложение: разница пикселей на чёрном фоне — совпадающее гаснет. */
+.image-studio-wipe-stage--blend { background: #000; cursor: default; }
+.image-studio-wipe-stage--blend img + img { mix-blend-mode: difference; }
 .image-studio-wipe-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
 .image-studio-wipe input[type='range'] { width: 100%; }
+/* Сетка сравнения трёх-четырёх картинок: подписи-ссылки под каждой. */
+.image-studio-compare-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.image-studio-compare-grid figure { margin: 0; min-width: 0; display: grid; gap: 4px; justify-items: center; }
+.image-studio-compare-grid img { max-width: 100%; max-height: 30vh; object-fit: contain; background: var(--surface); border-radius: var(--radius-medium); }
+.image-studio-compare-grid figcaption { font-size: 11px; text-align: center; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .image-studio-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .image-studio-compare figure { margin: 0; min-width: 0; }
 .image-studio-compare figcaption { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .image-studio-trash { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; font-size: 12px; }
+/* Панель свойств лайтбокса: пары «поле — значение» в две колонки, заметка
+   отдельной строкой под ними. */
+.image-studio-props { margin-top: 10px; font-size: 12px; color: var(--text); display: grid; gap: 8px; }
+.image-studio-props dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+.image-studio-props dt { color: var(--text-dim); }
+.image-studio-props dd { margin: 0; word-break: break-word; }
+.image-studio-note { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* Гистограмма яркости: столбики от тени слева к свету справа. */
+.image-studio-histogram-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.image-studio-histogram { display: inline-flex; align-items: flex-end; gap: 1px; height: 36px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+.image-studio-histogram span { display: block; width: 3px; background: var(--accent); border-radius: 1px 1px 0 0; }
+/* Палитра картинки: круглые образцы цвета, клик копирует hex. */
+.image-studio-palette { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.image-studio-swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); cursor: pointer; padding: 0; }
+/* Поле подписи в строке инструментов карточки. */
+/* Поле запрета и чипы частых запретов — одной строкой, с переносом. */
+.image-studio-negative { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.image-studio-negative .image-studio-chip { font-size: 11px; padding: 2px 8px; }
+.image-studio-caption-row { display: inline-flex; gap: 4px; align-items: center; }
+.image-studio-caption-row input { width: 140px; min-width: 0; font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
+.image-studio-note input { flex: 1 1 220px; min-width: 0; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
+/* Контекстное меню карточки: fixed по точке клика, поверх сетки. */
+.image-studio-menu { position: fixed; z-index: 1300; min-width: 200px; display: grid; padding: 4px; gap: 1px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--panel, var(--surface)); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); }
+.image-studio-menu button { font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border: 0; border-radius: 6px; background: none; color: var(--text); cursor: pointer; }
+.image-studio-menu button:hover, .image-studio-menu button:focus-visible { background: var(--surface-hover); }
+/* Шпаргалка клавиш галереи: комбинация слева, смысл справа. */
+.image-studio-keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 10px; font-size: 13px; }
+.image-studio-keys dt { color: var(--text-dim); white-space: nowrap; }
+.image-studio-keys dd { margin: 0; }
+/* Поле переноса пометок: моноширинный JSON на всю ширину окна. */
+.image-studio-marks { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); resize: vertical; }
+/* Полоска пакетной операции: сколько файлов уже сделано. */
+.image-studio-batch-bar { display: block; height: 3px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
+.image-studio-batch-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 120ms linear; }
+@media (prefers-reduced-motion: reduce) { .image-studio-batch-bar span { transition: none; } }
+/* Группы галереи по датам: заголовок и своя сетка под ним. */
+.image-studio-group { display: grid; gap: 8px; margin-top: 12px; }
+.image-studio-group-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+/* Маркер конца страницы: наблюдатель ловит его появление в видимой области. */
+.image-studio-more { display: flex; justify-content: center; padding: 4px 0; }
+/* Поле шаблона пакетного переименования: узкое и не растягивается, иначе
+   правило поиска (flex: 1 1 200px) раздуло бы его на всю строку. */
+.image-studio-rename-batch { display: inline-flex; gap: 4px; align-items: center; }
+.image-studio-filter .image-studio-rename-batch input { flex: 0 0 auto; width: 120px; min-width: 0; font-size: 12px; padding: 4px 8px; }
 .image-studio-selected-chip { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 12px; color: var(--text-dim); }
 .image-studio-selected-chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 6px; background: var(--surface); }
 .image-studio-quota-bar { height: 4px; border-radius: 999px; background: var(--surface-hover); margin-top: 10px; overflow: hidden; }
@@ -3909,6 +3986,10 @@ button.conscmd:hover {
 .image-studio-card-actions { display: inline-flex; gap: 2px; }
 .image-studio-rename { display: flex; gap: 4px; align-items: center; }
 .image-studio-rename input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--panel, #fff); color: inherit; font: inherit; }
+.image-studio-rename { flex-wrap: wrap; }
+.image-studio-rename input[aria-invalid='true'] { border-color: var(--danger); }
+/* Ошибка имени — под полем, на всю ширину строки переименования. */
+.image-studio-rename-error { flex: 1 0 100%; font-size: 11px; color: var(--danger); }
 
 /* Вкладка «Активность» карточки: три ленты (комментарии, история, ворклог). */
 .task-activity-panel { display: grid; gap: 12px; }
@@ -6631,6 +6712,74 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split-chat > .main { flex: 1 1 auto; min-height: 0; height: auto; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
+/* Console Reader follows Make «Проект 18»: product chat and PTY stay mounted,
+   while this wrapper owns only their adaptive geometry and accessible splitter. */
+.console-reader-workshop { position: relative; background: var(--bg); }
+.console-reader-workshop > .chat-split-chat {
+  flex: 0 0 var(--console-chat-width, 42%);
+  width: var(--console-chat-width, 42%);
+  min-width: 360px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.console-reader-console-host {
+  flex: 1 1 auto;
+  min-width: 320px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  background: var(--panel);
+}
+.console-reader-console-host > .console-browser-pane { flex: 1 1 auto; width: 100%; height: 100%; }
+.console-reader-divider {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 12px;
+  align-self: stretch;
+  border: 0;
+  outline: none;
+  cursor: col-resize;
+  touch-action: none;
+}
+.console-reader-divider::before {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+  content: '';
+  transform: translateX(-50%);
+  transition: width 100ms ease, background-color 100ms ease;
+}
+.console-reader-divider__handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 100ms ease;
+}
+.console-reader-divider:hover::before,
+.console-reader-divider:focus-visible::before,
+.console-reader-workshop[data-resizing='true'] .console-reader-divider::before { width: 2px; background: var(--accent); }
+.console-reader-divider:hover .console-reader-divider__handle,
+.console-reader-divider:focus-visible .console-reader-divider__handle,
+.console-reader-workshop[data-resizing='true'] .console-reader-divider__handle { opacity: 1; }
+.console-reader-divider:focus-visible .console-reader-divider__handle { outline: 2px solid var(--accent); outline-offset: 2px; }
+.console-reader-drag-shield { position: fixed; z-index: 100; inset: 0; display: none; cursor: col-resize; touch-action: none; }
+.console-reader-workshop[data-resizing='true'] { cursor: col-resize; user-select: none; }
+.console-reader-workshop[data-resizing='true'] .console-reader-drag-shield { display: block; }
+@media (max-width: 1100px) and (min-width: 769px) {
+  .console-reader-selector > strong { overflow: hidden; width: 9px; color: transparent; }
+  .console-reader-selector > strong::before { color: var(--text); content: '●'; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .console-reader-divider::before, .console-reader-divider__handle { transition: none; }
+}
 .webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .webpreview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
 .webpreview-address { flex: 1; min-width: 0; }
@@ -6660,9 +6809,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split-tabs { display: grid; grid-template-columns: 1fr 1fr; flex: none; padding: 6px; gap: 4px; border-bottom: 1px solid var(--border); background: var(--panel); }
   .chat-split-tabs button { padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); font: inherit; }
   .chat-split-tabs button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); font-weight: 700; }
-  .chat-split-divider { display: none; }
-  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
-  .chat-split--chat .webpreview, .chat-split--preview .chat-split-chat { display: none; }
+  .chat-split-divider, .console-reader-divider, .console-reader-drag-shield { display: none !important; }
+  .chat-split-chat, .webpreview, .console-reader-console-host { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
+  .chat-split--chat .webpreview, .chat-split--chat .console-reader-console-host, .chat-split--preview .chat-split-chat { display: none; }
+  .console-reader-workshop > .chat-split-chat { width: 100%; min-width: 0; }
+  .chat-split-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 
 /* Universal widget + assistant split. Visual tokens mirror Make «Проект 14» (index.html + styles.css). */

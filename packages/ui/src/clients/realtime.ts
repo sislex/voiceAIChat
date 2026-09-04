@@ -67,7 +67,7 @@ export const createBrowserRealtime = (): RealtimeConnect => (handlers) => {
   if (claude) {
     unsubs.push(claude.onToken((m) => handlers.turnToken(m.delta, m.conversationId)))
     unsubs.push(claude.onDone((m) => handlers.turnDone(m.text, m.meta, m.engine, m.message, m.conversationId)))
-    unsubs.push(claude.onError((m) => handlers.turnError(m.message, m.conversationId)))
+    unsubs.push(claude.onError((m) => handlers.turnError(m.message, m.conversationId, m.fix)))
     if (claude.onActive) unsubs.push(claude.onActive((m) => handlers.turnActive(m.turns)))
     if (claude.onStart) unsubs.push(claude.onStart((m) => handlers.turnStart({ provider: m.provider, model: m.model, execTarget: m.execTarget }, m.conversationId)))
     if (claude.onQueue) {

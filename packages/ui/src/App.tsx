@@ -111,6 +111,10 @@ function deviceLabel(userAgent: string): string {
 }
 
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
+const CONSOLE_READER_DEFAULT_CHAT_WIDTH = 42
+const CONSOLE_READER_MIN_PERCENT = 25
+const CONSOLE_READER_MAX_PERCENT = 75
+const CONSOLE_READER_KEYBOARD_STEP = 2
 
 // Окно сессий открывают редко, а тянет оно весь модуль устройств — грузим по
 // требованию, чтобы основной бандл не рос из-за диалога в меню аккаунта.
@@ -508,6 +512,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [gitWorkspaces, setGitWorkspaces] = useState<{ items: GitWorkspaceRef[]; status: LoadStatus; error: string | null }>({ items: [], status: 'idle', error: null })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
+  const [consoleChatWidth, setConsoleChatWidth] = useState(CONSOLE_READER_DEFAULT_CHAT_WIDTH)
+  const [consoleResizing, setConsoleResizing] = useState(false)
+  const consoleSplitRef = useRef<HTMLDivElement | null>(null)
+  const consoleDividerRef = useRef<HTMLDivElement | null>(null)
+  const consolePointerIdRef = useRef<number | null>(null)
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
   // Открытый файл/выделение в Make — уходит вместе с сообщением (п.21).
   const [makeEditorContext, setMakeEditorContext] = useState<EditorContextPayload | null>(null)
@@ -658,6 +667,49 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
   }
+  const clampConsoleChatWidth = useCallback((percent: number): number => {
+    const width = consoleSplitRef.current?.getBoundingClientRect().width ?? 0
+    const pixelMin = width > 0 ? (360 / width) * 100 : CONSOLE_READER_MIN_PERCENT
+    const pixelMax = width > 0 ? ((width - 320 - 12) / width) * 100 : CONSOLE_READER_MAX_PERCENT
+    const lower = Math.min(CONSOLE_READER_MAX_PERCENT, Math.max(CONSOLE_READER_MIN_PERCENT, pixelMin))
+    const upper = Math.max(lower, Math.min(CONSOLE_READER_MAX_PERCENT, pixelMax))
+    return Math.min(upper, Math.max(lower, percent))
+  }, [])
+  const setConsoleChatPercent = useCallback((percent: number): void => {
+    setConsoleChatWidth(clampConsoleChatWidth(percent))
+  }, [clampConsoleChatWidth])
+  const stopConsoleResize = useCallback((): void => {
+    const pointerId = consolePointerIdRef.current
+    const divider = consoleDividerRef.current
+    consolePointerIdRef.current = null
+    setConsoleResizing(false)
+    if (pointerId !== null && divider?.hasPointerCapture(pointerId)) divider.releasePointerCapture(pointerId)
+  }, [])
+  useEffect(() => {
+    if (!consoleResizing) return
+    const move = (event: PointerEvent): void => {
+      const rect = consoleSplitRef.current?.getBoundingClientRect()
+      if (!rect?.width) return
+      event.preventDefault()
+      setConsoleChatPercent(((event.clientX - rect.left) / rect.width) * 100)
+    }
+    const stopOnHidden = (): void => { if (document.hidden) stopConsoleResize() }
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', stopConsoleResize, true)
+    window.addEventListener('pointercancel', stopConsoleResize, true)
+    window.addEventListener('blur', stopConsoleResize)
+    document.addEventListener('visibilitychange', stopOnHidden)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stopConsoleResize, true)
+      window.removeEventListener('pointercancel', stopConsoleResize, true)
+      window.removeEventListener('blur', stopConsoleResize)
+      document.removeEventListener('visibilitychange', stopOnHidden)
+    }
+  }, [consoleResizing, setConsoleChatPercent, stopConsoleResize])
+  useEffect(() => {
+    if (!inConsoleReader) stopConsoleResize()
+  }, [inConsoleReader, stopConsoleResize])
   useEffect(() => {
     let active = true
     void api['app:ping']().then((value) => { if (active) setRelease(value) }).catch(() => undefined)
@@ -2406,9 +2458,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         </ToolFrame>
       )}
       {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && !(inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0) && (
-      <div className={inSplit ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inSplit ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
-      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
-      <div className="chat-split-chat">
+      <div
+        ref={inConsoleReader ? consoleSplitRef : undefined}
+        className={inSplit ? `chat-split chat-split--${chatView}${inConsoleReader ? ' console-reader-workshop' : ''}` : 'chat-page'}
+        data-resizing={inConsoleReader && consoleResizing ? 'true' : undefined}
+        style={inSplit ? (inConsoleReader
+          ? { '--console-chat-width': `${consoleChatWidth}%` } as CSSProperties
+          : { '--preview-width': `${previewWidth}%` } as CSSProperties) : undefined}
+      >
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inConsoleReader ? 'Панели мастерской' : undefined}><button id={inConsoleReader ? 'console-reader-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inConsoleReader ? 'console-reader-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат</button><button id={inConsoleReader ? 'console-reader-console-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inConsoleReader ? 'console-reader-console-pane' : undefined} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
+      <div id={inConsoleReader ? 'console-reader-chat-pane' : undefined} role={inConsoleReader ? 'tabpanel' : undefined} aria-labelledby={inConsoleReader ? 'console-reader-chat-tab' : undefined} className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
       {inConsoleReader && <header className="web-recorder-selector console-reader-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
@@ -2498,6 +2557,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenMachines={session.authRequired ? () => navigate('/machines') : undefined}
         onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={shell.error}
+        errorFix={shell.errorFix}
+        // Кнопка «Исправить» отправляет подготовленный сервером промпт обычной
+        // репликой в этот же чат: модель правит на месте, ход помечен как
+        // исправление и системный preflight копии для него пропускается.
+        onFixError={(prompt) => { shellActions.dismissError(); void chatActions.submitFix(prompt) }}
         onDismissError={shellActions.dismissError}
         modelMissing={VOICE_INPUT_ENABLED && !settingsState.modelPresent}
         modelLabel={settingsState.settings.whisperModel}
@@ -2564,7 +2628,38 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         }
       /> : <div className="chat-route-loading" role="status">{inMake ? 'Открываем проект…' : 'Открываем выбранный Reader-разговор…'}</div>}
       </div>
-      {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
+      {inSplit && readerSurfaceReady && (inConsoleReader ? <div
+        ref={consoleDividerRef}
+        className="console-reader-divider"
+        hidden={compactChat}
+        role="separator"
+        aria-label="Изменить ширину панелей"
+        aria-orientation="vertical"
+        aria-valuemin={CONSOLE_READER_MIN_PERCENT}
+        aria-valuemax={CONSOLE_READER_MAX_PERCENT}
+        aria-valuenow={Math.round(consoleChatWidth)}
+        tabIndex={0}
+        onPointerDown={(event) => {
+          if (window.matchMedia('(max-width: 768px)').matches) return
+          event.preventDefault()
+          consolePointerIdRef.current = event.pointerId
+          event.currentTarget.setPointerCapture(event.pointerId)
+          setConsoleResizing(true)
+          const rect = consoleSplitRef.current?.getBoundingClientRect()
+          if (rect?.width) setConsoleChatPercent(((event.clientX - rect.left) / rect.width) * 100)
+        }}
+        onLostPointerCapture={stopConsoleResize}
+        onDoubleClick={() => setConsoleChatPercent(CONSOLE_READER_DEFAULT_CHAT_WIDTH)}
+        onKeyDown={(event) => {
+          const next = event.key === 'ArrowLeft' ? consoleChatWidth - CONSOLE_READER_KEYBOARD_STEP
+            : event.key === 'ArrowRight' ? consoleChatWidth + CONSOLE_READER_KEYBOARD_STEP
+              : event.key === 'Home' ? CONSOLE_READER_MIN_PERCENT
+                : event.key === 'End' ? CONSOLE_READER_MAX_PERCENT : null
+          if (next === null) return
+          event.preventDefault()
+          setConsoleChatPercent(next)
+        }}
+      ><span className="console-reader-divider__handle" aria-hidden="true" /></div> : <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>)}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:
@@ -2577,7 +2672,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         },
         ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
       } : {})} /></Suspense>}
-      {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
+      {inConsoleReader && readerSurfaceReady && chat.activeId && <div id="console-reader-console-pane" role="tabpanel" aria-labelledby="console-reader-console-tab" className="console-reader-console-host"><ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} /></div>}
+      {inConsoleReader && <div className="console-reader-drag-shield" aria-hidden="true" onPointerUp={stopConsoleResize} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
       {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense>}
       {inReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
