@@ -111,7 +111,7 @@ describe('voiceStore — интеграция стора с api-моком и м
     const id = await store.actions.createConversation({ title: 'Проектный чат', projectId: project.id })
 
     expect(create).toHaveBeenCalledOnce()
-    expect(create).toHaveBeenCalledWith({ title: 'Проектный чат', projectId: project.id })
+    expect(create).toHaveBeenCalledWith({ title: 'Проектный чат', scope: 'chat', projectId: project.id })
     expect(setProject).not.toHaveBeenCalled()
     expect(store.getState().activeId).toBe(id)
     expect(store.getState().conversations.find((item) => item.id === id)?.projectId).toBe(project.id)
@@ -2110,6 +2110,19 @@ describe('voiceStore — машинные утилиты', () => {
     store.actions.openUtility('explorer', 'm1', '/work', true)
     // Без dir тот же путь считался бы файлом, и проводник открыл бы его родителя.
     expect(store.getState().utility).toEqual({ kind: 'explorer', agentId: 'm1', path: '/work', dir: true })
+  })
+
+  it('newConversation("images") создаёт «Картинки N» и кладёт их в imageStudioConversations', async () => {
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
+    await store.actions.init()
+    await store.actions.newConversation('images')
+    await store.actions.newConversation('images')
+    const titles = store.getState().imageStudioConversations.map((c) => c.title).sort()
+    expect(titles).toEqual(['Картинки 1', 'Картинки 2'])
+    expect(store.getState().imageStudioConversations.every((c) => c.assistantKind === 'images')).toBe(true)
+    // Студийные чаты не подмешиваются в обычный список и в списки ридеров.
+    expect(store.getState().conversations.map((c) => c.assistantKind)).not.toContain('images')
+    expect(store.getState().makeConversations).toEqual([])
   })
 
   it('newConversation("make") создаёт проект «Проект N» и кладёт его в makeConversations', async () => {

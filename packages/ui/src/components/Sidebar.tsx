@@ -272,6 +272,8 @@ export interface SidebarProps {
   onOpenConsoleReader?: () => void
   /** Инструмент Make — веб-проект с ассистентом. */
   onOpenMake?: () => void
+  /** Студия картинок — галерея с ассистентом. */
+  onOpenImageStudio?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
   /** Открыть установленную локальную версию или предложить её скачать. */
@@ -363,6 +365,7 @@ export function Sidebar({
   onOpenPlaywrightReader,
   onOpenConsoleReader,
   onOpenMake,
+  onOpenImageStudio,
   onOpenUsers,
   onOpenLocalApp,
   onOpenMachines,
@@ -845,10 +848,11 @@ export function Sidebar({
             <EmptyState
               compact
               icon="🗂"
-              title={projects.length ? 'Ничего не найдено' : 'Проектов пока нет'}
+              title={projects.length ? 'Ничего не найдено' : 'Пока нет проектов — создайте первый'}
               description={projects.length
                 ? 'Измените запрос — поиск идёт по имени и типу проекта.'
-                : 'Создайте первый — доска, задачи и CI появятся внутри него.'}
+                : 'Проект появится в этом списке и объединит связанные чаты и задачи.'}
+              {...(!projects.length && onCreateProject ? { actionLabel: 'Новый проект', onAction: onCreateProject } : {})}
             />
           )}
           {visibleProjects.map((p) => (
@@ -934,6 +938,12 @@ export function Sidebar({
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMake)}>
                     <span className="footico">✦</span>
                     Make — веб-проект
+                  </Button>
+                )}
+                {onOpenImageStudio && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenImageStudio)}>
+                    <span className="footico">🎨</span>
+                    Студия картинок
                   </Button>
                 )}
                 <div className="acct-sep" aria-hidden />

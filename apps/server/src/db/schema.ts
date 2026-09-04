@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   preview_url       TEXT,
   task_id           TEXT,
   assistant_kind    TEXT,
+  scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')),
   -- Режим применения мутаций канбан-ассистентом: auto (сразу) или confirm.
   assistant_autonomy TEXT,
   status            TEXT NOT NULL DEFAULT 'developing'
@@ -653,6 +654,50 @@ CREATE INDEX IF NOT EXISTS idx_tasks_column
 -- Связь карточки с дизайном из Make: отдельная таблица, а не JSON в tasks, —
 -- панель Make спрашивает обратное направление («какие задачи ссылаются на эту
 -- страницу»), и по колонке JSON такой запрос не построить.
+-- Активность карточки как в Jira: комментарии, ворклог и история изменений.
+-- Три таблицы, а не одна лента: у комментария есть правка и удаление, у
+-- ворклога — минуты и дата работы, у истории — поле и пара значений; общая
+-- таблица заставила бы каждую сущность таскать чужие колонки.
+CREATE TABLE IF NOT EXISTS task_comments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  author TEXT NOT NULL,
+  -- Кто внёс: сам человек или модель канбан-ассистента от его имени.
+  via TEXT NOT NULL DEFAULT 'user',
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at);
+
+CREATE TABLE IF NOT EXISTS task_worklog (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  author TEXT NOT NULL,
+  minutes INTEGER NOT NULL,
+  comment TEXT NOT NULL DEFAULT '',
+  -- Когда работа была сделана (задаёт автор), а не когда запись создана.
+  started_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_task_worklog_task ON task_worklog(task_id, started_at);
+
+CREATE TABLE IF NOT EXISTS task_history (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  via TEXT NOT NULL DEFAULT 'user',
+  field TEXT NOT NULL,
+  from_value TEXT,
+  to_value TEXT,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id, at);
+
 CREATE TABLE IF NOT EXISTS task_designs (
   id              TEXT PRIMARY KEY,
   task_id         TEXT NOT NULL,

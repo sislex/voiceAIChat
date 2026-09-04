@@ -73,7 +73,7 @@ function startAgent(): void {
 function createWindow(): void {
   if (window) { window.show(); window.focus(); return }
   window = new BrowserWindow({
-    width: 500, height: 480, resizable: false, title: 'VoiceChat Login',
+    width: 1000, height: 860, minWidth: 360, minHeight: 560, resizable: true, title: 'VoiceChat Login',
     webPreferences: { preload: join(mainDir, '../preload/index.mjs'), contextIsolation: true, sandbox: false, nodeIntegration: false }
   })
   window.on('closed', () => { window = null })

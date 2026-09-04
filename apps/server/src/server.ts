@@ -78,6 +78,9 @@ import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { registerMakeMcp, MAKE_MCP_PATH, MakeTaskScopeBroker, buildTaskMakeSources } from './mcp/makeMcp.js'
+import { ImageStudioStore } from './images/studio.js'
+import { registerImageStudioRoutes } from './routes/imageStudio.js'
+import { llmImageStudioGenerator } from './llm/imageStudioGenerator.js'
 import { preparationDesignNote } from './ci/preparationNotes.js'
 import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
@@ -278,7 +281,14 @@ fi
 toplevel="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
 test -n "$toplevel" && test "$toplevel" = "$(cd "$repo" && pwd -P)" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
 worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
-test -z "$worktree_status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
+test -z "$worktree_status" || {
+  # Сообщение называет виновников: одно «содержит локальные изменения» не
+  # подсказывает, что чинить, и человек шёл смотреть status руками.
+  dirty_count="$(printf '%s\n' "$worktree_status" | grep -c . || true)"
+  dirty_head="$(printf '%s\n' "$worktree_status" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
+  echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена. Копия: $repo. Изменено записей: $dirty_count. Первые: $dirty_head. Закоммитьте нужное или уберите лишнее в этой копии и повторите." >&2
+  exit 66
+}
 current="$(git -C "$repo" branch --show-current)"
 test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
 git -C "$repo" fetch --no-tags origin "refs/heads/\${base}:refs/remotes/origin/\${base}"
@@ -573,6 +583,25 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     runs: () => kanbanRunLaunchers
   }, mcpSecret)
   // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
+  // Студия картинок: галерея на разговор + генерация/правка через LLM — тем же
+  // способом, что ретушь (модель сохраняет PNG и показывает fenced-блоком).
+  const imageStudioStore = new ImageStudioStore(join(opts.config.dataDir, 'image-studio'))
+  registerImageStudioRoutes(app, {
+    db,
+    store: imageStudioStore,
+    generator: (userId) => llmImageStudioGenerator({
+      client: codex,
+      userId,
+      model: db.getSettings(userId).codexModel,
+      cwd: profileHome(userId),
+      readGenerated: async (path) => {
+        if (runnerFs) return runnerFs.readFile(userId, path)
+        const local = readUserFile(path, [profileHome(userId)])
+        return local.ok ? local.file : null
+      }
+    })
+  })
+
   registerMakeRoutes(app, {
     db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
     boardChanged: (projectId) => boardHub.emit(projectId),
@@ -1239,6 +1268,33 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     ensureChatStorage,
     ensureProjectMainCurrent,
+    // Студия картинок: изображения из ответа складываются в галерею разговора.
+    studioContext: async (conversationId) => {
+      const files = await imageStudioStore.list(conversationId)
+      const listing = files.slice(0, 30).map((file) => `- ${file.path}${file.prompt ? ` (промпт: ${file.prompt.slice(0, 80)})` : ''}`).join('\n')
+      return [
+        '## Студия картинок',
+        'Это чат студии картинок: пользователь собирает галерею изображений этого разговора.',
+        'Когда рисуешь или правишь картинку — сохрани файл и обязательно покажи его штатным fenced-блоком image с абсолютным путём: только так он попадает в галерею.',
+        listing ? `Сейчас в галерее:\n${listing}` : 'Галерея пока пуста.'
+      ].join('\n')
+    },
+    captureStudioImages: async (userId, conversationId, finalText) => {
+      const { parseImages } = await import('@voicechat/shared')
+      for (const image of parseImages(finalText).images.slice(0, 10)) {
+        try {
+          const file = await (runnerFs ? runnerFs.readFile(userId, image.path) : Promise.resolve(readUserFile(image.path, [profileHome(userId)])).then((r) => r.ok ? r.file : null))
+          if (!file?.dataBase64) continue
+          const original = image.path.split('/').pop() ?? 'изображение.png'
+          // Технические имена ранов («exec-<uuid>.png») в галерее нечитаемы.
+          const readable = /^exec-[0-9a-f-]{20,}\./i.test(original) ? `из-чата${original.slice(original.lastIndexOf('.'))}` : original
+          const name = await imageStudioStore.freeName(conversationId, readable)
+          await imageStudioStore.writeBuffer(conversationId, name, Buffer.from(file.dataBase64, 'base64'))
+        } catch {
+          // не-картинка, квота или чтение не удалось — ход это не ломает
+        }
+      }
+    },
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)
@@ -1919,7 +1975,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(() => { try { agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
   watchdogTimer?.unref?.()
   app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
-  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)
   registerInvitationRoutes(app, db, { mailer, publicUrl: opts.config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard,

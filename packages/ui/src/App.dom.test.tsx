@@ -1044,6 +1044,61 @@ describe('App — Sidebar в рабочих split-режимах', () => {
       expect(open).toHaveFocus()
     }
   )
+
+  it('console-reader exposes the Make 18 splitter keyboard contract and reset', async () => {
+    await renderSplit('console-reader')
+    const splitter = screen.getByRole('separator', { name: 'Изменить ширину панелей' })
+    expect(splitter).toHaveAttribute('aria-valuemin', '25')
+    expect(splitter).toHaveAttribute('aria-valuemax', '75')
+    expect(splitter).toHaveAttribute('aria-valuenow', '42')
+
+    splitter.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(splitter).toHaveAttribute('aria-valuenow', '44')
+    await userEvent.keyboard('{Home}')
+    expect(splitter).toHaveAttribute('aria-valuenow', '25')
+    await userEvent.keyboard('{End}')
+    expect(splitter).toHaveAttribute('aria-valuenow', '75')
+    await userEvent.dblClick(splitter)
+    expect(splitter).toHaveAttribute('aria-valuenow', '42')
+  })
+
+  it('console-reader pointer resize clamps to panel minimums and clears its shield on cancel', async () => {
+    await renderSplit('console-reader')
+    const workshop = document.querySelector<HTMLElement>('.console-reader-workshop')!
+    vi.spyOn(workshop, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 1440, bottom: 900, width: 1440, height: 900, toJSON: () => ({})
+    })
+    const splitter = screen.getByRole('separator', { name: 'Изменить ширину панелей' })
+    fireEvent.pointerDown(splitter, { pointerId: 7, clientX: 1000 })
+    expect(workshop).toHaveAttribute('data-resizing', 'true')
+    fireEvent.pointerMove(window, { pointerId: 7, clientX: 10 })
+    await waitFor(() => expect(splitter).toHaveAttribute('aria-valuenow', '25'))
+    fireEvent.pointerMove(window, { pointerId: 7, clientX: 1430 })
+    await waitFor(() => expect(splitter).toHaveAttribute('aria-valuenow', '75'))
+    fireEvent.pointerCancel(window, { pointerId: 7 })
+    await waitFor(() => expect(workshop).not.toHaveAttribute('data-resizing'))
+  })
+
+  it('console-reader switches mounted chat and PTY panes with accessible mobile tabs', async () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(max-width: 768px)', media: query, onchange: null,
+      addEventListener: () => undefined, removeEventListener: () => undefined,
+      addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => true
+    })) as typeof window.matchMedia
+    const consolePane = await renderSplit('console-reader')
+    const chatTab = screen.getByRole('tab', { name: 'Чат' })
+    const consoleTab = screen.getByRole('tab', { name: 'Консоль' })
+    expect(chatTab).toHaveAttribute('aria-selected', 'true')
+    expect(chatTab).toHaveAttribute('aria-controls', 'console-reader-chat-pane')
+    expect(consoleTab).toHaveAttribute('aria-controls', 'console-reader-console-pane')
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument()
+
+    await userEvent.click(consoleTab)
+    expect(consoleTab).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(chatTab)
+    expect(screen.getByRole('region', { name: 'Консоль' })).toBe(consolePane)
+  })
 })
 
 describe('App — выход из аккаунта', () => {

@@ -94,12 +94,13 @@ describe('ProjectPage — общая шапка страницы проекта'
 })
 
 describe('ProjectPage — крайние случаи раздела', () => {
-  it('проектов нет: пустое состояние ведёт создавать проект в сайдбаре', async () => {
-    render(<ProjectsEmptyPage />)
+  it('проектов нет: пустое состояние предлагает переданное действие создания', async () => {
+    const onCreateProject = vi.fn()
+    render(<ProjectsEmptyPage onCreateProject={onCreateProject} />)
     const page = screen.getByTestId('projects-empty')
     expect(within(page).getByText('Проектов пока нет')).toBeInTheDocument()
-    // Подсказка обязана называть кнопку сайдбара дословно — «+ Новый проект».
-    expect(within(page).getByText(/«\+ Новый проект»/)).toBeInTheDocument()
+    await userEvent.click(within(page).getByRole('button', { name: 'Добавить новый проект' }))
+    expect(onCreateProject).toHaveBeenCalledTimes(1)
     await expectNoViolations()
   })
 

@@ -451,6 +451,42 @@ describe('projects REST: доска', () => {
   })
 })
 
+describe('активность карточки: комментарии, ворклог, история', () => {
+  it('полный цикл: комментарий добавляется, правится, удаляется; история пишется', async () => {
+    const project = await createProject('Активность')
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
+    const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: board.columns[0]!.id, title: 'С активностью' } })).json() as Task
+
+    const added = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/comments`, payload: { text: 'Первый комментарий' } })).json()
+    expect(added.author).toBe('admin')
+
+    await inj(adminTok, { method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}/comments/${added.id}`, payload: { text: 'Поправленный' } })
+    await inj(adminTok, { method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { title: 'Переименована' } })
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/worklog`, payload: { minutes: 90, comment: 'вёрстка' } })
+
+    const activity = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/activity` })).json()
+    expect(activity.comments[0]).toMatchObject({ text: 'Поправленный' })
+    expect(activity.comments[0].updatedAt).not.toBeNull()
+    expect(activity.history.some((event: { field: string; to: string }) => event.field === 'title' && event.to === 'Переименована')).toBe(true)
+    expect(activity.totalMinutes).toBe(90)
+
+    const del = await inj(adminTok, { method: 'DELETE', url: `/api/projects/${project.id}/tasks/${task.id}/comments/${added.id}` })
+    expect(del.json()).toEqual({ ok: true })
+  })
+
+  it('чужой комментарий участнику не правится — 403 словами', async () => {
+    const project = await createProject('Права активности')
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/members`, payload: { username: 'bob' } })
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
+    const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: board.columns[0]!.id, title: 'Чужая' } })).json() as Task
+    const comment = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/comments`, payload: { text: 'От владельца' } })).json()
+
+    const blocked = await inj(bobTok, { method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}/comments/${comment.id}`, payload: { text: 'взлом' } })
+    expect(blocked.statusCode).toBe(403)
+    expect(blocked.json().error).toContain('автор, владелец')
+  })
+})
+
 describe('автосвязь задачи с Make-проектом источника', () => {
   // Ошибка, с которой начался фикс: задача создавалась из Make-чата без связи
   // task_designs, подготовка не получала файлы макета и блокировалась вопросом
