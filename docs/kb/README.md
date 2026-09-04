@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 38 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 245 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-04 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 4d06ce88 Merge main into CHAT-409 (task dfb010d9-9ebb-4807-a526-ae824f21925d) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-04 | ⚠ 8 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-04 | ✓ |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 7 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1152 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1155 коммит(ов) в areas после сверки: 4d06ce88 Merge main into CHAT-409 (task dfb010d9-9ebb-4807-a526-ae824f21925d) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 180 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 225 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 113 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
@@ -39,7 +39,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 19 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 146 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 934b5472 fix(ui): поднять лимит одного теста фронтенда до 60 секунд |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 98 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-04, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -61,18 +61,18 @@
 
 ## Журнал сессий
 
-Всего записей: 602. Последние:
+Всего записей: 603. Последние:
 
 - [2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md](log/2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md) — task-card-rework-storage-and-development-settle
 - [2026-09-04-alexeys-macbook-air-2-task-card-new-legacy.md](log/2026-09-04-alexeys-macbook-air-2-task-card-new-legacy.md) — task-card-new-legacy
 - [2026-09-04-alexeys-macbook-air-2-restore-production-signup.md](log/2026-09-04-alexeys-macbook-air-2-restore-production-signup.md) — restore-production-signup
+- [2026-09-04-alexeys-macbook-air-2-reliable-long-gates.md](log/2026-09-04-alexeys-macbook-air-2-reliable-long-gates.md) — reliable-long-gates
 - [2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md](log/2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md) — merge-auto-fix-checks
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-54.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-54.md) — image-studio-improvements-54
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md) — image-studio-improvements-53
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-52.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-52.md) — image-studio-improvements-52
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-51.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-51.md) — image-studio-improvements-51
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-50.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-50.md) — image-studio-improvements-50
-- [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-49.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-49.md) — image-studio-improvements-49
 
 ## Исторические планы
 
