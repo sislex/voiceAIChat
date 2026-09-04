@@ -95,7 +95,7 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
   // и sandbox не при чём — подключается до ветвления plan/remote, как БЗ.
   if (req.previewMcpUrl) {
     args.push(...mcpServerArgs('browser', req.previewMcpUrl))
-    prompt = `${previewToolHint()}\n\n${prompt}`
+    prompt = `${previewToolHint(req.previewSurface ?? 'panel')}\n\n${prompt}`
   }
 
   // «Консоль с ассистентом»: живой PTY-терминал пользователя как MCP-инструменты.

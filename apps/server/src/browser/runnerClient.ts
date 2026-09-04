@@ -34,6 +34,8 @@ export interface BrowserStartInput {
   userKey: string
   conversationKey: string
   viewport?: BrowserViewport
+  /** Cookie контекста: ключ доступа Chromium к прокси превью (см. `machinePreview`). */
+  cookies?: Array<{ name: string; value: string; url: string }>
 }
 
 export interface BrowserRunnerClient {

@@ -661,7 +661,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     resetTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'DELETE' }),
     getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),
     getTaskMachines: (projectId, taskId) => req<import('@shared/ci').CiTaskMachines>(REST.taskCiMachines(projectId, taskId)),
-    putTaskCi: (projectId, taskId, config) => req<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[] }>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
+    putTaskCi: (projectId, taskId, config) => req<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[]; browserCheck: import('@shared/ci').CiBrowserCheck }>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     startRun: (projectId, taskId, options) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(options ?? {}) }),
     getMergeMachines: (projectId, taskId) => req<import('@shared/merge').MergeMachinesResponse>(REST.taskMergeMachines(projectId, taskId)),
     startMerge: (projectId, taskId, agentId) => req<import('@shared/merge').MergeRun>(REST.taskMergeStart(projectId, taskId), { method: 'POST', body: JSON.stringify(agentId ? { agentId } : {}) }),

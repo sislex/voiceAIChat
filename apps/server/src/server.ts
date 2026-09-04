@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { isPlaywrightReaderConversation, planModelAction } from '@voicechat/shared'
+import { DEFAULT_CI_BROWSER_CHECK, isPlaywrightReaderConversation, planModelAction } from '@voicechat/shared'
 import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -28,11 +28,12 @@ import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseM
 import { releaseCiTarget, releaseProductionTarget } from './releases/targets.js'
 import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
-import { createCiRunManager } from './ci/runManager.js'
+import { createCiRunManager, type CiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor, shellQuote } from './ci/executor.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
+import { saveBrowserShot, sweepBrowserShots } from './browser/checkShots.js'
 import { automatedQaRemarks } from '@voicechat/shared'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
@@ -123,6 +124,8 @@ import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
 import { registerBrowserRoutes } from './routes/browser.js'
 import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
+import { browserCheckTarget, withMachinePreviewTarget, type BrowserCheckTarget } from './browser/checkTarget.js'
+import { PREVIEW_RUN_COOKIE, PreviewRunKeys } from './browser/machinePreview.js'
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 import { AuthStatusState } from './auth/statusState.js'
@@ -329,7 +332,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Хаб сессий один на процесс: его слушают WS-соединения, а публикуют в него
   // и сессионные роуты, и админский отзыв чужой сессии.
   const sessionHub = new SessionHub()
-  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, ...(opts.geo ? { geo: opts.geo } : {}) })
+  // Ключи Chromium к прокси превью: изолированный браузер открывает dev-сервер
+  // машины от лица владельца задачи, а Bearer-заголовка у навигации нет.
+  const previewRunKeys = new PreviewRunKeys()
+  // Адрес сервера, видимый из контейнеров-исполнителей (в compose — http://voicechat:8787);
+  // без него остаёмся на loopback dev-сервера, где раннер и сервер — один хост.
+  const runnerFacingBase = opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
+  const previewRunCookie = (userId: string): { name: string; value: string; url: string } =>
+    ({ name: PREVIEW_RUN_COOKIE, value: previewRunKeys.issue(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` })
+  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
@@ -594,6 +605,43 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
   // FeaturePreviewManager создаётся ниже по файлу — previewMcp получает его лениво.
   const featurePreviewsRef: { current: FeaturePreviewManager | null } = { current: null }
+  // CiRunManager создаётся ниже по файлу; лента кадров получает его лениво.
+  const ciRunManagerRef: { current: CiRunManager | null } = { current: null }
+
+  /**
+   * Кадр браузерной проверки уходит в ленту активного рана задачи ссылкой на
+   * файл: base64 в логе распухал бы на сотни килобайт при каждом реплее ленты.
+   * Нет рана или шага — кадр просто не логируется: модель его уже получила.
+   */
+  const logBrowserCheckShot = (conversationId: string, userId: string, png: Buffer): void => {
+    const taskId = db.getConversation(userId, conversationId)?.taskId
+    if (!taskId || db.getTaskBrowserCheck(taskId).mode !== 'chromium') return
+    const run = db.activeCiRunForTask(taskId)
+    if (!run) return
+    const step = db.getCiRun(run.triggeredBy, run.id)?.steps.filter((item) => item.status === 'running').at(-1)
+    if (!step) return
+    const saved = saveBrowserShot(browserShotsRoot, run.id, png)
+    if (!saved) return
+    const line = db.appendCiLog(run.id, step.id, 'system', `Снимок страницы проверки: ${saved.url}\n`)
+    ciRunManagerRef.current?.publish({ t: 'ci.log', runId: run.id, line }, run.triggeredBy)
+  }
+
+  /**
+   * Изолированный Chromium обслуживает два входа: разговор Playwright Reader и
+   * браузерную проверку задачи (её режим — настройка CI задачи). Всё остальное
+   * идёт прежним путём — в панель браузера пользователя.
+   */
+  const browserCheckTargetOf = (userId: string, conversationId: string): BrowserCheckTarget | null => {
+    const conversation = db.getConversation(userId, conversationId)
+    if (!conversation) return null
+    const taskId = conversation.taskId ?? null
+    return browserCheckTarget({
+      conversationId,
+      taskId,
+      playwrightReader: isPlaywrightReaderConversation(conversation),
+      check: taskId ? db.getTaskBrowserCheck(taskId) : DEFAULT_CI_BROWSER_CHECK
+    })
+  }
   registerPreviewMcp(app, {
     secret: mcpSecret,
     relay: previewRelay,
@@ -601,14 +649,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // relay пушит действие в браузер пользователя, а страницы там нет.
     browserExecutor: async (userId, conversationId, action) => {
       if (!browserRunner) return null
-      const conversation = db.getConversation(userId, conversationId)
-      if (!conversation || !isPlaywrightReaderConversation(conversation)) return null
-      const plan = planModelAction(action)
+      const target = browserCheckTargetOf(userId, conversationId)
+      if (!target) return null
+      const plan = planModelAction(withMachinePreviewTarget(action, runnerFacingBase))
       if (plan.kind === 'unsupported') return { ok: false, error: plan.reason }
       try {
         // start идемпотентен: живая сессия переиспользуется, incarnation берём из неё.
-        const session = await browserRunner.start({ sessionId: conversationId, userKey: userId, conversationKey: conversationId })
-        const result = await browserRunner.command(conversationId, {
+        const session = await browserRunner.start({
+          sessionId: target.sessionId, userKey: userId, conversationKey: target.conversationKey,
+          cookies: [previewRunCookie(userId)]
+        })
+        const result = await browserRunner.command(target.sessionId, {
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant', command: plan.command
         })
         return { ok: true, data: result as unknown as Record<string, unknown> }
@@ -620,14 +671,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // возвращает картинку, а не структуру действия.
     browserScreenshot: async (userId, conversationId, args) => {
       if (!browserRunner) return null
-      const conversation = db.getConversation(userId, conversationId)
-      if (!conversation || !isPlaywrightReaderConversation(conversation)) return null
+      const target = browserCheckTargetOf(userId, conversationId)
+      if (!target) return null
       try {
-        const session = await browserRunner.start({ sessionId: conversationId, userKey: userId, conversationKey: conversationId })
-        const shot = await browserRunner.screenshot(conversationId, {
+        const session = await browserRunner.start({
+          sessionId: target.sessionId, userKey: userId, conversationKey: target.conversationKey,
+          cookies: [previewRunCookie(userId)]
+        })
+        const shot = await browserRunner.screenshot(target.sessionId, {
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
           command: { type: 'screenshot', format: 'png', ...(args.selector ? { selector: args.selector } : {}) }
         })
+        logBrowserCheckShot(conversationId, userId, shot.buffer)
         return {
           ok: true,
           result: {
@@ -697,7 +752,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const browserRunner = opts.browserRunner ?? (opts.config.browserRunnerUrl && opts.config.browserRunnerToken
     ? createBrowserRunnerClient({ baseUrl: opts.config.browserRunnerUrl, token: opts.config.browserRunnerToken })
     : undefined)
-  registerBrowserRoutes(app, { db, ...(browserRunner ? { runner: browserRunner } : {}) })
+  // Кадры браузерной проверки задач: файл на диске, в ленте рана — ссылка.
+  const browserShotsRoot = join(opts.config.dataDir, 'ci-browser-shots')
+  registerBrowserRoutes(app, { db, shotsRoot: browserShotsRoot, ...(browserRunner ? { runner: browserRunner } : {}) })
   // Снимки вердикта Playwright-этапа: файл на диске, а не base64 в result_json —
   // строка рана иначе распухала бы на сотни килобайт с каждой попыткой.
   const automatedQaScreenshotDir = join(opts.config.dataDir, 'qa-screenshots')
@@ -708,6 +765,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     catch (error) { app.log.warn({ error }, 'qa screenshot sweep failed') }
   }
   sweepScreenshots()
+  // Кадры проверки живут короче снимков вердикта: их за ран много, а смысл
+  // они имеют, пока лента этого рана кому-то интересна.
+  const sweepBrowserCheckShots = (): void => {
+    try { sweepBrowserShots({ root: browserShotsRoot, knownRunIds: db.ciRunIds(), maxAgeMs: 7 * 24 * 60 * 60_000 }) }
+    catch (error) { app.log.warn({ error }, 'browser check shot sweep failed') }
+  }
+  sweepBrowserCheckShots()
+  const browserShotSweepTimer = setInterval(sweepBrowserCheckShots, 24 * 60 * 60_000)
+  browserShotSweepTimer.unref?.()
+  app.addHook('onClose', async () => clearInterval(browserShotSweepTimer))
   const screenshotSweepTimer = setInterval(sweepScreenshots, 24 * 60 * 60_000)
   screenshotSweepTimer.unref?.()
   app.addHook('onClose', async () => clearInterval(screenshotSweepTimer))
@@ -1221,6 +1288,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
     kbMcpBaseUrl,
+    // Браузерная проверка результата: инструменты появляются у хода только при
+    // выбранном режиме проверки задачи (см. `withBrowserTools`).
+    previewMcpBaseUrl,
+    previewTool: previewToolBroker,
     makeMcpBaseUrl,
     makeTaskScopes
   })
@@ -1737,7 +1808,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   let autoPilotTick: (projectId: string) => void = () => {}
   const emitBoard = (projectId: string): void => { boardHub.emit(projectId); queueMicrotask(() => autoPilotTick(projectId)) }
-  const ciRunManager = createCiRunManager({
+  const ciRunManager: CiRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
     boardChanged: emitBoard,
@@ -1758,6 +1829,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         /* чат мог быть удалён — не роняем ответ на вопрос */
       }
     },
+    // Сессия браузерной проверки задачи гасится best-effort: не смогли — ран
+    // продолжится в прежней странице, а это заметно модели, но не смертельно.
+    resetBrowserCheck: ({ taskId }) => {
+      void browserRunner?.stop(`task-${taskId}`).catch(() => undefined)
+    },
     // Резюме законченного рана — обычное AI-сообщение чата; метка `ciRunSummary`
     // связывает его с раном и отличает от ответа хода модели.
     postSummaryToChat: ({ userId, conversationId, text, runId }) => {
@@ -1773,6 +1849,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
+  ciRunManagerRef.current = ciRunManager
   registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId))
 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —

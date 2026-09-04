@@ -61,6 +61,12 @@ export interface CiRunManagerDeps {
   kbUpdate?: CiKbUpdateHook
   /** Автоматическая подготовка структурированных сценариев при входе в qa_preparation. */
   qaPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string; runId: string }) => void
+  /**
+   * Сбросить сессию браузерной проверки задачи перед новым раном. Страница
+   * прошлого рана только путает модель, а профиль Chromium остаётся в томе,
+   * поэтому входы на проверяемом сайте переживают сброс.
+   */
+  resetBrowserCheck?: (args: { userId: string; taskId: string }) => void
 }
 
 type ResumePoint = { kind: 'command'; slot: CiSlot; index: number } | { kind: 'model' }
@@ -1639,6 +1645,11 @@ fi`
     }
 
     const slots = deps.db.resolveTaskSlots(runRow.projectId, runRow.taskId)
+    // Браузерная проверка начинается с чистой страницы: сброс здесь, а не в
+    // конце прошлого рана, — тогда он работает и после падения сервера.
+    if (!resume && deps.db.getTaskBrowserCheck(runRow.taskId).mode === 'chromium') {
+      deps.resetBrowserCheck?.({ userId, taskId: runRow.taskId })
+    }
     const enabledStages = new Set(deps.db.getTaskProcessStages(runRow.taskId))
     const total = (enabledStages.has('before_model') ? slots.beforeModel.length : 0)
       + (enabledStages.has('model_work') ? 1 : 0)

@@ -16,10 +16,13 @@ import { randomUUID } from 'node:crypto'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import { BrowserRunnerError, type BrowserRunnerClient } from '../browser/runnerClient.js'
+import { readBrowserShot } from '../browser/checkShots.js'
 
 export interface BrowserRoutesDeps {
   db: VoiceChatDb
   runner?: BrowserRunnerClient
+  /** Корень кадров браузерной проверки ранов; без него роут отдачи не появляется. */
+  shotsRoot?: string
 }
 
 /** Разумные границы вьюпорта: панель не должна просить у Chromium гигантский кадр. */
@@ -38,6 +41,19 @@ function normalizeViewport(value: unknown): BrowserViewport | undefined {
 
 export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesDeps): void {
   const { db, runner } = deps
+
+  // Кадр браузерной проверки рана. Доступ решает `getCiRun` (он проверяет
+  // членство в проекте), имя файла — строгий шаблон номера: в путь не должно
+  // попадать ничего, кроме кадра этого рана.
+  if (deps.shotsRoot) {
+    const shotsRoot = deps.shotsRoot
+    app.get<{ Params: { runId: string; name: string } }>('/api/ci/runs/:runId/browser-shots/:name', async (req, reply) => {
+      if (!db.getCiRun(uid(req), req.params.runId)) return reply.code(404).send({ error: 'not_found' })
+      const png = readBrowserShot(shotsRoot, req.params.runId, req.params.name)
+      if (!png) return reply.code(404).send({ error: 'not_found' })
+      return reply.type('image/png').header('cache-control', 'private, max-age=86400').send(png)
+    })
+  }
 
   // Общая проверка: разговор существует, принадлежит пользователю и это
   // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.

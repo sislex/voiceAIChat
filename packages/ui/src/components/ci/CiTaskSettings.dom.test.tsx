@@ -38,6 +38,26 @@ describe('CiTaskSettings', () => {
     expect(screen.getByRole('checkbox', { name: 'Подготовка' })).toBeChecked()
   })
 
+  it('проверка в браузере: режим выключен, порт и страница появляются вместе с режимом и сохраняются', async () => {
+    const { unmount } = render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    const mode = await screen.findByRole('combobox', { name: 'Режим' })
+    expect(mode).toHaveValue('off')
+    // Без режима порт и страница не нужны: спрашивать их «на всякий случай» незачем.
+    expect(screen.queryByRole('spinbutton', { name: 'Порт dev-сервера' })).not.toBeInTheDocument()
+
+    fireEvent.change(mode, { target: { value: 'chromium' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Порт dev-сервера' }), { target: { value: '8799' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Стартовая страница' }), { target: { value: '/board' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить проверку' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Сохранить проверку' })).not.toBeInTheDocument())
+
+    unmount()
+    render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    expect(await screen.findByRole('combobox', { name: 'Режим' })).toHaveValue('chromium')
+    expect(screen.getByRole('spinbutton', { name: 'Порт dev-сервера' })).toHaveValue(8799)
+    expect(screen.getByRole('textbox', { name: 'Стартовая страница' })).toHaveValue('/board')
+  })
+
   it('показывает ошибку сохранения этапов и оставляет возможность повторить', async () => {
     window.ci!.putTaskCi = vi.fn(async () => { throw new Error('network down') })
     render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)

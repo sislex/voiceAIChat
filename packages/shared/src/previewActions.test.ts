@@ -141,6 +141,16 @@ describe('previewToolHint', () => {
     expect(hint).toContain('mcp__browser__')
     expect(hint).toContain('активного чата')
   })
+
+  it('для изолированного Chromium не обещает панель и требует поднять dev-сервер самому', () => {
+    const hint = previewToolHint('chromium')
+    expect(hint).toContain('изолированный Chromium')
+    expect(hint).not.toContain('Рядом с чатом у пользователя открыта панель')
+    expect(hint).toContain('mcp__remote__bash')
+    expect(hint).toContain('screenshot')
+    // Словарь инструментов у поверхностей общий — расходиться им незачем.
+    for (const tool of ['open', 'read', 'find', 'click', 'type']) expect(hint).toContain(tool)
+  })
 })
 
 describe('isPreviewAction: hover, scroll, press', () => {
