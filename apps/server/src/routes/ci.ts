@@ -227,16 +227,18 @@ export function registerCiRoutes(
       config: db.resolveTaskSlots(req.params.id, req.params.taskId),
       overridden: db.hasCiSlotConfig('task', req.params.taskId),
       projectDefault: db.getCiSlotConfig('project', req.params.id),
-      enabledStages: db.getTaskProcessStages(req.params.taskId)
+      enabledStages: db.getTaskProcessStages(req.params.taskId),
+      browserCheck: db.getTaskBrowserCheck(req.params.taskId)
     }
   })
-  app.put<{ Params: { id: string; taskId: string }; Body: { beforeModel?: string[]; afterModel?: string[]; enabledStages?: unknown } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
+  app.put<{ Params: { id: string; taskId: string }; Body: { beforeModel?: string[]; afterModel?: string[]; enabledStages?: unknown; browserCheck?: unknown } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     const b = req.body ?? {}
     const slots: Array<[CiSlot, string[] | undefined]> = [['before_model', b.beforeModel], ['after_model', b.afterModel]]
     for (const [slot, ids] of slots) if (ids) db.setCiSlotCommands('task', req.params.taskId, slot, ids)
     const enabledStages = b.enabledStages === undefined ? db.getTaskProcessStages(req.params.taskId) : db.setTaskProcessStages(req.params.taskId, b.enabledStages)
-    return { ...db.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages }
+    const browserCheck = b.browserCheck === undefined ? db.getTaskBrowserCheck(req.params.taskId) : db.setTaskBrowserCheck(req.params.taskId, b.browserCheck)
+    return { ...db.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages, browserCheck }
   })
 
   // --- Запуск / отмена / повтор рана ---

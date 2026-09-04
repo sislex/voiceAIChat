@@ -63,6 +63,7 @@ export interface CiTaskConfig {
   overridden: boolean
   projectDefault: CiSlotConfig
   enabledStages: import('@shared/ci').CiProcessStage[]
+  browserCheck: import('@shared/ci').CiBrowserCheck
 }
 
 /** Ответ GET метрик проекта. */
@@ -96,7 +97,7 @@ export interface RendererCiRest {
   resetTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
   getTaskMachines(projectId: string, taskId: string): Promise<CiTaskMachines>
-  putTaskCi(projectId: string, taskId: string, config: Partial<CiSlotConfig> & { enabledStages?: import('@shared/ci').CiProcessStage[] }): Promise<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[] }>
+  putTaskCi(projectId: string, taskId: string, config: Partial<CiSlotConfig> & { enabledStages?: import('@shared/ci').CiProcessStage[]; browserCheck?: import('@shared/ci').CiBrowserCheck }): Promise<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[]; browserCheck: import('@shared/ci').CiBrowserCheck }>
   startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel'; agentId?: string }): Promise<CiRun>
   getMergeMachines(projectId: string, taskId: string): Promise<import('@shared/merge').MergeMachinesResponse>
   /** agentId выбирает машину проекта для рана; без него — машина workspace. */

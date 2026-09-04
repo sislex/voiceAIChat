@@ -58,6 +58,14 @@ export interface CiModelHooksDeps {
   kbToolEnabled?: boolean
   /** Брокер токенов ходов БЗ (в тестах — двойник, следящий за утечкой). */
   kbTool?: { register(token: string, entry: KbToolEntry): void; unregister(token: string): void }
+  /**
+   * Браузерная проверка результата: база URL MCP превью (с ?k=секрет) и брокер
+   * токенов ходов. Инструменты `mcp__browser__*` появляются у хода только когда
+   * у задачи выбран режим проверки — иначе действие некому исполнить, и модель
+   * упиралась бы в таймаут relay.
+   */
+  previewMcpBaseUrl?: string
+  previewTool?: { register(token: string, entry: { userId: string; conversationId: string }): void; unregister(token: string): void }
   makeMcpBaseUrl?: string
   makeTaskScopes?: MakeTaskScopeBroker
 }
@@ -586,6 +594,28 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   /**
+   * Инструменты браузера на ход работы модели. Транспорт выбирает сервер по
+   * настройке задачи: `chromium` — изолированный браузер (см. `checkTarget`),
+   * `user_panel` — открытая панель пользователя. Токен снимается в `finally`,
+   * как у БЗ: он адресует ход и жить дольше него не должен.
+   */
+  async function withBrowserTools<T>(ctx: CiModelContext, body: (fields: Partial<LlmRequest>) => Promise<T>): Promise<T> {
+    const conversationId = ctx.run.conversationId
+    const check = deps.db.getTaskBrowserCheck(ctx.task.id)
+    if (!deps.previewMcpBaseUrl || !deps.previewTool || !conversationId || check.mode === 'off') return body({})
+    const token = randomUUID()
+    deps.previewTool.register(token, { userId: ctx.run.triggeredBy, conversationId })
+    try {
+      return await body({
+        previewMcpUrl: `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(token)}`,
+        previewSurface: check.mode === 'chromium' ? 'chromium' : 'panel'
+      })
+    } finally {
+      deps.previewTool.unregister(token)
+    }
+  }
+
+  /**
    * Авто-контекст БЗ по теме задачи (режим `auto`): разобранный на прозу и код
    * запрос (kb/taskQuery.ts) идёт тем же поиском и с тем же порогом уверенности,
    * что и ход чата (kb/autoContext.ts). Никогда не бросает: сломанная БЗ — это
@@ -670,7 +700,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const turnOf = stageRunner(ctx, 'model_work', ctx.parentStepId)
 
     try {
-      return await withKbTools(ctx, ctx.parentStepId, async (kbFields, kbTurnId) => {
+      return await withBrowserTools(ctx, async (browserFields) => await withKbTools(ctx, ctx.parentStepId, async (kbFields, kbTurnId) => {
         // «Сначала база знаний, потом код»: требование идёт в задании, а блок
         // контекста по теме задачи сервер подмешивает сам (режим `auto`).
         const kbMode = kbModeOf(ctx)
@@ -711,6 +741,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             // CLI работает внутри server-контейнера; workspace существует на удалённой машине
             // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
             ...base,
+            // Браузер только в разработке: в фазе плана правок нет, а проверять
+            // нечего — смотреть страницу до реализации незачем.
+            ...(phase === 'plan' ? {} : browserFields),
             ...(phase === 'plan'
               ? {
                   readOnlyRemote: true,
@@ -783,7 +816,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         }
         log('system', `Достигнут предел ходов модели (${MAX_MODEL_TURNS}).\n`)
         return { ok: false }
-      })
+      }))
     } finally {
       ciToolBroker.unregister(token)
     }
