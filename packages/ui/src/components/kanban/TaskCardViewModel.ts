@@ -100,5 +100,7 @@ export interface TaskCardCallbacks {
   onStartRework(): void
   onChangeReworkDraft(draft: TaskReworkDraft): void
   onSubmitRework(draft: TaskReworkDraft, idempotencyKey: string): void | Promise<void>
+  onUploadAttachment?(file: File, target: 'task' | 'rework'): void | Promise<void>
+  onDeleteAttachment?(attachmentId: string, target: 'task' | 'rework'): void | Promise<void>
   onCancelRework(): void
 }

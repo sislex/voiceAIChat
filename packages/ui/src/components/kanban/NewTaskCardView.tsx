@@ -25,13 +25,19 @@ export interface NewTaskCardViewProps {
   callbacks: TaskCardCallbacks
 }
 
-function FileRows({ files }: { files: TaskCardViewModel['source']['attachments'] }): JSX.Element {
+function FileRows({ files, onDelete }: { files: TaskCardViewModel['source']['attachments']; onDelete?: (id: string) => void }): JSX.Element {
   if (!files.length) return <EmptyState title="Файлов пока нет" description="Добавленные материалы появятся здесь." />
   return <div className="new-task-files" role="list">{files.map((file) =>
     <div className={'new-task-file new-task-file--' + file.status} role="listitem" key={file.id}>
       <span>{file.name}</span><small>{file.error ?? file.mimeType ?? 'Файл'}</small>
+      {onDelete && file.status !== 'uploading' && <Button size="sm" variant="ghost" onClick={() => onDelete(file.id)}>Удалить</Button>}
     </div>
   )}</div>
+}
+
+function AttachmentPicker({ label, onPick }: { label: string; onPick?: (file: File) => void }): JSX.Element | null {
+  if (!onPick) return null
+  return <label>{label}<input type="file" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) onPick(file); event.currentTarget.value = '' }} /></label>
 }
 
 export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
@@ -84,8 +90,8 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         </div>}
         {model.loadState === 'ready' && activeTab === 'workflow' && <section className="new-task-section">{model.workflow.map((step) => <div className={'new-task-workflow-step new-task-workflow-step--' + step.state} key={step.id}><i aria-hidden="true" /><strong>{step.label}</strong></div>)}</section>}
         {model.loadState === 'ready' && activeTab === 'runs' && <section className="new-task-section"><h3>Раны</h3>{model.runs.length ? model.runs.map((run) => <button className="new-task-run-link" key={run.id} onClick={() => callbacks.onOpenRun(run.id)}><strong>{run.title}</strong><span className={'new-task-run-status new-task-run-status--' + run.status}>{RUN_LABELS[run.status]}</span></button>) : <EmptyState title="Ранов пока нет" description="История появится после запуска этапа." />}</section>}
-        {model.loadState === 'ready' && activeTab === 'files' && <div className="new-task-grid"><section className="new-task-section"><h3>Вложения исходной задачи</h3><FileRows files={model.source.attachments} /></section><section className="new-task-section"><h3>Make-связи</h3>{model.makeSources.length ? model.makeSources.map((source) => <article key={source.id}><Button size="sm" variant="ghost" onClick={() => callbacks.onOpenMake(source.conversationId)}>{source.title}</Button><small>{source.mode === 'whole_project' ? 'Проект целиком' : source.paths.map((path) => path.path).join(', ')}</small>{source.paths.filter((path) => !path.available).map((path) => <p className="new-task-source-error" key={path.path}>{path.path}: {path.error ?? 'Файл недоступен'}</p>)}</article>) : <EmptyState title="Make не связан" description="Связь можно добавить в старой карточке." />}</section></div>}
-        {model.loadState === 'ready' && activeTab === 'history' && <section className="new-task-section"><h3>История доработок</h3>{model.cycles.length ? model.cycles.map((cycle) => <article className="new-task-cycle" key={cycle.id}><strong>Цикл {cycle.sequence}</strong><p>{cycle.description}</p><small>{new Date(cycle.createdAt).toLocaleString('ru-RU')} · {cycle.createdBy}</small></article>) : <EmptyState title="Доработок пока не было" description="После успешной разработки здесь сохраняются неизменяемые циклы." />}</section>}
+        {model.loadState === 'ready' && activeTab === 'files' && <div className="new-task-grid"><section className="new-task-section"><h3>Вложения исходной задачи</h3><AttachmentPicker label="Загрузить вложение" onPick={(file) => void callbacks.onUploadAttachment?.(file, 'task')} /><FileRows files={model.source.attachments} onDelete={(id) => void callbacks.onDeleteAttachment?.(id, 'task')} /></section><section className="new-task-section"><h3>Make-связи</h3>{model.makeSources.length ? model.makeSources.map((source) => <article key={source.id}><Button size="sm" variant="ghost" onClick={() => callbacks.onOpenMake(source.conversationId)}>{source.title}</Button><small>{source.mode === 'whole_project' ? 'Проект целиком' : source.paths.map((path) => path.path).join(', ')}</small>{source.paths.filter((path) => !path.available).map((path) => <p className="new-task-source-error" key={path.path}>{path.path}: {path.error ?? 'Файл недоступен'}</p>)}</article>) : <EmptyState title="Make не связан" description="Связь можно добавить в старой карточке." />}</section></div>}
+        {model.loadState === 'ready' && activeTab === 'history' && <section className="new-task-section"><h3>История доработок</h3>{model.cycles.length ? model.cycles.map((cycle) => <article className="new-task-cycle" key={cycle.id}><strong>Цикл {cycle.sequence}</strong><p>{cycle.description}</p>{cycle.criteria.length > 0 && <><h4>Критерии</h4><ul>{cycle.criteria.map((item) => <li key={item}>{item}</li>)}</ul></>}{cycle.makeSources.length > 0 && <><h4>Make-снимок</h4>{cycle.makeSources.map((source) => <div key={source.conversationId}><strong>{source.title}</strong><small>{source.mode === 'whole_project' ? 'Проект целиком' : source.paths.map((path) => path.path).join(', ')}</small>{source.paths.filter((path) => !path.available).map((path) => <p className="new-task-source-error" key={path.path}>{path.path}: {path.error ?? 'Файл недоступен'}</p>)}</div>)}</>}{cycle.attachments.length > 0 && <><h4>Вложения</h4><FileRows files={cycle.attachments} /></>}<small>{new Date(cycle.createdAt).toLocaleString('ru-RU')} · {cycle.createdBy}</small></article>) : <EmptyState title="Доработок пока не было" description="После успешной разработки здесь сохраняются неизменяемые циклы." />}</section>}
       </main>
     </div>
     {props.reworkOpen && <div className="new-task-rework" role="dialog" aria-modal="true" aria-label="Новый цикл доработки">
@@ -127,7 +133,8 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
             </div>
           })}
         </fieldset>
-        <FileRows files={props.reworkDraft.attachments} />
+        <AttachmentPicker label="Загрузить вложение цикла" onPick={(file) => void callbacks.onUploadAttachment?.(file, 'rework')} />
+        <FileRows files={props.reworkDraft.attachments} onDelete={(id) => void callbacks.onDeleteAttachment?.(id, 'rework')} />
         {props.reworkError && <p className="new-task-source-error" role="alert">{props.reworkError}</p>}
       </div>
       <footer><Button onClick={callbacks.onCancelRework}>Отмена</Button><Button variant="primary" loading={props.reworkPending} disabled={!props.reworkDraft.description.trim() || model.actions.hasActiveRun} onClick={submit}>Создать цикл</Button></footer>

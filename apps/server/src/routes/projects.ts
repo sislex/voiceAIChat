@@ -1029,6 +1029,29 @@ export function registerProjectRoutes(
     async (req, reply) => db.listTaskReworkCycles(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
   )
 
+  app.get<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/attachments',
+    async (req, reply) => db.listTaskAttachments(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+  )
+
+  app.post<{ Params: { id: string; taskId: string }; Body: import('@voicechat/shared').CreateTaskAttachmentInput }>(
+    '/api/projects/:id/tasks/:taskId/attachments',
+    async (req, reply) => {
+      try { return db.createTaskAttachment(uid(req), req.params.id, req.params.taskId, req.body) }
+      catch (error) { return badReq(reply, errMessage(error)) }
+    }
+  )
+
+  app.delete<{ Params: { id: string; taskId: string; attachmentId: string } }>(
+    '/api/projects/:id/tasks/:taskId/attachments/:attachmentId',
+    async (req, reply) => {
+      try {
+        const deleted = db.deleteTaskAttachment(uid(req), req.params.id, req.params.taskId, req.params.attachmentId)
+        return deleted ? { deleted } : nf(reply)
+      } catch (error) { return badReq(reply, errMessage(error)) }
+    }
+  )
+
   app.get<{ Params: { id: string; conversationId: string } }>(
     '/api/projects/:id/design-sources/:conversationId/files',
     async (req, reply) => {

@@ -40,4 +40,26 @@ describe('NewTaskCardView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Создать цикл' }))
     expect(submit).not.toHaveBeenCalled()
   })
+
+  it('показывает ошибку Make и позволяет повторить загрузку', () => {
+    const retry = vi.fn()
+    render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={draft} makeState="error" onRetryMake={retry} onVersionChange={vi.fn()} callbacks={callbacks()} />)
+    expect(screen.getByText('Не удалось загрузить Make-проекты')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
+
+  it('восстанавливает полный снимок неизменяемого цикла в истории', () => {
+    const cycle = {
+      id: 'cycle-1', sequence: 1, description: 'Исправить retry', criteria: ['Черновик сохранён'],
+      makeSources: [{ id: 'make-2', title: 'Макет', conversationId: 'make-2', mode: 'files' as const, paths: [{ path: 'src/App.tsx', available: true }] }],
+      attachments: [{ id: 'file-1', name: 'screen.png', status: 'ready' as const }],
+      createdBy: 'alice', createdAt: 1, preparationRunId: null
+    }
+    render(<NewTaskCardView model={{ ...model, cycles: [cycle] }} activeTab="history" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks()} />)
+    expect(screen.getByText('Исправить retry')).toBeTruthy()
+    expect(screen.getByText('Черновик сохранён')).toBeTruthy()
+    expect(screen.getByText('src/App.tsx')).toBeTruthy()
+    expect(screen.getByText('screen.png')).toBeTruthy()
+  })
 })

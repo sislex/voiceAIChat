@@ -666,6 +666,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/projects/${encodeURIComponent(projectId)}/design-sources/${encodeURIComponent(conversationId)}/files`),
     'tasks:reworkCycles': ({ projectId, taskId }) =>
       req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`),
+    'tasks:attachments': ({ projectId, taskId }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments`),
+    'tasks:uploadAttachment': ({ projectId, taskId, input }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments`, { method: 'POST', body: JSON.stringify(input) }),
+    'tasks:deleteAttachment': ({ projectId, taskId, attachmentId }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' }),
     'tasks:createReworkCycle': ({ projectId, taskId, idempotencyKey, input }) =>
       req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) }),
     'tasks:delete': async ({ projectId, taskId }) => {
