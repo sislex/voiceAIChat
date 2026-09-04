@@ -2444,6 +2444,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenMachines={session.authRequired ? () => navigate('/machines') : undefined}
         onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={shell.error}
+        errorFix={shell.errorFix}
+        // Кнопка «Исправить» отправляет подготовленный сервером промпт обычной
+        // репликой в этот же чат: модель правит на месте, ход помечен как
+        // исправление и системный preflight копии для него пропускается.
+        onFixError={(prompt) => { shellActions.dismissError(); void chatActions.submitFix(prompt) }}
         onDismissError={shellActions.dismissError}
         modelMissing={VOICE_INPUT_ENABLED && !settingsState.modelPresent}
         modelLabel={settingsState.settings.whisperModel}

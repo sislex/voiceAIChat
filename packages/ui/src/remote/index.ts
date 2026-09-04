@@ -61,8 +61,8 @@ function makeSttBridge(ws: WsClient): RendererSttBridge {
 
 export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
   return {
-    send: ({ conversationId, messageId, segments, attachments, verbose, execTarget, assistantContext }) =>
-      ws.send({ t: 'claude.send', conversationId, messageId, segments, attachments, verbose, execTarget, assistantContext }),
+    send: ({ conversationId, messageId, segments, attachments, verbose, execTarget, skipProjectSync, assistantContext }) =>
+      ws.send({ t: 'claude.send', conversationId, messageId, segments, attachments, verbose, execTarget, skipProjectSync, assistantContext }),
     cancel: (payload) =>
       ws.send({
         t: 'claude.cancel',
@@ -85,7 +85,7 @@ export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
         })
       ),
     onError: (cb) =>
-      ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message })),
+      ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message, ...(m.fix ? { fix: m.fix } : {}) })),
     onLog: (cb) =>
       ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry })),
     onStart: (cb) => ws.on('claude.start', (m) => cb({ conversationId: m.conversationId, provider: m.provider, model: m.model, execTarget: m.execTarget })),
