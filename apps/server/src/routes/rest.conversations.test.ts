@@ -1,5 +1,5 @@
 // Беседы, сообщения, настройки и полнотекстовый поиск.
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,6 +44,33 @@ describe('REST: conversations/messages/settings', () => {
     expect(first.json().conversation).toMatchObject({ title: 'Файл README.md', projectId: project.id, skillNames: ['ts'], messageCount: 1 })
     expect(first.json().messages).toHaveLength(1)
     expect((await inj({ method: 'GET', url: '/api/conversations' })).json()).toHaveLength(1)
+  })
+
+  it('новый Make-чат проекта разово обновляет общую копию до origin, обычный чат — нет', async () => {
+    // Единственное, что Make делает с репозиторием: модель к машине не ходит
+    // (`turns.ts`: makeChat), поэтому копию до актуального main доводит сервер
+    // здесь, один раз при создании чата.
+    const project = db.createProject(U, { name: 'Витрина', gitUrl: 'https://example.com/repo.git' })
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.linkMachine(U, project.id, agent.id)
+    db.setProjectMachinePath(U, project.id, agent.id, '/repo')
+    vi.spyOn(agentRegistry, 'isOnline').mockReturnValue(true)
+    const exec = vi.spyOn(agentRegistry, 'exec').mockResolvedValue({
+      exitCode: 0, output: `BASE_SHA=${'a'.repeat(40)}\n`, timedOut: false
+    } as never)
+
+    const made = await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make', projectId: project.id } })
+    expect(made.json().assistantKind).toBe('make')
+    for (let i = 0; i < 200 && exec.mock.calls.length === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(exec.mock.calls[0]?.[0]).toBe(agent.id)
+    expect(String(exec.mock.calls[0]?.[1])).toContain('merge --ff-only')
+
+    // Обычный чат того же проекта копию при создании не трогает: его ход
+    // проходит системный preflight сам.
+    exec.mockClear()
+    await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный', projectId: project.id } })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(exec).not.toHaveBeenCalled()
   })
 
   it('create → list → get', async () => {

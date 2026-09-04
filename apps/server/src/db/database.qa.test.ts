@@ -27,6 +27,26 @@ function fixture() {
 }
 
 describe('manual QA persistence and workflow', () => {
+  // Список типов был продублирован в мапперe тройкой legacy-значений, поэтому
+  // актуальные ui|api|integration|negative|regression молча становились manual —
+  // а по UI-сценарию запускается Component QA.
+  it('сохраняет актуальные типы сценариев и сводит к manual только неизвестный', () => {
+    const { project, task } = fixture()
+    for (const testType of ['ui', 'api', 'integration', 'negative', 'regression'] as const) {
+      const created = db.createAcceptanceCriterion('owner', project.id, task.id, {
+        title: `Сценарий ${testType}`, description: 'Описание', preconditions: 'Открыт экран',
+        steps: 'Шаги', testData: 'Данные', expectedResult: 'Результат', required: true, testType
+      })!
+      expect(created.testType).toBe(testType)
+    }
+    const broken = db.createAcceptanceCriterion('owner', project.id, task.id, {
+      title: 'Неизвестный тип', description: 'Описание', preconditions: 'Открыт экран',
+      steps: 'Шаги', testData: 'Данные', expectedResult: 'Результат', required: true,
+      testType: 'выдумка' as unknown as 'manual'
+    })!
+    expect(broken.testType).toBe('manual')
+  })
+
   it('requires detailed scenarios before moving from component QA to manual QA', () => {
     const project = db.createProject('owner', { name: 'QA preparation' })
     const preparation = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'component_qa')!

@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-03
-checked: 604e3314
+updated: 2026-09-04
+checked: 1ffda784
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -280,7 +280,39 @@ Usage нормализуется в `TurnUsage` и рассылается как
 
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
 
-**Make без машины у не-admin (roadmap-3 п.2).** Раньше `turns.ts` форсил `plan` для любого пользователя без машины, а нативный plan-режим CLI глушит MCP — Make не мог писать файлы. Теперь для Make-разговора с провайдером Claude ход идёт в `default` с `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …) — остаются только MCP-инструменты, make MCP без `ro=1`. Для Codex ход остаётся в плане (`--sandbox read-only`): раньше считалось, что read-only sandbox блокирует HTTP-MCP, но настоящая причина — Codex ≥0.15 требует одобрения любого MCP-вызова, а неинтерактивный `codex exec` отвечает «MCP tool call requires approval, but approval policy is never». С 2026-09-02 раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`), и MCP работает и в read-only sandbox; проверено на 0.152 против пробного сервера (без ключа падают даже read-only инструменты, с `--dangerously-bypass-approvals-and-sandbox` проходят, с ключом — проходят при read-only). Политику изменений при этом держат сами MCP-серверы (`ro=1`, автопилот/подтверждения).
+**Make без машины (roadmap-3 п.2).** Раньше `turns.ts` форсил `plan` для любого пользователя без машины, а нативный plan-режим CLI глушит MCP — Make не мог писать файлы. Теперь для Make-разговора с провайдером Claude ход идёт в `default` с `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …) — остаются только MCP-инструменты, make MCP без `ro=1`. Для Codex ход остаётся в плане (`--sandbox read-only`): раньше считалось, что read-only sandbox блокирует HTTP-MCP, но настоящая причина — Codex ≥0.15 требует одобрения любого MCP-вызова, а неинтерактивный `codex exec` отвечает «MCP tool call requires approval, but approval policy is never». С 2026-09-02 раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`), и MCP работает и в read-only sandbox; проверено на 0.152 против пробного сервера (без ключа падают даже read-only инструменты, с `--dangerously-bypass-approvals-and-sandbox` проходят, с ключом — проходят при read-only). Политику изменений при этом держат сами MCP-серверы (`ro=1`, автопилот/подтверждения).
+
+**Make-чат к машине не ходит вообще (2026-09-04).** Раньше исключение работало
+только «без машины»: назначенная чату машина давала remote-bash-мост, а у роли
+`admin` вместе с ним и встроенные `Bash`/`Write`/`Read` — то есть модель Make
+могла править файлы на машине, включая общую копию проекта. Теперь `turns.ts`
+(флаг `makeChat`) для Make игнорирует машину целиком: `resolveConversationMachine`
+не вызывается, `remote` не собирается, отсутствие или offline машины не блокирует
+ход, `MAKE_ONLY_DISALLOWED_TOOLS` запрещаются при любой роли и режиме, а Codex-ход
+Make остаётся в `plan` тоже при любой роли. Причина — та же, что и у удаления
+Make-push: общая копия проекта (`…/projects/<id>/worktree`) принадлежит git-потоку
+(задачи, CI, релизы), и правка мимо коммита оставляет её dirty. Мастерская при
+этом не теряет ничего: `make_*` пишут в `<dataDir>/make/<conversationId>` и машины
+не требуют. Снимок контекста (`routes/rest.ts`) повторяет это правило: для
+Make-чата `resolution` = null, поэтому «Машина выполнения», рабочая директория,
+навыки и `mcp-remote-*` показываются недоступными, а `disallowedTools` содержат
+встроенные инструменты. Единственное действие Make с репозиторием — разовое
+обновление общей копии до `origin/<base>` при создании чата: `refreshProjectMain`
+в `server.ts` (передаётся в `registerRest`) вызывается из `POST /api/conversations`
+при `assistantKind: 'make'` с проектом, best-effort и без `await` — нет машины, она
+offline или синхронизация упала, чат всё равно создаётся, а причина уходит в лог
+(`make_chat_project_refresh_failed`). Оставшиеся с прежних времён привязки
+Make-чатов к машине снимает миграция `database.ts` (`UPDATE conversations SET
+exec_target = NULL, workdir = NULL WHERE assistant_kind = 'make'`, идемпотентно;
+явное `exec_target = 'none'` сохраняется как осознанный выбор пользователя), а
+`setConversationExecTarget` больше не даёт записать машину и каталог Make-чату —
+остальные поля того же вызова (`permission_mode`, движок, модель, навыки)
+сохраняются. Тесты: `turns.test.ts` («Make с назначенной машиной всё равно не
+получает remote-мост» — машина наследуется как default-машина проекта, «Make на
+Codex остаётся в плане даже у admin»), `rest.conversations.test.ts` («новый
+Make-чат проекта разово обновляет общую копию до origin, обычный чат — нет») и
+`db/database.test.ts` («снимает с Make-чатов привязку к машине и каталог, а «none»
+и чужие чаты не трогает»).
 
 ## Канбан: инструменты `mcp__kanban__*`
 
@@ -611,8 +643,9 @@ details («встроенный запуск CLI на сервере», когд
 - **режим доступа в Make-чате.** Ход не понижает режим до «плана» без машины
   (`makeOnlyExecution` в `turns.ts`): инструменты `make_*` машины не требуют, а
   нативный plan-режим CLI их глушит — вместо понижения запрещаются встроенные
-  инструменты (`MAKE_ONLY_DISALLOWED_TOOLS`). Снимок понижал, и обычный
-  пользователь читал «Только планирование», пока ход правил файлы проекта;
+  инструменты (`MAKE_ONLY_DISALLOWED_TOOLS`, с 2026-09-04 — при любой роли).
+  Снимок понижал, и обычный пользователь читал «Только планирование», пока ход
+  правил файлы проекта;
 - **права на движок.** Ход берёт первый разрешённый провайдер, если выбранный
   пользователю закрыт (`isProviderAllowed`/`firstAllowedProvider`; права —
   deny-list, запись `modelId: '*'` закрывает движок целиком). Снимок показывал
