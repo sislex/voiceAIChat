@@ -302,6 +302,25 @@ describe('ClaudeCli', () => {
     for (const tool of ['open', 'read', 'find', 'click', 'type']) expect(allowed).toContain(`mcp__browser__${tool}`)
   })
 
+  it('previewSurface chromium: хинт про изолированный браузер и расширенный allow-list', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      {
+        prompt: 'x', sessionId: null, model: 'opus', previewMcpUrl: 'http://127.0.0.1:8787/mcp/preview?k=s&turn=t1',
+        previewSurface: 'chromium',
+        remote: { mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1', agentName: 'Мак' }
+      },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const hint = args[args.indexOf('--append-system-prompt') + 1]
+    expect(hint).toContain('изолированный Chromium')
+    const allowed = args[args.indexOf('--allowedTools') + 1]
+    // Смотреть страницу — снимок, ошибки и ожидание — без автоодобрения бесполезно.
+    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network']) expect(allowed).toContain(`mcp__browser__${tool}`)
+  })
+
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn

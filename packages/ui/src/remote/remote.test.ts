@@ -8,6 +8,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
+import { createQaRest } from './qaBridge'
+import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { base64ToArrayBuffer } from './decode'
 import { getCsrf } from './session'
 import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
@@ -381,6 +383,42 @@ describe('cookie-сессия: имена по схеме', () => {
     const bridge = makeSessionBridge('', ws)
     expect(withCookie('_ga=чужая-аналитика', () => bridge.hasCookieSession!())).toBe(false)
     expect(withCookie('__Secure-vc_csrf=есть', () => bridge.hasCookieSession!())).toBe(true)
+  })
+})
+
+// Панели QA и тестовых окружений собирали заголовки сами и знали только про
+// Bearer. В вебе после перезагрузки страницы токен живёт лишь в памяти, запрос
+// авторизует cookie — и каждая мутация возвращала 403 `csrf`. Проверено живьём
+// на проде: POST …/qa/integration/runs отвечал 403, а UI показывал
+// «Не удалось обновить интеграционные автотесты - csrf».
+describe('мосты QA и тестовых окружений', () => {
+  const collect = (): Array<{ url: string; init?: RequestInit }> => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init })
+      return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as unknown as Response
+    })
+    return calls
+  }
+
+  it('мутации QA несут x-vc-csrf при cookie-сессии', async () => {
+    const calls = collect()
+    document.cookie = 'vc_csrf=tok123'
+    const qa = createQaRest('')
+    await qa.startIntegration!('p1', 't1')
+    await qa.startComponent!('p1', 't1')
+    for (const call of calls) expect((call.init?.headers as Record<string, string>)['x-vc-csrf']).toBe('tok123')
+    expect(calls[0].url).toBe('/api/projects/p1/tasks/t1/qa/integration/runs')
+    document.cookie = 'vc_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+  })
+
+  it('мутации тестового окружения несут x-vc-csrf при cookie-сессии', async () => {
+    const calls = collect()
+    document.cookie = 'vc_csrf=tok456'
+    const preview = createFeaturePreviewRest('')
+    await preview.operate('p1', 't1', 'start', { machineId: 'agent-1' })
+    expect((calls[0].init?.headers as Record<string, string>)['x-vc-csrf']).toBe('tok456')
+    document.cookie = 'vc_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   })
 })
 

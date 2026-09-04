@@ -403,14 +403,15 @@ describe('App — вход в раздел «Проекты»', () => {
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
   })
 
-  it('проектов нет: #/projects показывает пустое состояние без формы создания', async () => {
+  it('проектов нет: #/projects показывает Make-состояние и открывает существующий диалог', async () => {
     window.location.hash = '#/projects'
     await renderApp()
     const page = await screen.findByTestId('projects-empty')
-    expect(within(page).getByText('Проектов пока нет')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Название нового проекта')).not.toBeInTheDocument()
-    // Редиректу некуда вести — адрес остаётся прежним.
-    await new Promise((r) => setTimeout(r, 50))
+    expect(within(page).getByRole('heading', { name: 'Проекты' })).toBeInTheDocument()
+    expect(within(page).getByText('Новый проект появится здесь после создания.')).toBeInTheDocument()
+    await userEvent.click(within(page).getByRole('button', { name: 'Добавить новый проект' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    // Отдельной страницы списка по-прежнему нет.
     expect(window.location.hash).toBe('#/projects')
   })
 

@@ -785,6 +785,15 @@ CREATE TABLE IF NOT EXISTS ci_task_process_stages (
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
+-- Браузерная проверка стадии разработки: режим, порт dev-сервера и стартовый путь.
+-- Отдельной таблицей, а не колонкой в tasks: настройка принадлежит CI-процессу
+-- задачи и уходит вместе с ней (как выбор этапов выше).
+CREATE TABLE IF NOT EXISTS ci_task_browser_checks (
+  task_id    TEXT PRIMARY KEY,
+  check_json TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ci_llm_configs (
   owner_type TEXT NOT NULL,
   owner_id   TEXT NOT NULL,

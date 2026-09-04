@@ -13,6 +13,7 @@ import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { createCiRunManager } from './runManager.js'
+import type { BrowserRunnerClient } from '../browser/runnerClient.js'
 
 const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
@@ -40,6 +41,13 @@ let onExec: ((script: string) => void) | null = null
 let modelGate: Promise<void> | null = null
 let codexModel = ''
 let modelRequests: LlmRequest[] = []
+/** Сессии изолированного Chromium, которые ран попросил погасить. */
+let browserStops: string[] = []
+
+/** Раннер браузера здесь нужен одним методом: гашение сессии перед раном. */
+const fakeBrowserRunner = {
+  stop: async (sessionId: string) => { browserStops.push(sessionId); return true }
+} as unknown as BrowserRunnerClient
 
 const fakeClaude: LlmClient = {
   send: (req, handlers) => {
@@ -132,9 +140,10 @@ beforeEach(async () => {
   modelGate = null
   codexModel = ''
   modelRequests = []
+  browserStops = []
   counts.clear()
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => Date.now() })
-  app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-${Date.now()}`) }), db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex })
+  app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-${Date.now()}`) }), db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex, browserRunner: fakeBrowserRunner })
   admin = signToken({ name: 'admin', role: 'admin' }, SECRET)
 })
 afterEach(async () => { await app.close(); db.close() })
@@ -258,6 +267,17 @@ describe('ci run manager', () => {
       agentId: second.id,
       agentSelectionSource: 'project_default'
     })
+  })
+
+  it('перед раном гасит сессию браузерной проверки задачи, а без режима chromium не трогает её', async () => {
+    const { project, task } = setup()
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    await waitRun(await run(project.id, task.id))
+    expect(browserStops).toEqual([`task-${task.id}`])
+
+    db.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
+    await waitRun(await run(project.id, task.id))
+    expect(browserStops).toEqual([`task-${task.id}`])
   })
 
   it('подготавливает отсутствующий repos_root из существующей папки проекта', async () => {

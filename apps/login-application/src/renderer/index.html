@@ -5,31 +5,55 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>VoiceChat Login</title>
   <style>
-    body { font: 14px/1.45 -apple-system,sans-serif; margin: 0; padding: 28px; color: #1a1a1a; background: #fafaf7; }
-    h1 { font-size: 22px; margin: 0 0 8px; } p { color: #555; }
-    details { margin-top: 22px; }
-    summary { cursor: pointer; font-weight: 700; }
-    form { display: grid; gap: 12px; margin-top: 14px; }
-    label { display: grid; gap: 5px; font-weight: 600; }
-    input { padding: 10px; border: 1px solid #bbb; border-radius: 8px; font: inherit; }
-    button { padding: 11px; border: 0; border-radius: 8px; background: #276b4d; color: white; font-weight: 700; }
-    button:disabled { opacity: .55; } #message { min-height: 42px; color: #276b4d; } #message.error { color: #b42318; }
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --bg:#fdfdfc; --surface:#fff; --text:#1e1e1d; --muted:#60605d; --line:#bdbdb8; --focus:#e99700; --success:#287754; --danger:#b42318; }
+    * { box-sizing: border-box; }
+    body { min-width: 0; margin: 0; color: var(--text); background: var(--bg); }
+    main { width: min(100%, 1000px); margin: 0 auto; padding: 56px 55px 28px; }
+    h1 { margin: 0 0 32px; font-size: clamp(29px, 4.4vw, 44px); line-height: 1.08; letter-spacing: -1px; }
+    .intro { margin: 0 0 48px; color: var(--muted); font-size: clamp(17px, 2.8vw, 28px); line-height: 1.45; }
+    form { display: grid; }
+    label { margin: 0 0 13px; font-size: clamp(17px, 2.7vw, 27px); font-weight: 750; }
+    input, select, button { width: 100%; font: inherit; }
+    input, select { height: 82px; margin-bottom: 28px; padding: 0 20px; border: 2px solid var(--line); border-radius: 16px; outline: none; background: var(--surface); color: var(--text); font-size: clamp(16px, 2.7vw, 27px); font-weight: 600; }
+    input:focus-visible, select:focus-visible { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus); }
+    button { min-height: 74px; border: 0; border-radius: 15px; background: var(--success); color: #fff; font-size: clamp(16px, 2.7vw, 27px); font-weight: 750; cursor: pointer; }
+    button:hover:not(:disabled) { filter: brightness(.94); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    button:disabled { background: var(--line); color: #f3f3f1; cursor: not-allowed; opacity: .72; }
+    #message { min-height: 1.4em; margin: 26px 0 0; color: var(--success); font-size: clamp(16px, 2.7vw, 27px); line-height: 1.35; }
+    #message.error { color: var(--danger); }
+    @media (prefers-color-scheme: dark) { :root { --bg:#1d1f20; --surface:#282b2d; --text:#f3f3f1; --muted:#b5b5af; --line:#696966; } }
+    @media (max-width:700px) {
+      main { padding: 30px 24px 18px; }
+      h1 { margin-bottom: 18px; }
+      .intro { margin-bottom: 28px; }
+      label { margin-bottom: 8px; }
+      input, select { height: 52px; margin-bottom: 18px; border-radius: 10px; }
+      button { min-height: 50px; border-radius: 10px; }
+      #message { margin-top: 17px; }
+    }
   </style>
 </head>
 <body>
-  <h1>Подключить этот Mac</h1>
-  <p>Вернитесь в ChatAI и нажмите «Подключить текущее устройство». Одноразовая ссылка откроет это приложение автоматически.</p>
-  <details>
-    <summary>Подключиться вручную</summary>
-    <p>Резервный способ: пароль используется только для запроса и не сохраняется.</p>
-    <form>
-      <label>Адрес ChatAI<input name="serverUrl" type="url" placeholder="https://chat.example.com" required autofocus /></label>
-      <label>Логин<input name="login" autocomplete="username" required /></label>
-      <label>Пароль<input name="password" type="password" autocomplete="current-password" required /></label>
-      <button type="submit" disabled>Добавить текущее устройство</button>
+  <main>
+    <h1>Подключить этот Mac</h1>
+    <p class="intro">Откройте приложение из ChatAI или войдите вручную. Пароль не сохраняется.</p>
+    <form novalidate>
+      <label for="server-url">Сервер ChatAI</label>
+      <select id="server-url" name="serverUrl" required autofocus>
+        <option value="https://voicechat.app">Основной — https://voicechat.app</option>
+        <option value="https://team.voicechat.app">Командный — https://team.voicechat.app</option>
+        <option value="http://localhost:3000">Локальный — http://localhost:3000</option>
+      </select>
+      <label for="login">Логин</label>
+      <input id="login" name="login" autocomplete="username" required />
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button type="submit" disabled aria-disabled="true">Добавить текущее устройство</button>
     </form>
-  </details>
-  <p id="message" role="status" aria-live="polite"></p>
+    <p id="message" role="status" aria-live="polite"></p>
+  </main>
   <script type="module" src="./index.ts"></script>
 </body>
 </html>
