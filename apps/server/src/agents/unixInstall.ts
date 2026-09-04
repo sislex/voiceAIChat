@@ -34,6 +34,27 @@ export function buildUnixInstallScript(baseUrl: string, os: UnixOs): string {
     ? `launchctl kickstart -k "gui/$(id -u)/com.voicechat.agent" 2>/dev/null || true`
     : `systemctl --user restart voicechat-agent.service 2>/dev/null || true`
 
+  const portableVersion = isMac
+    ? `# Для macOS берём первый (самый свежий) релиз линии v22, но дочитываем EOF.
+  NVER="$(curl -fsSL https://nodejs.org/dist/index.json | grep -o '\"version\":\"v[0-9.]*\"' | awk '$0 ~ /\"v22\\./ && !first { first = $0 } END { print first }' | sed 's/.*\"v/v/;s/\"//')"`
+    : `# Linux сохраняет прежнюю политику: первая запись — самая свежая версия.
+  NVER="$(curl -fsSL https://nodejs.org/dist/index.json | grep -o '\"version\":\"v[0-9.]*\"' | awk 'NR == 1 { first = $0 } END { print first }' | sed 's/.*\"v/v/;s/\"//')"`
+
+  const supportedArchitectures = isMac
+    ? `x86_64|amd64) NARCH=x64 ;;
+    aarch64|arm64) NARCH=arm64 ;;`
+    : `x86_64|amd64) NARCH=x64 ;;
+    aarch64|arm64) NARCH=arm64 ;;
+    armv7l) NARCH=armv7l ;;`
+
+  const recoveryContext = isMac
+    ? `MACOS_VERSION="$(sw_vers -productVersion 2>/dev/null || printf 'unknown')"
+  echo "Не удалось восстановить Node.js для macOS $MACOS_VERSION ($ARCH)." >&2
+  echo "  выбранная версия: \${NVER:-не определена}" >&2
+  echo "  причина: $1" >&2
+  echo "Повторите установку позже или установите рабочий Node.js 22+ вручную и повторите команду." >&2`
+    : `echo "$1" >&2`
+
   const autostart = isMac
     ? `PLIST="$HOME/Library/LaunchAgents/com.voicechat.agent.plist"
 mkdir -p "$HOME/Library/LaunchAgents"
@@ -93,42 +114,97 @@ mkdir -p "$AGENT_DIR"
 
 # --- Node.js -------------------------------------------------------------
 echo "[1/7] Проверяю Node.js (нужна 22+)…"
-node_major() {
-  local out
-  out="$("$1" -v 2>/dev/null || true)"
-  case "$out" in
-    v*) echo "\${out#v}" | cut -d. -f1 ;;
-    *) echo 0 ;;
-  esac
+NODE_VERSION=""
+NODE_ERROR=""
+ARCH="$(uname -m)"
+check_node() {
+  local candidate="$1" out status major
+  if out="$("$candidate" --version)"; then
+    if ! printf '%s\n' "$out" | grep -Exq 'v[0-9]+[.][0-9]+[.][0-9]+'; then
+      NODE_ERROR="$candidate вернул невалидную версию: \${out:-<пусто>}"
+      echo "  $NODE_ERROR" >&2
+      return 1
+    fi
+    major="\${out#v}"
+    major="\${major%%.*}"
+    if [ "$major" -lt 22 ]; then
+      NODE_ERROR="$candidate сообщает $out, нужна версия 22+"
+      echo "  $NODE_ERROR" >&2
+      return 1
+    fi
+    NODE_VERSION="$out"
+    return 0
+  else
+    status=$?
+    NODE_ERROR="$candidate не запускается (код $status)"
+    echo "  $NODE_ERROR" >&2
+    return 1
+  fi
+}
+absolute_node() {
+  local candidate="$1" dir name
+  dir="$(dirname "$candidate")"
+  name="$(basename "$candidate")"
+  printf '%s/%s\n' "$(cd "$dir" && pwd -P)" "$name"
+}
+recovery_error() {
+  ${recoveryContext}
 }
 
 NODE_BIN=""
-if command -v node >/dev/null 2>&1 && [ "$(node_major node)" -ge 22 ]; then
-  NODE_BIN="$(command -v node)"
-elif [ -x "$AGENT_DIR/node/bin/node" ] && [ "$(node_major "$AGENT_DIR/node/bin/node")" -ge 22 ]; then
-  NODE_BIN="$AGENT_DIR/node/bin/node"
-else
+if command -v node >/dev/null 2>&1; then
+  NODE_CANDIDATE="$(command -v node)"
+  if check_node "$NODE_CANDIDATE"; then
+    NODE_BIN="$(absolute_node "$NODE_CANDIDATE")"
+  fi
+fi
+if [ -z "$NODE_BIN" ] && [ -e "$AGENT_DIR/node/bin/node" ]; then
+  if check_node "$AGENT_DIR/node/bin/node"; then
+    NODE_BIN="$(absolute_node "$AGENT_DIR/node/bin/node")"
+  else
+    echo "  Сохранённый portable Node повреждён — заменяю его." >&2
+  fi
+fi
+if [ -z "$NODE_BIN" ]; then
   echo "  Node.js 22+ не найден — качаю портативный (без sudo)…"
   ARCH="$(uname -m)"
   case "$ARCH" in
-    x86_64|amd64) NARCH=x64 ;;
-    aarch64|arm64) NARCH=arm64 ;;
-    armv7l) NARCH=armv7l ;;
-    *) echo "Неизвестная архитектура $ARCH — поставьте Node.js 22+ вручную и повторите."; exit 1 ;;
+    ${supportedArchitectures}
+    *) recovery_error "неподдерживаемая архитектура $ARCH"; exit 1 ;;
   esac
-  # Первая запись в index.json — самая свежая версия.
-  NVER="$(curl -fsSL https://nodejs.org/dist/index.json | grep -o '"version":"v[0-9.]*"' | awk 'NR == 1 { first = $0 } END { print first }' | sed 's/.*"v/v/;s/"//')"
-  [ -n "$NVER" ] || { echo "не удалось узнать версию Node.js"; exit 1; }
+  NVER=""
+  ${portableVersion}
+  [ -n "$NVER" ] || { recovery_error "в index.json не найден подходящий релиз Node.js"; exit 1; }
   echo "  $NVER ($NARCH)"
-  curl -fsSL "https://nodejs.org/dist/$NVER/node-$NVER-${nodePlatform}-$NARCH.tar.gz" -o "$AGENT_DIR/node.tar.gz"
-  rm -rf "$AGENT_DIR/node" "$AGENT_DIR/node.tmp"
+  rm -f "$AGENT_DIR/node.tar.gz"
+  if ! curl -fsSL "https://nodejs.org/dist/$NVER/node-$NVER-${nodePlatform}-$NARCH.tar.gz" -o "$AGENT_DIR/node.tar.gz"; then
+    recovery_error "не удалось скачать архив $NVER"
+    exit 1
+  fi
+  rm -rf "$AGENT_DIR/node.tmp"
   mkdir -p "$AGENT_DIR/node.tmp"
-  tar -xzf "$AGENT_DIR/node.tar.gz" -C "$AGENT_DIR/node.tmp" --strip-components=1
+  if ! tar -xzf "$AGENT_DIR/node.tar.gz" -C "$AGENT_DIR/node.tmp" --strip-components=1; then
+    recovery_error "не удалось распаковать архив $NVER"
+    rm -rf "$AGENT_DIR/node.tmp"
+    rm -f "$AGENT_DIR/node.tar.gz"
+    exit 1
+  fi
+  if ! check_node "$AGENT_DIR/node.tmp/bin/node"; then
+    recovery_error "скачанный Node.js не прошёл проверку: $NODE_ERROR"
+    rm -rf "$AGENT_DIR/node.tmp"
+    rm -f "$AGENT_DIR/node.tar.gz"
+    exit 1
+  fi
+  rm -rf "$AGENT_DIR/node"
   mv "$AGENT_DIR/node.tmp" "$AGENT_DIR/node"
   rm -f "$AGENT_DIR/node.tar.gz"
   NODE_BIN="$AGENT_DIR/node/bin/node"
 fi
-echo "  использую $NODE_BIN ($("$NODE_BIN" -v))"
+if ! check_node "$NODE_BIN"; then
+  recovery_error "выбранный Node.js не прошёл итоговую проверку: $NODE_ERROR"
+  exit 1
+fi
+echo "  использую $NODE_BIN ($NODE_VERSION)"
 
 # --- Свежий скрипт агента ------------------------------------------------
 echo "[2/7] Ставлю нативный терминал…"

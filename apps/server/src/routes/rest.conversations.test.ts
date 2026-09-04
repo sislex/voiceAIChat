@@ -730,7 +730,7 @@ describe('REST: conversations/messages/settings', () => {
       expect(res.statusCode).toBe(200)
       expect(res.headers['content-type']).toContain('shellscript')
       expect(res.body).toContain('/api/agents/script')
-      expect(res.body).toContain('-ge 22') // проверка Node 22+
+      expect(res.body).toContain('[ "$major" -lt 22 ]') // строгая проверка Node 22+
     }
     expect(lin.body).toContain('systemctl --user')
     expect(mac.body).toContain('LaunchAgents')
