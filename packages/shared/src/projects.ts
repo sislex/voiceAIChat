@@ -592,6 +592,15 @@ export interface ProjectSummary {
   mergeTransport: 'local' | 'github_pull_request'
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
+  /**
+   * Команды пост-development стадий. Пустое значение наследует `testCommand`,
+   * поэтому старые проекты работают как раньше. Смысл раздельных настроек в
+   * том, что Component QA нужны компонентные проверки, а интеграционному этапу —
+   * только новые интеграционные тесты: до разделения обе стадии гоняли полный
+   * гейт монорепо на коде, который уже прошёл его в разработке.
+   */
+  componentQaCommand?: string
+  integrationTestCommand?: string
   /** Команда полного Automated QA; пустое значение использует `npm test`. */
   automatedQaCommand?: string
   /** Способ исполнения этапа Automated QA; по умолчанию `command`. */

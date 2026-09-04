@@ -501,6 +501,8 @@ export interface IpcInvokeMap {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      componentQaCommand?: string
+      integrationTestCommand?: string
       productionDeployCommand?: string
       productionAgentId?: string | null
       productionEnvironmentMode?: 'legacy' | 'managed'

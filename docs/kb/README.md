@@ -13,35 +13,35 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 245 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-03 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 4d06ce88 Merge main into CHAT-409 (task dfb010d9-9ebb-4807-a526-ae824f21925d) … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-04 | ⚠ 8 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-04 | ⚠ 9 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-04 | ✓ |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 101 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 32 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 209 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-05 | ✓ |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 102 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 33 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 210 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 141 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 7 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1159 коммит(ов) в areas после сверки: 90fedb3b docs(kb): update after merge f09ba427-9c0e-4056-9782-a0763c1d3d0c … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 180 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 225 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 113 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 6 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 8 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 6 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1160 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-05 | ✓ |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 226 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 114 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 235 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 8 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 193 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-04 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: 6679533e Merge main into CHAT-410 (task f09ba427-9c0e-4056-9782-a0763c1d3d0c) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 23 коммит(ов) в areas после сверки: 6679533e Merge main into CHAT-410 (task f09ba427-9c0e-4056-9782-a0763c1d3d0c) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 24 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 19 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 146 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 98 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ⚠ 6 коммит(ов) в areas после сверки: c99a8d94 fix(ci): пост-development стадии ставят зависимости и не теряют node_modules … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-04, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 605. Последние:
+Всего записей: 606. Последние:
 
+- [2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md](log/2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md) — qa-stage-cost
 - [2026-09-04-pc-radvilovich-macos-node-recovery.md](log/2026-09-04-pc-radvilovich-macos-node-recovery.md) — macos-node-recovery
 - [2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md](log/2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md) — task-card-rework-storage-and-development-settle
 - [2026-09-04-alexeys-macbook-air-2-task-card-new-legacy.md](log/2026-09-04-alexeys-macbook-air-2-task-card-new-legacy.md) — task-card-new-legacy
@@ -72,7 +73,6 @@
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-54.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-54.md) — image-studio-improvements-54
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md) — image-studio-improvements-53
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-52.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-52.md) — image-studio-improvements-52
-- [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-51.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-51.md) — image-studio-improvements-51
 
 ## Исторические планы
 

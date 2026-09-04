@@ -1,7 +1,7 @@
 import type { ComponentQaCommandResult, ComponentQaRun, ComponentQaScenarioSnapshot } from '@voicechat/shared'
 import type { CommandExecutor } from './types.js'
 import type { AutomatedQaStepResult, AutomatedQaVerdict } from '@voicechat/shared'
-import { scenarioLabel } from '@voicechat/shared'
+import { gateSignature, scenarioLabel } from '@voicechat/shared'
 import type { AutomatedQaExecutionContext, CiStageExecutionContext } from '../db/database.js'
 import type { AutomatedQaScenarioRunner } from './automatedQaScenario.js'
 import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
@@ -19,6 +19,8 @@ export interface ComponentQaFinishInput {
 export interface ComponentQaRunnerDeps {
   db: {
     componentQaExecutionContext(runId: string): CiStageExecutionContext | null
+    findPassedGateResult(commitSha: string, signature: string): { runKind: string; runId: string; createdAt: number } | null
+    recordPassedGateResult(args: { projectId: string; taskId: string; commitSha: string; signature: string; commands: readonly string[]; runKind: string; runId: string }): void
     getComponentQaRun(userId: string, runId: string): ComponentQaRun | null
     markComponentQaRunning(runId: string): void
     appendComponentQaLog(runId: string, stream: 'stdout' | 'stderr', chunk: string): void
@@ -89,6 +91,27 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         const diagnostic = result.timedOut ? 'command_timeout' : result.exitCode == null ? 'executor_disconnected' : passed ? '' : infra ? infra.kind : 'non_zero_exit'
         return { record: { commandId: '', name: '', command: script, exitCode: result.exitCode, durationMs: now() - stageStartedAt, status: passed ? 'passed' : stageInfrastructure ? 'blocked' : 'failed', stdout, stderr: '', diagnostic, artifacts: [] }, passed, infrastructure: stageInfrastructure }
       }
+      // Тот же код с теми же командами уже мог пройти проверки на предыдущей
+      // стадии или в прошлой попытке: повторный прогон ничего не выясняет, а
+      // стоит установки зависимостей и полного гейта.
+      const signature = gateSignature(context.commands)
+      const cached = deps.db.findPassedGateResult(run.commitSha, signature)
+      if (cached) {
+        deps.db.appendComponentQaLog(runId, 'stdout', `Проверки этого коммита уже пройдены (${cached.runKind} ${cached.runId}) — результат переиспользован\n`)
+        const reused = deps.db.getComponentQaRun(userId, runId)
+        if (reused && reused.status === 'running') {
+          deps.db.finishComponentQaRun(userId, runId, {
+            status: 'passed',
+            scenarios: reused.scenarios.map((item) => ({ ...item, status: 'passed', actualResult: 'Компонентные проверки прошли (результат прошлого прогона того же коммита)', diagnostic: '' })),
+            commands: [{ commandId: 'cache', name: 'Результат прошлого прогона', command: context.commands.join(' && '), exitCode: 0, durationMs: 0, status: 'passed', stdout: `Источник: ${cached.runKind} ${cached.runId}`, stderr: '', diagnostic: '', artifacts: [] }],
+            summary: 'Component QA пройден (результат прошлого прогона того же коммита)',
+            failureClassification: null,
+            blockerReasons: []
+          })
+          deps.completed?.(runId, userId, true, 'Component QA пройден')
+        }
+        return
+      }
       const installed = await runStage(install, WORKSPACE_INSTALL_TIMEOUT_MS)
       if (!installed) return
       commands.push({ ...installed.record, commandId: 'install', name: 'Установка зависимостей' })
@@ -106,6 +129,7 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       const current = deps.db.getComponentQaRun(userId, runId)
       if (!current || current.status !== 'running') return
       const passed = !failedStage
+      if (passed) deps.db.recordPassedGateResult({ projectId: run.projectId, taskId: run.taskId, commitSha: run.commitSha, signature, commands: context.commands, runKind: 'component_qa', runId })
       deps.db.finishComponentQaRun(userId, runId, {
         status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed',
         scenarios: current.scenarios.map((item) => ({ ...item, status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed', actualResult: passed ? 'Компонентные проверки прошли' : 'Команда компонентных проверок завершилась с ошибкой', diagnostic: failedStage?.diagnostic ?? '' })),
