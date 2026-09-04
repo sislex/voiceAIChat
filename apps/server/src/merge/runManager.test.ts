@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { recommendedProjectMachineDirectories, type MergeRun, type ProjectMachineDirectoryAssignments } from '@voicechat/shared'
-import { MergeRunManager, type MergeConflictFixContext, type MergeKbUpdateContext } from './runManager.js'
+import { MergeRunManager, type MergeConflictFixContext, type MergeKbUpdateContext, type MergeTestFixContext } from './runManager.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 
@@ -8,8 +8,9 @@ const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
 type Out=string|{output:string;exitCode:number}
-function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true, kbFiles:string[]=[], conflictFix:(ctx:MergeConflictFixContext)=>Promise<{ok:boolean;message:string}>=async()=>({ok:false,message:'Модель не исправила конфликты'})){
+function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true, kbFiles:string[]=[], conflictFix:(ctx:MergeConflictFixContext)=>Promise<{ok:boolean;message:string}>=async()=>({ok:false,message:'Модель не исправила конфликты'}), testFix?:(ctx:MergeTestFixContext)=>Promise<{ok:boolean;message:string}>){
   const kbSha=kbFiles.length?'5'.repeat(40):merged
+  let lastPushed:string|undefined
   let run=initial
   const moves:string[]=[]
   const repositories:{agentId:string;path:string;kind:string;state:string}[]=[]
@@ -33,12 +34,17 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     if(req.script.includes('git worktree add --detach'))return{exitCode:0,timedOut:false}
     if(req.script.includes('git worktree remove --force')||req.script==='git worktree prune')return{exitCode:0,timedOut:false}
     if(req.script.includes('git add -- docs/kb')){onChunk(`${kbFiles.length?'KB_COMMITTED':'KB_TREE_UNCHANGED'}\nFINAL=${kbSha}\nCHANGED\n${kbFiles.join('\n')}\n`);return{exitCode:0,timedOut:false}}
-    if(req.script.includes('git push --porcelain')){onChunk('push ok\n');return{exitCode:0,timedOut:false}}
-    if(req.script==='git ls-remote origin refs/heads/main'){onChunk(kbSha+' refs/heads/main\n');return{exitCode:0,timedOut:false}}
+    if(req.script.includes('git push --porcelain')){
+      // Запоминаем, что именно ушло в origin: проверка после push сверяется с
+      // этим, иначе тест с автоисправлением видел бы «неопределённый результат».
+      lastPushed=req.script.match(/([0-9a-f]{40}):refs\/heads\/main/i)?.[1]??lastPushed
+      onChunk('push ok\n');return{exitCode:0,timedOut:false}
+    }
+    if(req.script==='git ls-remote origin refs/heads/main'){onChunk(`${lastPushed??kbSha} refs/heads/main\n`);return{exitCode:0,timedOut:false}}
     if(req.script.includes('git checkout --ours -- docs/kb/README.md'))return{exitCode:0,timedOut:false}
     const item=outputs.shift()??'';const spec=typeof item==='string'?{output:item,exitCode:0}:item;onChunk(spec.output);return{exitCode:spec.exitCode,timedOut:false}
   })}
-  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,conflictFix,kbUpdate,isOnline,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
+  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,conflictFix,...(testFix?{testFix}:{}),kbUpdate,isOnline,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
   return{manager,get run(){return run},moves,executor,repositories}
 }
 
@@ -301,6 +307,113 @@ describe('MergeRunManager',()=>{
     expect(scripts.find(script=>script.includes(`refs/heads/${s.run.sourceBranch}`)&&script.includes('git push'))).toContain(final)
     expect(scripts.find(script=>script.includes('refs/heads/main')&&script.includes('git push'))).toContain(final)
     expect(s.run.checks.map(check=>check.name)).toEqual(['Проверки проекта','Документальный гейт после БЗ'])
+  })
+
+  it('lets the model fix failing checks once and continues after the server commits and re-runs the gate',async()=>{
+    const fixed='7'.repeat(40)
+    // Первая пара «deps + tests» падает, затем идут проверка результата модели,
+    // коммит фикса и повторный проход гейта уже от нового SHA.
+    const s=setup([
+      '','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n',
+      'deps ok\n',{output:'tests failed\n',exitCode:1},
+      `HEAD=${merged}\nDIRTY\n M packages/ui/src/styles/app.css\nMARKERS\n`,
+      `FIXED=${fixed}\n`,
+      'deps ok\n','tests ok\n',
+      `TARGET=${target}\n`
+    ],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'БЗ обновлена'}),()=>true,[],undefined,async()=>({ok:true,message:'Модель поправила токен'}))
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'),{timeout:3000})
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    // Сервер сам закоммитил правку модели, и дальше ран пошёл от нового SHA:
+    // KB-шаг сравнивает дерево именно с ним.
+    expect(scripts.find(script=>script.includes('fix(merge): автоисправление упавших проверок'))).toBeTruthy()
+    expect(scripts.find(script=>script.includes('docs(kb): update after merge'))).toContain(fixed)
+    expect(s.run.checks.map(check=>check.status)).toContain('passed')
+    // Гейт прогоняется заново после исправления (и ещё раз после KB-коммита).
+    expect(scripts.filter(script=>script==='npm run affected-check').length).toBeGreaterThanOrEqual(2)
+    expect(s.moves).toContain('done')
+  })
+
+  it('rejects a fix that changed nothing and keeps the task in merge',async()=>{
+    const s=setup([
+      '','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n',
+      'deps ok\n',{output:'tests failed\n',exitCode:1},
+      `HEAD=${merged}\nDIRTY\nMARKERS\n`
+    ],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'БЗ обновлена'}),()=>true,[],undefined,async()=>({ok:true,message:'Модель считает, что всё исправила'}))
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.some(script=>script.includes('fix(merge): автоисправление'))).toBe(false)
+    expect(scripts.some(script=>script.includes('git push'))).toBe(false)
+    expect(s.run.error).toContain('автоисправление не помогло')
+    expect(s.moves).toContain('merge')
+  })
+
+  it('does not try a second fix inside one run',async()=>{
+    const fixed='7'.repeat(40)
+    const s=setup([
+      '','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n',
+      'deps ok\n',{output:'tests failed\n',exitCode:1},
+      `HEAD=${merged}\nDIRTY\n M app.css\nMARKERS\n`,
+      `FIXED=${fixed}\n`,
+      'deps ok\n',{output:'tests failed again\n',exitCode:1}
+    ],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'БЗ обновлена'}),()=>true,[],undefined,async()=>({ok:true,message:'Модель поправила'}))
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    // Ровно один коммит автоисправления: второй заход не запускается.
+    expect(scripts.filter(script=>script.includes('fix(merge): автоисправление')).length).toBe(1)
+    expect(s.run.error).toContain('Проверки упали')
+    expect(s.moves).toContain('merge')
+  })
+
+  it('starts by merging main into the feature branch, not the other way round',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`])
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'))
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    const prepared=scripts.find(script=>script.includes('git checkout -f --detach'))!
+    const mergeCommand=scripts.find(script=>script.includes('merge --no-ff'))!
+    // Встаём на ветку задачи и вливаем в неё main: merge-коммит принадлежит
+    // ветке, а main догоняет её fast-forward.
+    expect(prepared).toContain(`refs/merge-runs/${s.run.id}/source`)
+    expect(prepared).not.toContain(`refs/merge-runs/${s.run.id}/target`)
+    expect(mergeCommand).toContain(`refs/merge-runs/${s.run.id}/target`)
+    expect(mergeCommand).toContain(`Merge main into ${s.run.sourceBranch}`)
+  })
+
+  it('fixes the post-KB gate too and publishes the repaired SHA',async()=>{
+    const kbSha='5'.repeat(40), fixed='7'.repeat(40)
+    // Первый гейт проходит, KB-коммит меняет сборочный файл, повторный полный
+    // гейт падает — и вот его лечит та же одна попытка автоисправления.
+    const s=setup([
+      '','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n',
+      'deps ok\n','tests ok\n',
+      'deps repeat\n',{output:'repeat failed\n',exitCode:1},
+      `HEAD=${kbSha}\nDIRTY\n M apps/server/src/config.ts\nMARKERS\n`,
+      `FIXED=${fixed}\n`,
+      'deps repeat 2\n','tests ok\n',
+      `TARGET=${target}\n`
+    ],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'БЗ и код обновлены'}),()=>true,['apps/server/src/config.ts'],undefined,async()=>({ok:true,message:'Модель поправила сборку'}))
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('success'),{timeout:3000})
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.find(script=>script.includes('fix(merge): автоисправление упавших проверок'))).toBeTruthy()
+    // В main уходит SHA после автоисправления, а не упавший KB-коммит.
+    expect(scripts.find(script=>script.includes('refs/heads/main')&&script.includes('git push'))).toContain(fixed)
+    expect(s.moves).toContain('done')
+  })
+
+  it('keeps the old behaviour when no test-fix hook is wired',async()=>{
+    const s=setup([
+      '','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n',
+      'deps ok\n',{output:'tests failed\n',exitCode:1}
+    ],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'БЗ обновлена'}))
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.some(script=>script.includes('fix(merge): автоисправление'))).toBe(false)
+    expect(s.run.error).toBe('Проверки упали (exit 1)')
   })
 
   it('repeats the full gate when the KB worktree changes build-affecting files',async()=>{

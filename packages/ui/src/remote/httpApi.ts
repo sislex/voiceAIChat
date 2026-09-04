@@ -120,6 +120,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/trash`),
     'imgstudio:restore': ({ conversationId, name }) =>
       req(`/api/image-studio/${encodeURIComponent(conversationId)}/restore`, { method: 'POST', body: JSON.stringify({ name }) }),
+    'imgstudio:purge': ({ conversationId, name }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/trash/purge`, { method: 'POST', body: JSON.stringify(name !== undefined ? { name } : {}) }),
     'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
     'imgstudio:read': async ({ conversationId, path }) => {
       // Байты картинки — через авторизованный fetch: <img src> без токена

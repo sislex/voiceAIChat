@@ -269,6 +269,8 @@ export interface StartTurnRequest {
   verbose?: boolean
   /** Цель конкретного сообщения: id, null — сервер, 'none' — запрет команд. */
   execTarget?: string | null
+  /** Ход-исправление грязной копии: системный preflight пропускается. */
+  skipProjectSync?: boolean
   /** Безопасный снимок виджета; принимается только служебным чатом ассистента. */
   assistantContext?: WidgetAssistantContext
 }
@@ -690,6 +692,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       // не отвечает; модель лишь предупреждается, что копия не проверялась.
       if (!projectPath) {
         prompt = `${prompt}\n\nМашина «${deps.agents?.nameOf(target) ?? target}» не привязана к проекту: общая копия репозитория на ней не проверялась, актуальность относительно origin/${projectContext.ciBaseBranch || 'main'} не подтверждена.`
+      } else if (req.skipProjectSync) {
+        // Это и есть ход-исправление: preflight пропускаем намеренно, но модель
+        // обязана знать, что копия не сверена с origin и чинит её именно она.
+        prompt = `${prompt}\n\nСистемный preflight общей копии проекта пропущен для этого хода: копия ${projectPath} не сверена с origin/${projectContext.ciBaseBranch || 'main'}. Приведи её в порядок сам и не считай базовую ветку актуальной.`
       } else {
         try {
           const snapshot = await deps.ensureProjectMainCurrent({
@@ -700,7 +706,40 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         } catch (error) {
           starting.delete(conversationId)
           const detail = error instanceof Error ? error.message : String(error)
-          broadcast({ t: 'claude.error', conversationId, message: `Не удалось синхронизировать проект с origin: ${detail}` }, userId)
+          const base = projectContext.ciBaseBranch || 'main'
+          // К отказу сразу прикладываем готовое исправление: пользователю
+          // остаётся нажать кнопку, а разбираться будет модель в этом же чате.
+          const dirty = /локальные изменения/.test(detail)
+          broadcast({
+            t: 'claude.error',
+            conversationId,
+            message: `Не удалось синхронизировать проект с origin: ${detail}`,
+            fix: dirty
+              ? {
+                  label: 'Исправить копию',
+                  skipProjectSync: true,
+                  prompt: [
+                    `Синхронизация общей копии проекта с origin/${base} остановлена: в рабочей копии ${projectPath} есть локальные изменения.`,
+                    `Отчёт preflight: ${detail}`,
+                    'Разберись с копией на этой машине по шагам:',
+                    `1) покажи \`git -C ${projectPath} status --porcelain --untracked-files=all\` и \`git -C ${projectPath} stash list\`;`,
+                    '2) нужное сохрани — отдельной ветке или коммитом, ничего не выбрасывая молча;',
+                    '3) лишнее убери (`git restore`, `git clean -fd` только по конкретным путям, которые назовёшь);',
+                    `4) верни копию на ${base} и обнови её fast-forward до origin/${base};`,
+                    '5) в конце покажи, что дерево чистое и SHA совпал с origin.',
+                    'Если что-то выглядит как чужая незавершённая работа — останови на этом и скажи, что нашёл, вместо удаления.'
+                  ].join('\n')
+                }
+              : {
+                  label: 'Разобраться в чате',
+                  skipProjectSync: true,
+                  prompt: [
+                    `Системный preflight общей копии проекта не прошёл: ${detail}`,
+                    `Копия: ${projectPath}, базовая ветка: ${base}.`,
+                    'Выясни причину на машине, покажи диагностику и предложи, что делать. Ничего необратимого без моего подтверждения.'
+                  ].join('\n')
+                }
+          }, userId)
           return
         }
       }
