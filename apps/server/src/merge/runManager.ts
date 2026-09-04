@@ -47,6 +47,13 @@ export interface MergeTestFixContext {
 }
 export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; testFix?(ctx:MergeTestFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; repositoriesChanged?(projectId:string,taskId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
+
+/**
+ * Лимит одной команды гейта. Прежние 30 минут не покрывали полный гейт монорепо
+ * на занятой машине: у CHAT-408 «Проверки проекта» упёрлись в лимит на 34-й
+ * минуте, когда параллельно с ними шёл модельный шаг актуализации БЗ.
+ */
+const GATE_COMMAND_TIMEOUT_MS = 3_600_000
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
 /** Канонизирует Git URL до host/owner/repo: SSH- и HTTPS-формы одного
@@ -416,7 +423,13 @@ exit 0`,repo,30000)
         if(!installed.exitCode&&!installed.timedOut){
           tested={exitCode:0 as number|null,timedOut:false,output:installed.output}
           for(const command of gateCommands){
-            const result=await this.cmd(run,command,workdir,1800000)
+            // Полный гейт монорепо на занятой машине идёт десятки минут, а его
+            // вывод приходит порциями: без этих отметок 30 минут тишины в логе
+            // не отличить от зависшего рана.
+            const commandStarted=this.now()
+            this.log(run.id,`[${name}] запускаю: ${command}`)
+            const result=await this.cmd(run,command,workdir,GATE_COMMAND_TIMEOUT_MS)
+            this.log(run.id,`[${name}] ${command} — ${result.timedOut?`превысил лимит ${Math.round(GATE_COMMAND_TIMEOUT_MS/60000)} мин`:`код ${result.exitCode}`} за ${this.now()-commandStarted} мс`)
             tested={...result,output:tested.output+result.output}
             if(result.exitCode||result.timedOut)break
           }
@@ -561,7 +574,12 @@ exit 0`,repo,30000)
     if(!outcome.ok){ this.log(id,`Автоисправление отклонено: ${outcome.message}`); return null }
     // Проверка результата до коммита: тот же HEAD (модель не коммитила и не
     // переключала ветку), непустой diff и никаких конфликтных маркеров.
-    const inspected=await this.cmd(run,`printf 'HEAD=%s\n' "$(git rev-parse HEAD)"\nprintf 'DIRTY\n'\ngit status --porcelain\nprintf 'MARKERS\n'\ngit grep -l -e '<<<<<<<' -e '>>>>>>>' -- . || true`,workdir,120000)
+    // Маркеры ищем ТОЛЬКО в том, что тронула модель. Раньше `git grep` шёл по
+    // всему дереву и находил легальные вхождения в самом merge-раннере, в
+    // резолвере конфликтов и в статьях БЗ про маркеры — из-за чего любое
+    // автоисправление в этом репозитории отклонялось всегда, независимо от
+    // содержимого правок.
+    const inspected=await this.cmd(run,`printf 'HEAD=%s\n' "$(git rev-parse HEAD)"\nprintf 'DIRTY\n'\ngit status --porcelain\nprintf 'MARKERS\n'\n{ git diff --name-only -z HEAD; git ls-files -z --others --exclude-standard; } | xargs -0 -r grep -I -l -e '<<<<<<<' -e '>>>>>>>' -- || true`,workdir,120000)
     const head=inspected.output.match(/HEAD=([0-9a-f]{40})/i)?.[1]
     const dirty=(inspected.output.split(/DIRTY\r?\n/)[1]??'').split(/MARKERS\r?\n/)[0]?.trim()??''
     const markers=(inspected.output.split(/MARKERS\r?\n/)[1]??'').trim()
