@@ -828,6 +828,9 @@ CREATE TABLE IF NOT EXISTS ci_workspaces (
   task_id            TEXT NOT NULL,
   agent_id           TEXT,
   path               TEXT NOT NULL,
+  -- Кэш npm задачи: рабочую копию сносит уборка, а кэш переиспользуют и
+  -- пост-development стадии (Component QA, интеграционные тесты).
+  npm_cache_dir      TEXT,
   branch             TEXT,
   commit_sha         TEXT,
   pushed             INTEGER NOT NULL DEFAULT 0,

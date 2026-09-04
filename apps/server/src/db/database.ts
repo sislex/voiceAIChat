@@ -1459,6 +1459,7 @@ export class VoiceChatDb {
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'branch')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN branch TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'commit_sha')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN commit_sha TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'pushed')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN pushed INTEGER NOT NULL DEFAULT 0`)
+    if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'npm_cache_dir')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN npm_cache_dir TEXT`)
     const mergeRunCols = this.db.prepare(`PRAGMA table_info(merge_runs)`).all() as Array<{ name: string }>
     if (mergeRunCols.length) {
       this.db.exec(`DROP INDEX IF EXISTS idx_merge_runs_one_active_task`)
@@ -6710,6 +6711,14 @@ export class VoiceChatDb {
     return counts
   }
 
+  /** Закрыта ли задача (Done/Отменена) или её уже нет: рабочую копию и её
+   *  зависимости держим до этого момента — пост-development стадии выполняются
+   *  в том же checkout, что и development-ран. */
+  isTaskClosed(taskId: string): boolean {
+    const row = this.db.prepare(`SELECT c.semantic_type FROM tasks t LEFT JOIN kanban_columns c ON c.id = t.column_id WHERE t.id = ?`).get(taskId) as { semantic_type: string | null } | undefined
+    return !row || row.semantic_type === 'done' || row.semantic_type === 'cancelled'
+  }
+
   getCiRunRaw(runId: string): CiRun | null {
     const r = this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(runId) as CiRunRow | undefined
     return r ? mapCiRun(r) : null
@@ -7243,9 +7252,9 @@ export class VoiceChatDb {
 
   // --- Рабочие директории ---
 
-  createCiWorkspace(args: { projectId: string; taskId: string; agentId: string | null; path: string }): CiWorkspace {
+  createCiWorkspace(args: { projectId: string; taskId: string; agentId: string | null; path: string; npmCacheDir?: string | null }): CiWorkspace {
     const id = this.newId()
-    this.db.prepare(`INSERT INTO ci_workspaces (id, project_id, task_id, agent_id, path, state, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)`).run(id, args.projectId, args.taskId, args.agentId, args.path, this.now())
+    this.db.prepare(`INSERT INTO ci_workspaces (id, project_id, task_id, agent_id, path, npm_cache_dir, state, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`).run(id, args.projectId, args.taskId, args.agentId, args.path, args.npmCacheDir ?? null, this.now())
     return mapCiWorkspace(this.db.prepare(`SELECT * FROM ci_workspaces WHERE id = ?`).get(id) as CiWorkspaceRow)
   }
 
@@ -8314,10 +8323,10 @@ export class VoiceChatDb {
     })()
   }
 
-  componentQaExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
+  componentQaExecutionContext(runId:string):CiStageExecutionContext|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null}|undefined
     if (!row?.agent_id||!row.path) return null
-    return {agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run test:storybook'])}
+    return {agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.test_command??'',['npm run test:storybook'])}
   }
 
   markComponentQaRunning(id:string):void {
@@ -8459,9 +8468,9 @@ export class VoiceChatDb {
     })()
   }
 
-  integrationTestExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
-    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run affected-check'])}:null
+  integrationTestExecutionContext(runId:string):CiStageExecutionContext|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null}|undefined
+    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.test_command??'',['npm run affected-check'])}:null
   }
   markIntegrationTestRunning(id:string):void { this.db.prepare(`UPDATE integration_test_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id) }
   appendIntegrationTestLog(id:string,chunk:string):void { this.db.prepare(`UPDATE integration_test_runs SET log=substr(log||?,-500000) WHERE id=? AND status='running'`).run(chunk,id) }
@@ -10057,6 +10066,17 @@ export function projectKbSkeleton(name: string, description: string): string {
     'Пока не описано.',
     ''
   ].join('\n')
+}
+
+/** Где и что выполняет пост-development стадия (Component QA, интеграционные
+ *  тесты). `npmCacheDir` — кэш npm задачи из записи рабочей директории: стадия
+ *  ставит зависимости сама и берёт тот же кэш, что и development-ран. У старых
+ *  записей его нет — тогда npm работает со своим кэшем по умолчанию. */
+export interface CiStageExecutionContext {
+  agentId: string
+  workdir: string
+  npmCacheDir: string | null
+  commands: string[]
 }
 
 /** Всё, что нужно раннеру этапа Automated QA: где выполнять и что именно. */
