@@ -86,3 +86,46 @@ export async function mapWithLimit<T, R>(items: T[], limit: number, task: (item:
   await Promise.all(workers)
   return results
 }
+
+export interface GridWindow {
+  /** Индекс первой рисуемой карточки. */
+  from: number
+  /** Индекс за последней рисуемой картой (exclusive). */
+  to: number
+  /** Высота распорки до окна, px. */
+  padTop: number
+  /** Высота распорки после окна, px. */
+  padBottom: number
+}
+
+/**
+ * Окно видимых карточек сетки. При сотне-двух файлов держать в DOM все
+ * карточки дорого: каждая — это превью, восемь кнопок и тултипы. Считаем
+ * диапазон строк вокруг видимой области и заменяем остальное распорками, чтобы
+ * полоса прокрутки осталась честной.
+ *
+ * `overscan` — сколько экранов рисуем сверх видимого: без запаса быстрая
+ * прокрутка показывает пустые места.
+ */
+export function gridWindow(
+  total: number,
+  columns: number,
+  rowHeight: number,
+  scrollTop: number,
+  viewportHeight: number,
+  overscan = 1
+): GridWindow {
+  const safeColumns = Math.max(1, Math.floor(columns))
+  const safeRow = Math.max(1, rowHeight)
+  const rows = Math.ceil(total / safeColumns)
+  if (viewportHeight <= 0 || rows === 0) return { from: 0, to: total, padTop: 0, padBottom: 0 }
+  const visibleRows = Math.max(1, Math.ceil(viewportHeight / safeRow))
+  const firstRow = Math.max(0, Math.floor(Math.max(0, scrollTop) / safeRow) - visibleRows * overscan)
+  const lastRow = Math.min(rows, firstRow + visibleRows * (1 + 2 * overscan))
+  return {
+    from: firstRow * safeColumns,
+    to: Math.min(total, lastRow * safeColumns),
+    padTop: firstRow * safeRow,
+    padBottom: Math.max(0, (rows - lastRow) * safeRow)
+  }
+}
