@@ -84,3 +84,21 @@ describe('clampCrop', () => {
     expect(clampCrop({ x: 99, y: 0, w: 50, h: 50 }, 100, 100)).toBeNull()
   })
 })
+
+import { nextQuality, WEB_TARGET_BYTES } from './imageTransform'
+
+describe('nextQuality', () => {
+  it('слишком большой файл снижает качество, маленький — повышает', () => {
+    expect(nextQuality(0.8, true, 0.2)).toBe(0.6)
+    expect(nextQuality(0.6, false, 0.1)).toBe(0.7)
+  })
+
+  it('не выходит за разумные границы: ниже 0.35 картинка рассыпается', () => {
+    expect(nextQuality(0.4, true, 0.3)).toBe(0.35)
+    expect(nextQuality(0.9, false, 0.3)).toBe(0.95)
+  })
+
+  it('целевой вес веб-версии — 200 КБ', () => {
+    expect(WEB_TARGET_BYTES).toBe(204800)
+  })
+})

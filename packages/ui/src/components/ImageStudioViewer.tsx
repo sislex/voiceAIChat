@@ -9,6 +9,7 @@ import { versionChain } from '../lib/imageVersions'
 import { IMAGE_STUDIO_VIEWER_BG_KEY } from '../store/contracts'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
+import { MOBILE_QUERY, useMediaQuery } from '../lib/mediaQuery'
 
 interface Props {
   viewing: string
@@ -47,18 +48,51 @@ interface Props {
   onPalette?: (path: string) => Promise<string[]>
   /** Столбики гистограммы яркости в процентах высоты. */
   onHistogram?: (path: string) => Promise<number[]>
+  /** Гистограммы по каналам R/G/B: перекос цвета по яркости не виден. */
+  onChannels?: (path: string) => Promise<{ r: number[]; g: number[]; b: number[] }>
+  /** Избранное открытого файла: пометить можно не выходя из просмотра. */
+  starred?: boolean
+  onToggleStar?: (path: string) => void
+  /** Готовность открытого файла: пусто → черновик → готово. */
+  status?: 'draft' | 'ready' | undefined
+  onCycleStatus?: (path: string) => void
+  /** В каких наборах лежит файл — видно в свойствах. */
+  sets?: string[]
+  /** Дерево версий: путь и уровень вложенности (правка правки — второй). */
+  versions?: Array<{ path: string; depth: number }>
+  /** Факты о содержимом: настоящий тип, прозрачность, число цветов. */
+  onFacts?: (path: string) => Promise<{ type: string | null; mismatch: string | null; alpha: boolean; colors: number }>
+  /** Найти этот кадр в сетке: закрыть просмотр и подсветить карточку. */
+  onLocate?: (path: string) => void
+  /** Открыли ради показа: слайдшоу запускается само, не дожидаясь кнопки. */
+  autoSlideshow?: boolean
+  onAutoSlideshowUsed?: () => void
+  /** Открыли клавишей «i»: свойства раскрыты сразу. */
+  autoProps?: boolean
+  onAutoPropsUsed?: () => void
   onDelete: (path: string) => void
   onClose: () => void
 }
 
 /** Шаг слайдшоу: меньше — не успеваешь рассмотреть, больше — уже не показ. */
 const SLIDESHOW_MS = 3000
+/** Шаги показа: быстро пролистать пачку, рассмотреть или показать другому. */
+const SLIDESHOW_STEPS = [3000, 6000, 10000] as const
+/** Сколько кадров ленты держать по каждую сторону от текущего. */
+const STRIP_RADIUS = 12
+/** На телефоне лента уже: двадцать пять миниатюр там не нужны и не влезают. */
+const STRIP_RADIUS_PHONE = 5
 /** Фоны подложки: прозрачный PNG читается по-разному на каждом из них. */
 const VIEWER_BACKGROUNDS = ['checker', 'light', 'dark'] as const
 type ViewerBackground = (typeof VIEWER_BACKGROUNDS)[number]
 const BACKGROUND_LABELS: Record<ViewerBackground, string> = { checker: 'шахматка', light: 'светлый', dark: 'тёмный' }
 
-export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onDelete, onClose, position }: Props): JSX.Element {
+/** Виды направляющих: третей, центр, золотое сечение — и без них. */
+const GUIDE_MODES = ['thirds', 'center', 'golden', 'none'] as const
+type GuideMode = (typeof GUIDE_MODES)[number]
+const GUIDE_LABELS: Record<GuideMode, string> = { thirds: 'трети', center: 'центр', golden: 'золотое сечение', none: 'выключены' }
+
+export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, compare, compareWith, compareGrid, formatBytes, canStep, onCompareChange, onView, onStep, onUsePrompt, onPickForEdit, onVariate, onCrop, onAnnotate, onDownload, onCopy, note, onNoteChange, onPalette, onHistogram, onChannels, starred, onToggleStar, status, onCycleStatus, sets, versions, onFacts, onLocate, autoSlideshow, onAutoSlideshowUsed, autoProps, onAutoPropsUsed, onDelete, onClose, position }: Props): JSX.Element {
   /** Положение шторки сравнения, % ширины (0 — весь исходник, 100 — весь результат). */
   const [wipe, setWipe] = useState(50)
   /**
@@ -94,16 +128,79 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
       return (VIEWER_BACKGROUNDS as readonly string[]).includes(saved ?? '') ? saved as ViewerBackground : 'checker'
     } catch { return 'checker' }
   })
+  /**
+   * Поворот **просмотра**, не файла: перевёрнутый кадр надо сначала увидеть
+   * правильно, а уже потом решать, поворачивать ли его насовсем. Сбрасывается
+   * при листании — к следующему файлу он отношения не имеет.
+   */
+  const [spin, setSpin] = useState(0)
+  /**
+   * Лента миниатюр под кадром: листать стрелками по одному — долго, когда
+   * знаешь, что нужный кадр «где-то через пять». По умолчанию свёрнута:
+   * лайтбокс открывают, чтобы смотреть картинку, а не список.
+   */
+  const [strip, setStrip] = useState(false)
+  const phone = useMediaQuery(MOBILE_QUERY)
+  /**
+   * Инверсия **просмотра**: быстрый способ увидеть, как картинка ляжет на
+   * тёмный фон и не потеряется ли контраст. Файл не меняется — для этого есть
+   * трансформация «Инвертировать».
+   */
+  const [inverted, setInverted] = useState(false)
+  /**
+   * Лупа: круг с увеличенным фрагментом под курсором. Для «рассмотреть глаз
+   * на портрете» зум с панорамированием — слишком много движений, а лупа
+   * показывает деталь, не теряя всю картинку из вида.
+   */
+  const [loupe, setLoupe] = useState(false)
+  const [probe, setProbe] = useState<{ x: number; y: number; px: number; py: number; color: string | null } | null>(null)
+  /** Канва 1×1 для чтения цвета: пересоздавать её на каждое движение мыши дорого. */
+  const probeCanvas = useRef<HTMLCanvasElement | null>(null)
+  useEffect(() => { setInverted(false) }, [viewing])
+  useEffect(() => { setSpin(0) }, [viewing])
   /** Слайдшоу: сам листает вперёд, пока не выключат или не начнут править. */
   const [slideshow, setSlideshow] = useState(false)
+  /** Скорость показа: три секунды на кадр — «пролистать», десять — «показать». */
+  const [slideshowMs, setSlideshowMs] = useState<number>(SLIDESHOW_MS)
+  // Открыли кнопкой «Показ» — начинаем сразу: иначе после открытия надо ещё
+  // найти в шапке треугольник.
+  useEffect(() => {
+    if (!autoSlideshow) return
+    setSlideshow(true)
+    onAutoSlideshowUsed?.()
+  }, [autoSlideshow, onAutoSlideshowUsed])
+  useEffect(() => {
+    if (!autoProps) return
+    setPropsOpen(true)
+    onAutoPropsUsed?.()
+  }, [autoProps, onAutoPropsUsed])
   /** Раскрытая панель свойств: полная мета и заметка одним списком. */
   const [propsOpen, setPropsOpen] = useState(false)
+  /** Полный экран: браузерный fullscreen на теле лайтбокса. */
+  const [fullscreen, setFullscreen] = useState(false)
+  const frameRef = useRef<HTMLDivElement | null>(null)
+  // Выход из полного экрана бывает и мимо нашей кнопки (Esc, жест системы) —
+  // состояние обязано следовать за браузером, иначе подпись кнопки врёт.
+  useEffect(() => {
+    const sync = (): void => setFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', sync)
+    return () => document.removeEventListener('fullscreenchange', sync)
+  }, [])
   /** Доминирующие цвета открытой картинки; null — ещё не считали. */
   const [palette, setPalette] = useState<string[] | null>(null)
   /** Гистограмма яркости; null — ещё не считали. */
   const [histogram, setHistogram] = useState<number[] | null>(null)
+  /** Гистограммы по каналам; null — ещё не считали (считаем по кнопке). */
+  const [channels, setChannels] = useState<{ r: number[]; g: number[]; b: number[] } | null>(null)
+  /** Факты о содержимом; null — ещё не спрашивали (чтение файла не бесплатно). */
+  const [facts, setFacts] = useState<{ type: string | null; mismatch: string | null; alpha: boolean; colors: number } | null>(null)
+  /**
+   * Направляющие: раньше трети висели всегда, а они нужны не всем и не всегда.
+   * Кнопка ведёт по кругу: трети → центр → золотое сечение → без них.
+   */
+  const [guides, setGuides] = useState<GuideMode>('thirds')
   // Листаем — палитра и гистограмма прежнего кадра к новому отношения не имеют.
-  useEffect(() => { setPalette(null); setHistogram(null) }, [viewing])
+  useEffect(() => { setPalette(null); setHistogram(null); setChannels(null); setFacts(null) }, [viewing])
   /** Черновик заметки: пишем в панель по «Сохранить», а не на каждый символ. */
   const [noteDraft, setNoteDraft] = useState(note ?? '')
   // Листаем — заметка в поле должна стать заметкой нового файла.
@@ -112,9 +209,9 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
   const stopSlideshow = (): void => setSlideshow(false)
   useEffect(() => {
     if (!slideshow || !canStep) return
-    const timer = setInterval(() => onStep(1), SLIDESHOW_MS)
+    const timer = setInterval(() => onStep(1), slideshowMs)
     return () => clearInterval(timer)
-  }, [slideshow, canStep, onStep])
+  }, [slideshow, canStep, onStep, slideshowMs])
   /** Масштаб кнопками: колесо есть не у всех (трекпад, тач, клавиатура). */
   const zoomBy = (delta: number): void => setZoom((prev) => {
     const scale = Math.min(4, Math.max(1, Math.round((prev.scale + delta) * 100) / 100))
@@ -127,19 +224,40 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
       const tag = (event.target as HTMLElement | null)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { onStep(event.key === 'ArrowLeft' ? -1 : 1); return }
+      // Масштаб клавишами: «,» и «.» стоят рядом с «<» и «>» на латинской
+      // раскладке, «0» — общепринятый сброс.
+      if (event.key === ',' || event.key === '<') { zoomBy(-0.25); return }
+      if (event.key === '.' || event.key === '>') { zoomBy(0.25); return }
+      if (event.key === '0') { setZoom({ scale: 1, x: 0, y: 0 }); return }
+      if (event.key.toLowerCase() === 'f' && onToggleStar) { onToggleStar(viewing); return }
       // Delete — то же удаление с confirm, что и кнопкой корзины.
       if (event.key === 'Delete' || event.key === 'Backspace') onDelete(viewing)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onStep, onDelete, viewing])
+  }, [onStep, onDelete, viewing, onToggleStar])
   const meta = files.find((file) => file.path === viewing)
   const sourceInGallery = meta?.source && files.some((file) => file.path === meta.source)
 
   useEffect(() => { setZoom({ scale: 1, x: 0, y: 0 }) }, [viewing])
   useEffect(() => { if (!compare) setBlend(false) }, [compare])
   const positionLabel = position && position.total > 1 ? ` · ${position.index + 1} из ${position.total}` : ''
-  return <ToolFrame title={compare ? `${viewing} — сравнение с исходником` : `${viewing}${positionLabel}`} onClose={onClose} className="util-embed--img" testId="image-studio-viewer"
+  return <ToolFrame
+    title={compare ? `${viewing} — сравнение с исходником` : `${viewing}${positionLabel}`}
+    onClose={onClose}
+    /**
+     * Esc при увеличении или повороте — «вернуться к целой картинке», а не
+     * «закрыть»: закрывать лайтбокс, потеряв масштаб, приходилось по ошибке.
+     * Свой слушатель тут не поможет — Esc забирает общий стек окон в фазе
+     * перехвата, и перебить его можно только этим пропом.
+     */
+    onEscape={() => {
+      if (zoom.scale === 1 && !spin) return false
+      setZoom({ scale: 1, x: 0, y: 0 })
+      setSpin(0)
+      return true
+    }}
+    className="util-embed--img" testId="image-studio-viewer"
     actions={<>
       {(sourceInGallery || compareWith || (compareGrid?.length ?? 0) > 2) && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
       <IconButton size="sm" aria-label={annotating ? 'Выйти из режима разметки' : `Разметить ${viewing}`} title={annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'} aria-pressed={annotating} onClick={() => { stopSlideshow(); setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>✏️</IconButton>
@@ -155,13 +273,48 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         <IconButton size="sm" aria-label="Уменьшить масштаб" title="Уменьшить (колесо мыши тоже)" disabled={zoom.scale <= 1} onClick={() => zoomBy(-0.25)}>−</IconButton>
         <IconButton size="sm" aria-label={`Масштаб ${Math.round(zoom.scale * 100)} процентов, сбросить к 100`} title="Сбросить масштаб" disabled={zoom.scale === 1} onClick={() => setZoom({ scale: 1, x: 0, y: 0 })}>{`${Math.round(zoom.scale * 100)}%`}</IconButton>
         <IconButton size="sm" aria-label="Увеличить масштаб" title="Увеличить (колесо мыши тоже)" disabled={zoom.scale >= 4} onClick={() => zoomBy(0.25)}>+</IconButton>
+        {/* 1:1 — пиксель картинки в пиксель экрана: разглядеть шум и артефакты
+            иначе нельзя, вписанная в окно картинка их сглаживает. */}
+        <IconButton size="sm" aria-label="Натуральный размер, один к одному" title="1:1 — натуральный размер" onClick={() => {
+          const img = imgRef.current
+          if (!img || !img.naturalWidth || !img.clientWidth) return
+          const natural = Math.min(4, Math.max(1, Math.round(img.naturalWidth / img.clientWidth * 100) / 100))
+          setZoom(natural <= 1 ? { scale: 1, x: 0, y: 0 } : { scale: natural, x: 0, y: 0 })
+        }}>1:1</IconButton>
+        <IconButton size="sm" aria-label={spin ? `Просмотр повёрнут на ${spin} градусов — повернуть ещё` : 'Повернуть просмотр на 90 градусов'} title={spin ? `Просмотр повёрнут на ${spin}° (файл не меняется)` : 'Повернуть просмотр (файл не меняется)'} aria-pressed={spin > 0} onClick={() => setSpin((prev) => (prev + 90) % 360)}>⟳</IconButton>
       </>}
       <IconButton size="sm" aria-label={`Фон подложки: ${BACKGROUND_LABELS[background]} — сменить`} title={`Фон: ${BACKGROUND_LABELS[background]}`} onClick={() => setBackground((prev) => {
         const next = VIEWER_BACKGROUNDS[(VIEWER_BACKGROUNDS.indexOf(prev) + 1) % VIEWER_BACKGROUNDS.length]!
         try { localStorage.setItem(IMAGE_STUDIO_VIEWER_BG_KEY, next) } catch { /* приватный режим */ }
         return next
       })}>◧</IconButton>
-      {canStep && <IconButton size="sm" aria-label={slideshow ? 'Остановить слайдшоу' : 'Запустить слайдшоу'} title={slideshow ? 'Стоп' : `Слайдшоу (${SLIDESHOW_MS / 1000} с на кадр)`} aria-pressed={slideshow} onClick={() => setSlideshow((prev) => !prev)}>{slideshow ? '⏸' : '▶'}</IconButton>}
+      {canStep && <IconButton size="sm" aria-label={slideshow ? 'Остановить слайдшоу' : 'Запустить слайдшоу'} title={slideshow ? 'Стоп' : `Слайдшоу (${slideshowMs / 1000} с на кадр)`} aria-pressed={slideshow} onClick={() => setSlideshow((prev) => !prev)}>{slideshow ? '⏸' : '▶'}</IconButton>}
+      {/* Скорость показа рядом с кнопкой и только во время показа: в простое
+          это лишний селект в и без того плотной шапке. */}
+      {onToggleStar && <IconButton size="sm" aria-label={starred ? `Убрать ${viewing} из избранного` : `В избранное ${viewing}`} title={starred ? 'Убрать из избранного' : 'В избранное'} aria-pressed={starred} onClick={() => onToggleStar(viewing)}>{starred ? '★' : '☆'}</IconButton>}
+      {onCycleStatus && <IconButton
+        size="sm"
+        aria-label={status === 'ready' ? `${viewing}: готово — снять пометку` : status === 'draft' ? `${viewing}: черновик — отметить готовым` : `Отметить ${viewing} черновиком`}
+        title={status === 'ready' ? 'Готово' : status === 'draft' ? 'Черновик' : 'Готовность: не отмечено'}
+        onClick={() => onCycleStatus(viewing)}
+      >{status === 'ready' ? '✔' : status === 'draft' ? '✎' : '◦'}</IconButton>}
+      {cropping && <IconButton size="sm" aria-label={`Направляющие: ${GUIDE_LABELS[guides]} — сменить`} title={`Направляющие: ${GUIDE_LABELS[guides]}`} onClick={() => setGuides((prev) => GUIDE_MODES[(GUIDE_MODES.indexOf(prev) + 1) % GUIDE_MODES.length]!)}>#</IconButton>}
+      <IconButton size="sm" aria-label={loupe ? 'Убрать лупу' : 'Лупа: увеличить фрагмент под курсором'} title={loupe ? 'Убрать лупу' : 'Лупа (и цвет под курсором)'} aria-pressed={loupe} onClick={() => { setLoupe((prev) => !prev); setProbe(null) }}>🔍</IconButton>
+      <IconButton size="sm" aria-label={inverted ? 'Вернуть обычные цвета просмотра' : 'Инвертировать цвета просмотра'} title={inverted ? 'Обычные цвета' : 'Инверсия просмотра (файл не меняется)'} aria-pressed={inverted} onClick={() => setInverted((prev) => !prev)}>◑</IconButton>
+      {canStep && <IconButton size="sm" aria-label={strip ? 'Скрыть ленту кадров' : 'Показать ленту кадров'} title={strip ? 'Скрыть ленту' : 'Лента кадров'} aria-pressed={strip} onClick={() => setStrip((prev) => !prev)}>▤</IconButton>}
+      {canStep && slideshow && <select
+        aria-label="Секунд на кадр"
+        title="Сколько держать кадр"
+        value={slideshowMs}
+        onChange={(event) => setSlideshowMs(Number(event.target.value))}
+      >
+        {SLIDESHOW_STEPS.map((step) => <option key={step} value={step}>{step / 1000} с</option>)}
+      </select>}
+      <IconButton size="sm" aria-label={fullscreen ? 'Выйти из полного экрана' : 'Показать на весь экран'} title={fullscreen ? 'Обычный размер' : 'Полный экран'} aria-pressed={fullscreen} onClick={() => {
+        const node = frameRef.current
+        if (document.fullscreenElement) { void document.exitFullscreen?.().catch(() => undefined); return }
+        void node?.requestFullscreen?.().catch(() => undefined)
+      }}>⛶</IconButton>
       <IconButton size="sm" aria-label={propsOpen ? 'Скрыть свойства' : `Свойства ${viewing}`} title="Свойства и заметка" aria-pressed={propsOpen} onClick={() => setPropsOpen((prev) => !prev)}>ⓘ</IconButton>
       <IconButton size="sm" aria-label={`Скопировать ${viewing} в буфер`} title="Копировать в буфер" onClick={() => onCopy(viewing)}>⧉</IconButton>
       <IconButton size="sm" aria-label={`Скачать ${viewing}`} title="Скачать" onClick={() => onDownload(viewing)}>⇩</IconButton>
@@ -171,7 +324,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
         <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { onCompareChange(false); onStep(1) }}>›</IconButton>
       </>}
     </>}>
-    <div className={`imgbody image-studio-bg--${background}`} tabIndex={-1}
+    <div ref={frameRef} className={`imgbody image-studio-bg--${background}${fullscreen ? ' imgbody--fullscreen' : ''}`} tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key === 'ArrowLeft') onStep(-1)
         if (event.key === 'ArrowRight') onStep(1)
@@ -283,15 +436,71 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
               event.currentTarget.setPointerCapture(event.pointerId)
             }}
             onPointerMove={(event) => {
-              if (!panStart.current) return
-              const start = panStart.current
-              setZoom((prev) => ({ ...prev, x: start.ox + (event.clientX - start.x), y: start.oy + (event.clientY - start.y) }))
+              if (panStart.current) {
+                const start = panStart.current
+                setZoom((prev) => ({ ...prev, x: start.ox + (event.clientX - start.x), y: start.oy + (event.clientY - start.y) }))
+                return
+              }
+              if (!loupe) return
+              const img = imgRef.current
+              if (!img || !img.naturalWidth) return
+              const box = img.getBoundingClientRect()
+              const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom
+              if (!inside) { setProbe(null); return }
+              // Координаты и цвет — в пикселях исходника: «где именно артефакт»
+              // на глаз в CSS-пикселях не назовёшь.
+              const px = Math.floor((event.clientX - box.left) / box.width * img.naturalWidth)
+              const py = Math.floor((event.clientY - box.top) / box.height * img.naturalHeight)
+              let color: string | null = null
+              try {
+                const canvas = probeCanvas.current ?? (probeCanvas.current = document.createElement('canvas'))
+                canvas.width = 1
+                canvas.height = 1
+                const ctx = canvas.getContext('2d')
+                if (ctx) {
+                  ctx.drawImage(img, px, py, 1, 1, 0, 0, 1, 1)
+                  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+                  color = `#${[r, g, b].map((value) => Number(value).toString(16).padStart(2, '0')).join('')}`
+                }
+              } catch { /* картинка из другого источника — цвет не прочитать */ }
+              setProbe({ x: event.clientX - box.left, y: event.clientY - box.top, px, py, color })
             }}
             onPointerUp={() => { panStart.current = null }}
+            onPointerLeave={() => setProbe(null)}
             role="presentation"
             title={zoom.scale > 1 ? 'Двойной клик — сбросить масштаб' : 'Колесо мыши — масштаб'}>
             <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false}
-              style={zoom.scale > 1 ? { transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`, cursor: 'grab' } : undefined} data-zoom={zoom.scale > 1 ? zoom.scale.toFixed(2) : undefined} />
+              style={zoom.scale > 1 || spin
+                ? {
+                    transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale}) rotate(${spin}deg)`,
+                    ...(zoom.scale > 1 ? { cursor: 'grab' } : {}),
+                    // На боку картинка вписывается в высоту, а не в ширину:
+                    // иначе повёрнутый кадр вылезает за пределы окна.
+                    ...(spin % 180 ? { maxWidth: 'none', maxHeight: 'min(78vw, 100%)' } : {})
+                  }
+                : undefined}
+              data-zoom={zoom.scale > 1 ? zoom.scale.toFixed(2) : undefined} data-spin={spin || undefined} data-inverted={inverted || undefined} />
+            {loupe && probe && <span
+              className="image-studio-loupe"
+              aria-hidden="true"
+              style={{
+                left: probe.x,
+                top: probe.y,
+                backgroundImage: `url(${previews[viewing]})`,
+                // Фон сдвигаем так, чтобы точка под курсором оказалась в центре
+                // круга: увеличение трёхкратное от натурального размера.
+                backgroundSize: `${(imgRef.current?.naturalWidth ?? 0) * 3}px ${(imgRef.current?.naturalHeight ?? 0) * 3}px`,
+                backgroundPosition: `${-probe.px * 3 + 60}px ${-probe.py * 3 + 60}px`
+              }}
+            />}
+            {loupe && probe && <span className="image-studio-probe" role="status">
+              {probe.px}×{probe.py}
+              {probe.color && <>
+                {' '}
+                <span className="image-studio-swatch-inline" style={{ background: probe.color }} aria-hidden="true" />
+                <button type="button" className="image-studio-cancel" onClick={() => void navigator.clipboard?.writeText(probe.color!).catch(() => undefined)}>{probe.color}</button>
+              </>}
+            </span>}
           </div>
         }
         return <div className="image-studio-crop-stage"
@@ -317,7 +526,7 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           onPointerUp={() => { dragStart.current = null }}>
           <img ref={imgRef} className="image-studio-full" src={previews[viewing]} alt={viewing} draggable={false} />
           {/* Правило третей: кадрировать «на глаз» без направляющих неудобно. */}
-          <span className="image-studio-thirds" aria-hidden="true" />
+          {guides !== 'none' && <span className={`image-studio-thirds image-studio-thirds--${guides}`} aria-hidden="true" />}
           {cropBox && <span className="image-studio-crop-box" style={{ left: cropBox.x, top: cropBox.y, width: cropBox.w, height: cropBox.h }} aria-hidden="true" />}
           <p className="image-studio-origin"><span className="image-studio-dim">Выделите область мышью и нажмите «Вырезать».</span></p>
         </div>
@@ -397,6 +606,23 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           ].filter(Boolean)
           void navigator.clipboard?.writeText(lines.join('\n')).catch(() => undefined)
         }}>Скопировать сводку</button>
+        {sets && sets.length > 0 && <span className="image-studio-dim">В наборах: {sets.join(', ')}</span>}
+        {versions && versions.length > 1 && <span className="image-studio-versions" role="group" aria-label="Дерево версий">
+          {versions.map((node) => <span key={node.path} className="image-studio-dim" style={{ paddingLeft: node.depth * 12 }}>
+            {node.depth > 0 ? '└ ' : ''}{node.path === viewing
+              ? <strong>{node.path}</strong>
+              : <button type="button" className="image-studio-cancel" onClick={() => { onCompareChange(false); onView(node.path) }}>{node.path}</button>}
+          </span>)}
+        </span>}
+        {onFacts && (facts === null
+          ? <button type="button" className="image-studio-cancel" onClick={() => void onFacts(viewing).then(setFacts).catch(() => setFacts({ type: null, mismatch: null, alpha: false, colors: 0 }))}>Что внутри файла</button>
+          : <span className="image-studio-dim">
+              {facts.type ? `Тип: ${facts.type.toUpperCase()}` : 'Тип: не распознан'}
+              {' · '}{facts.alpha ? 'с прозрачностью' : 'без прозрачности'}
+              {facts.colors ? ` · цветов примерно ${facts.colors}` : ''}
+              {facts.mismatch ? ` · ${facts.mismatch}` : ''}
+            </span>)}
+        {onLocate && <button type="button" className="image-studio-cancel" onClick={() => onLocate(viewing)}>Показать в сетке</button>}
         {onPalette && <span className="image-studio-palette">
           {palette === null
             ? <button type="button" className="image-studio-cancel" onClick={() => void onPalette(viewing).then(setPalette).catch(() => setPalette([]))}>Показать палитру</button>
@@ -426,6 +652,20 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
                   <span className="image-studio-histogram" role="img" aria-label={`Гистограмма яркости: ${histogram.length} столбиков, тени слева`}>
                     {histogram.map((height, index) => <span key={index} style={{ height: `${Math.max(2, height)}%` }} />)}
                   </span>
+                  {/* Каналы отдельной кнопкой: по яркости перекос цвета не
+                      видно, но и считать их каждому кадру незачем. */}
+                  {onChannels && (channels === null
+                    ? <button type="button" className="image-studio-cancel" onClick={() => void onChannels(viewing).then(setChannels).catch(() => setChannels({ r: [], g: [], b: [] }))}>Каналы R/G/B</button>
+                    : <span className="image-studio-channels">
+                        {(['r', 'g', 'b'] as const).map((channel) => <span
+                          key={channel}
+                          className={`image-studio-histogram image-studio-histogram--${channel}`}
+                          role="img"
+                          aria-label={`Гистограмма канала ${channel.toUpperCase()}`}
+                        >
+                          {channels[channel].map((height, index) => <span key={index} style={{ height: `${Math.max(2, height)}%` }} />)}
+                        </span>)}
+                      </span>)}
                 </>}
         </span>}
         {onNoteChange && <span className="image-studio-note">
@@ -439,6 +679,36 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           <button type="button" className="image-studio-cancel" disabled={noteDraft === (note ?? '')} onClick={() => onNoteChange(viewing, noteDraft)}>Сохранить заметку</button>
         </span>}
       </div>}
+      {note && !propsOpen && <p className="image-studio-origin image-studio-note-line">
+        <span className="image-studio-dim">Заметка:</span> {note}
+      </p>}
+      {strip && files.length > 1 && (() => {
+        // Окно вокруг текущего кадра: на галерее в сотню файлов сто миниатюр
+        // в ленте — это сотня <img> ради двадцати видимых.
+        const current = Math.max(0, files.findIndex((file) => file.path === viewing))
+        const radius = phone ? STRIP_RADIUS_PHONE : STRIP_RADIUS
+        const from = Math.max(0, current - radius)
+        const nearby = files.slice(from, current + radius + 1)
+        return <div className="image-studio-strip" role="list" aria-label="Лента кадров">
+        {/* Кнопке нельзя дать role="listitem": она перестанет быть кнопкой для
+            читалки. Поэтому элемент списка — обёртка, кнопка внутри. */}
+        {nearby.map((file) => <span key={file.path} role="listitem">
+          <button
+            type="button"
+            className={`image-studio-strip-item${file.path === viewing ? ' image-studio-strip-item--current' : ''}`}
+            aria-label={file.path}
+            aria-current={file.path === viewing ? 'true' : undefined}
+            title={file.path}
+            // Текущий кадр подводим к центру ленты: иначе после нескольких
+            // нажатий стрелки он уезжает за край и лента бесполезна.
+            ref={(node) => { if (node && file.path === viewing) node.scrollIntoView?.({ block: 'nearest', inline: 'center' }) }}
+            onClick={() => { setSlideshow(false); onView(file.path) }}
+          >
+            <img src={previews[file.path]} alt="" loading="lazy" />
+          </button>
+        </span>)}
+        </div>
+      })()}
       <p className="image-studio-origin"><span className="image-studio-dim">← → — листать · Delete — удалить · Esc — закрыть{slideshow ? ' · слайдшоу идёт' : ''}</span></p>
       {meta && <p className="imgcap image-studio-origin">
         <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
