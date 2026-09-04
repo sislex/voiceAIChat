@@ -229,6 +229,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
             attachments: msg.attachments,
             verbose: msg.verbose,
             execTarget: msg.execTarget,
+            skipProjectSync: msg.skipProjectSync,
             assistantContext: msg.assistantContext
           })
           break

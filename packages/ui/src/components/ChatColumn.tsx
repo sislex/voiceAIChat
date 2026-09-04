@@ -139,6 +139,9 @@ export interface ChatColumnProps {
   liveTarget?: TurnTarget | null
   /** Текст ошибки для баннера (null/undefined — нет баннера). */
   error?: string | null
+  /** Готовое исправление к ошибке: кнопка рядом с текстом. */
+  errorFix?: { label: string; prompt: string } | null
+  onFixError?: (prompt: string) => void
   /** Закрыть баннер ошибки. */
   onDismissError?: () => void
   /** Доступна ли озвучка (кнопка ▶ на ответах). */
@@ -236,6 +239,8 @@ export function ChatColumn({
   onDeleteMessage,
   onEditMessage,
   error,
+  errorFix,
+  onFixError,
   onDismissError,
   modelMissing = false,
   modelLabel = '',
@@ -639,6 +644,11 @@ export function ChatColumn({
       {error && (
         <div className={error.startsWith('Предупреждение:') ? 'errbar warnbar' : 'errbar'} role="alert" data-testid="error-bar">
           <span>{error}</span>
+          {errorFix && onFixError && (
+            <Button size="sm" variant="secondary" title="Отправить исправление в этот чат — правит модель" onClick={() => onFixError(errorFix.prompt)}>
+              {errorFix.label}
+            </Button>
+          )}
           <button className="errclose" aria-label="Закрыть ошибку" title="Закрыть ошибку" onClick={onDismissError}>
             ✕
           </button>

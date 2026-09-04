@@ -169,6 +169,45 @@ describe('синхронизация общей базовой ветки пер
     expect(script).toContain('test "$local_sha" = "$remote_sha"')
   })
 
+  it('называет мешающие файлы, когда копия грязная', () => {
+    const root = mkdtempSync(join(tmpdir(), 'vc-main-dirty-'))
+    const origin = join(root, 'origin.git')
+    const seed = join(root, 'seed')
+    const checkout = join(root, 'checkout')
+    const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim()
+    try {
+      git('init', '--bare', origin)
+      git('init', '-b', 'main', seed)
+      git('-C', seed, 'config', 'user.email', 'test@example.com')
+      git('-C', seed, 'config', 'user.name', 'Test')
+      writeFileSync(join(seed, 'value.txt'), 'one\n')
+      git('-C', seed, 'add', 'value.txt')
+      git('-C', seed, 'commit', '-m', 'first')
+      git('-C', seed, 'remote', 'add', 'origin', origin)
+      git('-C', seed, 'push', '-u', 'origin', 'main')
+      git('clone', '--branch', 'main', origin, checkout)
+
+      // Незакоммиченная правка и неотслеживаемый файл: оба должны попасть в текст.
+      writeFileSync(join(checkout, 'value.txt'), 'local\n')
+      writeFileSync(join(checkout, 'scratch.log'), 'temp\n')
+      let message = ''
+      try {
+        execSync(projectMainRefreshScript(checkout, 'main'), { shell: '/bin/sh', stdio: 'pipe' })
+      } catch (error) {
+        message = String((error as { stderr?: Buffer }).stderr ?? '')
+      }
+      expect(message).toContain('содержит локальные изменения')
+      expect(message).toContain(checkout)
+      expect(message).toContain('Изменено записей: 2')
+      expect(message).toContain('value.txt')
+      expect(message).toContain('scratch.log')
+      // Синхронизация действительно остановлена: HEAD копии не двигался.
+      expect(git('-C', checkout, 'status', '--porcelain')).toContain('value.txt')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('обновляет реальную локальную main из origin/main без склеенной ссылки', () => {
     const root = mkdtempSync(join(tmpdir(), 'vc-main-sync-'))
     const origin = join(root, 'origin.git')

@@ -263,6 +263,8 @@ export interface ChatActions {
   exportConversation(format: 'md' | 'json'): void
   setDraft(value: string): void
   submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean>
+  /** Отправить предложенное сервером исправление (ход пропускает preflight копии). */
+  submitFix(prompt: string): Promise<boolean>
   /** Сохраняет безопасный служебный результат без запуска LLM. */
   publishDiagnosticMessage(conversationId: string, text: string): Promise<void>
   retryAttachment(localId: string): Promise<void>
@@ -393,6 +395,12 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
 }
 
 export function createChatStore(deps: ChatDeps): ChatStore {
+  /**
+   * Следующий ход — исправление грязной копии проекта: системный preflight
+   * пропускается. Живёт в замыкании, а не в состоянии: флаг одноразовый и
+   * экрану о нём знать нечего.
+   */
+  let nextTurnSkipsProjectSync = false
   const client = deps.chat
   const kbBridge = client.kb
   const turn = client.turn
@@ -718,14 +726,19 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     segments: SttSegmentWire[],
     attachments: string[] = [],
     execTarget: string | null = activeConversationExecTarget(),
-    messageId?: string
+    messageId?: string,
+    skipProjectSyncArg?: boolean
   ): void {
+    const skipProjectSync = skipProjectSyncArg ?? nextTurnSkipsProjectSync
+    nextTurnSkipsProjectSync = false
     const activeId = getState().activeId
     if (turn.enabled && turn.send && activeId) {
       setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [], liveUsage: null, liveTarget: null })
       voice.beginTurn()
       // verbose=true всегда: активность нужна для живого статуса и подробного вида.
-      if (messageId) turn.send(activeId, segments, attachments, true, execTarget, messageId)
+      // Ход-исправление отдаётся полным вызовом: у него важен последний аргумент.
+      if (skipProjectSync) turn.send(activeId, segments, attachments, true, execTarget, messageId, true)
+      else if (messageId) turn.send(activeId, segments, attachments, true, execTarget, messageId)
       else if (execTarget === null) turn.send(activeId, segments, attachments, true)
       else turn.send(activeId, segments, attachments, true, execTarget)
       return
@@ -1164,6 +1177,18 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
+  }
+
+  /**
+   * Отправить готовое исправление из баннера ошибки: текст уходит обычной
+   * репликой (её видно в истории), но ход помечен как исправление, поэтому
+   * системный preflight копии проекта для него пропускается — иначе кнопка
+   * упиралась бы в ту же ошибку, из-за которой и появилась.
+   */
+  function submitFix(prompt: string): Promise<boolean> {
+    nextTurnSkipsProjectSync = true
+    setState({ draft: prompt })
+    return submitText()
   }
 
   function submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
@@ -1752,6 +1777,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         setState({ draft: value })
       },
       submitText,
+      submitFix,
       publishDiagnosticMessage,
       submitVoiceSegments,
       async suggestPrompts(modifiers) {

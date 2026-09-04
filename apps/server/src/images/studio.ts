@@ -305,6 +305,27 @@ export class ImageStudioStore {
     return out.sort((a, b) => b.deletedAt - a.deletedAt).map(({ name, deletedAt }) => ({ name, deletedAt }))
   }
 
+  /**
+   * Чистит корзину: без имени — целиком, с именем — все экземпляры одного
+   * файла. Корзина занимает ту же квоту разговора, а ждать неделю, когда
+   * место нужно сейчас, — не выход.
+   */
+  async purgeTrash(conversationId: string, rawName?: string): Promise<number> {
+    const dir = this.trashDir(conversationId)
+    if (!existsSync(dir)) return 0
+    const name = rawName ? safeName(rawName) : null
+    let removed = 0
+    for (const entry of await readdir(dir)) {
+      const sep = entry.indexOf(TRASH_SEP)
+      if (sep <= 0) continue
+      if (name !== null && entry.slice(sep + TRASH_SEP.length) !== name) continue
+      await rm(join(dir, entry), { force: true })
+      removed += 1
+    }
+    if (name !== null && removed === 0) throw new ImageStudioError('not_found', `«${name}» нет в корзине`)
+    return removed
+  }
+
   /** Возвращает последний удалённый экземпляр `name` обратно в галерею. */
   async restore(conversationId: string, rawName: string): Promise<string> {
     const name = safeName(rawName)

@@ -387,4 +387,24 @@ describe('студия картинок: корзина', () => {
     expect((await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/trash` })).json().items).toEqual([])
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/restore`, payload: { name: 'кот.png' } })).statusCode).toBe(404)
   })
+
+  it('очистка корзины: по имени и целиком, после неё restore уже невозможен', async () => {
+    await store.writeBuffer(convId, 'пёс.png', PNG_BYTES)
+    await store.writeBuffer(convId, 'кит.png', PNG_BYTES)
+    await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/file?path=${encodeURIComponent('пёс.png')}` })
+    await app.inject({ method: 'DELETE', url: `/api/image-studio/${convId}/file?path=${encodeURIComponent('кит.png')}` })
+
+    const one = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/trash/purge`, payload: { name: 'пёс.png' } })
+    expect(one.json()).toMatchObject({ removed: 1 })
+    expect((one.json() as { items: Array<{ name: string }> }).items.map((item) => item.name)).toEqual(['кит.png'])
+    // Вычищенное не восстановить — на это и рассчитано.
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/restore`, payload: { name: 'пёс.png' } })).statusCode).toBe(404)
+
+    const all = await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/trash/purge`, payload: {} })
+    expect(all.json()).toEqual({ removed: 1, items: [] })
+    // Пустую корзину чистить не ошибка: кнопка не обязана знать про гонки.
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/trash/purge`, payload: {} })).json()).toEqual({ removed: 0, items: [] })
+    // А вот несуществующее имя — 404: значит, промахнулись мимо записи.
+    expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/trash/purge`, payload: { name: 'кот.png' } })).statusCode).toBe(404)
+  })
 })
