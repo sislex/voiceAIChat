@@ -416,7 +416,9 @@ describe('мосты QA и тестовых окружений', () => {
     const calls = collect()
     document.cookie = 'vc_csrf=tok456'
     const preview = createFeaturePreviewRest('')
-    await preview.operate('p1', 't1', 'start', { machineId: 'agent-1' })
+    // Контракт моста — `agentId`: `machineId` не существует в его типе, и
+    // typecheck main падал именно на этой строке.
+    await preview.operate('p1', 't1', 'start', { agentId: 'agent-1' })
     expect((calls[0].init?.headers as Record<string, string>)['x-vc-csrf']).toBe('tok456')
     document.cookie = 'vc_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   })
