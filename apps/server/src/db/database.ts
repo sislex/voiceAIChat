@@ -150,6 +150,7 @@ import {
   type CiBrowserCheck,
   type CiProcessStage,
   CI_PROCESS_STAGES,
+  QA_CRITERION_TEST_TYPES,
   DEFAULT_CI_BROWSER_CHECK,
   normalizeCiBrowserCheck,
   normalizeCiProcessStages,
@@ -9623,7 +9624,10 @@ interface QaIssueRow { id:string;result_id:string;classification:string;severity
 interface QaAttachmentRow { id:string;result_id:string;upload_id:string;name:string;mime_type:string;size:number;width:number|null;height:number|null;caption:string;author:string;created_at:number;commit_sha:string }
 
 function qaSnapshot(value:AcceptanceCriterionSnapshot):AcceptanceCriterionSnapshot {
-  const testType=value.testType==='automated'||value.testType==='mixed'||value.testType==='not_testable_in_app'?value.testType:'manual'
+  // Список типов один — общий контракт QA. Пока здесь была тройка legacy-значений,
+  // актуальные ui|api|integration|negative|regression молча превращались в manual,
+  // и сценарий, по которому запускается Component QA, терял свой тип при сохранении.
+  const testType=QA_CRITERION_TEST_TYPES.includes(value.testType)?value.testType:'manual'
   return {title:value.title.trim(),description:value.description.trim(),preconditions:value.preconditions.trim(),steps:value.steps.trim(),testData:value.testData.trim(),expectedResult:value.expectedResult.trim(),required:value.required!==false,testType}
 }
 function mapTaskRepository(r: Record<string, unknown>): TaskRepository {

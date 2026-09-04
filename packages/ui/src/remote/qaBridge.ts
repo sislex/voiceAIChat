@@ -1,6 +1,6 @@
 import { REST } from '@shared/protocol'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, ComponentQaRun, ComponentQaTaskState, IntegrationTestRun, IntegrationTestTaskState, QaCriterionResult, QaSession, QaTaskState } from '@shared/qa'
-import { getToken } from './session'
+import { authHeaders } from './session'
 
 type StartSessionInput = { branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }
 export interface RendererQaBridge {
@@ -34,8 +34,14 @@ export interface RendererQaBridge {
 
 export function createQaRest(httpBase: string): RendererQaBridge {
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    const token = getToken()
-    const response = await fetch(httpBase + path, { ...init, headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) } })
+    // Заголовки — только через общий authHeaders: он кладёт и Bearer, и
+    // `x-vc-csrf`. Собственная сборка знала лишь про Bearer, а в вебе после
+    // перезагрузки страницы токен живёт только в памяти и авторизует cookie —
+    // поэтому каждый POST панелей QA отвечал 403 `csrf`.
+    const response = await fetch(httpBase + path, {
+      ...init,
+      headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), ...authHeaders() }
+    })
     if (response.status === 404 && !init) return null as T
     const body = await response.json().catch(() => ({})) as { error?: string }
     if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`)
