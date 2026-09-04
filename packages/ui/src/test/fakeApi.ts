@@ -1595,11 +1595,6 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       }
       return { links: projectSyncLinks, state: { rev: 1, files: [] } as never }
     },
-    'make:projectPush': async ({ paths }) => {
-      const pushed = (paths?.length ? paths : projectSyncLinks.map((link) => link.path))
-      for (const link of projectSyncLinks) if (pushed.includes(link.path)) link.status = 'same'
-      return { pushed, conflicts: [], links: projectSyncLinks }
-    },
     'make:taskLinks': async ({ conversationId, path }) => designLinks
       .filter((link) => link.conversationId === conversationId && (path === undefined || link.path === path))
       .map((link) => ({

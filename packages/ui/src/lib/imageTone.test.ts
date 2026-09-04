@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyLut, computeHistogram, histogramBars, levelsLut, levelsRange, unsharpPixels } from './imageTone'
+import { applyLut, computeChannelHistograms, computeHistogram, histogramBars, levelsLut, levelsRange, unsharpPixels } from './imageTone'
 
 /** Пиксели RGBA одним массивом, как их отдаёт canvas. */
 function pixels(...colors: Array<[number, number, number, number]>): number[] {
@@ -95,5 +95,18 @@ describe('histogramBars', () => {
 
   it('пустая гистограмма даёт нули, а не деление на ноль', () => {
     expect(histogramBars(new Array<number>(256).fill(0), 4)).toEqual([0, 0, 0, 0])
+  })
+})
+
+describe('computeChannelHistograms', () => {
+  it('считает каналы отдельно и пропускает прозрачные пиксели', () => {
+    // Два пикселя: красный видимый и зелёный полностью прозрачный.
+    const channels = computeChannelHistograms([255, 0, 0, 255, 0, 255, 0, 0])
+    expect(channels.r[255]).toBe(1)
+    expect(channels.g[0]).toBe(1)
+    expect(channels.b[0]).toBe(1)
+    // Прозрачный не попал ни в один канал.
+    expect(channels.g[255]).toBe(0)
+    expect(channels.r.reduce((sum, value) => sum + value, 0)).toBe(1)
   })
 })

@@ -11,15 +11,6 @@ function makeApi(initialLinks: MakeProjectLinkInfo[] = []) {
     for (const path of paths) links.push({ path, importedHash: `h-${path}`, importedAt: 1, status: 'same' })
     return { links: [...links], state: { rev: 1 } as never }
   })
-  const push = vi.fn(async ({ paths, force }: { paths?: string[]; force?: boolean }) => {
-    // Первый вызов без force — конфликт, как отвечает сервер (409 → ошибка моста).
-    if (!force && links.some((link) => link.status === 'both')) {
-      throw new Error('Файлы в проекте изменились после копирования')
-    }
-    const pushed = paths ?? links.map((link) => link.path)
-    for (const link of links) if (pushed.includes(link.path)) link.status = 'same'
-    return { pushed, conflicts: [], links: [...links] }
-  })
   return {
     api: {
       'make:projectFiles': vi.fn(async ({ path }: { path?: string }) => path === 'src'
@@ -29,10 +20,9 @@ function makeApi(initialLinks: MakeProjectLinkInfo[] = []) {
             { name: 'theme.css', path: 'theme.css', kind: 'file' as const, size: 5 }
           ]),
       'make:projectLinks': vi.fn(async () => [...links]),
-      'make:projectPull': pull,
-      'make:projectPush': push
+      'make:projectPull': pull
     },
-    pull, push
+    pull
   }
 }
 
@@ -55,28 +45,24 @@ describe('MakeProjectSyncDialog', () => {
     expect(linksList.textContent).toContain('совпадает с проектом')
   })
 
-  it('конфликт возврата решается подтверждением, а не молчаливой перезаписью', async () => {
-    const { api, push } = makeApi([
+  it('расхождение показывает словами и не предлагает записать в репозиторий', async () => {
+    const { api } = makeApi([
       { path: 'theme.css', importedHash: 'h', importedAt: 1, status: 'both' }
     ])
     render(<MakeProjectSyncDialog conversationId="c1" api={api as never} onClose={vi.fn()} />)
 
     const linksList = await screen.findByTestId('make-sync-links')
     expect(linksList.textContent).toContain('конфликт')
-    fireEvent.click(within(linksList).getByRole('button', { name: 'Вернуть' }))
-
-    // Подтверждение: перезапись сотрёт чужую правку в репозитории.
-    expect(await screen.findByText('Файлы в проекте изменились')).toBeInTheDocument()
-    fireEvent.click(await screen.findByRole('button', { name: 'Перезаписать' }))
-    await waitFor(() => expect(push).toHaveBeenLastCalledWith({ conversationId: 'c1', paths: ['theme.css'], force: true }))
+    // Обратной записи у Make нет: общая копия проекта принадлежит git-потоку.
+    expect(within(linksList).queryByRole('button', { name: 'Вернуть' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Вернуть всё/ })).toBeNull()
   })
 
   it('машина недоступна — ошибка словами и «Повторить», а не пустой диалог', async () => {
     const api = {
       'make:projectFiles': vi.fn(async () => { throw new Error('Машина «Мак» offline.') }),
       'make:projectLinks': vi.fn(async () => []),
-      'make:projectPull': vi.fn(),
-      'make:projectPush': vi.fn()
+      'make:projectPull': vi.fn()
     }
     render(<MakeProjectSyncDialog conversationId="c1" api={api as never} onClose={vi.fn()} />)
     expect(await screen.findByText(/offline/)).toBeInTheDocument()

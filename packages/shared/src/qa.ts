@@ -104,6 +104,16 @@ export interface DevelopmentReadiness {
 export interface ReadinessCheck { allowed: boolean; reasons: string[] }
 
 /** Pure quality gate used before entering Ready for Development. */
+/**
+ * Сценарии, которые вправе прогонять Component QA: витрина проверяет UI, а не
+ * ручные шаги. Предикат общий для гейта подготовки и гейта запуска этапа —
+ * пока они расходились, подготовка успешно выпускала бриф, с которым Component
+ * QA не запускался никогда, и задача застревала после разработки.
+ */
+export function hasRequiredComponentScenario(testCases: readonly TestCaseDefinition[]): boolean {
+  return testCases.some((item) => item.required && (item.testType === 'ui' || item.testType === 'automated' || item.testType === 'mixed'))
+}
+
 export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): ReadinessCheck {
   const reasons: string[] = []
   if (!input.functionalRequirements.trim()) reasons.push('missing_functional_requirements')
@@ -123,6 +133,9 @@ export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): Rea
   if (!input.uiImpact) reasons.push('missing_ui_impact')
   if (input.uiImpact && input.uiImpact !== 'none') {
     if (input.affectedComponents.length === 0) reasons.push('missing_affected_components')
+    // Тот же список типов, что и у запуска Component QA: иначе бриф пройдёт
+    // подготовку, а этап откажется стартовать с `missing_required_component_scenarios`.
+    if (!hasRequiredComponentScenario(input.testCases)) reasons.push('missing_required_component_scenarios')
     for (const component of input.affectedComponents) {
       if (!component.storybookStoryId && (!component.exclusionReason.trim() || !component.alternativeVerification.trim() || !component.coverage || Object.keys(component.coverage).length === 0)) reasons.push(`missing_storybook_coverage:${component.id}`)
       if (component.reusable && input.uiImpact === 'new_components' && !component.storybookStoryId && !component.exclusionReason.trim()) reasons.push(`new_reusable_component_without_story:${component.id}`)
@@ -155,7 +168,7 @@ export function developmentReadinessGateResults(input: DevelopmentReadiness): Pr
     ['material_questions_closed', (r) => r.startsWith('open_material_question:')],
     ['contradictions_resolved', (r) => r === 'acceptance_criteria_conflict' || r === 'unresolved_material_contradiction'],
     ['acceptance_criteria_verifiable', (r) => r.startsWith('unverifiable_acceptance_criterion:')],
-    ['required_test_cases_complete', (r) => /^(missing_(stable_id|title|description|preconditions|test_data|steps|expected_result|required_test_cases)|missing_manual_justification)/.test(r)],
+    ['required_test_cases_complete', (r) => /^(missing_(stable_id|title|description|preconditions|test_data|steps|expected_result|required_test_cases|required_component_scenarios)|missing_manual_justification)/.test(r)],
     ['ui_impact_sufficient', (r) => r.includes('storybook') || r.includes('affected_components') || r.includes('ui_impact') || r.includes('reusable_component')],
     ['assumptions_allowed', (r) => r.startsWith('invalid_assumption:')],
     ['sensitive_data_redacted', () => false]
@@ -352,8 +365,7 @@ export function componentQaLaunchReasons(readiness: DevelopmentReadiness): strin
   const reasons: string[] = []
   if (!readiness.uiImpact) reasons.push('missing_ui_impact')
   if (!readiness.affectedComponents.length) reasons.push('missing_affected_components')
-  const componentCases = readiness.testCases.filter((item) => item.testType === 'ui' || item.testType === 'automated' || item.testType === 'mixed')
-  if (!componentCases.some((item) => item.required)) reasons.push('missing_required_component_scenarios')
+  if (!hasRequiredComponentScenario(readiness.testCases)) reasons.push('missing_required_component_scenarios')
   for (const component of readiness.affectedComponents) {
     if (!component.storybookStoryId) {
       if (!component.exclusionReason.trim()) reasons.push(`missing_exclusion_reason:${component.id}`)
