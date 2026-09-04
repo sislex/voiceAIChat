@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { groupDuplicates, inventoryMarkdown, mapWithLimit } from './imageInventory'
+import { gridWindow, groupDuplicates, inventoryMarkdown, mapWithLimit } from './imageInventory'
 import type { ImageStudioFile } from '@shared/imageStudio'
 
 const file = (path: string, patch: Partial<ImageStudioFile> = {}): ImageStudioFile => ({ path, size: 1024, updatedAt: 1, ...patch })
@@ -74,5 +74,43 @@ describe('mapWithLimit', () => {
 
   it('лимит меньше единицы всё равно выполняет работу — по одной задаче', async () => {
     expect(await mapWithLimit([1, 2], 0, async (item) => item + 1)).toEqual([2, 3])
+  })
+})
+
+describe('gridWindow', () => {
+  it('рисует только строки вокруг видимой области и держит распорки', () => {
+    // 100 файлов, 4 колонки, строка 200px, экран 600px (3 строки), запас 1 экран.
+    const win = gridWindow(100, 4, 200, 4000, 600)
+    // Видимая строка — 20-я; с запасом окно начинается на 17-й.
+    expect(win.from).toBe(17 * 4)
+    expect(win.to).toBeGreaterThan(win.from)
+    expect(win.padTop).toBe(17 * 200)
+    // Суммарная высота не меняется: полоса прокрутки остаётся честной.
+    const rows = Math.ceil(100 / 4)
+    const drawnRows = (win.to - win.from) / 4
+    expect(win.padTop + drawnRows * 200 + win.padBottom).toBe(rows * 200)
+  })
+
+  it('в начале списка ничего не отрезает сверху', () => {
+    const win = gridWindow(100, 4, 200, 0, 600)
+    expect(win.from).toBe(0)
+    expect(win.padTop).toBe(0)
+  })
+
+  it('без известной высоты экрана рисует всё: измерений ещё нет', () => {
+    expect(gridWindow(50, 4, 200, 0, 0)).toEqual({ from: 0, to: 50, padTop: 0, padBottom: 0 })
+  })
+
+  it('пустая галерея и странные размеры не роняют расчёт', () => {
+    expect(gridWindow(0, 4, 200, 0, 600)).toEqual({ from: 0, to: 0, padTop: 0, padBottom: 0 })
+    const win = gridWindow(10, 0, 0, -50, 600)
+    expect(win.from).toBe(0)
+    expect(win.to).toBeGreaterThan(0)
+  })
+
+  it('в конце списка нижняя распорка исчезает', () => {
+    const win = gridWindow(40, 4, 200, 10_000, 600)
+    expect(win.to).toBe(40)
+    expect(win.padBottom).toBe(0)
   })
 })

@@ -4,7 +4,7 @@
 
 import { applyLut, computeHistogram, levelsLut, levelsRange, unsharpPixels } from './imageTone'
 
-export type ImageTransformKind = 'rotate90' | 'rotate180' | 'rotate270' | 'flipH' | 'downscale512' | 'upscale2x' | 'padSquare' | 'toJpeg' | 'toWebp' | 'brighten' | 'contrast' | 'grayscale' | 'trim' | 'fitSquare' | 'fitOg' | 'fitWide' | 'autoLevels' | 'sharpen' | 'blur' | 'invert'
+export type ImageTransformKind = 'rotate90' | 'rotate180' | 'rotate270' | 'flipH' | 'downscale512' | 'upscale2x' | 'padSquare' | 'toJpeg' | 'toWebp' | 'brighten' | 'contrast' | 'grayscale' | 'trim' | 'fitSquare' | 'fitOg' | 'fitWide' | 'autoLevels' | 'sharpen' | 'blur' | 'invert' | 'toWeb200'
 
 /** Целевые размеры подгонки: квадрат поста, OG-превью и обложка 16:9. */
 export const FIT_PRESETS: Record<'fitSquare' | 'fitOg' | 'fitWide', { width: number; height: number }> = {
@@ -33,8 +33,22 @@ export const IMAGE_TRANSFORMS: Array<{ kind: ImageTransformKind; label: string; 
   { kind: 'autoLevels', label: 'Автоуровни', suffix: 'уровни' },
   { kind: 'sharpen', label: 'Резче', suffix: 'резче' },
   { kind: 'blur', label: 'Размыть', suffix: 'размыто' },
-  { kind: 'invert', label: 'Инвертировать', suffix: 'негатив' }
+  { kind: 'invert', label: 'Инвертировать', suffix: 'негатив' },
+  { kind: 'toWeb200', label: 'Сжать до ~200 КБ (JPEG)', suffix: 'web', ext: 'jpg' }
 ]
+
+/** Целевой вес «веб-версии»: 200 КБ — обычный бюджет картинки в статье. */
+export const WEB_TARGET_BYTES = 200 * 1024
+
+/**
+ * Подбор качества JPEG под целевой вес: качество делим пополам по шагам,
+ * пока не влезем. Один фиксированный уровень не годится — фотография и
+ * плоская иллюстрация при одном качестве весят в разы по-разному.
+ */
+export function nextQuality(current: number, tooBig: boolean, step: number): number {
+  const shift = tooBig ? -step : step
+  return Math.min(0.95, Math.max(0.35, Math.round((current + shift) * 100) / 100))
+}
 
 /**
  * Прямоугольник непрозрачного содержимого: у логотипов и иконок вокруг
@@ -89,6 +103,7 @@ export async function applyImageTransform(source: Blob, kind: ImageTransformKind
   if (kind === 'trim') return trimImage(source)
   if (kind === 'fitSquare' || kind === 'fitOg' || kind === 'fitWide') return fitImage(source, FIT_PRESETS[kind])
   if (kind === 'autoLevels') return autoLevelsImage(source)
+  if (kind === 'toWeb200') return compressToBytes(source, WEB_TARGET_BYTES)
   if (kind === 'sharpen') return sharpenImage(source)
   const bitmap = await createImageBitmap(source)
   try {
@@ -332,6 +347,43 @@ export async function cropImage(source: Blob, rect: CropRect): Promise<Blob> {
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
     if (!blob) throw new Error('Не удалось сохранить кроп')
     return blob
+  } finally {
+    bitmap.close?.()
+  }
+}
+
+/**
+ * Сжать в JPEG под целевой вес: подбираем качество, каждый раз уменьшая шаг
+ * (двоичный поиск по качеству). Пять попыток — компромисс: каждая попытка это
+ * полная перекодировка, а разница между 0.62 и 0.60 глазами не видна.
+ */
+export async function compressToBytes(source: Blob, target: number): Promise<Blob> {
+  const bitmap = await createImageBitmap(source)
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas недоступен в этом браузере')
+    // JPEG не умеет прозрачность: без белой подложки прозрачные края чернеют.
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(bitmap, 0, 0)
+    let quality = 0.8
+    let step = 0.2
+    let best: Blob | null = null
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
+      if (!blob) break
+      // Держим лучший из влезающих; если не влез ни один — последний (самый мелкий).
+      if (blob.size <= target && (!best || blob.size > best.size)) best = blob
+      else if (!best) best = blob
+      if (Math.abs(blob.size - target) < target * 0.05) break
+      quality = nextQuality(quality, blob.size > target, step)
+      step = Math.max(0.02, step / 2)
+    }
+    if (!best) throw new Error('Не удалось пересжать картинку')
+    return best
   } finally {
     bitmap.close?.()
   }

@@ -31,3 +31,33 @@ export function versionChain(files: ImageStudioFile[], path: string): string[] {
   }
   return chain
 }
+
+/**
+ * Вся родня файла: и предки, и все потомки со всеми ветвями. В отличие от
+ * `versionChain` (одна нить для подписи в лайтбоксе) это ответ на вопрос «где
+ * все варианты этой картинки» — их обычно несколько параллельных.
+ */
+export function versionFamily(files: ImageStudioFile[], path: string): string[] {
+  const byPath = new Map(files.map((file) => [file.path, file]))
+  if (!byPath.has(path)) return []
+  // Корень: вверх по source, пока он есть в галерее (циклы гасит visited).
+  const seenUp = new Set<string>([path])
+  let root = path
+  for (;;) {
+    const source = byPath.get(root)?.source
+    if (!source || !byPath.has(source) || seenUp.has(source)) break
+    seenUp.add(source)
+    root = source
+  }
+  // Вниз обходом в ширину: собираем всех потомков корня.
+  const family = [root]
+  const seen = new Set<string>([root])
+  for (let index = 0; index < family.length; index += 1) {
+    const parent = family[index]!
+    for (const child of files.filter((file) => file.source === parent && !seen.has(file.path)).sort((a, b) => a.updatedAt - b.updatedAt)) {
+      seen.add(child.path)
+      family.push(child.path)
+    }
+  }
+  return family
+}

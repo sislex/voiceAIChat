@@ -21,6 +21,23 @@ export function computeHistogram(pixels: Uint8ClampedArray | number[]): number[]
 }
 
 /**
+ * Гистограммы по каналам: по яркости не видно, какой канал упёрся в предел —
+ * а именно так выглядит перекос цвета («ушло в синеву»), который на глаз
+ * объясняется как «странный оттенок».
+ */
+export function computeChannelHistograms(pixels: Uint8ClampedArray | number[]): { r: number[]; g: number[]; b: number[] } {
+  const make = (): number[] => new Array<number>(HISTOGRAM_BINS).fill(0)
+  const out = { r: make(), g: make(), b: make() }
+  for (let index = 0; index + 3 < pixels.length; index += 4) {
+    if (pixels[index + 3]! < 8) continue
+    out.r[pixels[index]!]! += 1
+    out.g[pixels[index + 1]!]! += 1
+    out.b[pixels[index + 2]!]! += 1
+  }
+  return out
+}
+
+/**
  * Границы для автоуровней: отбрасываем `clip` долю самых тёмных и самых
  * светлых пикселей, иначе один случайный блик растягивает всю картинку зря.
  * Возвращает `null`, если тянуть нечего (пусто или уже во всю шкалу).
@@ -88,6 +105,23 @@ export function histogramBars(histogram: number[], bars = 64): number[] {
  * 256 px по длинной стороне) — форма от этого не меняется, а полный проход по
  * пикселям большой картинки заметно тормозит вкладку.
  */
+export async function channelHistogramsOf(source: Blob, bars = 64): Promise<{ r: number[]; g: number[]; b: number[] }> {
+  const bitmap = await createImageBitmap(source)
+  try {
+    const scale = Math.min(1, 256 / Math.max(1, bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas недоступен в этом браузере')
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const channels = computeChannelHistograms(ctx.getImageData(0, 0, canvas.width, canvas.height).data)
+    return { r: histogramBars(channels.r, bars), g: histogramBars(channels.g, bars), b: histogramBars(channels.b, bars) }
+  } finally {
+    bitmap.close?.()
+  }
+}
+
 export async function histogramOf(source: Blob, bars?: number): Promise<number[]> {
   const bitmap = await createImageBitmap(source)
   try {
