@@ -49,6 +49,15 @@ const READINESS = JSON.stringify({
     testData: 'Фикстура', steps: 'Открыть карточку', expectedResult: 'Карточка открыта',
     required: true, testType: 'regression', automatable: true, automationLinks: [],
     notAutomatedReason: '', alternativeManualVerification: '', comments: ''
+  }, {
+    // UI-сценарий обязателен, когда задача трогает интерфейс: по нему потом
+    // запускается Component QA, и гейт подготовки этого требует
+    // (`hasRequiredComponentScenario`). Тесты с `uiImpact ≠ none` без него
+    // получали бы `blocked` — а проверяют они совсем другое.
+    id: 'TC-2', title: 'Экран открывается', description: 'Проверка интерфейса',
+    preconditions: 'Вошли в приложение', testData: 'Фикстура', steps: 'Открыть экран',
+    expectedResult: 'Экран виден', required: true, testType: 'ui', automatable: true,
+    automationLinks: [], notAutomatedReason: '', alternativeManualVerification: '', comments: ''
   }],
   constraints: [],
   contradictions: [],
