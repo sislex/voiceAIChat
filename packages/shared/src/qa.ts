@@ -447,6 +447,19 @@ export function integrationTestSemanticVersion(testCases: readonly TestCaseDefin
   for (let index=0; index<stable.length; index++) { hash ^= stable.charCodeAt(index); hash = Math.imul(hash,16777619) }
   return (hash>>>0).toString(16).padStart(8,'0')
 }
+/**
+ * Отпечаток набора команд стадии. Вместе с SHA коммита он задаёт вопрос «этот
+ * код уже проходил ровно эти проверки?»: пост-development стадии выполняются на
+ * неизменном коде development-рана, и без такого ключа один и тот же гейт
+ * монорепо гоняется по разу на каждой стадии и ещё раз на повторе.
+ */
+export function gateSignature(commands: readonly string[]): string {
+  const stable = JSON.stringify(commands.map((command) => command.trim()))
+  let hash = 2166136261
+  for (let index = 0; index < stable.length; index++) { hash ^= stable.charCodeAt(index); hash = Math.imul(hash, 16777619) }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
 export function integrationTestGate(run: IntegrationTestRun, currentSha: string, currentCases: readonly TestCaseDefinition[]): ReadinessCheck {
   const reasons:string[]=[]
   if (run.status!=='passed'&&run.status!=='skipped') reasons.push(`run_${run.status}`)
@@ -463,6 +476,31 @@ export function validateIntegrationTestDiff(paths: readonly string[], patterns: 
   /\.(test|spec)\.[cm]?[jt]sx?$/i
 ]): string[] {
   return paths.filter((path)=>!patterns.some((pattern)=>pattern.test(path)))
+}
+
+/**
+ * Маркер покрытия в тестовом файле: `@testCase <id>` в комментарии. Разработка
+ * ставит его рядом с тестом, который закрывает кейс из readiness, — иначе
+ * покрытие приходится синтезировать из диффа, приписывая первый попавшийся
+ * тестовый файл всем обязательным кейсам сразу (так и было до CHAT-411).
+ */
+export const AUTOMATION_MARKER = '@testCase'
+
+/**
+ * Разбор вывода `grep -HoE '@testCase[[:space:]]+…' -- <файлы>`: строки вида
+ * `path:@testCase TC-1`. Один тест может закрывать несколько кейсов, один кейс
+ * может закрываться несколькими файлами — побеждает первый встреченный путь,
+ * чтобы ссылка была стабильной между прогонами.
+ */
+export function parseAutomationMarkers(output: string): Array<{ testId: string; path: string }> {
+  const seen = new Map<string, string>()
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^(.+?):.*@testCase[\s:]+([A-Za-z0-9._-]+)/.exec(line.trim())
+    if (!match) continue
+    const [, path, testId] = match
+    if (!seen.has(testId)) seen.set(testId, path.trim())
+  }
+  return [...seen].map(([testId, path]) => ({ testId, path }))
 }
 
 export type QaResultStatus = 'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'

@@ -485,6 +485,10 @@ CREATE TABLE IF NOT EXISTS projects (
   merge_transport TEXT NOT NULL DEFAULT 'local',
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',
   test_command TEXT NOT NULL DEFAULT '',
+  -- Пустое значение наследует test_command: пост-development стадии сужают гейт,
+  -- а не заводят вторую копию настройки.
+  component_qa_command TEXT NOT NULL DEFAULT '',
+  integration_test_command TEXT NOT NULL DEFAULT '',
   automated_qa_command TEXT NOT NULL DEFAULT 'npm test',
   automated_qa_mode TEXT NOT NULL DEFAULT 'command',
   automated_qa_scenario_json TEXT NOT NULL DEFAULT '',
@@ -841,6 +845,24 @@ CREATE TABLE IF NOT EXISTS ci_workspaces (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_ci_workspaces_project ON ci_workspaces(project_id, state);
+
+-- Результаты гейта по коммиту: пост-development стадии выполняются на неизменном
+-- коде development-рана, поэтому один и тот же набор команд не гоняется дважды.
+-- Пишутся только успешные прогоны: падение может быть флаки, и повтор обязан
+-- реально выполнить команды.
+CREATE TABLE IF NOT EXISTS ci_gate_results (
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL,
+  task_id      TEXT NOT NULL,
+  commit_sha   TEXT NOT NULL,
+  signature    TEXT NOT NULL,
+  commands_json TEXT NOT NULL DEFAULT '[]',
+  run_kind     TEXT NOT NULL,
+  run_id       TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_gate_results_key ON ci_gate_results(commit_sha, signature);
 
 CREATE TABLE IF NOT EXISTS ci_runs (
   id             TEXT PRIMARY KEY,

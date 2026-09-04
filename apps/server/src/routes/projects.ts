@@ -198,6 +198,8 @@ export function registerProjectRoutes(
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      componentQaCommand?: string
+      integrationTestCommand?: string
       automatedQaCommand?: string
       automatedQaMode?: import('@voicechat/shared').AutomatedQaMode
       automatedQaScenario?: import('@voicechat/shared').AutomatedQaScenario

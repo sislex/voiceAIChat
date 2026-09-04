@@ -79,6 +79,22 @@ describe('Component QA: контекст исполнения', () => {
     expect(db.componentQaExecutionContext('нет-такого')).toBeNull()
   })
 
+  // Component QA нужны компонентные проверки, а не полный гейт монорепо: своя
+  // команда сужает стадию, пустая — наследует прежнюю настройку проекта.
+  it('своя команда стадии перекрывает общую команду тестирования', () => {
+    const { project, task } = componentFixture()
+    db.updateProject('owner', project.id, { testCommand: 'npm run gate', componentQaCommand: 'npm run test:storybook' })
+    const run = db.startComponentQaRun('owner', project.id, task.id)
+    expect(db.componentQaExecutionContext(run.id)?.commands).toEqual(['npm run test:storybook'])
+  })
+
+  it('пустая команда стадии наследует команду тестирования проекта', () => {
+    const { project, task } = componentFixture()
+    db.updateProject('owner', project.id, { testCommand: 'npm run gate', componentQaCommand: '   ' })
+    const run = db.startComponentQaRun('owner', project.id, task.id)
+    expect(db.componentQaExecutionContext(run.id)?.commands).toEqual(['npm run gate'])
+  })
+
   // Рабочие директории, созданные до появления колонки, кэша не знают: стадия
   // ставит зависимости кэшем npm по умолчанию, а не падает без контекста.
   it('у старой рабочей директории кэш пустой, но контекст выдаётся', () => {
@@ -210,6 +226,27 @@ describe('Integration QA: контекст и журнал', () => {
     const run = db.startIntegrationTestRun('owner', project.id, task.id)
     db.markIntegrationTestRunning(run.id)
     expect(db.integrationTestExecutionContext(run.id)).toBeNull()
+  })
+
+  it('своя команда этапа перекрывает общую, пустая — наследует', () => {
+    const { project, task } = integrationFixture()
+    db.updateProject('owner', project.id, { testCommand: 'npm run gate', integrationTestCommand: 'npm run test:integration' })
+    const run = db.startIntegrationTestRun('owner', project.id, task.id)
+    expect(db.integrationTestExecutionContext(run.id)?.commands).toEqual(['npm run test:integration'])
+    db.updateProject('owner', project.id, { integrationTestCommand: '' })
+    expect(db.integrationTestExecutionContext(run.id)?.commands).toEqual(['npm run gate'])
+  })
+
+  it('кэш гейта отдаёт только точную пару коммит + набор команд', () => {
+    const { project, task } = integrationFixture()
+    db.recordPassedGateResult({ projectId: project.id, taskId: task.id, commitSha: SHA, signature: 'sig-1', commands: ['npm run gate'], runKind: 'component_qa', runId: 'run-1' })
+    expect(db.findPassedGateResult(SHA, 'sig-1')).toMatchObject({ runKind: 'component_qa', runId: 'run-1' })
+    expect(db.findPassedGateResult(SHA, 'sig-2')).toBeNull()
+    expect(db.findPassedGateResult('b'.repeat(40), 'sig-1')).toBeNull()
+    expect(db.findPassedGateResult('', 'sig-1')).toBeNull()
+    // Повторная запись того же ключа не ломает уникальный индекс.
+    db.recordPassedGateResult({ projectId: project.id, taskId: task.id, commitSha: SHA, signature: 'sig-1', commands: ['npm run gate'], runKind: 'integration_tests', runId: 'run-2' })
+    expect(db.findPassedGateResult(SHA, 'sig-1')?.runId).toBe('run-1')
   })
 
   it('вывод копится только у запущенного рана', () => {

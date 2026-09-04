@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, integrationTestGate, integrationTestSemanticVersion, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
+import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, gateSignature, integrationTestGate, integrationTestSemanticVersion, parseAutomationMarkers, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
 
 function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'>): QaSession {
   return {
@@ -174,6 +174,28 @@ describe('component QA gate', () => {
 describe('integration test creation gate',()=>{
   it('accepts only test-directory or spec/test files in the committed diff',()=>{
     expect(validateIntegrationTestDiff(['apps/server/src/foo.ts','apps/server/src/foo.test.ts','tests/api.spec.ts'])).toEqual(['apps/server/src/foo.ts'])
+  })
+
+  it('маркеры покрытия дают явную пару кейс → файл',()=>{
+    const output = [
+      'packages/ui/src/a.test.tsx:// @testCase TC-1',
+      'packages/ui/src/a.test.tsx: * @testCase: TC-2',
+      'packages/ui/src/b.test.tsx:// @testCase TC-1',
+      'мусорная строка без маркера'
+    ].join('\n')
+    // Первый путь для кейса побеждает: ссылка обязана быть стабильной между прогонами.
+    expect(parseAutomationMarkers(output)).toEqual([
+      { testId: 'TC-1', path: 'packages/ui/src/a.test.tsx' },
+      { testId: 'TC-2', path: 'packages/ui/src/a.test.tsx' }
+    ])
+    expect(parseAutomationMarkers('')).toEqual([])
+  })
+
+  it('подпись гейта зависит только от набора команд',()=>{
+    expect(gateSignature([' npm test '])).toBe(gateSignature(['npm test']))
+    expect(gateSignature(['npm test'])).not.toBe(gateSignature(['npm test','npm run lint']))
+    expect(gateSignature(['a','b'])).not.toBe(gateSignature(['b','a']))
+    expect(gateSignature([])).toHaveLength(8)
   })
   it('pins the run to SHA and semantic automatable snapshot and reuses canCompleteAutomation',()=>{
     const cases=[testCase({automationLinks:[{testId:'TC-1',path:'tests/tc1.test.ts',updatedAt:1,commitSha:'abc'}]})]
