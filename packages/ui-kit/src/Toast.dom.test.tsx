@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { MOBILE_QUERY } from './mediaQuery'
-import { TOAST_DURATION_MS, TOAST_VISIBLE_MAX, ToastProvider, useToast } from './Toast'
+import { TOAST_ACTION_DURATION_MS, TOAST_DURATION_MS, TOAST_VISIBLE_MAX, ToastProvider, useToast } from './Toast'
 
 function Harness({ onRetry }: { onRetry?: () => void } = {}): JSX.Element {
   const toast = useToast()
@@ -18,6 +18,9 @@ function Harness({ onRetry }: { onRetry?: () => void } = {}): JSX.Element {
         с повтором
       </button>
       <button onClick={() => [1, 2, 3, 4].forEach((n) => toast.info(`Сообщение ${n}`, { duration: 0 }))}>пачка</button>
+      <button onClick={() => toast.success('Удалено файлов: 2', { action: { label: 'Вернуть', onClick: () => {} } })}>
+        с отменой
+      </button>
     </div>
   )
 }
@@ -175,5 +178,22 @@ describe('Toast', () => {
     )
     fireEvent.click(screen.getByText('успех'))
     expect(document.documentElement.style.getPropertyValue('--vc-toast-inset')).toBe('')
+  })
+})
+
+// Кнопка отмены, исчезающая раньше, чем до неё дотянулись, — не отмена. Тост с
+// действием живёт дольше обычного; на этом же спотыкался dom-тест студии
+// картинок в регрессионном прогоне release/0.1.226.
+describe('тост с действием', () => {
+  it('живёт дольше обычного и переживает окно простого тоста', () => {
+    vi.useFakeTimers()
+    setup()
+    act(() => { screen.getByRole('button', { name: 'с отменой' }).click() })
+    expect(screen.getByRole('button', { name: 'Вернуть' })).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(TOAST_DURATION_MS + 400))
+    expect(screen.getByRole('button', { name: 'Вернуть' })).toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(TOAST_ACTION_DURATION_MS))
+    expect(screen.queryByRole('button', { name: 'Вернуть' })).not.toBeInTheDocument()
+    vi.useRealTimers()
   })
 })
