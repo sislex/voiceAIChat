@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 225 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 21 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1131 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1134 коммит(ов) в areas после сверки: cbde4a7d Merge main into CHAT-407 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 170 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 216 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 106 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-01 | ⚠ 4 коммит(ов) в areas после сверки: e4b8c534 feat: add standalone machine login application … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 93 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ⚠ 7 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-04, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 588. Последние:
+Всего записей: 589. Последние:
 
 - [2026-09-04-alexeys-macbook-air-2-restore-production-signup.md](log/2026-09-04-alexeys-macbook-air-2-restore-production-signup.md) — restore-production-signup
 - [2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md](log/2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md) — merge-auto-fix-checks

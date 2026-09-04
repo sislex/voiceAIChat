@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-04
-checked: c16a3777
+checked: 5544d470
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -72,6 +72,12 @@ Standalone-витрина Web Reader различает пустое, загру
 Playwright Reader владеет отдельным `BrowserSessionState` и жизненным циклом start/subscribe/navigate/stop/dispose. Начальное состояние честно объявляет все capabilities выключенными; browser UI показывает недоступность Chromium и блокирует навигацию, пока adapter не вернул `navigate: true`. Это frontend-модель интеграции, не свидетельство готовой server orchestration Chromium.
 
 `packages/ui/src/moduleRegistry.ts` объявляет оба продукта отдельными dynamic imports, а quality gate проверяет lazy loading, публичные exports, изолированный CSS, Storybook states и отсутствие запрещённых зависимостей. При этом `packages/ui` и `apps/web` всё ещё монтируют legacy `App.tsx`; новый registry пока загружает только Reader surfaces без создания и bootstrap их stores. Поэтому целевая схема «host содержит лишь adapters/render slots/регистрацию» выражена контрактами новых пакетов, но фактический browser/desktop composition path ещё не полностью переведён.
+
+### Console Reader: адаптивный split и общий PTY
+
+Маршрут `#/console-reader/<conversationId>` использует отдельный враппер `.console-reader-workshop` в `packages/ui/src/App.tsx` и `packages/ui/src/styles/app.css`: слева остаётся текущая панель ассистента, справа — существующий `ConsoleSessionPane`. На десктопе начальная доля чата равна 42%, процент ограничен диапазоном 25–75%; дополнительно враппер сохраняет минимум 360 px для чата и 320 px для консоли с учётом 12 px зоны разделителя. Вертикальный separator имеет ARIA-значения и фокус: его можно тянуть указателем, стрелки меняют долю на 2 процентных пункта, `Home`/`End` ставят 25%/75%, двойной щелчок возвращает 42%. Потеря pointer capture, blur окна, скрытие документа и завершение/отмена pointer-жеста прекращают resize; при `prefers-reduced-motion` переходы разделителя отключены.
+
+На ширине до 768 px разделитель и drag-shield скрыты, а вкладки «Чат» и «Консоль» переключают единственную видимую область. Обе панели остаются в React-дереве: CSS скрывает неактивную панель через `display: none`, поэтому переключение вкладок не размонтирует `ConsoleSessionPane` и не обрывает общий PTY разговора. Враппер отвечает только за геометрию и доступное переключение; контракты чата, консоли и `ConversationSettings` не менялись.
 
 ## Слои
 
