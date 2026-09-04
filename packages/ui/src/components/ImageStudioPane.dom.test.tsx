@@ -6,6 +6,19 @@ import { aspectLabel, groupByDay, highlightParts, ImageStudioPane, matchesQuery,
 import type { ImageStudioFile } from '@shared/imageStudio'
 
 /** Мосты панели: галерея в замыкании, как её отдал бы сервер. */
+/**
+ * Тост по его тексту. Искать кнопку тоста глобально нельзя: тот же текст
+ * дублируется в aria-live области, а тостов с кнопкой «Вернуть» в стеке бывает
+ * несколько — они живут дольше обычных, чтобы человек успел нажать отмену.
+ */
+async function findToast(text: string): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const found = [...document.querySelectorAll<HTMLElement>('.vc-toast')].find((node) => node.textContent?.includes(text))
+    if (!found) throw new Error(`нет тоста с текстом «${text}»`)
+    return found
+  })
+}
+
 function makeApi(initial: Array<{ path: string; prompt?: string; size?: number }> = [], options: { trash?: Array<{ name: string; deletedAt: number }> } = {}) {
   let files: ImageStudioFile[] = initial.map((file, index) => ({ path: file.path, size: file.size ?? 10, updatedAt: index + 1, ...(file.prompt ? { prompt: file.prompt } : {}) }))
   let trash = [...(options.trash ?? [])]
@@ -1448,7 +1461,9 @@ describe('ImageStudioPane', () => {
     const dialog = await screen.findByText('Удалить 2 файл(ов)?')
     fireEvent.click(within(dialog.closest('.vc-dialog-overlay') as HTMLElement).getByRole('button', { name: 'Удалить' }))
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Вернуть' }))
+    // Кнопку берём из своего тоста: тост с действием живёт долго (человеку надо
+    // успеть решить), поэтому в стеке их бывает несколько.
+    fireEvent.click(within(await findToast('Удалено файлов: 2')).getByRole('button', { name: 'Вернуть' }))
     await waitFor(() => expect(api['imgstudio:restore']).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByRole('button', { name: 'а.png' })).toBeInTheDocument())
   })
@@ -2574,7 +2589,7 @@ describe('ImageStudioPane', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Удалить выбранные (2)' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Удалить' }))
     await waitFor(() => expect(api['imgstudio:delete']).toHaveBeenCalledTimes(2))
-    fireEvent.click(await screen.findByRole('button', { name: 'Вернуть' }))
+    fireEvent.click(within(await findToast('Удалено файлов: 2')).getByRole('button', { name: 'Вернуть' }))
     await waitFor(() => expect(api['imgstudio:restore']).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('Возвращено файлов: 2')).toBeInTheDocument()
   })

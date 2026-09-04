@@ -466,13 +466,13 @@ const QA_WORKFLOW_TRANSITIONS: Readonly<Record<string, readonly KanbanColumnSema
   preparation: ['ready', 'decision_required'],
   ready: ['development', 'preparation'],
   development: ['component_qa', 'decision_required'],
-  component_qa: ['integration_tests', 'development', 'decision_required'],
-  integration_tests: ['automated_qa', 'development', 'decision_required'],
-  automated_qa: ['manual_qa', 'integration_tests', 'development', 'decision_required'],
+  component_qa: ['integration_tests', 'development', 'preparation', 'decision_required'],
+  integration_tests: ['automated_qa', 'development', 'preparation', 'decision_required'],
+  automated_qa: ['manual_qa', 'integration_tests', 'development', 'preparation', 'decision_required'],
   manual_qa: ['awaiting_merge', 'development', 'preparation', 'decision_required'],
-  awaiting_merge: ['merge', 'component_qa', 'automated_qa', 'decision_required'],
-  merge: ['done', 'decision_required'],
-  done: [],
+  awaiting_merge: ['merge', 'component_qa', 'automated_qa', 'preparation', 'decision_required'],
+  merge: ['done', 'preparation', 'decision_required'],
+  done: ['preparation'],
   decision_required: []
 }
 

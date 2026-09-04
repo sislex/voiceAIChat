@@ -16,6 +16,7 @@ artifacts/
 
 # Логи и мусор ОС
 *.log
+.long-runs/
 .DS_Store
 
 # Окружение
