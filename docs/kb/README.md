@@ -23,18 +23,18 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 7 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1158 коммит(ов) в areas после сверки: 6679533e Merge main into CHAT-410 (task f09ba427-9c0e-4056-9782-a0763c1d3d0c) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1159 коммит(ов) в areas после сверки: 90fedb3b docs(kb): update after merge f09ba427-9c0e-4056-9782-a0763c1d3d0c … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 180 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 225 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 113 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 235 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 8 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-04 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 193 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-04 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: 6679533e Merge main into CHAT-410 (task f09ba427-9c0e-4056-9782-a0763c1d3d0c) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 23 коммит(ов) в areas после сверки: 6679533e Merge main into CHAT-410 (task f09ba427-9c0e-4056-9782-a0763c1d3d0c) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 19 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 146 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 604. Последние:
+Всего записей: 605. Последние:
 
 - [2026-09-04-pc-radvilovich-macos-node-recovery.md](log/2026-09-04-pc-radvilovich-macos-node-recovery.md) — macos-node-recovery
 - [2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md](log/2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md) — task-card-rework-storage-and-development-settle

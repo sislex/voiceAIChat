@@ -1,5 +1,8 @@
 import { validateIntegrationTestDiff, type IntegrationTestCommandResult, type IntegrationTestRun } from '@voicechat/shared'
 import type { CommandExecutor } from './types.js'
+import type { CiStageExecutionContext } from '../db/database.js'
+import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { workspaceInstallCommand, WORKSPACE_INSTALL_TIMEOUT_MS } from './workspaceDeps.js'
 
 export interface IntegrationTestFinishInput {
   status: 'passed' | 'failed' | 'blocked'
@@ -12,7 +15,7 @@ export interface IntegrationTestFinishInput {
 
 export interface IntegrationTestRunnerDeps {
   db: {
-    integrationTestExecutionContext(runId: string): { agentId: string; workdir: string; commands: string[] } | null
+    integrationTestExecutionContext(runId: string): CiStageExecutionContext | null
     getIntegrationTestRun(userId: string, runId: string): IntegrationTestRun | null
     markIntegrationTestRunning(runId: string): void
     appendIntegrationTestLog(runId: string, chunk: string): void
@@ -75,8 +78,11 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       deps.db.recordIntegrationAutomationLinks(userId,runId,covered,sha)
       let failedStage: IntegrationTestCommandResult | null = null
       let infrastructure = false
-      for (let index = 0; index < total; index++) {
-        const script = context.commands[index], stageStartedAt = now(), remainingMs = deadline - stageStartedAt
+      // Как и в Component QA: checkout приходит от development-рана, зависимости
+      // ставим сами и тем же кэшем задачи (см. workspaceDeps.ts).
+      const runStage = async (script: string, timeoutMs: number): Promise<{ record: IntegrationTestCommandResult; passed: boolean; infrastructure: boolean } | null> => {
+        const stageStartedAt = now(), remainingMs = Math.min(timeoutMs, deadline - stageStartedAt)
+        deps.db.appendIntegrationTestLog(runId, `$ ${script}\n`)
         let stdout = ''
         const result = remainingMs > 0
           ? await deps.executor.run({ agentId: context.agentId, script, workdir: context.workdir, env: { CI: '1' }, timeoutMs: remainingMs }, (chunk) => {
@@ -84,12 +90,24 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
               deps.db.appendIntegrationTestLog(runId, chunk)
             }, controller.signal)
           : { exitCode: null, timedOut: true }
-        if (controller.signal.aborted) return
-        const stageInfrastructure = result.timedOut || result.exitCode == null
-        const stagePassed = result.exitCode === 0 && !result.timedOut
-        const record: IntegrationTestCommandResult = { commandId: `stage-${index + 1}`, name: total > 1 ? `Стадия ${index + 1} из ${total}` : 'Integration tests', command: script, exitCode: result.exitCode, durationMs: now() - stageStartedAt, status: stagePassed ? 'passed' : stageInfrastructure ? 'blocked' : 'failed', stdout, stderr: '', diagnostic: result.timedOut ? 'command_timeout' : result.exitCode == null ? 'executor_disconnected' : stagePassed ? '' : 'non_zero_exit' }
+        if (controller.signal.aborted) return null
+        const passed = result.exitCode === 0 && !result.timedOut
+        const infra = passed ? null : classifyCiInfraFailure({ exitCode: result.exitCode, output: stdout })
+        if (infra) deps.db.appendIntegrationTestLog(runId, formatCiInfraFailure(infra))
+        const stageInfrastructure = result.timedOut || result.exitCode == null || infra != null
+        const diagnostic = result.timedOut ? 'command_timeout' : result.exitCode == null ? 'executor_disconnected' : passed ? '' : infra ? infra.kind : 'non_zero_exit'
+        return { record: { commandId: '', name: '', command: script, exitCode: result.exitCode, durationMs: now() - stageStartedAt, status: passed ? 'passed' : stageInfrastructure ? 'blocked' : 'failed', stdout, stderr: '', diagnostic }, passed, infrastructure: stageInfrastructure }
+      }
+      const installed = await runStage(workspaceInstallCommand(context.npmCacheDir), WORKSPACE_INSTALL_TIMEOUT_MS)
+      if (!installed) return
+      commands.push({ ...installed.record, commandId: 'install', name: 'Установка зависимостей' })
+      if (!installed.passed) { failedStage = commands[0]; infrastructure = installed.infrastructure }
+      for (let index = 0; !failedStage && index < total; index++) {
+        const stage = await runStage(context.commands[index], deadline - now())
+        if (!stage) return
+        const record: IntegrationTestCommandResult = { ...stage.record, commandId: `stage-${index + 1}`, name: total > 1 ? `Стадия ${index + 1} из ${total}` : 'Integration tests' }
         commands.push(record)
-        if (!stagePassed) { failedStage = record; infrastructure = stageInfrastructure; break }
+        if (!stage.passed) { failedStage = record; infrastructure = stage.infrastructure }
       }
       const current = deps.db.getIntegrationTestRun(userId, runId)
       if (!current || current.status !== 'running') return
@@ -97,7 +115,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       deps.db.finishIntegrationTestRun(userId, runId, {
         status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed',
         commands,
-        summary: passed ? 'Integration tests пройден' : infrastructure ? 'Integration tests заблокирован инфраструктурой' : 'Integration tests выявил дефект реализации',
+        summary: passed ? 'Integration tests пройден' : infrastructure ? `Integration tests заблокирован инфраструктурой: ${failedStage?.name ?? ''} (${failedStage?.diagnostic ?? ''})`.trim() : 'Integration tests выявил дефект реализации',
         failureClassification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
         blockerReasons: infrastructure && failedStage ? [failedStage.diagnostic] : []
       })
