@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 7 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1155 коммит(ов) в areas после сверки: 4d06ce88 Merge main into CHAT-409 (task dfb010d9-9ebb-4807-a526-ae824f21925d) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1158 коммит(ов) в areas после сверки: 6679533e Merge main into CHAT-410 (task f09ba427-9c0e-4056-9782-a0763c1d3d0c) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 180 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 225 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 113 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
@@ -35,7 +35,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 193 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-04 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 21 коммит(ов) в areas после сверки: 451ecb87 fix(server): UI-сценарий в фикстуре подготовки к разработке … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 23 коммит(ов) в areas после сверки: 6679533e Merge main into CHAT-410 (task f09ba427-9c0e-4056-9782-a0763c1d3d0c) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 19 коммит(ов) в areas после сверки: 5bd7df1b Merge main into CHAT-408 (task 22c22ca6-30bf-4848-99c9-698bc67a1ab5) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 146 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 603. Последние:
+Всего записей: 604. Последние:
 
+- [2026-09-04-pc-radvilovich-macos-node-recovery.md](log/2026-09-04-pc-radvilovich-macos-node-recovery.md) — macos-node-recovery
 - [2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md](log/2026-09-04-alexeys-macbook-air-2-task-card-rework-storage-and-development-settle.md) — task-card-rework-storage-and-development-settle
 - [2026-09-04-alexeys-macbook-air-2-task-card-new-legacy.md](log/2026-09-04-alexeys-macbook-air-2-task-card-new-legacy.md) — task-card-new-legacy
 - [2026-09-04-alexeys-macbook-air-2-restore-production-signup.md](log/2026-09-04-alexeys-macbook-air-2-restore-production-signup.md) — restore-production-signup
@@ -72,7 +73,6 @@
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md) — image-studio-improvements-53
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-52.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-52.md) — image-studio-improvements-52
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-51.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-51.md) — image-studio-improvements-51
-- [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-50.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-50.md) — image-studio-improvements-50
 
 ## Исторические планы
 
