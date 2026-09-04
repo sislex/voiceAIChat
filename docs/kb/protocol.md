@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-04
-checked: a487f302
+checked: 1ffda784
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -88,12 +88,13 @@ URL руками. Параметризованные пути — функции
 разговора: источник передаётся телом, потому что это данные операции, а не
 адрес). Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
 
-Обмен Make с репозиторием проекта: `GET /api/make/:id/project-files?path=`
-(листинг машины), `GET …/project-links` (статусы связей),
-`POST …/project-pull` `{paths}` и `POST …/project-push` `{paths?, force?}`
-(409 + `conflicts` без force при чужой правке). Мосты `make:projectFiles`,
-`make:projectLinks`, `make:projectPull`, `make:projectPush`. Разбор —
-[ui.md](ui.md#make-компоненты-и-стили-из-репозитория-проекта--туда-и-обратно).
+Чтение репозитория проекта из Make: `GET /api/make/:id/project-files?path=`
+(листинг машины), `GET …/project-links` (статусы связей) и
+`POST …/project-pull` `{paths}`. Мосты `make:projectFiles`,
+`make:projectLinks`, `make:projectPull`. Обратного `project-push` и моста
+`make:projectPush` больше нет (удалены 2026-09-04): Make в репозиторий не
+пишет, иначе общая копия проекта остаётся dirty мимо git. Разбор —
+[ui.md](ui.md#make-компоненты-и-стили-из-репозитория-проекта-только-чтение).
 
 `warnings` снимка считает сервер, и порогов там три разного смысла.
 `CONTEXT_PREVIEW_TOKENS_NOTICE` (4000 токенов) — абсолютный: «постоянная часть

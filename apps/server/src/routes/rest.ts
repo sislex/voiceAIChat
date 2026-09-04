@@ -140,7 +140,11 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const settings = db.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
   const role = db.getUser(viewer)?.role ?? 'developer'
-  const resolution = db.resolveConversationMachine(userId, conversationId, { isOnline })
+  // Make-чат к машине не подключается (`turns.ts`: makeChat), поэтому снимок не
+  // показывает ни её, ни remote-инструменты как доступные: иначе панель обещала
+  // бы Bash на машине, которого ход не даёт.
+  const makeChat = conversation.assistantKind === 'make'
+  const resolution = makeChat ? null : db.resolveConversationMachine(userId, conversationId, { isOnline })
   const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
   const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
@@ -183,14 +187,14 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
    * Режим доступа — по правилам хода (`turns.ts`), включая исключение для Make.
    * Там ход НЕ понижает режим до «плана» без машины: инструменты `make_*`
    * машины не требуют, а нативный plan-режим CLI их глушит. Вместо понижения
-   * запрещаются встроенные инструменты (`MAKE_ONLY_DISALLOWED_TOOLS`). Пока
-   * снимок этого не знал, обычный пользователь в Make-чате видел «Только
-   * планирование», а ход шёл с правкой файлов проекта.
+   * запрещаются встроенные инструменты (`MAKE_ONLY_DISALLOWED_TOOLS`) — при
+   * любой роли, включая админа. Пока снимок этого не знал, обычный пользователь
+   * в Make-чате видел «Только планирование», а ход шёл с правкой файлов проекта.
    */
-  const makeOnlyExecution = conversation.assistantKind === 'make' && provider === 'claude'
-    && conversation.execTarget !== 'none' && role !== 'admin' && !machineAvailable
+  const makeOnlyExecution = makeChat && provider === 'claude'
     && (conversation.permissionMode ?? settings.permissionMode) !== 'plan'
-  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (role !== 'admin' && !machineAvailable && !makeOnlyExecution)
+  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (makeChat && provider === 'codex')
+    || (role !== 'admin' && !machineAvailable && !makeOnlyExecution)
     ? 'plan'
     : (conversation.permissionMode ?? settings.permissionMode)
   // Тумблер сильнее настройки — ровно как в ходе (`turns.ts`: kbMode). Пока
@@ -707,9 +711,9 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     // Тот же список, что уйдёт исполнителю (`turns.ts` → LlmRequest.disallowedTools).
     disallowedTools: [
       ...[...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null),
-      // Make без машины: ход глушит встроенные инструменты вместо понижения
-      // режима — значит модель их не получит, и список это обязан показывать.
-      ...(makeOnlyExecution ? MAKE_ONLY_DISALLOWED_TOOLS : [])
+      // Make: ход глушит встроенные инструменты вместо понижения режима —
+      // значит модель их не получит, и список это обязан показывать.
+      ...(makeChat ? MAKE_ONLY_DISALLOWED_TOOLS : [])
     ].sort(),
     cliMcpServers,
     warnings,
@@ -820,6 +824,14 @@ export async function registerRest(
      * к промпту. Мастерская живёт в `server.ts`, поэтому приходит функцией.
      */
     makeContext?: (conversationId: string) => Promise<string>
+    /**
+     * Разовое обновление общей копии проекта до origin/<base>. Единственное, что
+     * Make делает с репозиторием: новый Make-чат начинает работу от актуального
+     * main, а сами ходы к машине уже не ходят (`turns.ts`: makeChat). Вызов
+     * best-effort и без await — создание чата не ждёт сети и не падает из-за
+     * offline-машины.
+     */
+    refreshProjectMain?: (userId: string, projectId: string) => void
   } = {}
 ): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
@@ -881,7 +893,11 @@ export async function registerRest(
       : parseConversationScope(req.body.scope)
     if (!scope || (scope === 'kanban' && !req.body?.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
     try {
-      return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope)
+      const conversation = db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope)
+      // Новый Make-чат стартует от актуального main: копию обновляет сервер один
+      // раз здесь, потому что сама модель Make к репозиторию доступа не имеет.
+      if (kind === 'make' && conversation?.projectId) opts.refreshProjectMain?.(uid(req), conversation.projectId)
+      return conversation
     } catch (error) {
       if (error instanceof Error && error.message === 'project not found') return reply.code(404).send({ error: error.message })
       throw error

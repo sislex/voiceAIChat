@@ -58,7 +58,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks' | 'make:projectFiles' | 'make:projectLinks' | 'make:projectPull' | 'make:projectPush'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks' | 'make:projectFiles' | 'make:projectLinks' | 'make:projectPull'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -1337,7 +1337,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             </>}
             {item('🧠 Память проекта', () => setNotesOpen(true), { ariaLabel: 'Память проекта', title: 'Заметки для ассистента и режим «дизайнер / разработчик»' })}
             {item('🗂 Задачи проекта', () => setTaskLinksOpen(true), { ariaLabel: 'Задачи проекта', title: 'Связать открытую страницу с карточкой доски и увидеть уже связанные' })}
-            {item('⇅ Компоненты из проекта', () => setProjectSyncOpen(true), { ariaLabel: 'Компоненты из проекта', title: 'Скопировать компоненты и стили из репозитория проекта, поправить в Make и вернуть обратно' })}
+            {item('⇅ Компоненты из проекта', () => setProjectSyncOpen(true), { ariaLabel: 'Компоненты из проекта', title: 'Скопировать компоненты и стили из репозитория проекта и править их в Make' })}
             {onInsertToChat && item('✦ Идеи для старта', () => setIdeasOpen(true), { ariaLabel: 'Идеи для старта' })}
             {item('▤ Шаблоны проекта', () => setTemplatesOpen(true), { ariaLabel: 'Шаблоны проекта' })}
             {item('⇪ Импорт проекта', () => setImportOpen(true), { ariaLabel: 'Импорт проекта', title: 'Импорт: ZIP, страница по URL или репозиторий GitHub' })}
