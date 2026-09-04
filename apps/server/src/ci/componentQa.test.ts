@@ -12,15 +12,22 @@ type Outcome = CommandExecResult & { output?: string; advanceMs?: number }
 
 /** Стадии идут после установки зависимостей, поэтому `outcomes` описывают
  *  только их: исход самой установки задаётся отдельно (`opts.install`). */
-function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs?: number; install?: Outcome; npmCacheDir?: string | null } = {}) {
+function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs?: number; install?: Outcome; npmCacheDir?: string | null; cached?: boolean } = {}) {
   let t = 0
-  const run = { id: 'run1', status: 'queued', scenarios: [scenario()] } as unknown as ComponentQaRun
+  const run = { id: 'run1', status: 'queued', projectId: 'p1', taskId: 't1', commitSha: 'a'.repeat(40), scenarios: [scenario()] } as unknown as ComponentQaRun
   const finished: ComponentQaFinishInput[] = []
   const calls: CommandExecRequest[] = []
   const log: string[] = []
   const stages = [opts.install ?? { exitCode: 0, timedOut: false }, ...outcomes]
+  const gateResults: Array<{ commitSha: string; signature: string; runId: string }> = []
   const db = {
     componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands } : null),
+    findPassedGateResult: (commitSha: string, signature: string) => {
+      if (opts.cached) return { runKind: 'component_qa', runId: 'previous-run', createdAt: 0 }
+      const hit = gateResults.find((item) => item.commitSha === commitSha && item.signature === signature)
+      return hit ? { runKind: 'component_qa', runId: hit.runId, createdAt: 0 } : null
+    },
+    recordPassedGateResult: (args: { commitSha: string; signature: string; runId: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature, runId: args.runId }) },
     getComponentQaRun: () => run,
     markComponentQaRunning: () => { run.status = 'running' },
     appendComponentQaLog: (_id: string, _stream: 'stdout' | 'stderr', chunk: string) => { log.push(chunk) },
@@ -39,7 +46,7 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
   /** Вызовы и записи стадий проекта — без предваряющей установки зависимостей. */
   const stageCalls = (): CommandExecRequest[] => calls.slice(1)
   const stageRecords = (input: ComponentQaFinishInput) => input.commands.slice(1)
-  return { runner, run, finished, calls, log, stageCalls, stageRecords }
+  return { runner, run, finished, calls, log, stageCalls, stageRecords, gateResults }
 }
 
 describe('createComponentQaRunner', () => {
@@ -155,6 +162,39 @@ describe('createComponentQaRunner', () => {
     expect(s.log.join('')).toContain('Авто-фикс не запускаю')
   })
 
+  it('зелёный прогон запоминается для этого коммита и набора команд', async () => {
+    const s = setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.finished[0].status).toBe('passed')
+    expect(s.gateResults).toHaveLength(1)
+    expect(s.gateResults[0].commitSha).toBe('a'.repeat(40))
+  })
+
+  // Пост-development стадии идут по неизменному коду development-рана: повторный
+  // прогон того же набора команд ничего не выясняет, а стоит установки и гейта.
+  it('готовый результат того же коммита переиспользуется без прогона', async () => {
+    const s = setup(['npm run one', 'npm run two'], [], { cached: true })
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.calls).toHaveLength(0)
+    const input = s.finished[0]
+    expect(input.status).toBe('passed')
+    expect(input.failureClassification).toBeNull()
+    expect(input.commands.map((command) => command.commandId)).toEqual(['cache'])
+    expect(input.scenarios.every((item) => item.status === 'passed')).toBe(true)
+    expect(input.summary).toContain('результат прошлого прогона')
+    expect(s.log.join('')).toContain('уже пройдены')
+  })
+
+  it('провалившийся прогон в кэш не попадает', async () => {
+    const s = setup(['npm run one'], [{ exitCode: 1, timedOut: false }])
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.finished[0].status).toBe('failed')
+    expect(s.gateResults).toHaveLength(0)
+  })
+
   it('недоступный workspace даёт blocked с workspace_unavailable', () => {
     const s = setup(null, [])
     s.runner.launch('run1', 'user')
@@ -163,13 +203,15 @@ describe('createComponentQaRunner', () => {
   })
 
   it('отмена через контроллер прерывает стадии без финализации рана', async () => {
-    const run = { id: 'run1', status: 'queued', scenarios: [scenario()] } as unknown as ComponentQaRun
+    const run = { id: 'run1', status: 'queued', projectId: 'p1', taskId: 't1', commitSha: 'a'.repeat(40), scenarios: [scenario()] } as unknown as ComponentQaRun
     const finished: ComponentQaFinishInput[] = []
     const executorRun = vi.fn((_req: CommandExecRequest, _onChunk: (data: string) => void, signal?: AbortSignal) =>
       new Promise<CommandExecResult>((resolve) => signal?.addEventListener('abort', () => resolve({ exitCode: null, timedOut: false }))))
     const runner = createComponentQaRunner({
       db: {
         componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'] }),
+        findPassedGateResult: () => null,
+        recordPassedGateResult: () => {},
         getComponentQaRun: () => run,
         markComponentQaRunning: () => { run.status = 'running' },
         appendComponentQaLog: () => {},

@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
-  appendQuestionsHint, ciToolCallsAny, designPromptLines, makeDesignPreviewUrl, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
+  appendQuestionsHint, AUTOMATION_MARKER, ciToolCallsAny, designPromptLines, makeDesignPreviewUrl, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
   classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, CI_USAGE_KIND_LABELS, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
   isCiToolDenial, KB_GAPS_HINT, parseKbGaps, parseQuestions,
   trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
@@ -311,6 +311,23 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
 const MODEL_COMMAND_TRIM_HINT =
   'полный вывод остался в ленте шага; повтори команду с фильтром, если нужна середина'
 
+/**
+ * Автотесты пишутся здесь же, а не на отдельном позднем этапе: у этой модели уже
+ * в контексте задача, readiness и собственный код, тогда как поздний ран читал
+ * бы всё заново (лишние токены), приносил бы ещё один коммит и ещё один полный
+ * прогон гейта. Этап `integration_tests` только проверяет — см. KB
+ * features/qa-stage-runs.md, «Чего в коде нет».
+ */
+export function automationHint(readiness: import('@voicechat/shared').DevelopmentReadiness | null): string {
+  const cases = (readiness?.testCases ?? []).filter((item) => item.required && item.automatable)
+  if (!cases.length) return ''
+  const list = cases.map((item) => `${item.id} — ${item.title}`).join('; ')
+  return [
+    `Обязательные автоматизируемые тест-кейсы закрой автотестами в этом же коммите: ${list}.`,
+    `Над каждым таким тестом поставь маркер покрытия в комментарии: \`// ${AUTOMATION_MARKER} <id кейса>\` — по нему этап интеграционных тестов свяжет кейс с файлом. Без маркера кейс считается непокрытым.`
+  ].join('\n')
+}
+
 const DEVELOPMENT_FAST_GATE_HINT =
   'Перед завершением работы запусти быстрый гейт задачи (`npm run gate:fast`): он проверяет только связанные с текущими изменениями тесты и типы. Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай — они выполняются на следующих шагах workflow; не отдавай работу с падающими проверками.'
 
@@ -322,6 +339,7 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode, readiness: import('@vo
       ]
     : [
         'Реализуй задачу в рабочей директории. Команды выполняй через доступный инструмент bash.',
+        automationHint(readiness),
         DEVELOPMENT_FAST_GATE_HINT,
         `Готовую работу коммить в ветку ${ctx.env.BRANCH ?? ''} — пушить не нужно: раннер сам отправит её в origin перед очисткой рабочей директории.`
       ]
