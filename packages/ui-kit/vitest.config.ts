@@ -8,7 +8,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    testTimeout: 20000,
+    // Тот же лимит, что у @voicechat/ui: dom-тесты на загруженной релизной машине
+    // не укладывались в 20 с (см. комментарий в packages/ui/vitest.config.ts).
+    testTimeout: 60_000,
     include: ['src/**/*.test.{ts,tsx}']
   }
 })
