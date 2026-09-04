@@ -1,4 +1,5 @@
-import { validateIntegrationTestDiff, type IntegrationTestCommandResult, type IntegrationTestRun } from '@voicechat/shared'
+import { AUTOMATION_MARKER, gateSignature, parseAutomationMarkers, validateIntegrationTestDiff, type IntegrationTestCommandResult, type IntegrationTestRun } from '@voicechat/shared'
+import { shellQuote } from './executor.js'
 import type { CommandExecutor } from './types.js'
 import type { CiStageExecutionContext } from '../db/database.js'
 import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
@@ -16,6 +17,8 @@ export interface IntegrationTestFinishInput {
 export interface IntegrationTestRunnerDeps {
   db: {
     integrationTestExecutionContext(runId: string): CiStageExecutionContext | null
+    findPassedGateResult(commitSha: string, signature: string): { runKind: string; runId: string; createdAt: number } | null
+    recordPassedGateResult(args: { projectId: string; taskId: string; commitSha: string; signature: string; commands: readonly string[]; runKind: string; runId: string }): void
     getIntegrationTestRun(userId: string, runId: string): IntegrationTestRun | null
     markIntegrationTestRunning(runId: string): void
     appendIntegrationTestLog(runId: string, chunk: string): void
@@ -69,12 +72,29 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       const diff=await inspect('git diff-tree --no-commit-id --name-only -r HEAD')
       if(controller.signal.aborted)return
       if(diff.exitCode!==0||diff.timedOut){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось проверить git diff',failureClassification:'infrastructure',failureReason:diff.timedOut?'command_timeout':'executor_disconnected',blockerReasons:[diff.timedOut?'command_timeout':'executor_disconnected']});return}
-      const changed=diff.output.split(/\\r?\\n/).map((item)=>item.trim()).filter(Boolean),invalid=validateIntegrationTestDiff(changed)
+      // Двойное экранирование в регулярке (`/\\r?\\n/`) искало литерал «\r», а не
+      // перевод строки: многофайловый дифф приходил в валидацию одной склейкой,
+      // и коммит разработки проезжал проверку, если где-то внутри встречался
+      // тестовый путь. Проверено на CHAT-411.
+      const changed=diff.output.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean),invalid=validateIntegrationTestDiff(changed)
       if(invalid.length){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Изменены нетестовые файлы: '+invalid.join(', '),failureClassification:'implementation_defect',failureReason:'non_test_files_changed',blockerReasons:invalid.map((path)=>'non_test_file:'+path)});return}
-      const shaResult=await inspect('git rev-parse HEAD'),sha=shaResult.output.trim().split(/\\s/)[0]??''
+      const shaResult=await inspect('git rev-parse HEAD'),sha=shaResult.output.trim().split(/\s/)[0]??''
       if(!sha){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось определить SHA тестового коммита',failureClassification:'infrastructure',failureReason:'executor_disconnected',blockerReasons:['executor_disconnected']});return}
+      // Покрытие берём из маркеров `@testCase <id>` в самих тестах: разработка
+      // ставит их рядом с тестом, закрывающим кейс. Fallback на прежний синтез
+      // («первый тестовый путь всем обязательным кейсам») остаётся для веток,
+      // написанных до появления маркеров, но честным покрытием он не является.
       const testPath=changed.find((path)=>validateIntegrationTestDiff([path]).length===0)
-      const covered=run.testCases.filter((item)=>item.required&&item.automatable&&testPath).map((item)=>({testId:item.id,path:testPath!}))
+      const markers=changed.length?await inspect(`grep -HoE '${AUTOMATION_MARKER}[[:space:]:]+[A-Za-z0-9._-]+' -- ${changed.map(shellQuote).join(' ')} || true`):{exitCode:0,timedOut:false,output:''}
+      if(controller.signal.aborted)return
+      const marked=parseAutomationMarkers(markers.output)
+      const byTestId=new Map(marked.map((item)=>[item.testId,item.path]))
+      const required=run.testCases.filter((item)=>item.required&&item.automatable)
+      const covered=byTestId.size
+        ? required.filter((item)=>byTestId.has(item.id)).map((item)=>({testId:item.id,path:byTestId.get(item.id)!}))
+        : required.filter(()=>Boolean(testPath)).map((item)=>({testId:item.id,path:testPath!}))
+      if(byTestId.size) deps.db.appendIntegrationTestLog(runId,`Покрытие по маркерам ${AUTOMATION_MARKER}: ${covered.length} из ${required.length} обязательных кейсов\n`)
+      else if(required.length) deps.db.appendIntegrationTestLog(runId,`Маркеров ${AUTOMATION_MARKER} в тестах нет — покрытие синтезировано из диффа и требует ручной сверки\n`)
       deps.db.recordIntegrationAutomationLinks(userId,runId,covered,sha)
       let failedStage: IntegrationTestCommandResult | null = null
       let infrastructure = false
@@ -98,6 +118,25 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         const diagnostic = result.timedOut ? 'command_timeout' : result.exitCode == null ? 'executor_disconnected' : passed ? '' : infra ? infra.kind : 'non_zero_exit'
         return { record: { commandId: '', name: '', command: script, exitCode: result.exitCode, durationMs: now() - stageStartedAt, status: passed ? 'passed' : stageInfrastructure ? 'blocked' : 'failed', stdout, stderr: '', diagnostic }, passed, infrastructure: stageInfrastructure }
       }
+      // Проверки этого коммита мог уже прогнать Component QA или прошлая попытка
+      // — см. componentQa.ts, там же мотивация кэша.
+      const signature = gateSignature(context.commands)
+      const cached = deps.db.findPassedGateResult(sha || run.commitSha, signature)
+      if (cached) {
+        deps.db.appendIntegrationTestLog(runId, `Проверки этого коммита уже пройдены (${cached.runKind} ${cached.runId}) — результат переиспользован\n`)
+        const reused = deps.db.getIntegrationTestRun(userId, runId)
+        if (reused && reused.status === 'running') {
+          deps.db.finishIntegrationTestRun(userId, runId, {
+            status: 'passed',
+            commands: [{ commandId: 'cache', name: 'Результат прошлого прогона', command: context.commands.join(' && '), exitCode: 0, durationMs: 0, status: 'passed', stdout: `Источник: ${cached.runKind} ${cached.runId}`, stderr: '', diagnostic: '' }],
+            summary: 'Integration tests пройден (результат прошлого прогона того же коммита)',
+            failureClassification: null,
+            blockerReasons: []
+          })
+          deps.completed?.(runId, userId, true, 'Integration tests пройдены')
+        }
+        return
+      }
       const installed = await runStage(workspaceInstallCommand(context.npmCacheDir), WORKSPACE_INSTALL_TIMEOUT_MS)
       if (!installed) return
       commands.push({ ...installed.record, commandId: 'install', name: 'Установка зависимостей' })
@@ -112,6 +151,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       const current = deps.db.getIntegrationTestRun(userId, runId)
       if (!current || current.status !== 'running') return
       const passed = !failedStage
+      if (passed) deps.db.recordPassedGateResult({ projectId: run.projectId, taskId: run.taskId, commitSha: sha || run.commitSha, signature, commands: context.commands, runKind: 'integration_tests', runId })
       deps.db.finishIntegrationTestRun(userId, runId, {
         status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed',
         commands,

@@ -608,6 +608,8 @@ interface ProjectRow {
   merge_transport: string
   agent_plan_approval_mode: string
   test_command: string
+  component_qa_command: string
+  integration_test_command: string
   command_policy?: string | null
   production_deploy_command: string
   production_agent_id: string | null
@@ -1393,6 +1395,8 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'command_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN command_policy TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'component_qa_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN component_qa_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'integration_test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN integration_test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_environment_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_environment_mode TEXT NOT NULL DEFAULT 'legacy'`)
@@ -4579,6 +4583,8 @@ export class VoiceChatDb {
       mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
+      componentQaCommand: r.component_qa_command || undefined,
+      integrationTestCommand: r.integration_test_command || undefined,
       automatedQaCommand: r.automated_qa_command || 'npm test',
       automatedQaMode: r.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
       automatedQaScenarios: parseAutomatedQaScenarios(parseJsonValue<unknown>(r.automated_qa_scenario_json, [])),
@@ -4829,6 +4835,8 @@ export class VoiceChatDb {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      componentQaCommand?: string
+      integrationTestCommand?: string
       automatedQaCommand?: string
       automatedQaMode?: AutomatedQaMode
       automatedQaScenarios?: AutomatedQaScenario[]
@@ -4903,6 +4911,8 @@ export class VoiceChatDb {
       vals.push(fields.agentPlanApprovalMode)
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
+    if (fields.componentQaCommand !== undefined) { set.push('component_qa_command = ?'); vals.push(fields.componentQaCommand) }
+    if (fields.integrationTestCommand !== undefined) { set.push('integration_test_command = ?'); vals.push(fields.integrationTestCommand) }
     if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
     if (fields.automatedQaMode !== undefined) { set.push('automated_qa_mode = ?'); vals.push(fields.automatedQaMode === 'playwright' ? 'playwright' : 'command') }
     if (fields.automatedQaScenarios !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(fields.automatedQaScenarios.map(normalizeAutomatedQaScenario))) }
@@ -6711,6 +6721,25 @@ export class VoiceChatDb {
     return counts
   }
 
+  /**
+   * Успешный прогон этого набора команд на этом коммите, если он уже был.
+   * Возвращается вместе с раном-источником: стадия пишет его в лог, чтобы
+   * переиспользование было видно человеку, а не выглядело как пропуск проверок.
+   */
+  findPassedGateResult(commitSha: string, signature: string): { runKind: string; runId: string; createdAt: number } | null {
+    if (!commitSha || !signature) return null
+    const row = this.db.prepare(`SELECT run_kind, run_id, created_at FROM ci_gate_results WHERE commit_sha = ? AND signature = ?`).get(commitSha, signature) as { run_kind: string; run_id: string; created_at: number } | undefined
+    return row ? { runKind: row.run_kind, runId: row.run_id, createdAt: row.created_at } : null
+  }
+
+  /** Запоминает зелёный прогон; повторная запись того же ключа безвредна. */
+  recordPassedGateResult(args: { projectId: string; taskId: string; commitSha: string; signature: string; commands: readonly string[]; runKind: string; runId: string }): void {
+    if (!args.commitSha || !args.signature) return
+    this.db.prepare(`INSERT INTO ci_gate_results (id, project_id, task_id, commit_sha, signature, commands_json, run_kind, run_id, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(commit_sha, signature) DO NOTHING`)
+      .run(this.newId(), args.projectId, args.taskId, args.commitSha, args.signature, JSON.stringify(args.commands), args.runKind, args.runId, this.now())
+  }
+
   /** Закрыта ли задача (Done/Отменена) или её уже нет: рабочую копию и её
    *  зависимости держим до этого момента — пост-development стадии выполняются
    *  в том же checkout, что и development-ран. */
@@ -8324,9 +8353,9 @@ export class VoiceChatDb {
   }
 
   componentQaExecutionContext(runId:string):CiStageExecutionContext|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null}|undefined
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.component_qa_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;component_qa_command:string|null}|undefined
     if (!row?.agent_id||!row.path) return null
-    return {agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.test_command??'',['npm run test:storybook'])}
+    return {agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.component_qa_command?.trim()||row.test_command||'',['npm run test:storybook'])}
   }
 
   markComponentQaRunning(id:string):void {
@@ -8469,8 +8498,8 @@ export class VoiceChatDb {
   }
 
   integrationTestExecutionContext(runId:string):CiStageExecutionContext|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null}|undefined
-    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.test_command??'',['npm run affected-check'])}:null
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.integration_test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;integration_test_command:string|null}|undefined
+    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.integration_test_command?.trim()||row.test_command||'',['npm run affected-check'])}:null
   }
   markIntegrationTestRunning(id:string):void { this.db.prepare(`UPDATE integration_test_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id) }
   appendIntegrationTestLog(id:string,chunk:string):void { this.db.prepare(`UPDATE integration_test_runs SET log=substr(log||?,-500000) WHERE id=? AND status='running'`).run(chunk,id) }

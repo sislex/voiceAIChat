@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars, type MergeRun } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
-import { createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
+import { automationHint, createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
 import type { CiFixContext, CiModelContext, CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -297,6 +297,28 @@ describe('работа модели: машины проекта', () => {
     await hooksWith(rec.client).modelWork(ctx)
     expect(rec.last()!.remote?.mcpUrl).not.toContain('&project=')
     expect(rec.last()!.remote?.projectMachines).toBeUndefined()
+  })
+})
+
+describe('автотесты пишет разработка', () => {
+  const readiness = (cases: Array<{ id: string; title: string; required: boolean; automatable: boolean }>) =>
+    ({ testCases: cases } as unknown as import('@voicechat/shared').DevelopmentReadiness)
+
+  it('промпт называет обязательные автоматизируемые кейсы и требует маркер покрытия', () => {
+    const hint = automationHint(readiness([
+      { id: 'TC-1', title: 'Форма Make', required: true, automatable: true },
+      { id: 'TC-2', title: 'Только руками', required: true, automatable: false },
+      { id: 'TC-3', title: 'Необязательный', required: false, automatable: true }
+    ]))
+    expect(hint).toContain('TC-1 — Форма Make')
+    expect(hint).not.toContain('TC-2')
+    expect(hint).not.toContain('TC-3')
+    expect(hint).toContain('@testCase <id кейса>')
+  })
+
+  it('без обязательных автоматизируемых кейсов промпт не растёт', () => {
+    expect(automationHint(null)).toBe('')
+    expect(automationHint(readiness([{ id: 'TC-1', title: 'Руками', required: true, automatable: false }]))).toBe('')
   })
 })
 
