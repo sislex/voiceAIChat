@@ -56,6 +56,7 @@ export interface TaskReworkCycleViewModel {
 }
 
 export interface TaskCardViewModel {
+  projectId?: string
   taskId: string
   taskKey: string
   projectName: string
@@ -84,8 +85,10 @@ export interface TaskCardViewModel {
 export interface TaskReworkDraft {
   description: string
   criteria: string[]
-  makeMode: TaskCardMakeMode
-  makePaths: string[]
+  makeSources?: Array<{ conversationId: string; title: string; mode: TaskCardMakeMode; paths: string[]; files?: string[]; filesState?: TaskCardLoadState; error?: string }>
+  /** Legacy fields retained for story/test compatibility. */
+  makeMode?: TaskCardMakeMode
+  makePaths?: string[]
   attachments: TaskCardFileViewModel[]
 }
 

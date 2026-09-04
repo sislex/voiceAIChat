@@ -174,6 +174,8 @@ import {
   type TaskComment,
   type TaskWorklogEntry,
   type TaskDesignLink,
+  type TaskReworkCycle,
+  type TaskReworkMakeSource,
   type ProjectDesignSource,
   type MakeTaskLink,
   type MakeLinkableTask,
@@ -5499,6 +5501,90 @@ export class VoiceChatDb {
       .get(userId, userId, userId, taskId, projectId) as TaskRow | undefined
     if (!row) return null
     return { ...mapTask(row), latestRunResult: this.latestTaskRunResult(row.id), designs: this.taskDesigns(row.id) }
+  }
+
+  // ---- Неизменяемые циклы ручной доработки -------------------------------
+
+  listTaskReworkCycles(userId: string, projectId: string, taskId: string): TaskReworkCycle[] | null {
+    if (!this.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    const rows = this.db.prepare(`SELECT * FROM task_rework_cycles WHERE task_id = ? ORDER BY sequence ASC`).all(taskId) as Array<{
+      id: string; task_id: string; sequence: number; description: string; criteria_json: string
+      make_sources_json: string; created_by: string; created_at: number; preparation_run_id: string | null
+    }>
+    return rows.map((row) => ({
+      id: row.id, taskId: row.task_id, sequence: row.sequence, description: row.description,
+      criteria: JSON.parse(row.criteria_json) as string[],
+      makeSources: JSON.parse(row.make_sources_json) as TaskReworkMakeSource[],
+      attachments: this.taskAttachments(taskId, row.id),
+      createdBy: row.created_by, createdAt: row.created_at, preparationRunId: row.preparation_run_id
+    }))
+  }
+
+  private taskAttachments(taskId: string, cycleId: string | null) {
+    const rows = this.db.prepare(`SELECT id, task_id, rework_cycle_id, name, size, mime_type, checksum, status, created_by, created_at
+      FROM task_attachments WHERE task_id = ? AND rework_cycle_id IS ? AND draft_key IS NULL ORDER BY created_at, id`).all(taskId, cycleId) as Array<{
+      id: string; task_id: string; rework_cycle_id: string | null; name: string; size: number; mime_type: string
+      checksum: string; status: 'ready' | 'missing'; created_by: string; created_at: number
+    }>
+    return rows.map((row) => ({ id: row.id, taskId: row.task_id, reworkCycleId: row.rework_cycle_id, name: row.name,
+      size: row.size, mimeType: row.mime_type, checksum: row.checksum, status: row.status, createdBy: row.created_by, createdAt: row.created_at }))
+  }
+
+  createTaskReworkCycle(userId: string, projectId: string, taskId: string, idempotencyKey: string, input: {
+    description: string; criteria?: string[]; makeSources?: Array<{ conversationId: string; mode: 'whole_project' | 'files'; paths?: string[] }>; attachmentIds?: string[]
+  }): TaskReworkCycle {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Задача не найдена')
+    const description = input.description.trim()
+    if (!description) throw new Error('Опишите, что нужно доработать')
+    const criteria = (input.criteria ?? []).map((item) => item.trim()).filter(Boolean)
+    const sources: TaskReworkMakeSource[] = (input.makeSources ?? []).map((source) => {
+      this.assertTaskDesignSource(userId, projectId, taskId, source.conversationId)
+      const meta = this.projectDesignSources(userId, projectId)?.find((item) => item.conversationId === source.conversationId)
+      if (!meta) throw new Error('Make-проект недоступен')
+      const paths = [...new Set((source.paths ?? []).map((path) => normalizeMakePath(path)))].sort()
+      if (paths.some((path) => path === null)) throw new Error('Путь Make-файла должен быть каноническим')
+      if (source.mode === 'whole_project' && paths.length) throw new Error('Для всего проекта пути не передаются')
+      if (source.mode === 'files' && !paths.length) throw new Error('Выберите хотя бы один Make-файл')
+      return { conversationId: source.conversationId, title: meta.title, owner: meta.owner, mode: source.mode, paths: paths as string[] }
+    }).sort((a, b) => a.conversationId.localeCompare(b.conversationId))
+    const create = this.db.transaction(() => {
+      const replay = this.db.prepare(`SELECT id FROM task_rework_cycles WHERE task_id = ? AND idempotency_key = ?`).get(taskId, idempotencyKey) as { id: string } | undefined
+      if (replay) return replay.id
+      const task = this.getTask(projectId, taskId)
+      if (!task) throw new Error('Задача не найдена')
+      if (this.latestTaskRunResult(taskId)?.outcome === 'active') throw new Error('TASK_ACTIVE_RUN')
+      const preparation = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = 'preparation' LIMIT 1`).get(projectId) as { id: string } | undefined
+      if (!preparation) throw new Error('Колонка preparation отсутствует')
+      const sequence = ((this.db.prepare(`SELECT COALESCE(MAX(sequence), 0) AS value FROM task_rework_cycles WHERE task_id = ?`).get(taskId) as { value: number }).value) + 1
+      const id = this.newId()
+      const at = this.now()
+      this.db.prepare(`INSERT INTO task_rework_cycles (id, task_id, sequence, idempotency_key, description, criteria_json, make_sources_json, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, taskId, sequence, idempotencyKey, description, JSON.stringify(criteria), JSON.stringify(sources), userId, at)
+      for (const attachmentId of [...new Set(input.attachmentIds ?? [])]) {
+        const changed = this.db.prepare(`UPDATE task_attachments SET rework_cycle_id = ?, draft_key = NULL WHERE id = ? AND task_id = ? AND created_by = ? AND rework_cycle_id IS NULL AND draft_key IS NOT NULL`).run(id, attachmentId, taskId, userId)
+        if (!changed.changes) throw new Error('Вложение черновика недоступно')
+      }
+      this.db.prepare(`UPDATE tasks SET column_id = ?, updated_at = ? WHERE id = ? AND project_id = ?`).run(preparation.id, at, taskId, projectId)
+      return id
+    })
+    const id = create()
+    return this.listTaskReworkCycles(userId, projectId, taskId)!.find((cycle) => cycle.id === id)!
+  }
+
+  reworkPreparationContext(userId: string, projectId: string, taskId: string): string | null {
+    const task = this.getTask(projectId, taskId)
+    const cycles = this.listTaskReworkCycles(userId, projectId, taskId)
+    if (!task || !cycles) return null
+    return [
+      `Исходное ТЗ:\n${task.description}`,
+      `Исходные критерии:\n${task.acceptanceCriteria}`,
+      ...cycles.flatMap((cycle) => [
+        `Цикл ${cycle.sequence}: ${cycle.description}`,
+        ...(cycle.criteria.length ? [`Критерии цикла:\n${cycle.criteria.map((item) => `- ${item}`).join('\n')}`] : []),
+        ...cycle.makeSources.map((source) => `Make-снимок: ${source.title} (${source.conversationId}), ${source.mode}, ${source.paths.join(', ')}`),
+        ...cycle.attachments.map((file) => `Вложение цикла: ${file.name} [${file.status}]`)
+      ])
+    ].join('\n\n')
   }
 
   // ---- Дизайны карточки (связь задачи с Make-проектом) -------------------

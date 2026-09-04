@@ -662,6 +662,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'tasks:unlinkDesign': ({ projectId, taskId, linkId }) =>
       req(REST.taskDesign(projectId, taskId, linkId), { method: 'DELETE' }),
     'projects:designSources': ({ id }) => req(REST.projectDesignSources(id)),
+    'projects:designSourceFiles': ({ projectId, conversationId }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/design-sources/${encodeURIComponent(conversationId)}/files`),
+    'tasks:reworkCycles': ({ projectId, taskId }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`),
+    'tasks:createReworkCycle': ({ projectId, taskId, idempotencyKey, input }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) }),
     'tasks:delete': async ({ projectId, taskId }) => {
       await req(REST.projectTask(projectId, taskId), { method: 'DELETE' })
     }

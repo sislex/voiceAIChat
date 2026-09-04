@@ -18,6 +18,9 @@ export interface NewTaskCardViewProps {
   reworkDraft: TaskReworkDraft
   reworkPending?: boolean
   reworkError?: string | null
+  makeState?: import('./TaskCardViewModel').TaskCardLoadState
+  availableMakeSources?: import('@shared/projects').ProjectDesignSource[]
+  onRetryMake?(): void
   onVersionChange(version: TaskCardVersion): void
   callbacks: TaskCardCallbacks
 }
@@ -34,6 +37,7 @@ function FileRows({ files }: { files: TaskCardViewModel['source']['attachments']
 export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
   const { model, activeTab, callbacks } = props
   const [criterion, setCriterion] = useState('')
+  const draftSources = props.reworkDraft.makeSources ?? []
   const setDraft = (patch: Partial<TaskReworkDraft>): void => callbacks.onChangeReworkDraft({ ...props.reworkDraft, ...patch })
   const submit = (): void => {
     if (!props.reworkDraft.description.trim() || model.actions.hasActiveRun) return
@@ -91,7 +95,38 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         <label>Описание доработки<textarea value={props.reworkDraft.description} onChange={(e) => setDraft({ description: e.target.value })} aria-invalid={!props.reworkDraft.description.trim()} /></label>
         <label>Дополнительный критерий<div className="new-task-inline"><input value={criterion} onChange={(e) => setCriterion(e.target.value)} /><Button size="sm" onClick={() => { if (criterion.trim()) { setDraft({ criteria: [...props.reworkDraft.criteria, criterion.trim()] }); setCriterion('') } }}>Добавить</Button></div></label>
         <ul>{props.reworkDraft.criteria.map((item, index) => <li key={index}>{item}</li>)}</ul>
-        <fieldset><legend>Make-источники</legend><label><input type="radio" checked={props.reworkDraft.makeMode === 'whole_project'} onChange={() => setDraft({ makeMode: 'whole_project', makePaths: [] })} /> Весь проект</label><label><input type="radio" checked={props.reworkDraft.makeMode === 'files'} onChange={() => setDraft({ makeMode: 'files' })} /> Отдельные файлы</label></fieldset>
+        <fieldset><legend>Make-источники</legend>
+          {props.makeState === 'loading' && <div role="status"><Skeleton height={56} /></div>}
+          {props.makeState === 'error' && <div role="alert"><ErrorState message="Не удалось загрузить Make-проекты" /><Button size="sm" onClick={props.onRetryMake}>Повторить</Button></div>}
+          {props.makeState === 'empty' && <EmptyState title="Нет доступных Make-проектов" description="Цикл можно создать без Make-источника." />}
+          {props.makeState === 'ready' && props.availableMakeSources?.map((source) => {
+            const selected = draftSources.find((item) => item.conversationId === source.conversationId)
+            const update = (patch: Partial<NonNullable<typeof selected>>): void => {
+              if (!selected) return
+              setDraft({ makeSources: draftSources.map((item) => item.conversationId === source.conversationId ? { ...item, ...patch } : item) })
+            }
+            const toggle = (): void => {
+              if (selected) setDraft({ makeSources: draftSources.filter((item) => item.conversationId !== source.conversationId) })
+              else setDraft({ makeSources: [...draftSources, { conversationId: source.conversationId, title: source.title, mode: 'whole_project', paths: [] }] })
+            }
+            const loadFiles = (): void => {
+              update({ mode: 'files', paths: [], filesState: 'loading' })
+              void window.api['projects:designSourceFiles']({ projectId: model.projectId ?? model.taskId, conversationId: source.conversationId })
+                .then((files) => update({ files: files.map((file) => file.path), filesState: files.length ? 'ready' : 'empty' }))
+                .catch((cause) => update({ filesState: 'error', error: cause instanceof Error ? cause.message : 'Не удалось загрузить файлы.' }))
+            }
+            return <div key={source.conversationId} className="new-task-make-choice">
+              <label><input type="checkbox" checked={Boolean(selected)} onChange={toggle} /> {source.title}</label>
+              {selected && <div><label><input type="radio" checked={selected.mode === 'whole_project'} onChange={() => update({ mode: 'whole_project', paths: [] })} /> Весь проект</label>
+                <label><input type="radio" checked={selected.mode === 'files'} onChange={loadFiles} /> Отдельные файлы</label>
+                {selected.filesState === 'loading' && <span role="status">Загрузка файлов…</span>}
+                {selected.filesState === 'empty' && <small>В проекте нет файлов</small>}
+                {selected.filesState === 'error' && <Button size="sm" onClick={loadFiles}>Повторить загрузку файлов</Button>}
+                {selected.files?.map((path) => <label key={path}><input type="checkbox" checked={selected.paths.includes(path)} onChange={() => update({ paths: selected.paths.includes(path) ? selected.paths.filter((item) => item !== path) : [...selected.paths, path].sort() })} /> {path}</label>)}
+              </div>}
+            </div>
+          })}
+        </fieldset>
         <FileRows files={props.reworkDraft.attachments} />
         {props.reworkError && <p className="new-task-source-error" role="alert">{props.reworkError}</p>}
       </div>

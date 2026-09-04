@@ -1026,3 +1026,20 @@ describe('projects: пред-разработческая подготовка',
     expect(db.listTaskPreparationRuns('alice', project.id, task.id).map((item) => item.id)).toEqual([retry.id, run.id])
   })
 })
+
+describe('projects: неизменяемые циклы доработки', () => {
+  it('создаёт последовательную ревизию, идемпотентно повторяет её и переводит задачу в preparation', () => {
+    const project = db.createProject('alice', { name: 'Rework' })
+    const board = db.getBoard('alice', project.id)!
+    const done = board.columns.find((column) => column.semanticType === 'done')!
+    const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
+    const task = db.createTask('alice', project.id, { columnId: done.id, title: 'Сверить карточку', description: 'Исходное ТЗ', acceptanceCriteria: 'Исходный AC' })!
+    const first = db.createTaskReworkCycle('alice', project.id, task.id, 'request-1', { description: 'Добавить retry', criteria: ['Не терять черновик'] })
+    const replay = db.createTaskReworkCycle('alice', project.id, task.id, 'request-1', { description: 'Иное значение' })
+    expect(replay).toEqual(first)
+    expect(first).toMatchObject({ sequence: 1, description: 'Добавить retry', criteria: ['Не терять черновик'], createdBy: 'alice' })
+    expect(db.getTaskDetail('alice', project.id, task.id)).toMatchObject({ description: 'Исходное ТЗ', acceptanceCriteria: 'Исходный AC', columnId: preparation.id })
+    expect(db.listTaskReworkCycles('alice', project.id, task.id)).toHaveLength(1)
+    expect(db.reworkPreparationContext('alice', project.id, task.id)).toContain('Цикл 1: Добавить retry')
+  })
+})
