@@ -253,6 +253,26 @@ describe('turns: актуальная main проекта', () => {
     db.close()
   })
 
+  it('рассказывает модели про автолечение копии, чтобы исчезнувшие правки не были загадкой', async () => {
+    const db = freshDb()
+    const { conv } = projectChat(db)
+    const rec = recorder()
+    const turns = createTurnManager({
+      db, claude: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret',
+      ensureProjectMainCurrent: async () => ({ baseSha: 'b'.repeat(40), autoHealed: 'незакоммиченные изменения (1 зап.: M app.css) спрятаны в stash «vc-autosync-20260904-105025»' })
+    })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'проверь код' }] })
+    })
+    const prompt = rec.last()?.prompt ?? ''
+    expect(prompt).toContain('Системный preflight подтвердил')
+    expect(prompt).toContain('vc-autosync-20260904-105025')
+    expect(prompt).toContain('Не восстанавливай спрятанное сам')
+    db.close()
+  })
+
   it('к отказу по грязной копии прикладывает готовое исправление для кнопки', async () => {
     const db = freshDb()
     const { conv } = projectChat(db)
@@ -386,6 +406,48 @@ describe('turns: инструкции чата', () => {
     expect(rec.last()?.permissionMode).not.toBe('plan')
     expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit', 'Read']))
     expect(rec.last()?.makeMcpUrl).not.toContain('ro=1')
+    db.close()
+  })
+
+  it('Make с назначенной машиной всё равно не получает remote-мост и встроенные инструменты', async () => {
+    const db = freshDb() // владелец — admin: раньше именно у него Make получал Bash и файлы
+    const project = db.createProject(U, { name: 'Проект' })
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.linkMachine(U, project.id, agent.id)
+    db.setProjectMachinePath(U, project.id, agent.id, '/repo')
+    // Машина проекта по умолчанию — то есть чат её наследует (прямую привязку
+    // Make-чату БД теперь не даёт записать, см. database.test.ts).
+    db.setUserProjectDefaultMachine(U, project.id, agent.id)
+    const conv = db.createConversation(U, 'Витрина', 'make', project.id)!
+    db.addMessage(U, conv.id, 'u0', 'поправь кнопку', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'поправь кнопку' }] })
+    })
+    // Общая копия проекта принадлежит git-потоку: доступа к машине у Make нет.
+    expect(rec.last()?.remote).toBeUndefined()
+    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit', 'Read']))
+    // Мастерская при этом работает: make_* остаются подключёнными и не read-only.
+    expect(rec.last()?.makeMcpUrl).toContain('/mcp/make?k=secret')
+    expect(rec.last()?.makeMcpUrl).not.toContain('ro=1')
+    db.close()
+  })
+
+  it('Make на Codex остаётся в плане даже у admin: MCP в read-only sandbox недоступен', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Витрина', 'make')!
+    db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex' })
+    db.addMessage(U, conv.id, 'u0', 'поправь кнопку', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, codex: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'поправь кнопку' }] })
+    })
+    expect(rec.last()?.permissionMode).toBe('plan')
+    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit']))
     db.close()
   })
 

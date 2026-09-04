@@ -4,7 +4,8 @@
 // изменился ли экран.
 //
 // Правила стека (почему так, а не «показать всё»):
-//   • успех/факт закрываются сами через TOAST_DURATION_MS, ошибка — только
+//   • успех/факт закрываются сами через TOAST_DURATION_MS (с действием —
+//     TOAST_ACTION_DURATION_MS), ошибка — только
 //     крестиком: её нужно успеть прочитать, а часто и скопировать;
 //   • наведение мышью останавливает отсчёт — иначе тост с кнопкой «Повторить»
 //     исчезает под курсором ровно в момент клика;
@@ -53,6 +54,14 @@ export interface ToastApi {
 
 /** Автозакрытие обычного тоста. */
 export const TOAST_DURATION_MS = 4000
+
+/**
+ * Тост с действием живёт дольше обычного: 4 секунды — это время прочитать
+ * текст, но не время решить и нажать «Вернуть» после удаления пачки файлов.
+ * Кнопка отмены, которая исчезает раньше, чем до неё дотягиваются, — это не
+ * отмена. Заодно снимается гонка в тестах: они ловили её в том же окне.
+ */
+export const TOAST_ACTION_DURATION_MS = 12000
 /** Сколько тостов видно одновременно; остальные ждут в очереди. */
 export const TOAST_VISIBLE_MAX = 3
 /** Шаг обратного отсчёта: один таймер на весь стек, пауза — просто его остановка. */
@@ -100,7 +109,7 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
 
   const push = useCallback((kind: ToastKind, text: string, options?: ToastOptions): string => {
     const id = nextId()
-    const duration = options?.duration ?? (kind === 'error' ? 0 : TOAST_DURATION_MS)
+    const duration = options?.duration ?? (kind === 'error' ? 0 : options?.action ? TOAST_ACTION_DURATION_MS : TOAST_DURATION_MS)
     setItems((all) => [...all, { id, kind, text, duration, ...(options?.action ? { action: options.action } : {}) }])
     return id
   }, [])

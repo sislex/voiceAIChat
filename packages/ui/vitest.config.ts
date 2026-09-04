@@ -23,7 +23,12 @@ export default defineConfig({
     environmentMatchGlobs: [['src/**/*.dom.test.{ts,tsx}', 'jsdom']],
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    testTimeout: 20000,
+    // 60 с, как у server. Двадцати не хватало не тестам, а машине: в
+    // релизном regression dom-тест, который локально идёт 0,4 с, упирался в
+    // лимит на 21-й секунде — воркспейсы гоняются параллельно и голодают по
+    // CPU (release/0.1.226 и 0.1.227 упали именно так, на разных тестах).
+    // Настоящее зависание 60 с всё равно поймают.
+    testTimeout: 60_000,
     include: ['src/**/*.test.{ts,tsx}'],
     coverage: {
       provider: 'v8',

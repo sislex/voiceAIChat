@@ -292,7 +292,12 @@ describe('MergeRunManager',()=>{
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.indexOf('npm run one')).toBeLessThan(scripts.indexOf('npm run two'))
     expect(s.run.checks[0].command).toBe('npm run one\nnpm run two')
-    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.find(call=>call[0].script==='npm run one')?.[0].timeoutMs).toBe(1800000)
+    // Лимит одной команды гейта: полный гейт монорепо на занятой машине не
+    // укладывался в прежние 30 минут (CHAT-408 упёрся на 34-й).
+    expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.find(call=>call[0].script==='npm run one')?.[0].timeoutMs).toBe(3600000)
+    // Начало и итог каждой команды видны в логе: иначе долгий гейт не отличить от зависшего.
+    expect(s.run.log).toContain('запускаю: npm run one')
+    expect(s.run.log).toContain('npm run two — код 0')
   })
 
   it('creates a separate KB commit in feature and pushes exactly that SHA to main',async()=>{
@@ -327,6 +332,14 @@ describe('MergeRunManager',()=>{
     // Сервер сам закоммитил правку модели, и дальше ран пошёл от нового SHA:
     // KB-шаг сравнивает дерево именно с ним.
     expect(scripts.find(script=>script.includes('fix(merge): автоисправление упавших проверок'))).toBeTruthy()
+    // Маркеры проверяются только в файлах, которые тронула модель. Пока grep шёл
+    // по всему дереву, он находил легальные вхождения в самом merge-раннере, в
+    // резолвере конфликтов и в статьях БЗ — и любое автоисправление в этом
+    // репозитории отклонялось всегда (лог CHAT-408).
+    const inspection=scripts.find(script=>script.includes('MARKERS'))!
+    expect(inspection).toContain('git diff --name-only -z HEAD')
+    expect(inspection).toContain('git ls-files -z --others --exclude-standard')
+    expect(inspection).not.toContain("git grep -l -e '<<<<<<<' -e '>>>>>>>' -- .")
     expect(scripts.find(script=>script.includes('docs(kb): update after merge'))).toContain(fixed)
     expect(s.run.checks.map(check=>check.status)).toContain('passed')
     // Гейт прогоняется заново после исправления (и ещё раз после KB-коммита).
@@ -347,6 +360,14 @@ describe('MergeRunManager',()=>{
     expect(scripts.some(script=>script.includes('git push'))).toBe(false)
     expect(s.run.error).toContain('автоисправление не помогло')
     expect(s.moves).toContain('merge')
+    // Ни один этап не остаётся незакрытым: лента считает длительность
+    // незавершённого этапа «до сейчас», и упавший ран продолжал тикать —
+    // у CHAT-408 «База знаний» показывала 95+ минут спустя часы после остановки.
+    expect(s.run.stages.filter(stage=>stage.status==='running'||stage.status==='queued')).toEqual([])
+    const kb=s.run.stages.find(stage=>stage.stage==='kb_update')!
+    expect(kb.status).toBe('failed')
+    expect(kb.finishedAt).not.toBeNull()
+    expect(kb.message).toContain('Актуализация БЗ снята')
   })
 
   it('does not try a second fix inside one run',async()=>{
