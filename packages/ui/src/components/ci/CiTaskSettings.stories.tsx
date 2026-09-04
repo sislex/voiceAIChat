@@ -34,7 +34,8 @@ export const Overridden: Story = {
         config: { beforeModel: ['cmd-1', 'cmd-2'], afterModel: ['cmd-3', 'cmd-5'] },
         overridden: true,
         projectDefault: { beforeModel: ['cmd-1'], afterModel: [] },
-        enabledStages: ['before_model', 'model_work', 'after_model', 'summary']
+        enabledStages: ['before_model', 'model_work', 'after_model', 'summary'],
+        browserCheck: { mode: 'off', devServerPort: 5173, startPath: '/' }
       })
       ci.getTaskCiLlm = async () => ({
         config: makeLlmConfig({ provider: 'claude', model: 'opus', mode: 'plan' }),
@@ -73,7 +74,8 @@ export const CleanupWarning: Story = {
         config: { beforeModel: [], afterModel: ['cmd-5'] },
         overridden: true,
         projectDefault: { beforeModel: [], afterModel: [] },
-        enabledStages: ['before_model', 'model_work', 'after_model', 'summary']
+        enabledStages: ['before_model', 'model_work', 'after_model', 'summary'],
+        browserCheck: { mode: 'off', devServerPort: 5173, startPath: '/' }
       })
     })
   ]

@@ -10,38 +10,38 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 37 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 238 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 240 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-03 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-01 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: e00e5c8c feat: студия картинок — сплит «чат + галерея» с генерацией и правкой через LLM |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-04 | ⚠ 6 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 94 коммит(ов) в areas после сверки: e00e5c8c feat: студия картинок — сплит «чат + галерея» с генерацией и правкой через LLM … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 27 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 204 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 136 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 225 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 21 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1134 коммит(ов) в areas после сверки: cbde4a7d Merge main into CHAT-407 … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 170 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 216 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 106 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-02 | ⚠ 43 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 230 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 6 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-03 | ⚠ 5 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-04 | ⚠ 6 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-04 | ⚠ 35 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 96 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 29 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 206 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 138 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 227 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1137 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 172 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 218 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 108 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-02 | ⚠ 45 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 232 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 8 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-03 | ⚠ 3 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-03 | ⚠ 7 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 193 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 30 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 13 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 13 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 141 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-03 | ⚠ 32 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ⚠ 3 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 15 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 15 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 143 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-01 | ⚠ 4 коммит(ов) в areas после сверки: e4b8c534 feat: add standalone machine login application … |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 93 коммит(ов) в areas после сверки: 593eae9f feat: студия картинок 37–45, автопочинка merge-рана и кнопка исправления в чате … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ✓ |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 95 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ⚠ 51 коммит(ов) в areas после сверки: bbb48616 Merge origin/main в feat/ci-browser-checks … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-04, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 589. Последние:
+Всего записей: 590. Последние:
 
 - [2026-09-04-alexeys-macbook-air-2-restore-production-signup.md](log/2026-09-04-alexeys-macbook-air-2-restore-production-signup.md) — restore-production-signup
 - [2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md](log/2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md) — merge-auto-fix-checks

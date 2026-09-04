@@ -158,8 +158,19 @@ export function claudeArgs(req: LlmRequest): string[] {
     mcpServers.browser = { type: 'http', url: req.previewMcpUrl }
     if (req.remote || process.env.VC_KB_TOOL_ALLOWLIST === '1') {
       allowed.push('mcp__browser__open', 'mcp__browser__read', 'mcp__browser__find', 'mcp__browser__click', 'mcp__browser__type')
+      // Браузерная проверка задачи живёт без пользователя рядом, поэтому её
+      // рабочий набор шире: неодобренный инструмент в headless объявлен, но
+      // каждый вызов упирается в разрешение — снаружи это выглядит как
+      // «модель не стала смотреть страницу».
+      if (req.previewSurface === 'chromium') {
+        allowed.push(
+          'mcp__browser__screenshot', 'mcp__browser__errors', 'mcp__browser__wait', 'mcp__browser__console',
+          'mcp__browser__network', 'mcp__browser__scroll', 'mcp__browser__press', 'mcp__browser__hover',
+          'mcp__browser__set', 'mcp__browser__a11y', 'mcp__browser__back', 'mcp__browser__forward'
+        )
+      }
     }
-    systemHints.push(previewToolHint())
+    systemHints.push(previewToolHint(req.previewSurface ?? 'panel'))
   }
   if (req.consoleMcpUrl) {
     // «Консоль с ассистентом»: инструменты пишут и читают ту же живую PTY-сессию,

@@ -147,6 +147,24 @@ describe('ci: выбор этапов процесса', () => {
   })
 })
 
+describe('ci: браузерная проверка задачи', () => {
+  it('по умолчанию выключена, сохраняется и нормализуется при чтении', () => {
+    const { task } = project()
+    expect(db.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/' })
+    expect(db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 8799, startPath: 'board' }))
+      .toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board' })
+    expect(db.getTaskBrowserCheck(task.id)).toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board' })
+  })
+
+  it('битая строка в БД не мешает запустить ран', () => {
+    const { task } = project()
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium' })
+    ;(db as unknown as { db: Database.Database }).db
+      .prepare('UPDATE ci_task_browser_checks SET check_json = ? WHERE task_id = ?').run('{не json', task.id)
+    expect(db.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/' })
+  })
+})
+
 describe('ci: движок и модель', () => {
   it('задача наследует настройку проекта и может переопределить её', () => {
     const { p, task } = project()

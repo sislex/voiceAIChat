@@ -65,6 +65,11 @@ services:
       # loopback, а в контейнере исполнителя на 127.0.0.1:8787 никого нет —
       # инструменты mcp__remote__*/mcp__kb__* тогда молча пропадают у модели.
       VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
+      # Адрес сервера для изолированного Chromium: по нему он открывает прокси
+      # превью в браузерных проверках задач. Должен совпадать с
+      # VC_BROWSER_PREVIEW_ORIGIN у browser-runner — иначе SSRF-гейт раннера
+      # зарежет запрос (имя сервера в сети compose ведёт в приватную сеть).
+      VC_BROWSER_PREVIEW_BASE: ${VC_BROWSER_PREVIEW_BASE:-http://voicechat:8787}
       # Пароль admin при первом создании БД (пустой том). Задаётся в shell/.env;
       # если БД уже создана, пароль меняется в UI (Настройки → Пользователи).
       VC_ADMIN_PASSWORD: ${VC_ADMIN_PASSWORD:-}
@@ -137,6 +142,9 @@ services:
       # обходят ufw только для внешних подключений), зато ходит к соседнему
       # сервису по имени. Пары «внешний host:port=внутренний host:port».
       VC_BROWSER_HOST_ALIASES: ${VC_BROWSER_HOST_ALIASES:-}
+      # Кому из внутренней сети доверяем как оркестратору: сервер, через прокси
+      # которого идут браузерные проверки задач. Пара к VC_BROWSER_PREVIEW_BASE.
+      VC_BROWSER_PREVIEW_ORIGIN: ${VC_BROWSER_PREVIEW_ORIGIN:-http://voicechat:8787}
     volumes:
       - vc-browser-data:/data
     # Chromium падает при нехватке разделяемой памяти: дефолтные 64 МБ ему мало.

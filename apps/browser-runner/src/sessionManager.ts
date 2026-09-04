@@ -42,11 +42,23 @@ export function nextActiveTab(open: string[], activeId: string, closedId: string
   return open.find((id) => id !== closedId) ?? ''
 }
 
+/**
+ * Cookie, которую сервер кладёт в контекст сессии. Нужна одному сценарию:
+ * dev-сервер выбранной машины живёт на её loopback и открывается через прокси
+ * превью сервера, а навигация браузера не носит Bearer-заголовков.
+ */
+export interface StartSessionCookie {
+  name: string
+  value: string
+  url: string
+}
+
 export interface StartSessionRequest {
   sessionId: string
   userKey: string
   conversationKey: string
   viewport?: BrowserViewport
+  cookies?: StartSessionCookie[]
 }
 
 export class BrowserSessionManager {
@@ -54,8 +66,17 @@ export class BrowserSessionManager {
 
   private readonly allowedTargets: Set<string>
 
-  constructor(private readonly profilesRoot: string, private readonly hostAliases: HostAliases = new Map()) {
+  constructor(
+    private readonly profilesRoot: string,
+    private readonly hostAliases: HostAliases = new Map(),
+    /** Доверенный origin сервера (`host:port`) для браузерных проверок задач. */
+    previewOrigin: string | null = null
+  ) {
     this.allowedTargets = aliasTargets(hostAliases)
+    if (previewOrigin) {
+      this.allowedTargets.add(previewOrigin)
+      this.allowedTargets.add(previewOrigin.split(':')[0])
+    }
   }
 
   async start(request: StartSessionRequest): Promise<BrowserSessionMetadata> {
@@ -67,6 +88,10 @@ export class BrowserSessionManager {
     }
     const session = await pending
     if (session.userKey !== request.userKey || session.conversationKey !== request.conversationKey) throw new Error('session identity mismatch')
+    // Идемпотентный start переиспользует живую сессию, но ключ доступа сервер
+    // выдаёт заново: без повторной установки в профиле осталась бы прошлая
+    // cookie, и прокси превью ответил бы 401 посреди рана.
+    await this.applyCookies(session, request.cookies)
     return await this.metadata(session)
   }
 
@@ -156,6 +181,14 @@ export class BrowserSessionManager {
     context.on('page', (page) => register(page))
     context.on('close', () => this.sessions.delete(request.sessionId))
     return session
+  }
+
+  /** Пустой и битый список молча пропускаем: cookie — не причина ронять сессию. */
+  private async applyCookies(session: Session, cookies: StartSessionCookie[] | undefined): Promise<void> {
+    if (!cookies?.length) return
+    const valid = cookies.filter((cookie) => cookie && typeof cookie.name === 'string' && typeof cookie.value === 'string' && typeof cookie.url === 'string')
+    if (!valid.length) return
+    await session.context.addCookies(valid.map((cookie) => ({ name: cookie.name, value: cookie.value, url: cookie.url })))
   }
 
   async stop(sessionId: string): Promise<boolean> {

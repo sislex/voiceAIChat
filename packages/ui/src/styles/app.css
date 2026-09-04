@@ -5621,6 +5621,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ci-task-stages { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .ci-task-stages label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .ci-task-stages input { margin: 0; }
+/* Проверка в браузере: режим, порт dev-сервера и стартовая страница в одну строку. */
+.ci-task-browser { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: flex-end; }
+.ci-task-browser label { display: inline-flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ci-task-browser input[type="number"] { width: 96px; }
+.ci-task-browser input[type="text"] { width: 200px; }
 .ci-task-save, .ci-defaults .vc-btn { margin-top: var(--space-100); }
 .ci-task-llm-head { margin-top: 14px; }
 .ci-task-llm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

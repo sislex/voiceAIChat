@@ -147,8 +147,11 @@ import {
   type CiCommandScope,
   type CiSlot,
   type CiSlotConfig,
+  type CiBrowserCheck,
   type CiProcessStage,
   CI_PROCESS_STAGES,
+  DEFAULT_CI_BROWSER_CHECK,
+  normalizeCiBrowserCheck,
   normalizeCiProcessStages,
   type CiLlmConfig,
   DEFAULT_CI_CLAUDE_MODEL,
@@ -6460,6 +6463,19 @@ export class VoiceChatDb {
     return normalized
   }
 
+  /** Браузерная проверка задачи; нет строки — режим «без браузера». */
+  getTaskBrowserCheck(taskId: string): CiBrowserCheck {
+    const row = this.db.prepare(`SELECT check_json FROM ci_task_browser_checks WHERE task_id = ?`).get(taskId) as { check_json: string } | undefined
+    if (!row) return { ...DEFAULT_CI_BROWSER_CHECK }
+    try { return normalizeCiBrowserCheck(JSON.parse(row.check_json)) } catch { return { ...DEFAULT_CI_BROWSER_CHECK } }
+  }
+
+  setTaskBrowserCheck(taskId: string, value: unknown): CiBrowserCheck {
+    const normalized = normalizeCiBrowserCheck(value)
+    this.db.prepare(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`).run(taskId, JSON.stringify(normalized))
+    return normalized
+  }
+
   getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): CiLlmConfig | null {
     const row = this.db.prepare(`SELECT llm_engine_id, provider, model, mode, clarify_level, clarify_max FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as
       | { llm_engine_id: string | null; provider: string; model: string; mode: string; clarify_level: string; clarify_max: number }
@@ -9235,6 +9251,11 @@ export class VoiceChatDb {
   /** Идентификаторы всех ранов этапов — для уборки осиротевших снимков на диске. */
   qaStageRunIds(): Set<string> {
     return new Set((this.db.prepare(`SELECT id FROM qa_stage_runs`).all() as Array<{ id: string }>).map((row) => row.id))
+  }
+
+  /** Существующие раны CI — для уборки файлов, которые каскад БД не трогает. */
+  ciRunIds(): Set<string> {
+    return new Set((this.db.prepare(`SELECT id FROM ci_runs`).all() as Array<{ id: string }>).map((row) => row.id))
   }
 
   recoverableAutomatedQaRuns(): Array<{ id: string; userId: string; projectId: string }> {

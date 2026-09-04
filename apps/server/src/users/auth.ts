@@ -17,6 +17,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { createMailer, type Mailer } from './mailer.js'
+import { PREVIEW_RUN_COOKIE } from '../browser/machinePreview.js'
 import { createHash, randomBytes } from 'node:crypto'
 import type { ProjectFeature } from '@voicechat/shared'
 
@@ -246,6 +247,24 @@ function previewSession(req: FastifyRequest, url: string): string | undefined {
   return readCookie(req, PREVIEW_SESSION_COOKIE) || undefined
 }
 
+/**
+ * Пользователь ключа Chromium: cookie читается только на точном пути прокси,
+ * поэтому ключ не работает ни на одном другом маршруте API.
+ */
+export function previewRunUser(
+  db: VoiceChatDb,
+  req: FastifyRequest,
+  url: string,
+  keys: NonNullable<AuthOptions['previewRunKeys']>
+): SessionUser | null {
+  if (url !== PREVIEW_COOKIE_PATH) return null
+  const name = keys.userOf(readCookie(req, PREVIEW_RUN_COOKIE) || undefined)
+  if (!name) return null
+  const user = db.getUser(name)
+  if (!user || user.blocked) return null
+  return { name: user.name, role: user.role }
+}
+
 /** Публичные пути (без токена): health, сессия, скачивание бинарей/установщиков агента. */
 function isPublic(url: string): boolean {
   return (
@@ -298,6 +317,12 @@ export interface AuthOptions {
   geo?: GeoResolver
   /** Куда сообщать об изменениях списка сессий (живое обновление по WS). */
   sessions?: SessionHub
+  /**
+   * Ключи изолированного Chromium к прокси превью: он открывает dev-сервер
+   * машины от лица владельца рана, но Bearer-токена у навигации браузера нет.
+   * Ключ действует только на пути прокси (`previewRunUser`).
+   */
+  previewRunKeys?: { userOf(key: string | undefined): string | null }
 }
 
 /** Настройка открытой регистрации хранится в app_config: `signup.enabled` ('1'/'0') и `signup.role`. */
@@ -407,9 +432,10 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     let viaCookie = false
     if (!token) { token = readCookie(req, SESSION_COOKIE); viaCookie = Boolean(token) }
     if (!token) token = previewSession(req, url)
+    const runUser = token || !options.previewRunKeys ? null : previewRunUser(db, req, url, options.previewRunKeys)
     // Путь запоминаем в сессии: в списке устройств он отвечает на вопрос «а что
     // это устройство вообще делает», когда вход выглядит подозрительно.
-    const user = activeUser(token, url)
+    const user = runUser ?? activeUser(token, url)
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply

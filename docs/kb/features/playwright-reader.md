@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-03
-checked: d09b8f16
+updated: 2026-09-04
+checked: bbb48616
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -320,6 +320,46 @@ Playwright Reader снимок уходил **в браузер пользова
 вьюпорт или узел по селектору (`locator.screenshot()`, круг 10); `null` означает
 «этот разговор не про изолированный браузер, иди обычным путём». Область `rect`
 координатами документа раннер не поддерживает — у него либо вьюпорт, либо узел.
+
+### Второй вход в Chromium: браузерная проверка задачи
+
+Тот же изолированный Chromium обслуживает браузерные проверки стадии разработки.
+Выбор цели вынесен в чистый `browserCheckTarget`
+(`apps/server/src/browser/checkTarget.ts`): разговор Playwright Reader остаётся
+при сессии по разговору, а задача с режимом `chromium` получает сессию
+`task-<taskId>`. Ключ по задаче, а не по рану — иначе каждый прогон оставлял бы
+в томе свой каталог профиля; настройка режима описана в
+[ci-runner.md](ci-runner.md#браузерная-проверка-результата-на-стадии-разработки).
+
+Dev-сервер задачи живёт на loopback выбранной машины, поэтому адрес
+`http://<agentId>.machine.internal:<порт>/` не открывается Chromium напрямую:
+`withMachinePreviewTarget` подменяет его адресом прокси превью сервера
+(`machinePreviewUrl`, база — `config.browserPreviewBase`, иначе `mcpPublicBase`;
+в compose `VC_BROWSER_PREVIEW_BASE=http://voicechat:8787`). Доставку до машины
+делает уже существующий агент-мост `/api/preview`, поэтому SSRF-гейт раннера не
+ослаблялся, а алиасы для самих машин не нужны.
+
+**Сервер раннеру всё равно надо разрешить, и это выяснилось живым прогоном.**
+Гейт `context.route` в `sessionManager` режет не литерал адреса, а **результат
+DNS-резолва**: имя без приватного литерала (`voicechat`) проходит
+`validatePublicUrl`, но затем резолвится в адрес внутренней сети и получает
+`route.abort('blockedbyclient')` — Chromium отвечает `ERR_BLOCKED_BY_CLIENT`, а
+страница остаётся белой. Поэтому раннер принимает
+`VC_BROWSER_PREVIEW_ORIGIN=http://voicechat:8787` (`previewOriginTarget` в
+`security.ts`), и этот origin добавляется в те же `allowedTargets`, что и цели
+алиасов, — то есть доверие даёт оператор переменной, а не пользователь адресом.
+Значения `VC_BROWSER_PREVIEW_BASE` (сервер) и `VC_BROWSER_PREVIEW_ORIGIN`
+(раннер) обязаны совпадать: расходятся — и проверка молча превращается в белый
+экран.
+
+Авторизует эти запросы не сессионный токен пользователя, а ключ из
+`PreviewRunKeys` (`apps/server/src/browser/machinePreview.ts`): токен работал бы
+Bearer-ом на всём API, а лежал бы в профиле Chromium. Ключ выдаётся на
+пользователя, продлевается при каждой выдаче, живёт сутки и приходит в контекст
+сессии cookie `vc_preview_run` — раннер принимает её полем `cookies` в
+`StartSessionRequest` и переустанавливает при каждом идемпотентном `start`.
+Читает ключ `previewRunUser` в `apps/server/src/users/auth.ts` и **только** на
+точном пути `/api/preview`; доступ к машине дальше решает прежний `canUse`.
 
 ### Локальный раннер для проверки (круг 11)
 
