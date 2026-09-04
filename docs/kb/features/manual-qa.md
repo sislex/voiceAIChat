@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-08-24
-checked: 0c455789
+updated: 2026-09-04
+checked: a487f302
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -68,6 +68,24 @@ FNV-1a-хеш стабильно сериализованных сценарие
 при следующем запросе старта и учитывается gate'ом при попытке перехода.
 Снимок сценариев рана берёт из readiness только кейсы с
 `testType ∈ {ui, automated, mixed}`.
+
+**Гейт подготовки и гейт Component QA согласованы одним предикатом.**
+`hasRequiredComponentScenario` (`packages/shared/src/qa.ts`) — единственное место,
+где решается, есть ли у задачи обязательный сценарий типа `ui|automated|mixed`.
+Его зовут и `canConfirmDevelopmentReadiness`, и `componentQaLaunchReasons`.
+Пока они расходились (подготовка требовала любой `required`-сценарий, а этап —
+только UI-типа), почти каждая задача успешно проходила подготовку и потом
+навсегда застревала в `component_qa` с `missing_required_component_scenarios`:
+снимок `readiness_json` неизменяем, править тип сценария в нём нечем. Промпт
+подготовки теперь перечисляет допустимые `testType`
+(`ui|api|integration|negative|regression|manual`) и прямо требует UI-сценарий
+при `uiImpact ≠ none`.
+
+Мапперу критериев тоже нужен полный список типов: `qaSnapshot` в
+`apps/server/src/db/database.ts` сверяется с `QA_CRITERION_TEST_TYPES`, а не с
+собственной копией. Прежняя копия знала только legacy-тройку
+(`automated|mixed|not_testable_in_app`), поэтому `ui`, `api`, `integration`,
+`negative` и `regression` молча сохранялись как `manual`.
 
 `componentQaLaunchReasons` для UI-задачи требует непустой список компонентов и
 хотя бы один обязательный component-сценарий; компонент со story обязан

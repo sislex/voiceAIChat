@@ -264,6 +264,16 @@ export function taskPreparationFailure(provider: LlmProvider, userId: string, me
  * релизы и preview. Непустой каталог без репозитория остаётся ошибкой: чужие файлы
  * не перезаписываются. Репозиторием считается корень рабочего дерева (в том числе
  * созданный `git worktree add`, где `.git` — файл), а не подкаталог чужого репозитория.
+ *
+ * Копия общая: её же берут Git-панель проекта и чаты задач, поэтому к началу
+ * синхронизации в ней штатно оказываются чужая ветка и незакоммиченные правки.
+ * Раньше это останавливало подготовку до ручного разбора, теперь скрипт лечит
+ * сам и ничего не выбрасывает: правки уходят в именованный stash
+ * (`vc-autosync-<UTC>`), копия возвращается на базовую ветку, а строка
+ * `AUTOHEAL=` в выводе рассказывает, что было сделано и как вернуть спрятанное.
+ * Остановка остаётся там, где автолечение небезопасно: git отказал в stash
+ * (например незавершённый merge с конфликтом), дерево осталось грязным, ветку
+ * не удалось переключить или базовая ветка разошлась с origin.
  */
 export function projectMainRefreshScript(path: string, branch: string, gitUrl?: string | null): string {
   const repo = shellQuote(path)
@@ -281,21 +291,45 @@ fi
 toplevel="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
 test -n "$toplevel" && test "$toplevel" = "$(cd "$repo" && pwd -P)" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
 worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
-test -z "$worktree_status" || {
-  # Сообщение называет виновников: одно «содержит локальные изменения» не
-  # подсказывает, что чинить, и человек шёл смотреть status руками.
+notice=''
+if [ -n "$worktree_status" ]; then
+  # Общая копия делится с человеком, Git-панелью проекта и чатами задач, поэтому
+  # к началу синхронизации в ней остаются чужие незакоммиченные правки. Прежний
+  # отказ блокировал подготовку до ручного разбора; теперь ничего не выбрасывается —
+  # правки уезжают в именованный stash, и синхронизация идёт дальше сама.
   dirty_count="$(printf '%s\n' "$worktree_status" | grep -c . || true)"
   dirty_head="$(printf '%s\n' "$worktree_status" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
-  echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена. Копия: $repo. Изменено записей: $dirty_count. Первые: $dirty_head. Закоммитьте нужное или уберите лишнее в этой копии и повторите." >&2
-  exit 66
-}
-current="$(git -C "$repo" branch --show-current)"
-test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
+  stash_name="vc-autosync-$(date -u +%Y%m%d-%H%M%S)"
+  # Identity задаётся флагами: stash делает коммит, а на свежей машине агента
+  # user.email может быть не настроен — иначе автолечение падало бы на нём.
+  stash_log="$(git -C "$repo" -c user.name='voiceAIChat autosync' -c user.email='autosync@voicechat.local' stash push --include-untracked --message "$stash_name" 2>&1)" || {
+    echo "Рабочая копия проекта содержит локальные изменения, и спрятать их в stash не удалось; синхронизация с origin/$base остановлена. Копия: $repo. Изменено записей: $dirty_count. Первые: $dirty_head. Ответ git: $stash_log. Закоммитьте нужное или уберите лишнее в этой копии и повторите." >&2
+    exit 66
+  }
+  left="$(git -C "$repo" status --porcelain --untracked-files=all)"
+  test -z "$left" || {
+    left_head="$(printf '%s\n' "$left" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
+    echo "Рабочая копия проекта осталась с локальными изменениями после автоматического stash «\${stash_name}»; синхронизация с origin/$base остановлена. Копия: $repo. Осталось: $left_head. Уберите лишнее в этой копии и повторите." >&2
+    exit 66
+  }
+  notice="незакоммиченные изменения ($dirty_count зап.: $dirty_head) спрятаны в stash «\${stash_name}»; вернуть их: git -C $repo stash apply 'stash^{/$stash_name}'"
+fi
 git -C "$repo" fetch --no-tags origin "refs/heads/\${base}:refs/remotes/origin/\${base}"
+current="$(git -C "$repo" branch --show-current)"
+if [ "$current" != "$base" ]; then
+  # Ветку задачи в общей копии оставляет чат задачи или Git-панель. Дерево здесь
+  # уже чистое, поэтому возврат на базовую ветку ничего не теряет, а прежний
+  # отказ (exit 67) требовал ручного checkout перед каждой следующей подготовкой.
+  head_label="$current"
+  test -n "$head_label" || head_label='detached HEAD'
+  git -C "$repo" checkout "$base" >/dev/null 2>&1 || git -C "$repo" checkout -B "$base" "refs/remotes/origin/$base" >/dev/null 2>&1 || { echo "Копия проекта $repo стоит на «\${head_label}», переключить её на $base не удалось" >&2; exit 67; }
+  if [ -z "$notice" ]; then notice="копия возвращена на $base с ветки «\${head_label}»"; else notice="$notice; копия возвращена на $base с ветки «\${head_label}»"; fi
+fi
 git -C "$repo" merge --ff-only "refs/remotes/origin/$base"
 local_sha="$(git -C "$repo" rev-parse HEAD)"
 remote_sha="$(git -C "$repo" rev-parse "refs/remotes/origin/$base")"
 test "$local_sha" = "$remote_sha" || { echo "Локальная ветка $base не совпадает с origin/$base после fast-forward" >&2; exit 68; }
+test -z "$notice" || printf 'AUTOHEAL=%s\\n' "$notice"
 printf 'BASE_SHA=%s\\n' "$local_sha"`
 }
 
@@ -378,10 +412,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const agentRegistry = opts.agentRegistry ?? new AgentRegistry({ offlineGraceMs: opts.config.agentOfflineGraceMs })
   /**
    * Системная граница актуальности общей копии проекта. Модель не участвует:
-   * dirty/diverged checkout блокирует ход, чистая базовая ветка обновляется только fast-forward.
+   * чистая базовая ветка обновляется только fast-forward, а посторонние
+   * незакоммиченные правки и оставленная чужая ветка лечатся автоматически
+   * (stash + возврат на базовую ветку) — `autoHealed` описывает, что сделано,
+   * чтобы это попало в лог подготовки и в промпт хода.
    */
-  const projectMainRefreshes = new Map<string, Promise<{ baseSha: string }>>()
-  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl?: string | null }): Promise<{ baseSha: string }> => {
+  const projectMainRefreshes = new Map<string, Promise<{ baseSha: string; autoHealed?: string }>>()
+  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl?: string | null }): Promise<{ baseSha: string; autoHealed?: string }> => {
     const key = [args.projectId, args.agentId, args.path, args.branch].join('\u0000')
     const activeRefresh = projectMainRefreshes.get(key)
     if (activeRefresh) return activeRefresh
@@ -392,7 +429,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (result.exitCode !== 0) throw new Error(result.output.trim() || `Синхронизация с origin завершилась с кодом ${result.exitCode ?? 'unknown'}`)
     const baseSha = result.output.match(/BASE_SHA=([0-9a-f]{40})/)?.[1]
     if (!baseSha) throw new Error('Синхронизация не вернула SHA актуальной базовой ветки')
-    return { baseSha }
+    const autoHealed = result.output.match(/AUTOHEAL=(.*)/)?.[1]?.trim()
+    return { baseSha, ...(autoHealed ? { autoHealed } : {}) }
     })()
     projectMainRefreshes.set(key, operation)
     void operation.finally(() => { if (projectMainRefreshes.get(key) === operation) projectMainRefreshes.delete(key) }).catch(() => {})
@@ -416,7 +454,24 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       online: agentRegistry.isOnline(agent.id),
       version: agentRegistry.versionOf(agent.id),
       telemetry: agentRegistry.telemetryOf(agent.id)
-    }))
+    })),
+    // Новый Make-чат начинает от актуального main: копию обновляет сервер один
+    // раз при создании чата — единственное, что Make делает с репозиторием.
+    // Ошибка (нет машины, offline, dirty без возможности stash) не мешает
+    // создать чат: мастерская работает и без свежей копии, а причина уходит в лог.
+    refreshProjectMain: (userId, projectId) => {
+      const project = db.getProject(userId, projectId)
+      if (!project?.gitUrl) return
+      const machine = (project.machines ?? []).find((candidate) => candidate.canUse !== false && candidate.path.trim() && agentRegistry.isOnline(candidate.agentId))
+      if (!machine) return
+      void ensureProjectMainCurrent({
+        userId, projectId, conversationId: null, agentId: machine.agentId,
+        path: machine.path, branch: project.ciBaseBranch || 'main', gitUrl: project.gitUrl
+      }).then(
+        (snapshot) => app.log.info({ event: 'make_chat_project_refresh', projectId, baseSha: snapshot.baseSha, ...(snapshot.autoHealed ? { autoHealed: snapshot.autoHealed } : {}) }),
+        (error) => app.log.warn({ event: 'make_chat_project_refresh_failed', projectId, error: error instanceof Error ? error.message : String(error) })
+      )
+    }
   })
   registerPreviewProxy(app, {
     machines: {
@@ -605,12 +660,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerMakeRoutes(app, {
     db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
     boardChanged: (projectId) => boardHub.emit(projectId),
-    // Обмен с репозиторием проекта: файловый мост машины. Политику записи
-    // (allowWrite, allowedDirs) агент проверяет на своей стороне.
+    // Чтение репозитория проекта: файловый мост машины только на чтение —
+    // Make копирует файлы к себе, но в общую копию проекта не пишет.
     machineFs: {
       list: (agentId, path) => agentRegistry.fsList(agentId, path),
       read: (agentId, path) => agentRegistry.fsRead(agentId, path),
-      write: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
       isOnline: (agentId) => agentRegistry.isOnline(agentId)
     }
   })
@@ -1643,7 +1697,7 @@ ${machineDiagnostic}
 ${preparationDesignNote(task?.designs ?? [], preparationMakeSources)}`
     const basePrompt = `${researchDirective}
 
-Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект: первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект: первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
 const ordinaryResponses: string[] = []
     const terminalValidationFailure = (message: string, text: string, recoveryDetail?: string): void => {
       const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
@@ -1667,7 +1721,7 @@ const ordinaryResponses: string[] = []
 Строгий контракт DevelopmentReadiness:
 schemaVersion: 2; goal, functionalRequirements, acceptanceCriteria — string; scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints, contradictions — string[]; uiImpact — none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean.
 acceptanceCriteriaItems: {id,title,precondition,action,observableResult:string}[].
-testCases: {id,title,description,preconditions,testData,steps,expectedResult,testType,notAutomatedReason,alternativeManualVerification,comments:string,required:boolean,automatable:boolean,automationLinks:array}[].
+testCases: {id,title,description,preconditions,testData,steps,expectedResult,testType,notAutomatedReason,alternativeManualVerification,comments:string,required:boolean,automatable:boolean,automationLinks:array}[]. testType — ui|api|integration|negative|regression|manual; при uiImpact≠none обязателен хотя бы один testCase с required=true и testType=ui.
 affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reusable:boolean,storybookStoryId:string|null,coverage:object}[]. Для каждого компонента coverage непустой; при storybookStoryId=null обязательны непустые exclusionReason и alternativeVerification.
 openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
 sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
@@ -1770,6 +1824,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           path: selectedMachine.path, branch: project.ciBaseBranch || 'main', gitUrl: project.gitUrl
         })
         db.appendTaskPreparationLog(run.id, `[система] Актуальная базовая ветка: ${project.ciBaseBranch || 'main'} @ ${snapshot.baseSha}; совпадение с origin подтверждено.\n`)
+        // Автолечение копии видно в логе подготовки: иначе спрятанный stash
+        // остаётся невидимым и человек не знает, где искать свои правки.
+        if (snapshot.autoHealed) db.appendTaskPreparationLog(run.id, `[система] Общая копия проекта приведена в порядок автоматически: ${snapshot.autoHealed}.\n`)
       }
       sendAttempt(1)
     })().catch((error) => {

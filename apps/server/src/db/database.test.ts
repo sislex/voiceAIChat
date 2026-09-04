@@ -847,6 +847,69 @@ describe('VoiceChatDb — миграции', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('снимает с Make-чатов привязку к машине и каталог, а «none» и чужие чаты не трогает', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-db-make-machine-'))
+    const file = join(dir, 'voicechat.db')
+    const raw = new Database(file)
+    raw.exec(`
+      CREATE TABLE conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        claude_session_id TEXT,
+        user_id TEXT,
+        exec_target TEXT,
+        workdir TEXT,
+        skill_names TEXT NOT NULL DEFAULT '[]',
+        llm_provider TEXT,
+        llm_model TEXT,
+        permission_mode TEXT,
+        kb_context_mode TEXT NOT NULL DEFAULT 'auto',
+        project_id TEXT,
+        task_id TEXT,
+        assistant_kind TEXT,
+        status TEXT NOT NULL DEFAULT 'developing'
+      );
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL,
+        time TEXT NOT NULL, created_at INTEGER NOT NULL, engine TEXT, meta TEXT, exec_target TEXT
+      );
+      CREATE TABLE speakers (conversation_id TEXT NOT NULL, speaker_id INTEGER NOT NULL, label TEXT NOT NULL, PRIMARY KEY (conversation_id, speaker_id));
+      CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen INTEGER, policy TEXT, user_id TEXT);
+      CREATE TABLE users (name TEXT PRIMARY KEY, password_hash TEXT NOT NULL, role TEXT NOT NULL, blocked INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+    `)
+    raw.prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES ('admin', 'x', 'admin', 0, 1)`).run()
+    const insert = raw.prepare(`INSERT INTO conversations (id, title, created_at, updated_at, user_id, skill_names, kb_context_mode, assistant_kind, exec_target, workdir, status) VALUES (?, ?, 1, 2, 'admin', '[]', 'auto', ?, ?, ?, 'developing')`)
+    insert.run('m1', 'make с машиной', 'make', 'agent-1', '/Users/dev/ChatAI/projects/p1/worktree')
+    insert.run('m2', 'make без машины', 'make', 'none', null)
+    insert.run('c1', 'обычный чат', null, 'agent-1', '/repo')
+    raw.close()
+
+    const db = new VoiceChatDb(file)
+    try {
+      // Привязка Make-чата снята: ход её всё равно игнорирует, а панель показывала
+      // машину и каталог, которых нет в работе.
+      expect(db.getConversation('admin', 'm1')).toMatchObject({ execTarget: null, workdir: null })
+      // Явное «без машины» — осознанный выбор пользователя, он сохраняется.
+      expect(db.getConversation('admin', 'm2')?.execTarget).toBe('none')
+      // Обычный чат работает на машине: его привязка не трогается.
+      expect(db.getConversation('admin', 'c1')).toMatchObject({ execTarget: 'agent-1', workdir: '/repo' })
+
+      // Повторно назначить машину Make-чату нельзя и через API.
+      const machine = db.createAgent('admin', 'Ноутбук')
+      db.setConversationExecTarget('admin', 'm1', machine.id, '/repo')
+      expect(db.getConversation('admin', 'm1')).toMatchObject({ execTarget: null, workdir: null })
+      // Прочие настройки того же вызова сохраняются.
+      db.setConversationExecTarget('admin', 'm1', machine.id, '/repo', undefined, undefined, undefined, 'plan')
+      expect(db.getConversation('admin', 'm1')).toMatchObject({ execTarget: null, permissionMode: 'plan' })
+    } finally {
+      db.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('VoiceChatDb — хранилища машин', () => {

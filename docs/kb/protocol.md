@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-04
-checked: c16a3777
+checked: 1ffda784
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -88,12 +88,13 @@ URL руками. Параметризованные пути — функции
 разговора: источник передаётся телом, потому что это данные операции, а не
 адрес). Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
 
-Обмен Make с репозиторием проекта: `GET /api/make/:id/project-files?path=`
-(листинг машины), `GET …/project-links` (статусы связей),
-`POST …/project-pull` `{paths}` и `POST …/project-push` `{paths?, force?}`
-(409 + `conflicts` без force при чужой правке). Мосты `make:projectFiles`,
-`make:projectLinks`, `make:projectPull`, `make:projectPush`. Разбор —
-[ui.md](ui.md#make-компоненты-и-стили-из-репозитория-проекта--туда-и-обратно).
+Чтение репозитория проекта из Make: `GET /api/make/:id/project-files?path=`
+(листинг машины), `GET …/project-links` (статусы связей) и
+`POST …/project-pull` `{paths}`. Мосты `make:projectFiles`,
+`make:projectLinks`, `make:projectPull`. Обратного `project-push` и моста
+`make:projectPush` больше нет (удалены 2026-09-04): Make в репозиторий не
+пишет, иначе общая копия проекта остаётся dirty мимо git. Разбор —
+[ui.md](ui.md#make-компоненты-и-стили-из-репозитория-проекта-только-чтение).
 
 `warnings` снимка считает сервер, и порогов там три разного смысла.
 `CONTEXT_PREVIEW_TOKENS_NOTICE` (4000 токенов) — абсолютный: «постоянная часть
@@ -288,6 +289,19 @@ WS дозванивается только при наличии токена с
 `admin:deleteLlmEngine`, `admin:checkLlmEngineHealth` объявлены в
 `packages/shared/src/ipc.ts`, web-мост проксирует их в `REST.adminLlmEngines*`.
 Health-check — обычный REST-запрос, а не отдельный WS-канал.
+
+### Заголовки моста собирает только `authHeaders()`
+
+Любой мост, который сам зовёт `fetch`, обязан брать заголовки из
+`authHeaders()` (`packages/ui/src/remote/session.ts`): она кладёт и Bearer, и
+`x-vc-csrf`. Своя сборка заголовков — источник тихой поломки: в вебе после
+перезагрузки страницы Bearer живёт только в памяти, запрос авторизует
+cookie-сессия, и без `x-vc-csrf` сервер отвечает 403 `{ error: 'csrf' }` на
+каждую мутацию. Так были сломаны все действия панелей QA (`qaBridge`) и
+тестовых окружений (`featurePreviewBridge`): кнопка «Запустить» интеграционных
+автотестов на проде давала «Не удалось обновить интеграционные автотесты -
+csrf», а `POST …/qa/integration/runs` — 403. Регрессия закреплена в
+`packages/ui/src/remote/remote.test.ts` рядом с таким же тестом для проводника.
 
 ## Сервер↔машина (`/agent`)
 
