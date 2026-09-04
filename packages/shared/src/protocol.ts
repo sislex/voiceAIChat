@@ -442,6 +442,10 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/designs/${encodeURIComponent(linkId)}`,
   /** Make-проекты, привязанные к проекту: источники дизайна для карточек. */
   projectDesignSources: (id: string) => `/api/projects/${encodeURIComponent(id)}/design-sources`,
+  taskReworkCycles: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`,
+  taskAttachments: (id: string, taskId: string, scope?: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/attachments${scope ? `?scope=${encodeURIComponent(scope)}` : ''}`,
+  taskAttachment: (id: string, taskId: string, attachmentId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`,
+  taskReworkMakeFiles: (id: string, taskId: string, conversationId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-make/${encodeURIComponent(conversationId)}/files`,
   taskMergeStart: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/merge`,
   taskMergeMachines: (id: string, taskId: string) =>

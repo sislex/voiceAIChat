@@ -47,7 +47,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
     // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
-    const headers: Record<string, string> = { ...authHeaders() }
+    const headers: Record<string, string> = { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) }
     if (init?.body != null) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     const text = await res.text()
@@ -662,6 +662,15 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'tasks:unlinkDesign': ({ projectId, taskId, linkId }) =>
       req(REST.taskDesign(projectId, taskId, linkId), { method: 'DELETE' }),
     'projects:designSources': ({ id }) => req(REST.projectDesignSources(id)),
+    'tasks:reworkCycles': ({ projectId, taskId }) => req(REST.taskReworkCycles(projectId, taskId)),
+    'tasks:createReworkCycle': ({ projectId, taskId, idempotencyKey, input }) =>
+      req(REST.taskReworkCycles(projectId, taskId), { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) }),
+    'tasks:attachments': ({ projectId, taskId, scope }) => req(REST.taskAttachments(projectId, taskId, scope)),
+    'tasks:uploadAttachment': ({ projectId, taskId, ...body }) =>
+      req(REST.taskAttachments(projectId, taskId), { method: 'POST', body: JSON.stringify(body) }),
+    'tasks:deleteAttachment': ({ projectId, taskId, attachmentId }) =>
+      req(REST.taskAttachment(projectId, taskId, attachmentId), { method: 'DELETE' }),
+    'tasks:reworkMakeFiles': ({ projectId, taskId, conversationId }) => req(REST.taskReworkMakeFiles(projectId, taskId, conversationId)),
     'tasks:delete': async ({ projectId, taskId }) => {
       await req(REST.projectTask(projectId, taskId), { method: 'DELETE' })
     }
@@ -676,7 +685,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
 /** REST телеметрии БЗ: снапшоты по чату и по проекту (инкременты идут по WS). */
 export function createKbUsageRest(httpBase: string): RendererKbRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const headers: Record<string, string> = { ...authHeaders() }
+    const headers: Record<string, string> = { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) }
     if (init?.body != null) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
@@ -691,7 +700,7 @@ export function createKbUsageRest(httpBase: string): RendererKbRest {
 
 export function createCiRest(httpBase: string): RendererCiRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const headers: Record<string, string> = { ...authHeaders() }
+    const headers: Record<string, string> = { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) }
     if (init?.body != null) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)

@@ -1025,6 +1025,71 @@ export function registerProjectRoutes(
     }
   )
 
+  // --- Неизменяемые циклы ручной доработки и постоянные вложения --------
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply) =>
+    db.taskReworkCycles(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+  )
+
+  app.post<{ Params: { id: string; taskId: string }; Body: { description?: string; criteria?: string[]; makeSources?: Array<{ conversationId: string; mode: 'whole_project' | 'files'; paths: string[] }>; attachmentIds?: string[] } }>(
+    '/api/projects/:id/tasks/:taskId/rework-cycles',
+    async (req, reply) => {
+      const key = String(req.headers['idempotency-key'] ?? '').trim()
+      if (!key) return badReq(reply, 'Idempotency-Key required')
+      try {
+        const sources = Array.isArray(req.body?.makeSources) ? req.body.makeSources : []
+        for (const source of sources) {
+          db.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, source.conversationId)
+          if (source.mode === 'files') {
+            if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
+            const existing = new Set((await makeWorkspaces.list(source.conversationId)).map((file) => file.path))
+            const missing = source.paths.find((path) => !existing.has(path))
+            if (missing) throw new Error(`Make-проект ${source.conversationId}: файл ${missing} не найден`)
+          }
+        }
+        const result = db.createTaskReworkCycle(uid(req), req.params.id, req.params.taskId, key, {
+          description: req.body?.description ?? '',
+          criteria: Array.isArray(req.body?.criteria) ? req.body.criteria : [],
+          makeSources: sources,
+          attachmentIds: Array.isArray(req.body?.attachmentIds) ? req.body.attachmentIds : []
+        })
+        boardHub.emit(req.params.id)
+        return result
+      } catch (error) {
+        const message = errMessage(error)
+        if (message === 'TASK_ACTIVE_RUN') return reply.code(409).send({ error: 'task_active_run', message: 'Создание цикла заблокировано: активный ран продолжает выполняться.' })
+        return badReq(reply, message)
+      }
+    }
+  )
+
+  app.get<{ Params: { id: string; taskId: string }; Querystring: { scope?: 'source' | 'rework_draft' } }>(
+    '/api/projects/:id/tasks/:taskId/attachments',
+    async (req, reply) => db.taskAttachments(uid(req), req.params.id, req.params.taskId, req.query.scope ?? 'source') ?? nf(reply)
+  )
+  app.post<{ Params: { id: string; taskId: string }; Body: { name?: string; mimeType?: string; dataBase64?: string; scope?: 'source' | 'rework_draft' } }>(
+    '/api/projects/:id/tasks/:taskId/attachments',
+    async (req, reply) => {
+      try {
+        if (!req.body?.name || !req.body?.dataBase64) return badReq(reply, 'name and dataBase64 required')
+        return db.createTaskAttachment(uid(req), req.params.id, req.params.taskId, { name: req.body.name, mimeType: req.body.mimeType, dataBase64: req.body.dataBase64, scope: req.body.scope })
+      } catch (error) { return badReq(reply, errMessage(error)) }
+    }
+  )
+  app.delete<{ Params: { id: string; taskId: string; attachmentId: string } }>(
+    '/api/projects/:id/tasks/:taskId/attachments/:attachmentId',
+    async (req, reply) => db.deleteTaskAttachment(uid(req), req.params.id, req.params.taskId, req.params.attachmentId) ? { deleted: true } : nf(reply)
+  )
+  app.get<{ Params: { id: string; taskId: string; conversationId: string } }>(
+    '/api/projects/:id/tasks/:taskId/rework-make/:conversationId/files',
+    async (req, reply) => {
+      try {
+        db.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, req.params.conversationId)
+        if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
+        return await makeWorkspaces.list(req.params.conversationId)
+      } catch (error) { return badReq(reply, errMessage(error)) }
+    }
+  )
+
   // --- Дизайны карточки: связь задачи с проектом Make -------------------
   // Источник ограничен Make-проектами, привязанными к этому же проекту: связь
   // не должна приводить участника к дизайну, которого он не вправе открыть.

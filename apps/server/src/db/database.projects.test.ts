@@ -4,7 +4,7 @@ import { VoiceChatDb } from './database.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_SETTINGS } from '@voicechat/shared'
+import { DEFAULT_SETTINGS, taskReworkContext } from '@voicechat/shared'
 
 let db: VoiceChatDb
 
@@ -18,6 +18,22 @@ beforeEach(() => {
 })
 
 afterEach(() => db.close())
+
+describe('контекст повторной подготовки', () => {
+  // @testCase TC-INT-1
+  it('детерминированно содержит исходную постановку, все циклы, Make и missing-вложения', () => {
+    const attachment = { id: 'a', taskId: 't', scope: 'source' as const, name: 'brief.pdf', size: 1, mimeType: 'application/pdf', checksum: 'x', status: 'ready' as const, createdBy: 'alice', createdAt: 1 }
+    const text = taskReworkContext({ description: 'ORIGINAL', acceptanceCriteria: 'ORIGINAL-AC' }, [{
+      id: 'c2', taskId: 't', sequence: 2, description: 'SECOND', criteria: ['SECOND-AC'], makeSources: [], attachments: [{ ...attachment, id: 'missing', name: 'gone.png', scope: 'rework_cycle', status: 'missing' }], createdBy: 'alice', createdAt: 3, preparationRunId: null
+    }, {
+      id: 'c1', taskId: 't', sequence: 1, description: 'FIRST', criteria: ['FIRST-AC'], makeSources: [{ conversationId: 'make', title: 'Design', owner: 'alice', mode: 'files', paths: ['b.ts', 'a.ts'] }], attachments: [], createdBy: 'alice', createdAt: 2, preparationRunId: null
+    }], [attachment])
+    expect(text.indexOf('ORIGINAL')).toBeLessThan(text.indexOf('FIRST'))
+    expect(text.indexOf('FIRST')).toBeLessThan(text.indexOf('SECOND'))
+    expect(text).toContain('a.ts, b.ts')
+    expect(text).toContain('gone.png [missing]')
+  })
+})
 
 describe('projects: миграция имён связанных чатов', () => {
   it('старый чат задачи получает префикс «Задача », переименованный вручную — нет', () => {

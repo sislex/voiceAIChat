@@ -27,12 +27,45 @@ describe('NewTaskCardView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'На доработку' }))
     expect(cb.onStartRework).toHaveBeenCalledOnce()
   })
+  // @testCase TC-REG-1
   it('переключает представление без доменной мутации', () => {
     const change = vi.fn()
     render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={change} callbacks={callbacks()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Старая' }))
     expect(change).toHaveBeenCalledWith('legacy')
   })
+  // @testCase TC-UI-1
+  it('показывает loading, error с retry и empty для Make-источников', () => {
+    const retry = vi.fn()
+    const view = (state: 'loading' | 'error' | 'empty') => <NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={draft} makeSourcesState={{ state, items: [], ...(state === 'error' ? { error: 'Make недоступен' } : {}) }} onVersionChange={vi.fn()} callbacks={callbacks({ onRetryMakeSources: retry })} />
+    const { rerender } = render(view('loading'))
+    expect(screen.getByRole('status')).toHaveTextContent('Загружаем Make-проекты')
+    rerender(view('error')); fireEvent.click(screen.getByRole('button', { name: 'Повторить' })); expect(retry).toHaveBeenCalledOnce()
+    rerender(view('empty')); expect(screen.getByText('Нет доступных Make-проектов')).toBeTruthy()
+  })
+
+  // @testCase TC-UI-2
+  it('собирает независимый выбор целого проекта и файлов', async () => {
+    const change = vi.fn()
+    const cb = callbacks({ onChangeReworkDraft: change, onLoadMakeFiles: async () => ['src/App.tsx', 'src/styles.css'] })
+    const sources = { state: 'ready' as const, items: [{ conversationId: 'a', title: 'A', owner: 'me', own: true, updatedAt: 1 }, { conversationId: 'b', title: 'B', owner: 'me', own: true, updatedAt: 1 }] }
+    const { rerender } = render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={draft} makeSourcesState={sources} onVersionChange={vi.fn()} callbacks={cb} />)
+    fireEvent.click(screen.getByLabelText('A')); expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ makeSources: [{ conversationId: 'a', mode: 'whole_project', paths: [] }] }))
+    const selected = { ...draft, makeSources: [{ conversationId: 'a', mode: 'whole_project' as const, paths: [] }, { conversationId: 'b', mode: 'files' as const, paths: [] }] }
+    rerender(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={selected} makeSourcesState={sources} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(screen.getByRole('button', { name: 'Создать цикл' })).toBeDisabled()
+  })
+
+  // @testCase TC-UI-3
+  it('загружает и удаляет вложения задачи и черновика', () => {
+    const upload = vi.fn(); const remove = vi.fn()
+    render(<NewTaskCardView model={{ ...model, source: { ...model.source, attachments: [{ id: 'old', name: 'brief.pdf', status: 'ready' }] } }} activeTab="overview" version="new" reworkOpen reworkDraft={{ ...draft, attachments: [{ id: 'draft', name: 'shot.png', status: 'ready' }] }} makeSourcesState={{ state: 'empty', items: [] }} onVersionChange={vi.fn()} callbacks={callbacks({ onUploadAttachment: upload, onDeleteAttachment: remove })} />)
+    fireEvent.change(screen.getByLabelText('Добавить вложение цикла'), { target: { files: [new File(['x'], 'new.png', { type: 'image/png' })] } })
+    expect(upload).toHaveBeenCalledWith('rework_draft', expect.objectContaining({ name: 'new.png' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Удалить' })[0]!); expect(remove).toHaveBeenCalled()
+  })
+
+  // @testCase TC-NEG-1
   it('при активном ране не подтверждает доработку', () => {
     const submit = vi.fn()
     render(<NewTaskCardView model={{ ...model, actions: { canRework: true, hasActiveRun: true, reworkBlockedReason: 'Ран активен', safeActiveRunActions: ['keep_running'] } }} activeTab="overview" version="new" reworkOpen reworkDraft={{ ...draft, description: 'Правка' }} onVersionChange={vi.fn()} callbacks={callbacks({ onSubmitRework: submit })} />)
