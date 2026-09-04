@@ -614,6 +614,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     try {
       const row = deps.db.getCiRunRaw(runId)
       if (!row?.agentId || !isTerminalCiStatus(row.status)) return
+      // Пока задача жива, `node_modules` — не мусор: следом за development-раном
+      // в этом же checkout идут Component QA и интеграционные тесты. Снос сразу
+      // после рана ронял их первой же стадией с npm-бинарём (`tsc: command not
+      // found`, код 127), и падение уходило в fix-loop как дефект реализации
+      // (CHAT-411, три круга подряд). Закрытая задача убирает копию целиком —
+      // `releaseTaskRepositories` в merge-ране.
+      if (!deps.db.isTaskClosed(row.taskId)) return
       const nodeModules = `${current.workspacePath}/node_modules`
       await deps.executor.run({
         agentId: row.agentId,
@@ -1649,7 +1656,7 @@ fi`
     const prep = `${cachePrep}\n${workspacePrep}`
     if (!resume) {
       // Новый ран: создаём запись рабочей директории. При повторе — переиспользуем.
-      const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath })
+      const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath, npmCacheDir })
       deps.db.updateCiRun(runId, { workspaceId: ws.id })
     }
 

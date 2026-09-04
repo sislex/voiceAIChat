@@ -2,8 +2,10 @@ import type { ComponentQaCommandResult, ComponentQaRun, ComponentQaScenarioSnaps
 import type { CommandExecutor } from './types.js'
 import type { AutomatedQaStepResult, AutomatedQaVerdict } from '@voicechat/shared'
 import { scenarioLabel } from '@voicechat/shared'
-import type { AutomatedQaExecutionContext } from '../db/database.js'
+import type { AutomatedQaExecutionContext, CiStageExecutionContext } from '../db/database.js'
 import type { AutomatedQaScenarioRunner } from './automatedQaScenario.js'
+import { classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { workspaceInstallCommand, WORKSPACE_INSTALL_TIMEOUT_MS } from './workspaceDeps.js'
 
 export interface ComponentQaFinishInput {
   status: 'passed' | 'failed' | 'blocked'
@@ -16,7 +18,7 @@ export interface ComponentQaFinishInput {
 
 export interface ComponentQaRunnerDeps {
   db: {
-    componentQaExecutionContext(runId: string): { agentId: string; workdir: string; commands: string[] } | null
+    componentQaExecutionContext(runId: string): CiStageExecutionContext | null
     getComponentQaRun(userId: string, runId: string): ComponentQaRun | null
     markComponentQaRunning(runId: string): void
     appendComponentQaLog(runId: string, stream: 'stdout' | 'stderr', chunk: string): void
@@ -63,8 +65,13 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       const commands: ComponentQaCommandResult[] = []
       let failedStage: ComponentQaCommandResult | null = null
       let infrastructure = false
-      for (let index = 0; index < total; index++) {
-        const script = context.commands[index], stageStartedAt = now(), remainingMs = deadline - stageStartedAt
+      // Зависимости ставим сами: checkout достаётся от development-рана и его
+      // `node_modules` могли не пережить уборку. Установка идёт отдельной
+      // записью, чтобы нумерация стадий проекта осталась прежней.
+      const install = workspaceInstallCommand(context.npmCacheDir)
+      const runStage = async (script: string, timeoutMs: number): Promise<{ record: ComponentQaCommandResult; passed: boolean; infrastructure: boolean } | null> => {
+        const stageStartedAt = now(), remainingMs = Math.min(timeoutMs, deadline - stageStartedAt)
+        deps.db.appendComponentQaLog(runId, 'stdout', `$ ${script}\n`)
         let stdout = ''
         const result = remainingMs > 0
           ? await deps.executor.run({ agentId: context.agentId, script, workdir: context.workdir, env: { CI: '1' }, timeoutMs: remainingMs }, (chunk) => {
@@ -72,12 +79,29 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
               deps.db.appendComponentQaLog(runId, 'stdout', chunk)
             }, controller.signal)
           : { exitCode: null, timedOut: true }
-        if (controller.signal.aborted) return
-        const stageInfrastructure = result.timedOut || result.exitCode == null
-        const stagePassed = result.exitCode === 0 && !result.timedOut
-        const record: ComponentQaCommandResult = { commandId: `stage-${index + 1}`, name: total > 1 ? `Стадия ${index + 1} из ${total}` : 'Component / Storybook tests', command: script, exitCode: result.exitCode, durationMs: now() - stageStartedAt, status: stagePassed ? 'passed' : stageInfrastructure ? 'blocked' : 'failed', stdout, stderr: '', diagnostic: result.timedOut ? 'command_timeout' : result.exitCode == null ? 'executor_disconnected' : stagePassed ? '' : 'non_zero_exit', artifacts: [] }
+        if (controller.signal.aborted) return null
+        const passed = result.exitCode === 0 && !result.timedOut
+        // Сбой машины и пустая рабочая копия в fix-loop не лечатся: такой ран
+        // блокируется, а не отправляет задачу на доработку за чужую вину.
+        const infra = passed ? null : classifyCiInfraFailure({ exitCode: result.exitCode, output: stdout })
+        if (infra) deps.db.appendComponentQaLog(runId, 'stdout', formatCiInfraFailure(infra))
+        const stageInfrastructure = result.timedOut || result.exitCode == null || infra != null
+        const diagnostic = result.timedOut ? 'command_timeout' : result.exitCode == null ? 'executor_disconnected' : passed ? '' : infra ? infra.kind : 'non_zero_exit'
+        return { record: { commandId: '', name: '', command: script, exitCode: result.exitCode, durationMs: now() - stageStartedAt, status: passed ? 'passed' : stageInfrastructure ? 'blocked' : 'failed', stdout, stderr: '', diagnostic, artifacts: [] }, passed, infrastructure: stageInfrastructure }
+      }
+      const installed = await runStage(install, WORKSPACE_INSTALL_TIMEOUT_MS)
+      if (!installed) return
+      commands.push({ ...installed.record, commandId: 'install', name: 'Установка зависимостей' })
+      // Провал самой установки классифицируем как обычную стадию: сбой машины
+      // блокирует ран, а рассинхронизированный package-lock ветки — дефект,
+      // который правится в рабочей копии.
+      if (!installed.passed) { failedStage = commands[0]; infrastructure = installed.infrastructure }
+      for (let index = 0; !failedStage && index < total; index++) {
+        const stage = await runStage(context.commands[index], deadline - now())
+        if (!stage) return
+        const record: ComponentQaCommandResult = { ...stage.record, commandId: `stage-${index + 1}`, name: total > 1 ? `Стадия ${index + 1} из ${total}` : 'Component / Storybook tests' }
         commands.push(record)
-        if (!stagePassed) { failedStage = record; infrastructure = stageInfrastructure; break }
+        if (!stage.passed) { failedStage = record; infrastructure = stage.infrastructure }
       }
       const current = deps.db.getComponentQaRun(userId, runId)
       if (!current || current.status !== 'running') return
@@ -86,7 +110,7 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed',
         scenarios: current.scenarios.map((item) => ({ ...item, status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed', actualResult: passed ? 'Компонентные проверки прошли' : 'Команда компонентных проверок завершилась с ошибкой', diagnostic: failedStage?.diagnostic ?? '' })),
         commands,
-        summary: passed ? 'Component QA пройден' : infrastructure ? 'Component QA заблокирован инфраструктурой' : 'Component QA выявил дефект реализации',
+        summary: passed ? 'Component QA пройден' : infrastructure ? `Component QA заблокирован инфраструктурой: ${failedStage?.name ?? ''} (${failedStage?.diagnostic ?? ''})`.trim() : 'Component QA выявил дефект реализации',
         failureClassification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
         blockerReasons: infrastructure && failedStage ? [failedStage.diagnostic] : []
       })

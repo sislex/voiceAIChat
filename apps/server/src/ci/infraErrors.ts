@@ -6,7 +6,7 @@
 /** Разобранная инфраструктурная ошибка: что случилось и что с этим делать. */
 export interface CiInfraFailure {
   /** Машиночитаемый вид сбоя (уходит в аудит `run.infra_error`). */
-  kind: 'npm_cache' | 'disk_full' | 'agent_offline'
+  kind: 'npm_cache' | 'disk_full' | 'agent_offline' | 'missing_dependencies'
   /** Короткое описание для лога шага. */
   message: string
   /** Что делать оператору. */
@@ -25,6 +25,16 @@ const DISK_FULL = /\bENOSPC\b|no space left on device/i
  * выводе сойдёт за сбой машины.
  */
 const AGENT_OFFLINE = /(?:^|\n)Машина (?:отключилась[^\n]*|не в сети)\s*$/
+/**
+ * Бинаря из `node_modules/.bin` нет в рабочей копии: `tsc`/`vitest`/`playwright`
+ * не находятся, а npm отдаёт 127. Реальный случай CHAT-411: development-ран в
+ * конце сносил `node_modules`, и следующий за ним Component QA падал на первой
+ * же стадии с npm-бинарём — три круга доработки подряд искали дефект в коде,
+ * которого там не было. Зависимости не лечатся правкой рабочей копии.
+ */
+const MISSING_COMMAND = /: (?:command not found|not found)(?:\n|$)/
+/** Код 127 приходит и от самой оболочки, и от npm — оба вида пишем явно. */
+const EXIT_127 = /(?:^|\n)npm error code 127(?:\n|$)/
 
 /**
  * Признать падение шага инфраструктурным по хвосту вывода. Код выхода не
@@ -47,6 +57,15 @@ export function classifyCiInfraFailure(args: { exitCode: number | null; output: 
       hint: 'Освободить место на машине (рабочие копии в `$REPO_ROOT`, кэши ранов в `$REPO_ROOT/.npm-cache`, docker-образы) и повторить шаг.'
     }
   }
+  // Только связка «нет бинаря» + код 127: одинокая строка `command not found`
+  // встречается и в выводе теста проекта, а одинокий 127 — в чужих скриптах.
+  if ((args.exitCode === 127 || EXIT_127.test(out)) && MISSING_COMMAND.test(out)) {
+    return {
+      kind: 'missing_dependencies',
+      message: 'В рабочей копии нет установленных зависимостей: команда шага не найдена (код 127) — инфраструктурный сбой, а не ошибка задачи.',
+      hint: 'Проверить, что шаг ставит зависимости перед проверками (`npm ci` в рабочей копии) и что уборка рабочей директории не сносит `node_modules` до закрытия задачи.'
+    }
+  }
   if (args.exitCode === null && AGENT_OFFLINE.test(out)) {
     return {
       kind: 'agent_offline',
@@ -61,7 +80,8 @@ export function classifyCiInfraFailure(args: { exitCode: number | null; output: 
 export const CI_INFRA_LABEL: Record<CiInfraFailure['kind'], string> = {
   npm_cache: 'повреждён кэш npm',
   disk_full: 'нет места на диске',
-  agent_offline: 'машина потеряла связь'
+  agent_offline: 'машина потеряла связь',
+  missing_dependencies: 'нет зависимостей в рабочей копии'
 }
 
 /** Готовый текст для лога шага: диагноз + подсказка + почему без fix-loop. */

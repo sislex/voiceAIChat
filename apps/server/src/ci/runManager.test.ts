@@ -397,19 +397,53 @@ describe('ci run manager', () => {
     expect(modelRequests).toHaveLength(0)
   })
 
-  it('после терминального статуса удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
+  // Пока задача не закрыта, зависимости нужны следующим этапам: Component QA и
+  // интеграционные тесты идут в этом же checkout (регрессия CHAT-411).
+  it('после успешного рана незакрытой задачи node_modules остаются на месте', async () => {
     const { project, task, agent } = setup()
     db.saveMachineStorage('admin', agent.id, '/storage', 1)
 
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('success')
-    for (let i = 0; i < 100 && !scripts.some((script) => script.includes('/node_modules')); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const cleanup = scripts.find((script) => script.includes('/node_modules'))
-    expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
-    expect(cleanup).not.toContain('.npm-cache')
+    expect(scripts.some((script) => script.includes('/node_modules'))).toBe(false)
+  })
+
+  it('у закрытой задачи удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    // Карточку закрывает merge-ран уже после development-рана, поэтому здесь
+    // подменяем сам признак: проверяем уборку, а не маршрут карточки по доске.
+    const isTaskClosed = db.isTaskClosed.bind(db)
+    db.isTaskClosed = () => true
+
+    try {
+      const runId = await run(project.id, task.id)
+      expect((await waitRun(runId)).run.status).toBe('success')
+      for (let i = 0; i < 100 && !scripts.some((script) => script.includes('/node_modules')); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+
+      const cleanup = scripts.find((script) => script.includes('/node_modules'))
+      expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
+      expect(cleanup).not.toContain('.npm-cache')
+    } finally {
+      db.isTaskClosed = isTaskClosed
+    }
+  })
+
+  it('задача считается закрытой только в Done и «Отменено»', () => {
+    const { project, task } = setup()
+    const columns = db.getBoard('admin', project.id)!.columns
+    expect(db.isTaskClosed(task.id)).toBe(false)
+    for (const semantic of ['done', 'cancelled'] as const) {
+      const column = columns.find((item) => item.semanticType === semantic)
+      if (!column) continue
+      db.moveTask('admin', project.id, task.id, { columnId: column.id })
+      expect(db.isTaskClosed(task.id)).toBe(true)
+    }
+    expect(db.isTaskClosed('нет такой задачи')).toBe(true)
   })
 
   it('ошибка записи managed storage обнаруживается до clone', async () => {
