@@ -471,6 +471,9 @@ exit 0`,repo,30000)
         this.deps.db.updateMergeRun(id,{checks:[check]})
         this.stage(id,'testing',check.status==='passed'?'passed':'failed',`Проверки ${check.status==='passed'?'прошли':'не прошли'} за ${check.durationMs} мс; параллельный участок ${parallelDuration} мс`)
         if(check.status==='failed'){
+          // Параллельный шаг БЗ снят тем же abort, что и проверки: закрываем его
+          // этап сразу, а не оставляем «running» до конца рана.
+          this.stage(id,'kb_update','failed','Актуализация БЗ снята: проверки проекта не прошли')
           const failure=check.timedOut?'Проверки превысили timeout':`Проверки упали (exit ${check.exitCode})`
           if(!fixAllowed)throw new Error(failure)
           fixAllowed=false
@@ -596,7 +599,19 @@ exit 0`,repo,30000)
 
   private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'merge'|'decision_required'):void {
     const run=this.deps.db.getMergeRunRaw(id); if(!run||terminal.has(run.status))return
-    this.deps.db.updateMergeRun(id,{status,stage:status,finishedAt:this.now(),error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
+    const at=this.now()
+    // Незакрытые этапы закрываем здесь — в единственной точке терминального
+    // исхода. Лента считает длительность незавершённого этапа от `startedAt` до
+    // «сейчас», поэтому у упавшего рана этап продолжал тикать: у CHAT-408
+    // «База знаний» показывала 95+ минут спустя часы после остановки, хотя
+    // модельный шаг давно был снят по abort вместе с проверками.
+    const stages=run.stages.map(item=>{
+      if(item.status!=='running'&&item.status!=='queued')return item
+      const closing:MergeStageRecord['status']=status==='success'?'skipped':status==='cancelled'?'skipped':'failed'
+      const note=status==='cancelled'?'этап снят вместе с отменённым раном':'этап остановлен вместе с раном'
+      return {...item,status:closing,finishedAt:at,durationMs:item.startedAt?at-item.startedAt:0,message:item.message?`${item.message} — ${note}`:note}
+    })
+    this.deps.db.updateMergeRun(id,{status,stage:status,stages,finishedAt:at,error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
   }
   /** Закрытие задачи: удаляет все активные копии её репозиториев на доступных
    *  машинах; недоступная машина оставляет запись до следующей очистки.

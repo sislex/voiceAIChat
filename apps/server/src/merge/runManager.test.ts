@@ -360,6 +360,14 @@ describe('MergeRunManager',()=>{
     expect(scripts.some(script=>script.includes('git push'))).toBe(false)
     expect(s.run.error).toContain('автоисправление не помогло')
     expect(s.moves).toContain('merge')
+    // Ни один этап не остаётся незакрытым: лента считает длительность
+    // незавершённого этапа «до сейчас», и упавший ран продолжал тикать —
+    // у CHAT-408 «База знаний» показывала 95+ минут спустя часы после остановки.
+    expect(s.run.stages.filter(stage=>stage.status==='running'||stage.status==='queued')).toEqual([])
+    const kb=s.run.stages.find(stage=>stage.stage==='kb_update')!
+    expect(kb.status).toBe('failed')
+    expect(kb.finishedAt).not.toBeNull()
+    expect(kb.message).toContain('Актуализация БЗ снята')
   })
 
   it('does not try a second fix inside one run',async()=>{
