@@ -14,7 +14,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-03 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-01 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-03 | ⚠ 1 коммит(ов) в areas после сверки: e00e5c8c feat: студия картинок — сплит «чат + галерея» с генерацией и правкой через LLM |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 56 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-03 | ⚠ 25 коммит(ов) в areas после сверки: a3552856 feat: align device enrollment interfaces with Make project 2 … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 94 коммит(ов) в areas после сверки: e00e5c8c feat: студия картинок — сплит «чат + галерея» с генерацией и правкой через LLM … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 24 коммит(ов) в areas после сверки: a3552856 feat: align device enrollment interfaces with Make project 2 … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 224 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 248 коммит(ов) в areas после сверки: e28067df feat: студия картинок — итерация улучшений 27 (корзина и стили) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-03 | ⚠ 18 коммит(ов) в areas после сверки: a3552856 feat: align device enrollment interfaces with Make project 2 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1128 коммит(ов) в areas после сверки: bb4887bf docs(kb): update after merge e8a7c4eb-9cbf-4335-a36b-4a63d2292d0a … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1130 коммит(ов) в areas после сверки: 60f3b155 docs(prod): document SMTP egress timeout … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 167 коммит(ов) в areas после сверки: a3552856 feat: align device enrollment interfaces with Make project 2 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 213 коммит(ов) в areas после сверки: a3552856 feat: align device enrollment interfaces with Make project 2 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 105 коммит(ов) в areas после сверки: c0b315a0 feat: студия картинок — итерация улучшений 16 (закрепы и говорящие имена) … |
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 576. Последние:
+Всего записей: 577. Последние:
 
+- [2026-09-04-alexeys-macbook-air-2-restore-production-signup.md](log/2026-09-04-alexeys-macbook-air-2-restore-production-signup.md) — restore-production-signup
 - [2026-09-03-macbook-air-user-make-project-3-empty-shell.md](log/2026-09-03-macbook-air-user-make-project-3-empty-shell.md) — make-project-3-empty-shell
 - [2026-09-03-macbook-air-user-device-connection-interfaces.md](log/2026-09-03-macbook-air-user-device-connection-interfaces.md) — device-connection-interfaces
 - [2026-09-03-germany-4-8-60-mac-enrollment-late-callbacks.md](log/2026-09-03-germany-4-8-60-mac-enrollment-late-callbacks.md) — mac-enrollment-late-callbacks
@@ -72,7 +73,6 @@
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-9.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-9.md) — image-studio-improvements-9
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-8.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-8.md) — image-studio-improvements-8
 - [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-7.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-7.md) — image-studio-improvements-7
-- [2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md](log/2026-09-03-alexeys-macbook-air-2-image-studio-improvements-6.md) — image-studio-improvements-6
 
 ## Исторические планы
 
