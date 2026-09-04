@@ -27,7 +27,8 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
-import { TaskModal, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
+import { type TaskModalTab, type TaskUpdateFields } from './TaskModal'
+import { TaskCardContainer } from './TaskCardContainer'
 import { ImprovementModal } from './ImprovementModal'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
@@ -1770,7 +1771,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         />
       )}
       {openTask && board && (
-        <TaskModal
+        <TaskCardContainer
           task={openTask}
           board={board}
           projectFeatures={props.projectFeatures}
