@@ -1497,6 +1497,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:designSources': async ({ id }) => conversations
       .filter((c) => c.assistantKind === 'make' && c.projectId === id)
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
+    'projects:designSourceFiles': async () => [],
+    'tasks:reworkCycles': async () => [],
+    'tasks:createReworkCycle': async ({ taskId, input }) => ({
+      id: 'rework-1', taskId, sequence: 1, description: input.description, criteria: input.criteria ?? [],
+      makeSources: [], attachments: [], createdBy: 'me', createdAt: nowMs, preparationRunId: null
+    }),
     // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
     // Студия картинок: галерея в замыкании фейка.
     'imgstudio:cancel': async () => ({ cancelled: false }),

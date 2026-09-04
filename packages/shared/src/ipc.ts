@@ -681,6 +681,9 @@ export interface IpcInvokeMap {
   'tasks:unlinkDesign': { arg: { projectId: string; taskId: string; linkId: string }; result: import('./projects').TaskDesignLink[] }
   /** Make-проекты, привязанные к проекту: выбор источника дизайна в карточке. */
   'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
+  'projects:designSourceFiles': { arg: { projectId: string; conversationId: string }; result: Array<{ path: string }> }
+  'tasks:reworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
+  'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; idempotencyKey: string; input: import('./projects').CreateTaskReworkCycleInput }; result: import('./projects').TaskReworkCycle }
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
   /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
   /** Студия картинок: галерея разговора, генерация и правка по промпту. */
@@ -1472,6 +1475,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:linkDesign',
   'tasks:unlinkDesign',
   'projects:designSources',
+  'projects:designSourceFiles',
+  'tasks:reworkCycles',
+  'tasks:createReworkCycle',
   'imgstudio:list',
   'imgstudio:read',
   'imgstudio:upload',

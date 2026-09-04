@@ -719,6 +719,42 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_task_designs_unique
 CREATE INDEX IF NOT EXISTS idx_task_designs_source
   ON task_designs(conversation_id, path);
 
+CREATE TABLE IF NOT EXISTS task_rework_cycles (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  description TEXT NOT NULL,
+  criteria_json TEXT NOT NULL DEFAULT '[]',
+  make_sources_json TEXT NOT NULL DEFAULT '[]',
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  preparation_run_id TEXT,
+  UNIQUE(task_id, sequence),
+  UNIQUE(task_id, idempotency_key),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_rework_cycles_task ON task_rework_cycles(task_id, sequence);
+
+CREATE TABLE IF NOT EXISTS task_attachments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  rework_cycle_id TEXT,
+  draft_key TEXT,
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mime_type TEXT NOT NULL,
+  storage_key TEXT NOT NULL UNIQUE,
+  checksum TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ready',
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK ((rework_cycle_id IS NULL AND draft_key IS NULL) OR (rework_cycle_id IS NULL AND draft_key IS NOT NULL) OR (rework_cycle_id IS NOT NULL AND draft_key IS NULL)),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (rework_cycle_id) REFERENCES task_rework_cycles(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id, created_at);
+
 CREATE TABLE IF NOT EXISTS task_creation_requests (
   actor TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,

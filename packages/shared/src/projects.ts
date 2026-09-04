@@ -808,6 +808,47 @@ export interface ProjectDesignSource {
   updatedAt: number
 }
 
+export interface TaskAttachment {
+  id: string
+  taskId: string
+  reworkCycleId: string | null
+  name: string
+  size: number
+  mimeType: string
+  checksum: string
+  status: 'ready' | 'missing'
+  createdBy: string
+  createdAt: number
+}
+
+export interface TaskReworkMakeSource {
+  conversationId: string
+  title: string
+  owner: string | null
+  mode: 'whole_project' | 'files'
+  paths: string[]
+}
+
+export interface TaskReworkCycle {
+  id: string
+  taskId: string
+  sequence: number
+  description: string
+  criteria: string[]
+  makeSources: TaskReworkMakeSource[]
+  attachments: TaskAttachment[]
+  createdBy: string
+  createdAt: number
+  preparationRunId: string | null
+}
+
+export interface CreateTaskReworkCycleInput {
+  description: string
+  criteria?: string[]
+  makeSources?: Array<{ conversationId: string; mode: 'whole_project' | 'files'; paths?: string[] }>
+  attachmentIds?: string[]
+}
+
 /** Карточка проекта для выбора в диалоге «Связать с задачей» панели Make. */
 export interface MakeLinkableTask {
   taskId: string

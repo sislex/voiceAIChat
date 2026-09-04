@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@voicechat/ui-kit'
 import { issueKey, QA_WORKFLOW, type KanbanColumnSemanticType } from '@shared/projects'
 import type { TaskModalProps } from './TaskModal'
 import { TaskModal } from './TaskModal'
 import { NewTaskCardView } from './NewTaskCardView'
-import type { TaskCardRunStatus, TaskCardTab, TaskCardVersion, TaskCardViewModel, TaskReworkCycleViewModel, TaskReworkDraft } from './TaskCardViewModel'
+import type { TaskCardLoadState, TaskCardRunStatus, TaskCardTab, TaskCardVersion, TaskCardViewModel, TaskReworkCycleViewModel, TaskReworkDraft } from './TaskCardViewModel'
 
 const LABELS: Record<KanbanColumnSemanticType, string> = {
   backlog: 'Бэклог', preparation: 'Подготовка', ready: 'Готово к разработке',
@@ -14,7 +14,7 @@ const LABELS: Record<KanbanColumnSemanticType, string> = {
   decision_required: 'Требуется решение', done: 'Готово', cancelled: 'Отменено', custom: 'Пользовательский этап'
 }
 const POST_DEVELOPMENT = new Set<KanbanColumnSemanticType>(['component_qa', 'integration_tests', 'automated_qa', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge', 'decision_required', 'done'])
-const EMPTY_DRAFT: TaskReworkDraft = { description: '', criteria: [], makeMode: 'whole_project', makePaths: [], attachments: [] }
+const EMPTY_DRAFT: TaskReworkDraft = { description: '', criteria: [], makeSources: [], attachments: [] }
 
 export interface TaskCardContainerProps extends TaskModalProps {
   initialVersion?: TaskCardVersion
@@ -66,6 +66,7 @@ export function buildTaskCardViewModel(props: TaskCardContainerProps, cycles: Ta
     createdAt: 0, finishedAt: null, canOpen: true, canCancel: activeRun, canAnswer: props.ciSummary.awaitingInput
   }] : []
   return {
+    projectId: props.task.projectId,
     taskId: props.task.id,
     taskKey: issueKey(props.projectName, props.task),
     projectName: props.projectName,
@@ -103,6 +104,28 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   const [cycles, setCycles] = useState<TaskReworkCycleViewModel[]>(props.reworkCycles ?? [])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [makeState, setMakeState] = useState<TaskCardLoadState>('loading')
+  const [makeSources, setMakeSources] = useState<import('@shared/projects').ProjectDesignSource[]>([])
+  const loadPersistent = (): void => {
+    if (!window.api) return
+    setMakeState('loading')
+    void Promise.all([
+      window.api['projects:designSources']({ id: props.task.projectId }),
+      window.api['tasks:reworkCycles']({ projectId: props.task.projectId, taskId: props.task.id })
+    ]).then(([sources, saved]) => {
+      setMakeSources(sources)
+      setMakeState(sources.length ? 'ready' : 'empty')
+      setCycles(saved.map((cycle) => ({
+        ...cycle,
+        makeSources: cycle.makeSources.map((source) => ({ id: source.conversationId, title: source.title, conversationId: source.conversationId, mode: source.mode, paths: source.paths.map((path) => ({ path, available: true })) })),
+        attachments: cycle.attachments.map((file) => ({ id: file.id, name: file.name, size: file.size, mimeType: file.mimeType, status: file.status }))
+      })))
+    }).catch((cause) => {
+      setMakeState('error')
+      setError(cause instanceof Error ? cause.message : 'Не удалось загрузить данные карточки.')
+    })
+  }
+  useEffect(() => { if (version === 'new') loadPersistent() }, [version, props.task.id, props.task.projectId])
   const model = useMemo(() => buildTaskCardViewModel(props, cycles), [props, cycles])
   if (version === 'legacy') return <TaskModal {...props} headerExtra={<div className="task-version-switch" role="group" aria-label="Версия карточки"><Button size="sm" variant="ghost" aria-pressed={false} onClick={() => setVersion('new')}>Новая</Button><Button size="sm" variant="primary" aria-pressed>Старая</Button></div>} />
   return <NewTaskCardView
@@ -113,6 +136,9 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     reworkDraft={draft}
     reworkPending={pending}
     reworkError={error}
+    makeState={makeState}
+    availableMakeSources={makeSources}
+    onRetryMake={loadPersistent}
     onVersionChange={setVersion}
     callbacks={{
       onClose: props.onClose,
@@ -125,10 +151,14 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
       onSubmitRework: async (next, key) => {
         if (model.actions.hasActiveRun || pending) return
         if (!next.description.trim()) { setError('Опишите, что нужно доработать.'); return }
-        if (!props.onCreateReworkCycle) { setError('Создание цикла пока недоступно для этого проекта.'); return }
         setPending(true); setError(null)
         try {
-          const cycle = await props.onCreateReworkCycle(props.task.id, next, key)
+          const cycle = props.onCreateReworkCycle
+            ? await props.onCreateReworkCycle(props.task.id, next, key)
+            : await window.api['tasks:createReworkCycle']({
+                projectId: props.task.projectId, taskId: props.task.id, idempotencyKey: key,
+                input: { description: next.description, criteria: next.criteria, makeSources: (next.makeSources ?? []).map(({ conversationId, mode, paths }) => ({ conversationId, mode, paths })), attachmentIds: next.attachments.map((file) => file.id) }
+              }).then((saved) => ({ ...saved, makeSources: saved.makeSources.map((source) => ({ id: source.conversationId, title: source.title, conversationId: source.conversationId, mode: source.mode, paths: source.paths.map((path) => ({ path, available: true })) })), attachments: saved.attachments.map((file) => ({ id: file.id, name: file.name, size: file.size, mimeType: file.mimeType, status: file.status })) }))
           setCycles((all) => all.some((item) => item.id === cycle.id) ? all : [...all, cycle])
           setDraft(EMPTY_DRAFT); setReworkOpen(false)
         } catch (cause) {

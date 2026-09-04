@@ -1023,6 +1023,51 @@ export function registerProjectRoutes(
     }
   )
 
+  // --- Неизменяемые циклы ручной доработки ------------------------------
+  app.get<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/rework-cycles',
+    async (req, reply) => db.listTaskReworkCycles(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+  )
+
+  app.get<{ Params: { id: string; conversationId: string } }>(
+    '/api/projects/:id/design-sources/:conversationId/files',
+    async (req, reply) => {
+      const allowed = db.projectDesignSources(uid(req), req.params.id)?.some((source) => source.conversationId === req.params.conversationId)
+      if (!allowed) return nf(reply)
+      if (!makeWorkspaces) return reply.code(503).send({ error: 'Хранилище Make недоступно' })
+      try { return await makeWorkspaces.list(req.params.conversationId) } catch (error) {
+        return reply.code(503).send({ error: errMessage(error) })
+      }
+    }
+  )
+
+  app.post<{
+    Params: { id: string; taskId: string }
+    Headers: { 'idempotency-key'?: string }
+    Body: import('@voicechat/shared').CreateTaskReworkCycleInput
+  }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply) => {
+    const key = req.headers['idempotency-key']?.trim()
+    if (!key) return badReq(reply, 'Idempotency-Key required')
+    try {
+      for (const source of req.body?.makeSources ?? []) {
+        if (source.mode !== 'files') continue
+        if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
+        db.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, source.conversationId)
+        const existing = new Set((await makeWorkspaces.list(source.conversationId)).map((file) => file.path))
+        const missing = (source.paths ?? []).find((path) => !existing.has(path))
+        if (missing) throw new Error(`Make-файл ${missing} не найден`)
+      }
+      const cycle = db.createTaskReworkCycle(uid(req), req.params.id, req.params.taskId, key, req.body)
+      boardHub.emit(req.params.id)
+      return cycle
+    } catch (error) {
+      if (errMessage(error) === 'TASK_ACTIVE_RUN') {
+        return reply.code(409).send({ error: 'Создание цикла невозможно, пока выполняется ран.', code: 'TASK_ACTIVE_RUN' })
+      }
+      return badReq(reply, errMessage(error))
+    }
+  })
+
   // --- Дизайны карточки: связь задачи с проектом Make -------------------
   // Источник ограничен Make-проектами, привязанными к этому же проекту: связь
   // не должна приводить участника к дизайну, которого он не вправе открыть.
