@@ -66,8 +66,17 @@ export class BrowserSessionManager {
 
   private readonly allowedTargets: Set<string>
 
-  constructor(private readonly profilesRoot: string, private readonly hostAliases: HostAliases = new Map()) {
+  constructor(
+    private readonly profilesRoot: string,
+    private readonly hostAliases: HostAliases = new Map(),
+    /** Доверенный origin сервера (`host:port`) для браузерных проверок задач. */
+    previewOrigin: string | null = null
+  ) {
     this.allowedTargets = aliasTargets(hostAliases)
+    if (previewOrigin) {
+      this.allowedTargets.add(previewOrigin)
+      this.allowedTargets.add(previewOrigin.split(':')[0])
+    }
   }
 
   async start(request: StartSessionRequest): Promise<BrowserSessionMetadata> {

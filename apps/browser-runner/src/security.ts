@@ -96,6 +96,22 @@ export function aliasTargets(aliases: HostAliases): Set<string> {
 }
 
 /**
+ * Origin сервера, которому раннер доверяет как оркестратору: через него идут
+ * браузерные проверки задач (прокси превью доставляет dev-сервер машины). Его
+ * имя в сети compose резолвится в приватный адрес, поэтому собственный
+ * SSRF-гейт зарезал бы запрос — как и любой другой внутренний адрес. Пускает
+ * его оператор переменной окружения, а не пользователь адресом.
+ */
+export function previewOriginTarget(raw: string | undefined): string | null {
+  if (!raw) return null
+  let url: URL
+  try { url = new URL(raw) } catch { return null }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+  const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+  return `${url.hostname.toLowerCase()}:${port}`
+}
+
+/**
  * Обратная подстановка: внутренний адрес → тот, который назвал человек.
  *
  * Алиас — деталь транспорта оператора, а наружу он протекал: `page.url()` после
