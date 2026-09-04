@@ -2,12 +2,13 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import { expectNoViolations } from '../test/a11y'
-import { ImageStudioPane } from './ImageStudioPane'
+import { aspectLabel, groupByDay, highlightParts, ImageStudioPane, matchesQuery, renameError, renamePlan } from './ImageStudioPane'
 import type { ImageStudioFile } from '@shared/imageStudio'
 
 /** Мосты панели: галерея в замыкании, как её отдал бы сервер. */
-function makeApi(initial: Array<{ path: string }> = []) {
-  let files: ImageStudioFile[] = initial.map((file, index) => ({ path: file.path, size: 10, updatedAt: index + 1 }))
+function makeApi(initial: Array<{ path: string; prompt?: string; size?: number }> = [], options: { trash?: Array<{ name: string; deletedAt: number }> } = {}) {
+  let files: ImageStudioFile[] = initial.map((file, index) => ({ path: file.path, size: file.size ?? 10, updatedAt: index + 1, ...(file.prompt ? { prompt: file.prompt } : {}) }))
+  let trash = [...(options.trash ?? [])]
   const generate = vi.fn(async ({ prompt }: { prompt: string }) => {
     const file = { path: 'изображение.png', size: prompt.length, updatedAt: Date.now() }
     files = [file, ...files]
@@ -24,9 +25,18 @@ function makeApi(initial: Array<{ path: string }> = []) {
     api: {
       'imgstudio:cancel': cancel,
       'imgstudio:run': vi.fn(async () => ({ active: false })),
-      'imgstudio:transfer': vi.fn(async ({ path }: { path: string }) => { files = files.filter((file) => file.path !== path); return { name: path, files: [...files] } }),
-      'imgstudio:trash': vi.fn(async () => ({ items: [] as Array<{ name: string; deletedAt: number }> })),
-      'imgstudio:restore': vi.fn(async ({ name }: { name: string }) => { files = [{ path: name, size: 1, updatedAt: Date.now() }, ...files]; return { name, files: [...files] } }),
+      // Копия оставляет файл на месте, перенос — убирает: как на сервере.
+      'imgstudio:transfer': vi.fn(async ({ path, copy }: { path: string; copy?: boolean }) => {
+        if (!copy) files = files.filter((file) => file.path !== path)
+        return { name: path, files: [...files] }
+      }),
+      'imgstudio:trash': vi.fn(async () => ({ items: [...trash] })),
+      'imgstudio:restore': vi.fn(async ({ name }: { name: string }) => { trash = trash.filter((item) => item.name !== name); files = [{ path: name, size: 1, updatedAt: Date.now() }, ...files]; return { name, files: [...files] } }),
+      'imgstudio:purge': vi.fn(async ({ name }: { name?: string }) => {
+        const before = trash.length
+        trash = name ? trash.filter((item) => item.name !== name) : []
+        return { removed: before - trash.length, items: [...trash] }
+      }),
       'imgstudio:publish': vi.fn(async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: 1, views: 0, passwordProtected: false })),
       'imgstudio:publication': vi.fn(async () => ({ url: null })),
       'imgstudio:unpublish': vi.fn(async () => ({ url: null })),
@@ -40,6 +50,133 @@ function makeApi(initial: Array<{ path: string }> = []) {
     }
   }
 }
+
+describe('aspectLabel', () => {
+  it('узнаёт частые пропорции и отдельно превью ссылки', () => {
+    expect(aspectLabel('1200×630')).toBe('OG')
+    expect(aspectLabel('1080×1080')).toBe('1:1')
+    expect(aspectLabel('1280×720')).toBe('16:9')
+    expect(aspectLabel('800×600')).toBe('4:3')
+    expect(aspectLabel('1080×1920')).toBe('9:16')
+  })
+
+  it('нестандартное соотношение и мусор не подписывает', () => {
+    expect(aspectLabel('1000×333')).toBe('')
+    expect(aspectLabel('')).toBe('')
+    expect(aspectLabel('512')).toBe('')
+    expect(aspectLabel('0×0')).toBe('')
+  })
+})
+
+describe('matchesQuery', () => {
+  it('все слова запроса должны найтись, порядок не важен', () => {
+    expect(matchesQuery('кит закат', ['кит.png', 'синий кит на закате'])).toBe(true)
+    expect(matchesQuery('закат кит', ['кит.png', 'синий кит на закате'])).toBe(true)
+    expect(matchesQuery('кит рассвет', ['кит.png', 'синий кит на закате'])).toBe(false)
+  })
+
+  it('регистр и пустые поля не мешают', () => {
+    expect(matchesQuery('КИТ', ['кит.png', undefined, undefined])).toBe(true)
+    expect(matchesQuery('', ['что угодно'])).toBe(true)
+    expect(matchesQuery('   ', ['что угодно'])).toBe(true)
+  })
+
+  it('слово ищется по всем полям вместе, а не по каждому отдельно', () => {
+    // «кит» из имени, «обложк» из заметки — вместе это совпадение. Морфологии
+    // нет: «обложка» не найдёт «обложки», и это ожидаемо для подстроки.
+    expect(matchesQuery('кит обложк', ['кит.png', undefined, 'для обложки'])).toBe(true)
+    expect(matchesQuery('кит обложка', ['кит.png', undefined, 'для обложки'])).toBe(false)
+  })
+})
+
+describe('highlightParts', () => {
+  it('делит строку на совпавшие и обычные куски', () => {
+    expect(highlightParts('кот-в-шляпе.png', 'кот')).toEqual([
+      { text: 'кот', hit: true },
+      { text: '-в-шляпе.png', hit: false }
+    ])
+  })
+
+  it('несколько слов и повторы отмечаются все', () => {
+    const parts = highlightParts('кот и кот', 'кот')
+    expect(parts.filter((part) => part.hit).map((part) => part.text)).toEqual(['кот', 'кот'])
+  })
+
+  it('пересекающиеся слова не рвут строку на буквы', () => {
+    expect(highlightParts('котенок', 'кот котен')).toEqual([
+      { text: 'котен', hit: true },
+      { text: 'ок', hit: false }
+    ])
+  })
+
+  it('пустой запрос отдаёт строку целиком', () => {
+    expect(highlightParts('кот.png', '  ')).toEqual([{ text: 'кот.png', hit: false }])
+  })
+})
+
+describe('renameError', () => {
+  it('пустое имя, точка в начале и служебные символы — ошибка', () => {
+    expect(renameError('', new Set())).toBe('Имя не может быть пустым')
+    expect(renameError('.скрытый.png', new Set())).toBe('Имя не может начинаться с точки')
+    expect(renameError('папка/кот.png', new Set())).toContain('нельзя использовать')
+  })
+
+  it('слишком длинное имя называет длину', () => {
+    expect(renameError(`${'к'.repeat(130)}.png`, new Set())).toContain('134 символов из 120')
+  })
+
+  it('занятое имя видно до запроса, своё же имя ошибкой не считается', () => {
+    expect(renameError('кот.png', new Set(['кот.png']))).toBe('«кот.png» уже есть в галерее')
+    expect(renameError('кот.png', new Set(['пёс.png']))).toBeNull()
+  })
+})
+
+describe('groupByDay', () => {
+  const now = new Date('2026-09-04T12:00:00').getTime()
+  const file = (path: string, at: number) => ({ path, size: 1, updatedAt: at })
+
+  it('делит на «Сегодня», «Вчера» и «Раньше»', () => {
+    const groups = groupByDay([
+      file('сегодня.png', now - 3600 * 1000),
+      file('вчера.png', now - 30 * 3600 * 1000),
+      file('давно.png', now - 10 * 24 * 3600 * 1000)
+    ], now)
+    expect(groups.map((group) => group.title)).toEqual(['Сегодня', 'Вчера', 'Раньше'])
+    expect(groups[0]!.files.map((item) => item.path)).toEqual(['сегодня.png'])
+  })
+
+  it('пустые группы не показываются', () => {
+    const groups = groupByDay([file('сегодня.png', now)], now)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.title).toBe('Сегодня')
+  })
+
+  it('полночь считается началом сегодняшнего дня', () => {
+    const midnight = new Date('2026-09-04T00:00:00').getTime()
+    const groups = groupByDay([file('в-полночь.png', midnight)], now)
+    expect(groups[0]!.title).toBe('Сегодня')
+  })
+})
+
+describe('renamePlan', () => {
+  it('{n} — номер по порядку, расширение остаётся от исходника', () => {
+    expect(renamePlan('кадр-{n}', ['а.png', 'б.jpg'])).toEqual([
+      { from: 'а.png', to: 'кадр-1.png' },
+      { from: 'б.jpg', to: 'кадр-2.jpg' }
+    ])
+  })
+
+  it('шаблон без {n} получает номер в конце — иначе имена совпали бы', () => {
+    expect(renamePlan('обложка', ['а.png', 'б.png'])).toEqual([
+      { from: 'а.png', to: 'обложка-1.png' },
+      { from: 'б.png', to: 'обложка-2.png' }
+    ])
+  })
+
+  it('несколько {n} в шаблоне подставляются все', () => {
+    expect(renamePlan('{n}-из-двух-{n}', ['а.png'])).toEqual([{ from: 'а.png', to: '1-из-двух-1.png' }])
+  })
+})
 
 describe('ImageStudioPane', () => {
   // Пресет размера и недавние промпты персистятся — между тестами их надо чистить.
@@ -137,7 +274,7 @@ describe('ImageStudioPane', () => {
     const { api } = makeApi(Array.from({ length: 8 }, (_, index) => ({ path: `файл-${index}.png` })))
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
 
-    const filterField = await screen.findByRole('textbox', { name: 'Фильтр по имени файла' })
+    const filterField = await screen.findByRole('textbox', { name: 'Фильтр по имени файла или промпту' })
     fireEvent.change(filterField, { target: { value: 'файл-3' } })
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
     fireEvent.change(filterField, { target: { value: 'нет такого' } })
@@ -509,12 +646,10 @@ describe('ImageStudioPane', () => {
   })
 
   it('корзина показывает удалённое и восстанавливает', async () => {
-    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
-    ;(api['imgstudio:trash'] as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ items: [{ name: 'старый.png', deletedAt: 1 }] })
-      .mockResolvedValue({ items: [] })
+    // Счётчик у кнопки приезжает сразу при монтировании — он часть подписи.
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }], { trash: [{ name: 'старый.png', deletedAt: 1 }] })
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Корзина…' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Корзина… (1)' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Восстановить старый.png' }))
     await waitFor(() => expect(api['imgstudio:restore']).toHaveBeenCalledWith({ conversationId: 'c1', name: 'старый.png' }))
     expect(await screen.findByText(/Корзина пуста/)).toBeInTheDocument()
@@ -535,9 +670,23 @@ describe('ImageStudioPane', () => {
     render(<ImageStudioPane conversationId="c1" api={api as never} otherChats={[{ id: 'c2', title: 'Картинки 2' }]} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
     fireEvent.keyDown(screen.getByTestId('image-studio'), { key: 'a', metaKey: true })
-    const moveSelect = await screen.findByRole('combobox', { name: 'Перенести выбранные в другой чат' })
-    fireEvent.change(moveSelect, { target: { value: 'c2' } })
+    // Селект стал общим для переноса и копии, поэтому в значении есть режим.
+    const moveSelect = await screen.findByRole('combobox', { name: 'Перенести или скопировать выбранные в другой чат' })
+    fireEvent.change(moveSelect, { target: { value: 'move:c2' } })
     await waitFor(() => expect(api['imgstudio:transfer']).toHaveBeenCalledTimes(3))
+    expect((api['imgstudio:transfer'] as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({ to: 'c2', copy: false })
+  })
+
+  it('выбранные можно скопировать в другой чат, не убирая из этого', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} otherChats={[{ id: 'c2', title: 'Картинки 2' }]} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Перенести или скопировать выбранные в другой чат' }), { target: { value: 'copy:c2' } })
+    await waitFor(() => expect(api['imgstudio:transfer']).toHaveBeenCalledTimes(2))
+    expect((api['imgstudio:transfer'] as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject({ to: 'c2', copy: true })
+    // Копия — значит файлы на месте.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'а.png' })).toBeInTheDocument())
   })
 
   it('открытый лайтбокс без нарушений доступности (axe)', async () => {
@@ -575,9 +724,9 @@ describe('ImageStudioPane', () => {
     render(<ImageStudioPane conversationId="c1" api={api as never} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать а.png' }))
-    expect(screen.getByText('Выбрано 1 из 3')).toBeInTheDocument()
+    expect(screen.getByText(/Выбрано 1 из 3/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Инвертировать' }))
-    expect(await screen.findByText('Выбрано 2 из 3')).toBeInTheDocument()
+    expect(await screen.findByText(/Выбрано 2 из 3/)).toBeInTheDocument()
     expect((screen.getByRole('checkbox', { name: 'Выбрать а.png' }) as HTMLInputElement).checked).toBe(false)
   })
 
@@ -620,6 +769,1042 @@ describe('ImageStudioPane', () => {
     const overlay = confirmText.closest('.vc-dialog-overlay') as HTMLElement
     fireEvent.click(within(overlay).getByRole('button', { name: 'Отмена' }))
     await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот-копия.png' })))
+  })
+
+  it('фильтр ищет и по промпту, а не только по имени файла', async () => {
+    const { api } = makeApi([
+      { path: 'файл-0.png', prompt: 'синий кит в океане' },
+      ...Array.from({ length: 6 }, (_, index) => ({ path: `файл-${index + 1}.png` }))
+    ])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    const filterField = await screen.findByRole('textbox', { name: 'Фильтр по имени файла или промпту' })
+    fireEvent.change(filterField, { target: { value: 'кит' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'файл-0.png' })).toBeInTheDocument()
+  })
+
+  it('стрелки двигают выбор по сетке, Enter открывает лайтбокс', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+    await screen.findByRole('button', { name: 'б.png' })
+
+    // Сортировка «сначала новые» ставит б.png первой — с неё и начинается выбор.
+    fireEvent.keyDown(zone, { key: 'ArrowRight' })
+    await waitFor(() => expect(screen.getByText('правим: б.png')).toBeInTheDocument())
+    fireEvent.keyDown(zone, { key: 'ArrowRight' })
+    await waitFor(() => expect(screen.getByText('правим: а.png')).toBeInTheDocument())
+
+    fireEvent.keyDown(zone, { key: 'Enter' })
+    expect(await screen.findByTestId('image-studio-viewer')).toBeInTheDocument()
+  })
+
+  it('счётчик корзины виден до раскрытия, «Восстановить всё» возвращает все файлы', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }], {
+      trash: [{ name: 'старый-кот.png', deletedAt: 1 }, { name: 'старый-пёс.png', deletedAt: 2 }]
+    })
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Корзина… \(2\)/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Восстановить всё (2)' }))
+    await waitFor(() => expect(api['imgstudio:restore']).toHaveBeenCalledTimes(2))
+    // Корзина опустела — и кнопка, и счётчик исчезают сами.
+    await waitFor(() => expect(screen.queryByText('Восстановить всё (2)')).toBeNull())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Корзина…' })).toBeInTheDocument())
+  })
+
+  it('загрузка сверх квоты разговора отбивается до первого запроса', async () => {
+    const { api } = makeApi([{ path: 'огромный.png', size: 128 * 1024 * 1024 - 1024 }, { path: 'кот.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+
+    const big = new File(['x'.repeat(4096)], 'новый.png', { type: 'image/png' })
+    fireEvent.drop(zone, { dataTransfer: { files: [big], types: ['Files'] } })
+    expect((await screen.findAllByText(/Не хватит места/))[0]).toBeTruthy()
+    expect(api['imgstudio:upload']).not.toHaveBeenCalled()
+  })
+
+  it('лайтбокс: масштаб кнопками, переключение фона, копирование и слайдшоу', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    const clipboard = await import('../lib/clipboard')
+    const spy = vi.spyOn(clipboard, 'copyImage').mockResolvedValue(true)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Открыть а.png в полный размер' }))
+      const viewer = await screen.findByTestId('image-studio-viewer')
+
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Увеличить масштаб' }))
+      await waitFor(() => expect(within(viewer).getByRole('button', { name: /Масштаб 125 процентов/ })).toBeTruthy())
+      fireEvent.click(within(viewer).getByRole('button', { name: /Масштаб 125 процентов/ }))
+      await waitFor(() => expect(within(viewer).getByRole('button', { name: /Масштаб 100 процентов/ })).toBeTruthy())
+
+      fireEvent.click(within(viewer).getByRole('button', { name: /Фон подложки: шахматка/ }))
+      await waitFor(() => expect(within(viewer).getByRole('button', { name: /Фон подложки: светлый/ })).toBeTruthy())
+
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Запустить слайдшоу' }))
+      await waitFor(() => expect(within(viewer).getByRole('button', { name: 'Остановить слайдшоу' })).toBeTruthy())
+
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Скопировать а.png в буфер' }))
+      await waitFor(() => expect(spy).toHaveBeenCalled())
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('корзину можно очистить навсегда — с подтверждением', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }], {
+      trash: [{ name: 'старый-1.png', deletedAt: 1 }, { name: 'старый-2.png', deletedAt: 2 }]
+    })
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Корзина… \(2\)/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Очистить корзину (2)' }))
+    const dialog = await screen.findByText('Очистить корзину (2)?')
+    const overlay = dialog.closest('.vc-dialog-overlay') as HTMLElement
+    fireEvent.click(within(overlay).getByRole('button', { name: 'Очистить' }))
+    await waitFor(() => expect(api['imgstudio:purge']).toHaveBeenCalledWith({ conversationId: 'c1' }))
+    // Счётчик у кнопки исчезает: корзина пуста, восстанавливать нечего.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Корзина…' })).toBeInTheDocument())
+    expect(await screen.findByText(/Корзина пуста/)).toBeInTheDocument()
+  })
+
+  it('одну запись корзины можно удалить навсегда, не тронув остальные', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }], {
+      trash: [{ name: 'старый-1.png', deletedAt: 1 }, { name: 'старый-2.png', deletedAt: 2 }]
+    })
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Корзина… \(2\)/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить старый-1.png навсегда' }))
+    const dialog = await screen.findByText('Удалить «старый-1.png» навсегда?')
+    const overlay = dialog.closest('.vc-dialog-overlay') as HTMLElement
+    fireEvent.click(within(overlay).getByRole('button', { name: 'Удалить навсегда' }))
+    await waitFor(() => expect(api['imgstudio:purge']).toHaveBeenCalledWith({ conversationId: 'c1', name: 'старый-1.png' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Восстановить старый-2.png' })).toBeInTheDocument())
+  })
+
+  it('фильтр по типу оставляет только файлы этого расширения', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.jpg' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    const kind = await screen.findByRole('combobox', { name: 'Тип файла' })
+    fireEvent.change(kind, { target: { value: 'jpg' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'б.jpg' })).toBeInTheDocument()
+    fireEvent.change(kind, { target: { value: '' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+  })
+
+  it('в мультирежиме звёзды ставятся и снимаются пачкой', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'В избранное (2)' }))
+    // Обе звёзды загорелись — кнопка сама предлагает обратное действие.
+    const off = await screen.findByRole('button', { name: 'Убрать из избранного (2)' })
+    expect(screen.getByRole('button', { name: 'Убрать а.png из избранного' })).toBeInTheDocument()
+    fireEvent.click(off)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'В избранное а.png' })).toBeInTheDocument())
+  })
+
+  it('пакетное переименование идёт через временные имена и уважает {n}', async () => {
+    // Цель первого файла — текущее имя второго: прямое переименование упёрлось
+    // бы в «уже есть», поэтому пачка проходит два круга.
+    const { api } = makeApi([{ path: 'кадр-2.png' }, { path: 'кадр-1.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Шаблон пакетного переименования' }), { target: { value: 'кадр-{n}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Переименовать по шаблону' }))
+
+    await waitFor(() => expect(api['imgstudio:rename']).toHaveBeenCalledTimes(4))
+    const calls = (api['imgstudio:rename'] as ReturnType<typeof vi.fn>).mock.calls.map(([arg]) => arg as { from: string; to: string })
+    expect(calls.slice(0, 2).every((call) => call.to.startsWith('пакет-'))).toBe(true)
+    expect(calls.slice(2).map((call) => call.to).sort()).toEqual(['кадр-1.png', 'кадр-2.png'])
+  })
+
+  it('коллаж собирается из выбранных и сохраняется новым файлом', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    const collage = new Blob([new Uint8Array([1])], { type: 'image/png' })
+    Object.defineProperty(collage, 'arrayBuffer', { value: async () => new Uint8Array([1]).buffer })
+    const lib = await import('../lib/imageCollage')
+    const spy = vi.spyOn(lib, 'buildCollage').mockResolvedValue(collage)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Коллаж (2)' }))
+      await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'коллаж.png' })))
+      expect(spy.mock.calls[0]![0]).toHaveLength(2)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('побайтовый дубликат при загрузке спрашивает, а отказ пропускает файл', async () => {
+    const { api } = makeApi([{ path: 'кот.png', size: 1 }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+
+    // Фейк отдаёт байты «img» для любого файла, а File.arrayBuffer в jsdom
+    // подменён на те же байты — значит содержимое совпадает.
+    const same = new File(['img'], 'другое-имя.png', { type: 'image/png' })
+    Object.defineProperty(same, 'size', { value: 1 })
+    Object.defineProperty(same, 'arrayBuffer', { value: async () => new TextEncoder().encode('img').buffer })
+    fireEvent.drop(zone, { dataTransfer: { files: [same], types: ['Files'] } })
+
+    const dialog = await screen.findByText('Такая картинка уже есть в галерее')
+    const overlay = dialog.closest('.vc-dialog-overlay') as HTMLElement
+    fireEvent.click(within(overlay).getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.getByText(/уже есть в галерее — ничего не загружено/)).toBeInTheDocument())
+    expect(api['imgstudio:upload']).not.toHaveBeenCalled()
+  })
+
+  it('хоткеи панели: «/» уводит в поиск, «f» помечает выбранную картинку', async () => {
+    const { api } = makeApi(Array.from({ length: 7 }, (_, index) => ({ path: `файл-${index}.png` })))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+
+    fireEvent.keyDown(zone, { key: '/' })
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Фильтр по имени файла или промпту' })))
+
+    fireEvent.click(screen.getByRole('button', { name: 'файл-6.png' }))
+    fireEvent.keyDown(zone, { key: 'f' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Убрать файл-6.png из избранного' })).toBeInTheDocument())
+  })
+
+  it('сборка архива отчитывается о каждом файле и о результате', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    // Настоящий ZIP не нужен: проверяем отчётность, а не байты архива.
+    const zip = await import('../lib/zipStore')
+    const spy = vi.spyOn(zip, 'buildZip').mockReturnValue(new Blob([new Uint8Array([1])], { type: 'application/zip' }))
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Скачать архивом' }))
+      await waitFor(() => expect(screen.getByText(/Архив собран: 2/)).toBeInTheDocument())
+      // В архив попадают и файлы, и metadata.json — сборка идёт по всей выборке.
+      expect(spy.mock.calls[0]![0].map((entry) => entry.name)).toEqual(['б.png', 'а.png', 'metadata.json'])
+    } finally {
+      spy.mockRestore()
+      clickSpy.mockRestore()
+    }
+  })
+
+  it('заметка из лайтбокса сохраняется и попадает в поиск', async () => {
+    const { api } = makeApi(Array.from({ length: 7 }, (_, index) => ({ path: `файл-${index}.png` })))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть файл-3.png в полный размер' }))
+    const viewer = await screen.findByTestId('image-studio-viewer')
+    fireEvent.click(within(viewer).getByRole('button', { name: 'Свойства файл-3.png' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Заметка к файл-3.png' }), { target: { value: 'для обложки' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить заметку' }))
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.imgstudio.notes.c1') ?? '{}')).toEqual({ 'файл-3.png': 'для обложки' }))
+
+    fireEvent.click(within(screen.getByTestId('image-studio-viewer')).getByRole('button', { name: 'Закрыть' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Фильтр по имени файла или промпту' }), { target: { value: 'обложк' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'файл-3.png' })).toBeInTheDocument()
+  })
+
+  it('сортировка «сначала избранные» поднимает помеченные наверх', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    // По умолчанию сверху самый свежий — «в.png»; звезда у самого старого.
+    fireEvent.click(await screen.findByRole('button', { name: 'В избранное а.png' }))
+    const order = screen.getByRole('button', { name: 'Сначала новые' })
+    fireEvent.click(order)
+    fireEvent.click(screen.getByRole('button', { name: 'По имени' }))
+    fireEvent.click(screen.getByRole('button', { name: 'По размеру' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Сначала избранные' })).toBeInTheDocument())
+    await waitFor(() => {
+      const cards = screen.getAllByRole('listitem').map((item) => item.getAttribute('data-path'))
+      expect(cards[0]).toBe('а.png')
+    })
+  })
+
+  it('негативный промпт дописывается к запросу и переживает перерисовку', async () => {
+    const { api, generate } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Чего не должно быть на картинке' }), { target: { value: 'люди, текст' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'город на закате' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Нарисовать' }))
+    await waitFor(() => expect(generate).toHaveBeenCalled())
+    expect((generate.mock.calls[0]![0] as { prompt: string }).prompt).toContain('Не должно быть на изображении: люди, текст.')
+    expect(localStorage.getItem('vc.imgstudio.negative')).toBe('люди, текст')
+  })
+
+  it('«похожие» переносят начало промпта в поиск', async () => {
+    const { api } = makeApi(Array.from({ length: 7 }, (_, index) => ({ path: `файл-${index}.png`, ...(index < 2 ? { prompt: 'синий кит в океане' } : {}) })))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Показать похожие на файл-1.png' }))
+    await waitFor(() => expect((screen.getByRole('textbox', { name: 'Фильтр по имени файла или промпту' }) as HTMLInputElement).value).toBe('синий кит в океане'))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
+  })
+
+  it('«Список в буфер» отдаёт markdown-таблицу видимых файлов', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png', prompt: 'кит' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Список в буфер' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    const text = writeText.mock.calls[0]![0]
+    expect(text).toContain('| Файл | Размер | Пиксели | Промпт | Заметка |')
+    expect(text).toContain('| б.png |')
+    expect(text).toContain('Всего файлов: 2')
+  })
+
+  it('«Найти дубликаты» отмечает копии, оставляя самый старый файл', async () => {
+    // Фейк отдаёт одинаковые байты всем — значит все три файла одинаковы, и
+    // группа должна оставить самый старый, а два отметить как копии.
+    const { api } = makeApi([{ path: 'старый.png' }, { path: 'копия.png' }, { path: 'ещё.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Найти дубликаты' }))
+    await waitFor(() => expect(screen.getByText(/Выбрано 2 из 3/)).toBeInTheDocument())
+    expect((screen.getByRole('checkbox', { name: 'Выбрать копия.png' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('checkbox', { name: 'Выбрать старый.png' }) as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('пакетное переименование можно откатить одной кнопкой', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Шаблон пакетного переименования' }), { target: { value: 'кадр-{n}' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Переименовать по шаблону' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'кадр-1.png' })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Вернуть имена' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'б.png' })).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'а.png' })).toBeInTheDocument()
+  })
+
+  it('досмотр до конца списка подгружает следующую порцию сам', async () => {
+    // 70 файлов: первая страница — 60, маркер конца должен добрать остальные.
+    const { api } = makeApi(Array.from({ length: 70 }, (_, index) => ({ path: `файл-${String(index).padStart(2, '0')}.png` })))
+    const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = []
+    class FakeObserver {
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) { observers.push(callback) }
+      observe(): void { /* маркер под наблюдением */ }
+      disconnect(): void { /* конец наблюдения */ }
+    }
+    const original = (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver
+    ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = FakeObserver as never
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(60))
+      await waitFor(() => expect(observers.length).toBeGreaterThan(0))
+      observers[observers.length - 1]!([{ isIntersecting: true }])
+      await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(70))
+    } finally {
+      ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = original
+    }
+  })
+
+  it('звезда и заметка переезжают вместе с переименованным файлом', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'В избранное кот.png' }))
+    localStorage.setItem('vc.imgstudio.notes.c1', JSON.stringify({ 'кот.png': 'герой обложки' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Переименовать кот.png' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Новое имя файла' }), { target: { value: 'котик.png' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ок' }))
+
+    // Пометки привязаны к имени, поэтому за файлом их надо переносить руками.
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.imgstudio.stars.c1') ?? '[]')).toEqual(['котик.png']))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Убрать котик.png из избранного' })).toBeInTheDocument())
+  })
+
+  it('очистка корзины убирает пометки удалённых навсегда файлов', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }], { trash: [{ name: 'старый.png', deletedAt: 1 }] })
+    localStorage.setItem('vc.imgstudio.stars.c1', JSON.stringify(['старый.png', 'а.png']))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Корзина… \(1\)/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить старый.png навсегда' }))
+    const dialog = await screen.findByText('Удалить «старый.png» навсегда?')
+    fireEvent.click(within(dialog.closest('.vc-dialog-overlay') as HTMLElement).getByRole('button', { name: 'Удалить навсегда' }))
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.imgstudio.stars.c1') ?? '[]')).toEqual(['а.png']))
+  })
+
+  it('пометки переезжают в другой чат вместе с картинкой', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    localStorage.setItem('vc.imgstudio.notes.c1', JSON.stringify({ 'кот.png': 'для письма' }))
+    render(<ImageStudioPane conversationId="c1" api={api as never} otherChats={[{ id: 'c2', title: 'Картинки 2' }]} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Инструменты обработки кот.png' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Перенести или скопировать кот.png в другой чат' }), { target: { value: 'move:c2' } })
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.imgstudio.notes.c2') ?? '{}')).toEqual({ 'кот.png': 'для письма' }))
+    // В исходном чате заметка не остаётся: файл ушёл.
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.imgstudio.notes.c1') ?? '{}')).toEqual({}))
+  })
+
+  it('Shift+клик отмечает диапазон карточек', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }, { path: 'г.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    // Порядок «сначала новые»: г, в, б, а. Отмечаем «г», затем Shift+«б».
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Выбрать г.png' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать б.png' }), { shiftKey: true })
+    await waitFor(() => expect(screen.getByText(/Выбрано 3 из 4/)).toBeInTheDocument())
+    expect((screen.getByRole('checkbox', { name: 'Выбрать в.png' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('checkbox', { name: 'Выбрать а.png' }) as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('сводка мультирежима показывает вес выбранного', async () => {
+    const { api } = makeApi([{ path: 'а.png', size: 2048 }, { path: 'б.png', size: 1024 }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    await waitFor(() => expect(screen.getByText(/Выбрано 2 из 2 · 3 КБ/)).toBeInTheDocument())
+  })
+
+  it('пакетная обработка не начинается, если результату не хватит места', async () => {
+    // Галерея почти полна: обработка добавила бы копии тем же весом.
+    const { api } = makeApi([{ path: 'огромный.png', size: 127 * 1024 * 1024 }, { path: 'к.png', size: 2 * 1024 * 1024 }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Обработать выбранные' }), { target: { value: 'grayscale' } })
+    expect((await screen.findAllByText(/Не хватит места/))[0]).toBeTruthy()
+    expect(api['imgstudio:upload']).not.toHaveBeenCalled()
+  })
+
+  it('пакетную правку моделью можно прервать между файлами', async () => {
+    const { api, edit } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    // Первая правка «висит», как настоящий ран модели: иначе мгновенный фейк
+    // успевает пройти всю пачку до нажатия «Прервать», и тест ничего не проверяет.
+    let release: (() => void) | undefined
+    edit.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve({ file: { path: 'а-2.png', size: 1, updatedAt: 2 }, files: [] })
+    }))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Промпт для изображения' }), { target: { value: 'сделай ярче' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Править выбранные (3)' }))
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Прервать пакет' }))
+    release?.()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Прервать пакет' })).toBeNull())
+    // Остальные две правки не начались — модель дорога, и это главное.
+    expect(edit).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/Прервано: поправлено 1 из 3/)).toBeInTheDocument()
+  })
+
+  it('шпаргалка клавиш открывается кнопкой и перечисляет комбинации', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    // Клавиша «?» занята общей шпаргалкой приложения, поэтому вход — кнопка
+    // тулбара, а он появляется от двух файлов.
+    fireEvent.click(await screen.findByRole('button', { name: 'Горячие клавиши галереи' }))
+    expect(await screen.findByText('Клавиши галереи')).toBeInTheDocument()
+    expect(screen.getByText('перейти в поиск')).toBeInTheDocument()
+    expect(screen.getByText('в мультирежиме — отметить диапазон')).toBeInTheDocument()
+  })
+
+  it('пометки переносятся текстом: применение принимает JSON и чинит состояние', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Пометки…' }))
+    const field = await screen.findByRole('textbox', { name: 'Пометки галереи в формате JSON' })
+    fireEvent.change(field, { target: { value: JSON.stringify({ stars: ['б.png'], notes: { 'б.png': 'из другого браузера' } }) } })
+    fireEvent.click(screen.getByRole('button', { name: 'Применить' }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Убрать б.png из избранного' })).toBeInTheDocument())
+    expect(JSON.parse(localStorage.getItem('vc.imgstudio.notes.c1') ?? '{}')).toEqual({ 'б.png': 'из другого браузера' })
+  })
+
+  it('битый текст пометок не ломает галерею, а объясняет формат', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Пометки…' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Пометки галереи в формате JSON' }), { target: { value: 'не json' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Применить' }))
+    expect(await screen.findByText(/ожидается JSON/)).toBeInTheDocument()
+    // Окно осталось открытым: текст можно поправить, не набирая заново.
+    expect(screen.getByRole('textbox', { name: 'Пометки галереи в формате JSON' })).toBeInTheDocument()
+  })
+
+  it('адрес с именем файла сразу открывает лайтбокс', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    window.location.hash = `#/images/c1/${encodeURIComponent('пёс.png')}`
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      const viewer = await screen.findByTestId('image-studio-viewer')
+      expect(within(viewer).getByText(/пёс\.png/)).toBeTruthy()
+      // Закрыли — адрес вернулся к чату, чтобы ссылка не «залипала».
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Закрыть' }))
+      await waitFor(() => expect(window.location.hash).toBe('#/images/c1'))
+    } finally {
+      window.location.hash = ''
+    }
+  })
+
+  it('адрес с исчезнувшим файлом чистится, а не показывает пустой лайтбокс', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    window.location.hash = '#/images/c1/удалённый.png'
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      await waitFor(() => expect(window.location.hash).toBe('#/images/c1'))
+      expect(screen.queryByTestId('image-studio-viewer')).toBeNull()
+    } finally {
+      window.location.hash = ''
+    }
+  })
+
+  it('открытие лайтбокса пишет картинку в адрес', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    window.location.hash = '#/images/c1'
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Открыть кот.png в полный размер' }))
+      await waitFor(() => expect(decodeURIComponent(window.location.hash)).toBe('#/images/c1/кот.png'))
+    } finally {
+      window.location.hash = ''
+    }
+  })
+
+  it('фильтр по происхождению делит нарисованное и свои файлы', async () => {
+    const { api } = makeApi([{ path: 'нарисованное.png', prompt: 'кит' }, { path: 'своё.png' }, { path: 'ещё-своё.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    const origin = await screen.findByRole('combobox', { name: 'Происхождение файла' })
+    fireEvent.change(origin, { target: { value: 'ai' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    fireEvent.change(origin, { target: { value: 'own' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
+    fireEvent.change(origin, { target: { value: '' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+  })
+
+  it('подпись наносится новым файлом и не трогает исходник', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }])
+    const done = new Blob([new Uint8Array([1])], { type: 'image/png' })
+    Object.defineProperty(done, 'arrayBuffer', { value: async () => new Uint8Array([1]).buffer })
+    const lib = await import('../lib/imageTransform')
+    const spy = vi.spyOn(lib, 'captionImage').mockResolvedValue(done)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Инструменты обработки кот.png' }))
+      fireEvent.change(await screen.findByRole('textbox', { name: 'Подпись на картинке кот.png' }), { target: { value: 'черновик' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Подписать' }))
+      await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledWith(expect.objectContaining({ path: 'кот-подпись.png', source: 'кот.png' })))
+      expect(spy).toHaveBeenCalledWith(expect.anything(), 'черновик')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('«Ссылка на кадр» кладёт в буфер адрес с именем файла', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { api } = makeApi([{ path: 'кот.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Инструменты обработки кот.png' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Ссылка на кадр' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(decodeURIComponent(writeText.mock.calls[0]![0])).toContain('#/images/c1/кот.png')
+  })
+
+  it('палитра открытой картинки показывается и копируется по клику', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    const lib = await import('../lib/imagePalette')
+    const spy = vi.spyOn(lib, 'extractPalette').mockResolvedValue(['#112233', '#445566'])
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Открыть кот.png в полный размер' }))
+      const viewer = await screen.findByTestId('image-studio-viewer')
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Свойства кот.png' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Показать палитру' }))
+      const swatch = await screen.findByRole('button', { name: 'Скопировать цвет #112233' })
+      fireEvent.click(swatch)
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('#112233'))
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('фильтр «только новое» показывает появившееся за сессию', async () => {
+    const { api } = makeApi([{ path: 'старое.png' }, { path: 'тоже-старое.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    await screen.findByRole('button', { name: 'старое.png' })
+
+    // Ход ассистента: файл появился не из действий панели — он «новое».
+    // Фейку моста хватает имени: остальное он не смотрит.
+    void api['imgstudio:upload']({ path: 'свежее.png' })
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить галерею' }))
+    const only = await screen.findByRole('button', { name: /Только новое \(1\)/ })
+    fireEvent.click(only)
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'свежее.png' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Все файлы' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+  })
+
+  it('правый клик по карточке открывает меню действий', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const card = (await screen.findByRole('button', { name: 'кот.png' })).closest('[data-path]') as HTMLElement
+
+    fireEvent.contextMenu(card)
+    const menu = await screen.findByRole('menu', { name: 'Действия кот.png' })
+    expect(within(menu).getByRole('menuitem', { name: 'В избранное' })).toBeInTheDocument()
+
+    // Пункт меняет состояние и закрывает меню — как любое меню.
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'В избранное' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Убрать кот.png из избранного' })).toBeInTheDocument()
+  })
+
+  it('меню закрывается по Escape, ничего не сделав', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const card = (await screen.findByRole('button', { name: 'кот.png' })).closest('[data-path]') as HTMLElement
+
+    fireEvent.contextMenu(card)
+    await screen.findByRole('menu', { name: 'Действия кот.png' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(screen.getByRole('button', { name: 'В избранное кот.png' })).toBeInTheDocument()
+  })
+
+  it('пакетное удаление предлагает вернуть файлы из корзины', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить выбранные (2)' }))
+    const dialog = await screen.findByText('Удалить 2 файл(ов)?')
+    fireEvent.click(within(dialog.closest('.vc-dialog-overlay') as HTMLElement).getByRole('button', { name: 'Удалить' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Вернуть' }))
+    await waitFor(() => expect(api['imgstudio:restore']).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'а.png' })).toBeInTheDocument())
+  })
+
+  it('результаты пакетной обработки можно убрать одним нажатием', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    const done = new Blob([new Uint8Array([1])], { type: 'image/png' })
+    Object.defineProperty(done, 'arrayBuffer', { value: async () => new Uint8Array([1]).buffer })
+    const lib = await import('../lib/imageTransform')
+    const spy = vi.spyOn(lib, 'applyImageTransform').mockResolvedValue(done)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+      fireEvent.change(await screen.findByRole('combobox', { name: 'Обработать выбранные' }), { target: { value: 'grayscale' } })
+      await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledTimes(2))
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Убрать результаты' }))
+      await waitFor(() => expect((api['imgstudio:delete'] as ReturnType<typeof vi.fn>).mock.calls.map(([arg]) => (arg as { path: string }).path).sort())
+        .toEqual(['а-чб.png', 'б-чб.png']))
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('заметка ставится всем выбранным сразу', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Заметка для выбранных' }), { target: { value: 'для подборки' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Заметить (2)' }))
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.imgstudio.notes.c1') ?? '{}')).toEqual({ 'а.png': 'для подборки', 'б.png': 'для подборки' }))
+  })
+
+  it('пресеты стиля и размера помнятся на каждый разговор отдельно', async () => {
+    const first = makeApi([{ path: 'а.png' }])
+    const { unmount } = render(<ImageStudioPane conversationId="c1" api={first.api as never} />)
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Стиль изображения' }), { target: { value: 'акварель' } })
+    await waitFor(() => expect(localStorage.getItem('vc.imgstudio.style.c1')).toBe('акварель'))
+    unmount()
+
+    // Новый чат наследует последний выбор, но может уйти от него своим путём.
+    const second = makeApi([{ path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c2" api={second.api as never} />)
+    const styleSelect = await screen.findByRole('combobox', { name: 'Стиль изображения' })
+    expect((styleSelect as HTMLSelectElement).value).toBe('акварель')
+    fireEvent.change(styleSelect, { target: { value: 'пиксель-арт' } })
+    await waitFor(() => expect(localStorage.getItem('vc.imgstudio.style.c2')).toBe('пиксель-арт'))
+    expect(localStorage.getItem('vc.imgstudio.style.c1')).toBe('акварель')
+  })
+
+  it('data-URI уходит в буфер с правильным типом', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { api } = makeApi([{ path: 'кот.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Инструменты обработки кот.png' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Как data-URI' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(writeText.mock.calls[0]![0]).toBe(`data:image/png;base64,${btoa('img')}`)
+  })
+
+  it('фон сетки переключается и запоминается', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Фон сетки: шахматка/ }))
+    await waitFor(() => expect(localStorage.getItem('vc.imgstudio.gridBg')).toBe('light'))
+    const grid = screen.getByRole('list', { name: 'Галерея изображений' })
+    expect(grid.className).toContain('image-studio-bg--light')
+    fireEvent.click(screen.getByRole('button', { name: /Фон сетки: светлый/ }))
+    await waitFor(() => expect(localStorage.getItem('vc.imgstudio.gridBg')).toBe('dark'))
+  })
+
+  it('позиция прокрутки галереи возвращается при повторном открытии', async () => {
+    const { api } = makeApi(Array.from({ length: 8 }, (_, index) => ({ path: `файл-${index}.png` })))
+    sessionStorage.setItem('vc.imgstudio.scroll.c1', '420')
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      const pane = await screen.findByTestId('image-studio')
+      await waitFor(() => expect(pane.scrollTop).toBe(420))
+    } finally {
+      sessionStorage.clear()
+    }
+  })
+
+  it('переименование объясняет ошибку до запроса и не отправляет её', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Переименовать кот.png' }))
+    const field = screen.getByRole('textbox', { name: 'Новое имя файла' })
+    fireEvent.change(field, { target: { value: 'пёс' } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('«пёс.png» уже есть в галерее')
+    expect(screen.getByRole('button', { name: 'Ок' })).toBeDisabled()
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(api['imgstudio:rename']).not.toHaveBeenCalled()
+
+    // Поправили — ошибка ушла, имя применяется.
+    fireEvent.change(field, { target: { value: 'котик' } })
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'Ок' }))
+    await waitFor(() => expect(api['imgstudio:rename']).toHaveBeenCalledWith({ conversationId: 'c1', from: 'кот.png', to: 'котик.png' }))
+  })
+
+  it('группировка по датам разбивает сетку на секции', async () => {
+    const now = Date.now()
+    const { api } = makeApi([{ path: 'свежий.png' }, { path: 'старый.png' }])
+    // Второму файлу — прошлая неделя, чтобы группы точно были разные.
+    ;(api['imgstudio:list'] as ReturnType<typeof vi.fn>).mockImplementation(async () => [
+      { path: 'свежий.png', size: 10, updatedAt: now },
+      { path: 'старый.png', size: 10, updatedAt: now - 8 * 24 * 3600 * 1000 }
+    ])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'По датам' }))
+    expect(await screen.findByRole('list', { name: 'Галерея изображений: сегодня' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Галерея изображений: раньше' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Без групп' }))
+    await waitFor(() => expect(screen.getByRole('list', { name: 'Галерея изображений' })).toBeInTheDocument())
+  })
+
+  it('фильтр «с прошлого визита» показывает появившееся без нас', async () => {
+    const now = Date.now()
+    localStorage.setItem('vc.imgstudio.seen.c1', String(now - 5000))
+    const { api } = makeApi()
+    ;(api['imgstudio:list'] as ReturnType<typeof vi.fn>).mockImplementation(async () => [
+      { path: 'новое.png', size: 10, updatedAt: now },
+      { path: 'виденное.png', size: 10, updatedAt: now - 60_000 }
+    ])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'С прошлого визита (1)' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'новое.png' })).toBeInTheDocument()
+  })
+
+  it('меню открывается с клавиатуры и ходит стрелками', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'кот.png' }))
+    fireEvent.keyDown(zone, { key: 'm' })
+    const menu = await screen.findByRole('menu', { name: 'Действия кот.png' })
+    const items = within(menu).getAllByRole('menuitem')
+    // Фокус уехал в меню на первый пункт, стрелка ведёт ко второму.
+    expect(document.activeElement).toBe(items[0])
+    fireEvent.keyDown(items[0]!, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(items[1])
+    fireEvent.keyDown(items[1]!, { key: 'End' })
+    expect(document.activeElement).toBe(items[items.length - 1])
+    // Стрелка не должна утекать в сетку: выбор остался на той же картинке.
+    expect(screen.getByText('правим: кот.png')).toBeInTheDocument()
+  })
+
+  it('Shift+F10 тоже открывает меню выбранной карточки', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'пёс.png' }))
+    fireEvent.keyDown(zone, { key: 'F10', shiftKey: true })
+    expect(await screen.findByRole('menu', { name: 'Действия пёс.png' })).toBeInTheDocument()
+  })
+
+  it('чипы запретов складывают негативный промпт', async () => {
+    const { api } = makeApi()
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'текст и надписи' }))
+    fireEvent.click(screen.getByRole('button', { name: 'люди' }))
+    const field = screen.getByRole('textbox', { name: 'Чего не должно быть на картинке' }) as HTMLInputElement
+    await waitFor(() => expect(field.value).toBe('текст и надписи, люди'))
+    // Повторное нажатие снимает запрет.
+    fireEvent.click(screen.getByRole('button', { name: '✓ текст и надписи' }))
+    await waitFor(() => expect(field.value).toBe('люди'))
+  })
+
+  it('серия вариаций делает три рана и прерывается по кнопке', async () => {
+    const { api, edit } = makeApi([{ path: 'кот.png' }])
+    let release: (() => void) | undefined
+    edit.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve({ file: { path: 'кот-2.png', size: 1, updatedAt: 2 }, files: [] })
+    }))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    const card = (await screen.findByRole('button', { name: 'кот.png' })).closest('[data-path]') as HTMLElement
+    fireEvent.contextMenu(card)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Три вариации подряд' }))
+    await waitFor(() => expect(edit).toHaveBeenCalledTimes(1))
+    fireEvent.click(await screen.findByRole('button', { name: 'Прервать пакет' }))
+    release?.()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Прервать пакет' })).toBeNull())
+    expect(edit).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/Прервано: готово вариаций 1 из 3/)).toBeInTheDocument()
+  })
+
+  it('промпты выбранных уходят в буфер, а без промптов — подсказка', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { api } = makeApi([{ path: 'с-промптом.png', prompt: 'кит' }, { path: 'без.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Выбрать без.png' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Промпты выбранных' }))
+    expect(await screen.findByText(/У выбранных нет промптов/)).toBeInTheDocument()
+    expect(writeText).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать с-промптом.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Промпты выбранных' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('с-промптом.png: кит'))
+  })
+
+  it('поиск ищет по всем словам и подсвечивает совпадения в имени', async () => {
+    const { api } = makeApi([
+      { path: 'кит-на-закате.png', prompt: 'синий кит' },
+      { path: 'кит-утром.png', prompt: 'кит на рассвете' },
+      ...Array.from({ length: 5 }, (_, index) => ({ path: `прочее-${index}.png` }))
+    ])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    const field = await screen.findByRole('textbox', { name: 'Фильтр по имени файла или промпту' })
+    fireEvent.change(field, { target: { value: 'кит закат' } })
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
+    // Совпавшая часть имени обёрнута в <mark>.
+    const card = screen.getByRole('button', { name: 'кит-на-закате.png' }).closest('[data-path]') as HTMLElement
+    expect(card.querySelectorAll('mark.image-studio-hit').length).toBeGreaterThan(0)
+  })
+
+  it('«Сбросить фильтры» снимает все условия сразу', async () => {
+    const { api } = makeApi([{ path: 'а.png', prompt: 'кит' }, { path: 'б.jpg' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Тип файла' }), { target: { value: 'jpg' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Показать только избранные' }))
+    const reset = await screen.findByRole('button', { name: 'Сбросить фильтры (2)' })
+    fireEvent.click(reset)
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+    expect(screen.queryByRole('button', { name: /Сбросить фильтры/ })).toBeNull()
+  })
+
+  it('в архив попадают заметки и звёзды выбранных файлов', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }])
+    localStorage.setItem('vc.imgstudio.notes.c1', JSON.stringify({ 'кот.png': 'для обложки' }))
+    localStorage.setItem('vc.imgstudio.stars.c1', JSON.stringify(['кот.png']))
+    const zip = await import('../lib/zipStore')
+    const spy = vi.spyOn(zip, 'buildZip').mockReturnValue(new Blob([new Uint8Array([1])], { type: 'application/zip' }))
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      // Тулбар с архивом появляется от двух файлов — добавим второй загрузкой.
+      await screen.findByRole('button', { name: 'кот.png' })
+      const zone = screen.getByTestId('image-studio')
+      fireEvent.drop(zone, { dataTransfer: { files: [new File(['x'], 'пёс.png', { type: 'image/png' })], types: ['Files'] } })
+      fireEvent.click(await screen.findByRole('button', { name: 'Скачать архивом' }))
+      await waitFor(() => expect(spy).toHaveBeenCalled())
+      const meta = spy.mock.calls[0]![0].find((entry) => entry.name === 'metadata.json')!
+      const parsed = JSON.parse(new TextDecoder().decode(meta.data)) as Array<{ path: string; note?: string; starred?: boolean }>
+      expect(parsed.find((item) => item.path === 'кот.png')).toMatchObject({ note: 'для обложки', starred: true })
+    } finally {
+      spy.mockRestore()
+      clickSpy.mockRestore()
+    }
+  })
+
+  it('три выбранных сравниваются сеткой, а не шторкой', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Сравнить сеткой (3)' }))
+    const grid = await screen.findByRole('group', { name: 'Сравнение 3 картинок' })
+    expect(within(grid).getAllByRole('button')).toHaveLength(3)
+    // Шторки в этом режиме нет.
+    expect(screen.queryByRole('slider', { name: /Шторка сравнения/ })).toBeNull()
+  })
+
+  it('на телефоне строка карточки — одна кнопка с меню', async () => {
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: query === '(max-width: 720px)',
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false
+    }) as MediaQueryList)
+    try {
+      const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      // Вместо восьми иконок — одна «⋯», открывающая то же меню.
+      fireEvent.click(await screen.findByRole('button', { name: 'Действия кот.png' }))
+      expect(await screen.findByRole('menu', { name: 'Действия кот.png' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Переименовать кот.png' })).toBeNull()
+    } finally {
+      matchMedia.mockRestore()
+    }
+  })
+
+  it('двойной клик мимо карточек снимает выбор', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'кот.png' }))
+    expect(await screen.findByText('правим: кот.png')).toBeInTheDocument()
+    fireEvent.doubleClick(screen.getByTestId('image-studio'))
+    await waitFor(() => expect(screen.queryByText('правим: кот.png')).toBeNull())
+  })
+
+  it('гистограмма яркости показывается в свойствах', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    const tone = await import('../lib/imageTone')
+    const spy = vi.spyOn(tone, 'histogramOf').mockResolvedValue([10, 40, 90, 20])
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Открыть кот.png в полный размер' }))
+      const viewer = await screen.findByTestId('image-studio-viewer')
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Свойства кот.png' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Показать гистограмму' }))
+      const chart = await screen.findByRole('img', { name: /Гистограмма яркости/ })
+      expect(chart.querySelectorAll('span')).toHaveLength(4)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('«Проверить файлы» помечает нечитаемые и молчит, когда всё цело', async () => {
+    const { api } = makeApi([{ path: 'целый.png' }, { path: 'битый.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    await screen.findByRole('button', { name: 'целый.png' })
+
+    // Ломаем чтение одного файла и проверяем, что его назовут.
+    ;(api['imgstudio:read'] as ReturnType<typeof vi.fn>).mockImplementation(async ({ path }: { path: string }) => {
+      if (path === 'битый.png') throw new Error('нет доступа')
+      return { path, dataBase64: btoa('img') }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить файлы' }))
+    expect((await screen.findAllByText(/Не читаются файлы: битый\.png/))[0]).toBeTruthy()
+  })
+
+  it('подпись именами создаёт файл на каждую выбранную', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    const done = new Blob([new Uint8Array([1])], { type: 'image/png' })
+    Object.defineProperty(done, 'arrayBuffer', { value: async () => new Uint8Array([1]).buffer })
+    const lib = await import('../lib/imageTransform')
+    const spy = vi.spyOn(lib, 'captionImage').mockResolvedValue(done)
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'Подписать именами (2)' }))
+      await waitFor(() => expect(api['imgstudio:upload']).toHaveBeenCalledTimes(2))
+      // Подпись каждой картинки — её собственное имя.
+      expect(spy.mock.calls.map(([, text]) => text).sort()).toEqual(['а.png', 'б.png'])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('набор запоминает выбор и возвращает его одним нажатием', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Выбрать а.png' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Выбрать в.png' }))
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Имя набора' }), { target: { value: 'обложки' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить набор' }))
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('vc.imgstudio.sets.c1') ?? '{}')).toEqual({ обложки: ['а.png', 'в.png'] }))
+
+    // Сняли выбор и вернули его чипом набора.
+    fireEvent.click(screen.getByRole('button', { name: 'Инвертировать' }))
+    fireEvent.click(await screen.findByRole('button', { name: /обложки \(2\)/ }))
+    await waitFor(() => expect(screen.getByText(/Выбрано 2 из 3/)).toBeInTheDocument())
+    expect((screen.getByRole('checkbox', { name: 'Выбрать а.png' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('набор с удалёнными файлами выбирает только оставшиеся', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    localStorage.setItem('vc.imgstudio.sets.c1', JSON.stringify({ старый: ['а.png', 'исчез.png'] }))
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /старый \(2\)/ }))
+    await waitFor(() => expect(screen.getByText(/Выбрано 1 из 2/)).toBeInTheDocument())
+    expect(await screen.findByText(/Часть набора «старый» уже удалена: 1/)).toBeInTheDocument()
+  })
+
+  it('хоткеи g и b переключают группы и фон сетки', async () => {
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const zone = await screen.findByTestId('image-studio')
+
+    fireEvent.keyDown(zone, { key: 'g' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Без групп' })).toBeInTheDocument())
+    fireEvent.keyDown(zone, { key: 'b' })
+    await waitFor(() => expect(localStorage.getItem('vc.imgstudio.gridBg')).toBe('light'))
   })
 
   it('пустая галерея объясняет следующий шаг', async () => {

@@ -253,6 +253,53 @@ describe('turns: актуальная main проекта', () => {
     db.close()
   })
 
+  it('к отказу по грязной копии прикладывает готовое исправление для кнопки', async () => {
+    const db = freshDb()
+    const { conv } = projectChat(db)
+    const rec = recorder()
+    const turns = createTurnManager({
+      db, claude: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret',
+      ensureProjectMainCurrent: async () => { throw new Error('Рабочая копия проекта содержит локальные изменения; синхронизация с origin/main остановлена. Копия: /srv/project. Изменено записей: 2. Первые: M value.txt; ?? scratch.log.') }
+    })
+    let fix: { label: string; prompt: string; skipProjectSync?: boolean } | undefined
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => {
+        if (message.t === 'claude.error') { fix = message.fix; off(); resolve() }
+      })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'проверь код' }] })
+    })
+    // Пользователю остаётся нажать кнопку: промпт уже собран и помечен как
+    // ход-исправление, иначе он упёрся бы в тот же самый отказ.
+    expect(fix?.label).toBe('Исправить копию')
+    expect(fix?.skipProjectSync).toBe(true)
+    expect(fix?.prompt).toContain('/srv/project')
+    expect(fix?.prompt).toContain('M value.txt')
+    expect(fix?.prompt).toContain('status --porcelain')
+    expect(rec.last()).toBeNull()
+    db.close()
+  })
+
+  it('ход-исправление пропускает preflight и честно предупреждает модель', async () => {
+    const db = freshDb()
+    const { conv } = projectChat(db)
+    const rec = recorder()
+    const calls: unknown[] = []
+    const turns = createTurnManager({
+      db, claude: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret',
+      ensureProjectMainCurrent: async (args) => { calls.push(args); return { baseSha: 'a'.repeat(40) } }
+    })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, skipProjectSync: true, segments: [{ speakerId: 1, text: 'почини копию' }] })
+    })
+    expect(calls).toEqual([])
+    expect(rec.last()?.prompt).toContain('preflight общей копии проекта пропущен')
+    expect(rec.last()?.prompt).not.toContain('Системный preflight подтвердил')
+    db.close()
+  })
+
   it('не запускает LLM, если origin/main нельзя подтвердить', async () => {
     const db = freshDb()
     const { conv } = projectChat(db)

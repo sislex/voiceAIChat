@@ -665,6 +665,12 @@ export type ClientMessage =
       verbose?: boolean
       /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
       execTarget?: string | null
+      /**
+       * Ход-исправление: пропустить системный preflight общей копии проекта.
+       * Нужен ровно для случая, когда сам preflight и упал (грязное дерево):
+       * иначе кнопка «Исправить» уводила бы в тот же отказ по кругу.
+       */
+      skipProjectSync?: boolean
       assistantContext?: import('./widgetAssistant').WidgetAssistantContext
     }
   | { t: 'claude.cancel'; conversationId?: string }
@@ -724,7 +730,17 @@ export type ServerMessage =
       /** Сообщение, сохранённое сервером в БД (клиент не сохраняет сам). */
       message?: Message
     }
-  | { t: 'claude.error'; conversationId: string; message: string }
+  | {
+      t: 'claude.error'
+      conversationId: string
+      message: string
+      /**
+       * Готовое исправление: клиент рисует кнопку с `label`, а по нажатию
+       * отправляет `prompt` обычным ходом (`skipProjectSync`, если помечено).
+       * Так пользователю не приходится самому придумывать, что писать модели.
+       */
+      fix?: { label: string; prompt: string; skipProjectSync?: boolean }
+    }
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'claude.usage'; conversationId: string; usage: TurnUsage }
   | { t: 'claude.active'; turns: ActiveTurn[] }

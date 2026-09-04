@@ -37,6 +37,8 @@ export interface ShellState {
   kbUsageOpen: boolean
   /** Текст последней ошибки для баннера (null — нет). */
   error: string | null
+  /** Готовое исправление к текущей ошибке: кнопка в баннере. */
+  errorFix: { label: string; prompt: string; skipProjectSync?: boolean } | null
   /** Очередь уведомлений для тостов. */
   notices: AppNotice[]
 }
@@ -54,6 +56,7 @@ export interface ShellActions {
   /** Показать баннер ошибки (голос, ход модели, загрузки). */
   setError(message: string | null): void
   dismissError(): void
+  setErrorFix(fix: { label: string; prompt: string; skipProjectSync?: boolean } | null): void
   /** Поставить уведомление в очередь тостов. */
   notify(notice: Omit<AppNotice, 'id'>): void
   /** Ошибка вызова клиента: тост, плюс «Повторить», если повтор безопасен. */
@@ -81,6 +84,7 @@ function initialState(collapsed: boolean): ShellState {
     cheatSheetOpen: false,
     kbUsageOpen: false,
     error: null,
+    errorFix: null,
     notices: []
   }
 }
@@ -113,8 +117,11 @@ export function createShellStore(deps: ShellDeps = {}): ShellStore {
       setCheatSheetOpen: (open) => setState({ cheatSheetOpen: open }),
       openKbUsage: () => setState({ kbUsageOpen: true }),
       closeKbUsage: () => setState({ kbUsageOpen: false }),
-      setError: (message) => setState({ error: message }),
-      dismissError: () => setState({ error: null }),
+      // Своя ошибка без предложения гасит прежнее: кнопка «Исправить» от
+      // старой причины к новой не относится.
+      setError: (message) => setState({ error: message, errorFix: null }),
+      dismissError: () => setState({ error: null, errorFix: null }),
+      setErrorFix: (fix) => setState({ errorFix: fix }),
       notify,
       fail(err, retry) {
         notify({ kind: 'error', text: err instanceof Error ? err.message : String(err), ...(retry ? { retry } : {}) })
