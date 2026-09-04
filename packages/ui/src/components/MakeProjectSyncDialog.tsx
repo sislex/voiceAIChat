@@ -1,8 +1,10 @@
 // Диалог «Из проекта» в панели Make: компоненты и стили копируются из рабочей
-// директории машины проекта в мастерскую, правятся здесь (ассистент, превью) и
-// возвращаются обратно кнопкой «Вернуть». Связь помнит хеш на момент
-// копирования: сервер отклоняет возврат, если файл в репозитории уже изменился,
-// и тогда пользователь решает — перезаписать или забрать свежую версию заново.
+// директории машины проекта в мастерскую и правятся здесь (ассистент, превью).
+// Обратной кнопки нет — Make в репозиторий не пишет: общая копия проекта
+// принадлежит git-потоку, и файл, положенный туда мимо коммита, оставлял её
+// dirty. Дизайн доходит до кода через связь с карточкой задачи. Связь помнит
+// хеш на момент копирования и показывает, где содержимое разошлось: правили в
+// мастерской или файл в проекте ушёл вперёд и его стоит забрать заново.
 //
 // Панель не знает ни машины, ни путей проекта: сервер сам находит машину
 // проекта и отвечает словами (409), если её нет или она offline.
@@ -10,18 +12,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus } from '@shared/make'
-import { Button, Dialog, EmptyState, ErrorState, useConfirm, useToast } from '@voicechat/ui-kit'
+import { Button, Dialog, EmptyState, ErrorState, useToast } from '@voicechat/ui-kit'
 
 interface Props {
   conversationId: string
-  api: Pick<RendererApi, 'make:projectFiles' | 'make:projectLinks' | 'make:projectPull' | 'make:projectPush'>
+  api: Pick<RendererApi, 'make:projectFiles' | 'make:projectLinks' | 'make:projectPull'>
   onClose: () => void
 }
 
 /** Статус связи словами пользователя, а не кодом контракта. */
 const STATUS_TEXT: Record<MakeProjectLinkStatus, string> = {
   same: 'совпадает с проектом',
-  edited_in_make: 'изменён в Make — можно вернуть',
+  edited_in_make: 'изменён в Make',
   changed_in_project: 'изменён в проекте — заберите заново',
   both: 'конфликт: изменён и здесь, и в проекте',
   missing_in_project: 'в проекте больше нет',
@@ -30,7 +32,6 @@ const STATUS_TEXT: Record<MakeProjectLinkStatus, string> = {
 
 export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): JSX.Element {
   const toast = useToast()
-  const confirm = useConfirm()
   const [dir, setDir] = useState('')
   const [entries, setEntries] = useState<MakeProjectFileEntry[]>([])
   const [links, setLinks] = useState<MakeProjectLinkInfo[]>([])
@@ -72,42 +73,9 @@ export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): 
     }
   }, [api, conversationId, selected, toast])
 
-  const push = useCallback(async (paths?: string[]): Promise<void> => {
-    setBusy(true)
-    try {
-      const result = await api['make:projectPush']({ conversationId, ...(paths ? { paths } : {}) })
-      setLinks(result.links)
-      toast.success(`Возвращено в проект: ${result.pushed.length}`)
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause)
-      // Конфликт — решение пользователя, а не тоста: перезапись сотрёт чужую
-      // работу в репозитории, и по умолчанию мы её не делаем.
-      if (message.includes('изменились после копирования')) {
-        if (await confirm({
-          title: 'Файлы в проекте изменились',
-          message: 'После копирования их правили в репозитории. Вернуть версии из Make поверх этих правок?',
-          confirmLabel: 'Перезаписать'
-        })) {
-          try {
-            const forced = await api['make:projectPush']({ conversationId, ...(paths ? { paths } : {}), force: true })
-            setLinks(forced.links)
-            toast.success(`Возвращено с перезаписью: ${forced.pushed.length}`)
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : String(err))
-          }
-        }
-      } else {
-        toast.error(message)
-      }
-    } finally {
-      setBusy(false)
-    }
-  }, [api, conversationId, confirm, toast])
-
   const toggle = (path: string, checked: boolean): void =>
     setSelected((prev) => checked ? [...prev, path] : prev.filter((item) => item !== path))
   const parent = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : ''
-  const returnable = links.filter((link) => link.status === 'edited_in_make' || link.status === 'both')
 
   return <Dialog title="Компоненты из проекта" size="lg" padded onClose={onClose} testId="make-project-sync">
     {error
@@ -134,18 +102,13 @@ export function MakeProjectSyncDialog({ conversationId, api, onClose }: Props): 
           <section aria-label="Связанные с проектом файлы">
             <h3>Связанные файлы</h3>
             {links.length === 0
-              ? <EmptyState title="Пока ничего не скопировано" description="Отметьте файлы слева и скопируйте их в Make — после правок их можно вернуть в проект." />
+              ? <EmptyState title="Пока ничего не скопировано" description="Отметьте файлы слева и скопируйте их в Make — правки останутся в мастерской." />
               : <div className="make-sync-list" role="list" data-testid="make-sync-links">
                   {links.map((link) => <div role="listitem" key={link.path} className="make-sync-link">
                     <span className="make-sync-path">{link.path}</span>
                     <span className="make-sync-status" data-status={link.status}>{STATUS_TEXT[link.status]}</span>
-                    {(link.status === 'edited_in_make' || link.status === 'both') &&
-                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => void push([link.path])}>Вернуть</Button>}
                   </div>)}
                 </div>}
-            {returnable.length > 1 && <div className="make-sync-actions">
-              <Button size="sm" disabled={busy} onClick={() => void push()}>Вернуть всё изменённое ({returnable.length})</Button>
-            </div>}
           </section>
         </div>}
   </Dialog>
