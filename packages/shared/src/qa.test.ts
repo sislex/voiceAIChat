@@ -68,6 +68,32 @@ describe('development readiness gate', () => {
       'missing_code_source', 'critical_source_unavailable:code'
     ]))
   })
+  // Расхождение гейтов: подготовка выпускала бриф без UI-сценария, а Component
+  // QA без него не запускался вовсе — задача застревала после разработки.
+  it('requires a required UI scenario when the task touches UI', () => {
+    const input = ready()
+    input.uiImpact = 'existing_components'
+    input.affectedComponents = [{
+      id: 'button', name: 'Button', storybookStoryId: 'button--default', reusable: true,
+      coverage: { states: true, variants: true, sizes: true, loading: true, empty: true, error: true, a11y: true },
+      exclusionReason: '', alternativeVerification: ''
+    }]
+    input.testCases = [testCase({ testType: 'manual', automatable: false, notAutomatedReason: 'Ручная проверка', alternativeManualVerification: 'По шагам' })]
+    expect(canConfirmDevelopmentReadiness(input).reasons).toContain('missing_required_component_scenarios')
+    // Ровно то же требование, что и у запуска этапа: причина совпадает дословно.
+    expect(componentQaLaunchReasons(input)).toContain('missing_required_component_scenarios')
+
+    input.testCases.push(testCase({ id: 'TC-2', testType: 'ui' }))
+    expect(canConfirmDevelopmentReadiness(input).reasons).not.toContain('missing_required_component_scenarios')
+    expect(componentQaLaunchReasons(input)).not.toContain('missing_required_component_scenarios')
+  })
+
+  it('does not demand a UI scenario when uiImpact is none', () => {
+    const input = ready()
+    input.testCases = [testCase({ testType: 'manual', automatable: false, notAutomatedReason: 'Ручная', alternativeManualVerification: 'Шаги' })]
+    expect(canConfirmDevelopmentReadiness(input).reasons).not.toContain('missing_required_component_scenarios')
+  })
+
   it('requires Storybook coverage or an explicit alternative for UI work', () => {
     const input = ready()
     input.uiImpact = 'new_components'
