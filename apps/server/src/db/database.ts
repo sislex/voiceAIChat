@@ -49,6 +49,7 @@ import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
 import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
 import { testStages } from '../ci/testStages.js'
+import { trimHistoricalRunLogs } from '../ci/qaStateLogs.js'
 
 export const TASK_COMMIT_COMMAND_NAME = 'Закоммитить работу в ветку задачи'
 export const TASK_COMMIT_COMMAND_SCRIPT = `set -eu
@@ -550,6 +551,10 @@ const NOT_CANCELLED_TASK_CHAT = `(c.task_id IS NULL OR NOT EXISTS (
 
 /** Шаг дробного ранга для порядка колонок/задач. */
 const RANK_STEP = 1024
+/** Сколько строк лога рана отдаётся по умолчанию: лента показывает конец, а не всю историю. */
+const CI_RUN_LOG_TAIL_LINES = 5_000
+/** Жёсткий потолок запроса: даже явный `?limit=` не должен собирать в память весь лог. */
+const CI_RUN_LOG_MAX_LINES = 20_000
 /** Порог схлопывания дробного ранга — ниже него колонка ренормализуется. */
 const RANK_EPS = 1e-6
 
@@ -6939,10 +6944,19 @@ export class VoiceChatDb {
     return { runId, stepId, seq, stream, chunk, at }
   }
 
-  getCiRunLog(userId: string, runId: string): CiLogLine[] {
+  /**
+   * Хвост лога рана. Раньше метод отдавал все строки: у длинного рана это сотни
+   * тысяч записей, и сериализация такого ответа роняла процесс целиком
+   * («FATAL ERROR: Reached heap limit» в `StreamBase::Writev` — прод 2026-09-05).
+   * Лента показывает конец лога и дописывает новые строки по WS, поэтому хвост
+   * закрывает её потребность, а сервер остаётся живым.
+   */
+  getCiRunLog(userId: string, runId: string, limit = CI_RUN_LOG_TAIL_LINES): CiLogLine[] {
     const r = this.db.prepare(`SELECT project_id FROM ci_runs WHERE id = ?`).get(runId) as { project_id: string } | undefined
     if (!r || !this.isProjectMember(userId, r.project_id)) return []
-    return (this.db.prepare(`SELECT * FROM ci_run_logs WHERE run_id = ? ORDER BY seq ASC`).all(runId) as CiLogRow[]).map(mapCiLog)
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), CI_RUN_LOG_MAX_LINES) : CI_RUN_LOG_TAIL_LINES
+    const rows = this.db.prepare(`SELECT * FROM ci_run_logs WHERE run_id = ? ORDER BY seq DESC LIMIT ?`).all(runId, safeLimit) as CiLogRow[]
+    return rows.reverse().map(mapCiLog)
   }
 
   // --- fix-loop ---
@@ -8332,9 +8346,10 @@ export class VoiceChatDb {
     if (!this.isProjectMember(userId,projectId)) return null
     const task = this.db.prepare(`SELECT t.id,c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {id:string;semantic_type:string}|undefined
     if (!task) return null
-    const runs=(this.db.prepare(`SELECT * FROM component_qa_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapComponentQaRun(row))
-    const activeRun=runs.find((run)=>run.status==='queued'||run.status==='running') ?? null
-    const latestRun=runs[0] ?? null
+    const allRuns=(this.db.prepare(`SELECT * FROM component_qa_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapComponentQaRun(row))
+    const activeRun=allRuns.find((run)=>run.status==='queued'||run.status==='running') ?? null
+    const latestRun=allRuns[0] ?? null
+    const runs=trimHistoricalRunLogs(allRuns,[activeRun?.id,latestRun?.id])
     const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {readiness_json:string}|undefined
     const readiness=prep ? parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null) : null
     const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
@@ -8484,9 +8499,12 @@ export class VoiceChatDb {
     if(!this.isProjectMember(userId,projectId)) return null
     const input=this.currentIntegrationInputs(projectId,taskId)
     if(!input.task) return null
-    const runs=(this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
-    const activeRun=runs.find((run)=>run.status==='queued'||run.status==='running')??null
-    const latestRun=runs[0]??null
+    const allRuns=(this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
+    const activeRun=allRuns.find((run)=>run.status==='queued'||run.status==='running')??null
+    const latestRun=allRuns[0]??null
+    // Историческим попыткам оставляем только хвост лога: полный текст каждой
+    // делал ответ многомегабайтным, и клиент с сервером ложились вместе.
+    const runs=trimHistoricalRunLogs(allRuns,[activeRun?.id,latestRun?.id])
     const reasons:string[]=[]
     if(input.task.semantic_type!=='integration_tests') reasons.push('task_not_in_integration_tests')
     if(!input.workspace?.branch||!input.workspace.commitSha||!input.workspace.agentId||!input.workspace.path||!input.workspace.pushed) reasons.push('missing_pushed_development_workspace')
