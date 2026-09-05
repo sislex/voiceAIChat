@@ -492,6 +492,7 @@ CREATE TABLE IF NOT EXISTS projects (
   automated_qa_command TEXT NOT NULL DEFAULT 'npm test',
   automated_qa_mode TEXT NOT NULL DEFAULT 'command',
   automated_qa_scenario_json TEXT NOT NULL DEFAULT '',
+  autopilot_default INTEGER NOT NULL DEFAULT 0,
   autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0,
   autopilot_fix_limit INTEGER NOT NULL DEFAULT 3,
   production_deploy_command TEXT NOT NULL DEFAULT '',

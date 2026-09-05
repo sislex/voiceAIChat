@@ -6,7 +6,9 @@ import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnap
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
 import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
+import type { ProjectStorybookSession } from '@shared/projectComponents'
 import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from './fixtures/git'
+import { makeProjectComponents, makeStorybookSession } from './fixtures/projectComponents'
 import type { RendererApi } from '@shared/ipc'
 import type { ContextSnapshotItem, Conversation, ConversationContextSnapshot, Message, Settings } from '@shared/types'
 import { contextLockReason, isContextToggleable } from '@shared/contextGating'
@@ -54,6 +56,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     commits: Array<{ message: string; staged: number }>
     pushed: string[]
   } = { status: makeGitStatus(), saved: [], commits: [], pushed: [] }
+  /** Компоненты проекта: сессия Storybook и заведённые тикеты живут между вызовами. */
+  const componentsState: {
+    session: ProjectStorybookSession
+    tickets: Array<{ title: string; paths: string[] }>
+  } = { session: makeStorybookSession({ state: 'stopped', readyAt: null }), tickets: [] }
   /** Выключенные пункты контекста — «сервер» помнит их между снимками. */
   const disabledContext = new Set<string>()
   const contextSnapshotFake = (id: string): ConversationContextSnapshot => {
@@ -1320,6 +1327,32 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       gitState.pushed.push(target)
       gitState.status = { ...gitState.status, ahead: 0 }
       return { status: gitState.status, branch: target, sha: 'd'.repeat(40) }
+    },
+    // Компоненты проекта: фейк держит состояние Storybook, чтобы «запустить → готово»
+    // и «остановить» проверялись кликами, а не моками отдельных вызовов.
+    'projects:components': async ({ workspace }) => ({
+      ...makeProjectComponents({ workspaceId: workspace }),
+      source: componentsState.session.state === 'running' ? 'storybook' : 'files'
+    }),
+    'projects:componentStories': async ({ path }) => ({
+      path,
+      title: 'UI/Button',
+      stories: [{ id: 'ui-button--primary', name: 'Primary' }]
+    }),
+    'projects:storybookSession': async ({ workspace }) => ({ ...componentsState.session, workspaceId: workspace }),
+    'projects:storybookAction': async ({ workspace, action }) => {
+      componentsState.session = {
+        ...componentsState.session,
+        workspaceId: workspace,
+        state: action === 'stop' ? 'stopped' : 'running',
+        adopted: false,
+        readyAt: action === 'stop' ? null : makeStorybookSession().readyAt
+      }
+      return componentsState.session
+    },
+    'projects:componentTicket': async ({ title, paths }) => {
+      componentsState.tickets.push({ title, paths })
+      return { taskId: 'task-new', taskNumber: 77, branch: 'CHAT-77', commitSha: 'e'.repeat(40), columnId: 'col-awaiting', readyToMerge: true }
     },
     'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setMachineSsh': async ({ id, agentId, sshHost, sshUser }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) Object.assign(m, { sshHost, sshUser }); return detail(p) },
