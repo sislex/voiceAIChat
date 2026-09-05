@@ -118,6 +118,22 @@ describe('автопроход: начало конвейера', () => {
     expect(await semanticOf(projectId, taskId)).toBe('backlog')
   })
 
+  it('у Git-проекта с offline-машиной подготовка не стартует и попытки не жжёт', async () => {
+    const { projectId, taskId } = await taskInBacklog()
+    // Git-проекту нужна копия на машине: без online-машины запускать нечего, и
+    // прежний перезапуск «на автомате» только сжигал круги за чужой сбой.
+    const agent = db.createAgent('admin', 'Спящий ноутбук')
+    db.linkMachine('admin', projectId, agent.id)
+    db.setProjectMachinePath('admin', projectId, agent.id, '/srv/app')
+    db.updateProject('admin', projectId, { gitUrl: 'git@github.com:x/y.git' })
+
+    await enableAutoPilot(projectId, taskId)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    expect(await runs(projectId, taskId)).toHaveLength(0)
+    expect(await semanticOf(projectId, taskId)).toBe('backlog')
+  })
+
   it('упавшая попытка повторяется автоматически, а после лимита автопроход останавливается', async () => {
     const { projectId, taskId } = await taskInBacklog()
     // Лимит доработок общий для автопрохода: он же ограничивает повторы подготовки.
