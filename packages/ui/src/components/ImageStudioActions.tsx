@@ -47,6 +47,8 @@ interface Props {
   onReload: () => void
   onAskNotifications: () => void
   onOpenKeys: () => void
+  /** Справочник возможностей студии со снимками экрана. */
+  onOpenGuide: () => void
   onOpenMarks: () => void
   /** Сохранённые виды: фильтры и сортировка под именем. */
   onOpenViews: () => void
@@ -73,7 +75,7 @@ export function ImageStudioActions({
   busy, shownCount, totalCount, hasPrompts, gridBg, dense, fit, starsOnly, trashCount, trashOpen,
   canAskNotifications, onDownloadArchive, onCopyInventory, onDownloadInventory, onFindDuplicates, onVerifyFiles,
   onCopyPrompts, onCycleGridBg, onToggleDense, onToggleFit, onToggleStarsOnly, onReload, onAskNotifications,
-  onOpenKeys, onOpenMarks, onOpenViews, viewsCount, onCopyViewLink,
+  onOpenKeys, onOpenGuide, onOpenMarks, onOpenViews, viewsCount, onCopyViewLink,
   onSlideshow, pageSize, onPageSize, journalCount, onOpenJournal, hasNotes, onCopyNotes, onPrint, onToggleTrash
 }: Props): JSX.Element {
   const background = BACKGROUND_TITLES[gridBg]
@@ -118,6 +120,9 @@ export function ImageStudioActions({
     </select>}
     <IconButton size="sm" aria-label="Обновить галерею" title="Обновить (r)" onClick={onReload}>↻</IconButton>
     <IconButton size="sm" aria-label="Горячие клавиши галереи" title="Клавиши (?)" onClick={onOpenKeys}>?</IconButton>
+    {/* Половина возможностей студии живёт в меню и раскрытиях: без такой
+        кнопки о них узнают случайно. */}
+    <IconButton size="sm" aria-label="Что умеет студия картинок" title="Что умеет студия" onClick={onOpenGuide}>ⓘ</IconButton>
     <Button size="sm" variant="ghost" aria-expanded={trashOpen} title={trashCount ? `Клавиша t · в корзине файлов: ${trashCount} (хранятся 7 дней)` : 'Клавиша t · корзина пуста'} onClick={onToggleTrash}>
       Корзина…{trashCount ? ` (${trashCount})` : ''}
     </Button>

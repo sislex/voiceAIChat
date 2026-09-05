@@ -4090,6 +4090,24 @@ button.conscmd:hover {
    кнопками порядка и групп в одну неразборчивую строку. */
 /* Раскрытая часть мультирежима: своя строка с подложкой — иначе двадцать
    контролов сливаются с кнопками выбора и удаления. */
+/* Справочник студии: длинный текст с картинками — читаемая ширина строки и
+   снимки во всю ширину окна, чтобы мелкие подписи на них не терялись. */
+.image-studio-guide { display: grid; gap: 20px; max-width: 860px; }
+.image-studio-guide-lead { margin: 0; color: var(--text-dim); }
+.image-studio-guide-toc { display: flex; flex-wrap: wrap; gap: 8px 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border-soft); }
+.image-studio-guide-toc a { color: var(--accent); font-size: 13px; text-decoration: none; }
+.image-studio-guide-toc a:hover, .image-studio-guide-toc a:focus-visible { text-decoration: underline; }
+.image-studio-guide-section { display: grid; gap: 10px; scroll-margin-top: 8px; }
+.image-studio-guide-section h3 { margin: 0; font-size: 15px; }
+.image-studio-guide-section ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.image-studio-guide-section li { line-height: 1.45; }
+.image-studio-guide-shot {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+}
+
 .image-studio-batch-more {
   display: flex;
   flex-wrap: wrap;
