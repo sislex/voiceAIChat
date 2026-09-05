@@ -5568,6 +5568,12 @@ export class VoiceChatDb {
     })
   }
 
+  taskReworkCycleByIdempotencyKey(userId: string, projectId: string, taskId: string, key: string): TaskReworkCycle | null {
+    if (!this.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    const row = this.db.prepare(`SELECT id FROM task_rework_cycles WHERE task_id=? AND idempotency_key=?`).get(taskId, key) as { id: string } | undefined
+    return row ? this.taskReworkCycles(userId, projectId, taskId)!.find((item) => item.id === row.id) ?? null : null
+  }
+
   createTaskReworkCycle(userId: string, projectId: string, taskId: string, key: string, input: CreateTaskReworkCycle): { cycle: TaskReworkCycle; task: Task; replayed: boolean } {
     if (!key.trim()) throw new Error('Idempotency-Key required')
     if (!input.description.trim()) throw new Error('Описание доработки обязательно')
