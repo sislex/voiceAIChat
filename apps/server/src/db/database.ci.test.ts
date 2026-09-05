@@ -858,6 +858,24 @@ describe('ci: временная шкала задачи', () => {
     expect(db.countCiEvents(run.id, 'run.started')).toBe(0)
   })
 
+  it('считает подряд упавшие раны задачи и останавливается на первом успехе', () => {
+    const { p, task } = project()
+    const mk = (status: 'failed' | 'success' | 'timeout' | 'cancelled') => {
+      const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+      db.updateCiRun(run.id, { status })
+      return run
+    }
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(0)
+    mk('failed')
+    mk('failed')
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(2)
+    // Успех обнуляет счётчик: считаем только хвост, а не всю историю.
+    mk('success')
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(0)
+    mk('timeout')
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(1)
+  })
+
   it('объединяет пересекающиеся активные интервалы параллельных ранов', () => {
     const { p, task } = project()
     const first = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })

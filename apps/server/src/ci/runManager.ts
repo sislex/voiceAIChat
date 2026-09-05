@@ -16,7 +16,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
-import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { CI_INFRA_LABEL, classifyCiInfraFailure, classifyLlmTransportFailure, formatCiInfraFailure } from './infraErrors.js'
 import type { CiConsoleExecResult, ProjectMachine } from '@voicechat/shared'
 
 /**
@@ -1830,6 +1830,8 @@ fi`
     const prim = makePrimitives(runId, userId, agentId, project.machines, repoPath, commandWorkspacePath, env, signal)
     let modelOk = true
     let modelCancelled = false
+    /** Текст ошибки хода: по нему отличаем обрыв транспорта от содержательного отказа. */
+    let modelError = ''
     /** Модель работала, но рабочая копия пуста — слот «после» не запускаем. */
     let emptyWork = false
     if (enabledStages.has('model_work') && !(resume?.kind === 'command' && resume.slot === 'after_model')) {
@@ -1847,8 +1849,10 @@ fi`
           const r = await deps.modelWork(ctx)
           modelOk = r.ok
           modelCancelled = r.cancelled === true
-        } catch {
+          modelError = r.error ?? ''
+        } catch (error) {
           modelOk = false
+          modelError = error instanceof Error ? error.message : String(error)
         }
       } else {
         const line = deps.db.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
@@ -1872,7 +1876,18 @@ fi`
         return
       }
       if (!modelOk) {
-        progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
+        // Обрыв канала до исполнителя — не выбор модели и не дефект задачи: ход
+        // прервался на транспорте. Помечаем инфраструктурным, чтобы автопроход
+        // возобновил тот же шаг, а человек не искал причину в промпте.
+        const transport = classifyLlmTransportFailure(modelError)
+        if (transport) {
+          const line = deps.db.appendCiLog(runId, mwStep.id, 'system', formatCiInfraFailure(transport))
+          broadcast({ t: 'ci.log', runId, line }, userId)
+          deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: transport.kind, stepId: mwStep.id } })
+          progress(runId, done, total, `Инфраструктурная ошибка — ${CI_INFRA_LABEL[transport.kind]}`, userId)
+        } else {
+          progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
+        }
         finalize(runId, userId, 'failed')
         return
       }
