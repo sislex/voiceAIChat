@@ -32,6 +32,16 @@ export function releaseCheckoutCommand(target:ReleaseProjectTarget):string {
  * хотя к самому релизу это отношения не имеет. Так же поступает автолечение
  * общей копии проекта в `projectMainRefreshScript`.
  */
+/**
+ * Лимит шага «База знаний» берётся из настроек проекта, как у остальных шагов.
+ * Жёсткие 120 с убивали шаг с объявленным лимитом 10 минут ровно на 121-й
+ * секунде — посреди `git push`, оставляя в логе обрыв без причины.
+ */
+export function knowledgeBaseTimeoutMs(target: Pick<ReleaseProjectTarget, 'limits'>): number {
+  const limit = target.limits?.knowledgeBaseMs
+  return typeof limit === 'number' && limit > 0 ? limit : DEFAULT_RELEASE_TIMEOUTS.knowledgeBaseMs
+}
+
 export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseBranch:string):string {
   const branchRef=quote(`refs/heads/${releaseBranch}`)
   const fetchedRef=quote(`refs/voicechat/preflight/${releaseBranch}`)
