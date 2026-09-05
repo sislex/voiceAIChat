@@ -276,9 +276,11 @@ export function registerCiRoutes(
     }
   )
   app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => db.getCiRun(uid(req), req.params.runId) ?? nf(reply))
-  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
+  app.get<{ Params: { runId: string }; Querystring: { limit?: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
     if (!db.getCiRun(uid(req), req.params.runId)) return nf(reply)
-    return db.getCiRunLog(uid(req), req.params.runId)
+    // Полный лог длинного рана не помещается в память процесса, поэтому отдаём
+    // хвост; `limit` позволяет попросить больше в пределах серверного потолка.
+    return db.getCiRunLog(uid(req), req.params.runId, Number(req.query.limit) || undefined)
   })
   // Использование базы знаний моделью: по одному рану (лента) и по всем ранам
   // задачи (модалка). Гейт — членство в проекте: чужому 404, а не пустой отчёт.
