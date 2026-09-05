@@ -54,6 +54,9 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       if (run) {
         deps.db.markComponentQaRunning(runId)
         deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: run.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: 'development workspace is unavailable' })), commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
+        // Автопроход обязан узнать об исходе: молчание оставляет карточку в
+        // component_qa, и следующий board event запускает такой же ран по кругу.
+        deps.completed?.(runId, userId, false, 'Development workspace недоступен')
       }
       if (run) deps.boardChanged?.(run.projectId)
       return
@@ -141,7 +144,10 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       deps.completed?.(runId, userId, passed, passed ? 'Component QA пройден' : failedStage?.diagnostic || 'Component QA failed')
     })().catch((error) => {
       const current = deps.db.getComponentQaRun(userId, runId)
-      if (current?.status === 'running') deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: current.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: String(error) })), commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
+      if (current?.status === 'running') {
+        deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: current.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: String(error) })), commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
+        deps.completed?.(runId, userId, false, String(error))
+      }
     }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId) })
   }
   return { launch, cancel: (runId) => controllers.get(runId)?.abort() }
