@@ -246,8 +246,13 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     const publication = await store.publication(conversationId)
     const files = await store.list(conversationId)
     const esc = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    const cards = files.map((file) => `<figure><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
+    const cards = files.map((file) => `<figure data-name="${esc(file.path.toLowerCase())}"><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
     const title = publication?.title?.trim() || 'Галерея'
+    // Вес рядом с числом файлов: зритель решает, качать ли это на телефоне.
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+    const totalLabel = totalBytes >= 1024 * 1024
+      ? `${(totalBytes / 1024 / 1024).toFixed(1)} МБ`
+      : totalBytes >= 1024 ? `${Math.round(totalBytes / 1024)} КБ` : ''
     // OG-мета: мессенджеры делают fetch по ссылке и показывают карточку с
     // первой картинкой — «глухая» ссылка выглядит хуже.
     const origin = `${req.protocol}://${req.headers.host ?? ''}`
@@ -262,7 +267,21 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       figcaption{margin-top:8px;word-break:break-word}
       figcaption small{display:block;color:#999;margin-top:2px}
       .dl{color:#8ab4f8;text-decoration:none;font-size:12px;margin-left:6px}
-    </style></head><body><h1>${esc(title)} · ${countRu(files.length, 'файл', 'файла', 'файлов')}</h1><div class="grid">${cards}</div></body></html>`
+      .find{display:flex;gap:8px;align-items:center;margin:0 0 16px;flex-wrap:wrap}
+      .find input{flex:0 1 320px;padding:7px 10px;border:1px solid #333;border-radius:8px;background:#191919;color:inherit;font:inherit}
+      @media (prefers-color-scheme: light){.find input{background:#fff;border-color:#d5d8e0}}
+      .find small{color:#999}
+      figure[hidden]{display:none}
+    </style></head><body><h1>${esc(title)} · ${countRu(files.length, 'файл', 'файла', 'файлов')}${totalLabel ? ` · ${totalLabel}` : ''}</h1>${files.length >= 12 ? `<form class="find" role="search" onsubmit="return false"><label for="q">Поиск по имени</label><input id="q" type="search" autocomplete="off" placeholder="часть имени файла"><small id="found"></small></form>` : ''}<main class="grid">${cards}</main>${files.length >= 12 ? `<script>
+      // Фильтр по имени — на странице, без запросов: галерею на сотню кадров
+      // иначе листают руками. Имена лежат в data-name уже в нижнем регистре.
+      var q=document.getElementById('q'),found=document.getElementById('found'),cards=[].slice.call(document.querySelectorAll('figure'));
+      q.addEventListener('input',function(){
+        var needle=q.value.trim().toLowerCase(),shown=0;
+        cards.forEach(function(card){var hit=!needle||card.dataset.name.indexOf(needle)>=0;card.hidden=!hit;if(hit)shown++});
+        found.textContent=needle?('Найдено: '+shown):'';
+      });
+    </script>` : ''}</body></html>`
     return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex').send(html)
   })
 
