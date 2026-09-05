@@ -8363,9 +8363,9 @@ export class VoiceChatDb {
   }
 
   componentQaExecutionContext(runId:string):CiStageExecutionContext|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.component_qa_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;component_qa_command:string|null}|undefined
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.component_qa_command,p.ci_base_branch FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;component_qa_command:string|null;ci_base_branch:string|null}|undefined
     if (!row?.agent_id||!row.path) return null
-    return {agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.component_qa_command?.trim()||row.test_command||'',['npm run test:storybook'])}
+    return {agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.component_qa_command?.trim()||row.test_command||'',['npm run test:storybook']),ciBaseBranch:row.ci_base_branch?.trim()||'main'}
   }
 
   markComponentQaRunning(id:string):void {
@@ -8508,8 +8508,8 @@ export class VoiceChatDb {
   }
 
   integrationTestExecutionContext(runId:string):CiStageExecutionContext|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.integration_test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;integration_test_command:string|null}|undefined
-    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.integration_test_command?.trim()||row.test_command||'',['npm run affected-check'])}:null
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.integration_test_command,p.ci_base_branch FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;integration_test_command:string|null;ci_base_branch:string|null}|undefined
+    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.integration_test_command?.trim()||row.test_command||'',['npm run affected-check']),ciBaseBranch:row.ci_base_branch?.trim()||'main'}:null
   }
   markIntegrationTestRunning(id:string):void { this.db.prepare(`UPDATE integration_test_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id) }
   appendIntegrationTestLog(id:string,chunk:string):void { this.db.prepare(`UPDATE integration_test_runs SET log=substr(log||?,-500000) WHERE id=? AND status='running'`).run(chunk,id) }
@@ -10125,6 +10125,8 @@ export interface CiStageExecutionContext {
   workdir: string
   npmCacheDir: string | null
   commands: string[]
+  /** Ветка, относительно точки ветвления с которой анализируется diff задачи. */
+  ciBaseBranch: string
 }
 
 /** Всё, что нужно раннеру этапа Automated QA: где выполнять и что именно. */
