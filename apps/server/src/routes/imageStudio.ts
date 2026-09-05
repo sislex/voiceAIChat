@@ -2,6 +2,7 @@
 // переименование, удаление и два действия модели — «нарисовать по промпту» и
 // «поправить выбранную по промпту». Доступ — владелец разговора; чужой и
 // несуществующий неотличимы (404), как везде в Make/чатах.
+import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
@@ -310,7 +311,20 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     try {
       const data = await store.readBuffer(conversationId, req.query.path ?? '')
       if (!data) return reply.code(404).send({ error: 'файл не найден' })
-      return reply.header('content-type', imageStudioMime(req.query.path ?? '')).header('cache-control', 'no-store').send(data)
+      /**
+       * `no-store` заставлял зрителя качать всю галерею заново при каждом
+       * заходе и на каждой прокрутке — на девяноста кадрах это заметно даже
+       * локально. Отдаём ETag по содержимому и просим браузер переспрашивать
+       * (`no-cache`): картинку под тем же именем могли заменить, поэтому
+       * молча кэшировать надолго нельзя, а 304 стоит один запрос без тела.
+       */
+      const etag = `"${createHash('sha1').update(data).digest('hex')}"`
+      // Страница галереи помечена `noindex`, а сами картинки — нет: прямую
+      // ссылку на файл достаточно один раз где-то опубликовать, чтобы кадр
+      // ушёл в поиск по картинкам мимо всей приватности токена.
+      reply.header('etag', etag).header('cache-control', 'private, no-cache').header('x-robots-tag', 'noindex, noimageindex')
+      if (req.headers['if-none-match'] === etag) return reply.code(304).send()
+      return reply.header('content-type', imageStudioMime(req.query.path ?? '')).send(data)
     } catch (error) { return sendStudioError(reply, error) }
   })
 

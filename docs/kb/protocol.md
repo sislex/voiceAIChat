@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-05
-checked: 028dfe5a
+checked: b2acc02f
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -557,7 +557,7 @@ publish не ротирует ссылку, unpublish гасит страниц�
 отвечают 401 с формой (`POST /g/<token>/__auth__`; с 2026-09-05 попытки
 ограничены — десять за десять минут на «IP + токен», дальше 429 с `retry-after`, cookie-гейт
 `vc_gal_<token>` = sha256(gate:token:hash), Max-Age 30 дней — смена пароля
-разлогинивает всех); publication/publish отдают `passwordProtected`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+разлогинивает всех); publication/publish отдают `passwordProtected`. Файлы галереи (`GET /g/<token>/file?path=`) с 2026-09-05 отдаются с ETag и `private, no-cache` (повтор — 304) и помечены `x-robots-tag: noindex, noimageindex`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
 web-клиенте — авторизованный fetch → base64 (см. ui.md). Корзина: `GET
 /api/image-studio/:id/trash` (элемент — `{name, deletedAt, size}`; размер
 добавлен 2026-09-05: корзина ест ту же квоту разговора, и «сколько освободит
