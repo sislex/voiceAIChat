@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { ImageStudioFile } from '@shared/imageStudio'
 import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioPath } from '@shared/imageStudio'
+import { countRu } from '@shared/plural'
 import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, useConfirm, useToast } from '@voicechat/ui-kit'
 import { usePolling } from '../lib/usePolling'
 import { MOBILE_QUERY, useMediaQuery } from '../lib/mediaQuery'
@@ -1781,7 +1782,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           done += 1
         }
       }, items.length === 1 ? `Загружено: ${items[0]!.name}` : `Загружено файлов: ${items.length}`,
-        items.length > 1 ? `Загружаем ${items.length} файла(ов)` : undefined)
+        items.length > 1 ? `Загружаем ${countRu(items.length, 'файл', 'файла', 'файлов')}` : undefined)
     })()
   }
 
@@ -1806,6 +1807,27 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     const bytes = new Uint8Array(binary.length)
     for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
     return new Blob([bytes], { type: imageStudioMime(path) })
+  }
+
+  /**
+   * Ключ содержимого для поиска дубликатов. Раньше в память складывали целый
+   * base64 каждого кандидата (на сотне кадров это десятки мегабайт строк);
+   * хеш занимает 64 символа. Байты идут через `blobOf`, то есть из уже
+   * скачанного превью. Если `crypto.subtle` недоступен (небезопасный контекст,
+   * jsdom), честно возвращаемся к сравнению по base64.
+   */
+  const contentKey = async (path: string): Promise<string> => {
+    const digest = globalThis.crypto?.subtle
+    if (!digest) return readBase64(path)
+    try {
+      const bytes = await blobOf(path).then((blob) => blob.arrayBuffer())
+      const hash = await digest.digest('SHA-256', bytes)
+      return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+    } catch {
+      // `Blob.arrayBuffer` есть не везде (jsdom), а blob-URL превью мог быть
+      // отозван. Сравнение по base64 медленнее, но работает всегда.
+      return readBase64(path)
+    }
   }
 
   const download = (path: string): Promise<void> =>
@@ -1851,7 +1873,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         link.download = 'галерея.zip'
         link.click()
         URL.revokeObjectURL(url)
-        toast.success(list.length === 1 ? 'Архив собран' : `Архив собран: ${list.length} файл(ов)`)
+        toast.success(list.length === 1 ? 'Архив собран' : `Архив собран: ${countRu(list.length, 'файл', 'файла', 'файлов')}`)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error))
       } finally {
@@ -2004,9 +2026,17 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           }
           const candidates = [...bySize.values()].filter((list) => list.length > 1).flat()
           const keys = new Map<string, string>()
+          // Прогресс обновляем не чаще раза в 300 мс: он перерисовывает всю
+          // панель, а кандидатов бывает сотня — на каждом кадре сетка
+          // перерисовывалась заново и вкладка заметно тормозила.
+          let lastTick = 0
           await mapWithLimit(candidates, 4, async (file, index) => {
-            setProgress({ label: `Сравниваем содержимое: ${index + 1} из ${candidates.length}`, seconds: 0 })
-            try { keys.set(file.path, await readBase64(file.path)) } catch { /* нечитаемый файл не дубликат */ }
+            const now = Date.now()
+            if (now - lastTick > 300) {
+              lastTick = now
+              setProgress({ label: `Сравниваем содержимое: ${index + 1} из ${candidates.length}`, seconds: 0 })
+            }
+            try { keys.set(file.path, await contentKey(file.path)) } catch { /* нечитаемый файл не дубликат */ }
           })
           const groups = groupDuplicates(files, (file) => keys.get(file.path))
           const copies = groups.flatMap((group) => group.copies)
@@ -2014,7 +2044,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           // Отмечаем именно копии: что удалять, решает человек.
           setMulti(new Set(copies))
           setAnnounce(`Найдено копий: ${copies.length}`)
-          toast.success(`Нашлось копий: ${copies.length} в ${groups.length} групп(ах) — они отмечены`)
+          toast.success(`Нашлось копий: ${copies.length} в ${countRu(groups.length, 'группе', 'группах', 'группах')} — они отмечены`)
         } finally {
           setBusy(false)
           setProgress(null)
@@ -2418,7 +2448,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     onDelete: () => void (async () => {
       const picked = multi
       if (!picked || picked.size === 0) return
-      if (!(await confirm({ title: `Удалить ${picked.size} файл(ов)?`, message: 'Файлы уедут в корзину — вернуть их можно оттуда или кнопкой «Вернуть».', confirmLabel: 'Удалить' }))) return
+      if (!(await confirm({ title: `Удалить ${countRu(picked.size, 'файл', 'файла', 'файлов')}?`, message: 'Файлы уедут в корзину — вернуть их можно оттуда или кнопкой «Вернуть».', confirmLabel: 'Удалить' }))) return
       const doomed = [...picked]
       const ok = await run(async () => {
         for (const path of doomed) await api['imgstudio:delete']({ conversationId, path })
@@ -3444,7 +3474,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       }, `Восстановлено файлов: ${trash.length}`)}>Восстановить всё ({trash.length})</Button>}
       {trash.some((item) => Date.now() - item.deletedAt > 24 * 60 * 60 * 1000) && <Button size="sm" variant="ghost" disabled={busy} title="Удалить навсегда только то, что лежит больше суток — свежее останется" onClick={() => void (async () => {
         const old = trash.filter((item) => Date.now() - item.deletedAt > 24 * 60 * 60 * 1000).map((item) => item.name)
-        if (!(await confirm({ title: `Удалить навсегда ${old.length} файл(ов) старше суток?`, message: 'Свежее удалённое останется в корзине. Восстановить очищенное будет нельзя.', confirmLabel: 'Очистить' }))) return
+        if (!(await confirm({ title: `Удалить навсегда ${countRu(old.length, 'файл', 'файла', 'файлов')} старше суток?`, message: 'Свежее удалённое останется в корзине. Восстановить очищенное будет нельзя.', confirmLabel: 'Очистить' }))) return
         await run(async () => {
           for (const name of old) await api['imgstudio:purge']({ conversationId, name })
           dropMarks(old)

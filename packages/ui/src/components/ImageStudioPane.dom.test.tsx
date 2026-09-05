@@ -409,7 +409,7 @@ describe('ImageStudioPane', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать ф-1.png' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать ф-2.png' }))
     fireEvent.click(screen.getByRole('button', { name: 'Удалить выбранные (2)' }))
-    const confirmText = await screen.findByText('Удалить 2 файл(ов)?')
+    const confirmText = await screen.findByText('Удалить 2 файла?')
     const overlay = confirmText.closest('.vc-dialog-overlay') as HTMLElement
     fireEvent.click(within(overlay).getByRole('button', { name: 'Удалить' }))
     await waitFor(() => expect(api['imgstudio:delete']).toHaveBeenCalledTimes(2))
@@ -1607,7 +1607,7 @@ describe('ImageStudioPane', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Выбрать несколько' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Выбрать все' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Удалить выбранные (2)' }))
-    const dialog = await screen.findByText('Удалить 2 файл(ов)?')
+    const dialog = await screen.findByText('Удалить 2 файла?')
     fireEvent.click(within(dialog.closest('.vc-dialog-overlay') as HTMLElement).getByRole('button', { name: 'Удалить' }))
 
     // Кнопку берём из своего тоста: тост с действием живёт долго (человеку надо
@@ -3142,7 +3142,7 @@ describe('ImageStudioPane', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Архивом (2)' }))
     // Превью панель читает у всех карточек, поэтому счёт вызовов ничего не
     // докажет — судим по отчёту: в архив ушло ровно выбранное.
-    expect(await screen.findByText('Архив собран: 2 файл(ов)')).toBeInTheDocument()
+    expect(await screen.findByText('Архив собран: 2 файла')).toBeInTheDocument()
   })
 
   it('пометки выбранных ставятся и снимаются пачкой', async () => {

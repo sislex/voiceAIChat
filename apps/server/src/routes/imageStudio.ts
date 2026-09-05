@@ -3,7 +3,7 @@
 // «поправить выбранную по промпту». Доступ — владелец разговора; чужой и
 // несуществующий неотличимы (404), как везде в Make/чатах.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
+import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { ImageStudioError, type ImageStudioStore } from '../images/studio.js'
 import type { ImageStudioGenerator } from '../llm/imageStudioGenerator.js'
@@ -252,7 +252,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     // первой картинкой — «глухая» ссылка выглядит хуже.
     const origin = `${req.protocol}://${req.headers.host ?? ''}`
     const ogImage = files[0] ? `${origin}/g/${req.params.token}/file?path=${encodeURIComponent(files[0].path)}` : null
-    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Галерея из ${files.length} файл(ов)">${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}<style>
+    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Галерея из ${countRu(files.length, 'файла', 'файлов', 'файлов')}">${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}<style>
       body{margin:0;padding:24px;font:14px/1.4 system-ui,sans-serif;background:#111;color:#eee}
       @media (prefers-color-scheme: light){body{background:#f6f7fb;color:#1a1d23}figure{background:#fff !important}figcaption small{color:#666 !important}}
       h1{font-size:18px;margin:0 0 16px}
@@ -262,7 +262,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       figcaption{margin-top:8px;word-break:break-word}
       figcaption small{display:block;color:#999;margin-top:2px}
       .dl{color:#8ab4f8;text-decoration:none;font-size:12px;margin-left:6px}
-    </style></head><body><h1>${esc(title)} · ${files.length} файл(ов)</h1><div class="grid">${cards}</div></body></html>`
+    </style></head><body><h1>${esc(title)} · ${countRu(files.length, 'файл', 'файла', 'файлов')}</h1><div class="grid">${cards}</div></body></html>`
     return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex').send(html)
   })
 

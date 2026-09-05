@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 7 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 9 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 9 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1163 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1164 коммит(ов) в areas после сверки: 62c2251d perf(images): счёт средних цветов больше не занимает вкладку … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-05 | ⚠ 2 коммит(ов) в areas после сверки: 3449bea3 feat(images): общий враппер мастерской и разгрузка интерфейса студии … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 229 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 115 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 617. Последние:
+Всего записей: 618. Последние:
 
 - [2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md](log/2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md) — workshop-wrapper-shared
 - [2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md](log/2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md) — qa-stage-cost
@@ -72,7 +72,7 @@
 - [2026-09-05-alexeys-macbook-air-2-image-studio-toolbar-and-fit.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-toolbar-and-fit.md) — image-studio-toolbar-and-fit
 - [2026-09-05-alexeys-macbook-air-2-image-studio-tint-perf.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-tint-perf.md) — image-studio-tint-perf
 - [2026-09-05-alexeys-macbook-air-2-image-studio-tint-loop.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-tint-loop.md) — image-studio-tint-loop
-- [2026-09-05-alexeys-macbook-air-2-image-studio-order-select.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-order-select.md) — image-studio-order-select
+- [2026-09-05-alexeys-macbook-air-2-image-studio-plural-and-hash.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-plural-and-hash.md) — image-studio-plural-and-hash
 
 ## Исторические планы
 
