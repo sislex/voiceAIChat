@@ -181,6 +181,8 @@ export interface MakeShareGrant { user: string; role: MakeShareRole }
 /** Что видит получатель read-only ссылки. */
 export interface MakeSharedState {
   token: string
+  stack: MakeStack
+  uiKit: MakeUiKit
   owner: string
   title: string
   /** Роль текущего пользователя по именному доступу; null — только по ссылке (чтение). */
@@ -270,7 +272,32 @@ export interface MakePresenceClient {
 
 /** Настройки проекта Make для ассистента (roadmap-4 пп.6–7): заметки-память и режим работы. Хранятся в `.make/`. */
 export type MakeAssistantMode = 'balanced' | 'designer' | 'developer'
-export interface MakeProjectNotes { notes: string; mode: MakeAssistantMode }
+export const MAKE_STACKS = ['html', 'html-js', 'react', 'angular'] as const
+export type MakeStack = typeof MAKE_STACKS[number]
+export const MAKE_UI_KITS = ['none', 'bootstrap'] as const
+export type MakeUiKit = typeof MAKE_UI_KITS[number]
+export interface MakeProjectNotes { notes: string; mode: MakeAssistantMode; stack: MakeStack; uiKit: MakeUiKit }
+export const normalizeMakeStack = (value: unknown): MakeStack => typeof value === 'string' && (MAKE_STACKS as readonly string[]).includes(value) ? value as MakeStack : 'html-js'
+export const normalizeMakeUiKit = (value: unknown): MakeUiKit => typeof value === 'string' && (MAKE_UI_KITS as readonly string[]).includes(value) ? value as MakeUiKit : 'none'
+export const MAKE_STACK_HINTS: Record<MakeStack, string> = {
+  html: 'Стек HTML+CSS: JavaScript запрещён. Не создавай .js/.mjs файлы и не добавляй теги <script>.',
+  'html-js': 'Стек HTML+CSS+JS: используй браузерный vanilla JavaScript без сборки и index.html как точку входа.',
+  react: 'Стек React 18: используй закреплённый import map, JSX/TSX, компоненты в src/components и соседние *.stories.jsx или *.stories.tsx.',
+  angular: 'Стек Angular standalone JIT: импортируй @angular/compiler до bootstrapApplication, используй standalone-компоненты и закреплённые esm.sh зависимости без build step.'
+}
+export const MAKE_UI_KIT_HINTS: Record<MakeUiKit, string> = {
+  none: 'Стилевая база: собственная CSS-система на переменных-токенах; не подключай UI-фреймворки.',
+  bootstrap: 'Стилевая база Bootstrap 5.3.3: используй закреплённый CDN и отдельный CSS поверх Bootstrap-переменных.'
+}
+export const makeStackLabel = (stack: MakeStack, uiKit: MakeUiKit): string => `${stack === 'html' ? 'HTML+CSS' : stack === 'html-js' ? 'HTML+CSS+JS' : stack === 'react' ? 'React' : 'Angular'} · ${uiKit === 'bootstrap' ? 'Bootstrap' : 'своя система'}`
+export const MAKE_BOOTSTRAP_CSS_URL = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css'
+export const MAKE_BOOTSTRAP_JS_URL = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js'
+export const MAKE_ANGULAR_IMPORT_MAP: Record<string, string> = {
+  '@angular/compiler': 'https://esm.sh/@angular/compiler@18.2.13',
+  '@angular/core': 'https://esm.sh/@angular/core@18.2.13',
+  '@angular/platform-browser': 'https://esm.sh/@angular/platform-browser@18.2.13',
+  rxjs: 'https://esm.sh/rxjs@7.8.1'
+}
 export const MAKE_MODE_HINTS: Record<MakeAssistantMode, string> = {
   balanced: '',
   designer: 'Режим «Дизайнер»: приоритет — визуальная система (токены, типографика, отступы, состояния, адаптив, доступность). Логику и данные не переписывай без просьбы; предлагай варианты оформления и объясняй выбор коротко.',
@@ -378,8 +405,11 @@ export interface MakeTemplate {
   id: string
   title: string
   description: string
+  stack?: MakeStack
   files: Record<string, string>
 }
+
+export const isMakeTemplateCompatible = (template: MakeTemplate, stack: MakeStack): boolean => (template.stack ?? 'html-js') === stack
 
 const TEMPLATE_CSS_BASE = `:root { color-scheme: light; --bg: #f6f7f9; --fg: #1c1f26; --muted: #5b6170; --accent: #2f6df6; --card: #fff; --line: #e3e6ec; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 * { box-sizing: border-box; }
@@ -493,6 +523,7 @@ document.getElementById('orders').innerHTML = orders.map((row) => '<tr><td>' + r
   }
   ,{
     id: 'react',
+    stack: 'react',
     title: 'React-приложение + Storybook',
     description: 'React 18 из esm.sh без сборки: JSX транспилируется на сервере. Компоненты в src/components, сториз рядом (*.stories.jsx) — вкладка «Компоненты».',
     files: {
@@ -587,6 +618,7 @@ export const WithoutTitle = { args: { title: undefined } }
 
   ,{
     id: 'react-ts',
+    stack: 'react',
     title: 'React + TypeScript + Storybook',
     description: 'То же, что React-шаблон, но на TSX: типизированные пропсы компонентов, сториз *.stories.tsx. TSX транспилируется на сервере (типы не проверяются в рантайме).',
     files: {
@@ -686,9 +718,53 @@ export const Default = {}
 export const WithoutTitle = { args: { title: undefined } }
 `
     }
-  }
+  },
+  {
+    id: 'html',
+    stack: 'html',
+    title: 'HTML + CSS',
+    description: 'Статическая страница без JavaScript.',
+    files: {
+      'index.html': MAKE_SCAFFOLD['index.html']!.replace('  <script src="app.js"></script>\n', ''),
+      'styles.css': MAKE_SCAFFOLD['styles.css']!
+    }
+  },
+  {
+    id: 'angular',
+    stack: 'angular',
+    title: 'Angular standalone JIT',
+    description: 'Angular standalone JIT из закреплённых esm.sh импортов.',
+    files: {
+      'index.html': `<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Angular Make</title><link rel="stylesheet" href="styles.css">
+<script type="importmap">${JSON.stringify({ imports: MAKE_ANGULAR_IMPORT_MAP }, null, 2)}</script></head>
+<body><make-root>Загрузка…</make-root><script type="module" src="src/main.ts"></script></body></html>
+`,
+      'styles.css': MAKE_SCAFFOLD['styles.css']!,
+      'src/main.ts': `import '@angular/compiler'
+import { Component } from '@angular/core'
+import { bootstrapApplication } from '@angular/platform-browser'
 
+@Component({ selector: 'make-root', standalone: true, template: '<main class="hero"><h1>Angular работает</h1><p>Standalone JIT без build step.</p></main>' })
+class AppComponent {}
+bootstrapApplication(AppComponent).catch((error) => { throw error })
+`
+    }
+  }
 ]
+
+export function makeScaffold(stack: MakeStack, uiKit: MakeUiKit): Record<string, string> {
+  const template = MAKE_TEMPLATES.find((item) => item.id === (stack === 'html-js' ? 'blank' : stack))
+  const files = { ...(template?.files ?? MAKE_SCAFFOLD) }
+  if (uiKit === 'bootstrap') {
+    let html = files['index.html'] ?? ''
+    html = html.replace('</head>', `  <link rel="stylesheet" href="${MAKE_BOOTSTRAP_CSS_URL}">\n</head>`)
+    if (stack !== 'html') html = html.replace('</body>', `  <script src="${MAKE_BOOTSTRAP_JS_URL}"></script>\n</body>`)
+    files['index.html'] = html
+  }
+  return files
+}
 
 /** Стартовый промпт — как «идеи» на главной Figma Make: клик вставляет текст в композер. */
 export interface MakeStarterPrompt {

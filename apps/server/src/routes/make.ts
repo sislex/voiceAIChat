@@ -558,7 +558,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const owner = db.conversationOwner(conversationId) ?? ''
       const conv = owner ? db.getConversation(owner, conversationId) : null
       const state = await workspaces.state(conversationId)
-      return { token: req.params.token, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
+      const settings = await workspaces.notes(conversationId)
+      return { token: req.params.token, stack: settings.stack, uiKit: settings.uiKit, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
     } catch (error) { return sendError(reply, error) }
   })
   app.get<{ Params: { token: string }; Querystring: { path?: string } }>('/api/make/shared/:token/file', async (req, reply) => {

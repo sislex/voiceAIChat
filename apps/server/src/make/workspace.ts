@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile, statfs } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isMakeTestPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
+  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, MAKE_STACK_HINTS, MAKE_UI_KIT_HINTS, isMakeTemplateCompatible, makeScaffold, normalizeMakeStack, normalizeMakeUiKit, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isMakeTestPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
@@ -280,17 +280,29 @@ export class MakeWorkspaces {
     const dir = join(this.dirOf(conversationId), NOTES_DIR)
     const notes = await readFile(join(dir, 'notes.md'), 'utf8').catch(() => '')
     let mode: MakeAssistantMode = 'balanced'
-    try { const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as { mode?: string }; if (s.mode === 'designer' || s.mode === 'developer') mode = s.mode } catch { /* дефолт */ }
-    return { notes, mode }
+    let stack: MakeProjectNotes['stack'] = 'html-js'
+    let uiKit: MakeProjectNotes['uiKit'] = 'none'
+    try {
+      const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as { mode?: unknown; stack?: unknown; uiKit?: unknown }
+      if (s.mode === 'designer' || s.mode === 'developer') mode = s.mode
+      stack = normalizeMakeStack(s.stack)
+      uiKit = normalizeMakeUiKit(s.uiKit)
+    } catch { /* безопасные дефолты для отсутствующих и повреждённых настроек */ }
+    return { notes, mode, stack, uiKit }
   }
 
   async setNotes(conversationId: string, patch: Partial<MakeProjectNotes>): Promise<MakeProjectNotes> {
     const dir = join(this.dirOf(conversationId), NOTES_DIR)
     await mkdir(dir, { recursive: true })
     const cur = await this.notes(conversationId)
-    const next: MakeProjectNotes = { notes: (patch.notes ?? cur.notes).slice(0, 20_000), mode: patch.mode ?? cur.mode }
+    const next: MakeProjectNotes = {
+      notes: (typeof patch.notes === 'string' ? patch.notes : cur.notes).slice(0, 20_000),
+      mode: patch.mode === 'designer' || patch.mode === 'developer' || patch.mode === 'balanced' ? patch.mode : cur.mode,
+      stack: patch.stack === undefined ? cur.stack : normalizeMakeStack(patch.stack),
+      uiKit: patch.uiKit === undefined ? cur.uiKit : normalizeMakeUiKit(patch.uiKit)
+    }
     await writeFile(join(dir, 'notes.md'), next.notes, 'utf8')
-    await writeFile(join(dir, 'settings.json'), JSON.stringify({ mode: next.mode }), 'utf8')
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ mode: next.mode, stack: next.stack, uiKit: next.uiKit }), 'utf8')
     return next
   }
 
@@ -414,7 +426,9 @@ export class MakeWorkspaces {
       const tokens = css ? parseCssTokens(css.data.toString('utf8')) : []
       if (tokens.length) parts.push(`Дизайн-токены проекта (${tokensPath}, используй var(--имя), новые добавляй туда же): ${tokens.slice(0, 40).map((t) => `${t.name}: ${t.value}`).join('; ')}${tokens.length > 40 ? '; …' : ''}`)
     }
-    const memo = await this.notes(conversationId).catch(() => ({ notes: '', mode: 'balanced' as MakeAssistantMode }))
+    const memo = await this.notes(conversationId).catch(() => ({ notes: '', mode: 'balanced' as MakeAssistantMode, stack: 'html-js' as const, uiKit: 'none' as const }))
+    parts.push(MAKE_STACK_HINTS[memo.stack])
+    parts.push(MAKE_UI_KIT_HINTS[memo.uiKit])
     if (MAKE_MODE_HINTS[memo.mode]) parts.push(MAKE_MODE_HINTS[memo.mode])
     if (memo.notes.trim()) parts.push(`Заметки проекта (решения, которых нужно придерживаться; дополняй через make_remember):\n${memo.notes.trim().slice(0, 4000)}`)
     const open = (await this.comments(conversationId).catch(() => [] as MakeComment[])).filter((c) => !c.resolved)
@@ -1215,6 +1229,17 @@ export class MakeWorkspaces {
     const files = await this.list(conversationId)
     const paths = new Set(files.map((f) => f.path))
     const issues: MakeCheckIssue[] = []
+    const settings = await this.notes(conversationId)
+    if (settings.stack === 'html') {
+      for (const file of files) if (/\.(?:js|mjs)$/i.test(file.path)) issues.push({ path: file.path, kind: 'lint', severity: 'warning', rule: 'html-no-script', message: 'Стек HTML+CSS запрещает JavaScript-файлы' })
+    }
+    if (settings.stack === 'react') {
+      for (const file of files) {
+        const match = file.path.match(/^src\/components\/(.+)\.(jsx|tsx)$/i)
+        if (!match || /\.(?:stories|test)\.(?:jsx|tsx)$/i.test(file.path)) continue
+        if (!paths.has(`src/components/${match[1]}.stories.${match[2]}`)) issues.push({ path: file.path, kind: 'lint', severity: 'warning', rule: 'react-component-story', message: 'У React-компонента нет соседнего файла stories' })
+      }
+    }
     if (!paths.has('index.html')) issues.push({ path: 'index.html', kind: 'no-index', message: 'Нет index.html — превью открывать нечего' })
     for (const file of files) {
       if (file.size === 0) issues.push({ path: file.path, kind: 'empty-file', message: 'Файл пустой' })
@@ -1231,6 +1256,7 @@ export class MakeWorkspaces {
       }
       if (!/\.(html?|css)$/i.test(file.path)) continue
       const text = (await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')).slice(0, 512 * 1024)
+      if (settings.stack === 'html' && /<script\b/i.test(text)) issues.push({ path: file.path, kind: 'lint', severity: 'warning', rule: 'html-no-script', message: 'Стек HTML+CSS запрещает теги script' })
       const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''
       const refs = new Set<string>()
       for (const m of text.matchAll(/(?:href|src)\s*=\s*["']([^"'#?]+)/gi)) refs.add(m[1]!)
@@ -1255,10 +1281,12 @@ export class MakeWorkspaces {
   async applyTemplate(conversationId: string, templateId: string): Promise<MakeProjectState> {
     const template = MAKE_TEMPLATES.find((t) => t.id === templateId)
     if (!template) throw new MakeError('not_found', `Шаблон «${templateId}» не найден`)
+    const settings = await this.notes(conversationId)
+    if (!isMakeTemplateCompatible(template, settings.stack)) throw new MakeError('not_found', `Шаблон «${templateId}» несовместим со стеком ${settings.stack}`)
     await this.ensure(conversationId)
-    await this.snapshot(conversationId, `Перед шаблоном «${template.title}»`)
+    await this.snapshot(conversationId, 'До смены стека')
     await this.clearFiles(conversationId)
-    for (const [path, content] of Object.entries(template.files)) {
+    for (const [path, content] of Object.entries(settings.uiKit === 'none' ? template.files : makeScaffold(settings.stack, settings.uiKit))) {
       const abs = join(this.dirOf(conversationId), ...path.split('/'))
       await mkdir(dirname(abs), { recursive: true })
       await writeFile(abs, content, 'utf8')
