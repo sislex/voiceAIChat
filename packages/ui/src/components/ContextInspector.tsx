@@ -11,6 +11,7 @@ import {
   OPEN_SECTIONS_KEY,
   SECTION_IDS,
   detailIdFromHash,
+  filterSnapshotByGroup,
   highlightParts,
   kbEmptyText,
   matchesQuery,
@@ -19,6 +20,7 @@ import {
   reasonFor,
   roleHint,
   sizeLabel,
+  slugForFilename,
   sourceLabel,
   summaryLine,
   userStatus
@@ -314,11 +316,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
 
   /**
    * Человекочитаемый отчёт снимка. JSON годится для разбора, но в переписке и
-   * в задаче читают текст: что уйдёт, что выключено и почему.
+   * в задаче читают текст: что уйдёт, что выключено и почему. Если передана
+   * группа — заголовок и вводная строка называют её явно, чтобы отчёт «только
+   * инструкции» не выглядел как полный снимок с урезанной серединой.
    */
-  const markdownReport = (value: ConversationContextSnapshot): string => {
+  const markdownReport = (value: ConversationContextSnapshot, group: { id: string; title: string } | null = null): string => {
     const lines: string[] = [
-      `# Контекст разговора ${value.conversationId}`,
+      `# Контекст разговора ${value.conversationId}${group ? ` — группа «${group.title}»` : ''}`,
       '',
       `Снимок: ${new Date(value.generatedAt).toLocaleString('ru-RU')} · роль: ${value.viewerRole}`,
       `Движок: ${value.summary.provider} · ${value.summary.model || 'модель из конфигурации CLI'}`,
@@ -797,6 +801,16 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const isAdmin = effectiveRole === 'admin'
   const preview = snapshot.promptPreview
   /**
+   * Что выгружаем и с какой пометкой в имени файла/подписи кнопки. Выбранная
+   * группа сужает JSON, Markdown и CSV одной и той же функцией: снимок остаётся
+   * тем же типом `ConversationContextSnapshot`, поэтому существующие форматы
+   * (`markdownReport`, `changesCsv`) переиспользуются без параллельной ветки.
+   */
+  const exportGroup = groupFilter ? snapshotGroups.find((group) => group.id === groupFilter) ?? null : null
+  const exportSnapshot = exportGroup ? filterSnapshotByGroup(snapshot, exportGroup.id) : snapshot
+  const exportFileSuffix = exportGroup ? `-${slugForFilename(exportGroup.id)}` : ''
+  const exportGroupLabel = exportGroup ? ` (${exportGroup.title})` : ''
+  /**
    * Цена одного токена постоянной части — из суммы, которую посчитал сервер по
    * своему прайсу. Своей таблицы цен в UI нет и быть не должно: она разъедется
    * с админской. Нет прайса для модели — нет и оценки экономии.
@@ -962,9 +976,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         <p data-testid="context-prompt-size">Сервер добавит {preview.blocks.length} блок(ов): ≈{preview.approxTokens} токенов, {preview.chars} символов{preview.costUsd === null ? '' : `, ≈$${preview.costUsd.toFixed(4)} за ход`}. Снимок от {new Date(snapshot.generatedAt).toLocaleTimeString('ru-RU')}.</p>
         <div className="context-actions">
           <Button size="sm" disabled={!preview.text} onClick={() => void copy(preview.text, 'Текст')}>Скопировать текст</Button>
-          <Button size="sm" variant="ghost" onClick={() => void copy(JSON.stringify(snapshot, null, 2), 'Снимок')}>Скопировать JSON снимка</Button>
-          <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.json`, JSON.stringify(snapshot, null, 2), 'application/json')}>Скачать снимок</Button>
-          <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.md`, markdownReport(snapshot), 'text/markdown')}>Скачать отчёт (Markdown)</Button>
+          <Button size="sm" variant="ghost" onClick={() => void copy(JSON.stringify(exportSnapshot, null, 2), exportGroup ? `JSON группы «${exportGroup.title}»` : 'Снимок')}>Скопировать JSON снимка{exportGroupLabel}</Button>
+          <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}${exportFileSuffix}.json`, JSON.stringify(exportSnapshot, null, 2), 'application/json')}>Скачать снимок{exportGroupLabel}</Button>
+          <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}${exportFileSuffix}.md`, markdownReport(exportSnapshot, exportGroup), 'text/markdown')}>Скачать отчёт (Markdown){exportGroupLabel}</Button>
           {/* Настройки могли измениться в другом окне или другим админом:
               снимок отражает момент открытия, и обновить его надо уметь. */}
           <Button size="sm" variant="ghost" disabled={busy || locked} onClick={() => setReload((value) => value + 1)}>Обновить снимок</Button>
@@ -1376,9 +1390,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           </select>
         </label>
         {/* Журнал в задачу или в переписку с поддержкой: CSV открывается всем,
-            в отличие от JSON снимка. */}
+            в отличие от JSON снимка. Фильтр по группе сужает выгрузку — не
+            приходится потом чистить экспорт руками, чтобы прислать одну строку
+            про инструкции. */}
         <div className="context-actions">
-          <Button size="sm" variant="ghost" onClick={() => download(`context-changes-${props.conversationId}.csv`, changesCsv(snapshot), 'text/csv')}>Экспорт журнала (CSV)</Button>
+          <Button size="sm" variant="ghost" onClick={() => download(`context-changes-${props.conversationId}${exportFileSuffix}.csv`, changesCsv(exportSnapshot), 'text/csv')}>Экспорт журнала (CSV){exportGroupLabel}</Button>
         </div>
       </div>
       <ul className="context-changelog">{snapshot.changes.filter((event) => (!logActor || event.actor === logActor) && (!logItem || event.itemId === logItem)

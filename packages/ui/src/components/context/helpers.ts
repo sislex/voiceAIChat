@@ -4,6 +4,54 @@
 // проверяется напрямую, без рендера экрана.
 import type { ContextKbPreview, ContextSnapshotItem, ConversationContextSnapshot, UserRole } from '@shared/types'
 
+/**
+ * Срез снимка одной группой источников. Экспорт «всего снимка» в задачу или в
+ * переписку часто спрашивают про один раздел («что в персонализации», «что за
+ * инструкции»), а полный JSON/Markdown из тридцати источников с блоками промпта
+ * читать некому — пропадает суть. Здесь снимок сужается: остаются только пункты
+ * выбранной группы, блоки промпта с пересечением по `itemIds`, изменения по
+ * этим же id и запрещённые инструменты, привязанные к пунктам группы. Поля,
+ * которые описывают весь ход (`turnSizes`, `costUsd`, `turnTotal.history*`), в
+ * срезе теряют смысл — стоимость и историю нельзя честно поделить между
+ * группами, поэтому обнуляются, а не пересчитываются на глаз.
+ */
+export function filterSnapshotByGroup(snapshot: ConversationContextSnapshot, groupId: string): ConversationContextSnapshot {
+  const group = snapshot.groups.find((entry) => entry.id === groupId)
+  if (!group) return snapshot
+  const itemIds = new Set(group.items.map((item) => item.id))
+  const blocks = snapshot.promptPreview.blocks.filter((block) => block.itemIds.some((id) => itemIds.has(id)))
+  const text = blocks.map((block) => block.text).join('\n\n')
+  const approxTokens = blocks.reduce((sum, block) => sum + block.approxTokens, 0)
+  return {
+    ...snapshot,
+    groups: [group],
+    changes: snapshot.changes.filter((event) => itemIds.has(event.itemId)),
+    disallowedTools: snapshot.disallowedTools.filter((tool) => itemIds.has(`mcp-remote-${tool}`) || itemIds.has(`mcp-${tool}`)),
+    turnSizes: [],
+    promptPreview: {
+      ...snapshot.promptPreview,
+      blocks,
+      text,
+      chars: text.length,
+      approxTokens,
+      costUsd: null,
+      costByModel: [],
+      turnTotal: { ...snapshot.promptPreview.turnTotal, chars: text.length, approxTokens, historyChars: 0, historyApproxTokens: 0 }
+    }
+  }
+}
+
+/**
+ * Безопасный кусочек для имени файла экспорта: латиница, цифры, дефис. Русские
+ * названия групп сохранять в имя не пробуем — часть браузеров и файловых
+ * систем режет юникод в `download` до знака вопроса, и «context-Инструкции.md»
+ * приезжает как «context-______.md».
+ */
+export function slugForFilename(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return slug || 'group'
+}
+
 /** Статус пункта словами пользователя, а не полями снимка. */
 export type UserStatus = 'Будет использовано' | 'Доступно при необходимости' | 'Не настроено' | 'Недоступно' | 'Определится после отправки' | 'Выключено вами' | 'Выключено в настройках'
 
