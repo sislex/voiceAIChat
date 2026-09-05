@@ -1417,9 +1417,14 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     if (!pending.length) return
     tintQueue.current = true
     void (async () => {
-      // Счётчик ставим уже в микротаске: `ensureTints` зовут прямо из тела
-      // рендера, а `setState` в фазе рендера React крутит по кругу — прогон
-      // тестов на этом вставал намертво.
+      /**
+       * Счётчик ставим уже в микротаске: `ensureTints` зовут прямо из тела
+       * рендера, а `setState` в фазе рендера React крутит по кругу — прогон
+       * тестов на этом вставал намертво. И только по партиям, не по кадрам:
+       * состояние здесь перерисовывает всю сетку, и обновление на каждый из
+       * восьмидесяти кадров занимало вкладку так, что она переставала
+       * отвечать (поймано в браузере).
+       */
       setTintProgress(pending.length)
       try {
         const found: Record<string, { r: number; g: number; b: number }> = {}
@@ -1431,17 +1436,17 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
             canvas.width = 24
             canvas.height = 24
             const ctx = canvas.getContext('2d')
-            if (ctx) {
-              ctx.drawImage(bitmap, 0, 0, 24, 24)
-              const tint = averageColor(ctx.getImageData(0, 0, 24, 24).data)
-              if (tint) found[file.path] = tint
-            }
+            const tint = ctx ? (ctx.drawImage(bitmap, 0, 0, 24, 24), averageColor(ctx.getImageData(0, 0, 24, 24).data)) : null
+            // Кадр может пройти без ошибки, но цвета не дать: полностью
+            // прозрачный PNG, канвас без контекста, заглушка в тестах. Такой
+            // путь тоже помечаем — иначе он вечно возвращается в очередь.
+            if (tint) found[file.path] = tint
+            else tintFailed.current.add(file.path)
             bitmap.close?.()
           } catch {
             // svg и битые пропускаем: у них цвета не спросить — и больше не спрашиваем.
             tintFailed.current.add(file.path)
           }
-          setTintProgress((left) => Math.max(0, left - 1))
         })
         if (Object.keys(found).length) setTints((prev) => ({ ...prev, ...found }))
       } finally {
@@ -1783,11 +1788,25 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const readBase64 = (path: string): Promise<string> =>
     api['imgstudio:read']({ conversationId, path }).then(({ dataBase64 }) => dataBase64)
 
-  const blobOf = (path: string): Promise<Blob> =>
-    readBase64(path).then((dataBase64) => {
-      const bytes = Uint8Array.from(atob(dataBase64), (char) => char.charCodeAt(0))
-      return new Blob([bytes], { type: imageStudioMime(path) })
-    })
+  /**
+   * Байты файла. Сначала пробуем уже скачанное превью: это тот же файл, только
+   * лежит рядом blob-URL'ом. Чтение через мост тянет его во второй раз, а
+   * `atob` + `Uint8Array.from` с колбэком на каждый байт идут синхронно в
+   * главном потоке — на сотне кадров сортировка «по цвету» занимала вкладку
+   * на десятки секунд (renderer переставал отвечать на CDP).
+   */
+  const blobOf = async (path: string): Promise<Blob> => {
+    const preview = previewsRef.current[path]
+    if (preview) {
+      const cached = await fetch(preview).then((response) => response.blob()).catch(() => null)
+      if (cached?.size) return cached
+    }
+    const dataBase64 = await readBase64(path)
+    const binary = atob(dataBase64)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+    return new Blob([bytes], { type: imageStudioMime(path) })
+  }
 
   const download = (path: string): Promise<void> =>
     blobOf(path).then((blob) => {
