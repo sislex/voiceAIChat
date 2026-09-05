@@ -5,6 +5,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
+import { SlidingWindowLimiter } from '../make/rateLimit.js'
 import { ImageStudioError, type ImageStudioStore } from '../images/studio.js'
 import type { ImageStudioGenerator } from '../llm/imageStudioGenerator.js'
 
@@ -13,6 +14,8 @@ export interface ImageStudioRoutesDeps {
   store: ImageStudioStore
   /** Генератор изображений; функцией — в тестах подменяется фейком. */
   generator?: (userId: string) => ImageStudioGenerator
+  /** Счётчик попыток пароля публичной галереи; в тестах — со своими часами. */
+  passwordLimiter?: SlidingWindowLimiter
 }
 
 function sendStudioError(reply: FastifyReply, error: unknown): FastifyReply {
@@ -209,14 +212,20 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   // Публичная страница галереи: без авторизации, по непубличному токену.
   // Только чтение и только картинки; noindex, чтобы ссылку не съели роботы.
+  /**
+   * Пароль публичной галереи можно было подбирать без счёта: у публичного
+   * превью Make лимит стоял, а здесь нет. Окно то же — десять попыток за
+   * десять минут на пару «IP + токен».
+   */
+  const passwordLimiter = deps.passwordLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
   const gateCookieName = (token: string): string => `vc_gal_${token}`
   const cookieValue = (req: FastifyRequest, name: string): string | null => {
     const m = (req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(`${name}=`))
     return m ? decodeURIComponent(m.slice(name.length + 1)) : null
   }
-  const passwordPage = (action: string, wrong: boolean): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
+  const passwordPage = (action: string, wrong: boolean, limited = 0): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}@media (prefers-color-scheme: dark){body{background:#111;color:#eee}form{background:#1c1c1c !important;box-shadow:none !important}input{background:#111;border-color:#333;color:#eee}}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
-<body><form method="post" action="${action}"><h1>Галерея защищена паролем</h1>${wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
+<body><form method="post" action="${action}"><h1>Галерея защищена паролем</h1>${limited ? `<p class="err">Слишком много попыток — подождите ${limited} с.</p>` : wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" aria-label="Пароль галереи" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
 
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
     app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
@@ -227,7 +236,15 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   app.post<{ Params: { token: string }; Body: { password?: string } }>('/g/:token/__auth__', async (req, reply) => {
     const conversationId = await store.publishedTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
+    const verdict = passwordLimiter.hit(`${req.ip}:${req.params.token}`)
+    if (!verdict.ok) {
+      return reply.code(429).header('retry-after', String(verdict.retryAfterSec))
+        .header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
+        .send(passwordPage(`/g/${req.params.token}/__auth__`, false, verdict.retryAfterSec))
+    }
     if (!(await store.verifyPublicPassword(conversationId, req.body?.password ?? ''))) return reply.redirect(`/g/${req.params.token}/?wrong=1`)
+    // Вошли — окно попыток по этому токену начинается заново.
+    passwordLimiter.forget(`${req.ip}:${req.params.token}`)
     const gate = await store.publicGate(conversationId)
     return reply
       .header('set-cookie', `${gateCookieName(req.params.token)}=${gate ?? ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`)
