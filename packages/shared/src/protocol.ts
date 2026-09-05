@@ -514,6 +514,15 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/git/conflict?workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}`,
   projectGitStage: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/stage`,
   projectGitResolve: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/resolve`,
+  /** Компоненты рабочей копии и Storybook проекта на машине (режим «Проект» в Make). */
+  projectComponents: (id: string, workspace: string) =>
+    `/api/projects/${encodeURIComponent(id)}/components?workspace=${encodeURIComponent(workspace)}`,
+  projectComponentStories: (id: string, workspace: string, path: string) =>
+    `/api/projects/${encodeURIComponent(id)}/components/stories?workspace=${encodeURIComponent(workspace)}&path=${encodeURIComponent(path)}`,
+  projectStorybook: (id: string, workspace: string) =>
+    `/api/projects/${encodeURIComponent(id)}/components/storybook?workspace=${encodeURIComponent(workspace)}`,
+  projectStorybookAction: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/storybook`,
+  projectComponentTicket: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/ticket`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',

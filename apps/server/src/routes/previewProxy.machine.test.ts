@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import fastify from 'fastify'
 import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
-import { machineAgentIdOf, registerPreviewProxy, type PreviewMachineBridge } from './previewProxy.js'
+import { isMachinePreviewHost, machineAgentIdOf, registerPreviewProxy, rewriteModuleSpecifiers, type PreviewMachineBridge } from './previewProxy.js'
 
 interface BridgeCall { agentId: string; request: AgentHttpRequest }
 
@@ -172,5 +172,29 @@ describe('кэш переписанного тела', () => {
     expect(res.headers.etag).toBeUndefined()
     expect(res.headers['last-modified']).toBeUndefined()
     await app.close()
+  })
+})
+
+describe('модули dev-сервера машины', () => {
+  it('абсолютные и относительные импорты переписываются на прокси, голые имена — нет', () => {
+    const base = new URL('http://agent-1.machine.internal:6006/iframe.html')
+    const code = [
+      'import { setup } from "/@vite/client";',
+      'import "./styles.css";',
+      'const lazy = () => import("../chunks/story.js");',
+      'export { x } from "/@id/virtual:app";',
+      'import React from "react";'
+    ].join('\n')
+    const out = rewriteModuleSpecifiers(code, base)
+    expect(out).toContain('from "/api/preview?url=http%3A%2F%2Fagent-1.machine.internal%3A6006%2F%40vite%2Fclient"')
+    expect(out).toContain('import "/api/preview?url=http%3A%2F%2Fagent-1.machine.internal%3A6006%2Fstyles.css"')
+    expect(out).toContain('import("/api/preview?url=http%3A%2F%2Fagent-1.machine.internal%3A6006%2Fchunks%2Fstory.js")')
+    // Голое имя пакета dev-сервер уже разрешил — трогать его нечего.
+    expect(out).toContain('import React from "react"')
+  })
+
+  it('переписывание включается только для хостов машин', () => {
+    expect(isMachinePreviewHost('agent-1.machine.internal')).toBe(true)
+    expect(isMachinePreviewHost('example.com')).toBe(false)
   })
 })
