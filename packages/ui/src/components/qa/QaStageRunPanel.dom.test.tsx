@@ -73,3 +73,36 @@ it('снимок сценария виден, а повтор обещает в�
   expect(screen.getByText('Вход')).toBeInTheDocument()
   expect(screen.getByRole('button',{name:'Повторить те же сценарии'})).toBeInTheDocument()
 })
+
+it('снимок перечитывается по WS-событию этапа, а не опросом по таймеру',async()=>{
+  vi.useFakeTimers()
+  const getIntegration=vi.fn().mockResolvedValue(state())
+  window.qa={getIntegration} as unknown as typeof window.qa
+  let emit:((event:{projectId:string;taskId:string;stage:string})=>void)|undefined
+  window.board={
+    subscribe:vi.fn(),unsubscribe:vi.fn(),onChanged:vi.fn(()=>()=>{}),onConnected:vi.fn(()=>()=>{}),
+    onPreparationRunUpdated:vi.fn(()=>()=>{}),onTaskRepositoriesUpdated:vi.fn(()=>()=>{}),
+    onQaStageUpdated:vi.fn((cb)=>{emit=cb as typeof emit;return ()=>{emit=undefined}}),
+    onImprovementsUpdated:vi.fn(()=>()=>{}),onReconnect:vi.fn(()=>()=>{})
+  } as unknown as typeof window.board
+  render(<QaStageRunPanel projectId="p1" taskId="t1" stage="integration_tests"/>)
+  await vi.waitFor(()=>expect(getIntegration).toHaveBeenCalledTimes(1))
+
+  // Активный ран больше не означает опрос: без событий запросов не прибавляется.
+  await vi.advanceTimersByTimeAsync(6000)
+  expect(getIntegration).toHaveBeenCalledTimes(1)
+
+  // Чужой этап и чужая задача панель не трогают.
+  emit?.({projectId:'p1',taskId:'t1',stage:'component_qa'})
+  emit?.({projectId:'p1',taskId:'other',stage:'integration_tests'})
+  await vi.advanceTimersByTimeAsync(600)
+  expect(getIntegration).toHaveBeenCalledTimes(1)
+
+  // Своё событие — один перезапрос; серия событий схлопывается дебаунсом.
+  emit?.({projectId:'p1',taskId:'t1',stage:'integration_tests'})
+  emit?.({projectId:'p1',taskId:'t1',stage:'integration_tests'})
+  await vi.advanceTimersByTimeAsync(600)
+  expect(getIntegration).toHaveBeenCalledTimes(2)
+  delete window.board
+  vi.useRealTimers()
+})

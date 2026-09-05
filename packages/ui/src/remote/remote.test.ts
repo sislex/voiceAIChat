@@ -135,6 +135,18 @@ describe('WsClient', () => {
     c.close()
   })
 
+  it('маршрутизирует адресное событие QA-этапа', async () => {
+    const c = new WsClient('ws://x/ws')
+    const first = FakeWebSocket.last!
+    const updates = vi.fn()
+    makeBoardBridge(c).onQaStageUpdated(updates)
+    first._open()
+    await Promise.resolve()
+    first._emit({ t: 'qa.stage.updated', projectId: 'p1', taskId: 't1', stage: 'integration_tests' })
+    expect(updates).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', stage: 'integration_tests' })
+    c.close()
+  })
+
   it('маршрутизирует preparation-run и отличает reconnect от первого подключения', async () => {
     const c = new WsClient('ws://x/ws')
     const first = FakeWebSocket.last!

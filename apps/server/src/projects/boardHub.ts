@@ -8,6 +8,9 @@ export interface PreparationRunUpdate { userId: string; projectId: string; taskI
 export type PreparationRunListener = (update: PreparationRunUpdate) => void
 export interface TaskRepositoriesUpdate { projectId: string; taskId: string }
 export type TaskRepositoriesListener = (update: TaskRepositoriesUpdate) => void
+/** Изменилось состояние QA-этапа задачи: панель перечитает снимок сама. */
+export interface QaStageUpdate { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }
+export type QaStageListener = (update: QaStageUpdate) => void
 
 export interface NotificationInvalidation {
   projectId: string
@@ -37,6 +40,8 @@ export class BoardHub {
   private readonly listeners = new Set<BoardListener>()
   private readonly preparationRunListeners = new Set<PreparationRunListener>()
   private readonly taskRepositoriesListeners = new Set<TaskRepositoriesListener>()
+  private readonly qaStageListeners = new Set<QaStageListener>()
+  private readonly improvementsListeners = new Set<BoardListener>()
 
   /** Уведомить подписчиков об изменении доски проекта. */
   emit(projectId: string): void {
@@ -59,6 +64,30 @@ export class BoardHub {
   onPreparationRunChange(cb: PreparationRunListener): () => void {
     this.preparationRunListeners.add(cb)
     return () => this.preparationRunListeners.delete(cb)
+  }
+
+  /**
+   * Адресная инвалидация QA-этапа. Отдельно от `emit(projectId)`: доска обновляется
+   * на каждое изменение любой задачи, а панель этапа должна дёргать свой REST только
+   * когда изменился именно её ран.
+   */
+  emitQaStage(update: QaStageUpdate): void {
+    for (const listener of this.qaStageListeners) listener(update)
+  }
+
+  onQaStageChange(cb: QaStageListener): () => void {
+    this.qaStageListeners.add(cb)
+    return () => this.qaStageListeners.delete(cb)
+  }
+
+  /** Очередь улучшений проекта изменилась (предложение создано, скрыто, стало задачей). */
+  emitImprovements(projectId: string): void {
+    for (const listener of this.improvementsListeners) listener(projectId)
+  }
+
+  onImprovementsChange(cb: BoardListener): () => void {
+    this.improvementsListeners.add(cb)
+    return () => this.improvementsListeners.delete(cb)
   }
 
   emitTaskRepositories(update: TaskRepositoriesUpdate): void {
