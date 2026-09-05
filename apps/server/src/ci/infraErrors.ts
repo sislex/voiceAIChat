@@ -6,7 +6,7 @@
 /** Разобранная инфраструктурная ошибка: что случилось и что с этим делать. */
 export interface CiInfraFailure {
   /** Машиночитаемый вид сбоя (уходит в аудит `run.infra_error`). */
-  kind: 'npm_cache' | 'disk_full' | 'agent_offline' | 'missing_dependencies'
+  kind: 'npm_cache' | 'disk_full' | 'agent_offline' | 'missing_dependencies' | 'llm_transport'
   /** Короткое описание для лога шага. */
   message: string
   /** Что делать оператору. */
@@ -35,6 +35,24 @@ const AGENT_OFFLINE = /(?:^|\n)Машина (?:отключилась[^\n]*|не
 const MISSING_COMMAND = /: (?:command not found|not found)(?:\n|$)/
 /** Код 127 приходит и от самой оболочки, и от npm — оба вида пишем явно. */
 const EXIT_127 = /(?:^|\n)npm error code 127(?:\n|$)/
+
+/**
+ * Обрыв канала до исполнителя LLM: контейнер runner перезапустился, соединение
+ * умерло посреди ответа. К задаче это отношения не имеет — модель даже не успела
+ * ошибиться, — поэтому «выберите другую модель» здесь не помогает, а помогает
+ * повтор того же шага.
+ */
+const LLM_TRANSPORT = /Соединение с исполнителем [^\n]*оборвалось|исполнитель [^\n]*не ответил|runner .*disconnected/i
+
+/** Признать ошибку шага «Работа модели» сбоем транспорта, а не дефектом задачи. */
+export function classifyLlmTransportFailure(message: string): CiInfraFailure | null {
+  if (!message || !LLM_TRANSPORT.test(message)) return null
+  return {
+    kind: 'llm_transport',
+    message: `Обрыв соединения с исполнителем модели — инфраструктурный сбой: ${message.trim().slice(0, 300)}`,
+    hint: 'Повторить тот же шаг: смена модели тут не нужна, ход прервался на транспорте, а не на содержании.'
+  }
+}
 
 /**
  * Признать падение шага инфраструктурным по хвосту вывода. Код выхода не
@@ -81,7 +99,8 @@ export const CI_INFRA_LABEL: Record<CiInfraFailure['kind'], string> = {
   npm_cache: 'повреждён кэш npm',
   disk_full: 'нет места на диске',
   agent_offline: 'машина потеряла связь',
-  missing_dependencies: 'нет зависимостей в рабочей копии'
+  missing_dependencies: 'нет зависимостей в рабочей копии',
+  llm_transport: 'оборвалось соединение с исполнителем модели'
 }
 
 /** Готовый текст для лога шага: диагноз + подсказка + почему без fix-loop. */

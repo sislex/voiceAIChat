@@ -127,6 +127,13 @@ export const imageStudioViewsKey = (conversationId: string): string => `vc.imgst
 export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
 
 /**
+ * Команда запуска Storybook в режиме «Репозиторий» — на проект: в монорепо витрина
+ * живёт не в корне, и сервер эту команду не угадывает.
+ */
+export const makeStorybookCommandKey = (projectId: string): string =>
+  `vc.make.storybookCommand.${encodeURIComponent(projectId)}`
+
+/**
  * Все ключи предпочтений интерфейса в одном месте — реестр для стража
  * `preferenceKeys.test.ts`. Он не даёт разъехаться двум вещам: одинаковому
  * ключу у разных фич (одна молча затирает другую) и ключу-литералу мимо этого

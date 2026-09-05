@@ -14,7 +14,7 @@ import {
   isSafeRepoRelativePath, isValidGitBranchName, isValidGitRef, normalizeCommitMessage,
   parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain,
   parseGitWorkspaceId, splitGitSections,
-  GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus,
+  GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus, isProjectStoryPath,
   type AgentPolicy, type FsResult, type GitBranchChanges, type GitBranchList,
   type GitCheckoutResult, type GitCommitDetail, type GitCommitResult, type GitConflictSide,
   type GitConflictStages, type GitDiscardResult, type GitFileContent, type GitFileDiff,
@@ -29,7 +29,7 @@ import { hasProjectPermission } from '../users/auth.js'
 import {
   branchChangesScript, branchesScript, checkoutScript, commitDetailScript, commitScript,
   conflictStagesScript, createBranchScript, discardScript, fileAtRefScript, gitBaseEnv,
-  grepScript, logScript, pullScript, pushScript, resolveConflictScript, stageScript,
+  grepScript, logScript, pullScript, pushScript, resolveConflictScript, stageScript, storyFilesScript,
   statusScript, treeScript, type GitScript
 } from './scripts.js'
 
@@ -68,6 +68,8 @@ export class GitError extends Error {
 const READ_TIMEOUT_MS = 30_000
 const MUTATE_TIMEOUT_MS = 120_000
 const NETWORK_TIMEOUT_MS = 300_000
+/** Потолок вывода `ls-files`: у exec машины он 200 КБ, оставляем запас на base64. */
+const STORY_FILES_MAX_BYTES = 64 * 1024
 
 /** Последняя содержательная строка вывода: именно её показываем человеку. */
 function lastLine(output: string): string {
@@ -520,6 +522,22 @@ export class GitWorkspaceService {
     // Пустой результат — не ошибка: git grep выходит с кодом 1, когда ничего не нашёл.
     const parsed = parseGitGrep(decodeBase64Section(splitGitSections(result.output).grep), bounded)
     return { query: needle, matches: parsed.matches, truncated: parsed.truncated }
+  }
+
+  /**
+   * Файлы сториз рабочей копии — вход в режим «Компоненты проекта» Make, когда
+   * Storybook ещё не поднят: список компонентов есть сразу, а живой `index.json`
+   * появится после запуска.
+   */
+  async storyFiles(userId: string, projectId: string, workspaceId: string, maxBytes: number = STORY_FILES_MAX_BYTES): Promise<{ paths: string[]; truncated: boolean }> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const bounded = Math.max(1024, Math.min(maxBytes, STORY_FILES_MAX_BYTES))
+    const result = await this.run(userId, projectId, ref, storyFilesScript(bounded), READ_TIMEOUT_MS)
+    const raw = decodeBase64Section(splitGitSections(result.output).stories_b64)
+    const paths = raw.split('\u0000').map((path) => path.trim()).filter((path) => path && isProjectStoryPath(path))
+    // `head -c` мог оборвать последний путь ровно посередине — честно говорим об обрезке.
+    const truncated = Buffer.byteLength(raw) >= bounded
+    return { paths: paths.sort((a, b) => a.localeCompare(b, 'ru')), truncated }
   }
 
   /** Три стадии конфликта для трёхстороннего просмотра. */
