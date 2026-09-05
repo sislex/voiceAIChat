@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-01
-checked: cbb9c90f
+updated: 2026-09-04
+checked: fbfb9464
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -274,6 +274,18 @@ USD за 1M обычных/кэшированных/записанных в кэ
 
 **Cookie-сессия и CSRF (auth-roadmap п.5).** Логин, помимо `token` в теле, ставит `vc_session=<тот же HMAC-токен>; Path=/; HttpOnly; SameSite=Strict` (+`Secure`, если `x-forwarded-proto`/протокол https) и читаемую `vc_csrf` (случайная строка, в теле — `csrf`). PreHandler берёт токен в порядке Bearer → `vc_session` → preview-cookie; если авторизация пришла из cookie, любой не-GET/HEAD/OPTIONS запрос обязан нести заголовок `x-vc-csrf`, равный cookie `vc_csrf`, иначе 403 `{ error: 'csrf' }` — чужой сайт cookie отправит, заголовок поставить не сможет. WS-upgrade принимает `vc_session` из Cookie, если нет `?token=`. Logout гасит обе cookie (и preview). Web-клиент (`remote/session.ts`) держит Bearer только в памяти после свежего входа, `authHeaders()` добавляет Bearer при наличии и `x-vc-csrf` всегда при cookie-сессии; при старте `migrateLegacyToken` отправляет унаследованный localStorage-токен на `POST /api/session/cookie` и удаляет его из localStorage. `WsClient` получает маркер `'cookie'` вместо токена и подключается без query. Desktop и агенты продолжают ходить с Bearer — для них CSRF не требуется.
 
+**Ключ изолированного Chromium (`vc_preview_run`).** Браузерная проверка задачи
+открывает dev-сервер машины через прокси превью, а у навигации браузера нет
+Bearer-заголовка. Сессионный токен пользователя в профиль Chromium не уезжает:
+он работал бы Bearer-ом на всём API. Вместо него `PreviewRunKeys`
+(`apps/server/src/browser/machinePreview.ts`) выдаёт ключ на пользователя (сутки,
+срок продлевается при выдаче), сервер кладёт его в контекст сессии раннера
+cookie `vc_preview_run`, а `previewRunUser` в `auth.ts` принимает его **только**
+на точном пути `/api/preview` — на любом другом маршруте ключ бесполезен. Что
+можно открыть этим ключом, решает прежний `canUse` прокси: машины, доступные
+самому пользователю. Подробности транспорта —
+[playwright-reader.md](features/playwright-reader.md).
+
 **Имена cookie разведены по схеме, и это не косметика.** По https сервер ставит `__Secure-vc_session`, `__Secure-vc_csrf`, `__Secure-vc_preview_session`, `__Secure-vc_device` (с флагом `Secure` — префикс без него недействителен), по http — прежние имена без префикса; `cookieNameFor`/`readCookie` в `apps/server/src/users/auth.ts` держат оба варианта, чтение всегда предпочитает защищённое имя. Причина — инцидент 31.08.2026 на проде: он виден и как `https://<ip>` (Caddy), и как `http://<ip>:8787` (порт сервера напрямую), а браузер различает cookie по ХОСТУ, не по схеме и порту. После входа по https в браузере осталась `Secure`-cookie `vc_session`, и по правилу «Leave Secure Cookies Alone» (RFC 6265bis §5.4) незащищённый origin не мог ни прочитать её, ни перезаписать одноимённую: каждый вход по http браузер молча выбрасывал, Bearer жил только в памяти страницы, и любая перезагрузка возвращала экран входа. Диагностика снаружи выглядит так: `document.cookie` не содержит `vc_csrf`, запись cookie с НОВЫМ именем со страницы работает и переживает F5, а запись `vc_csrf` молча игнорируется. Лечение прошлых браузеров — `clearLegacySessionCookies`: вход по https дополнительно гасит старую пару обычных имён (защищённый origin это может, http — нет), поэтому один вход по https чинит адрес без ручной чистки cookie. Если cookie всё же не легла, клиент не молчит: мост отдаёт `hasCookieSession()` (по читаемой `vc_csrf`), и `App` показывает несбрасываемый тост «Вход не сохранён в cookie…» вместо загадочного разлогина. Читатели обоих имён есть и вне `auth.ts` — `cookieToken` для WS-upgrade в `server.ts` и `getCsrf` в `packages/ui/src/remote/session.ts`.
 
 **Второй фактор TOTP (auth-roadmap п.6).** `users/totp.ts` — RFC 6238 (HMAC-SHA1, 30 с, 6 цифр, окно ±1 шаг), base32-секрет, `otpauthUrl`; тесты на векторах RFC. Колонка `users.totp_secret` (NULL — выключено; `UserRow.totpEnabled`). Логин с включённым фактором после верного пароля отвечает `{ requires2fa: true, ticket }` (тикет — в памяти процесса, 5 минут, 5 попыток, одноразовый), `POST /api/session/2fa { ticket, code }` выдаёт сессию тем же `issueSession`, что и обычный вход. Настройка: `POST /api/session/2fa/setup` → `{ secret, otpauth, enabled }` (секрет ждёт подтверждения 10 минут), `POST …/enable { code }` включает, `POST …/disable { code }` выключает, `GET /api/session/2fa` — статус. Клиент: `RendererSessionBridge.login` может вернуть `LoginChallenge`, `sessionStore.twoFactorTicket` переводит `LoginScreen` в режим кода (`onCode`/`onCancelTwoFactor`), `runtime.loginCode`; настройка — пункт меню аккаунта «Двухфакторная защита» → `TwoFactorDialog` (QR не рисуем: otpauth-ссылка и ключ для ручного ввода). WebAuthn/passkeys отложены.
@@ -326,3 +338,15 @@ USD за 1M обычных/кэшированных/записанных в кэ
 `skill`): он говорит, что именно делает тумблер, и второй инвариантный тест
 сверяет объявление с фактом — инструмент обязан попасть в `--disallowedTools`,
 блок промпта — исчезнуть.
+
+## CHECK по scope разговоров и его расширение (2026-09-03)
+
+`conversations.scope` в свежих БД создаётся из `schema.ts` с CHECK-списком
+значений; в старых БД колонку добавлял ALTER **без** CHECK. SQLite не умеет
+менять CHECK через ALTER, поэтому при добавлении нового scope (последний —
+`images`) мало поправить schema.ts: в `migrate()` есть пересборка таблицы —
+если в DDL из `sqlite_master` есть `scope IN (...)` без нового значения,
+создаётся `conversations_new` с тем же DDL и новым списком, данные копируются,
+таблица переименовывается, индексы пересоздаются (под `PRAGMA
+foreign_keys=OFF`). Забыть про это — «CHECK constraint failed» только на
+свежесозданных инсталляциях, старые работают как ни в чём не бывало.

@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-08-30
-checked: 2aa08d76
+updated: 2026-09-03
+checked: d09b8f16
 areas:
   - packages/shared/src
 ---
@@ -37,7 +37,11 @@ areas:
 
 ## Базовая модель данных
 
-`Conversation` хранит серверные настройки конкретного чата: цель выполнения (`execTarget`), рабочий каталог, выбранные skills, LLM provider/model, permission mode, режим KB, проект и lifecycle-статус. Настройки чата намеренно отделены от глобального `Settings`: изменение одного разговора не меняет другие. Для веб-превью `previewUrl` — override разговора, а `projectPreviewUrl` — проектный fallback в том же снапшоте; override имеет приоритет. `ProjectSummary.previewUrl` хранит проектный адрес по умолчанию. Вид разговора типизирован: `assistantKind` — это `AssistantKind | null` (`web-recorder`, `playwright-reader`, `kanban`), а не свободная строка. Рядом в `types.ts` лежат контракты браузерной сессии Playwright Reader (`Browser*`) и три чистые функции для кадров и координат — описаны в [features/playwright-reader.md](features/playwright-reader.md), пока их использует только `apps/browser-runner`.
+`Conversation` хранит серверные настройки конкретного чата: цель выполнения (`execTarget`), рабочий каталог, выбранные skills, LLM provider/model, permission mode, режим KB, проект и lifecycle-статус. Настройки чата намеренно отделены от глобального `Settings`: изменение одного разговора не меняет другие. Для веб-превью `previewUrl` — override разговора, а `projectPreviewUrl` — проектный fallback в том же снапшоте; override имеет приоритет. `ProjectSummary.previewUrl` хранит проектный адрес по умолчанию. Вид разговора типизирован: `assistantKind` — это `AssistantKind | null`, а не свободная строка. Рядом в `types.ts` лежат контракты браузерной сессии Playwright Reader (`Browser*`) и чистые функции для кадров и координат — они описаны в [features/playwright-reader.md](features/playwright-reader.md).
+
+Каждый разговор обязательно несёт `ConversationScope`: `chat`, `kanban`, `make`, `console`, `playwright-reader` или `web-reader`. Это не декоративный тип, а часть контекста доступа: серверные список, поиск и получение истории сначала ограничиваются `userId` и точным `scope`, а для `kanban` требуют ещё совпадающий доступный `projectId`; без проекта kanban-запрос и создание отклоняются. Обычные вызовы без области совместимо означают `chat`, поэтому общий список больше не смешивает мастерские. Контракт аргументов находится в `packages/shared/src/ipc.ts`, серверная проверка — в `apps/server/src/routes/rest.ts` и `apps/server/src/db/database.ts`.
+
+Клиент загружает индексы `chat`, Web Reader, Playwright Reader, Console и Make отдельными запросами и при открытии передаёт область известного разговора. Поэтому сохранённый URL после F5 восстанавливает разговор только в своей мастерской, а id из другого маршрута сервер возвращает как отсутствующий; Kanban использует отдельный проектный запрос. Реализация выбора и раздельных коллекций находится в `packages/chat-app/src/store/chatStore.ts`.
 
 `Message` содержит текст, роль, время, движок, метаданные хода и фактическую цель выполнения реплики. Последнее важно для истории: будущая смена машины разговора не переписывает сведения о том, где исполнялась старая команда.
 

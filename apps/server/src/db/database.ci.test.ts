@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from './database.js'
+import { execFileSync } from 'node:child_process'
+import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_SCRIPT, VoiceChatDb } from './database.js'
 import { CI_KB_UPDATE_COMMAND_ID, ciToolOutputLimits, DEFAULT_CI_STAGE_MODELS, DEFAULT_TOOL_OUTPUT_SETTINGS } from '@voicechat/shared'
 
 let db: VoiceChatDb
@@ -143,6 +144,24 @@ describe('ci: выбор этапов процесса', () => {
     expect(db.getTaskProcessStages(task.id)).toEqual(['before_model', 'model_work', 'after_model', 'summary'])
     expect(db.setTaskProcessStages(task.id, ['summary', 'before_model'])).toEqual(['before_model', 'summary'])
     expect(db.getTaskProcessStages(task.id)).toEqual(['before_model', 'summary'])
+  })
+})
+
+describe('ci: браузерная проверка задачи', () => {
+  it('по умолчанию выключена, сохраняется и нормализуется при чтении', () => {
+    const { task } = project()
+    expect(db.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/' })
+    expect(db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 8799, startPath: 'board' }))
+      .toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board' })
+    expect(db.getTaskBrowserCheck(task.id)).toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/board' })
+  })
+
+  it('битая строка в БД не мешает запустить ран', () => {
+    const { task } = project()
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium' })
+    ;(db as unknown as { db: Database.Database }).db
+      .prepare('UPDATE ci_task_browser_checks SET check_json = ? WHERE task_id = ?').run('{не json', task.id)
+    expect(db.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/' })
   })
 })
 
@@ -621,13 +640,41 @@ describe('встроенный шаг «Актуализировать базу 
 
     const second = new VoiceChatDb(file, { newId: () => `s2-${++n}`, now: () => 2000 })
     expect(second.getCiSlotConfig('project', p.id).afterModel).toEqual([commit.id])
+    expect(second.getCiCommand('alice', commit.id)).toMatchObject({ script: TASK_COMMIT_COMMAND_SCRIPT, version: 2 })
     expect(second.getCiCommand('alice', CI_KB_UPDATE_COMMAND_ID)).toBeTruthy()
     // Повторное открытие ничего не возвращает в development pipeline.
     second.setCiSlotCommands('project', p.id, 'after_model', [test.id, commit.id])
     second.close()
     const third = new VoiceChatDb(file, { newId: () => `s3-${++n}`, now: () => 3000 })
     expect(third.getCiSlotConfig('project', p.id).afterModel).toEqual([commit.id])
+    expect(third.getCiCommand('alice', commit.id)).toMatchObject({ script: TASK_COMMIT_COMMAND_SCRIPT, version: 2 })
     third.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('обязательный commit-step задачи', () => {
+  it('создаёт ветку и коммит, а чистое дерево завершает без пустого коммита', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-task-commit-'))
+    const repo = join(dir, 'репозиторий задачи')
+    mkdirSync(repo)
+    execFileSync('git', ['init', '-q', repo])
+    writeFileSync(join(repo, 'work.txt'), 'готово\n')
+    const env = {
+      ...process.env,
+      SLUG: 'репозиторий задачи',
+      BRANCH: 'CHAT-401-ветка',
+      TASK_KEY: 'CHAT-401'
+    }
+
+    execFileSync('bash', ['-c', TASK_COMMIT_COMMAND_SCRIPT], { cwd: dir, env })
+    expect(execFileSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).trim()).toBe('CHAT-401-ветка')
+    expect(execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: repo, encoding: 'utf8' }).trim()).toBe('CHAT-401: работа CI-рана')
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()
+
+    const cleanOutput = execFileSync('bash', ['-c', TASK_COMMIT_COMMAND_SCRIPT], { cwd: dir, env, encoding: 'utf8' })
+    expect(cleanOutput).toContain('Нет незакоммиченных изменений — коммит не нужен')
+    expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()).toBe(head)
     rmSync(dir, { recursive: true, force: true })
   })
 })
@@ -793,6 +840,40 @@ describe('ci: временная шкала задачи', () => {
     expect(attempt.startedAt).toBeNull()
     expect(attempt.activeDuration).toBeNull()
     expect(timeline.summary.firstStartedAt).toBeNull()
+  })
+
+  it('считает события рана по типу: на этом держится лимит возобновлений', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    const other = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    db.addCiEvent({ projectId: p.id, runId: run.id, type: 'run.infra_error', actorType: 'system', payload: { kind: 'agent_offline' } })
+    db.addCiEvent({ projectId: p.id, runId: run.id, type: 'run.autopilot_infra_resume', actorType: 'system' })
+    db.addCiEvent({ projectId: p.id, runId: run.id, type: 'run.autopilot_infra_resume', actorType: 'system' })
+    // Счётчик привязан к рану: соседний ран той же задачи в него не попадает.
+    db.addCiEvent({ projectId: p.id, runId: other.id, type: 'run.autopilot_infra_resume', actorType: 'system' })
+
+    expect(db.countCiEvents(run.id, 'run.infra_error')).toBe(1)
+    expect(db.countCiEvents(run.id, 'run.autopilot_infra_resume')).toBe(2)
+    expect(db.countCiEvents(other.id, 'run.autopilot_infra_resume')).toBe(1)
+    expect(db.countCiEvents(run.id, 'run.started')).toBe(0)
+  })
+
+  it('считает подряд упавшие раны задачи и останавливается на первом успехе', () => {
+    const { p, task } = project()
+    const mk = (status: 'failed' | 'success' | 'timeout' | 'cancelled') => {
+      const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+      db.updateCiRun(run.id, { status })
+      return run
+    }
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(0)
+    mk('failed')
+    mk('failed')
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(2)
+    // Успех обнуляет счётчик: считаем только хвост, а не всю историю.
+    mk('success')
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(0)
+    mk('timeout')
+    expect(db.countTrailingFailedCiRuns(task.id)).toBe(1)
   })
 
   it('объединяет пересекающиеся активные интервалы параллельных ранов', () => {

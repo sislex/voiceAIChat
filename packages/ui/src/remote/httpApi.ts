@@ -95,11 +95,60 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
     'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
-    'conversations:list': ({ includeCompleted }) =>
-      req(`${REST.conversations}${includeCompleted ? '?includeCompleted=1' : ''}`),
-    'conversations:create': ({ title, projectId, assistantKind }) =>
-      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, projectId, assistantKind }) }),
+    'conversations:list': ({ scope, projectId, includeCompleted }) => {
+      const q = new URLSearchParams({ scope: scope ?? 'chat' })
+      if (projectId) q.set('projectId', projectId)
+      if (includeCompleted) q.set('includeCompleted', '1')
+      return req(`${REST.conversations}?${q.toString()}`)
+    },
+    'conversations:create': ({ title, scope, projectId, assistantKind }) =>
+      req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, scope: scope ?? (assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'make' ? 'make' : assistantKind === 'images' ? 'images' : 'chat'), projectId, assistantKind }) }),
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
+    'imgstudio:cancel': ({ conversationId }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/cancel`, { method: 'POST', body: '{}' }),
+    'imgstudio:publish': ({ conversationId, password }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'POST', body: JSON.stringify(password !== undefined ? { password } : {}) }),
+    'imgstudio:publication': ({ conversationId }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publication`),
+    'imgstudio:unpublish': ({ conversationId }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/publish`, { method: 'DELETE' }),
+    'imgstudio:run': ({ conversationId }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/run`),
+    'imgstudio:transfer': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/transfer`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:trash': ({ conversationId }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/trash`),
+    'imgstudio:restore': ({ conversationId, name }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/restore`, { method: 'POST', body: JSON.stringify({ name }) }),
+    'imgstudio:purge': ({ conversationId, name }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/trash/purge`, { method: 'POST', body: JSON.stringify(name !== undefined ? { name } : {}) }),
+    'imgstudio:list': ({ conversationId }) => req(`/api/image-studio/${encodeURIComponent(conversationId)}/files`),
+    'imgstudio:read': async ({ conversationId, path }) => {
+      // Байты картинки — через авторизованный fetch: <img src> без токена
+      // получил бы 401, поэтому панель строит blob-URL сама.
+      const response = await fetch(`${httpBase}/api/image-studio/${encodeURIComponent(conversationId)}/file?path=${encodeURIComponent(path)}`, { headers: authHeaders() })
+      if (!response.ok) throw new Error(await response.text().catch(() => 'файл не найден'))
+      const buffer = await response.arrayBuffer()
+      let binary = ''
+      const bytes = new Uint8Array(buffer)
+      for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!)
+      return { path, dataBase64: btoa(binary) }
+    },
+    'imgstudio:upload': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/file`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:delete': ({ conversationId, path }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/file?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
+    'imgstudio:rename': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/rename`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:generate': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/generate`, { method: 'POST', body: JSON.stringify(b) }),
+    'imgstudio:edit': ({ conversationId, ...b }) =>
+      req(`/api/image-studio/${encodeURIComponent(conversationId)}/edit`, { method: 'POST', body: JSON.stringify(b) }),
+    'make:projectFiles': ({ conversationId, path }) =>
+      req(`${REST.makeProjectFiles(conversationId)}${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+    'make:projectLinks': ({ conversationId }) => req(REST.makeProjectLinks(conversationId)),
+    'make:projectPull': ({ conversationId, ...b }) =>
+      req(REST.makeProjectPull(conversationId), { method: 'POST', body: JSON.stringify(b) }),
     'make:taskLinks': ({ conversationId, path }) =>
       req(path === undefined ? REST.makeTaskLinks(conversationId) : `${REST.makeTaskLinks(conversationId)}?path=${encodeURIComponent(path)}`),
     'make:linkTask': ({ conversationId, ...body }) =>
@@ -158,8 +207,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'widget:query': (body) => req('/api/widget-tools/query', { method: 'POST', body: JSON.stringify(body) }),
     'widget:get': (body) => req('/api/widget-tools/get', { method: 'POST', body: JSON.stringify(body) }),
     'widget:action': (body) => req('/api/widget-tools/action', { method: 'POST', body: JSON.stringify(body) }),
-    'conversations:get': async ({ id }) => {
-      const res = await fetch(httpBase + REST.conversation(id), {
+    'conversations:get': async ({ id, scope, projectId }) => {
+      const q = new URLSearchParams({ scope: scope ?? 'chat' })
+      if (projectId) q.set('projectId', projectId)
+      const res = await fetch(httpBase + `${REST.conversation(id)}?${q.toString()}`, {
         headers: authHeaders()
       })
       if (res.status === 404) return null
@@ -204,8 +255,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'conversations:listMachines': ({ id, projectId }) =>
       req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
-    'conversations:search': ({ query, includeCompleted }) =>
-      req(`${REST.conversationsSearch}?q=${encodeURIComponent(query)}${includeCompleted ? '&includeCompleted=1' : ''}`),
+    'conversations:search': ({ query, scope, projectId, includeCompleted }) => {
+      const q = new URLSearchParams({ q: query, scope: scope ?? 'chat' })
+      if (projectId) q.set('projectId', projectId)
+      if (includeCompleted) q.set('includeCompleted', '1')
+      return req(`${REST.conversationsSearch}?${q.toString()}`)
+    },
     'messages:search': ({ query, projectId, conversationId, limit, cursor }) => {
       searchAbort?.abort()
       const ctl = new AbortController()
@@ -560,6 +615,19 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/projects/${encodeURIComponent(projectId)}/task-launch/preparation`, { method: 'POST', body: JSON.stringify(b) }),
     'tasks:get': ({ projectId, taskId }) =>
       req(REST.projectTask(projectId, taskId)),
+    'tasks:activity': ({ projectId, taskId }) => req(REST.taskActivity(projectId, taskId)),
+    'tasks:commentAdd': ({ projectId, taskId, ...b }) =>
+      req(REST.taskComments(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:commentUpdate': ({ projectId, taskId, commentId, ...b }) =>
+      req(REST.taskComment(projectId, taskId, commentId), { method: 'PATCH', body: JSON.stringify(b) }),
+    'tasks:commentDelete': ({ projectId, taskId, commentId }) =>
+      req(REST.taskComment(projectId, taskId, commentId), { method: 'DELETE' }),
+    'tasks:worklogAdd': ({ projectId, taskId, ...b }) =>
+      req(REST.taskWorklog(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:worklogUpdate': ({ projectId, taskId, entryId, ...b }) =>
+      req(REST.taskWorklogEntry(projectId, taskId, entryId), { method: 'PATCH', body: JSON.stringify(b) }),
+    'tasks:worklogDelete': ({ projectId, taskId, entryId }) =>
+      req(REST.taskWorklogEntry(projectId, taskId, entryId), { method: 'DELETE' }),
     'tasks:update': ({ projectId, taskId, ...b }) =>
       req(REST.projectTask(projectId, taskId), { method: 'PATCH', body: JSON.stringify(b) }),
     'tasks:move': ({ projectId, taskId, ...b }) =>
@@ -662,7 +730,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     resetTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'DELETE' }),
     getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),
     getTaskMachines: (projectId, taskId) => req<import('@shared/ci').CiTaskMachines>(REST.taskCiMachines(projectId, taskId)),
-    putTaskCi: (projectId, taskId, config) => req<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[] }>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
+    putTaskCi: (projectId, taskId, config) => req<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[]; browserCheck: import('@shared/ci').CiBrowserCheck }>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     startRun: (projectId, taskId, options) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(options ?? {}) }),
     getMergeMachines: (projectId, taskId) => req<import('@shared/merge').MergeMachinesResponse>(REST.taskMergeMachines(projectId, taskId)),
     startMerge: (projectId, taskId, agentId) => req<import('@shared/merge').MergeRun>(REST.taskMergeStart(projectId, taskId), { method: 'POST', body: JSON.stringify(agentId ? { agentId } : {}) }),

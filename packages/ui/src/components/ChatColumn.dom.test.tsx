@@ -916,4 +916,21 @@ describe('ChatColumn — упрощённая основная шапка', () =
     await userEvent.selectOptions(screen.getByLabelText('Навыки машины'), 'логи')
     expect(onRunSkill).toHaveBeenCalledWith('m1', 'docker logs app')
   })
+
+  it('баннер ошибки предлагает исправление, и нажатие отправляет его в чат', async () => {
+    const onFixError = vi.fn()
+    renderCol({
+      error: 'Не удалось синхронизировать проект с origin: Рабочая копия проекта содержит локальные изменения',
+      errorFix: { label: 'Исправить копию', prompt: 'Разберись с копией /srv/project' },
+      onFixError
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Исправить копию' }))
+    expect(onFixError).toHaveBeenCalledWith('Разберись с копией /srv/project')
+  })
+
+  it('без предложения баннер остаётся прежним: только текст и закрытие', () => {
+    renderCol({ error: 'Что-то сломалось' })
+    expect(screen.getByTestId('error-bar')).toHaveTextContent('Что-то сломалось')
+    expect(screen.queryByRole('button', { name: 'Исправить копию' })).toBeNull()
+  })
 })

@@ -740,3 +740,56 @@ export function isBigMakeRequest(text: string): boolean {
   if (t.length > 600) return true
   return /(перепиш|передел|с нуля|полностью|целиком|редизайн|весь сайт|все страниц|всё приложение|все компонент|новый дизайн|переверста|мигрир|перенес(и|ти) на|rewrite|redesign|from scratch)/.test(t)
 }
+
+// ---------------------------------------------------------------------------
+// Чтение репозитория проекта: компоненты и стили копируются из рабочей
+// директории машины проекта в мастерскую и правятся там (ассистент, превью).
+// Обратной записи нет — Make ничего не пишет в репозиторий: общая копия проекта
+// принадлежит git-потоку (задачи, CI, релизы), и файл, положенный туда мимо
+// коммита, оставлял её dirty и ломал системную синхронизацию с origin.
+// Готовый дизайн доходит до кода через связь с карточкой задачи. Связь помнит
+// хеш на момент копирования — по нему считаются статусы «в мастерской правили»
+// и «в проекте ушло вперёд, заберите заново».
+
+/** Связь файла мастерской с файлом репозитория проекта. */
+export interface MakeProjectLink {
+  /** Путь в мастерской; совпадает с путём в проекте относительно его корня. */
+  path: string
+  /** sha256 содержимого на момент последнего копирования (в любую сторону). */
+  importedHash: string
+  importedAt: number
+}
+
+/**
+ * Статус связи. «edited_in_make» — файл правили в мастерской после копирования;
+ * «changed_in_project» — файл в репозитории ушёл вперёд, стоит забрать заново;
+ * «both» — разошлись обе стороны.
+ */
+export type MakeProjectLinkStatus =
+  | 'same'
+  | 'edited_in_make'
+  | 'changed_in_project'
+  | 'both'
+  | 'missing_in_project'
+  | 'missing_in_make'
+
+export interface MakeProjectLinkInfo extends MakeProjectLink {
+  status: MakeProjectLinkStatus
+}
+
+/** Элемент листинга рабочей директории машины проекта (для выбора файлов). */
+export interface MakeProjectFileEntry {
+  name: string
+  /** Путь относительно корня проекта на машине. */
+  path: string
+  kind: 'dir' | 'file'
+  size: number
+}
+
+export interface MakeProjectPullResult {
+  links: MakeProjectLinkInfo[]
+  state: MakeProjectState
+}
+
+/** Потолок файлов за одно копирование: больше — это уже перенос репозитория. */
+export const MAKE_PROJECT_SYNC_MAX_FILES = 40

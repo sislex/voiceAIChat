@@ -11,7 +11,9 @@ import {
   orchestrationItemReady,
   orchestrationStatusOf,
   type Orchestration,
-  type OrchestrationItem
+  type OrchestrationItem,
+  type RunCiPayload,
+  type WaitColumnPayload
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { KanbanRunLaunchers } from '../mcp/kanbanMcp.js'
@@ -76,6 +78,16 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
     return null
   }
 
+  /** Карточка стоит в нужной колонке: по семантике (`ready`, `development`…) или по id. */
+  const inColumn = (plan: Orchestration, taskId: string, payload: WaitColumnPayload): boolean => {
+    const board = deps.db.getBoard(plan.owner, plan.projectId, { includeCompleted: true })
+    const task = board?.tasks.find((candidate) => candidate.id === taskId)
+    if (!task) return false
+    if (payload.columnId) return task.columnId === payload.columnId
+    const column = board?.columns.find((candidate) => candidate.id === task.columnId)
+    return Boolean(payload.semantic) && column?.semanticType === payload.semantic
+  }
+
   /** Ветка задачи влита: merge-ран завершился успехом. */
   const merged = (plan: Orchestration, taskId: string): boolean =>
     deps.db.listMergeRuns(plan.owner, plan.projectId, taskId, 10)
@@ -113,15 +125,30 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
       if (merged(plan, taskId)) db.updateOrchestrationItem(item.id, { status: 'done', taskId })
       return
     }
+    if (item.kind === 'wait_column') {
+      // Событие «карточка перешла в колонку»: доска шлёт notify при каждом
+      // изменении, так что переход подхватывается сразу, а таймер — страховка.
+      if (inColumn(plan, taskId, item.payload as WaitColumnPayload)) db.updateOrchestrationItem(item.id, { status: 'done', taskId })
+      return
+    }
 
     const runner = deps.runs()
     if (!runner) { fail('Менеджеры ранов недоступны'); return }
     try {
+      if (item.kind === 'run_preparation') {
+        if (!runner.startPreparation) { fail('Подготовка задач недоступна'); return }
+        const run = runner.startPreparation(plan.owner, plan.projectId, taskId)
+        db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
+        return
+      }
       if (item.kind === 'run_ci') {
-        const payload = item.payload as { launch?: 'queue' | 'parallel'; agentId?: string }
+        const payload = item.payload as RunCiPayload
         const started = runner.startCi(plan.owner, plan.projectId, taskId, {
           launch: payload.launch ?? 'queue',
-          ...(payload.agentId ? { agentId: payload.agentId } : {})
+          ...(payload.agentId ? { agentId: payload.agentId } : {}),
+          // Модель шага — как у кнопки запуска: провайдер без модели берёт проектную.
+          ...(payload.provider ? { provider: payload.provider } : {}),
+          ...(payload.model ? { model: payload.model } : {})
         })
         if ('error' in started) { fail(started.error); return }
         db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: started.run.id })
@@ -175,6 +202,15 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
       if (run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
       else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'timeout') {
         failOrRetry(item, run.error ?? `Ран завершился со статусом ${run.status}`)
+      }
+      return
+    }
+    if (item.kind === 'run_preparation') {
+      const run = db.listTaskPreparationRuns(plan.owner, plan.projectId, item.taskId).find((candidate) => candidate.id === item.runId)
+      if (!run) return
+      if (run.status === 'completed' || run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
+      else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'blocked') {
+        failOrRetry(item, run.error ?? `Подготовка завершилась со статусом ${run.status}`)
       }
       return
     }

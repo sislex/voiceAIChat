@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
-  appendQuestionsHint, ciToolCallsAny, designPromptLines, makeDesignPreviewUrl, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
+  appendQuestionsHint, AUTOMATION_MARKER, ciToolCallsAny, designPromptLines, makeDesignPreviewUrl, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
   classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, CI_USAGE_KIND_LABELS, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
   isCiToolDenial, KB_GAPS_HINT, parseKbGaps, parseQuestions,
   trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
@@ -58,6 +58,14 @@ export interface CiModelHooksDeps {
   kbToolEnabled?: boolean
   /** Брокер токенов ходов БЗ (в тестах — двойник, следящий за утечкой). */
   kbTool?: { register(token: string, entry: KbToolEntry): void; unregister(token: string): void }
+  /**
+   * Браузерная проверка результата: база URL MCP превью (с ?k=секрет) и брокер
+   * токенов ходов. Инструменты `mcp__browser__*` появляются у хода только когда
+   * у задачи выбран режим проверки — иначе действие некому исполнить, и модель
+   * упиралась бы в таймаут relay.
+   */
+  previewMcpBaseUrl?: string
+  previewTool?: { register(token: string, entry: { userId: string; conversationId: string }): void; unregister(token: string): void }
   makeMcpBaseUrl?: string
   makeTaskScopes?: MakeTaskScopeBroker
 }
@@ -203,7 +211,7 @@ function runTurn(
       toolResponses.sort((a, b) => b.chars - a.chars)
       if (toolResponses.length > CI_TOOL_RESPONSES_KEEP) toolResponses.length = CI_TOOL_RESPONSES_KEEP
     }
-    const finish = (r: { ok: boolean; cancelled?: boolean }): void => {
+    const finish = (r: { ok: boolean; cancelled?: boolean; error?: string }): void => {
       if (settled) return
       settled = true
       signal.removeEventListener('abort', onAbort)
@@ -233,7 +241,9 @@ function runTurn(
       },
       onError: (m) => {
         onLog('system', `Ошибка модели: ${m}\n`)
-        finish({ ok: false })
+        // Текст нужен вызывающему: обрыв канала до исполнителя — сбой транспорта,
+        // и ран лечится повтором того же шага, а не сменой модели.
+        finish({ ok: false, error: m })
       },
       onActivity: (e) => {
         // Единственное место, где мимо сервера проходит КАЖДЫЙ вызов инструмента
@@ -303,6 +313,23 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
 const MODEL_COMMAND_TRIM_HINT =
   'полный вывод остался в ленте шага; повтори команду с фильтром, если нужна середина'
 
+/**
+ * Автотесты пишутся здесь же, а не на отдельном позднем этапе: у этой модели уже
+ * в контексте задача, readiness и собственный код, тогда как поздний ран читал
+ * бы всё заново (лишние токены), приносил бы ещё один коммит и ещё один полный
+ * прогон гейта. Этап `integration_tests` только проверяет — см. KB
+ * features/qa-stage-runs.md, «Чего в коде нет».
+ */
+export function automationHint(readiness: import('@voicechat/shared').DevelopmentReadiness | null): string {
+  const cases = (readiness?.testCases ?? []).filter((item) => item.required && item.automatable)
+  if (!cases.length) return ''
+  const list = cases.map((item) => `${item.id} — ${item.title}`).join('; ')
+  return [
+    `Обязательные автоматизируемые тест-кейсы закрой автотестами в этом же коммите: ${list}.`,
+    `Над каждым таким тестом поставь маркер покрытия в комментарии: \`// ${AUTOMATION_MARKER} <id кейса>\` — по нему этап интеграционных тестов свяжет кейс с файлом. Без маркера кейс считается непокрытым.`
+  ].join('\n')
+}
+
 const DEVELOPMENT_FAST_GATE_HINT =
   'Перед завершением работы запусти быстрый гейт задачи (`npm run gate:fast`): он проверяет только связанные с текущими изменениями тесты и типы. Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай — они выполняются на следующих шагах workflow; не отдавай работу с падающими проверками.'
 
@@ -314,6 +341,7 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode, readiness: import('@vo
       ]
     : [
         'Реализуй задачу в рабочей директории. Команды выполняй через доступный инструмент bash.',
+        automationHint(readiness),
         DEVELOPMENT_FAST_GATE_HINT,
         `Готовую работу коммить в ветку ${ctx.env.BRANCH ?? ''} — пушить не нужно: раннер сам отправит её в origin перед очисткой рабочей директории.`
       ]
@@ -346,6 +374,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   attemptFix: CiFixHook
   kbUpdate: CiKbUpdateHook
   conflictFixForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; conflicts: string[]; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
+  testFixForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; check: import('@voicechat/shared').MergeCheck; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
   kbUpdateForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
 } {
   const now = deps.now ?? (() => Date.now())
@@ -586,6 +615,28 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   /**
+   * Инструменты браузера на ход работы модели. Транспорт выбирает сервер по
+   * настройке задачи: `chromium` — изолированный браузер (см. `checkTarget`),
+   * `user_panel` — открытая панель пользователя. Токен снимается в `finally`,
+   * как у БЗ: он адресует ход и жить дольше него не должен.
+   */
+  async function withBrowserTools<T>(ctx: CiModelContext, body: (fields: Partial<LlmRequest>) => Promise<T>): Promise<T> {
+    const conversationId = ctx.run.conversationId
+    const check = deps.db.getTaskBrowserCheck(ctx.task.id)
+    if (!deps.previewMcpBaseUrl || !deps.previewTool || !conversationId || check.mode === 'off') return body({})
+    const token = randomUUID()
+    deps.previewTool.register(token, { userId: ctx.run.triggeredBy, conversationId })
+    try {
+      return await body({
+        previewMcpUrl: `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(token)}`,
+        previewSurface: check.mode === 'chromium' ? 'chromium' : 'panel'
+      })
+    } finally {
+      deps.previewTool.unregister(token)
+    }
+  }
+
+  /**
    * Авто-контекст БЗ по теме задачи (режим `auto`): разобранный на прозу и код
    * запрос (kb/taskQuery.ts) идёт тем же поиском и с тем же порогом уверенности,
    * что и ход чата (kb/autoContext.ts). Никогда не бросает: сломанная БЗ — это
@@ -670,7 +721,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const turnOf = stageRunner(ctx, 'model_work', ctx.parentStepId)
 
     try {
-      return await withKbTools(ctx, ctx.parentStepId, async (kbFields, kbTurnId) => {
+      return await withBrowserTools(ctx, async (browserFields) => await withKbTools(ctx, ctx.parentStepId, async (kbFields, kbTurnId) => {
         // «Сначала база знаний, потом код»: требование идёт в задании, а блок
         // контекста по теме задачи сервер подмешивает сам (режим `auto`).
         const kbMode = kbModeOf(ctx)
@@ -711,6 +762,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             // CLI работает внутри server-контейнера; workspace существует на удалённой машине
             // и доступен модели только через remote MCP. Хостовый путь нельзя передавать в spawn cwd.
             ...base,
+            // Браузер только в разработке: в фазе плана правок нет, а проверять
+            // нечего — смотреть страницу до реализации незачем.
+            ...(phase === 'plan' ? {} : browserFields),
             ...(phase === 'plan'
               ? {
                   readOnlyRemote: true,
@@ -783,7 +837,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         }
         log('system', `Достигнут предел ходов модели (${MAX_MODEL_TURNS}).\n`)
         return { ok: false }
-      })
+      }))
     } finally {
       ciToolBroker.unregister(token)
     }
@@ -1188,6 +1242,55 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     }
   }
 
+  /**
+   * Автоисправление упавших обязательных проверок merge-рана. Модель работает
+   * в проверочном worktree (зависимости уже установлены) и **не** коммитит:
+   * коммит, повторный гейт и решение о публикации остаются за сервером.
+   */
+  const testFixForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; check: import('@voicechat/shared').MergeCheck; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
+    const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const llm = { llmEngineId:args.run.llmEngineId, provider:args.run.llmProvider, model:args.run.llmModel }
+    if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для исправления проверок недоступен', llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
+    const noop = (): never => { throw new Error('Операция development CI недоступна в merge test_fix') }
+    const ctx = {
+      runId:development.id, agentId:args.run.agentId, workspacePath:args.repo,
+      env:{BASE_BRANCH:'main'}, signal:args.signal, addStep:noop, finishStep:noop,
+      log:(_stepId:string,_stream:'stdout'|'stderr'|'system',chunk:string)=>args.log(chunk),
+      runCommandById:noop, setModelSessionId:()=>{}, recordFix:noop, suggest:noop,
+      askUser:noop, askPlanApproval:noop,
+      run:{...development,llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model},
+      task, project, parentStepId:'merge-test-fix'
+    } as unknown as CiModelContext
+    // Хвост вывода: полный лог гейта может быть в мегабайтах, а причина почти
+    // всегда в последних строках.
+    const tail = args.check.output.split(/\r?\n/).slice(-120).join('\n')
+    const request=(model:string):LlmRequest=>({
+      userId:args.run.triggeredBy,
+      prompt:[
+        'Дополнительный шаг merge: обязательные проверки слитого дерева упали. Исправь причину в этой рабочей копии.',
+        `Задача: ${task.title}`,
+        task.description?`Описание: ${task.description}`:'',
+        `Команда проверок: ${args.check.command}`,
+        `Код возврата: ${args.check.exitCode ?? 'нет'}${args.check.timedOut?' (timeout)':''}`,
+        'Хвост вывода:',
+        tail,
+        'Правь минимально и по причине ошибки, а не подгоняй тесты под код: удалять и ослаблять проверки нельзя.',
+        'Не выполняй git commit, push, reset, checkout, stash и не удаляй рабочую копию — коммит сделает сервер сам.',
+        'Перед завершением прогони упавшую команду локально и убедись, что она проходит.'
+      ].filter(Boolean).join('\n'),
+      sessionId:null, model, permissionMode:'acceptEdits',
+      remote:{mcpUrl:`${deps.mcpBaseUrl}&agent=${encodeURIComponent(args.run.agentId)}&cwd=${encodeURIComponent(args.repo)}`,agentName:deps.agentNameOf(args.run.agentId)??args.run.agentId}
+    })
+    try {
+      const turn=await stageRunner(ctx,'fix','merge-test-fix')(request,(_stream,chunk)=>args.log(chunk),args.signal,'Исправление проверок остановлено.\n')
+      return {llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model,ok:turn.ok&&!turn.cancelled,message:turn.ok?'Дополнительный шаг исправления проверок завершён':'Модель не смогла исправить проверки'}
+    } catch(error) {
+      return {llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model,ok:false,message:`Шаг исправления проверок не выполнен: ${error instanceof Error?error.message:String(error)}`}
+    }
+  }
+
   const kbUpdateForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
     const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
     const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
@@ -1226,5 +1329,5 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     return { ...result, llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
   }
 
-  return { modelWork, modelSummary, attemptFix, kbUpdate, conflictFixForMerge, kbUpdateForMerge }
+  return { modelWork, modelSummary, attemptFix, kbUpdate, conflictFixForMerge, testFixForMerge, kbUpdateForMerge }
 }

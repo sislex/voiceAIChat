@@ -466,13 +466,13 @@ const QA_WORKFLOW_TRANSITIONS: Readonly<Record<string, readonly KanbanColumnSema
   preparation: ['ready', 'decision_required'],
   ready: ['development', 'preparation'],
   development: ['component_qa', 'decision_required'],
-  component_qa: ['integration_tests', 'development', 'decision_required'],
-  integration_tests: ['automated_qa', 'development', 'decision_required'],
-  automated_qa: ['manual_qa', 'integration_tests', 'development', 'decision_required'],
+  component_qa: ['integration_tests', 'development', 'preparation', 'decision_required'],
+  integration_tests: ['automated_qa', 'development', 'preparation', 'decision_required'],
+  automated_qa: ['manual_qa', 'integration_tests', 'development', 'preparation', 'decision_required'],
   manual_qa: ['awaiting_merge', 'development', 'preparation', 'decision_required'],
-  awaiting_merge: ['merge', 'component_qa', 'automated_qa', 'decision_required'],
-  merge: ['done', 'decision_required'],
-  done: [],
+  awaiting_merge: ['merge', 'component_qa', 'automated_qa', 'preparation', 'decision_required'],
+  merge: ['done', 'preparation', 'decision_required'],
+  done: ['preparation'],
   decision_required: []
 }
 
@@ -592,6 +592,15 @@ export interface ProjectSummary {
   mergeTransport: 'local' | 'github_pull_request'
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
+  /**
+   * Команды пост-development стадий. Пустое значение наследует `testCommand`,
+   * поэтому старые проекты работают как раньше. Смысл раздельных настроек в
+   * том, что Component QA нужны компонентные проверки, а интеграционному этапу —
+   * только новые интеграционные тесты: до разделения обе стадии гоняли полный
+   * гейт монорепо на коде, который уже прошёл его в разработке.
+   */
+  componentQaCommand?: string
+  integrationTestCommand?: string
   /** Команда полного Automated QA; пустое значение использует `npm test`. */
   automatedQaCommand?: string
   /** Способ исполнения этапа Automated QA; по умолчанию `command`. */
@@ -601,6 +610,12 @@ export interface ProjectSummary {
    * «много автотестов» упиралось именно в единственный сценарий на проект.
    */
   automatedQaScenarios?: import('./qa').AutomatedQaScenario[]
+  /**
+   * Включать автопроход у новых карточек-задач. Флаг живёт на самой карточке, и
+   * пока его приходилось ставить руками каждой задаче, конвейер всё равно
+   * начинался с действия человека — ровно того, чего автопроход избегает.
+   */
+  autoPilotDefault?: boolean
   /** Остановить автопроход перед manual_qa. */
   autoPilotRequiresManualQa?: boolean
   /** Максимум автоматических возвратов на доработку. */
@@ -1231,4 +1246,57 @@ export function sanitizeBoardView(raw: unknown): Partial<BoardView> {
     view.columnAssignees = Object.fromEntries(entries)
   }
   return view as Partial<BoardView>
+}
+
+// ---------------------------------------------------------------------------
+// Активность карточки как в Jira: комментарии, ворклог и история изменений.
+// Комментарии добавляют и правят и человек, и модель канбан-ассистента (via
+// различает их в ленте); историю пишет сервер сам при изменении полей.
+
+/** Кем внесена запись: человеком напрямую или моделью ассистента от его имени. */
+export type TaskActivityVia = 'user' | 'model'
+
+export interface TaskComment {
+  id: string
+  taskId: string
+  author: string
+  via: TaskActivityVia
+  text: string
+  createdAt: number
+  /** null — не правился; правка помечается «изменён» в ленте, как в Jira. */
+  updatedAt: number | null
+}
+
+export interface TaskWorklogEntry {
+  id: string
+  taskId: string
+  author: string
+  /** Затраченное время в минутах; UI показывает «2 ч 30 м». */
+  minutes: number
+  comment: string
+  /** Когда работа была сделана (задаёт автор), а не когда запись создана. */
+  startedAt: number
+  createdAt: number
+  updatedAt: number | null
+}
+
+export interface TaskHistoryEvent {
+  id: string
+  taskId: string
+  actor: string
+  via: TaskActivityVia
+  /** Код поля: title, description, acceptanceCriteria, column, assignee, priority, … */
+  field: string
+  from: string | null
+  to: string | null
+  at: number
+}
+
+/** Снимок вкладки «Активность»: три ленты одним запросом. */
+export interface TaskActivity {
+  comments: TaskComment[]
+  worklog: TaskWorklogEntry[]
+  history: TaskHistoryEvent[]
+  /** Сумма ворклога в минутах — итог считает сервер, а не каждый клиент. */
+  totalMinutes: number
 }

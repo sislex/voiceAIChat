@@ -107,6 +107,8 @@ export interface TurnManagerDeps {
   makeHub?: { turnSnapshot(turn: string): string | undefined }
   /** Контекст проекта Make для промпта: дизайн-токены и открытые комментарии (roadmap-2 п.9). */
   makeContext?: (conversationId: string) => Promise<string>
+  /** Контекст студии картинок: список галереи + правило показа результата. */
+  studioContext?: (conversationId: string) => Promise<string>
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
   previewTool?: {
     register(token: string, entry: { userId: string; conversationId: string }): void
@@ -134,10 +136,16 @@ export interface TurnManagerDeps {
   }
   /** Чтение файла картинки с диска сервера или из профиля исполнителя. */
   readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
+  /**
+   * Студия картинок: положить изображения из ответа ассистента в галерею
+   * разговора вида images. Пути — из fenced-блоков image финального текста;
+   * ошибки чтения глотаются в реализации: ход не должен падать из-за галереи.
+   */
+  captureStudioImages?: (userId: string, conversationId: string, finalText: string) => Promise<void>
   /** Привязка чата к хранилищу машины по умолчанию (ChatAI), если её ещё нет. */
   ensureChatStorage?: (userId: string, conversationId: string, machineId: string) => Promise<ChatStorageBinding | null>
   /** Системный preflight общей main-копии проекта перед запуском модели. */
-  ensureProjectMainCurrent?: (args: { userId: string; projectId: string; conversationId: string; agentId: string; path: string; branch: string; gitUrl?: string | null }) => Promise<{ baseSha: string }>
+  ensureProjectMainCurrent?: (args: { userId: string; projectId: string; conversationId: string; agentId: string; path: string; branch: string; gitUrl?: string | null }) => Promise<{ baseSha: string; autoHealed?: string }>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -261,6 +269,8 @@ export interface StartTurnRequest {
   verbose?: boolean
   /** Цель конкретного сообщения: id, null — сервер, 'none' — запрет команд. */
   execTarget?: string | null
+  /** Ход-исправление грязной копии: системный preflight пропускается. */
+  skipProjectSync?: boolean
   /** Безопасный снимок виджета; принимается только служебным чатом ассистента. */
   assistantContext?: WidgetAssistantContext
 }
@@ -628,16 +638,32 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext && !disabledContext.has('make-context')
       ? await deps.makeContext(conversationId).catch(() => '')
       : ''
-    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
+    // Чат студии картинок: модель должна знать, что уже лежит в галерее, и
+    // что нарисованное надо показать fenced-блоком — иначе оно туда не попадёт.
+    const studioContextBlock = conv?.assistantKind === 'images' && deps.studioContext
+      ? await deps.studioContext(conversationId).catch(() => '')
+      : ''
+    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
     let prompt = makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
       : promptQ
+    /**
+     * Make-чат к машине не ходит вообще. Его инструменты `make_*` пишут только в
+     * мастерскую (`<dataDir>/make/<conversationId>`), а любой доступ к машине —
+     * это доступ к общей копии проекта, которая принадлежит git-потоку (задачи,
+     * CI, релизы): файл, положенный туда мимо коммита, оставлял копию dirty и
+     * ломал системную синхронизацию с origin. Поэтому назначенная чату машина для
+     * Make игнорируется целиком: ни remote-bash, ни блокировок по её статусу.
+     * Единственное, что Make делает с репозиторием, — разовое обновление копии до
+     * origin/<base> при создании чата (`refreshProjectMain` в `server.ts`).
+     */
+    const makeChat = conv?.assistantKind === 'make'
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
-    const machine = deps.db.resolveConversationMachine(userId, conversationId, {
+    const machine = makeChat ? null : deps.db.resolveConversationMachine(userId, conversationId, {
       ...(req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
       ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
     })
@@ -655,12 +681,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const target = executionDisabled ? null : machine?.agentId ?? null
     // Пустой проект у admin сохраняет legacy server-side ход; если машины у
     // проекта есть, но ни одна не доступна online, это уже явная блокировка.
-    if (!executionDisabled && !target && conv?.projectId && deps.db.listUsableAgents(userId, conv.projectId).length > 0) {
+    // Make сюда не попадает: ему машина не нужна, и её отсутствие не блокировка.
+    if (!makeChat && !executionDisabled && !target && conv?.projectId && deps.db.listUsableAgents(userId, conv.projectId).length > 0) {
       starting.delete(conversationId)
       broadcast({ t: 'claude.error', conversationId, message: 'Нет доступной online-машины: запуск чата заблокирован' }, userId)
       return
     }
-    if (!executionDisabled && !target && role !== 'admin') {
+    if (!makeChat && !executionDisabled && !target && role !== 'admin') {
       broadcast({ t: 'claude.error', conversationId, message: 'Нет доступной online-машины: remote-команды заблокированы' }, userId)
     }
     const requestedTarget = target
@@ -677,6 +704,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       // не отвечает; модель лишь предупреждается, что копия не проверялась.
       if (!projectPath) {
         prompt = `${prompt}\n\nМашина «${deps.agents?.nameOf(target) ?? target}» не привязана к проекту: общая копия репозитория на ней не проверялась, актуальность относительно origin/${projectContext.ciBaseBranch || 'main'} не подтверждена.`
+      } else if (req.skipProjectSync) {
+        // Это и есть ход-исправление: preflight пропускаем намеренно, но модель
+        // обязана знать, что копия не сверена с origin и чинит её именно она.
+        prompt = `${prompt}\n\nСистемный preflight общей копии проекта пропущен для этого хода: копия ${projectPath} не сверена с origin/${projectContext.ciBaseBranch || 'main'}. Приведи её в порядок сам и не считай базовую ветку актуальной.`
       } else {
         try {
           const snapshot = await deps.ensureProjectMainCurrent({
@@ -684,10 +715,46 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             path: projectPath, branch: projectContext.ciBaseBranch || 'main', gitUrl: projectContext.gitUrl
           })
           prompt = `${prompt}\n\nАктуальная базовая ветка: ${projectContext.ciBaseBranch || 'main'} @ ${snapshot.baseSha}. Системный preflight подтвердил совпадение с origin.`
+          // Модель обязана знать, что копию перед ходом чинили: спрятанный stash
+          // и смена ветки объясняют, почему прежние правки в файлах исчезли.
+          if (snapshot.autoHealed) prompt = `${prompt} Копию пришлось привести в порядок: ${snapshot.autoHealed}. Не восстанавливай спрятанное сам — сообщи пользователю, если это похоже на его незавершённую работу.`
         } catch (error) {
           starting.delete(conversationId)
           const detail = error instanceof Error ? error.message : String(error)
-          broadcast({ t: 'claude.error', conversationId, message: `Не удалось синхронизировать проект с origin: ${detail}` }, userId)
+          const base = projectContext.ciBaseBranch || 'main'
+          // К отказу сразу прикладываем готовое исправление: пользователю
+          // остаётся нажать кнопку, а разбираться будет модель в этом же чате.
+          const dirty = /локальные изменения/.test(detail)
+          broadcast({
+            t: 'claude.error',
+            conversationId,
+            message: `Не удалось синхронизировать проект с origin: ${detail}`,
+            fix: dirty
+              ? {
+                  label: 'Исправить копию',
+                  skipProjectSync: true,
+                  prompt: [
+                    `Синхронизация общей копии проекта с origin/${base} остановлена: в рабочей копии ${projectPath} есть локальные изменения.`,
+                    `Отчёт preflight: ${detail}`,
+                    'Разберись с копией на этой машине по шагам:',
+                    `1) покажи \`git -C ${projectPath} status --porcelain --untracked-files=all\` и \`git -C ${projectPath} stash list\`;`,
+                    '2) нужное сохрани — отдельной ветке или коммитом, ничего не выбрасывая молча;',
+                    '3) лишнее убери (`git restore`, `git clean -fd` только по конкретным путям, которые назовёшь);',
+                    `4) верни копию на ${base} и обнови её fast-forward до origin/${base};`,
+                    '5) в конце покажи, что дерево чистое и SHA совпал с origin.',
+                    'Если что-то выглядит как чужая незавершённая работа — останови на этом и скажи, что нашёл, вместо удаления.'
+                  ].join('\n')
+                }
+              : {
+                  label: 'Разобраться в чате',
+                  skipProjectSync: true,
+                  prompt: [
+                    `Системный preflight общей копии проекта не прошёл: ${detail}`,
+                    `Копия: ${projectPath}, базовая ветка: ${base}.`,
+                    'Выясни причину на машине, покажи диагностику и предложи, что делать. Ничего необратимого без моего подтверждения.'
+                  ].join('\n')
+                }
+          }, userId)
           return
         }
       }
@@ -812,14 +879,32 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    // Make без машины (roadmap-3 п.2): инструменты make_* не требуют машины и безопасны, а нативный
+    // Make (roadmap-3 п.2): инструменты make_* не требуют машины и безопасны, а нативный
     // plan-режим CLI их глушит. Для Claude запускаем default, но запрещаем все встроенные инструменты
     // (shell/файлы сервера) — остаются только MCP. Codex в read-only sandbox блокирует HTTP-MCP, поэтому
-    // там остаётся план (ограничение задокументировано в KB).
-    const makeOnlyExecution = conv?.assistantKind === 'make' && provider === 'claude' && !executionDisabled
-      && role !== 'admin' && !remote && permissionMode !== 'plan'
+    // там остаётся план (ограничение задокументировано в KB). Роль здесь не важна:
+    // админ в Make-чате раньше получал встроенные Bash/Write и мог править
+    // репозиторий сервера — для мастерской это лишние права, а не удобство.
+    const makeOnlyExecution = makeChat && provider === 'claude' && permissionMode !== 'plan'
+    // Канбан-ассистент: «План» для его инструментов — только явный выбор
+    // пользователя в этом разговоре. Ход панели идёт без машины, и принудительный
+    // plan ниже раньше делал канбан read-only (ro=1): ассистент не мог ни создать
+    // карточку, ни запустить план, хотя политику изменений держит сам MCP
+    // (автопилот / подтверждения). Инцидент 2026-09-02.
+    const kanbanExplicitPlan = conv?.permissionMode === 'plan'
     if (executionDisabled || (role !== 'admin' && !remote && !makeOnlyExecution)) permissionMode = 'plan'
-    if (makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
+    // Codex-ход Make остаётся в плане при любой роли: его MCP в read-only sandbox
+    // всё равно недоступен, а default дал бы модели встроенные инструменты.
+    if (makeChat && provider === 'codex') permissionMode = 'plan'
+    // Встроенные инструменты Make запрещены всегда, а не только в MCP-режиме:
+    // мастерская правится через make_*, и ни shell, ни файлы сервера ей не нужны.
+    if (makeChat || makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
+    // Claude в нативном plan глушит MCP, поэтому ход канбан-ассистента без машины
+    // идёт в default с запретом встроенных инструментов — как Make без машины.
+    // Codex остаётся в plan (read-only sandbox): его MCP работает благодаря
+    // default_tools_approval_mode в раннере.
+    const kanbanMcpOnly = Boolean(kanbanMcpUrl) && provider === 'claude' && !remote && !kanbanExplicitPlan && permissionMode === 'plan'
+    if (kanbanMcpOnly) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db
@@ -871,7 +956,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // запускаем CLI в default, но remote-мост получает ro=1 и отклоняет любые
     // изменения; так в план-фазе доступны только чтение файлов и БЗ.
     const readOnlyRemote = permissionMode === 'plan' && Boolean(remote)
-    const executionPermissionMode = readOnlyRemote ? 'default' : permissionMode
+    const executionPermissionMode = readOnlyRemote || kanbanMcpOnly ? 'default' : permissionMode
     const executionRemote = readOnlyRemote && remote
       ? { ...remote, mcpUrl: `${remote.mcpUrl}&ro=1` }
       : remote
@@ -891,8 +976,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
         ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {}),
         ...(makeSources.length ? { makeSources } : {}),
-        // В режиме «План» канбан read-only: карточки и настройки не меняются (&ro=1).
-        ...(kanbanMcpUrl ? { kanbanMcpUrl: permissionMode === 'plan' ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
+        // Канбан read-only (&ro=1) только при явном «Плане» этого разговора; принудительный
+        // plan хода без машины инструментов доски не касается — см. kanbanExplicitPlan.
+        ...(kanbanMcpUrl ? { kanbanMcpUrl: kanbanExplicitPlan ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
       },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
@@ -995,6 +1081,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               turnInputTokens: turnInputTokens(merged)
             })
             return message
+          }
+          // Чат студии картинок: всё нарисованное в ходе попадает в галерею.
+          // Fire-and-forget: галерея — побочный продукт хода, а не его условие.
+          if (conv?.assistantKind === 'images' && deps.captureStudioImages) {
+            void deps.captureStudioImages(userId, conversationId, taskLaunch.text)
           }
           const emitDone = (finalText: string, message?: Message): void => {
             broadcast(

@@ -54,6 +54,19 @@ function sandboxArgs(permissionMode?: string): string[] {
 }
 
 /**
+ * Регистрация HTTP-MCP-сервера. Второй ключ обязателен: с Codex ≥0.15 любой
+ * вызов MCP-инструмента требует одобрения, а `codex exec` неинтерактивен и
+ * отвечает «MCP tool call requires approval, but approval policy is never» —
+ * даже read-only инструменту и даже в `--sandbox read-only`. Наши MCP-серверы
+ * держат политику изменений сами (ro=1, автопилот/подтверждения в интерфейсе),
+ * поэтому одобрение на стороне Codex не нужно. Проверено на 0.152 против
+ * пробного сервера: без ключа оба вызова падают, с ним проходят.
+ */
+function mcpServerArgs(name: string, url: string): string[] {
+  return ['-c', `mcp_servers.${name}.url="${url}"`, '-c', `mcp_servers.${name}.default_tools_approval_mode="approve"`]
+}
+
+/**
  * argv и текст промпта для `codex exec`: sandbox-флаги, MCP-серверы и добавки к
  * промпту (у codex нет `--append-system-prompt`, поэтому инструкции идут в сам
  * текст). Зовут двое: класс `CodexCli` и сырой ран исполнителя (`run/rawRun.ts`).
@@ -74,20 +87,20 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
   // База знаний подключается ДО ветвления plan/remote: она read-only, глушить
   // её в режиме «План» незачем — наоборот, там она главный источник контекста.
   if (req.kbMcpUrl) {
-    args.push('-c', `mcp_servers.kb.url="${req.kbMcpUrl}"`)
+    args.push(...mcpServerArgs('kb', req.kbMcpUrl))
     prompt = `${kbToolHint(req.kbMode ?? 'auto')}\n\n${prompt}`
   }
 
   // Панель веб-превью пользователя: действия выполняет браузер клиента, машина
   // и sandbox не при чём — подключается до ветвления plan/remote, как БЗ.
   if (req.previewMcpUrl) {
-    args.push('-c', `mcp_servers.browser.url="${req.previewMcpUrl}"`)
-    prompt = `${previewToolHint()}\n\n${prompt}`
+    args.push(...mcpServerArgs('browser', req.previewMcpUrl))
+    prompt = `${previewToolHint(req.previewSurface ?? 'panel')}\n\n${prompt}`
   }
 
   // «Консоль с ассистентом»: живой PTY-терминал пользователя как MCP-инструменты.
   if (req.consoleMcpUrl) {
-    args.push('-c', `mcp_servers.console.url="${req.consoleMcpUrl}"`)
+    args.push(...mcpServerArgs('console', req.consoleMcpUrl))
     prompt =
       'Инструмент «Консоль»: справа открыт живой терминал пользователя, работай в нём. Смотри console_context и console_read, ' +
       'в обычном shell выполняй console_run, в полноэкранном TUI (altScreen) — console_keys/console_input. ' +
@@ -97,31 +110,27 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
 
   // Make: файлы проекта разговора как MCP-инструменты.
   if (req.makeMcpUrl) {
-    args.push('-c', `mcp_servers.make.url="${req.makeMcpUrl}"`)
+    args.push(...mcpServerArgs('make', req.makeMcpUrl))
     prompt = MAKE_ASSISTANT_HINT + '\n\n' + prompt
   }
 
   // Связанные с задачей Make-проекты: независимые read-only MCP-серверы.
   for (const source of req.makeSources ?? []) {
-    args.push('-c', `mcp_servers.${source.name}.url="${source.mcpUrl}"`)
+    args.push(...mcpServerArgs(source.name, source.mcpUrl))
     const start = source.mode === 'whole_project' ? 'проект целиком' : `разрешённые файлы: ${source.paths.join(', ')}`
     prompt = `Read-only Make-источник ${source.name} (${source.conversationId}), ${start}. Начни с указанных путей, но make_list_files/make_read_file читают весь проект. Ошибку связывай с ${source.name} и ${source.conversationId}; не проси id или index.html.\n\n${prompt}`
   }
 
   // Канбан: доска и проектное API разговора как MCP-инструменты.
   if (req.kanbanMcpUrl) {
-    args.push('-c', `mcp_servers.kanban.url="${req.kanbanMcpUrl}"`)
+    args.push(...mcpServerArgs('kanban', req.kanbanMcpUrl))
     prompt = KANBAN_ASSISTANT_HINT + '\n\n' + prompt
   }
 
   if (req.remote && req.permissionMode !== 'plan') {
     // В режиме разработки пробрасываем команды на агента через MCP. Для remote
     // нужен bypass: иначе codex exec отменяет вызовы инструментов как user cancelled.
-    args.push(
-      '-c',
-      `mcp_servers.remote.url="${req.remote.mcpUrl}"`,
-      '--dangerously-bypass-approvals-and-sandbox'
-    )
+    args.push(...mcpServerArgs('remote', req.remote.mcpUrl), '--dangerously-bypass-approvals-and-sandbox')
     prompt =
       `Локальный shell недоступен: команды — только MCP remote:bash на машине «${req.remote.agentName}»; ` +
       `для долгих команд передавай timeout_ms (120000 по умолчанию, максимум 300000). ` +

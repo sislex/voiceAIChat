@@ -1,5 +1,5 @@
 // Беседы, сообщения, настройки и полнотекстовый поиск.
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,6 +44,33 @@ describe('REST: conversations/messages/settings', () => {
     expect(first.json().conversation).toMatchObject({ title: 'Файл README.md', projectId: project.id, skillNames: ['ts'], messageCount: 1 })
     expect(first.json().messages).toHaveLength(1)
     expect((await inj({ method: 'GET', url: '/api/conversations' })).json()).toHaveLength(1)
+  })
+
+  it('новый Make-чат проекта разово обновляет общую копию до origin, обычный чат — нет', async () => {
+    // Единственное, что Make делает с репозиторием: модель к машине не ходит
+    // (`turns.ts`: makeChat), поэтому копию до актуального main доводит сервер
+    // здесь, один раз при создании чата.
+    const project = db.createProject(U, { name: 'Витрина', gitUrl: 'https://example.com/repo.git' })
+    const agent = db.createAgent(U, 'Ноутбук')
+    db.linkMachine(U, project.id, agent.id)
+    db.setProjectMachinePath(U, project.id, agent.id, '/repo')
+    vi.spyOn(agentRegistry, 'isOnline').mockReturnValue(true)
+    const exec = vi.spyOn(agentRegistry, 'exec').mockResolvedValue({
+      exitCode: 0, output: `BASE_SHA=${'a'.repeat(40)}\n`, timedOut: false
+    } as never)
+
+    const made = await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make', projectId: project.id } })
+    expect(made.json().assistantKind).toBe('make')
+    for (let i = 0; i < 200 && exec.mock.calls.length === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(exec.mock.calls[0]?.[0]).toBe(agent.id)
+    expect(String(exec.mock.calls[0]?.[1])).toContain('merge --ff-only')
+
+    // Обычный чат того же проекта копию при создании не трогает: его ход
+    // проходит системный preflight сам.
+    exec.mockClear()
+    await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный', projectId: project.id } })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(exec).not.toHaveBeenCalled()
   })
 
   it('create → list → get', async () => {
@@ -335,21 +362,22 @@ describe('REST: conversations/messages/settings', () => {
     const ids = async (url: string): Promise<string[]> =>
       (await inj({ method: 'GET', url })).json().map((c: { id: string }) => c.id)
 
-    expect(await ids('/api/conversations')).toContain(chat.id)
+    const context = `scope=kanban&projectId=${encodeURIComponent(project.id)}`
+    expect(await ids(`/api/conversations?${context}`)).toContain(chat.id)
     db.moveTask(U, project.id, task.id, { columnId: done.id })
-    expect(await ids('/api/conversations')).not.toContain(chat.id)
-    expect(await ids('/api/conversations?includeCompleted=1')).toContain(chat.id)
-    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}`)).not.toContain(chat.id)
-    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).toContain(chat.id)
+    expect(await ids(`/api/conversations?${context}`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations?${context}&includeCompleted=1`)).toContain(chat.id)
+    expect(await ids(`/api/conversations/search?${context}&q=${encodeURIComponent('Скролл')}`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations/search?${context}&q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).toContain(chat.id)
 
     const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
     db.moveTask(U, project.id, task.id, { columnId: cancelled.id })
-    expect(await ids('/api/conversations')).not.toContain(chat.id)
-    expect(await ids('/api/conversations?includeCompleted=1')).not.toContain(chat.id)
-    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations?${context}`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations?${context}&includeCompleted=1`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations/search?${context}&q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).not.toContain(chat.id)
 
     // Прямая ссылка и кнопка «Открыть чат» на карточке работают как раньше.
-    expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}` })).json().conversation.id).toBe(chat.id)
+    expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}?${context}` })).json().conversation.id).toBe(chat.id)
     const fromCard = await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/chat` })
     expect(fromCard.json().id).toBe(chat.id)
   })
@@ -729,7 +757,7 @@ describe('REST: conversations/messages/settings', () => {
       expect(res.statusCode).toBe(200)
       expect(res.headers['content-type']).toContain('shellscript')
       expect(res.body).toContain('/api/agents/script')
-      expect(res.body).toContain('-ge 22') // проверка Node 22+
+      expect(res.body).toContain('[ "$major" -lt 22 ]') // строгая проверка Node 22+
     }
     expect(lin.body).toContain('systemctl --user')
     expect(mac.body).toContain('LaunchAgents')
@@ -1175,6 +1203,37 @@ describe('REST: conversations/messages/settings', () => {
     expect(snapshot.turnSizes[0]).toMatchObject({ model: 'sonnet', approxTokens: 300, resumed: false })
     // Стоимость постоянной части: у известной модели число, а не выдумка.
     expect(typeof snapshot.promptPreview.costUsd === 'number' || snapshot.promptPreview.costUsd === null).toBe(true)
+  })
+
+  it('чат задачи с макетом показывает read-only источники make_design', async () => {
+    // Свежая фича хода (turns.ts, buildTaskMakeSources по task_designs): чат
+    // задачи читает файлы привязанного Make-макета. Инспектор обязан это
+    // показывать — иначе «что сможет модель» снова отвечает неполно.
+    const project = db.createProject(U, { name: 'Проект макета' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'По макету' })!
+    const makeChat = db.createConversation(U, 'Макет', 'make', project.id)!
+    db.linkTaskDesign(U, project.id, task.id, { conversationId: makeChat.id })
+    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+
+    const item = async (id: string): Promise<{ available: boolean; toggleable: boolean; lockReason?: string | null } | undefined> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${chat.id}/context-snapshot` })).json()
+      return snapshot.groups
+        .flatMap((group: { items: Array<{ id: string; available: boolean; toggleable: boolean; lockReason?: string | null }> }) => group.items)
+        .find((entry: { id: string }) => entry.id === id)
+    }
+    const design = await item('mcp-make-design')
+    expect(design?.available).toBe(true)
+    // Тумблера нет: источник даёт привязка задачи, ход disabledContext не читает.
+    expect(design?.toggleable).toBe(false)
+    expect(design?.lockReason).toBe('kind')
+    expect((await inj({ method: 'POST', url: `/api/conversations/${chat.id}/context/mcp-make-design`, payload: { enabled: false } })).statusCode).toBe(400)
+
+    // Обычный чат без задачи честно говорит, что источник появится в чате задачи.
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${plain.id}/context-snapshot` })).json()
+    const plainDesign = snapshot.groups.flatMap((group: { items: Array<{ id: string; available: boolean }> }) => group.items).find((entry: { id: string }) => entry.id === 'mcp-make-design')
+    expect(plainDesign?.available).toBe(false)
   })
 
   it('в режиме планирования инструменты вида чата честно обещают только чтение', async () => {

@@ -45,12 +45,13 @@ import { TaskRunFeed } from '../ci/TaskRunFeed'
 import { TaskDesigns } from './TaskDesigns'
 import { TaskPreparationTab } from './TaskPreparationTab'
 import { TaskTimeline } from './TaskTimeline'
+import { TaskActivityPanel } from './TaskActivityPanel'
 import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementSource, type ImprovementStatus } from '@shared/ci'
+import { canStartCiRun, canStartParallelCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementSource, type ImprovementStatus } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
@@ -158,6 +159,8 @@ export interface TaskModalProps {
   footer?: ReactNode
   /** Дополнительные проектные настройки черновика (например, движок и модель). */
   detailsExtra?: ReactNode
+  /** Нейтральные UI-действия в шапке, например переключатель new/legacy. */
+  headerExtra?: ReactNode
 }
 
 function toDateInput(ms: number | null): string {
@@ -306,7 +309,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     const current = props.members.find((member) => member.role === 'owner' && member.active !== false)?.username
     if (current) props.onUpdate(task.id, { assignee: current })
   }, [props.draft, props.members, task.id, task.assignee])
-  type TaskTab = 'general' | 'timeline' | 'settings' | 'progress' | TaskModalTab
+  type TaskTab = 'general' | 'timeline' | 'activity' | 'settings' | 'progress' | TaskModalTab
   const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '')
   const defaultTab = (): TaskTab => {
     if (props.initialTab && props.initialTab !== 'preparation') return props.initialTab
@@ -523,7 +526,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const qaStageVisible = (stage: QaRunStage): boolean => qaStageRuns[stage]?.length ? true : currentWorkflowIndex >= workflowOrder.indexOf(stage)
   // Пока ран задачи идёт запуск недоступен; в семантическом «Готово» новый
   // запуск также запрещён — задача завершена, даже если старый ран терминальный.
-  const canStartCi = column?.semanticType !== 'done' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && canStartCiRun(props.ciSummary)
+  const ciLaunchStage = column?.semanticType !== 'done' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation'
+  const canStartCi = ciLaunchStage && canStartCiRun(props.ciSummary)
+  const canStartParallelCi = ciLaunchStage && canStartParallelCiRun(props.ciSummary)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
   const children = board.tasks.filter((t) => t.parentId === task.id)
   // Готовность подзадач считается по семантике колонки, а не по её названию:
@@ -594,6 +599,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // переходе стрелками, а рядом с ним нельзя было поставить пилюлю.
   const tabItems: Array<{ id: TaskTab; label: string; count?: number }> = [
     { id: 'general', label: 'Общее' }, { id: 'timeline', label: 'Временная шкала' },
+    // «Активность» — как в Jira: комментарии, история изменений, ворклог.
+    { id: 'activity' as const, label: 'Активность' },
     ...(preparationVisible && features.ci ? [{ id: 'preparation' as const, label: 'Подготовка к разработке' }] : []),
     { id: 'settings', label: 'Настройки' }, { id: 'progress', label: 'Ход выполнения' },
     ...(features.ci ? [{ id: 'improvements' as const, label: 'Улучшения', count: newImprovements }] : []),
@@ -765,7 +772,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       onEscape={requestClose}
       testId="task-modal"
       className="jmodal-frame"
-      actions={headActions}
+      actions={<>{props.headerExtra}{headActions}</>}
       footer={props.footer}
     >
       {!props.draft && <nav
@@ -1078,6 +1085,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <PanelHeading title="Временная шкала" description="Этапы задачи, попытки внутри них и время, потраченное на каждую." />
           {activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}
         </section>
+        <section className="task-tab-panel" data-testid="task-activity-tab-panel" {...panelProps('activity')}>
+          <PanelHeading title="Активность" description="Комментарии, история изменений и ворклог — как в Jira. Комментарии оставляют и участники, и модель ассистента." />
+          {/* Условный монтаж, как у временной шкалы: сетевые панели грузятся
+              только на своей активной вкладке. */}
+          {activeTab === 'activity' && window.api && <TaskActivityPanel projectId={task.projectId} taskId={task.id} api={window.api} />}
+        </section>
         <section className="task-tab-panel" data-testid="task-improvements-panel" {...panelProps('improvements')}>
           <PanelHeading
             title="Улучшения"
@@ -1389,7 +1402,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     onClick={() => void launchCi('queue')}
                   >{launching === 'queue' ? 'Добавляем в очередь…' : 'В очередь'}</Button>
                 )}
-                {props.onStartCiParallel && canStartCi && (
+                {props.onStartCiParallel && canStartParallelCi && (
                   <Button
                     size="sm"
                     loading={launching === 'parallel'}

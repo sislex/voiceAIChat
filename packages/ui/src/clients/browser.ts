@@ -151,8 +151,9 @@ export function createBrowserClients(overrides: BrowserClientOverrides = {}): Ap
                 attachments?: string[],
                 verbose?: boolean,
                 execTarget?: string | null,
-                messageId?: string
-              ) => claude.send({ conversationId, messageId, segments, attachments, verbose, execTarget }),
+                messageId?: string,
+                skipProjectSync?: boolean
+              ) => claude.send({ conversationId, messageId, segments, attachments, verbose, execTarget, skipProjectSync }),
               cancel: (conversationId?: string) =>
                 claude.cancel(conversationId ? { conversationId } : undefined),
               editQueued: (conversationId: string, id: string, text: string) =>

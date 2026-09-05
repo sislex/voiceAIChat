@@ -10,13 +10,13 @@ import type {
   CiRunMode, CiInteraction, CiInteractionAnswer, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand, managedCiWorkspacePaths } from '@voicechat/shared'
-import { extractImprovementFiles, isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, resolveCiStageModel } from '@voicechat/shared'
+import { extractImprovementFiles, isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
+import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME } from '../db/database.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook, CiRunPrimitives } from './types.js'
 import { isReadOnlyCommand } from './console.js'
-import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { CI_INFRA_LABEL, classifyCiInfraFailure, classifyLlmTransportFailure, formatCiInfraFailure } from './infraErrors.js'
 import type { CiConsoleExecResult, ProjectMachine } from '@voicechat/shared'
 
 /**
@@ -61,6 +61,12 @@ export interface CiRunManagerDeps {
   kbUpdate?: CiKbUpdateHook
   /** Автоматическая подготовка структурированных сценариев при входе в qa_preparation. */
   qaPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string; runId: string }) => void
+  /**
+   * Сбросить сессию браузерной проверки задачи перед новым раном. Страница
+   * прошлого рана только путает модель, а профиль Chromium остаётся в томе,
+   * поэтому входы на проверяемом сайте переживают сброс.
+   */
+  resetBrowserCheck?: (args: { userId: string; taskId: string }) => void
 }
 
 type ResumePoint = { kind: 'command'; slot: CiSlot; index: number } | { kind: 'model' }
@@ -396,33 +402,70 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (taskColumn?.semanticType === 'backlog' || taskColumn?.semanticType === 'preparation') {
       return { error: 'Development-run нельзя запускать из TODO или Подготовки к разработке' }
     }
-    // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
-    // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
-    if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     // null у задачи — динамическое наследование текущего project default.
-    // Результат вычисляется на каждом запуске; персональный default инициатора
-    // в цепочку задач не входит.
+    // Для parallel незакреплённая задача выбирает доступную online-машину с
+    // учётом текущей загрузки. Выбор завершается до продвижения queued-рана:
+    // ошибка машины не должна вынимать его из FIFO.
+    const usableAgents = deps.db.listUsableAgents(userId, projectId)
     let agentId: string | null = null
-    let agentSelectionSource: 'explicit' | 'task_pinned' | 'project_default'
+    let agentSelectionSource: 'explicit' | 'task_pinned' | 'project_default' | 'fallback'
     if (launchOptions?.agentId) {
       agentId = launchOptions.agentId
       agentSelectionSource = 'explicit'
     } else if (task.agentId) {
       agentId = task.agentId
       agentSelectionSource = 'task_pinned'
+    } else if (launch === 'parallel') {
+      const onlineAgentIds = usableAgents
+        .filter((agent) => !deps.isAgentOnline || deps.isAgentOnline(agent.id))
+        .map((agent) => agent.id)
+      agentId = pickCiRunAgent(onlineAgentIds, project.defaultAgentId, deps.db.countActiveCiRunsByAgent())
+      agentSelectionSource = agentId === project.defaultAgentId ? 'project_default' : 'fallback'
     } else {
       agentId = project.defaultAgentId
       agentSelectionSource = 'project_default'
     }
-    if (!agentId) return { error: 'машина проекта по умолчанию не задана. Выберите машину задачи или настройте проект' }
+    if (!agentId) {
+      return { error: launch === 'parallel'
+        ? 'Нет доступной online-машины для параллельного запуска'
+        : 'машина проекта по умолчанию не задана. Выберите машину задачи или настройте проект' }
+    }
     if (!deps.db.canUseAgent(userId, agentId, projectId)) {
       return { error: 'Выбранная машина больше недоступна для этой задачи' }
     }
-    const selectedAgent = deps.db.listUsableAgents(userId, projectId).find((agent) => agent.id === agentId)
+    const selectedAgent = usableAgents.find((agent) => agent.id === agentId)
     if (!selectedAgent) return { error: 'Выбранная машина удалена или доступ к ней отозван' }
     if (deps.isAgentOnline && !deps.isAgentOnline(agentId)) {
       return { error: 'Выбранная машина offline. CI не ожидает подключения: выберите online-машину' }
     }
+
+    // Parallel может атомарно продвинуть существующий queued-run. Проверка
+    // статуса, извлечение waiter и его пробуждение синхронны: конкурирующий
+    // запрос увидит уже bypass/running и не создаст второй ран.
+    if (launch === 'parallel') {
+      for (const [id, activeRun] of active) {
+        if (activeRun.taskId !== taskId || isClosingRun(id, activeRun)) continue
+        const row = deps.db.getCiRunRaw(id)
+        if (row?.status === 'queued' && promoteQueuedRun(id, agentId)) {
+          deps.db.updateCiRun(id, { agentSelectionSource })
+          deps.db.addCiEvent({
+            projectId,
+            runId: id,
+            type: 'run.promoted_parallel',
+            actorType: 'user',
+            actorId: userId,
+            payload: { agentId, bypassQueue: true }
+          })
+          const promoted = deps.db.getCiRunRaw(id)!
+          emitRun(promoted, activeRun.userId)
+          return { run: promoted }
+        }
+        return { error: 'Для этой задачи уже выполняется ран' }
+      }
+    }
+    // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
+    // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
+    if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
     const role = deps.db.getUser(userId)?.role ?? 'developer'
@@ -571,6 +614,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     try {
       const row = deps.db.getCiRunRaw(runId)
       if (!row?.agentId || !isTerminalCiStatus(row.status)) return
+      // Пока задача жива, `node_modules` — не мусор: следом за development-раном
+      // в этом же checkout идут Component QA и интеграционные тесты. Снос сразу
+      // после рана ронял их первой же стадией с npm-бинарём (`tsc: command not
+      // found`, код 127), и падение уходило в fix-loop как дефект реализации
+      // (CHAT-411, три круга подряд). Закрытая задача убирает копию целиком —
+      // `releaseTaskRepositories` в merge-ране.
+      if (!deps.db.isTaskClosed(row.taskId)) return
       const nodeModules = `${current.workspacePath}/node_modules`
       await deps.executor.run({
         agentId: row.agentId,
@@ -1018,7 +1068,16 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     try {
       if (targetError) throw new Error(targetError)
       if (!commandAgentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
-      const res = await deps.executor.run({ agentId: commandAgentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }, onChunk, signal)
+      const request = { agentId: commandAgentId, script: command.script, workdir: cwd, env: { ...baseEnv, ...command.env }, timeoutMs, secrets: [] }
+      let res = await deps.executor.run(request, onChunk, signal)
+      // В инциденте CHAT-386 агент не ответил на первый exec до guard-timeout:
+      // Git не запускался, но обязательный идемпотентный commit-step ушёл модели.
+      // После cancel безопасно повторяем именно этот системный шаг внутри той же
+      // попытки. Остальные команды могут быть неидемпотентны и не ретраятся.
+      if (command.name === TASK_COMMIT_COMMAND_NAME && res.timedOut && res.exitCode === null && !signal.aborted) {
+        onChunk('Исполнитель не вернул результат команды коммита — повторяю системный шаг без fix-loop.\n')
+        res = await deps.executor.run(request, onChunk, signal)
+      }
       exitCode = res.exitCode
       timedOut = res.timedOut
     } catch (err) {
@@ -1597,11 +1656,16 @@ fi`
     const prep = `${cachePrep}\n${workspacePrep}`
     if (!resume) {
       // Новый ран: создаём запись рабочей директории. При повторе — переиспользуем.
-      const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath })
+      const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath, npmCacheDir })
       deps.db.updateCiRun(runId, { workspaceId: ws.id })
     }
 
     const slots = deps.db.resolveTaskSlots(runRow.projectId, runRow.taskId)
+    // Браузерная проверка начинается с чистой страницы: сброс здесь, а не в
+    // конце прошлого рана, — тогда он работает и после падения сервера.
+    if (!resume && deps.db.getTaskBrowserCheck(runRow.taskId).mode === 'chromium') {
+      deps.resetBrowserCheck?.({ userId, taskId: runRow.taskId })
+    }
     const enabledStages = new Set(deps.db.getTaskProcessStages(runRow.taskId))
     const total = (enabledStages.has('before_model') ? slots.beforeModel.length : 0)
       + (enabledStages.has('model_work') ? 1 : 0)
@@ -1766,6 +1830,8 @@ fi`
     const prim = makePrimitives(runId, userId, agentId, project.machines, repoPath, commandWorkspacePath, env, signal)
     let modelOk = true
     let modelCancelled = false
+    /** Текст ошибки хода: по нему отличаем обрыв транспорта от содержательного отказа. */
+    let modelError = ''
     /** Модель работала, но рабочая копия пуста — слот «после» не запускаем. */
     let emptyWork = false
     if (enabledStages.has('model_work') && !(resume?.kind === 'command' && resume.slot === 'after_model')) {
@@ -1783,8 +1849,10 @@ fi`
           const r = await deps.modelWork(ctx)
           modelOk = r.ok
           modelCancelled = r.cancelled === true
-        } catch {
+          modelError = r.error ?? ''
+        } catch (error) {
           modelOk = false
+          modelError = error instanceof Error ? error.message : String(error)
         }
       } else {
         const line = deps.db.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
@@ -1808,7 +1876,18 @@ fi`
         return
       }
       if (!modelOk) {
-        progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
+        // Обрыв канала до исполнителя — не выбор модели и не дефект задачи: ход
+        // прервался на транспорте. Помечаем инфраструктурным, чтобы автопроход
+        // возобновил тот же шаг, а человек не искал причину в промпте.
+        const transport = classifyLlmTransportFailure(modelError)
+        if (transport) {
+          const line = deps.db.appendCiLog(runId, mwStep.id, 'system', formatCiInfraFailure(transport))
+          broadcast({ t: 'ci.log', runId, line }, userId)
+          deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: transport.kind, stepId: mwStep.id } })
+          progress(runId, done, total, `Инфраструктурная ошибка — ${CI_INFRA_LABEL[transport.kind]}`, userId)
+        } else {
+          progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
+        }
         finalize(runId, userId, 'failed')
         return
       }

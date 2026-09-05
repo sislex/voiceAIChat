@@ -6,6 +6,10 @@ import fastify from 'fastify'
 import type { Conversation } from '@voicechat/shared'
 import { registerBrowserRoutes } from './browser.js'
 import { BrowserRunnerError, type BrowserRunnerClient } from '../browser/runnerClient.js'
+import { saveBrowserShot } from '../browser/checkShots.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const meta = { id: 'c1', conversationId: 'c1', incarnation: 'inc', state: 'ready' as const, activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: 'https://a.b', title: null }
 
@@ -23,11 +27,23 @@ function makeRunner(overrides: Partial<BrowserRunnerClient> = {}): BrowserRunner
   }
 }
 
-async function makeApp(opts: { conv?: Conversation | null; runner?: BrowserRunnerClient | undefined } = {}) {
+async function makeApp(opts: {
+  conv?: Conversation | null
+  runner?: BrowserRunnerClient | undefined
+  shotsRoot?: string
+  run?: unknown
+} = {}) {
   const app = fastify()
   app.addHook('onRequest', async (req) => { (req as unknown as { user: { name: string; role: string } }).user = { name: 'admin', role: 'admin' } })
-  const db = { getConversation: vi.fn(() => (opts.conv === undefined ? conversation() : opts.conv)) } as never
-  registerBrowserRoutes(app, { db, ...(opts.runner !== undefined ? { runner: opts.runner } : {}) })
+  const db = {
+    getConversation: vi.fn(() => (opts.conv === undefined ? conversation() : opts.conv)),
+    getCiRun: vi.fn(() => opts.run ?? null)
+  } as never
+  registerBrowserRoutes(app, {
+    db,
+    ...(opts.shotsRoot ? { shotsRoot: opts.shotsRoot } : {}),
+    ...(opts.runner !== undefined ? { runner: opts.runner } : {})
+  })
   await app.ready()
   return app
 }
@@ -102,5 +118,39 @@ describe('registerBrowserRoutes', () => {
     expect(res.json()).toEqual({ stopped: true })
     expect(runner.stop).toHaveBeenCalledWith('c1')
     await app.close()
+  })
+})
+
+// Кадры браузерной проверки: доступ решает ран (в нём — членство в проекте), а
+// имя файла обязано быть номером — иначе в путь можно было бы вписать что угодно.
+describe('кадры браузерной проверки рана', () => {
+  it('отдаёт сохранённый кадр участнику проекта', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'vc-shots-route-'))
+    saveBrowserShot(root, 'run-1', Buffer.from('кадр'))
+    const app = await makeApp({ shotsRoot: root, run: { run: { id: 'run-1' }, steps: [] } })
+    const res = await app.inject({ method: 'GET', url: '/api/ci/runs/run-1/browser-shots/1.png' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('image/png')
+    expect(res.rawPayload.toString()).toBe('кадр')
+    await app.close()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('чужой ран — 404, кривое имя — 404, без каталога роута нет', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'vc-shots-route-'))
+    saveBrowserShot(root, 'run-1', Buffer.from('кадр'))
+
+    const foreign = await makeApp({ shotsRoot: root, run: null })
+    expect((await foreign.inject({ method: 'GET', url: '/api/ci/runs/run-1/browser-shots/1.png' })).statusCode).toBe(404)
+    await foreign.close()
+
+    const own = await makeApp({ shotsRoot: root, run: { run: { id: 'run-1' }, steps: [] } })
+    expect((await own.inject({ method: 'GET', url: '/api/ci/runs/run-1/browser-shots/секрет.png' })).statusCode).toBe(404)
+    await own.close()
+
+    const noRoot = await makeApp({ run: { run: { id: 'run-1' }, steps: [] } })
+    expect((await noRoot.inject({ method: 'GET', url: '/api/ci/runs/run-1/browser-shots/1.png' })).statusCode).toBe(404)
+    await noRoot.close()
+    rmSync(root, { recursive: true, force: true })
   })
 })

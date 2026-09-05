@@ -12,6 +12,7 @@ async function scene(api: FakeApi): Promise<{ projectId: string; taskId: string;
   const task = await api['tasks:create']({ projectId: project.id, columnId: board.columns[0].id, title: 'Экран оплаты' })
   const make = await api['conversations:create']({ title: 'Проект 1', assistantKind: 'make' })
   await api['conversations:setProject']({ id: make.id, projectId: project.id })
+  await api['make:write']({ conversationId: make.id, path: 'index.html', content: '<h1>Проект 14</h1>' })
   await api['make:write']({ conversationId: make.id, path: 'pay.html', content: '<h1>Оплата</h1>' })
   await api['make:write']({ conversationId: make.id, path: 'styles/app.css', content: 'body{}' })
   return { projectId: project.id, taskId: task.id, makeId: make.id }
@@ -35,8 +36,9 @@ describe('TaskDesigns — секция «Дизайн» карточки', () =>
 
     expect(await screen.findByText('Экран оплаты')).toBeInTheDocument()
     expect(screen.getByText('pay.html')).toBeInTheDocument()
-    // Файловый режим передаёт точный набор, а не публичный preview URL.
-    expect(screen.queryByRole('link', { name: 'Превью' })).not.toBeInTheDocument()
+    // Не-HTML-совместимых файлов в выборе нет: pay.html получает живое превью.
+    expect(screen.getByRole('link', { name: 'Превью' })).toHaveAttribute('href', expect.stringContaining(`/api/preview/make/`))
+    expect(screen.getByRole('link', { name: 'Превью' })).toHaveAttribute('href', expect.stringContaining('pay.html'))
   })
 
   it('переводит в Make по кнопке и снимает связь', async () => {
@@ -72,6 +74,24 @@ describe('TaskDesigns — секция «Дизайн» карточки', () =>
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     expect(await screen.findByText('styles/app.css')).toBeInTheDocument()
     expect(screen.queryByText('pay.html, styles/app.css')).not.toBeInTheDocument()
+  })
+
+  it('показывает полный список источников, возвращённый сервером', async () => {
+    const api = createFakeApi([])
+    window.api = api as unknown as typeof window.api
+    const { projectId, taskId } = await scene(api)
+    for (const title of ['Проект 2', 'Проект 3']) {
+      const make = await api['conversations:create']({ title, assistantKind: 'make' })
+      await api['conversations:setProject']({ id: make.id, projectId })
+    }
+
+    render(<TaskDesigns projectId={projectId} taskId={taskId} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Связать дизайн' }))
+
+    expect(await screen.findAllByRole('option')).toHaveLength(3)
+    expect(screen.getByRole('option', { name: 'Проект 1' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Проект 2' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Проект 3' })).toBeInTheDocument()
   })
 
   it('без привязанных Make-проектов объясняет, где взять источник', async () => {

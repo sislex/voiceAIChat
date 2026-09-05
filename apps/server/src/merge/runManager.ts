@@ -31,8 +31,29 @@ export interface MergeConflictFixContext {
   signal: AbortSignal
   log(chunk: string): void
 }
-export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; repositoriesChanged?(projectId:string,taskId:string):void; now?:()=>number }
+/**
+ * Падение обязательных проверок: модель правит код прямо в проверочном
+ * worktree merge-рана. Раньше такой ран просто останавливался и ждал человека,
+ * хотя причина обычно механическая (незаявленный токен, забытый импорт).
+ */
+export interface MergeTestFixContext {
+  run: MergeRun
+  /** Worktree, в котором проверки только что упали (зависимости уже стоят). */
+  repo: string
+  /** Что именно упало: команда, код возврата и хвост вывода. */
+  check: MergeCheck
+  signal: AbortSignal
+  log(chunk: string): void
+}
+export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; testFix?(ctx:MergeTestFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; repositoriesChanged?(projectId:string,taskId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
+
+/**
+ * Лимит одной команды гейта. Прежние 30 минут не покрывали полный гейт монорепо
+ * на занятой машине: у CHAT-408 «Проверки проекта» упёрлись в лимит на 34-й
+ * минуте, когда параллельно с ними шёл модельный шаг актуализации БЗ.
+ */
+const GATE_COMMAND_TIMEOUT_MS = 3_600_000
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
 /** Канонизирует Git URL до host/owner/repo: SSH- и HTTPS-формы одного
@@ -289,14 +310,20 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
       if(run.sourceSha&&source.toLowerCase()!==run.sourceSha.toLowerCase())throw new Error('stale source: ветка изменилась после development-рана')
 
       this.stage(id,'merging','running','Вычищаю дерево постоянного merge-клона')
-      const prep=await this.cmd(run,`git merge --abort 2>/dev/null || true\ngit checkout -f --detach ${shellQuote(targetRef)}\ngit reset --hard\ngit clean -fd`,repo)
+      // Работа в колонке merge начинается с вливания main в ветку задачи:
+      // встаём на feature и мержим в неё main. Так merge-коммит принадлежит
+      // ветке (её история продолжается линейно, first parent — feature), все
+      // конфликты и проверки решаются в контексте задачи, а main получает
+      // fast-forward до готового SHA.
+      const prep=await this.cmd(run,`git merge --abort 2>/dev/null || true\ngit checkout -f --detach ${shellQuote(sourceRef)}\ngit reset --hard\ngit clean -fd`,repo)
       if(prep.exitCode)throw new Error('Не удалось подготовить постоянный merge-клон')
-      const merged=await this.cmd(run,`git -c user.name=voiceAIChat -c user.email=merge@voicechat.local merge --no-ff ${shellQuote(sourceRef)} -m ${shellQuote(`Merge task ${run.taskId}`)}`,repo)
+      const merged=await this.cmd(run,`git -c user.name=voiceAIChat -c user.email=merge@voicechat.local merge --no-ff ${shellQuote(targetRef)} -m ${shellQuote(`Merge main into ${run.sourceBranch} (task ${run.taskId})`)}`,repo)
       if(merged.exitCode){
         const found=await this.cmd(run,'git diff --name-only --diff-filter=U',repo,30000), files=found.output.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)
         this.deps.db.updateMergeRun(id,{conflicts:files})
-        // README — производный индекс. Оставляем target-версию только временно:
-        // после kb_update индекс безусловно строится из итогового merge-дерева.
+        // README — производный индекс. Берём версию ветки (`--ours`, теперь это
+        // feature) только временно: после kb_update индекс безусловно строится
+        // из итогового merge-дерева.
         // Такой конфликт не должен блокировать merge или скрывать конфликт в коде.
         let unresolved=files
         if(files.includes('docs/kb/README.md')){
@@ -380,25 +407,15 @@ exit 0`,repo,30000)
       }
       const rev=await this.cmd(run,'git rev-parse HEAD',repo,30000), checkedSha=rev.output.match(/[0-9a-f]{40}/i)?.[0]
       if(!checkedSha)throw new Error('Merge-коммит не создан')
-      // Направление истории намеренно явное: merge-коммит строится от pinned main
-      // с feature как вторым родителем; отдельный KB-коммит становится его потомком
-      // в feature. В main публикуется ровно итоговый feature SHA.
-      this.deps.db.updateMergeRun(id,{mergeSha:checkedSha}); this.stage(id,'merging','passed',`Проверяемый SHA ${checkedSha.slice(0,8)} (main + feature)`)
+      // Направление истории намеренно явное: merge-коммит строится на feature с
+      // pinned main как вторым родителем, отдельный KB-коммит становится его
+      // потомком там же. В main публикуется ровно итоговый feature SHA, то есть
+      // main всегда догоняет ветку fast-forward.
+      this.deps.db.updateMergeRun(id,{mergeSha:checkedSha}); this.stage(id,'merging','passed',`Проверяемый SHA ${checkedSha.slice(0,8)} (feature + main)`)
 
       if (!this.deps.kbUpdate) throw new Error('Обязательный обработчик актуализации базы знаний не подключён')
       worktreeRepo=repo
-      const worktreeRoot=`${parent}/.merge-run-${id.replace(/[^A-Za-z0-9_-]/g,'_')}`
-      const testsRepo=`${worktreeRoot}-tests`,kbRepo=`${worktreeRoot}-kb`
-      const prepared=await this.cmd(run,`git worktree add --detach ${shellQuote(testsRepo)} ${shellQuote(checkedSha)}\ngit worktree add --detach ${shellQuote(kbRepo)} ${shellQuote(checkedSha)}`,repo,300000)
-      if(prepared.exitCode||prepared.timedOut)throw new Error('Не удалось создать изолированные worktree для проверок и БЗ')
-      temporaryWorktrees.push(testsRepo,kbRepo)
-
       const commands=testStages(project.testCommand??'',['npm run affected-check'])
-      const parallelStarted=this.now()
-      this.stage(id,'testing','running',`Параллельно запускаю проверки SHA ${checkedSha.slice(0,8)} в изолированном worktree`)
-      this.stage(id,'kb_update','running',`Параллельно актуализирую БЗ SHA ${checkedSha.slice(0,8)} в отдельном worktree`)
-      const branchCtl=new AbortController()
-      ctl.signal.addEventListener('abort',()=>branchCtl.abort(),{once:true})
       const runGate=async(workdir:string,gateCommands:string[],name:string):Promise<MergeCheck>=>{
         const began=this.now()
         const installed=await this.cmd(run,`npm_config_cache=${shellQuote(cacheDir)} npm ci --no-audit --no-fund`,workdir,900000)
@@ -406,24 +423,70 @@ exit 0`,repo,30000)
         if(!installed.exitCode&&!installed.timedOut){
           tested={exitCode:0 as number|null,timedOut:false,output:installed.output}
           for(const command of gateCommands){
-            const result=await this.cmd(run,command,workdir,1800000)
+            // Полный гейт монорепо на занятой машине идёт десятки минут, а его
+            // вывод приходит порциями: без этих отметок 30 минут тишины в логе
+            // не отличить от зависшего рана.
+            const commandStarted=this.now()
+            this.log(run.id,`[${name}] запускаю: ${command}`)
+            const result=await this.cmd(run,command,workdir,GATE_COMMAND_TIMEOUT_MS)
+            this.log(run.id,`[${name}] ${command} — ${result.timedOut?`превысил лимит ${Math.round(GATE_COMMAND_TIMEOUT_MS/60000)} мин`:`код ${result.exitCode}`} за ${this.now()-commandStarted} мс`)
             tested={...result,output:tested.output+result.output}
             if(result.exitCode||result.timedOut)break
           }
         }
         return{name,command:gateCommands.join('\n'),status:tested.exitCode===0&&!tested.timedOut?'passed':'failed',startedAt:began,finishedAt:this.now(),durationMs:this.now()-began,exitCode:tested.exitCode,timedOut:tested.timedOut,output:tested.output}
       }
-      const testsPromise=runGate(testsRepo,commands,'Проверки проекта').then(result=>{if(result.status==='failed')branchCtl.abort();return result})
-      const kbPromise=this.deps.kbUpdate({run:this.deps.db.getMergeRunRaw(id)??run,repo:kbRepo,targetRef,signal:branchCtl.signal,log:chunk=>this.log(id,chunk)}).then(result=>{if(!result.ok)branchCtl.abort();return result})
-      const [testsSettled,kbSettled]=await Promise.allSettled([testsPromise,kbPromise])
-      const parallelDuration=this.now()-parallelStarted
-      if(testsSettled.status==='rejected')throw testsSettled.reason
-      const check=testsSettled.value
-      this.deps.db.updateMergeRun(id,{checks:[check]})
-      this.stage(id,'testing',check.status==='passed'?'passed':'failed',`Проверки ${check.status==='passed'?'прошли':'не прошли'} за ${check.durationMs} мс; параллельный участок ${parallelDuration} мс`)
-      if(check.status==='failed')throw new Error(check.timedOut?'Проверки превысили timeout':`Проверки упали (exit ${check.exitCode})`)
-      if(kbSettled.status==='rejected')throw kbSettled.reason
-      const kbResult=kbSettled.value
+      // Проверки и БЗ идут от одного SHA. Если проверки упали, внутри рана
+      // разрешена ровно одна попытка автоисправления моделью: она правит код в
+      // проверочном worktree, сервер сам коммитит результат и повторяет и
+      // проверки, и БЗ уже от нового SHA. Второй раз не пробуем — иначе ран
+      // будет крутиться на одной и той же ошибке.
+      let attemptSha=checkedSha
+      let fixAllowed=Boolean(this.deps.testFix)
+      let attempt=0
+      let check!:MergeCheck
+      let parallelDuration=0
+      let kbResult!:{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}
+      let kbRepo=''
+      for(;;){
+        attempt+=1
+        const worktreeRoot=`${parent}/.merge-run-${id.replace(/[^A-Za-z0-9_-]/g,'_')}${attempt>1?`-fix${attempt-1}`:''}`
+        const testsRepo=`${worktreeRoot}-tests`
+        kbRepo=`${worktreeRoot}-kb`
+        const prepared=await this.cmd(run,`git worktree add --detach ${shellQuote(testsRepo)} ${shellQuote(attemptSha)}\ngit worktree add --detach ${shellQuote(kbRepo)} ${shellQuote(attemptSha)}`,repo,300000)
+        if(prepared.exitCode||prepared.timedOut)throw new Error('Не удалось создать изолированные worktree для проверок и БЗ')
+        temporaryWorktrees.push(testsRepo,kbRepo)
+
+        const parallelStarted=this.now()
+        this.stage(id,'testing','running',`Параллельно запускаю проверки SHA ${attemptSha.slice(0,8)} в изолированном worktree`)
+        this.stage(id,'kb_update','running',`Параллельно актуализирую БЗ SHA ${attemptSha.slice(0,8)} в отдельном worktree`)
+        const branchCtl=new AbortController()
+        ctl.signal.addEventListener('abort',()=>branchCtl.abort(),{once:true})
+        const testsPromise=runGate(testsRepo,commands,'Проверки проекта').then(result=>{if(result.status==='failed')branchCtl.abort();return result})
+        const kbPromise=this.deps.kbUpdate({run:this.deps.db.getMergeRunRaw(id)??run,repo:kbRepo,targetRef,signal:branchCtl.signal,log:chunk=>this.log(id,chunk)}).then(result=>{if(!result.ok)branchCtl.abort();return result})
+        const [testsSettled,kbSettled]=await Promise.allSettled([testsPromise,kbPromise])
+        parallelDuration=this.now()-parallelStarted
+        if(testsSettled.status==='rejected')throw testsSettled.reason
+        check=testsSettled.value
+        this.deps.db.updateMergeRun(id,{checks:[check]})
+        this.stage(id,'testing',check.status==='passed'?'passed':'failed',`Проверки ${check.status==='passed'?'прошли':'не прошли'} за ${check.durationMs} мс; параллельный участок ${parallelDuration} мс`)
+        if(check.status==='failed'){
+          // Параллельный шаг БЗ снят тем же abort, что и проверки: закрываем его
+          // этап сразу, а не оставляем «running» до конца рана.
+          this.stage(id,'kb_update','failed','Актуализация БЗ снята: проверки проекта не прошли')
+          const failure=check.timedOut?'Проверки превысили timeout':`Проверки упали (exit ${check.exitCode})`
+          if(!fixAllowed)throw new Error(failure)
+          fixAllowed=false
+          const repairedSha=await this.repairChecks(id,run,testsRepo,attemptSha,check,ctl)
+          if(!repairedSha)throw new Error(`${failure}; автоисправление не помогло`)
+          attemptSha=repairedSha
+          this.deps.db.updateMergeRun(id,{mergeSha:attemptSha})
+          continue
+        }
+        if(kbSettled.status==='rejected')throw kbSettled.reason
+        kbResult=kbSettled.value
+        break
+      }
       this.deps.db.updateMergeRun(id,{
         ...(kbResult.llmEngineId!==undefined?{llmEngineId:kbResult.llmEngineId}:{}),
         ...(kbResult.llmProvider?{llmProvider:kbResult.llmProvider}:{}),
@@ -431,22 +494,32 @@ exit 0`,repo,30000)
       })
       if(!kbResult.ok){this.stage(id,'kb_update','failed',kbResult.message);throw new Error(kbResult.message)}
 
-      const kbCommitted=await this.cmd(run,`node scripts/kb.mjs index\nnode scripts/kb.mjs check\ngit add -- docs/kb\nif git diff --cached --quiet; then echo KB_TREE_UNCHANGED; else git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit -m "docs(kb): update after merge ${run.taskId}"; fi\nprintf 'FINAL=%s\\n' "$(git rev-parse HEAD)"\nprintf 'CHANGED\\n'\ngit diff --name-only ${shellQuote(checkedSha)} HEAD`,kbRepo,300000)
-      const finalSha=kbCommitted.output.match(/FINAL=([0-9a-f]{40})/i)?.[1]
+      const kbCommitted=await this.cmd(run,`node scripts/kb.mjs index\nnode scripts/kb.mjs check\ngit add -- docs/kb\nif git diff --cached --quiet; then echo KB_TREE_UNCHANGED; else git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit -m "docs(kb): update after merge ${run.taskId}"; fi\nprintf 'FINAL=%s\\n' "$(git rev-parse HEAD)"\nprintf 'CHANGED\\n'\ngit diff --name-only ${shellQuote(attemptSha)} HEAD`,kbRepo,300000)
+      let finalSha=kbCommitted.output.match(/FINAL=([0-9a-f]{40})/i)?.[1]
       if(kbCommitted.exitCode||!finalSha)throw new Error('Не удалось создать отдельный коммит файловой БЗ')
       const changed=kbCommitted.output.split(/CHANGED\r?\n/)[1]?.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)??[]
-      const kbChanged=finalSha.toLowerCase()!==checkedSha.toLowerCase()
+      const kbChanged=finalSha.toLowerCase()!==attemptSha.toLowerCase()
       this.deps.db.updateMergeRun(id,{mergeSha:finalSha})
       this.stage(id,'kb_update','passed',`${kbResult.message}; ${kbChanged?`отдельный KB-коммит ${finalSha.slice(0,8)}`:'дерево не изменилось, пустой коммит не создан'}; ${parallelDuration} мс`)
 
       if(kbChanged){
         const docsOnly=changed.every(path=>/^docs\/(?!.*(?:generated|dist|build))/.test(path)||/^(?:\.github\/|[^/]*\.md$)/.test(path))
         const repeatCommands=docsOnly?['node scripts/kb.mjs check']:commands
-        this.stage(id,'testing','running',docsOnly?'Запускаю сокращённый документальный гейт после KB-коммита':'Изменения влияют на сборку; повторяю полный гейт')
-        const repeated=await runGate(kbRepo,repeatCommands,docsOnly?'Документальный гейт после БЗ':'Полный повторный гейт после БЗ')
-        this.deps.db.updateMergeRun(id,{checks:[check,repeated]})
-        this.stage(id,'testing',repeated.status==='passed'?'passed':'failed',`${repeated.name}: ${repeated.status}, ${repeated.durationMs} мс`)
-        if(repeated.status==='failed')throw new Error(`${repeated.name} не пройден`)
+        // Гейт после KB-коммита падает так же обидно, как первый, поэтому у него
+        // тот же бюджет автоисправления: одна попытка на ран суммарно.
+        for(;;){
+          this.stage(id,'testing','running',docsOnly?'Запускаю сокращённый документальный гейт после KB-коммита':'Изменения влияют на сборку; повторяю полный гейт')
+          const repeated=await runGate(kbRepo,repeatCommands,docsOnly?'Документальный гейт после БЗ':'Полный повторный гейт после БЗ')
+          this.deps.db.updateMergeRun(id,{checks:[check,repeated]})
+          this.stage(id,'testing',repeated.status==='passed'?'passed':'failed',`${repeated.name}: ${repeated.status}, ${repeated.durationMs} мс`)
+          if(repeated.status==='passed')break
+          if(!fixAllowed)throw new Error(`${repeated.name} не пройден`)
+          fixAllowed=false
+          const repairedSha=await this.repairChecks(id,run,kbRepo,finalSha,repeated,ctl)
+          if(!repairedSha)throw new Error(`${repeated.name} не пройден; автоисправление не помогло`)
+          finalSha=repairedSha
+          this.deps.db.updateMergeRun(id,{mergeSha:finalSha})
+        }
       }
 
       this.stage(id,'pushing','running','Повторно сверяю pinned origin/main и feature перед публикацией')
@@ -480,9 +553,65 @@ exit 0`,repo,30000)
       if(current?.startedAt&&current.finishedAt)this.log(id,`Общая длительность merge: ${current.finishedAt-current.startedAt} мс`)
     }
   }
+  /**
+   * Одна попытка автоисправления упавших проверок. Результату модели не
+   * доверяем: сервер сам убеждается, что она осталась на том же коммите, что-то
+   * действительно изменила и не оставила конфликтных маркеров, сам делает
+   * коммит и сам перезапускает гейт. Возвращает новый SHA или null.
+   */
+  private async repairChecks(id:string,run:MergeRun,workdir:string,baseSha:string,check:MergeCheck,ctl:AbortController):Promise<string|null> {
+    if(!this.deps.testFix)return null
+    this.stage(id,'testing','running','Проверки упали — запускаю дополнительный модельный шаг исправления в проверочном worktree')
+    let outcome
+    try {
+      outcome=await this.deps.testFix({run:this.deps.db.getMergeRunRaw(id)??run,repo:workdir,check,signal:ctl.signal,log:chunk=>this.log(id,chunk)})
+    } catch(error) {
+      this.log(id,`Шаг автоисправления не выполнен: ${error instanceof Error?error.message:String(error)}`)
+      return null
+    }
+    this.deps.db.updateMergeRun(id,{
+      ...(outcome.llmEngineId!==undefined?{llmEngineId:outcome.llmEngineId}:{}),
+      ...(outcome.llmProvider?{llmProvider:outcome.llmProvider}:{}),
+      ...(outcome.llmModel!==undefined?{llmModel:outcome.llmModel}:{})
+    })
+    if(!outcome.ok){ this.log(id,`Автоисправление отклонено: ${outcome.message}`); return null }
+    // Проверка результата до коммита: тот же HEAD (модель не коммитила и не
+    // переключала ветку), непустой diff и никаких конфликтных маркеров.
+    // Маркеры ищем ТОЛЬКО в том, что тронула модель. Раньше `git grep` шёл по
+    // всему дереву и находил легальные вхождения в самом merge-раннере, в
+    // резолвере конфликтов и в статьях БЗ про маркеры — из-за чего любое
+    // автоисправление в этом репозитории отклонялось всегда, независимо от
+    // содержимого правок.
+    const inspected=await this.cmd(run,`printf 'HEAD=%s\n' "$(git rev-parse HEAD)"\nprintf 'DIRTY\n'\ngit status --porcelain\nprintf 'MARKERS\n'\n{ git diff --name-only -z HEAD; git ls-files -z --others --exclude-standard; } | xargs -0 -r grep -I -l -e '<<<<<<<' -e '>>>>>>>' -- || true`,workdir,120000)
+    const head=inspected.output.match(/HEAD=([0-9a-f]{40})/i)?.[1]
+    const dirty=(inspected.output.split(/DIRTY\r?\n/)[1]??'').split(/MARKERS\r?\n/)[0]?.trim()??''
+    const markers=(inspected.output.split(/MARKERS\r?\n/)[1]??'').trim()
+    if(!head||head.toLowerCase()!==baseSha.toLowerCase()){ this.log(id,'Автоисправление отклонено: модель сменила HEAD проверочного worktree'); return null }
+    if(!dirty){ this.log(id,'Автоисправление отклонено: модель ничего не изменила'); return null }
+    if(markers){ this.log(id,`Автоисправление отклонено: остались конфликтные маркеры (${markers.split(/\r?\n/)[0]})`); return null }
+    const committed=await this.cmd(run,`git add -A\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit -m ${shellQuote(`fix(merge): автоисправление упавших проверок задачи ${run.taskId}`)}\nprintf 'FIXED=%s\n' "$(git rev-parse HEAD)"`,workdir,120000)
+    const fixedSha=committed.output.match(/FIXED=([0-9a-f]{40})/i)?.[1]
+    if(committed.exitCode||!fixedSha||fixedSha.toLowerCase()===baseSha.toLowerCase()){ this.log(id,'Автоисправление отклонено: коммит с правками не создан'); return null }
+    this.log(id,`Автоисправление закоммичено как ${fixedSha.slice(0,8)}; повторяю проверки и БЗ от него`)
+    this.stage(id,'testing','running',`${outcome.message}; повторяю обязательные проверки от ${fixedSha.slice(0,8)}`)
+    return fixedSha
+  }
+
   private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'merge'|'decision_required'):void {
     const run=this.deps.db.getMergeRunRaw(id); if(!run||terminal.has(run.status))return
-    this.deps.db.updateMergeRun(id,{status,stage:status,finishedAt:this.now(),error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
+    const at=this.now()
+    // Незакрытые этапы закрываем здесь — в единственной точке терминального
+    // исхода. Лента считает длительность незавершённого этапа от `startedAt` до
+    // «сейчас», поэтому у упавшего рана этап продолжал тикать: у CHAT-408
+    // «База знаний» показывала 95+ минут спустя часы после остановки, хотя
+    // модельный шаг давно был снят по abort вместе с проверками.
+    const stages=run.stages.map(item=>{
+      if(item.status!=='running'&&item.status!=='queued')return item
+      const closing:MergeStageRecord['status']=status==='success'?'skipped':status==='cancelled'?'skipped':'failed'
+      const note=status==='cancelled'?'этап снят вместе с отменённым раном':'этап остановлен вместе с раном'
+      return {...item,status:closing,finishedAt:at,durationMs:item.startedAt?at-item.startedAt:0,message:item.message?`${item.message} — ${note}`:note}
+    })
+    this.deps.db.updateMergeRun(id,{status,stage:status,stages,finishedAt:at,error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
   }
   /** Закрытие задачи: удаляет все активные копии её репозиториев на доступных
    *  машинах; недоступная машина оставляет запись до следующей очистки.

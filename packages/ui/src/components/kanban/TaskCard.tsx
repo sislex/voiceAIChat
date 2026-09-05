@@ -12,7 +12,7 @@ import { useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
-import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
+import { canStartCiRun, canStartParallelCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import type { TaskModalTab } from './TaskModal'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
@@ -133,7 +133,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const qaStage = props.columnSemanticType === 'component_qa' || props.columnSemanticType === 'integration_tests' || props.columnSemanticType === 'automated_qa' || props.columnSemanticType === 'manual_qa' || props.columnSemanticType === 'testing' || props.columnSemanticType === 'qa_preparation'
   const readyStage = props.columnSemanticType === 'ready'
   const stoppedStage = props.columnSemanticType === 'cancelled' || props.columnSemanticType === 'decision_required'
-  const canStart = (readyStage || developmentStage) && !done && canStartCiRun(ciSummary)
+  const launchStage = (readyStage || developmentStage) && !done
+  const canStart = launchStage && canStartCiRun(ciSummary)
+  const canStartParallel = launchStage && canStartParallelCiRun(ciSummary)
 
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
@@ -383,7 +385,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 onClick={() => void launchCi('queue')}
               >{launching === 'queue' ? 'Добавляем в очередь…' : 'В очередь'}</Button>
             )}
-            {canStart && props.onStartCiParallel && (
+            {canStartParallel && props.onStartCiParallel && (
               <Button
                 size="sm"
                 loading={launching === 'parallel'}

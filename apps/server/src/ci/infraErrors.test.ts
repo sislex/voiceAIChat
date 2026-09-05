@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { CI_INFRA_LABEL, classifyCiInfraFailure, classifyLlmTransportFailure, formatCiInfraFailure } from './infraErrors.js'
 import { createTestFixCycleCoordinator, createTestPipelineCoordinator } from './types.js'
 import type { TestGroupConfig, TestRun } from '@voicechat/shared'
 
@@ -15,6 +15,19 @@ const CACACHE_ENOENT = `npm warn tar TAR_ENTRY_ERROR ENOENT: no such file or dir
 npm error code ENOENT
 npm error ENOENT: no such file or directory, stat '/root/.npm/_cacache/content-v2/sha512/12/34/5678'
 `
+
+describe('обрыв соединения с исполнителем модели', () => {
+  it('признаётся инфраструктурным: повтор шага, а не смена модели', () => {
+    const failure = classifyLlmTransportFailure('Соединение с исполнителем Codex оборвалось до конца ответа — ход остановлен. Повторите запрос.')
+    expect(failure?.kind).toBe('llm_transport')
+    expect(failure?.hint).toContain('Повторить тот же шаг')
+  })
+
+  it('содержательный отказ модели инфраструктурой не считается', () => {
+    expect(classifyLlmTransportFailure('Модель отказалась выполнять запрос')).toBeNull()
+    expect(classifyLlmTransportFailure('')).toBeNull()
+  })
+})
 
 describe('classifyCiInfraFailure', () => {
   it('EEXIST в _cacache → инфраструктурный сбой npm_cache', () => {
@@ -61,6 +74,28 @@ describe('classifyCiInfraFailure', () => {
     expect(classifyCiInfraFailure({ exitCode: 1, output: 'Машина не в сети' })).toBeNull()
     // Собственные тесты проекта печатают эти строки как названия кейсов.
     expect(classifyCiInfraFailure({ exitCode: null, output: '× remoteBashMcp > Машина не в сети\n1 test failed\n' })).toBeNull()
+  })
+
+  // Реальный хвост стадии `npm run typecheck` в Component QA задачи CHAT-411:
+  // development-ран снёс `node_modules`, и tsc не нашёлся ни в одном воркспейсе.
+  it('нет бинаря из node_modules (127) → missing_dependencies', () => {
+    const output = `> @voicechat/admin-app@0.1.0 typecheck\n> tsc --noEmit -p tsconfig.json\n\nsh: tsc: command not found\nnpm error Lifecycle script \`typecheck\` failed with error:\nnpm error code 127\n`
+    const f = classifyCiInfraFailure({ exitCode: 127, output })
+    expect(f?.kind).toBe('missing_dependencies')
+    expect(f?.hint).toContain('npm ci')
+    expect(CI_INFRA_LABEL[f!.kind]).toBe('нет зависимостей в рабочей копии')
+  })
+
+  it('код 127 виден только в выводе npm — тот же класс', () => {
+    const output = 'sh: vitest: not found\nnpm error code 127\n'
+    expect(classifyCiInfraFailure({ exitCode: 1, output })?.kind).toBe('missing_dependencies')
+  })
+
+  it('127 без «command not found» и наоборот — ошибка задачи', () => {
+    // Скрипт проекта сам вернул 127 — это его логика, а не пустой node_modules.
+    expect(classifyCiInfraFailure({ exitCode: 127, output: 'assert failed\n' })).toBeNull()
+    // Строку печатает тест проекта, шаг при этом завершился обычной ошибкой.
+    expect(classifyCiInfraFailure({ exitCode: 1, output: '× shell > sh: foo: command not found\n1 test failed\n' })).toBeNull()
   })
 
   it('текст для лога объясняет, почему нет авто-фикса', () => {

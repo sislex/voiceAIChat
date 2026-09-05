@@ -507,6 +507,27 @@ describe('TaskModal — панель CI-рана', () => {
     expect(onStartCi).not.toHaveBeenCalled()
   })
 
+  it('для queued-рана показывает только «Параллельно», а running и awaiting_input защищены', () => {
+    const onStartCiParallel = vi.fn()
+    const view = render(<TaskModal {...props({
+      ciSummary: mkSummary({ status: 'queued', modelActive: false }),
+      onStartCi: vi.fn(),
+      onStartCiParallel
+    })} />)
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Параллельно' }))
+    expect(onStartCiParallel).toHaveBeenCalledWith('t1')
+
+    for (const status of ['running', 'awaiting_input'] as const) {
+      view.rerender(<TaskModal {...props({
+        ciSummary: mkSummary({ status, awaitingInput: status === 'awaiting_input' }),
+        onStartCi: vi.fn(),
+        onStartCiParallel
+      })} />)
+      expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+    }
+  })
+
   it('после завершения рана «В очередь» снова доступна', () => {
     const onStartCi = vi.fn()
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }), onOpenCiRun: vi.fn(), onStartCi })} />)
@@ -785,7 +806,7 @@ describe('TaskModal — вкладки и merge', () => {
     render(<TaskModal {...props()} />)
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
     ])
   })
 
@@ -835,21 +856,21 @@ describe('TaskModal — вкладки и merge', () => {
     const preparationBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Подготовка', semanticType: 'preparation' }] }
     const { unmount } = render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationRunId: 'prep-1' }) })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Активность', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
     ])
     unmount()
 
     const manualQaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
     render(<TaskModal {...props({ board: manualQaBoard })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Улучшения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения', 'Улучшения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
     ])
   })
 
-  it('переключает восемь вкладок без закрытия и сохраняет черновик', async () => {
+  it('переключает вкладки без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
-    expect(screen.getAllByRole('tab')).toHaveLength(9)
+    expect(screen.getAllByRole('tab')).toHaveLength(10)
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
@@ -1541,7 +1562,7 @@ describe('TaskModal — вкладки по возможностям типа п
 
   it('без возможностей типа остаются только вкладки, не зависящие от подсистем', () => {
     render(<TaskModal {...props({ projectFeatures: NO_PROJECT_FEATURES })} />)
-    expect(tabNames()).toEqual(['Общее', 'Временная шкала', 'Настройки', 'Ход выполнения'])
+    expect(tabNames()).toEqual(['Общее', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения'])
   })
 
   it('с полным набором возвращаются CI, QA и merge', () => {

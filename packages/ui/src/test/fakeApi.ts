@@ -222,6 +222,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const tasks: Task[] = []
   /** Связи карточек с дизайнами Make (см. мосты `tasks:*Design`). */
   const designLinks: TaskDesignLink[] = []
+  const projectSyncLinks: Array<import('@shared/make').MakeProjectLinkInfo> = []
+  const studioFiles = new Map<string, { path: string; size: number; updatedAt: number; dataBase64: string }[]>()
+  const taskActivityStore = new Map<string, import('@shared/projects').TaskActivity>()
+  const activityOf = (taskId: string): import('@shared/projects').TaskActivity => {
+    if (!taskActivityStore.has(taskId)) taskActivityStore.set(taskId, { comments: [], worklog: [], history: [], totalMinutes: 0 })
+    return taskActivityStore.get(taskId)!
+  }
   const summary = (p: FProject): ProjectSummary => ({
     id: p.id,
     name: p.name,
@@ -266,7 +273,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
-    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: 'developing', lastExecTarget: null }
+    return { id: nextId(), title, createdAt: ts, updatedAt: ts, messageCount: 0, scope: 'chat', claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, status: 'developing', lastExecTarget: null }
   }
 
   for (const title of seedConversations) conversations.push(makeConversation(title))
@@ -336,8 +343,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'widget:get': async ({ itemId }) => { throw new Error(`fake widget item not found: ${itemId}`) },
     'widget:action': async () => ({ applied: true, replayed: false, revision: String(Date.now()) }),
-    'conversations:list': async ({ includeCompleted } = {}) =>
+    'conversations:list': async ({ scope = 'chat', projectId, includeCompleted } = {}) =>
       [...conversations]
+        .filter((c) => c.scope === scope && (scope !== 'kanban' || c.projectId === projectId))
         .filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(withCounts),
@@ -506,9 +514,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },
     'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); for (const [k, v] of Object.entries(MAKE_SCAFFOLD)) files.set(k, v); return makeState(conversationId) },
-    'conversations:create': async ({ title, projectId, assistantKind } = {}) => {
+    'conversations:create': async ({ title, scope: requestedScope, projectId, assistantKind } = {}) => {
+      const scope = requestedScope ?? (assistantKind === 'web-recorder' ? 'web-reader' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'make' ? 'make' : 'chat')
+      if (scope === 'kanban' && !projectId) throw new Error('projectId is required for kanban')
       if (projectId && !projects.some((item) => item.id === projectId)) throw new Error('project not found')
-      const conv = { ...makeConversation(title ?? 'Новый разговор'), projectId: projectId ?? null, ...(assistantKind ? { assistantKind } : {}) }
+      const conv = { ...makeConversation(title ?? 'Новый разговор'), scope, projectId: projectId ?? null, ...(assistantKind ? { assistantKind } : {}) }
       conversations.push(conv)
       return conv
     },
@@ -581,8 +591,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       settings: [{ label: 'Модель', here: 'default', there: 'opus' }]
     }),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
-    'conversations:get': async ({ id }) => {
-      const conv = conversations.find((c) => c.id === id)
+    'conversations:get': async ({ id, scope = 'chat', projectId }) => {
+      const conv = conversations.find((c) => c.id === id && c.scope === scope && (scope !== 'kanban' || c.projectId === projectId))
       if (!conv) return null
       return {
         conversation: withCounts(conv),
@@ -591,9 +601,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           .sort((a, b) => a.createdAt - b.createdAt)
       }
     },
-    'conversations:search': async ({ query, includeCompleted }) => {
+    'conversations:search': async ({ query, scope = 'chat', projectId, includeCompleted }) => {
       const q = query.trim().toLowerCase()
-      const visible = [...conversations].filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
+      const visible = [...conversations]
+        .filter((c) => c.scope === scope && (scope !== 'kanban' || c.projectId === projectId))
+        .filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
       if (!q) return visible.sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
       return visible
         .filter(
@@ -720,6 +732,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         createdAt: 0,
         updatedAt: 0,
         messageCount: 0,
+        scope: 'chat',
         claudeSessionId: null,
         execTarget: null,
         workdir: null,
@@ -1517,6 +1530,104 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:designSources': async ({ id }) => conversations
       .filter((c) => c.assistantKind === 'make' && c.projectId === id)
       .map((c) => ({ conversationId: c.id, title: c.title, owner: 'me', own: true, updatedAt: c.updatedAt })),
+    // Обмен с репозиторием проекта: фейковый «диск машины» в замыкании.
+    // Студия картинок: галерея в замыкании фейка.
+    'imgstudio:cancel': async () => ({ cancelled: false }),
+    'imgstudio:publish': async () => ({ url: '/g/deadbeefdeadbeefdeadbeefdeadbeef/', publishedAt: Date.now(), views: 0, passwordProtected: false }),
+    'imgstudio:publication': async () => ({ url: null }),
+    'imgstudio:unpublish': async () => ({ url: null }),
+    'imgstudio:run': async () => ({ active: false }),
+    'imgstudio:transfer': async ({ path }) => ({ name: path, files: [] }),
+    'imgstudio:trash': async () => ({ items: [] }),
+    'imgstudio:restore': async ({ name }) => ({ name, files: [] }),
+    'imgstudio:purge': async () => ({ removed: 0, items: [] }),
+    'imgstudio:list': async ({ conversationId }) => (studioFiles.get(conversationId) ?? []).map(({ dataBase64: _b64, ...file }) => file),
+    'imgstudio:read': async ({ conversationId, path }) => {
+      const file = (studioFiles.get(conversationId) ?? []).find((entry) => entry.path === path)
+      if (!file) throw new Error('файл не найден')
+      return { path, dataBase64: file.dataBase64 }
+    },
+    'imgstudio:upload': async ({ conversationId, path, dataBase64 }) => {
+      const list = studioFiles.get(conversationId) ?? []
+      studioFiles.set(conversationId, [{ path, size: dataBase64.length, updatedAt: Date.now(), dataBase64 }, ...list.filter((entry) => entry.path !== path)])
+      return api['imgstudio:list']({ conversationId })
+    },
+    'imgstudio:delete': async ({ conversationId, path }) => {
+      studioFiles.set(conversationId, (studioFiles.get(conversationId) ?? []).filter((entry) => entry.path !== path))
+      return api['imgstudio:list']({ conversationId })
+    },
+    'imgstudio:rename': async ({ conversationId, from, to }) => {
+      const list = studioFiles.get(conversationId) ?? []
+      for (const entry of list) if (entry.path === from) entry.path = to
+      return api['imgstudio:list']({ conversationId })
+    },
+    'imgstudio:generate': async ({ conversationId, prompt, name }) => {
+      const path = (name?.trim() || 'изображение.png')
+      await api['imgstudio:upload']({ conversationId, path, dataBase64: Buffer.from(`generated:${prompt}`).toString('base64') })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === path)!, files }
+    },
+    'imgstudio:edit': async ({ conversationId, path, prompt }) => {
+      const next = path.replace(/(\.[a-z]+)$/i, '-2$1')
+      await api['imgstudio:upload']({ conversationId, path: next, dataBase64: Buffer.from(`edited:${prompt}`).toString('base64') })
+      const files = await api['imgstudio:list']({ conversationId })
+      return { file: files.find((entry) => entry.path === next)!, files }
+    },
+    'tasks:activity': async ({ taskId }) => activityOf(taskId),
+    'tasks:commentAdd': async ({ taskId, text }) => {
+      const activity = activityOf(taskId)
+      const comment = { id: `c-${activity.comments.length + 1}`, taskId, author: 'admin', via: 'user' as const, text, createdAt: Date.now(), updatedAt: null }
+      activity.comments.push(comment)
+      return comment
+    },
+    'tasks:commentUpdate': async ({ taskId, commentId, text }) => {
+      const comment = activityOf(taskId).comments.find((entry) => entry.id === commentId)!
+      comment.text = text; comment.updatedAt = Date.now()
+      return comment
+    },
+    'tasks:commentDelete': async ({ taskId, commentId }) => {
+      const activity = activityOf(taskId)
+      activity.comments = activity.comments.filter((entry) => entry.id !== commentId)
+      return { ok: true as const }
+    },
+    'tasks:worklogAdd': async ({ taskId, minutes, comment }) => {
+      const activity = activityOf(taskId)
+      const entry = { id: `w-${activity.worklog.length + 1}`, taskId, author: 'admin', minutes, comment: comment ?? '', startedAt: Date.now(), createdAt: Date.now(), updatedAt: null }
+      activity.worklog.push(entry)
+      activity.totalMinutes += minutes
+      return entry
+    },
+    'tasks:worklogUpdate': async ({ taskId, entryId, minutes }) => {
+      const activity = activityOf(taskId)
+      const entry = activity.worklog.find((item) => item.id === entryId)!
+      if (minutes !== undefined) { activity.totalMinutes += minutes - entry.minutes; entry.minutes = minutes }
+      entry.updatedAt = Date.now()
+      return entry
+    },
+    'tasks:worklogDelete': async ({ taskId, entryId }) => {
+      const activity = activityOf(taskId)
+      const entry = activity.worklog.find((item) => item.id === entryId)
+      if (entry) activity.totalMinutes -= entry.minutes
+      activity.worklog = activity.worklog.filter((item) => item.id !== entryId)
+      return { ok: true as const }
+    },
+    'make:projectFiles': async ({ path }) => (path
+      ? [{ name: 'Button.jsx', path: `${path}/Button.jsx`, kind: 'file' as const, size: 120 }]
+      : [
+          { name: 'src', path: 'src', kind: 'dir' as const, size: 0 },
+          { name: 'styles', path: 'styles', kind: 'dir' as const, size: 0 },
+          { name: 'theme.css', path: 'theme.css', kind: 'file' as const, size: 64 }
+        ]),
+    'make:projectLinks': async () => projectSyncLinks,
+    'make:projectPull': async ({ paths }) => {
+      const now = Date.now()
+      for (const path of paths) {
+        if (!projectSyncLinks.some((link) => link.path === path)) {
+          projectSyncLinks.push({ path, importedHash: `hash-${path}`, importedAt: now, status: 'same' })
+        }
+      }
+      return { links: projectSyncLinks, state: { rev: 1, files: [] } as never }
+    },
     'make:taskLinks': async ({ conversationId, path }) => designLinks
       .filter((link) => link.conversationId === conversationId && (path === undefined || link.path === path))
       .map((link) => ({
@@ -1600,6 +1711,7 @@ export function createFakeCi(): FakeCi {
   let projectLlm: CiLlmConfig = { ...DEFAULT_CI_LLM_CONFIG }
   let taskLlm: CiLlmConfig | null = null
   let taskProcessStages: import('@shared/ci').CiProcessStage[] = ['before_model', 'model_work', 'after_model', 'summary']
+  let taskBrowserCheck: import('@shared/ci').CiBrowserCheck = { mode: 'off', devServerPort: 5173, startPath: '/' }
   /** Паузы ранов, чтобы Storybook/dom-тесты умели показывать вопрос модели. */
   const interactions = new Map<string, CiInteraction[]>()
   type L = (...args: never[]) => void
@@ -1701,11 +1813,12 @@ export function createFakeCi(): FakeCi {
     getTaskPreparationLlm: async () => ({ llmEngineId: (taskLlm ?? projectLlm).llmEngineId ?? null, provider: (taskLlm ?? projectLlm).provider, model: (taskLlm ?? projectLlm).model }),
     putTaskCiLlm: async (_pid, _tid, config) => { taskLlm = { ...config }; return { ...config } },
     resetTaskCiLlm: async () => { taskLlm = null; return { config: { ...projectLlm }, overridden: false, projectDefault: { ...projectLlm } } },
-    getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] }, enabledStages: [...taskProcessStages] }),
+    getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] }, enabledStages: [...taskProcessStages], browserCheck: { ...taskBrowserCheck } }),
     getTaskMachines: async () => ({ machines: [], selectedAgentId: null, unavailableSelection: null }),
     putTaskCi: async (_pid, _tid, config) => {
       if (config.enabledStages) taskProcessStages = [...config.enabledStages]
-      return { beforeModel: config.beforeModel ?? [], afterModel: config.afterModel ?? [], enabledStages: [...taskProcessStages] }
+      if (config.browserCheck) taskBrowserCheck = { ...config.browserCheck }
+      return { beforeModel: config.beforeModel ?? [], afterModel: config.afterModel ?? [], enabledStages: [...taskProcessStages], browserCheck: { ...taskBrowserCheck } }
     },
     startRun: async (projectId, taskId, options) => { const run = { ...mkRun(projectId, taskId), mode: options?.mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
     getMergeMachines: async () => ({ machines: [], defaultAgentId: null }),

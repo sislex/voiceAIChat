@@ -140,7 +140,11 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const settings = db.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
   const role = db.getUser(viewer)?.role ?? 'developer'
-  const resolution = db.resolveConversationMachine(userId, conversationId, { isOnline })
+  // Make-чат к машине не подключается (`turns.ts`: makeChat), поэтому снимок не
+  // показывает ни её, ни remote-инструменты как доступные: иначе панель обещала
+  // бы Bash на машине, которого ход не даёт.
+  const makeChat = conversation.assistantKind === 'make'
+  const resolution = makeChat ? null : db.resolveConversationMachine(userId, conversationId, { isOnline })
   const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
   const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
@@ -183,14 +187,14 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
    * Режим доступа — по правилам хода (`turns.ts`), включая исключение для Make.
    * Там ход НЕ понижает режим до «плана» без машины: инструменты `make_*`
    * машины не требуют, а нативный plan-режим CLI их глушит. Вместо понижения
-   * запрещаются встроенные инструменты (`MAKE_ONLY_DISALLOWED_TOOLS`). Пока
-   * снимок этого не знал, обычный пользователь в Make-чате видел «Только
-   * планирование», а ход шёл с правкой файлов проекта.
+   * запрещаются встроенные инструменты (`MAKE_ONLY_DISALLOWED_TOOLS`) — при
+   * любой роли, включая админа. Пока снимок этого не знал, обычный пользователь
+   * в Make-чате видел «Только планирование», а ход шёл с правкой файлов проекта.
    */
-  const makeOnlyExecution = conversation.assistantKind === 'make' && provider === 'claude'
-    && conversation.execTarget !== 'none' && role !== 'admin' && !machineAvailable
+  const makeOnlyExecution = makeChat && provider === 'claude'
     && (conversation.permissionMode ?? settings.permissionMode) !== 'plan'
-  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (role !== 'admin' && !machineAvailable && !makeOnlyExecution)
+  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (makeChat && provider === 'codex')
+    || (role !== 'admin' && !machineAvailable && !makeOnlyExecution)
     ? 'plan'
     : (conversation.permissionMode ?? settings.permissionMode)
   // Тумблер сильнее настройки — ровно как в ходе (`turns.ts`: kbMode). Пока
@@ -209,6 +213,10 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
   const linkedTask = conversation.taskId && conversation.projectId ? db.getCiTask(userId, conversation.projectId, conversation.taskId) : null
   const makeSources = taskMakeSources(linkedTask?.designs ?? [])
+  /** Связи макета задачи: по ним ход подключает read-only Make-источники. */
+  const taskDesigns = conversation.taskId && conversation.projectId
+    ? (db.getCiTask(userId, conversation.projectId, conversation.taskId)?.designs ?? [])
+    : []
   const taskContext = (() => {
     if (!conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
     const tc = db.getTaskChatContext(userId, conversationId, isOnline)
@@ -291,6 +299,17 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       available: conversation.assistantKind === 'make',
       whenAvailable: 'Подключается в Make-чате: правка файлов проекта и есть задача такого чата.',
       whenUnavailable: 'Появится только в чате Make.'
+    },
+    {
+      // Read-only источники макета в чате задачи (turns.ts: buildTaskMakeSources
+      // по task_designs связанной задачи). Появились отдельно от Make-чата:
+      // модель читает файлы макета, не будучи Make-ассистентом.
+      id: 'mcp-make-design', title: 'make_design:* (макет задачи, только чтение)', source: 'Привязка задачи к макету Make', readOnlyInPlan: false,
+      scope: taskDesigns.length ? `${taskDesigns.length} связь(и) с Make` : 'Задача без макета', tools: ['mcp__make_design_*__make_list_files', 'mcp__make_design_*__make_read_file'],
+      description: 'Чтение файлов Make-проекта, привязанного к задаче этого чата.',
+      available: taskDesigns.length > 0,
+      whenAvailable: 'Подключается в чате задачи с привязанным макетом: инструменты только читают файлы, записи нет ни в каком режиме.',
+      whenUnavailable: conversation.taskId ? 'У задачи этого чата нет привязанного Make-макета.' : 'Появится в чате задачи с привязанным Make-макетом.'
     },
     {
       id: 'mcp-kanban-board', title: 'kanban:* (доска проекта)', source: 'Панель ассистента проекта', readOnlyInPlan: true,
@@ -692,9 +711,9 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     // Тот же список, что уйдёт исполнителю (`turns.ts` → LlmRequest.disallowedTools).
     disallowedTools: [
       ...[...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null),
-      // Make без машины: ход глушит встроенные инструменты вместо понижения
-      // режима — значит модель их не получит, и список это обязан показывать.
-      ...(makeOnlyExecution ? MAKE_ONLY_DISALLOWED_TOOLS : [])
+      // Make: ход глушит встроенные инструменты вместо понижения режима —
+      // значит модель их не получит, и список это обязан показывать.
+      ...(makeChat ? MAKE_ONLY_DISALLOWED_TOOLS : [])
     ].sort(),
     cliMcpServers,
     warnings,
@@ -776,6 +795,13 @@ function queryFlag(v: string | undefined): boolean {
   return v === '1' || v === 'true'
 }
 
+const CONVERSATION_SCOPES = ['chat', 'kanban', 'make', 'images', 'console', 'playwright-reader', 'web-reader'] as const
+function parseConversationScope(value: string | undefined): (typeof CONVERSATION_SCOPES)[number] | null {
+  return CONVERSATION_SCOPES.includes(value as (typeof CONVERSATION_SCOPES)[number])
+    ? value as (typeof CONVERSATION_SCOPES)[number]
+    : null
+}
+
 export async function registerRest(
   app: FastifyInstance,
   db: VoiceChatDb,
@@ -798,6 +824,14 @@ export async function registerRest(
      * к промпту. Мастерская живёт в `server.ts`, поэтому приходит функцией.
      */
     makeContext?: (conversationId: string) => Promise<string>
+    /**
+     * Разовое обновление общей копии проекта до origin/<base>. Единственное, что
+     * Make делает с репозиторием: новый Make-чат начинает работу от актуального
+     * main, а сами ходы к машине уже не ходят (`turns.ts`: makeChat). Вызов
+     * best-effort и без await — создание чата не ждёт сети и не падает из-за
+     * offline-машины.
+     */
+    refreshProjectMain?: (userId: string, projectId: string) => void
   } = {}
 ): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
@@ -842,18 +876,28 @@ export async function registerRest(
 
   // includeCompleted=1 — вместе с чатами задач, лежащих в колонке «Готово»
   // (по умолчанию их в списке нет, см. `listConversations`).
-  app.get<{ Querystring: { includeCompleted?: string } }>(REST.conversations, async (req) =>
-    db.listConversations(uid(req), { includeCompleted: queryFlag(req.query.includeCompleted) })
-  )
+  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversations, async (req, reply) => {
+    const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+    if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+    return db.listConversations(uid(req), { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
+  })
    app.post<{ Body: DesktopMigrationBundle }>(REST.desktopMigration, async (req, reply) => {
     if (!req.body || !Array.isArray(req.body.conversations)) return reply.code(400).send({ error: 'invalid migration bundle' })
     return db.importDesktopData(uid(req), req.body)
   })
 
-  app.post<{ Body: { title?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' } }>(REST.conversations, async (req, reply) => {
+  app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' } }>(REST.conversations, async (req, reply) => {
     const kind = req.body?.assistantKind
+    const scope = req.body?.scope === undefined
+      ? kind === 'web-recorder' ? 'web-reader' : kind === 'playwright-reader' ? 'playwright-reader' : kind === 'console-reader' ? 'console' : kind === 'make' ? 'make' : kind === 'images' ? 'images' : 'chat'
+      : parseConversationScope(req.body.scope)
+    if (!scope || (scope === 'kanban' && !req.body?.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
     try {
-      return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' ? kind : null, req.body?.projectId ?? null)
+      const conversation = db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope)
+      // Новый Make-чат стартует от актуального main: копию обновляет сервер один
+      // раз здесь, потому что сама модель Make к репозиторию доступа не имеет.
+      if (kind === 'make' && conversation?.projectId) opts.refreshProjectMain?.(uid(req), conversation.projectId)
+      return conversation
     } catch (error) {
       if (error instanceof Error && error.message === 'project not found') return reply.code(404).send({ error: error.message })
       throw error
@@ -863,8 +907,8 @@ export async function registerRest(
   app.get<{ Params: { projectId: string }; Querystring: { conversationId?: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
     const userId = uid(req)
     const privateConversation = db.ensureKanbanAssistantConversation(userId, req.params.projectId)
-    const requested = req.query.conversationId ? db.getConversation(userId, req.query.conversationId) : null
-    const conversation = requested?.projectId === req.params.projectId && (requested.assistantKind === null || requested.assistantKind === 'kanban')
+    const requested = req.query.conversationId ? db.getConversation(userId, req.query.conversationId, { scope: 'kanban', projectId: req.params.projectId }) : null
+    const conversation = requested?.projectId === req.params.projectId && requested.scope === 'kanban'
       ? requested
       : privateConversation
     if (!conversation) return reply.code(404).send({ error: 'not found' })
@@ -908,9 +952,11 @@ export async function registerRest(
     }
   })
 
-  app.get<{ Querystring: { q?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req) =>
-    db.searchConversations(uid(req), req.query.q ?? '', { includeCompleted: queryFlag(req.query.includeCompleted) })
-  )
+  app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req, reply) => {
+    const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+    if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+    return db.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
+  })
 
   /**
    * Полнотекстовый поиск по сообщениям (FTS5). `projectId` со значением `none`
@@ -930,8 +976,10 @@ export async function registerRest(
     })
   })
 
-  app.get<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
-    const conversation = db.getConversation(uid(req), req.params.id)
+  app.get<{ Params: { id: string }; Querystring: { scope?: string; projectId?: string } }>('/api/conversations/:id', async (req, reply) => {
+    const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+    if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+    const conversation = db.getConversation(uid(req), req.params.id, { scope, projectId: req.query.projectId })
     if (!conversation) return reply.code(404).send({ error: 'not found' })
     return { conversation, messages: db.listMessages(uid(req), req.params.id) }
   })

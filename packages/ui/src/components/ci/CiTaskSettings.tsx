@@ -1,7 +1,7 @@
 // CI-настройки задачи: команды и наследуемый движок/модель.
 import { useEffect, useState, type JSX } from 'react'
-import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiProcessStage, CiRunMode, CiSlotConfig, CiTaskMachine } from '@shared/ci'
-import { CI_CLARIFY_MAX_LIMIT, CI_PROCESS_STAGES, CI_PROCESS_STAGE_LABELS, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import type { CiBrowserCheck, CiBrowserCheckMode, CiCommand, CiClarifyLevel, CiLlmConfig, CiProcessStage, CiRunMode, CiSlotConfig, CiTaskMachine } from '@shared/ci'
+import { CI_BROWSER_CHECK_MODES, CI_BROWSER_CHECK_MODE_LABELS, CI_CLARIFY_MAX_LIMIT, CI_PROCESS_STAGES, CI_PROCESS_STAGE_LABELS, DEFAULT_CI_BROWSER_CHECK, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -38,6 +38,9 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [machinesReload, setMachinesReload] = useState(0)
   const [machinesKey, setMachinesKey] = useState<string | null>(null)
   const [enabledStages, setEnabledStages] = useState<CiProcessStage[]>([...CI_PROCESS_STAGES])
+  const [browserCheck, setBrowserCheck] = useState<CiBrowserCheck>({ ...DEFAULT_CI_BROWSER_CHECK })
+  const [browserSaved, setBrowserSaved] = useState(true)
+  const [browserError, setBrowserError] = useState<string | null>(null)
   const [stagesLoading, setStagesLoading] = useState(true)
   const [stagesSaved, setStagesSaved] = useState(true)
   const [stagesError, setStagesError] = useState<string | null>(null)
@@ -55,6 +58,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       if (cancelled) return
       setBefore(r.config.beforeModel); setAfter(r.config.afterModel); setOverridden(r.overridden)
       setEnabledStages(r.enabledStages); setStagesLoading(false); setStagesError(null)
+      setBrowserCheck(r.browserCheck); setBrowserSaved(true); setBrowserError(null)
     }).catch((error: unknown) => {
       if (!cancelled) { setStagesLoading(false); setStagesError(error instanceof Error ? error.message : String(error)) }
     })
@@ -109,6 +113,12 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       .then((result) => { setEnabledStages(result.enabledStages); setStagesSaved(true) })
       .catch((error: unknown) => setStagesError(error instanceof Error ? error.message : String(error)))
   }
+  const saveBrowserCheck = (): void => {
+    setBrowserError(null)
+    void window.ci?.putTaskCi(props.projectId, props.taskId, { browserCheck })
+      .then((result) => { setBrowserCheck(result.browserCheck); setBrowserSaved(true) })
+      .catch((error: unknown) => setBrowserError(error instanceof Error ? error.message : String(error)))
+  }
   const access = props.llmAccess ?? []
   const models = llm.provider === 'codex' ? allowedModels(access, 'codex') : allowedModels(access, 'claude')
   const changeProvider = (provider: 'claude' | 'codex'): void => {
@@ -138,6 +148,37 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     </div>}
     {!stagesSaved && <Button variant="primary" className="ci-task-save" onClick={saveStages}>Сохранить этапы</Button>}
     {stagesError && <div className="ci-warn" role="alert">Не удалось сохранить этапы: {stagesError}</div>}
+    <div className="ci-task-head"><h3 className="ci-task-title">Проверка в браузере</h3></div>
+    <p className="ci-task-hint">
+      Где модель проверяет результат: в изолированном Chromium сервера или в открытой панели Web Reader.
+      Страница берётся с dev-сервера выбранной машины задачи.
+    </p>
+    <div className="ci-task-browser">
+      <label>Режим
+        <select
+          value={browserCheck.mode}
+          onChange={(event) => { setBrowserCheck({ ...browserCheck, mode: event.target.value as CiBrowserCheckMode }); setBrowserSaved(false); setBrowserError(null) }}
+        >
+          {CI_BROWSER_CHECK_MODES.map((mode) => <option key={mode} value={mode}>{CI_BROWSER_CHECK_MODE_LABELS[mode]}</option>)}
+        </select>
+      </label>
+      {browserCheck.mode !== 'off' && <>
+        <label>Порт dev-сервера
+          <input
+            type="number" min={1} max={65535} value={browserCheck.devServerPort}
+            onChange={(event) => { setBrowserCheck({ ...browserCheck, devServerPort: Number(event.target.value) }); setBrowserSaved(false); setBrowserError(null) }}
+          />
+        </label>
+        <label>Стартовая страница
+          <input
+            type="text" value={browserCheck.startPath} placeholder="/"
+            onChange={(event) => { setBrowserCheck({ ...browserCheck, startPath: event.target.value }); setBrowserSaved(false); setBrowserError(null) }}
+          />
+        </label>
+      </>}
+    </div>
+    {!browserSaved && <Button variant="primary" className="ci-task-save" onClick={saveBrowserCheck}>Сохранить проверку</Button>}
+    {browserError && <div className="ci-warn" role="alert">Не удалось сохранить проверку: {browserError}</div>}
     <div className="ci-task-head"><h3 className="ci-task-title">Команды воркфлоу</h3><span className={`lozenge ${overridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{overridden ? 'переопределено' : 'унаследовано'}</span></div>
     <CiSlotEditor label="До работы модели" commands={commands} value={before} onChange={(v) => { setBefore(v); setSaved(false) }} />
     <CiSlotEditor label="После работы модели" commands={commands} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />

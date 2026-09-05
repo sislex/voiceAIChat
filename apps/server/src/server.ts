@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { isPlaywrightReaderConversation, planModelAction } from '@voicechat/shared'
+import { DEFAULT_CI_BROWSER_CHECK, isPlaywrightReaderConversation, planModelAction } from '@voicechat/shared'
 import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -24,19 +24,26 @@ import { registerQaRoutes } from './routes/qa.js'
 import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
-import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
+import { knowledgeBaseTimeoutMs, ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
 import { releaseCiTarget, releaseProductionTarget } from './releases/targets.js'
 import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
-import { createCiRunManager } from './ci/runManager.js'
+import { createCiRunManager, type CiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor, shellQuote } from './ci/executor.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
+import { saveBrowserShot, sweepBrowserShots } from './browser/checkShots.js'
 import { automatedQaRemarks } from '@voicechat/shared'
+import { syncProjectWithRetry } from './projectSync.js'
+import { shouldResumeAfterInfraFailure } from './ci/autopilotResume.js'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
 const CHECK_BUDGET_MS = 90_000
+/** Как часто автопроход сам осматривает проекты (приход машины в онлайн board-события не даёт). */
+const AUTOPILOT_SWEEP_MS = 60_000
+/** Сколько раз автопроход возобновляет один ран после сбоя машины. */
+const AUTOPILOT_INFRA_RESUMES = 3
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { createAutomatedQaCheck } from './ci/automatedQaCheck.js'
 import { MergeRunManager } from './merge/runManager.js'
@@ -80,6 +87,9 @@ import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { registerMakeMcp, MAKE_MCP_PATH, MakeTaskScopeBroker, buildTaskMakeSources } from './mcp/makeMcp.js'
+import { ImageStudioStore } from './images/studio.js'
+import { registerImageStudioRoutes } from './routes/imageStudio.js'
+import { llmImageStudioGenerator } from './llm/imageStudioGenerator.js'
 import { preparationDesignNote } from './ci/preparationNotes.js'
 import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
@@ -126,6 +136,8 @@ import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
 import { registerBrowserRoutes } from './routes/browser.js'
 import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
+import { browserCheckTarget, withMachinePreviewTarget, type BrowserCheckTarget } from './browser/checkTarget.js'
+import { PREVIEW_RUN_COOKIE, PreviewRunKeys } from './browser/machinePreview.js'
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 import { AuthStatusState } from './auth/statusState.js'
@@ -261,6 +273,16 @@ export function taskPreparationFailure(provider: LlmProvider, userId: string, me
  * релизы и preview. Непустой каталог без репозитория остаётся ошибкой: чужие файлы
  * не перезаписываются. Репозиторием считается корень рабочего дерева (в том числе
  * созданный `git worktree add`, где `.git` — файл), а не подкаталог чужого репозитория.
+ *
+ * Копия общая: её же берут Git-панель проекта и чаты задач, поэтому к началу
+ * синхронизации в ней штатно оказываются чужая ветка и незакоммиченные правки.
+ * Раньше это останавливало подготовку до ручного разбора, теперь скрипт лечит
+ * сам и ничего не выбрасывает: правки уходят в именованный stash
+ * (`vc-autosync-<UTC>`), копия возвращается на базовую ветку, а строка
+ * `AUTOHEAL=` в выводе рассказывает, что было сделано и как вернуть спрятанное.
+ * Остановка остаётся там, где автолечение небезопасно: git отказал в stash
+ * (например незавершённый merge с конфликтом), дерево осталось грязным, ветку
+ * не удалось переключить или базовая ветка разошлась с origin.
  */
 export function projectMainRefreshScript(path: string, branch: string, gitUrl?: string | null): string {
   const repo = shellQuote(path)
@@ -278,14 +300,45 @@ fi
 toplevel="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
 test -n "$toplevel" && test "$toplevel" = "$(cd "$repo" && pwd -P)" || { echo "Рабочая директория проекта не является Git-репозиторием: $repo" >&2; exit 65; }
 worktree_status="$(git -C "$repo" status --porcelain --untracked-files=all)"
-test -z "$worktree_status" || { echo "Рабочая копия проекта содержит локальные изменения; синхронизация с origin/$base остановлена" >&2; exit 66; }
-current="$(git -C "$repo" branch --show-current)"
-test "$current" = "$base" || { echo "Ожидалась ветка $base, текущая ветка: $current" >&2; exit 67; }
+notice=''
+if [ -n "$worktree_status" ]; then
+  # Общая копия делится с человеком, Git-панелью проекта и чатами задач, поэтому
+  # к началу синхронизации в ней остаются чужие незакоммиченные правки. Прежний
+  # отказ блокировал подготовку до ручного разбора; теперь ничего не выбрасывается —
+  # правки уезжают в именованный stash, и синхронизация идёт дальше сама.
+  dirty_count="$(printf '%s\n' "$worktree_status" | grep -c . || true)"
+  dirty_head="$(printf '%s\n' "$worktree_status" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
+  stash_name="vc-autosync-$(date -u +%Y%m%d-%H%M%S)"
+  # Identity задаётся флагами: stash делает коммит, а на свежей машине агента
+  # user.email может быть не настроен — иначе автолечение падало бы на нём.
+  stash_log="$(git -C "$repo" -c user.name='voiceAIChat autosync' -c user.email='autosync@voicechat.local' stash push --include-untracked --message "$stash_name" 2>&1)" || {
+    echo "Рабочая копия проекта содержит локальные изменения, и спрятать их в stash не удалось; синхронизация с origin/$base остановлена. Копия: $repo. Изменено записей: $dirty_count. Первые: $dirty_head. Ответ git: $stash_log. Закоммитьте нужное или уберите лишнее в этой копии и повторите." >&2
+    exit 66
+  }
+  left="$(git -C "$repo" status --porcelain --untracked-files=all)"
+  test -z "$left" || {
+    left_head="$(printf '%s\n' "$left" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
+    echo "Рабочая копия проекта осталась с локальными изменениями после автоматического stash «\${stash_name}»; синхронизация с origin/$base остановлена. Копия: $repo. Осталось: $left_head. Уберите лишнее в этой копии и повторите." >&2
+    exit 66
+  }
+  notice="незакоммиченные изменения ($dirty_count зап.: $dirty_head) спрятаны в stash «\${stash_name}»; вернуть их: git -C $repo stash apply 'stash^{/$stash_name}'"
+fi
 git -C "$repo" fetch --no-tags origin "refs/heads/\${base}:refs/remotes/origin/\${base}"
+current="$(git -C "$repo" branch --show-current)"
+if [ "$current" != "$base" ]; then
+  # Ветку задачи в общей копии оставляет чат задачи или Git-панель. Дерево здесь
+  # уже чистое, поэтому возврат на базовую ветку ничего не теряет, а прежний
+  # отказ (exit 67) требовал ручного checkout перед каждой следующей подготовкой.
+  head_label="$current"
+  test -n "$head_label" || head_label='detached HEAD'
+  git -C "$repo" checkout "$base" >/dev/null 2>&1 || git -C "$repo" checkout -B "$base" "refs/remotes/origin/$base" >/dev/null 2>&1 || { echo "Копия проекта $repo стоит на «\${head_label}», переключить её на $base не удалось" >&2; exit 67; }
+  if [ -z "$notice" ]; then notice="копия возвращена на $base с ветки «\${head_label}»"; else notice="$notice; копия возвращена на $base с ветки «\${head_label}»"; fi
+fi
 git -C "$repo" merge --ff-only "refs/remotes/origin/$base"
 local_sha="$(git -C "$repo" rev-parse HEAD)"
 remote_sha="$(git -C "$repo" rev-parse "refs/remotes/origin/$base")"
 test "$local_sha" = "$remote_sha" || { echo "Локальная ветка $base не совпадает с origin/$base после fast-forward" >&2; exit 68; }
+test -z "$notice" || printf 'AUTOHEAL=%s\\n' "$notice"
 printf 'BASE_SHA=%s\\n' "$local_sha"`
 }
 
@@ -332,7 +385,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Хаб сессий один на процесс: его слушают WS-соединения, а публикуют в него
   // и сессионные роуты, и админский отзыв чужой сессии.
   const sessionHub = new SessionHub()
-  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, ...(opts.geo ? { geo: opts.geo } : {}) })
+  // Ключи Chromium к прокси превью: изолированный браузер открывает dev-сервер
+  // машины от лица владельца задачи, а Bearer-заголовка у навигации нет.
+  const previewRunKeys = new PreviewRunKeys()
+  // Адрес сервера, видимый из контейнера browser-runner (в compose — http://voicechat:8787);
+  // без него остаёмся на loopback dev-сервера, где раннер и сервер — один хост.
+  const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
+  const previewRunCookie = (userId: string): { name: string; value: string; url: string } =>
+    ({ name: PREVIEW_RUN_COOKIE, value: previewRunKeys.issue(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` })
+  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
@@ -360,22 +421,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const agentRegistry = opts.agentRegistry ?? new AgentRegistry({ offlineGraceMs: opts.config.agentOfflineGraceMs })
   /**
    * Системная граница актуальности общей копии проекта. Модель не участвует:
-   * dirty/diverged checkout блокирует ход, чистая базовая ветка обновляется только fast-forward.
+   * чистая базовая ветка обновляется только fast-forward, а посторонние
+   * незакоммиченные правки и оставленная чужая ветка лечатся автоматически
+   * (stash + возврат на базовую ветку) — `autoHealed` описывает, что сделано,
+   * чтобы это попало в лог подготовки и в промпт хода.
    */
-  const projectMainRefreshes = new Map<string, Promise<{ baseSha: string }>>()
-  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl?: string | null }): Promise<{ baseSha: string }> => {
+  const projectMainRefreshes = new Map<string, Promise<{ baseSha: string; autoHealed?: string }>>()
+  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl?: string | null }): Promise<{ baseSha: string; autoHealed?: string }> => {
     const key = [args.projectId, args.agentId, args.path, args.branch].join('\u0000')
     const activeRefresh = projectMainRefreshes.get(key)
     if (activeRefresh) return activeRefresh
-    const operation = (async () => {
     const script = projectMainRefreshScript(args.path, args.branch, args.gitUrl)
-    const result = await agentRegistry.exec(args.agentId, script, 120_000, undefined, { userId: args.userId, conversationId: args.conversationId, source: 'system' })
-    if (result.timedOut) throw new Error('Синхронизация с origin завершилась по таймауту')
-    if (result.exitCode !== 0) throw new Error(result.output.trim() || `Синхронизация с origin завершилась с кодом ${result.exitCode ?? 'unknown'}`)
-    const baseSha = result.output.match(/BASE_SHA=([0-9a-f]{40})/)?.[1]
-    if (!baseSha) throw new Error('Синхронизация не вернула SHA актуальной базовой ветки')
-    return { baseSha }
-    })()
+    const operation = syncProjectWithRetry(() =>
+      agentRegistry.exec(args.agentId, script, 120_000, undefined, { userId: args.userId, conversationId: args.conversationId, source: 'system' }))
     projectMainRefreshes.set(key, operation)
     void operation.finally(() => { if (projectMainRefreshes.get(key) === operation) projectMainRefreshes.delete(key) }).catch(() => {})
     return operation
@@ -398,7 +456,24 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       online: agentRegistry.isOnline(agent.id),
       version: agentRegistry.versionOf(agent.id),
       telemetry: agentRegistry.telemetryOf(agent.id)
-    }))
+    })),
+    // Новый Make-чат начинает от актуального main: копию обновляет сервер один
+    // раз при создании чата — единственное, что Make делает с репозиторием.
+    // Ошибка (нет машины, offline, dirty без возможности stash) не мешает
+    // создать чат: мастерская работает и без свежей копии, а причина уходит в лог.
+    refreshProjectMain: (userId, projectId) => {
+      const project = db.getProject(userId, projectId)
+      if (!project?.gitUrl) return
+      const machine = (project.machines ?? []).find((candidate) => candidate.canUse !== false && candidate.path.trim() && agentRegistry.isOnline(candidate.agentId))
+      if (!machine) return
+      void ensureProjectMainCurrent({
+        userId, projectId, conversationId: null, agentId: machine.agentId,
+        path: machine.path, branch: project.ciBaseBranch || 'main', gitUrl: project.gitUrl
+      }).then(
+        (snapshot) => app.log.info({ event: 'make_chat_project_refresh', projectId, baseSha: snapshot.baseSha, ...(snapshot.autoHealed ? { autoHealed: snapshot.autoHealed } : {}) }),
+        (error) => app.log.warn({ event: 'make_chat_project_refresh_failed', projectId, error: error instanceof Error ? error.message : String(error) })
+      )
+    }
   })
   registerPreviewProxy(app, {
     machines: {
@@ -565,9 +640,35 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     runs: () => kanbanRunLaunchers
   }, mcpSecret)
   // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
+  // Студия картинок: галерея на разговор + генерация/правка через LLM — тем же
+  // способом, что ретушь (модель сохраняет PNG и показывает fenced-блоком).
+  const imageStudioStore = new ImageStudioStore(join(opts.config.dataDir, 'image-studio'))
+  registerImageStudioRoutes(app, {
+    db,
+    store: imageStudioStore,
+    generator: (userId) => llmImageStudioGenerator({
+      client: codex,
+      userId,
+      model: db.getSettings(userId).codexModel,
+      cwd: profileHome(userId),
+      readGenerated: async (path) => {
+        if (runnerFs) return runnerFs.readFile(userId, path)
+        const local = readUserFile(path, [profileHome(userId)])
+        return local.ok ? local.file : null
+      }
+    })
+  })
+
   registerMakeRoutes(app, {
     db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
-    boardChanged: (projectId) => boardHub.emit(projectId)
+    boardChanged: (projectId) => boardHub.emit(projectId),
+    // Чтение репозитория проекта: файловый мост машины только на чтение —
+    // Make копирует файлы к себе, но в общую копию проекта не пишет.
+    machineFs: {
+      list: (agentId, path) => agentRegistry.fsList(agentId, path),
+      read: (agentId, path) => agentRegistry.fsRead(agentId, path),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId)
+    }
   })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
@@ -589,6 +690,43 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
   // FeaturePreviewManager создаётся ниже по файлу — previewMcp получает его лениво.
   const featurePreviewsRef: { current: FeaturePreviewManager | null } = { current: null }
+  // CiRunManager создаётся ниже по файлу; лента кадров получает его лениво.
+  const ciRunManagerRef: { current: CiRunManager | null } = { current: null }
+
+  /**
+   * Кадр браузерной проверки уходит в ленту активного рана задачи ссылкой на
+   * файл: base64 в логе распухал бы на сотни килобайт при каждом реплее ленты.
+   * Нет рана или шага — кадр просто не логируется: модель его уже получила.
+   */
+  const logBrowserCheckShot = (conversationId: string, userId: string, png: Buffer): void => {
+    const taskId = db.getConversation(userId, conversationId)?.taskId
+    if (!taskId || db.getTaskBrowserCheck(taskId).mode !== 'chromium') return
+    const run = db.activeCiRunForTask(taskId)
+    if (!run) return
+    const step = db.getCiRun(run.triggeredBy, run.id)?.steps.filter((item) => item.status === 'running').at(-1)
+    if (!step) return
+    const saved = saveBrowserShot(browserShotsRoot, run.id, png)
+    if (!saved) return
+    const line = db.appendCiLog(run.id, step.id, 'system', `Снимок страницы проверки: ${saved.url}\n`)
+    ciRunManagerRef.current?.publish({ t: 'ci.log', runId: run.id, line }, run.triggeredBy)
+  }
+
+  /**
+   * Изолированный Chromium обслуживает два входа: разговор Playwright Reader и
+   * браузерную проверку задачи (её режим — настройка CI задачи). Всё остальное
+   * идёт прежним путём — в панель браузера пользователя.
+   */
+  const browserCheckTargetOf = (userId: string, conversationId: string): BrowserCheckTarget | null => {
+    const conversation = db.getConversation(userId, conversationId)
+    if (!conversation) return null
+    const taskId = conversation.taskId ?? null
+    return browserCheckTarget({
+      conversationId,
+      taskId,
+      playwrightReader: isPlaywrightReaderConversation(conversation),
+      check: taskId ? db.getTaskBrowserCheck(taskId) : DEFAULT_CI_BROWSER_CHECK
+    })
+  }
   registerPreviewMcp(app, {
     secret: mcpSecret,
     relay: previewRelay,
@@ -596,14 +734,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // relay пушит действие в браузер пользователя, а страницы там нет.
     browserExecutor: async (userId, conversationId, action) => {
       if (!browserRunner) return null
-      const conversation = db.getConversation(userId, conversationId)
-      if (!conversation || !isPlaywrightReaderConversation(conversation)) return null
-      const plan = planModelAction(action)
+      const target = browserCheckTargetOf(userId, conversationId)
+      if (!target) return null
+      const plan = planModelAction(withMachinePreviewTarget(action, runnerFacingBase))
       if (plan.kind === 'unsupported') return { ok: false, error: plan.reason }
       try {
         // start идемпотентен: живая сессия переиспользуется, incarnation берём из неё.
-        const session = await browserRunner.start({ sessionId: conversationId, userKey: userId, conversationKey: conversationId })
-        const result = await browserRunner.command(conversationId, {
+        const session = await browserRunner.start({
+          sessionId: target.sessionId, userKey: userId, conversationKey: target.conversationKey,
+          cookies: [previewRunCookie(userId)]
+        })
+        const result = await browserRunner.command(target.sessionId, {
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant', command: plan.command
         })
         return { ok: true, data: result as unknown as Record<string, unknown> }
@@ -615,14 +756,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // возвращает картинку, а не структуру действия.
     browserScreenshot: async (userId, conversationId, args) => {
       if (!browserRunner) return null
-      const conversation = db.getConversation(userId, conversationId)
-      if (!conversation || !isPlaywrightReaderConversation(conversation)) return null
+      const target = browserCheckTargetOf(userId, conversationId)
+      if (!target) return null
       try {
-        const session = await browserRunner.start({ sessionId: conversationId, userKey: userId, conversationKey: conversationId })
-        const shot = await browserRunner.screenshot(conversationId, {
+        const session = await browserRunner.start({
+          sessionId: target.sessionId, userKey: userId, conversationKey: target.conversationKey,
+          cookies: [previewRunCookie(userId)]
+        })
+        const shot = await browserRunner.screenshot(target.sessionId, {
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
           command: { type: 'screenshot', format: 'png', ...(args.selector ? { selector: args.selector } : {}) }
         })
+        logBrowserCheckShot(conversationId, userId, shot.buffer)
         return {
           ok: true,
           result: {
@@ -692,7 +837,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const browserRunner = opts.browserRunner ?? (opts.config.browserRunnerUrl && opts.config.browserRunnerToken
     ? createBrowserRunnerClient({ baseUrl: opts.config.browserRunnerUrl, token: opts.config.browserRunnerToken })
     : undefined)
-  registerBrowserRoutes(app, { db, ...(browserRunner ? { runner: browserRunner } : {}) })
+  // Кадры браузерной проверки задач: файл на диске, в ленте рана — ссылка.
+  const browserShotsRoot = join(opts.config.dataDir, 'ci-browser-shots')
+  registerBrowserRoutes(app, { db, shotsRoot: browserShotsRoot, ...(browserRunner ? { runner: browserRunner } : {}) })
   // Снимки вердикта Playwright-этапа: файл на диске, а не base64 в result_json —
   // строка рана иначе распухала бы на сотни килобайт с каждой попыткой.
   const automatedQaScreenshotDir = join(opts.config.dataDir, 'qa-screenshots')
@@ -703,6 +850,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     catch (error) { app.log.warn({ error }, 'qa screenshot sweep failed') }
   }
   sweepScreenshots()
+  // Кадры проверки живут короче снимков вердикта: их за ран много, а смысл
+  // они имеют, пока лента этого рана кому-то интересна.
+  const sweepBrowserCheckShots = (): void => {
+    try { sweepBrowserShots({ root: browserShotsRoot, knownRunIds: db.ciRunIds(), maxAgeMs: 7 * 24 * 60 * 60_000 }) }
+    catch (error) { app.log.warn({ error }, 'browser check shot sweep failed') }
+  }
+  sweepBrowserCheckShots()
+  const browserShotSweepTimer = setInterval(sweepBrowserCheckShots, 24 * 60 * 60_000)
+  browserShotSweepTimer.unref?.()
+  app.addHook('onClose', async () => clearInterval(browserShotSweepTimer))
   const screenshotSweepTimer = setInterval(sweepScreenshots, 24 * 60 * 60_000)
   screenshotSweepTimer.unref?.()
   app.addHook('onClose', async () => clearInterval(screenshotSweepTimer))
@@ -1167,6 +1324,33 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     ensureChatStorage,
     ensureProjectMainCurrent,
+    // Студия картинок: изображения из ответа складываются в галерею разговора.
+    studioContext: async (conversationId) => {
+      const files = await imageStudioStore.list(conversationId)
+      const listing = files.slice(0, 30).map((file) => `- ${file.path}${file.prompt ? ` (промпт: ${file.prompt.slice(0, 80)})` : ''}`).join('\n')
+      return [
+        '## Студия картинок',
+        'Это чат студии картинок: пользователь собирает галерею изображений этого разговора.',
+        'Когда рисуешь или правишь картинку — сохрани файл и обязательно покажи его штатным fenced-блоком image с абсолютным путём: только так он попадает в галерею.',
+        listing ? `Сейчас в галерее:\n${listing}` : 'Галерея пока пуста.'
+      ].join('\n')
+    },
+    captureStudioImages: async (userId, conversationId, finalText) => {
+      const { parseImages } = await import('@voicechat/shared')
+      for (const image of parseImages(finalText).images.slice(0, 10)) {
+        try {
+          const file = await (runnerFs ? runnerFs.readFile(userId, image.path) : Promise.resolve(readUserFile(image.path, [profileHome(userId)])).then((r) => r.ok ? r.file : null))
+          if (!file?.dataBase64) continue
+          const original = image.path.split('/').pop() ?? 'изображение.png'
+          // Технические имена ранов («exec-<uuid>.png») в галерее нечитаемы.
+          const readable = /^exec-[0-9a-f-]{20,}\./i.test(original) ? `из-чата${original.slice(original.lastIndexOf('.'))}` : original
+          const name = await imageStudioStore.freeName(conversationId, readable)
+          await imageStudioStore.writeBuffer(conversationId, name, Buffer.from(file.dataBase64, 'base64'))
+        } catch {
+          // не-картинка, квота или чтение не удалось — ход это не ломает
+        }
+      }
+    },
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)
@@ -1216,6 +1400,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
     kbMcpBaseUrl,
+    // Браузерная проверка результата: инструменты появляются у хода только при
+    // выбранном режиме проверки задачи (см. `withBrowserTools`).
+    previewMcpBaseUrl,
+    previewTool: previewToolBroker,
     makeMcpBaseUrl,
     makeTaskScopes
   })
@@ -1294,6 +1482,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
     const root = record(value)
     if (!root) throw new Error('Модель вернула неполную структуру готовности: корень должен быть JSON-объектом')
+    // Совместимость ограничена однозначными представлениями: смысл и фактическая
+    // доступность источника никогда не выводятся и не подменяются.
+    const normalizeBoolean = (input: Record<string, unknown>, key: string): void => {
+      if (input[key] === 'true') input[key] = true
+      if (input[key] === 'false') input[key] = false
+    }
+    if (root.schemaVersion === '2') root.schemaVersion = 2
+    normalizeBoolean(root, 'acceptanceCriteriaConflict')
     if (root.schemaVersion !== 2) issues.push('schemaVersion должен быть равен 2')
     requireString(root, 'functionalRequirements')
     requireString(root, 'acceptanceCriteria')
@@ -1311,6 +1507,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       for (const key of ['id', 'title', 'description', 'preconditions', 'testData', 'steps', 'expectedResult', 'testType', 'notAutomatedReason', 'alternativeManualVerification', 'comments']) {
         requireString(testCase, key, `${path}.${key}`)
       }
+      normalizeBoolean(testCase, 'required')
+      normalizeBoolean(testCase, 'automatable')
       requireBoolean(testCase, 'required', `${path}.required`)
       requireBoolean(testCase, 'automatable', `${path}.automatable`)
       for (const [linkIndex, link] of requireArray(testCase, 'automationLinks', `${path}.automationLinks`).entries()) {
@@ -1383,6 +1581,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const kindAliases: Record<string, string> = { knowledge_base: 'knowledge', 'knowledge-base': 'knowledge', 'knowledge-base-gap': 'knowledge', 'code-search': 'code' }
         if (typeof source.kind === 'string' && kindAliases[source.kind]) source.kind = kindAliases[source.kind]
         if (typeof source.refs === 'string') source.refs = [source.refs]
+        normalizeBoolean(source, 'critical')
+        if (typeof source.status === 'string') {
+          const canonicalStatus = source.status.trim().toLowerCase()
+          if (['available', 'absent', 'unavailable'].includes(canonicalStatus)) source.status = canonicalStatus
+        }
         for (const key of ['id', 'kind', 'status', 'summary']) requireString(source, key, `${path}.${key}`)
         if (typeof source.kind === 'string' && !['knowledge', 'hierarchy', 'related_tasks', 'code', 'tests', 'storybook'].includes(source.kind)) issues.push(`${path}.kind имеет недопустимое значение: ${String(source.kind)}`)
         if (typeof source.status === 'string' && !['available', 'absent', 'unavailable'].includes(source.status)) issues.push(`${path}.status имеет недопустимое значение`)
@@ -1488,7 +1691,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 2. Затем через read-only remote-инструменты найди релевантные файлы внутри настроенной рабочей директории проекта и прочитай фактические API-контракты, общие типы, клиентские компоненты и тесты. Код — источник истины при расхождении с БЗ.
 3. Не вызывай edit, deploy, package managers, сборки, тесты и любые команды, меняющие файлы, процессы, данные или окружение. Разрешены read/grep/machines и bash только для ls/find/git status/log/diff.
 4. Бюджет исследования: не более 12 вызовов инструментов суммарно, не более 8 файлов, не более 24 000 символов полезных выдержек; один вызов — не дольше 120 секунд. Исследуй только рабочую директорию проекта и docs/kb.
-5. В sources перечисли только фактически прочитанные источники, с точным refs и status available|absent|unavailable. Конкретную причину недоступности запиши в summary. Подтверждённое расхождение БЗ и кода запиши как закрытое решение в decisions (contradictions оставь только для неразрешённых противоречий) и опирайся на код.
+5. В sources перечисли только фактически прочитанные источники, с точным refs и фактическим status available|absent|unavailable. Никогда не меняй absent/unavailable на available. critical=true ставь только если без источника нельзя определить требования самого brief; источник, нужный лишь для последующей визуальной реализации или приёмки, сохраняй unavailable и помечай critical=false, явно оставляя его проверку в scope/testCases. Конкретную причину недоступности запиши в summary. Подтверждённое расхождение БЗ и кода запиши как закрытое решение в decisions (contradictions оставь только для неразрешённых противоречий) и опирайся на код.
 6. Не спрашивай доступ к машине или репозиторию: они определены конфигурацией ниже. Вопрос допустим только после исследования, если критичный источник реально недоступен, требования существенно противоречат друг другу либо нужно продуктовое решение.
 7. Если БЗ неполна, не изменяй её сейчас: зафиксируй подтверждённый пробел в финальном блоке kb-gaps для последующего безопасного этапа актуализации.
 
@@ -1496,7 +1699,7 @@ ${machineDiagnostic}
 ${preparationDesignNote(task?.designs ?? [], preparationMakeSources)}`
     const basePrompt = `${researchDirective}
 
-Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект: первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект: первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
 const ordinaryResponses: string[] = []
     const terminalValidationFailure = (message: string, text: string, recoveryDetail?: string): void => {
       const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
@@ -1520,7 +1723,7 @@ const ordinaryResponses: string[] = []
 Строгий контракт DevelopmentReadiness:
 schemaVersion: 2; goal, functionalRequirements, acceptanceCriteria — string; scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints, contradictions — string[]; uiImpact — none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean.
 acceptanceCriteriaItems: {id,title,precondition,action,observableResult:string}[].
-testCases: {id,title,description,preconditions,testData,steps,expectedResult,testType,notAutomatedReason,alternativeManualVerification,comments:string,required:boolean,automatable:boolean,automationLinks:array}[].
+testCases: {id,title,description,preconditions,testData,steps,expectedResult,testType,notAutomatedReason,alternativeManualVerification,comments:string,required:boolean,automatable:boolean,automationLinks:array}[]. testType — ui|api|integration|negative|regression|manual; при uiImpact≠none обязателен хотя бы один testCase с required=true и testType=ui.
 affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reusable:boolean,storybookStoryId:string|null,coverage:object}[]. Для каждого компонента coverage непустой; при storybookStoryId=null обязательны непустые exclusionReason и alternativeVerification.
 openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
 sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
@@ -1623,6 +1826,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           path: selectedMachine.path, branch: project.ciBaseBranch || 'main', gitUrl: project.gitUrl
         })
         db.appendTaskPreparationLog(run.id, `[система] Актуальная базовая ветка: ${project.ciBaseBranch || 'main'} @ ${snapshot.baseSha}; совпадение с origin подтверждено.\n`)
+        // Автолечение копии видно в логе подготовки: иначе спрятанный stash
+        // остаётся невидимым и человек не знает, где искать свои правки.
+        if (snapshot.autoHealed) db.appendTaskPreparationLog(run.id, `[система] Общая копия проекта приведена в порядок автоматически: ${snapshot.autoHealed}.\n`)
       }
       sendAttempt(1)
     })().catch((error) => {
@@ -1716,8 +1922,13 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   })
 
   let autoPilotTick: (projectId: string) => void = () => {}
-  const emitBoard = (projectId: string): void => { boardHub.emit(projectId); queueMicrotask(() => autoPilotTick(projectId)) }
-  const ciRunManager = createCiRunManager({
+  // Координатор автопрохода будится подпиской на сам хаб, а не обёрткой над ним:
+  // раньше тик планировал только `emitBoard`, а завершение preparation-, CI-,
+  // QA- и merge-ранов зовёт `boardHub.emit` напрямую — автопроход не узнавал,
+  // что этап закончился, и стоял до следующего действия человека.
+  boardHub.onChange((projectId) => autoPilotTick(projectId))
+  const emitBoard = (projectId: string): void => boardHub.emit(projectId)
+  const ciRunManager: CiRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
     boardChanged: emitBoard,
@@ -1738,6 +1949,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         /* чат мог быть удалён — не роняем ответ на вопрос */
       }
     },
+    // Сессия браузерной проверки задачи гасится best-effort: не смогли — ран
+    // продолжится в прежней странице, а это заметно модели, но не смертельно.
+    resetBrowserCheck: ({ taskId }) => {
+      void browserRunner?.stop(`task-${taskId}`).catch(() => undefined)
+    },
     // Резюме законченного рана — обычное AI-сообщение чата; метка `ciRunSummary`
     // связывает его с раном и отличает от ответа хода модели.
     postSummaryToChat: ({ userId, conversationId, text, runId }) => {
@@ -1753,6 +1969,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
+  ciRunManagerRef.current = ciRunManager
   registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId))
 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
@@ -1819,7 +2036,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     },
     isOnline: (agentId) => agentRegistry.isOnline(agentId),
     prepareKnowledgeBase: async (releaseBranch, target) => {
-      const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), 120_000)
+      // Лимит берётся из настроек шага, а не из константы: жёсткие 120 с убивали
+      // шаг с объявленным лимитом 10 минут ровно на 121-й секунде, и в логе
+      // оставался обрыв на середине push — искать причину было не по чему.
+      const limitMs = knowledgeBaseTimeoutMs(target)
+      const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), limitMs)
+      if (result.timedOut) throw new Error(`Release-preflight базы знаний не уложился в ${Math.round(limitMs / 1000)} с`)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
   })
@@ -1843,7 +2065,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(() => { try { agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
   watchdogTimer?.unref?.()
   app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
-  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)
   registerInvitationRoutes(app, db, { mailer, publicUrl: opts.config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard,
@@ -1888,31 +2110,167 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if(passed)return
     onAutoPilotFailure(runId,userId,'automated_qa',reason,{classification:verdict?.classification??null,remarks:verdict?automatedQaRemarks(verdict):''})
   }})
+  /**
+   * Начало конвейера у автопрохода: карточка в TODO или в подготовке сама уходит
+   * в работу. Раньше координатор начинался с `component_qa`, а старт подготовки и
+   * переход ready → development жили только в drag&drop-роуте доски, поэтому
+   * автопроход стоял до тех пор, пока человек не перетащит карточку руками.
+   *
+   * Ран подготовки уже идемпотентен (`launchTaskPreparation` переиспользует
+   * активный), поэтому повторные тики безопасны. Ожидание ответа на вопрос модели
+   * (`waiting_for_answer`) — осознанная остановка: там нужен человек, и
+   * перезапускать попытку нельзя. Упавшие попытки повторяются в пределах
+   * `autoPilotFixLimit` — инфраструктурный сбой (таймаут синхронизации с origin,
+   * отвалившаяся машина) не должен требовать ручного «Повторить», но и крутить
+   * бесконечный цикл на сломанном окружении координатор не имеет права.
+   */
+  const autoPilotPreparation = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (db.activeTaskPreparationRun(userId, projectId, task.id)) return
+    const runs = db.listTaskPreparationRuns(userId, projectId, task.id)
+    if (runs.some((run) => run.status === 'success' || run.status === 'completed')) return
+    const limit = db.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
+    const failed = runs.filter((run) => run.status === 'failed' || run.status === 'blocked').length
+    if (failed >= limit) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: 'Подготовка не прошла после автоматических повторов', attempts: failed, limit })
+      // Из TODO пути в decision_required нет (карту переходов автопроход не
+      // обходит): там карточка просто остаётся ждать человека с записью в аудите.
+      try { db.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.preparation_limit_exhausted') }
+      catch { /* переход недоступен из текущей колонки */ }
+      emitBoard(projectId)
+      return
+    }
+    try { launchTaskPreparation(userId, projectId, task.id) }
+    catch (error) {
+      // Причина запуска (нет машины, недоступная модель) не лечится повтором в том
+      // же тике: событие остаётся в аудите, а следующий board event попробует снова.
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: error instanceof Error ? error.message : String(error), attempts: failed, limit })
+    }
+  }
+  /**
+   * Сбой машины посреди рана (ноутбук ушёл в сон, обрыв Wi-Fi) валит текущий шаг,
+   * но работа модели остаётся в рабочей копии. Новый ран заставил бы модель
+   * делать её заново — десятки минут в мусор, — поэтому автопроход возобновляет
+   * тот же ран с упавшего шага. Повторов конечное число: сломанное окружение не
+   * должно крутить ран по кругу.
+   */
+  const autoPilotResumeAfterInfraFailure = (userId: string, projectId: string, task: import('@voicechat/shared').Task): boolean => {
+    const last = db.latestCiRunSummary(task.id)
+    if (!last) return false
+    const allowed = shouldResumeAfterInfraFailure({
+      status: last.status,
+      infraErrors: db.countCiEvents(last.id, 'run.infra_error'),
+      resumes: db.countCiEvents(last.id, 'run.autopilot_infra_resume'),
+      limit: AUTOPILOT_INFRA_RESUMES
+    })
+    if (!allowed) return false
+    const resumed = ciRunManager.retryFromFailed(userId, last.id)
+    if ('error' in resumed) return false
+    db.addCiEvent({ projectId, runId: last.id, type: 'run.autopilot_infra_resume', actorType: 'system', payload: { taskId: task.id, status: last.status } })
+    emitBoard(projectId)
+    return true
+  }
+  /**
+   * Карточка в development с упавшим раном и без активного — тупик: fix-loop уже
+   * отработал внутри рана, а следующий ран без человека не появлялся. Сначала
+   * пробуем продолжить брошенный ран, иначе ставим новый — но только пока подряд
+   * упавших ранов меньше лимита доработок: бесконечно долбиться в сломанную
+   * задачу автопроход не должен, для этого есть `decision_required`.
+   */
+  const autoPilotDevelopmentStuck = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    const last = db.latestCiRunSummary(task.id)
+    if (!last || (last.status !== 'failed' && last.status !== 'timeout')) return
+    const limit = db.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
+    const failures = db.countTrailingFailedCiRuns(task.id)
+    if (failures >= limit) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Подряд упавшие development-раны', failures, limit })
+      try { db.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted') }
+      catch { /* переход недоступен из текущей колонки */ }
+      emitBoard(projectId)
+      return
+    }
+    const started = ciRunManager.start(userId, projectId, task.id, { mode: 'development' })
+    if ('error' in started) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: started.error, failures, limit })
+      return
+    }
+    db.recordAutoPilotEvent(projectId, task.id, 'autopilot.development_retry', { runId: started.run.id, failures, limit })
+    emitBoard(projectId)
+  }
+  /** Готовая к разработке карточка сама встаёт в очередь development-рана. */
+  const autoPilotDevelopment = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    const result = ciRunManager.startForDevelopmentTransition(userId, projectId, task.id, true)
+    if ('error' in result) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'ready', reason: result.error })
+      return
+    }
+    if (!result.existing) emitBoard(projectId)
+  }
+  /**
+   * Этап не запускается на спящей машине. Раньше упавший по «Машина отключилась
+   * во время выполнения команды» этап сразу перезапускался следующим board-событием
+   * и падал снова — так задача жгла круги доработки за чужой сбой. Пока online-машины
+   * у проекта нет, автопроход просто ждёт: фоновый тик вернётся к нему сам.
+   */
+  const projectHasOnlineMachine = (userId: string, projectId: string): boolean =>
+    db.listUsableAgents(userId, projectId).some((agent) => agentRegistry.isOnline(agent.id))
   const ticking = new Set<string>()
+  /** Доска изменилась, пока шёл тик: пробуждение нельзя терять, иначе конвейер встаёт. */
+  const pendingTicks = new Set<string>()
   autoPilotTick = (projectId) => {
-    if (ticking.has(projectId)) return
+    if (ticking.has(projectId)) { pendingTicks.add(projectId); return }
     ticking.add(projectId)
     queueMicrotask(() => {
       try {
         for (const item of db.autoPilotSnapshot(projectId)) {
           const { task, stage, userId } = item
-          if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
+          // Машина нужна не всем стадиям: пропуск ручного QA — чистая работа с
+          // доской, а подготовка требует копию проекта только у Git-проекта.
+          const needsMachine = stage === 'manual_qa'
+            ? false
+            : stage === 'backlog' || stage === 'preparation'
+              ? Boolean(db.getProject(userId, projectId)?.gitUrl)
+              : true
+          if (needsMachine && !projectHasOnlineMachine(userId, projectId)) continue
+          if (stage === 'backlog' || stage === 'preparation') autoPilotPreparation(userId, projectId, task)
+          else if (stage === 'ready') autoPilotDevelopment(userId, projectId, task)
+          else if (stage === 'development') autoPilotDevelopmentStuck(userId, projectId, task)
+          else if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
           else if (stage === 'integration_tests') { const run=db.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
           else if (stage === 'automated_qa') { const run=db.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')automatedQaRunner.launch(run.id,userId) }
           else if (stage === 'manual_qa' && !item.requiresManualQa) db.transitionAutoPilotTask(projectId,task.id,'awaiting_merge','autopilot.skip_manual_qa')
           else if (stage === 'awaiting_merge') { const run=db.startMergeRun(userId,projectId,task.id); mergeRunManager.start(run) }
         }
       } catch (error) { app.log.warn({ projectId, error }, 'autopilot tick failed') }
-      finally { ticking.delete(projectId) }
+      finally {
+        ticking.delete(projectId)
+        if (pendingTicks.delete(projectId)) autoPilotTick(projectId)
+      }
     })
   }
+  // Board-события покрывают всё, что случилось в самом приложении, но не приход
+  // машины в онлайн: этап, брошенный уснувшим ноутбуком, ждал бы человека. Раз в
+  // минуту координатор сам проходит проекты с автопроходом — тик идемпотентен,
+  // и на живом конвейере этот проход ничего не делает.
+  const autoPilotTimer = setInterval(() => {
+    try { for (const projectId of db.autoPilotProjectIds()) autoPilotTick(projectId) }
+    catch (error) { app.log.warn({ error }, 'autopilot sweep failed') }
+  }, AUTOPILOT_SWEEP_MS)
+  autoPilotTimer.unref?.()
+  app.addHook('onClose', async () => clearInterval(autoPilotTimer))
   registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id),automatedQaScreenshotDir)
 
   // Запуск работ ассистентом и оркестратором идёт теми же путями, что кнопки в
   // UI: очередь, изоляция директорий и проверки готовности живут в менеджерах.
   const kanbanRunLaunchers: KanbanRunLaunchers = {
     startCi: (userId, projectId, taskId, options) =>
-      ciRunManager.start(userId, projectId, taskId, { launch: options.launch, ...(options.agentId ? { agentId: options.agentId } : {}) }),
+      ciRunManager.start(userId, projectId, taskId, {
+        launch: options.launch,
+        ...(options.agentId ? { agentId: options.agentId } : {}),
+        ...(options.provider ? { provider: options.provider } : {}),
+        ...(options.model ? { model: options.model } : {})
+      }),
     cancelCi: (userId, runId) => ciRunManager.cancel(userId, runId),
     previewOperate: (userId, projectId, taskId, operation, options) =>
       featurePreviews.operate(userId, projectId, taskId, operation, options),

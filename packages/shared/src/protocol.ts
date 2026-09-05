@@ -211,6 +211,11 @@ export const REST = {
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
   makeShare: (id: string) => `/api/make/${encodeURIComponent(id)}/share`,
   /** Обратная связь Make → доска: задачи, ссылающиеся на проект (или его страницу). */
+  // Обмен с репозиторием проекта: листинг машины, копирование в мастерскую,
+  // статусы связей и возврат правок в проект.
+  makeProjectFiles: (id: string) => `/api/make/${encodeURIComponent(id)}/project-files`,
+  makeProjectLinks: (id: string) => `/api/make/${encodeURIComponent(id)}/project-links`,
+  makeProjectPull: (id: string) => `/api/make/${encodeURIComponent(id)}/project-pull`,
   makeTaskLinks: (id: string) => `/api/make/${encodeURIComponent(id)}/task-links`,
   makeTaskLink: (id: string, linkId: string) => `/api/make/${encodeURIComponent(id)}/task-links/${encodeURIComponent(linkId)}`,
   makeShareGrants: (id: string) => `/api/make/${encodeURIComponent(id)}/share/grants`,
@@ -546,6 +551,9 @@ export const REST = {
   ciMetrics: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/metrics`,
   ciRun: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}`,
   ciRunLog: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/log`,
+  /** Кадр браузерной проверки рана: файл на диске, ссылка в строке лога ленты. */
+  ciRunBrowserShot: (runId: string, name: string) =>
+    `/api/ci/runs/${encodeURIComponent(runId)}/browser-shots/${encodeURIComponent(name)}`,
   /** Обращения модели к БЗ внутри одного рана и агрегат по всем ранам задачи. */
   ciRunKbUsage: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/kb-usage`,
   taskKbUsage: (id: string, taskId: string) =>
@@ -554,6 +562,17 @@ export const REST = {
   ciRunReport: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/report`,
   taskCiReport: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/report`,
+  // Активность карточки (как в Jira): комментарии, ворклог, история.
+  taskActivity: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/activity`,
+  taskComments: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/comments`,
+  taskComment: (id: string, taskId: string, commentId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
+  taskWorklog: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/worklog`,
+  taskWorklogEntry: (id: string, taskId: string, entryId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/worklog/${encodeURIComponent(entryId)}`,
   taskTimeline: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/timeline`,
   ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,
@@ -657,6 +676,12 @@ export type ClientMessage =
       verbose?: boolean
       /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
       execTarget?: string | null
+      /**
+       * Ход-исправление: пропустить системный preflight общей копии проекта.
+       * Нужен ровно для случая, когда сам preflight и упал (грязное дерево):
+       * иначе кнопка «Исправить» уводила бы в тот же отказ по кругу.
+       */
+      skipProjectSync?: boolean
       assistantContext?: import('./widgetAssistant').WidgetAssistantContext
     }
   | { t: 'claude.cancel'; conversationId?: string }
@@ -716,7 +741,17 @@ export type ServerMessage =
       /** Сообщение, сохранённое сервером в БД (клиент не сохраняет сам). */
       message?: Message
     }
-  | { t: 'claude.error'; conversationId: string; message: string }
+  | {
+      t: 'claude.error'
+      conversationId: string
+      message: string
+      /**
+       * Готовое исправление: клиент рисует кнопку с `label`, а по нажатию
+       * отправляет `prompt` обычным ходом (`skipProjectSync`, если помечено).
+       * Так пользователю не приходится самому придумывать, что писать модели.
+       */
+      fix?: { label: string; prompt: string; skipProjectSync?: boolean }
+    }
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'claude.usage'; conversationId: string; usage: TurnUsage }
   | { t: 'claude.active'; turns: ActiveTurn[] }
