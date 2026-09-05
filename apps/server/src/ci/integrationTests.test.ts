@@ -42,11 +42,13 @@ function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: st
     })
   }
   const stageEvents: Array<{ projectId: string; taskId: string }> = []
+  const completions: Array<{ passed: boolean; reason: string; classification?: string | null }> = []
   const runner = createIntegrationTestRunner({
     db, executor, now: () => 0,
-    qaStageChanged: (projectId, taskId) => { stageEvents.push({ projectId, taskId }) }
+    qaStageChanged: (projectId, taskId) => { stageEvents.push({ projectId, taskId }) },
+    completed: (_runId, _userId, passed, reason, classification) => { completions.push({ passed, reason, classification }) }
   })
-  return { runner, finished, calls, links, gateResults, stageEvents }
+  return { runner, finished, calls, links, gateResults, stageEvents, completions }
 }
 
 describe('createIntegrationTestRunner', () => {
@@ -72,6 +74,9 @@ describe('createIntegrationTestRunner', () => {
     expect(input.failureClassification).toBe('infrastructure')
     expect(input.blockerReasons).toEqual(['missing_dependencies'])
     expect(input.summary).toContain('заблокирован инфраструктурой')
+    // Сбой окружения не должен возвращать карточку в доработку — автопроход
+    // получает это отдельной классификацией.
+    expect(s.completions[0]?.classification).toBe('infrastructure')
   })
 
   // Регрессия CHAT-411: `split(/\\r?\\n/)` искал литерал «\r», дифф приходил в
@@ -86,6 +91,9 @@ describe('createIntegrationTestRunner', () => {
     expect(input.blockerReasons).toEqual(['non_test_file:apps/server/src/db/database.ts', 'non_test_file:apps/server/src/db/schema.ts'])
     // Стадии не запускались: дальше разбора коммита ран не пошёл.
     expect(s.calls.some((call) => call.script.includes('npm'))).toBe(false)
+    // Автопроход обязан узнать об исходе: без уведомления карточка застревала в
+    // integration_tests, а board-событие запускало следующий такой же ран по кругу.
+    expect(s.completions).toEqual([{ passed: false, reason: input.summary, classification: 'implementation_defect' }])
   })
 
   it('покрытие берётся из маркеров @testCase, а не из первого пути в диффе', async () => {

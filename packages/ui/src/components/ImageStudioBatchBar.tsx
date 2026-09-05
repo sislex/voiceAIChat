@@ -3,6 +3,7 @@
 // удалить выбранное. Логика — у панели, строка только показывает и дёргает
 // колбэки: у самой панели их уже больше двадцати, и держать эту разметку там
 // значило читать полторы тысячи строк ради одной кнопки.
+import { useState } from 'react'
 import { Button } from '@voicechat/ui-kit'
 import { IMAGE_TRANSFORMS, type ImageTransformKind } from '../lib/imageTransform'
 
@@ -90,6 +91,13 @@ export function ImageStudioBatchBar({
   renameTemplate, onRenameTemplateChange, renamePreview, noteDraft, onNoteDraftChange, captionDraft, onCaptionDraftChange, setNames, setName, onSetNameChange, formatBytes, actions
 }: Props): JSX.Element {
   const count = selected.size
+  /**
+   * Двадцать одна кнопка и четыре поля в одном ряду занимали пол-экрана, едва
+   * человек включал мультирежим. На виду — то, ради чего его включают чаще
+   * всего (скачать, отметить, удалить), остальное живёт в раскрытии: попапом
+   * его не сделать, внутри поля ввода для заметки, набора, шаблона и подписи.
+   */
+  const [more, setMore] = useState(false)
   return <>
     <Button size="sm" variant="ghost" onClick={actions.onSelectAll}>Выбрать все</Button>
     <Button size="sm" variant="ghost" onClick={actions.onInvert}>Инвертировать</Button>
@@ -105,6 +113,19 @@ export function ImageStudioBatchBar({
     {count > 0 && <Button size="sm" variant="ghost" onClick={() => actions.onToggleStars(allStarred)}>
       {allStarred ? `Убрать из избранного (${count})` : `В избранное (${count})`}
     </Button>}
+    {count > 0 && <Button size="sm" variant="ghost" aria-expanded={more} aria-controls="image-studio-batch-more" title="Пометки, наборы, коллаж, переименование, обработка, перенос" onClick={() => setMore((prev) => !prev)}>
+      {more ? 'Скрыть остальное' : 'Ещё с выбранными…'}
+    </Button>}
+    {count > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={actions.onDelete}>Удалить выбранные ({count})</Button>}
+    {count > 0 && more && <span
+      id="image-studio-batch-more"
+      role="group"
+      aria-label="Ещё действия с выбранными"
+      className="image-studio-batch-more"
+      // Esc сворачивает раскрытие, а не выходит из мультирежима: пока оно
+      // открыто, это ближайшее «отменить», и терять выбор пачки не за что.
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setMore(false) } }}
+    >
     {count > 0 && <select aria-label="Готовность выбранных" disabled={busy} value="" onChange={(event) => {
       if (event.target.value === 'draft' || event.target.value === 'ready') actions.onSetStatus(event.target.value)
       if (event.target.value === 'clear') actions.onClearMarks()
@@ -193,6 +214,6 @@ export function ImageStudioBatchBar({
         {otherChats.map((chatItem) => <option key={`copy:${chatItem.id}`} value={`copy:${chatItem.id}`}>{chatItem.title}</option>)}
       </optgroup>
     </select>}
-    {count > 0 && <Button size="sm" variant="danger" disabled={busy} onClick={actions.onDelete}>Удалить выбранные ({count})</Button>}
+    </span>}
   </>
 }
