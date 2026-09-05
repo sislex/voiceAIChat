@@ -57,6 +57,7 @@ export interface SessionDeps {
     subscribe(cb: (projectId: string) => void): () => void
     subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
     subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => void): () => void
+    subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }) => void): () => void
   }
   /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
   preparationNotifications?: {
@@ -117,6 +118,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubSessions: (() => void) | null = null
   let unsubPreparationRuns: (() => void) | null = null
   let unsubTaskRepositories: (() => void) | null = null
+  let unsubQaStages: (() => void) | null = null
   let unsubPreparationNotifications: (() => void) | null = null
   let boardProjectId: string | null = null
   /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
@@ -215,6 +217,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
         unsubTaskRepositories = deps.board.subscribeTaskRepositories((update) => {
           if (!deps.board?.getBoard(update.projectId, false)) return
           ctx.send({ t: 'task.repositories.updated', projectId: update.projectId, taskId: update.taskId })
+        })
+        // Гейт тот же, что у репозиториев: кадр уходит только тем, кому доска видна.
+        unsubQaStages = deps.board.subscribeQaStages((update) => {
+          if (!deps.board?.getBoard(update.projectId, false)) return
+          ctx.send({ t: 'qa.stage.updated', projectId: update.projectId, taskId: update.taskId, stage: update.stage })
         })
       }
     },
@@ -423,6 +430,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubPreparationRuns = null
       unsubTaskRepositories?.()
       unsubTaskRepositories = null
+      unsubQaStages?.()
+      unsubQaStages = null
       unsubPreparationNotifications?.()
       unsubPreparationNotifications = null
       boardProjectId = null
