@@ -19,7 +19,7 @@ async function findToast(text: string): Promise<HTMLElement> {
   })
 }
 
-function makeApi(initial: Array<{ path: string; prompt?: string; size?: number }> = [], options: { trash?: Array<{ name: string; deletedAt: number }> } = {}) {
+function makeApi(initial: Array<{ path: string; prompt?: string; size?: number }> = [], options: { trash?: Array<{ name: string; deletedAt: number; size?: number }> } = {}) {
   let files: ImageStudioFile[] = initial.map((file, index) => ({ path: file.path, size: file.size ?? 10, updatedAt: index + 1, ...(file.prompt ? { prompt: file.prompt } : {}) }))
   let trash = [...(options.trash ?? [])]
   const generate = vi.fn(async ({ prompt }: { prompt: string }) => {
@@ -2558,6 +2558,56 @@ describe('ImageStudioPane', () => {
       const paths = screen.getAllByRole('listitem').map((item) => item.getAttribute('data-path'))
       expect(paths).toEqual(['в.png'])
     })
+  })
+
+  it('порядок «По цвету» показывает, что цвета ещё считаются', async () => {
+    // В jsdom `createImageBitmap` нет вовсе: подменяем медленной заглушкой,
+    // иначе очередь пустеет в ту же микротаску и индикатор не увидеть.
+    const slowBitmap = vi.fn(async () => { await new Promise((done) => setTimeout(done, 60)); return { close: () => undefined } })
+    ;(globalThis as unknown as { createImageBitmap: unknown }).createImageBitmap = slowBitmap
+    try {
+      const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }])
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      await screen.findByRole('button', { name: 'а.png' })
+
+      // Счёт цветов на сотне кадров занимает секунды, и раньше на экране не
+      // менялось ничего — «сортировка не работает» было единственным выводом.
+      fireEvent.change(screen.getByRole('combobox', { name: 'Порядок картинок' }), { target: { value: 'tint' } })
+      expect(await screen.findByText(/Считаем цвета кадров/)).toBeInTheDocument()
+      // Как только очередь опустела, строка уходит сама.
+      await waitFor(() => expect(screen.queryByText(/Считаем цвета кадров/)).toBeNull(), { timeout: 4000 })
+    } finally {
+      delete (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap
+    }
+  })
+
+  it('«По цвету» не зацикливает панель, когда цвет не берётся', async () => {
+    // Без отметки о неудаче партия из одних «не посчиталось» повторялась на
+    // каждом рендере, а индикатор прогресса сам вызывает рендер: вкладка
+    // вставала намертво (поймано в браузере, renderer не отвечал 45 с).
+    const { api } = makeApi([{ path: 'а.png' }, { path: 'б.png' }, { path: 'в.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+    const order = await screen.findByRole('combobox', { name: 'Порядок картинок' })
+
+    fireEvent.change(order, { target: { value: 'tint' } })
+    await waitFor(() => expect(screen.queryByText(/Считаем цвета кадров/)).toBeNull())
+    // Панель осталась живой: следующий порядок применяется как обычно.
+    fireEvent.change(order, { target: { value: 'name' } })
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Порядок картинок' })).toHaveValue('name'))
+  })
+
+  it('корзина считает освобождаемое место, а красная кнопка стоит после списка', async () => {
+    // Тулбар с «Корзиной» появляется от двух файлов.
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }], { trash: [{ name: 'старое.png', deletedAt: Date.now() - 1000, size: 2048 }] })
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Корзина/ }))
+    const box = await screen.findByRole('group', { name: 'Корзина галереи' })
+    // «Освободится место» без веса с экрана не прочитать — корзина ест ту же квоту.
+    const purge = within(box).getByRole('button', { name: /Очистить корзину \(1 · 2 КБ\)/ })
+    // Опасная кнопка не должна стоять раньше содержимого, которое она уничтожит.
+    const items = within(box).getAllByRole('button')
+    expect(items.indexOf(purge)).toBe(items.length - 1)
   })
 
   it('кадр, выпавший из отбора, продолжает листаться по всей галерее', async () => {
