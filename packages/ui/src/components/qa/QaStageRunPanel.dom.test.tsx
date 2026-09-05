@@ -78,11 +78,12 @@ it('снимок перечитывается по WS-событию этапа,
   vi.useFakeTimers()
   const getIntegration=vi.fn().mockResolvedValue(state())
   window.qa={getIntegration} as unknown as typeof window.qa
-  let emit:((event:{projectId:string;taskId:string;stage:string})=>void)|null=null
+  let emit:((event:{projectId:string;taskId:string;stage:string})=>void)|undefined
   window.board={
     subscribe:vi.fn(),unsubscribe:vi.fn(),onChanged:vi.fn(()=>()=>{}),onConnected:vi.fn(()=>()=>{}),
     onPreparationRunUpdated:vi.fn(()=>()=>{}),onTaskRepositoriesUpdated:vi.fn(()=>()=>{}),
-    onQaStageUpdated:vi.fn((cb)=>{emit=cb;return ()=>{emit=null}}),onReconnect:vi.fn(()=>()=>{})
+    onQaStageUpdated:vi.fn((cb)=>{emit=cb as typeof emit;return ()=>{emit=undefined}}),
+    onImprovementsUpdated:vi.fn(()=>()=>{}),onReconnect:vi.fn(()=>()=>{})
   } as unknown as typeof window.board
   render(<QaStageRunPanel projectId="p1" taskId="t1" stage="integration_tests"/>)
   await vi.waitFor(()=>expect(getIntegration).toHaveBeenCalledTimes(1))

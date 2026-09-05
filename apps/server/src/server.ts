@@ -1932,6 +1932,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     db,
     executor: ciExecutor,
     boardChanged: emitBoard,
+    improvementsChanged: (projectId) => boardHub.emitImprovements(projectId),
     // Боевой исполнитель не ждёт reconnect агента; тестовый executor сам задаёт
     // доступность и не зависит от реестра WebSocket.
     isAgentOnline: opts.ciExecutor ? undefined : (agentId) => agentRegistry.isOnline(agentId),
@@ -1970,7 +1971,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
   ciRunManagerRef.current = ciRunManager
-  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId))
+  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId), (projectId) => boardHub.emitImprovements(projectId))
 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
@@ -2419,7 +2420,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         subscribe: (cb) => boardHub.onChange(cb),
         subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
         subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb),
-        subscribeQaStages: (cb) => boardHub.onQaStageChange(cb)
+        subscribeQaStages: (cb) => boardHub.onQaStageChange(cb),
+        subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb)
       },
       preparationNotifications: {
         canAccess: (projectId) => db.getProject(user.name, projectId) !== null,

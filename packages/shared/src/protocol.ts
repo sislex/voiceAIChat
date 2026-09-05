@@ -785,6 +785,12 @@ export type ServerMessage =
    * Кадр несёт только адрес — снимок панель читает своим REST-запросом.
    */
   | { t: 'qa.stage.updated'; projectId: string; taskId: string; stage: QaRunStage }
+  /**
+   * Очередь «Улучшения» проекта изменилась. Отдельно от `board.changed`: доска
+   * инвалидируется на каждое движение любой задачи, и панель улучшений ходила за
+   * своим списком ровно столько же раз, хотя предложения меняются редко.
+   */
+  | { t: 'project.improvements.updated'; projectId: string }
   /** Снимок уведомлений подготовки изменился; содержимое читается только по HTTP. */
   | { t: 'task-preparation.notifications.invalidate'; v: 1; projectId: string }
   /**
@@ -909,6 +915,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'machine.status',
   'preparation.run.updated',
   'qa.stage.updated',
+  'project.improvements.updated',
   'task.repositories.updated',
   'task-preparation.notifications.invalidate',
   'invitations.invalidate',

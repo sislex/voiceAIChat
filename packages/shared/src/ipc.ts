@@ -966,6 +966,8 @@ export interface RendererBoardBridge {
   onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
   /** Адресная инвалидация состояния QA-этапа: панель перечитывает снимок вместо опроса. */
   onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
+  /** Адресная инвалидация очереди «Улучшения» проекта. */
+  onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
   /** Успешное восстановление WS после уже состоявшегося подключения. */
   onReconnect(cb: () => void): () => void
 }
