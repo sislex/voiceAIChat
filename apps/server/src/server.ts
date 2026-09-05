@@ -2145,6 +2145,34 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     emitBoard(projectId)
     return true
   }
+  /**
+   * Карточка в development с упавшим раном и без активного — тупик: fix-loop уже
+   * отработал внутри рана, а следующий ран без человека не появлялся. Сначала
+   * пробуем продолжить брошенный ран, иначе ставим новый — но только пока подряд
+   * упавших ранов меньше лимита доработок: бесконечно долбиться в сломанную
+   * задачу автопроход не должен, для этого есть `decision_required`.
+   */
+  const autoPilotDevelopmentStuck = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    const last = db.latestCiRunSummary(task.id)
+    if (!last || (last.status !== 'failed' && last.status !== 'timeout')) return
+    const limit = db.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
+    const failures = db.countTrailingFailedCiRuns(task.id)
+    if (failures >= limit) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Подряд упавшие development-раны', failures, limit })
+      try { db.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted') }
+      catch { /* переход недоступен из текущей колонки */ }
+      emitBoard(projectId)
+      return
+    }
+    const started = ciRunManager.start(userId, projectId, task.id, { mode: 'development' })
+    if ('error' in started) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: started.error, failures, limit })
+      return
+    }
+    db.recordAutoPilotEvent(projectId, task.id, 'autopilot.development_retry', { runId: started.run.id, failures, limit })
+    emitBoard(projectId)
+  }
   /** Готовая к разработке карточка сама встаёт в очередь development-рана. */
   const autoPilotDevelopment = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
     if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
@@ -2183,9 +2211,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           if (needsMachine && !projectHasOnlineMachine(userId, projectId)) continue
           if (stage === 'backlog' || stage === 'preparation') autoPilotPreparation(userId, projectId, task)
           else if (stage === 'ready') autoPilotDevelopment(userId, projectId, task)
-          // В development координатор сам ранов не создаёт (это дело fix-loop и
-          // кнопок), но брошенный сбоем машины ран обязан продолжиться.
-          else if (stage === 'development') autoPilotResumeAfterInfraFailure(userId, projectId, task)
+          else if (stage === 'development') autoPilotDevelopmentStuck(userId, projectId, task)
           else if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
           else if (stage === 'integration_tests') { const run=db.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
           else if (stage === 'automated_qa') { const run=db.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')automatedQaRunner.launch(run.id,userId) }
