@@ -41,6 +41,7 @@ export class BoardHub {
   private readonly preparationRunListeners = new Set<PreparationRunListener>()
   private readonly taskRepositoriesListeners = new Set<TaskRepositoriesListener>()
   private readonly qaStageListeners = new Set<QaStageListener>()
+  private readonly improvementsListeners = new Set<BoardListener>()
 
   /** Уведомить подписчиков об изменении доски проекта. */
   emit(projectId: string): void {
@@ -77,6 +78,16 @@ export class BoardHub {
   onQaStageChange(cb: QaStageListener): () => void {
     this.qaStageListeners.add(cb)
     return () => this.qaStageListeners.delete(cb)
+  }
+
+  /** Очередь улучшений проекта изменилась (предложение создано, скрыто, стало задачей). */
+  emitImprovements(projectId: string): void {
+    for (const listener of this.improvementsListeners) listener(projectId)
+  }
+
+  onImprovementsChange(cb: BoardListener): () => void {
+    this.improvementsListeners.add(cb)
+    return () => this.improvementsListeners.delete(cb)
   }
 
   emitTaskRepositories(update: TaskRepositoriesUpdate): void {

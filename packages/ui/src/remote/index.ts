@@ -196,6 +196,7 @@ export function makeBoardBridge(ws: WsClient): RendererBoardBridge {
     onPreparationRunUpdated: (cb) => ws.on('preparation.run.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId, runId: m.runId })),
     onTaskRepositoriesUpdated: (cb) => ws.on('task.repositories.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId })),
     onQaStageUpdated: (cb) => ws.on('qa.stage.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId, stage: m.stage })),
+    onImprovementsUpdated: (cb) => ws.on('project.improvements.updated', (m) => cb({ projectId: m.projectId })),
     onReconnect: (cb) => ws.onConnected((reconnected) => { if (reconnected) cb() })
   }
 }
