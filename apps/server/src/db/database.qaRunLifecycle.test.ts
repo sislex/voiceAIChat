@@ -64,7 +64,7 @@ describe('Component QA: контекст исполнения', () => {
     const { project, task } = componentFixture()
     const run = db.startComponentQaRun('owner', project.id, task.id)
     expect(db.componentQaExecutionContext(run.id)).toEqual({
-      agentId: 'agent-component', workdir: '/repos/component', npmCacheDir: '/repos/.npm-cache/component', commands: ['npm run test:storybook']
+      agentId: 'agent-component', workdir: '/repos/component', npmCacheDir: '/repos/.npm-cache/component', commands: ['npm run test:storybook'], ciBaseBranch: 'main'
     })
   })
 
@@ -214,10 +214,11 @@ describe('Integration QA: контекст и журнал', () => {
   }
 
   it('очередной ран отдаёт свои команды проверки', () => {
-    const { project, task } = integrationFixture()
+    const { project, task, raw } = integrationFixture()
+    raw.prepare(`UPDATE projects SET ci_base_branch='develop' WHERE id=?`).run(project.id)
     const run = db.startIntegrationTestRun('owner', project.id, task.id)
     expect(db.integrationTestExecutionContext(run.id)).toEqual({
-      agentId: 'agent-component', workdir: '/repos/component', npmCacheDir: '/repos/.npm-cache/component', commands: ['npm run affected-check']
+      agentId: 'agent-component', workdir: '/repos/component', npmCacheDir: '/repos/.npm-cache/component', commands: ['npm run affected-check'], ciBaseBranch: 'develop'
     })
   })
 
