@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
 updated: 2026-09-05
-checked: 66f2bdd9
+checked: a55521d3
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/server.ts
@@ -66,6 +66,16 @@ development-рана через `startForDevelopmentTransition`. До этого
 даёт, поэтому раз в минуту (`AUTOPILOT_SWEEP_MS`) координатор сам обходит проекты
 из `db.autoPilotProjectIds()`; тик идемпотентен и на живом конвейере ничего не
 делает.
+
+Ран, брошенный сбоем машины, координатор **возобновляет с упавшего шага**, а не
+начинает заново: работа модели уже лежит в рабочей копии, и новый ран заставил бы
+её повторить (реальный случай CHAT-413 — ноутбук ушёл в сон на шаге «Закоммитить
+работу в ветку задачи»). Условие возобновления — чистая функция
+`shouldResumeAfterInfraFailure` (`apps/server/src/ci/autopilotResume.ts`): ран
+терминально упал (`failed`/`timeout`), у него есть событие `run.infra_error`, и
+предел `AUTOPILOT_INFRA_RESUMES` не исчерпан. Каждое возобновление пишет
+`run.autopilot_infra_resume`, а считает их `db.countCiEvents(runId, type)`. Дефект
+кода так не лечится — для него остаётся обычный fix-loop.
 
 Ожидание ответа на вопрос модели (`waiting_for_answer`) координатор не трогает:
 там нужен человек. Упавшая попытка подготовки повторяется автоматически в
