@@ -715,7 +715,7 @@ export interface IpcInvokeMap {
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number }> } }
+  'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number; size: number }> } }
   'imgstudio:restore': { arg: { conversationId: string; name: string }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
   /** Очистка корзины: без `name` — вся, с `name` — только этот файл. */
   'imgstudio:purge': { arg: { conversationId: string; name?: string }; result: { removed: number; items: Array<{ name: string; deletedAt: number }> } }

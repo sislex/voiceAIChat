@@ -971,20 +971,21 @@ describe('App — Sidebar в рабочих split-режимах', () => {
     localStorage.clear()
   })
 
-  async function renderSplit(mode: 'console-reader' | 'make'): Promise<HTMLElement> {
+  const SPLIT_TITLES = { 'console-reader': 'Тестовая консоль', make: 'Тестовый Make', images: 'Тестовая студия' } as const
+
+  async function renderSplit(mode: 'console-reader' | 'make' | 'images'): Promise<HTMLElement> {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     await api['conversations:create']({ title: 'Обычный разговор' })
-    const workspace = await api['conversations:create']({
-      title: mode === 'make' ? 'Тестовый Make' : 'Тестовая консоль',
-      assistantKind: mode
-    })
-    // MakePane по production-контракту монтируется только при доступном preload-мосте.
-    if (mode === 'make') window.api = api
+    const workspace = await api['conversations:create']({ title: SPLIT_TITLES[mode], assistantKind: mode })
+    // MakePane и студия по production-контракту монтируются только при доступном preload-мосте.
+    if (mode !== 'console-reader') window.api = api
     localStorage.setItem('vc:sidebarCollapsed', 'false')
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${mode}/${workspace.id}`)
+    const route = mode === 'images' ? 'images' : mode
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${route}/${workspace.id}`)
     render(<App api={api} delays={SLOW} />)
     if (mode === 'make') return screen.findByTestId('make-pane', {}, { timeout: 10_000 })
+    if (mode === 'images') return screen.findByTestId('image-studio', {}, { timeout: 10_000 })
     return screen.findByRole('region', { name: 'Консоль' })
   }
 
@@ -1065,7 +1066,7 @@ describe('App — Sidebar в рабочих split-режимах', () => {
 
   it('console-reader pointer resize clamps to panel minimums and clears its shield on cancel', async () => {
     await renderSplit('console-reader')
-    const workshop = document.querySelector<HTMLElement>('.console-reader-workshop')!
+    const workshop = document.querySelector<HTMLElement>('.workshop-split')!
     vi.spyOn(workshop, 'getBoundingClientRect').mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 1440, bottom: 900, width: 1440, height: 900, toJSON: () => ({})
     })
@@ -1080,6 +1081,52 @@ describe('App — Sidebar в рабочих split-режимах', () => {
     await waitFor(() => expect(workshop).not.toHaveAttribute('data-resizing'))
   })
 
+  it('студия картинок живёт в той же обёртке мастерской, что и консоль', async () => {
+    // Раньше у студии был декоративный разделитель `chat-split-divider`: тянешь —
+    // а галерея стоит на месте, потому что `--preview-width` она не читала.
+    const pane = await renderSplit('images')
+    const workshop = document.querySelector<HTMLElement>('.workshop-split')!
+    expect(workshop).toHaveAttribute('data-workshop', 'images')
+    expect(pane.closest('.workshop-side-host')).toHaveAttribute('id', 'workshop-side-pane')
+    expect(document.querySelector('.chat-split-divider')).not.toBeInTheDocument()
+
+    const splitter = screen.getByRole('separator', { name: 'Изменить ширину панелей' })
+    expect(splitter).toHaveAttribute('aria-valuenow', '42')
+    splitter.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(splitter).toHaveAttribute('aria-valuenow', '44')
+    // Ширина запоминается на свою поверхность: консоли и галерее нужны разные пропорции.
+    expect(localStorage.getItem('vc.workshop.chatWidth.images')).toBe('44')
+    expect(localStorage.getItem('vc.workshop.chatWidth.console')).toBeNull()
+  })
+
+  it('мастерская сворачивает колонку чата и помнит это по поверхности', async () => {
+    await renderSplit('images')
+    const workshop = document.querySelector<HTMLElement>('.workshop-split')!
+    const collapse = screen.getByRole('button', { name: 'Свернуть чат' })
+    await userEvent.click(collapse)
+    expect(workshop).toHaveClass('workshop-split--collapsed')
+    expect(localStorage.getItem('vc.workshop.chatCollapsed.images')).toBe('1')
+    // Свёрнутый чат не размонтирован: черновик и лента переживают сворачивание.
+    expect(document.querySelector('.chat-split-chat')).toBeInTheDocument()
+
+    // Разделитель при свёрнутом чате не тянется — тянуть нечего.
+    const splitter = screen.getByRole('separator', { name: 'Изменить ширину панелей' })
+    splitter.focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(splitter).toHaveAttribute('aria-valuenow', '42')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Показать чат' }))
+    expect(workshop).not.toHaveClass('workshop-split--collapsed')
+    expect(localStorage.getItem('vc.workshop.chatCollapsed.images')).toBe('0')
+  })
+
+  it('мастерская восстанавливает сохранённую ширину чата', async () => {
+    localStorage.setItem('vc.workshop.chatWidth.console', '61')
+    await renderSplit('console-reader')
+    expect(screen.getByRole('separator', { name: 'Изменить ширину панелей' })).toHaveAttribute('aria-valuenow', '61')
+  })
+
   it('console-reader switches mounted chat and PTY panes with accessible mobile tabs', async () => {
     window.matchMedia = ((query: string) => ({
       matches: query === '(max-width: 768px)', media: query, onchange: null,
@@ -1090,8 +1137,8 @@ describe('App — Sidebar в рабочих split-режимах', () => {
     const chatTab = screen.getByRole('tab', { name: 'Чат' })
     const consoleTab = screen.getByRole('tab', { name: 'Консоль' })
     expect(chatTab).toHaveAttribute('aria-selected', 'true')
-    expect(chatTab).toHaveAttribute('aria-controls', 'console-reader-chat-pane')
-    expect(consoleTab).toHaveAttribute('aria-controls', 'console-reader-console-pane')
+    expect(chatTab).toHaveAttribute('aria-controls', 'workshop-chat-pane')
+    expect(consoleTab).toHaveAttribute('aria-controls', 'workshop-side-pane')
     expect(screen.queryByRole('separator')).not.toBeInTheDocument()
 
     await userEvent.click(consoleTab)
