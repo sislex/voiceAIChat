@@ -842,6 +842,22 @@ describe('ci: временная шкала задачи', () => {
     expect(timeline.summary.firstStartedAt).toBeNull()
   })
 
+  it('считает события рана по типу: на этом держится лимит возобновлений', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    const other = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    db.addCiEvent({ projectId: p.id, runId: run.id, type: 'run.infra_error', actorType: 'system', payload: { kind: 'agent_offline' } })
+    db.addCiEvent({ projectId: p.id, runId: run.id, type: 'run.autopilot_infra_resume', actorType: 'system' })
+    db.addCiEvent({ projectId: p.id, runId: run.id, type: 'run.autopilot_infra_resume', actorType: 'system' })
+    // Счётчик привязан к рану: соседний ран той же задачи в него не попадает.
+    db.addCiEvent({ projectId: p.id, runId: other.id, type: 'run.autopilot_infra_resume', actorType: 'system' })
+
+    expect(db.countCiEvents(run.id, 'run.infra_error')).toBe(1)
+    expect(db.countCiEvents(run.id, 'run.autopilot_infra_resume')).toBe(2)
+    expect(db.countCiEvents(other.id, 'run.autopilot_infra_resume')).toBe(1)
+    expect(db.countCiEvents(run.id, 'run.started')).toBe(0)
+  })
+
   it('объединяет пересекающиеся активные интервалы параллельных ранов', () => {
     const { p, task } = project()
     const first = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
