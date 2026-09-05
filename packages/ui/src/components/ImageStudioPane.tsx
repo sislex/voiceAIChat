@@ -365,7 +365,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [dropActive, setDropActive] = useState(false)
   /** Корзина: содержимое подгружается при раскрытии. */
   const [trashOpen, setTrashOpen] = useState(false)
-  const [trash, setTrash] = useState<Array<{ name: string; deletedAt: number }>>([])
+  const [trash, setTrash] = useState<Array<{ name: string; deletedAt: number; size?: number }>>([])
   /** Сколько лежит в корзине — видно до раскрытия, иначе о ней забывают. */
   const [trashCount, setTrashCount] = useState<number | null>(null)
   /** Пресет стиля — добавка к промпту, как размер. */
@@ -710,6 +710,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
    * только по уменьшенной копии превью.
    */
   const [tints, setTints] = useState<Record<string, { r: number; g: number; b: number }>>({})
+  /** Сколько кадров осталось посчитать для порядка «По цвету»; 0 — не считаем. */
+  const [tintProgress, setTintProgress] = useState(0)
+  /** Кадры, у которых средний цвет не посчитался: второй раз не пробуем. */
+  const tintFailed = useRef<Set<string>>(new Set())
   const tintQueue = useRef(false)
   /**
    * Шаблоны промптов: имя → текст с `{переменными}`. Один и тот же каркас
@@ -1395,12 +1399,28 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
    * одновременных `createImageBitmap` подвешивает вкладку сильнее, чем сама
    * сортировка помогает.
    */
+  /**
+   * Сколько кадров ещё считается по цвету. Порядок «По цвету» на сотне файлов
+   * думает несколько секунд (каждый кадр — blob, `createImageBitmap` и канвас),
+   * и всё это время на экране не менялось ничего: человек не понимал, работает
+   * ли сортировка вообще.
+   */
   const ensureTints = (list: ImageStudioFile[]): void => {
     if (tintQueue.current) return
-    const pending = list.filter((file) => !tints[file.path]).slice(0, 24)
+    /**
+     * Файлы, у которых цвет не берётся (svg, битые, отозванный blob), держим
+     * отдельно: без этого партия из одних неудач повторяется на каждом рендере
+     * — а с индикатором прогресса, который сам вызывает рендер, это уже вечный
+     * цикл (вкладка вставала намертво, поймано в браузере).
+     */
+    const pending = list.filter((file) => !tints[file.path] && !tintFailed.current.has(file.path)).slice(0, 24)
     if (!pending.length) return
     tintQueue.current = true
     void (async () => {
+      // Счётчик ставим уже в микротаске: `ensureTints` зовут прямо из тела
+      // рендера, а `setState` в фазе рендера React крутит по кругу — прогон
+      // тестов на этом вставал намертво.
+      setTintProgress(pending.length)
       try {
         const found: Record<string, { r: number; g: number; b: number }> = {}
         await mapWithLimit(pending, 4, async (file) => {
@@ -1417,11 +1437,16 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
               if (tint) found[file.path] = tint
             }
             bitmap.close?.()
-          } catch { /* svg и битые пропускаем: у них цвета не спросить */ }
+          } catch {
+            // svg и битые пропускаем: у них цвета не спросить — и больше не спрашиваем.
+            tintFailed.current.add(file.path)
+          }
+          setTintProgress((left) => Math.max(0, left - 1))
         })
         if (Object.keys(found).length) setTints((prev) => ({ ...prev, ...found }))
       } finally {
         tintQueue.current = false
+        setTintProgress(0)
       }
     })()
   }
@@ -3196,6 +3221,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         reversed={reversed}
         onToggleReversed={() => setReversed((prev) => !prev)}
       />
+      {tintProgress > 0 && <p className="image-studio-progress" role="status">Считаем цвета кадров… осталось {tintProgress}</p>}
       {tintOf && <p className="image-studio-progress" role="status">
         Показаны кадры близкой гаммы к «{tintOf}»{' '}
         <button type="button" className="image-studio-cancel" onClick={() => { setTintOf(null); setVisibleCount(PAGE_SIZE) }}>Показать всё</button>
@@ -3405,6 +3431,27 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           dropMarks(old)
         }, `Удалено навсегда: ${old.length}`)
       })()}>Очистить старше суток</Button>}
+      
+      {trash.length === 0
+        ? <span className="image-studio-dim">Корзина пуста — удалённое хранится здесь 7 дней.</span>
+        : trash.map((item) => <span key={`${item.name}-${item.deletedAt}`} className="image-studio-chip">
+            {/* Возраст рядом с именем: корзина живёт 7 дней, и «сколько ещё
+                осталось» — единственное, что о записи нужно знать. */}
+            {/* Вес — в тултипе рядом с датой: по нему решают, что вернуть, а
+                что добить, когда место в разговоре кончается. */}
+            <span className="image-studio-chip-text" title={`Удалён: ${new Date(item.deletedAt).toLocaleString('ru-RU')}${item.size ? ` · ${formatBytes(item.size)}` : ''}`}>{item.name} <small className="image-studio-dim">{relativeTime(item.deletedAt)}</small></span>
+            <button type="button" className="image-studio-chip-pin" aria-label={`Восстановить ${item.name}`} title="Восстановить" onClick={() => void run(
+              () => api['imgstudio:restore']({ conversationId, name: item.name }),
+              `«${item.name}» восстановлен`
+            )}>↩</button>
+            <button type="button" className="image-studio-chip-pin" aria-label={`Удалить ${item.name} навсегда`} title="Удалить навсегда" onClick={() => void (async () => {
+              if (!(await confirm({ title: `Удалить «${item.name}» навсегда?`, message: 'Восстановить файл после этого будет нельзя.', confirmLabel: 'Удалить навсегда' }))) return
+              await run(async () => {
+                await api['imgstudio:purge']({ conversationId, name: item.name })
+                dropMarks([item.name])
+              }, `«${item.name}» удалён навсегда`)
+            })()}>✕</button>
+          </span>)}
       {trash.length > 0 && <Button size="sm" variant="danger" disabled={busy} title="Удалить содержимое корзины навсегда и освободить место" onClick={() => void (async () => {
         if (!(await confirm({
           title: `Очистить корзину (${trash.length})?`,
@@ -3419,25 +3466,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           setTrashCount(0)
           return removed
         }, 'Корзина очищена')
-      })()}>Очистить корзину ({trash.length})</Button>}
-      {trash.length === 0
-        ? <span className="image-studio-dim">Корзина пуста — удалённое хранится здесь 7 дней.</span>
-        : trash.map((item) => <span key={`${item.name}-${item.deletedAt}`} className="image-studio-chip">
-            {/* Возраст рядом с именем: корзина живёт 7 дней, и «сколько ещё
-                осталось» — единственное, что о записи нужно знать. */}
-            <span className="image-studio-chip-text" title={`Удалён: ${new Date(item.deletedAt).toLocaleString('ru-RU')}`}>{item.name} <small className="image-studio-dim">{relativeTime(item.deletedAt)}</small></span>
-            <button type="button" className="image-studio-chip-pin" aria-label={`Восстановить ${item.name}`} title="Восстановить" onClick={() => void run(
-              () => api['imgstudio:restore']({ conversationId, name: item.name }),
-              `«${item.name}» восстановлен`
-            )}>↩</button>
-            <button type="button" className="image-studio-chip-pin" aria-label={`Удалить ${item.name} навсегда`} title="Удалить навсегда" onClick={() => void (async () => {
-              if (!(await confirm({ title: `Удалить «${item.name}» навсегда?`, message: 'Восстановить файл после этого будет нельзя.', confirmLabel: 'Удалить навсегда' }))) return
-              await run(async () => {
-                await api['imgstudio:purge']({ conversationId, name: item.name })
-                dropMarks([item.name])
-              }, `«${item.name}» удалён навсегда`)
-            })()}>✕</button>
-          </span>)}
+      })()}>Очистить корзину ({trash.length}{trash.reduce((sum, item) => sum + (item.size ?? 0), 0) ? ` · ${formatBytes(trash.reduce((sum, item) => sum + (item.size ?? 0), 0))}` : ''})</Button>}
     </div>}
     {files.length === 0
       ? <div>
