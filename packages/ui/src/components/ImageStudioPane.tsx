@@ -29,6 +29,7 @@ import { ImageStudioBatchBar, type BatchActions } from './ImageStudioBatchBar'
 import { ImageStudioShareBar } from './ImageStudioShareBar'
 import { ImageStudioFilters } from './ImageStudioFilters'
 import { ImageStudioActions } from './ImageStudioActions'
+import { ImageStudioGuide } from './ImageStudioGuide'
 import { ImageStudioDialogs } from './ImageStudioDialogs'
 import { gridWindow, groupDuplicates, inventoryMarkdown, mapWithLimit } from '../lib/imageInventory'
 import { versionFamily } from '../lib/imageVersions'
@@ -405,6 +406,8 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   const [passwordDialog, setPasswordDialog] = useState(false)
   /** Шпаргалка клавиш панели: клавиш стало много, и о них надо где-то сказать. */
   const [keysOpen, setKeysOpen] = useState(false)
+  /** Справочник «что умеет студия»: открывается кнопкой ⓘ в тулбаре. */
+  const [guideOpen, setGuideOpen] = useState(false)
   /**
    * Сохранённые виды: имя → снимок условий отбора и порядка. Семь фильтров и
    * пять сортировок дают слишком много комбинаций, чтобы набирать нужную
@@ -3352,6 +3355,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           else toast.info('Без уведомлений: о готовности скажет заголовок вкладки и короткий сигнал')
         }).catch(() => undefined)}
         onOpenKeys={() => setKeysOpen(true)}
+        onOpenGuide={() => setGuideOpen(true)}
         onOpenMarks={() => {
           // Наборы и виды — такие же браузерные пометки: без них переезд в
           // другой браузер терял всю организацию, а не только звёзды.
@@ -3616,6 +3620,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       }}
     >↑ Наверх</Button>}
 
+    {guideOpen && <ImageStudioGuide onClose={() => setGuideOpen(false)} />}
     {menu && (() => {
       const file = files.find((item) => item.path === menu.path)
       if (!file) return null

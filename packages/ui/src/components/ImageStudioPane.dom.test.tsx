@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import { expectNoViolations } from '../test/a11y'
 import { aspectLabel, groupByDay, highlightParts, ImageStudioPane, matchesQuery, queryTerms, renameError, renamePlan, usualSeconds } from './ImageStudioPane'
+import { IMAGE_STUDIO_GUIDE } from './ImageStudioGuide'
 import type { ImageStudioFile } from '@shared/imageStudio'
 
 /** Мосты панели: галерея в замыкании, как её отдал бы сервер. */
@@ -2558,6 +2559,27 @@ describe('ImageStudioPane', () => {
       const paths = screen.getAllByRole('listitem').map((item) => item.getAttribute('data-path'))
       expect(paths).toEqual(['в.png'])
     })
+  })
+
+  it('справочник «что умеет студия» открывается из тулбара и перечисляет все разделы', async () => {
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    render(<ImageStudioPane conversationId="c1" api={api as never} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Что умеет студия картинок' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Что умеет студия картинок' })
+    // Половина возможностей живёт в меню и раскрытиях — справочник обязан
+    // перечислять их все, а не только то, что видно на экране.
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).length).toBe(IMAGE_STUDIO_GUIDE.length)
+    for (const section of IMAGE_STUDIO_GUIDE) {
+      expect(within(dialog).getByRole('heading', { level: 3, name: section.title })).toBeInTheDocument()
+    }
+    // У каждого снимка есть подпись: без неё читалка объявляет «изображение».
+    const shots = within(dialog).getAllByRole('img')
+    expect(shots.length).toBeGreaterThan(8)
+    for (const shot of shots) expect(shot).toHaveAccessibleName()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Что умеет студия картинок' })).toBeNull())
   })
 
   it('порядок «По цвету» показывает, что цвета ещё считаются', async () => {
