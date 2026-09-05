@@ -33,7 +33,7 @@ import { gridWindow, groupDuplicates, inventoryMarkdown, mapWithLimit } from '..
 import { versionFamily } from '../lib/imageVersions'
 import { averageColor, BIG_FILE_BYTES, colorDistance, colorHue, DOWNSCALE_SIDE, DOWNSCALE_TARGET, promptTemplateFill, promptTemplateVars, rangeBetween, safeUploadName, shouldDownscale } from '../lib/imageIntake'
 import { approxColorCount, extensionMismatch, hasAlphaPixels, notesMarkdown, sniffImageType, versionTree } from '../lib/imageFacts'
-import { IMAGE_STUDIO_COMPOSER_KEY, IMAGE_STUDIO_PAGE_KEY, IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_GRID_BG_KEY, IMAGE_STUDIO_NEGATIVE_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, IMAGE_STUDIO_STYLE_KEY, imageStudioDraftKey, imageStudioNegativeKey, imageStudioNotesKey, imageStudioPinnedKey, imageStudioPromptsKey, imageStudioScrollKey, imageStudioSeenKey, imageStudioSetsKey, imageStudioSizeKey, imageStudioStarsKey, imageStudioFoldedKey, imageStudioRecipesKey, imageStudioStatusKey, imageStudioTemplatesKey, imageStudioStyleKey, imageStudioViewsKey } from '../store/contracts'
+import { IMAGE_STUDIO_COMPOSER_KEY, IMAGE_STUDIO_PAGE_KEY, IMAGE_STUDIO_DENSE_KEY, IMAGE_STUDIO_FILTERS_KEY, IMAGE_STUDIO_FIT_KEY, IMAGE_STUDIO_GRID_BG_KEY, IMAGE_STUDIO_NEGATIVE_KEY, IMAGE_STUDIO_NEGATIVE_OPEN_KEY, IMAGE_STUDIO_NO_TEXT_KEY, IMAGE_STUDIO_ORDER_KEY, IMAGE_STUDIO_SIZE_KEY, IMAGE_STUDIO_STYLE_KEY, imageStudioDraftKey, imageStudioNegativeKey, imageStudioNotesKey, imageStudioPinnedKey, imageStudioPromptsKey, imageStudioScrollKey, imageStudioSeenKey, imageStudioSetsKey, imageStudioSizeKey, imageStudioStarsKey, imageStudioFoldedKey, imageStudioRecipesKey, imageStudioStatusKey, imageStudioTemplatesKey, imageStudioStyleKey, imageStudioViewsKey } from '../store/contracts'
 
 type StudioApi = Pick<RendererApi,
   'imgstudio:list' | 'imgstudio:read' | 'imgstudio:upload' | 'imgstudio:delete' |
@@ -501,7 +501,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   })
   const [recipeName, setRecipeName] = useState('')
   /** Строка фильтров раскрыта (только телефон: на десктопе она видна всегда). */
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(IMAGE_STUDIO_FILTERS_KEY) === '1' } catch { return false }
+  })
   /** Сетка сужена до выбранных: перед пакетным действием пачку проверяют глазами. */
   const [pickedOnly, setPickedOnly] = useState(false)
   /** Отбор по весу: «больше 1 МБ» и «больше 5 МБ» — с чего начинать чистку. */
@@ -621,6 +623,22 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   /** Плотность сетки: крупные карточки для рассматривания, мелкие для обзора. */
   const [dense, setDense] = useState<boolean>(() => {
     try { return localStorage.getItem(IMAGE_STUDIO_DENSE_KEY) === '1' } catch { return false }
+  })
+  /**
+   * Миниатюры по умолчанию обрезаны по квадрату: так сетка ровная. Но баннер
+   * 1200×300 и портрет в такой карточке теряют половину кадра — переключатель
+   * показывает картинку целиком, и выбор запоминается.
+   */
+  const [negativeOpen, setNegativeOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(IMAGE_STUDIO_NEGATIVE_OPEN_KEY) === '1' } catch { return false }
+  })
+  const [fit, setFit] = useState<boolean>(() => {
+    try { return localStorage.getItem(IMAGE_STUDIO_FIT_KEY) === '1' } catch { return false }
+  })
+  const toggleFit = (): void => setFit((current) => {
+    const next = !current
+    try { localStorage.setItem(IMAGE_STUDIO_FIT_KEY, next ? '1' : '0') } catch { /* приватный режим */ }
+    return next
   })
   /**
    * Палитра и гистограмма считаются по пикселям, поэтому листание туда-обратно
@@ -861,6 +879,23 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   }, [])
   // Во время хода ассистента картинки появляются без действий панели.
   usePolling(() => void reload(), { enabled: Boolean(turnActive), intervalMs: 4000 })
+  /**
+   * Возврат во вкладку — обновление списка. Пока ассистент не ведёт ход,
+   * галерея не поллится вовсе, и картинки, добавленные из другого места (второй
+   * вкладки, телефона, соседа по разговору), не появлялись до нажатия «r».
+   * Чаще раза в 10 с не ходим: переключение вкладок туда-сюда — обычное дело.
+   */
+  const lastVisibleReload = useRef(Date.now())
+  useEffect(() => {
+    const onVisible = (): void => {
+      if (document.hidden || turnActive) return
+      if (Date.now() - lastVisibleReload.current < 10_000) return
+      lastVisibleReload.current = Date.now()
+      void reload()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [reload, turnActive])
   // Хвост хода: captureStudioImages дописывает галерею уже после done, и
   // последний поллинг его не застаёт — добираем одним отложенным reload.
   const wasTurnActive = useRef(false)
@@ -2368,7 +2403,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                 onDoubleClick={(event) => { event.stopPropagation(); setViewing(file.path) }}
                 onContextMenu={(event) => {
                   // Правый клик — короткий путь к частым действиям: иконок в
-                  // строке карточки уже восемь, и попадать в них мышью тесно.
+                  // строке карточки четыре, остальное — в этом меню.
                   event.preventDefault()
                   setMenu({ path: file.path, x: event.clientX, y: event.clientY })
                 }}>
@@ -2380,7 +2415,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                     }} />
                   : broken.has(file.path)
                     ? <span className="image-studio-thumb-loading" role="status">превью не загрузилось</span>
-                    : <span className="image-studio-thumb-loading" role="status">…</span>}
+                    : <span className="image-studio-thumb-loading" role="status" aria-label={`Превью ${file.path} загружается`}>
+                        {/* Многоточие в квадрате читалось как «файл битый»;
+                            скелетон повторяет геометрию карточки и объясняет,
+                            что картинка ещё едет. */}
+                        <Skeleton variant="block" height="100%" />
+                      </span>}
                 {fresh.has(file.path) && <span className="image-studio-fresh" aria-label="Новая картинка" title={`Появилась ${relativeTime(file.updatedAt)} — нажмите, чтобы оставить в сетке только новое`} onClick={(event) => { event.stopPropagation(); setFreshOnly(true); setVisibleCount(PAGE_SIZE) }}>новое</span>}
                 {/* Точка «в наборе»: иначе принадлежность подборке видна только
                     в свойствах, и собранный набор легко разобрать случайно. */}
@@ -2455,7 +2495,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                       // Двойной клик по имени — переименовать: так делают все
                       // проводники. Всплытие гасим: на карточке двойной клик
                       // открывает лайтбокс, и без этого случалось и то, и то.
-                      onDoubleClick={(event) => { event.stopPropagation(); event.preventDefault(); setRenaming({ from: file.path, to: file.path }) }} title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}\nОбновлён: ${new Date(file.updatedAt).toLocaleString('ru-RU')} (${relativeTime(file.updatedAt)})${file.tookMs ? `\nСгенерировано за ${Math.round(file.tookMs / 1000)} с` : ''}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${notes[file.path] ? `\nЗаметка: ${notes[file.path]}` : ''}${file.source ? `\nИз: ${file.source}` : ''}\nКлик — скопировать имя`}
+                      onDoubleClick={(event) => { event.stopPropagation(); event.preventDefault(); setRenaming({ from: file.path, to: file.path }) }} title={`${file.path} · ${formatBytes(file.size)}${dimensions[file.path] ? ` · ${dimensions[file.path]}` : ''}\nОбновлён: ${new Date(file.updatedAt).toLocaleString('ru-RU')} (${relativeTime(file.updatedAt)})${file.tookMs ? `\nСгенерировано за ${Math.round(file.tookMs / 1000)} с` : ''}${file.prompt ? `\nПромпт: ${file.prompt}` : ''}${notes[file.path] ? `\nЗаметка: ${notes[file.path]}` : ''}${file.source ? `\nИз: ${file.source}` : ''}\nКлик — скопировать имя, двойной клик — переименовать`}
                       onClick={() => { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) }}
                       onKeyDown={(event) => { if (event.key === 'Enter') { void navigator.clipboard?.writeText(file.path).then(() => toast.success('Имя скопировано')).catch(() => undefined) } }}>
                       {filter.trim()
@@ -2468,6 +2508,10 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                       {/* Предупреждение появляется только у уже прочитанных
                           файлов: специально читать всю галерею ради значка
                           дорого, зато после открытия свойств оно остаётся. */}
+                      {/* Заметка потеряла свою кнопку в ряду действий (он ушёл
+                          в меню), но след о ней остаётся видимым — иначе
+                          заметка снова живёт только в тултипе. */}
+                      {notes[file.path] && <small className="image-studio-dim" title={notes[file.path]} aria-label={`Заметка: ${notes[file.path]}`}> 🗒</small>}
                       {factsCache.current.get(file.path)?.mismatch && <small className="image-studio-warn" title={factsCache.current.get(file.path)?.mismatch ?? ''} aria-label={factsCache.current.get(file.path)?.mismatch ?? ''}> ⚠</small>}
                     </span>
                     <span className="image-studio-card-actions">
@@ -2478,34 +2522,28 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                           }}>⋯</IconButton>
                         : <>
                       <IconButton size="sm" aria-label={stars.has(file.path) ? `Убрать ${file.path} из избранного` : `В избранное ${file.path}`} title={stars.has(file.path) ? 'Убрать из избранного' : 'В избранное'} aria-pressed={stars.has(file.path)} onClick={() => toggleStar(file.path)}>{stars.has(file.path) ? '★' : '☆'}</IconButton>
-                      <IconButton
+                      {!dense && <IconButton
                         size="sm"
                         aria-label={statuses[file.path] === 'ready' ? `${file.path}: готово — снять пометку` : statuses[file.path] === 'draft' ? `${file.path}: черновик — отметить готовым` : `Отметить ${file.path} черновиком`}
                         title={statuses[file.path] === 'ready' ? 'Готово' : statuses[file.path] === 'draft' ? 'Черновик' : 'Готовность: не отмечено'}
                         onClick={() => cycleStatus(file.path)}
-                      >{statuses[file.path] === 'ready' ? '✔' : statuses[file.path] === 'draft' ? '✎' : '◦'}</IconButton>
-                      {/* Заметка была видна только в тултипе имени — то есть
-                          для мыши и по случаю. Значок показывает, что заметка
-                          есть, и открывает её правку одним нажатием. */}
-                      {notes[file.path] && <IconButton size="sm" aria-label={`Заметка ${file.path}: ${notes[file.path]}`} title={notes[file.path]} onClick={() => setNoteFor({ path: file.path, text: notes[file.path] ?? '' })}>🗒</IconButton>}
+                      >{statuses[file.path] === 'ready' ? '✔' : statuses[file.path] === 'draft' ? '✎' : '◦'}</IconButton>}
                       <IconButton size="sm" aria-label={`Открыть ${file.path} в полный размер`} title="В полный размер" onClick={() => setViewing(file.path)}>⛶</IconButton>
-                      {file.prompt && <IconButton size="sm" aria-label={`Показать похожие на ${file.path}`} title="Похожие: тот же промпт" onClick={() => {
-                        // Фильтр ищет и по промпту, поэтому «похожие» — это тот же
-                        // поиск по началу промпта: правки и вариации попадут все.
-                        setFilter(file.prompt!.slice(0, 40))
-                        setVisibleCount(PAGE_SIZE)
-                        filterRef.current?.focus()
-                      }}>≈</IconButton>}
-                      <IconButton size="sm" aria-label={`Нарисовать вариацию ${file.path}`} title="Вариация" disabled={busy} onClick={() => variate(file)}>✦</IconButton>
-
-                      {onAttachToChat && <IconButton size="sm" aria-label={`Прикрепить ${file.path} к сообщению`} title="В сообщение чата" onClick={() => void blobOf(file.path).then((blob) => { onAttachToChat(new File([blob], file.path, { type: blob.type })); toast.success(`«${file.path}» прикреплена к сообщению`) }).catch(() => toast.error('Не удалось прочитать файл'))}>📎</IconButton>}
-                      <IconButton size="sm" aria-label={`Инструменты обработки ${file.path}`} title="Обработка (поворот, зеркало…)" aria-expanded={toolsFor === file.path} onClick={() => setToolsFor(toolsFor === file.path ? null : file.path)}>🛠</IconButton>
-                      <IconButton size="sm" aria-label={`Переименовать ${file.path}`} title="Переименовать" onClick={() => setRenaming({ from: file.path, to: file.path })}>✎</IconButton>
-                      <IconButton size="sm" aria-label={`Удалить ${file.path}`} title="Удалить" onClick={() => void (async () => {
+                      {/* Мелкая карточка — 104 px: там и три иконки тесно, поэтому
+                          готовность и удаление живут только в меню. */}
+                      {!dense && <IconButton size="sm" aria-label={`Удалить ${file.path}`} title="Удалить" onClick={() => void (async () => {
                         if (!(await confirm({ title: `Удалить «${file.path}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return
                         await deleteOne(file.path)
                         if (selected === file.path) setSelected(null)
-                      })()}>✕</IconButton>
+                      })()}>✕</IconButton>}
+                      {/* Круги улучшений довели ряд до десяти иконок, и имя
+                          файла в карточке ужималось до нуля. На виду остаются
+                          четыре частых действия, остальные — в том же меню,
+                          что и на телефоне. */}
+                      <IconButton size="sm" aria-label={`Действия ${file.path}`} title="Ещё действия (клавиша m)" onClick={(event) => {
+                        const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
+                        setMenu({ path: file.path, x: Math.round(box.left), y: Math.round(box.bottom + 4) })
+                      }}>⋯</IconButton>
                         </>}
                     </span>
                   </div>}
@@ -2563,9 +2601,17 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
               </div>
 
   const viewingIndex = viewing ? shown.findIndex((file) => file.path === viewing) : -1
+  /**
+   * Открытый кадр может выпасть из отбора: сузили поиск, включили фильтр,
+   * получили результат обработки. Раньше в этом случае стрелки молчали, а
+   * счётчик «N из M» исчезал — картинка висела в никуда. Листаем по всей
+   * галерее: человек видит именно её, а не отбор.
+   */
+  const viewList = viewingIndex >= 0 ? shown : (files ?? [])
+  const viewListIndex = viewingIndex >= 0 ? viewingIndex : viewList.findIndex((file) => file.path === viewing)
   const viewStep = (delta: number): void => {
-    if (viewingIndex < 0 || !shown.length) return
-    const next = shown[(viewingIndex + delta + shown.length) % shown.length]
+    if (viewListIndex < 0 || !viewList.length) return
+    const next = viewList[(viewListIndex + delta + viewList.length) % viewList.length]
     if (next) setViewing(next.path)
   }
 
@@ -2672,6 +2718,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           })
           return
         }
+        if (event.key.toLowerCase() === 'o') { event.preventDefault(); toggleFit(); return }
         if (event.key.toLowerCase() === 'f' && selected) { event.preventDefault(); toggleStar(selected); return }
         if (event.key.toLowerCase() === 'd' && selected) {
           event.preventDefault()
@@ -2831,6 +2878,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       }
     }}
   >
+    {/* Рамка при перетаскивании говорила «сюда можно», но не говорила, что
+        случится: подсказка называет действие прямо. */}
+    {dropActive && <div className="image-studio-drop-hint" role="status">Отпустите файлы — добавим в галерею</div>}
     <div className="image-studio-toolbar">
       {/* Панель рисования сворачивается: когда разбираешь готовую галерею, поле
           промпта с настройками занимает экран впустую. Баннеры прогресса и
@@ -2950,7 +3000,17 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           <input type="checkbox" checked={noText} onChange={(event) => { setNoText(event.target.checked); try { localStorage.setItem(IMAGE_STUDIO_NO_TEXT_KEY, event.target.checked ? '1' : '0') } catch { /* приватный режим */ } }} />
           без текста
         </label>
-        {!selected && <span className="image-studio-negative">
+        {/* Поле запретов с четырьмя чипами занимало строку композера всегда,
+            хотя заполняют его редко: кнопка показывает, сколько запретов
+            включено, и раскрывает список по требованию. */}
+        {!selected && <Button size="sm" variant="ghost" aria-expanded={negativeOpen} aria-controls="image-studio-negative" title="Чего не должно быть на картинке" onClick={() => setNegativeOpen((prev) => {
+          const next = !prev
+          try { localStorage.setItem(IMAGE_STUDIO_NEGATIVE_OPEN_KEY, next ? '1' : '0') } catch { /* приватный режим */ }
+          return next
+        })}>
+          {negativeOpen ? 'Скрыть запреты' : `Без…${negative.split(',').map((part) => part.trim()).filter(Boolean).length ? ` (${negative.split(',').map((part) => part.trim()).filter(Boolean).length})` : ''}`}
+        </Button>}
+        {!selected && negativeOpen && <span className="image-studio-negative" id="image-studio-negative">
           <input className="image-studio-filename" aria-label="Чего не должно быть на картинке" placeholder="без чего: текст, люди…" value={negative} disabled={busy} onChange={(event) => { setNegative(event.target.value); try { localStorage.setItem(imageStudioNegativeKey(conversationId), event.target.value); localStorage.setItem(IMAGE_STUDIO_NEGATIVE_KEY, event.target.value) } catch { /* приватный режим */ } }} />
           {NEGATIVE_PRESETS.map((preset) => {
             const parts = negative.split(',').map((part) => part.trim()).filter(Boolean)
@@ -3052,15 +3112,17 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       {lastError && !busy && <ErrorState compact message={lastError} {...(lastAttempt ? { onRetry: () => { setLastError(null); lastAttempt() } } : {})} />}
     </div>
 
-    {/* На телефоне десять селектов подряд занимают пол-экрана и оттесняют
-        сетку, поэтому там строка свёрнута в одну кнопку с числом условий. */}
-    {files.length >= 2 && phone && <div className="image-studio-filter">
-      <Button size="sm" variant="ghost" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((prev) => !prev)}>
-        {filtersOpen ? 'Скрыть фильтры' : `Фильтры${activeFilterCount ? ` (${activeFilterCount})` : ''}`}
-      </Button>
-    </div>}
-    {files.length >= 2 && (!phone || filtersOpen) && <div className="image-studio-filter">
+    {/* Шесть селектов отбора подряд читаются как стена — и на телефоне они
+        занимали пол-экрана. Ящик «Отбор» свёрнут по умолчанию: включённые
+        условия видно чипами, а поиск, порядок и группы остаются на виду. */}
+    {files.length >= 2 && <div className="image-studio-filter">
       <ImageStudioFilters
+        expanded={filtersOpen}
+        onToggleExpanded={() => setFiltersOpen((prev) => {
+          const next = !prev
+          try { localStorage.setItem(IMAGE_STUDIO_FILTERS_KEY, next ? '1' : '0') } catch { /* приватный режим */ }
+          return next
+        })}
         showSearch={files.length >= FILTER_THRESHOLD}
         searchRef={filterRef}
         query={filter}
@@ -3126,15 +3188,13 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         conditions={activeFilterCount ? viewSummary(currentView()) : null}
         shown={shown.length}
         total={files.length}
-        orderLabel={`${order === 'new' ? 'Сначала новые' : order === 'name' ? 'По имени' : order === 'size' ? 'По размеру' : order === 'pixels' ? 'По разрешению' : order === 'stars' ? 'Сначала избранные' : order === 'noted' ? 'Сначала с заметками' : 'Сначала готовые'}${reversed ? ' ↑' : ''}`}
-        // Shift+клик разворачивает нынешний порядок вместо перехода к следующему:
-        // «по имени наоборот» иначе недостижимо вовсе.
-        onOrderNext={(reverse) => {
-          if (reverse) { setReversed((prev) => !prev); return }
-          const next = order === 'new' ? 'name' : order === 'name' ? 'size' : order === 'size' ? 'pixels' : order === 'pixels' ? 'stars' : order === 'stars' ? 'ready' : order === 'ready' ? 'noted' : order === 'noted' ? 'tint' : 'new'
-          setOrder(next)
+        order={order}
+        onOrder={(next) => {
+          setOrder(next as typeof order)
           try { localStorage.setItem(IMAGE_STUDIO_ORDER_KEY, next) } catch { /* приватный режим */ }
         }}
+        reversed={reversed}
+        onToggleReversed={() => setReversed((prev) => !prev)}
       />
       {tintOf && <p className="image-studio-progress" role="status">
         Показаны кадры близкой гаммы к «{tintOf}»{' '}
@@ -3173,6 +3233,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         hasPrompts={shown.some((file) => file.prompt)}
         gridBg={gridBg}
         dense={dense}
+        fit={fit}
         starsOnly={starsOnly}
         trashCount={trashCount ?? 0}
         trashOpen={trashOpen}
@@ -3203,6 +3264,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           try { localStorage.setItem(IMAGE_STUDIO_GRID_BG_KEY, next) } catch { /* приватный режим */ }
           return next
         })}
+        onToggleFit={toggleFit}
         onToggleDense={() => setDense((prev) => {
           const next = !prev
           try { localStorage.setItem(IMAGE_STUDIO_DENSE_KEY, next ? '1' : '0') } catch { /* приватный режим */ }
@@ -3379,7 +3441,9 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
     </div>}
     {files.length === 0
       ? <div>
-          <EmptyState title="Галерея пуста — нарисуйте первую картинку" description="Опишите её в поле выше, перетащите файлы сюда или попросите ассистента в чате слева: всё нарисованное попадает сюда." />
+          {/* Пустая галерея объясняла три способа наполнить её, но ни один
+              нельзя было запустить отсюда — кнопка ведёт к самому быстрому. */}
+          <EmptyState title="Галерея пуста — нарисуйте первую картинку" description="Опишите её в поле выше, перетащите файлы сюда или попросите ассистента в чате слева: всё нарисованное попадает сюда." actionLabel="Загрузить с диска" onAction={() => uploadRef.current?.click()} />
           <div className="image-studio-recent image-studio-examples" aria-label="Примеры промптов">
             {PROMPT_EXAMPLES.map((example) => <button key={example} type="button" className="image-studio-chip" onClick={() => { setPrompt(example); promptRef.current?.focus() }}>{example}</button>)}
           </div>
@@ -3418,12 +3482,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
                       Выбрать группу
                     </Button>}
                   </h3>
-                  {!folded && <div className={`image-studio-grid image-studio-bg--${gridBg}${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label={`Галерея изображений: ${group.title.toLowerCase()}`}>
+                  {!folded && <div className={`image-studio-grid image-studio-bg--${gridBg}${dense ? ' image-studio-grid--dense' : ''}${fit ? ' image-studio-grid--fit' : ''}`} role="list" aria-label={`Галерея изображений: ${group.title.toLowerCase()}`}>
                     {group.files.map(renderCard)}
                   </div>}
                 </section>
               })
-            : <div ref={gridRef} className={`image-studio-grid image-studio-bg--${gridBg}${dense ? ' image-studio-grid--dense' : ''}`} role="list" aria-label="Галерея изображений" aria-busy={busy || undefined}>
+            : <div ref={gridRef} className={`image-studio-grid image-studio-bg--${gridBg}${dense ? ' image-studio-grid--dense' : ''}${fit ? ' image-studio-grid--fit' : ''}`} role="list" aria-label="Галерея изображений" aria-busy={busy || undefined}>
                 {progress && <div role="listitem" className="image-studio-card image-studio-card--ghost" aria-hidden="true">
                   <div className="image-studio-thumb image-studio-thumb--ghost"><Skeleton item="block" height={120} /></div>
                   <span className="image-studio-name">{progress.label}…</span>
@@ -3448,7 +3512,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           >
             {files.length === 1 ? '1 файл' : `Файлов: ${files.length}`}
             {shown.length !== files.length ? ` · отобрано ${shown.length}` : ''}
-            {multi?.size ? ` · выбрано ${multi.size}` : ''}
+            {multi?.size ? ` · выбрано ${multi.size} (${formatBytes(files.filter((file) => multi.has(file.path)).reduce((sum, file) => sum + file.size, 0))})` : ''}
             {' · '}занято {formatBytes(usedBytes)} из {formatBytes(IMAGE_STUDIO_LIMITS.maxConversationBytes)}
             {/* Пока превью грузятся, сетка выглядит наполовину пустой — счётчик
                 объясняет, что это не ошибка. */}
@@ -3546,6 +3610,16 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
           ? item(`Все версии (${versionFamily(files, file.path).length})`, () => { setFamilyOf(file.path); setVisibleCount(PAGE_SIZE) })
           : null}
         {item(notes[file.path] ? 'Изменить заметку' : 'Заметка…', () => setNoteFor({ path: file.path, text: notes[file.path] ?? '' }))}
+        {onAttachToChat ? item('В сообщение чата', () => void blobOf(file.path).then((blob) => {
+          onAttachToChat(new File([blob], file.path, { type: blob.type }))
+          toast.success(`«${file.path}» прикреплена к сообщению`)
+        }).catch(() => toast.error('Не удалось прочитать файл'))) : null}
+        {file.prompt ? item('Похожие: тот же промпт', () => {
+          setFilter(file.prompt!.slice(0, 40))
+          setVisibleCount(PAGE_SIZE)
+          filterRef.current?.focus()
+        }) : null}
+        {item('Вариация', () => variate(file))}
         {item('Три вариации подряд', () => variateSeries(file, 3))}
         {item('Дубликат', () => duplicate(file))}
         {item('Переименовать', () => setRenaming({ from: file.path, to: file.path }))}
@@ -3739,7 +3813,7 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
       compareWith={compareWith}
       {...(compareGrid ? { compareGrid } : {})}
       formatBytes={formatBytes}
-      canStep={shown.length > 1}
+      canStep={viewList.length > 1}
       onCompareChange={setCompare}
       onView={setViewing}
       onStep={viewStep}
@@ -3837,12 +3911,12 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
         await api['imgstudio:upload']({ conversationId, path: name, dataBase64: btoa(binary), source: path })
         setViewing(name)
       }, 'Разметка сохранена новым файлом')}
-      position={viewingIndex >= 0 ? { index: viewingIndex, total: shown.length } : undefined}
+      position={viewListIndex >= 0 ? { index: viewListIndex, total: viewList.length } : undefined}
       onDelete={(path) => void (async () => {
         if (!(await confirm({ title: `Удалить «${path}»?`, message: 'Восстановить изображение будет нельзя.', confirmLabel: 'Удалить' }))) return
         // После удаления открываем соседний файл, а не пустой лайтбокс.
-        const rest = shown.filter((file) => file.path !== path)
-        setViewing(rest[Math.min(viewingIndex, rest.length - 1)]?.path ?? null)
+        const rest = viewList.filter((file) => file.path !== path)
+        setViewing(rest[Math.min(Math.max(viewListIndex, 0), rest.length - 1)]?.path ?? null)
         if (selected === path) setSelected(null)
         await run(() => api['imgstudio:delete']({ conversationId, path }), 'Удалено')
       })()}
