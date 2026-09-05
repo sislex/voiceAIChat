@@ -1467,6 +1467,7 @@ describe('TaskModal — подготовка к разработке', () => {
       onChanged: vi.fn(() => () => {}), onConnected: vi.fn(() => () => {}),
       onPreparationRunUpdated: vi.fn((cb) => { preparationUpdated = cb; return offUpdate }),
       onTaskRepositoriesUpdated: vi.fn(() => () => {}),
+      onQaStageUpdated: vi.fn(() => () => {}),
       onReconnect: vi.fn((cb) => { reconnected = cb; return offReconnect })
     }
     const load = vi.fn(async () => [run('waiting_for_answer')])

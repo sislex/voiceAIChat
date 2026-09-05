@@ -30,6 +30,8 @@ export interface IntegrationTestRunnerDeps {
   timeoutMs?: number
   now?: () => number
   boardChanged?: (projectId: string) => void
+  /** Адресная инвалидация панели этапа: без неё она опрашивала бы состояние по таймеру. */
+  qaStageChanged?: (projectId: string, taskId: string) => void
   completed?: (runId: string, userId: string, passed: boolean, reason: string) => void
 }
 
@@ -54,13 +56,14 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         deps.db.markIntegrationTestRunning(runId)
         deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
       }
-      if (run) deps.boardChanged?.(run.projectId)
+      if (run) { deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) }
       return
     }
     const controller = new AbortController()
     controllers.set(runId, controller)
     deps.db.markIntegrationTestRunning(runId)
     deps.boardChanged?.(run.projectId)
+    deps.qaStageChanged?.(run.projectId, run.taskId)
     void (async () => {
       const startedAt = now(), deadline = startedAt + budgetMs, total = context.commands.length
       const commands: IntegrationTestCommandResult[] = []
@@ -163,7 +166,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
     })().catch((error) => {
       const current = deps.db.getIntegrationTestRun(userId, runId)
       if (current?.status === 'running') deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
-    }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId) })
+    }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) })
   }
   return { launch, cancel: (runId) => controllers.get(runId)?.abort() }
 }
