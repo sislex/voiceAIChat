@@ -11,7 +11,7 @@
 // стрелки — выбрать место, Enter — положить, Esc — отмена; каждый шаг
 // проговаривается в aria-live. Колонка = статус.
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
 import { kanbanFilterKey } from '../../store/contracts'
@@ -295,16 +295,29 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const compact = useMediaQuery(MOBILE_QUERY)
   const { loading, members } = props
   const confirm = useConfirm()
-  // Очередь «Улучшения»: по одной карточке на предложение. Перечитывается вместе
-  // с доской — сервер шлёт board.changed после создания задачи и удаления.
+  // Очередь «Улучшения»: по одной карточке на предложение. Читается один раз на
+  // проект и дальше только по адресному кадру `project.improvements.updated`.
+  // Раньше эффект висел на ссылках `props.board`/`props.ciSummaries`, а доска
+  // обновляется на каждое движение любой задачи: активный ран давал столько же
+  // запросов `/improvements`, сколько запросов доски (замерено на стенде).
   const [improvements, setImprovements] = useState<ProjectImprovement[]>([])
   const [openImprovementId, setOpenImprovementId] = useState<string | null>(null)
   const improvementsProjectId = props.board?.columns[0]?.projectId ?? props.board?.tasks[0]?.projectId
-  const reloadImprovements = (): void => {
+  const reloadImprovements = useCallback((): void => {
     if (!improvementsProjectId || !window.ci?.listProjectImprovements) { setImprovements([]); return }
     void window.ci.listProjectImprovements(improvementsProjectId).then(setImprovements).catch(() => {})
-  }
-  useEffect(reloadImprovements, [props.board, props.ciSummaries, improvementsProjectId])
+  }, [improvementsProjectId])
+  useEffect(reloadImprovements, [reloadImprovements])
+  useEffect(() => {
+    if (!improvementsProjectId) return
+    const bridge = window.board
+    const off = bridge?.onImprovementsUpdated?.((event) => {
+      if (event.projectId === improvementsProjectId) reloadImprovements()
+    })
+    // Пропущенные за обрыв события догоняем полной сверкой.
+    const offReconnect = bridge?.onReconnect?.(() => reloadImprovements())
+    return () => { off?.(); offReconnect?.() }
+  }, [improvementsProjectId, reloadImprovements])
   const openImprovement = openImprovementId ? improvements.find((item) => item.id === openImprovementId) ?? null : null
   const [showHidden, setShowHidden] = useState(false)
   const [internalShowCompleted, setInternalShowCompleted] = useState(false)

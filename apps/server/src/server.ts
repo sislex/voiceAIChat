@@ -1932,6 +1932,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     db,
     executor: ciExecutor,
     boardChanged: emitBoard,
+    improvementsChanged: (projectId) => boardHub.emitImprovements(projectId),
     // Боевой исполнитель не ждёт reconnect агента; тестовый executor сам задаёт
     // доступность и не зависит от реестра WebSocket.
     isAgentOnline: opts.ciExecutor ? undefined : (agentId) => agentRegistry.isOnline(agentId),
@@ -1970,7 +1971,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
   ciRunManagerRef.current = ciRunManager
-  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId))
+  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId), (projectId) => boardHub.emitImprovements(projectId))
 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
@@ -2096,17 +2097,17 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if (handled && !handled.decisionRequired) ciRunManager.start(userId, run.projectId, run.taskId, { mode: 'development' })
     emitBoard(run.projectId)
   }
-  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,completed:(runId,userId,passed,reason)=>{
+  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'component_qa'}),completed:(runId,userId,passed,reason)=>{
     const run=db.getComponentQaRun(userId,runId);if(!run)return
     if(passed){try{db.completeComponentQaRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'component_qa',error instanceof Error?error.message:String(error))}}
     else onAutoPilotFailure(runId,userId,'component_qa',reason)
   }})
-  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:emitBoard,completed:(runId,userId,passed,reason,classification)=>{
+  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'integration_tests'}),completed:(runId,userId,passed,reason,classification)=>{
     const run=db.getIntegrationTestRun(userId,runId);if(!run)return
     if(passed){try{db.completeIntegrationTestRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'integration_tests',error instanceof Error?error.message:String(error))}}
     else onAutoPilotFailure(runId,userId,'integration_tests',reason,{classification:classification??null})
   }})
-  const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,scenarioRunner:automatedQaScenarioRunner,boardChanged:emitBoard,completed:(runId,userId,passed,reason,verdict)=>{
+  const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,scenarioRunner:automatedQaScenarioRunner,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'automated_qa'}),completed:(runId,userId,passed,reason,verdict)=>{
     if(passed)return
     onAutoPilotFailure(runId,userId,'automated_qa',reason,{classification:verdict?.classification??null,remarks:verdict?automatedQaRemarks(verdict):''})
   }})
@@ -2266,7 +2267,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   }, AUTOPILOT_SWEEP_MS)
   autoPilotTimer.unref?.()
   app.addHook('onClose', async () => clearInterval(autoPilotTimer))
-  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id),automatedQaScreenshotDir)
+  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id),automatedQaScreenshotDir,(projectId,taskId,stage)=>boardHub.emitQaStage({projectId,taskId,stage}))
 
   // Запуск работ ассистентом и оркестратором идёт теми же путями, что кнопки в
   // UI: очередь, изоляция директорий и проверки готовности живут в менеджерах.
@@ -2425,7 +2426,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         getBoard: (projectId, includeCompleted) => db.getBoard(user.name, projectId, { includeCompleted }),
         subscribe: (cb) => boardHub.onChange(cb),
         subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
-        subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb)
+        subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb),
+        subscribeQaStages: (cb) => boardHub.onQaStageChange(cb),
+        subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb)
       },
       preparationNotifications: {
         canAccess: (projectId) => db.getProject(user.name, projectId) !== null,

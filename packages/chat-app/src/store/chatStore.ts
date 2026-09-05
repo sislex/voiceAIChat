@@ -517,7 +517,25 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     return all.filter((item) => item.projectId != null && selected.has(item.projectId))
   }
 
+  /**
+   * Параллельные запросы списка схлопываем: на старте его просили и bootstrap, и
+   * синхронизация проектов сайдбара — сервер отдавал один и тот же ответ трижды.
+   * Ключ учитывает поиск и показ завершённых: с разными параметрами это разные
+   * списки, и склеивать их нельзя.
+   */
+  let conversationsFlight: { key: string; promise: Promise<void> } | null = null
+
   async function refreshConversations(
+    options: { keepActiveListed?: boolean } = {}
+  ): Promise<void> {
+    const key = `${getState().searchQuery.trim()}|${getState().showDoneTaskChats}|${options.keepActiveListed === true}`
+    if (conversationsFlight?.key === key) return conversationsFlight.promise
+    const promise = runRefreshConversations(options)
+    conversationsFlight = { key, promise }
+    try { await promise } finally { if (conversationsFlight?.promise === promise) conversationsFlight = null }
+  }
+
+  async function runRefreshConversations(
     { keepActiveListed = false }: { keepActiveListed?: boolean } = {}
   ): Promise<void> {
     const seq = ++conversationsSeq
@@ -572,7 +590,17 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }, CONVERSATIONS_REFRESH_DEBOUNCE_MS)
   }
 
+  /** Бейджи тянутся следом за каждым списком — параллельные вызовы схлопываем. */
+  let badgesFlight: Promise<void> | null = null
+
   async function loadTaskChatBadges(): Promise<void> {
+    if (badgesFlight) return badgesFlight
+    const flight = runLoadTaskChatBadges()
+    badgesFlight = flight
+    try { await flight } finally { if (badgesFlight === flight) badgesFlight = null }
+  }
+
+  async function runLoadTaskChatBadges(): Promise<void> {
     try {
       const badges = await client['conversations:taskChats']()
       if (core.disposed()) return
