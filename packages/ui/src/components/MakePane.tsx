@@ -19,6 +19,7 @@ import { MAKE_SNAPSHOT_PREVIEW } from '@shared/make'
 import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
+import { MakeProjectComponents } from './MakeProjectComponents'
 import { CodeEditor, PHONE_EDITOR_QUERY, type EditorSelection } from './CodeEditor'
 import { useMediaQuery } from '../lib/mediaQuery'
 import { CodeDiff } from './CodeDiff'
@@ -57,7 +58,10 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks'
+  | 'projects:gitWorkspaces' | 'projects:components' | 'projects:componentStories'
+  | 'projects:storybookSession' | 'projects:storybookAction'
+  | 'projects:gitFile' | 'projects:gitSaveFile' | 'projects:componentTicket'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -85,12 +89,17 @@ export interface MakePaneProps {
   ensurePreview?: () => Promise<boolean>
   /** Открыть карточку связанной задачи на доске (диалог «Задачи проекта»). */
   onOpenTask?: (projectId: string, taskId: string) => void
+  /**
+   * Проект чата. Есть проект — появляется вкладка «Проект»: компоненты реального
+   * репозитория из рабочей копии на машине и Storybook проекта.
+   */
+  projectId?: string | null
   /** Задержка автосохранения; тесты уменьшают. */
   autosaveDelayMs?: number
 }
 
-type Mode = 'preview' | 'code' | 'stories' | 'history'
-const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Код', stories: 'Компоненты', history: 'История' }
+type Mode = 'preview' | 'code' | 'stories' | 'project' | 'history'
+const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Код', stories: 'Компоненты', project: 'Проект', history: 'История' }
 type Device = 'desktop' | 'tablet' | 'mobile' | 'all'
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390, all: null }
 const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон', all: 'Три ширины рядом' }
@@ -116,7 +125,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, lastRequest = null, previewBase, ensurePreview, onOpenTask, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, lastRequest = null, previewBase, ensurePreview, onOpenTask, projectId = null, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -1256,7 +1265,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const header = (
     <div className="make-head" role="toolbar" aria-label="Панель проекта">
       <div className="make-tabs" role="tablist" aria-label="Режим панели">
-        {(['preview', 'code', 'stories', 'history'] as Mode[]).map((m) => (
+        {(['preview', 'code', 'stories', ...(projectId ? ['project' as Mode] : []), 'history'] as Mode[]).map((m) => (
           <button key={m} type="button" role="tab" aria-selected={mode === m} className={mode === m ? 'make-tab on' : 'make-tab'} onClick={() => setMode(m)}>
             {MODE_LABEL[m]}
           </button>
@@ -1829,6 +1838,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             )}
           </div>
         </div>
+      )}
+
+      {mode === 'project' && projectId && (
+        <MakeProjectComponents
+          projectId={projectId}
+          api={api}
+          ensurePreview={ensurePreview ? async () => { await ensurePreview() } : undefined}
+          onOpenTask={onOpenTask}
+          onInsertToChat={onInsertToChat}
+        />
       )}
 
       {mode === 'history' && (

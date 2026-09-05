@@ -50,6 +50,9 @@ import { createAgentWatchdog } from './agents/watchdog.js'
 import { createCommandGate } from './agents/commandGate.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
+import { registerProjectComponentsRoutes } from './routes/projectComponents.js'
+import { StorybookSessions } from './components/storybookSessions.js'
+import { ComponentTicketService } from './components/componentTicket.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 import type { GeoResolver } from '@voicechat/sessions-core'
 import { SessionHub } from './users/sessionHub.js'
@@ -1754,7 +1757,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
-  registerProjectGitRoutes(app, new GitWorkspaceService({
+  const gitWorkspaces = new GitWorkspaceService({
     db,
     runtime: {
       exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
@@ -1766,7 +1769,28 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       nameOf: (agentId) => agentRegistry.nameOf(agentId)
     },
     gate: commandGate
-  }))
+  })
+  registerProjectGitRoutes(app, gitWorkspaces)
+
+  // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.
+  // Сессии живут в памяти процесса — перезапуск сервера оставляет dev-сервер сиротой,
+  // поэтому панель показывает «остановлен» и предлагает запустить заново.
+  const storybookSessions = new StorybookSessions({
+    registry: {
+      ptyStart: (agentId, ptyId, cols, rows, cwd, emit) => agentRegistry.ptyStart(agentId, ptyId, cols, rows, cwd, emit),
+      ptyInput: (ptyId, data) => agentRegistry.ptyInput(ptyId, data),
+      ptyKill: (ptyId) => agentRegistry.ptyKill(ptyId),
+      ptyLive: (ptyId) => agentRegistry.ptyLive(ptyId),
+      http: (agentId, request) => agentRegistry.http(agentId, request),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      nameOf: (agentId) => agentRegistry.nameOf(agentId)
+    }
+  })
+  registerProjectComponentsRoutes(app, {
+    git: gitWorkspaces,
+    storybook: storybookSessions,
+    tickets: new ComponentTicketService({ db, git: gitWorkspaces })
+  })
   const featurePreviews = new FeaturePreviewManager({
     db,
     executor: ciExecutor,
