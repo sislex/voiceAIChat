@@ -371,6 +371,28 @@ describe('студия картинок: OG-мета публичной стра
   })
 })
 
+describe('студия картинок: пароль публичной галереи', () => {
+  it('перебор пароля упирается в лимит попыток', async () => {
+    await store.writeBuffer(convId, 'тайна.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: 'верный' } })).json() as { url: string }
+    const token = pub.url.split('/').filter(Boolean)[1]!
+
+    // Десять промахов — это ещё редирект «пароль не подошёл».
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const miss = await app.inject({ method: 'POST', url: `/g/${token}/__auth__`, payload: { password: 'мимо' } })
+      expect(miss.statusCode).toBe(302)
+    }
+    // Одиннадцатая попытка — отказ со сроком ожидания: иначе пароль просто перебирают.
+    const blocked = await app.inject({ method: 'POST', url: `/g/${token}/__auth__`, payload: { password: 'мимо' } })
+    expect(blocked.statusCode).toBe(429)
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
+    expect(blocked.body).toContain('Слишком много попыток')
+
+    // Даже верный пароль ждёт окончания окна — счёт идёт по попыткам, а не по промахам.
+    expect((await app.inject({ method: 'POST', url: `/g/${token}/__auth__`, payload: { password: 'верный' } })).statusCode).toBe(429)
+  })
+})
+
 describe('студия картинок: публичная страница', () => {
   it('от дюжины файлов появляется поиск по имени, вес галереи — в заголовке', async () => {
     for (let index = 0; index < 12; index += 1) await store.writeBuffer(convId, `кадр-${index}.png`, PNG_BYTES)
@@ -382,6 +404,17 @@ describe('студия картинок: публичная страница', (
     expect(page.body).toContain('data-name="кадр-0.png"')
     expect(page.body).toContain('12 файлов')
     expect(page.body).toContain('<main class="grid">')
+  })
+
+  it('поле пароля названо для читалки, а не только placeholder', async () => {
+    await store.writeBuffer(convId, 'тайна.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: 'слово' } })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url })
+
+    expect(page.statusCode).toBe(401)
+    // Placeholder читалка подписью не считает — поле оставалось безымянным.
+    expect(page.body).toContain('aria-label="Пароль галереи"')
+    expect(page.body).toContain('autocomplete="current-password"')
   })
 
   it('маленькой галерее поиск не нужен', async () => {
