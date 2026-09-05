@@ -121,7 +121,7 @@ export interface CiFixContext extends CiModelContext {
  * прервана (план отклонён пользователем или ран отменён): слот «после» и резюме
  * не запускаются.
  */
-export type CiModelWorkHook = (ctx: CiModelContext) => Promise<{ ok: boolean; cancelled?: boolean }>
+export type CiModelWorkHook = (ctx: CiModelContext) => Promise<{ ok: boolean; cancelled?: boolean; error?: string }>
 /** Хук «резюме модели». */
 export type CiModelSummaryHook = (ctx: CiModelContext) => Promise<string>
 /**

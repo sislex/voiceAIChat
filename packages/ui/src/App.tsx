@@ -27,7 +27,7 @@ import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
-import { KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY } from './store/contracts'
+import { IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY } from './store/contracts'
 import { Sidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -42,15 +42,16 @@ import { PersonalizationPage } from './components/SettingsPage'
 import type { TaskUpdateFields } from './components/kanban/TaskModal'
 import { ReleaseCenter } from './components/releases/ReleaseCenter'
 import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
-import { KanbanAssistant, ProjectAssistantChatSelector } from './components/KanbanAssistant'
+import { KanbanAssistant } from './components/KanbanAssistant'
 import { CiCommands } from './components/ci/CiCommands'
 import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
+import { SidebarToggle } from './components/ui/IconButton'
 import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
-import { Button, Dialog, IconButton } from '@voicechat/ui-kit'
+import { Button, Dialog, EmptyState, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
 import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
@@ -110,6 +111,10 @@ function deviceLabel(userAgent: string): string {
 }
 
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
+const CONSOLE_READER_DEFAULT_CHAT_WIDTH = 42
+const CONSOLE_READER_MIN_PERCENT = 25
+const CONSOLE_READER_MAX_PERCENT = 75
+const CONSOLE_READER_KEYBOARD_STEP = 2
 
 // Окно сессий открывают редко, а тянет оно весь модуль устройств — грузим по
 // требованию, чтобы основной бандл не рос из-за диалога в меню аккаунта.
@@ -118,6 +123,10 @@ const SessionsDialogHost = lazy(async () => {
   return { default: module.SessionsDialogHost }
 })
 
+const ImageStudioPane = lazy(async () => {
+  const module = await import('./components/ImageStudioPane')
+  return { default: module.ImageStudioPane }
+})
 const UsersAdmin = lazy(async () => {
   const module = await import('@voicechat/admin-app')
   return { default: module.UsersAdmin }
@@ -379,9 +388,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const inConsoleReader = segments[0] === 'console-reader'
   const routeConsoleReaderChatId = inConsoleReader ? (segments[1] ?? null) : null
   const inMake = segments[0] === 'make'
+  const inImageStudio = segments[0] === 'images'
   const routeMakeChatId = inMake ? (segments[1] ?? null) : null
+  const routeImageStudioChatId = inImageStudio ? (segments[1] ?? null) : null
   // Любой полноэкранный split-режим «чат | панель справа».
-  const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake
+  const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake || inImageStudio
   // Console и Make сохраняют полноэкранную рабочую область, но используют общий
   // Sidebar. Reader-режимы по-прежнему изолированы от оболочки навигации.
   const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
@@ -501,6 +512,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [gitWorkspaces, setGitWorkspaces] = useState<{ items: GitWorkspaceRef[]; status: LoadStatus; error: string | null }>({ items: [], status: 'idle', error: null })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
+  const [consoleChatWidth, setConsoleChatWidth] = useState(CONSOLE_READER_DEFAULT_CHAT_WIDTH)
+  const [consoleResizing, setConsoleResizing] = useState(false)
+  const consoleSplitRef = useRef<HTMLDivElement | null>(null)
+  const consoleDividerRef = useRef<HTMLDivElement | null>(null)
+  const consolePointerIdRef = useRef<number | null>(null)
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
   // Открытый файл/выделение в Make — уходит вместе с сообщением (п.21).
   const [makeEditorContext, setMakeEditorContext] = useState<EditorContextPayload | null>(null)
@@ -651,6 +667,49 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
   }
+  const clampConsoleChatWidth = useCallback((percent: number): number => {
+    const width = consoleSplitRef.current?.getBoundingClientRect().width ?? 0
+    const pixelMin = width > 0 ? (360 / width) * 100 : CONSOLE_READER_MIN_PERCENT
+    const pixelMax = width > 0 ? ((width - 320 - 12) / width) * 100 : CONSOLE_READER_MAX_PERCENT
+    const lower = Math.min(CONSOLE_READER_MAX_PERCENT, Math.max(CONSOLE_READER_MIN_PERCENT, pixelMin))
+    const upper = Math.max(lower, Math.min(CONSOLE_READER_MAX_PERCENT, pixelMax))
+    return Math.min(upper, Math.max(lower, percent))
+  }, [])
+  const setConsoleChatPercent = useCallback((percent: number): void => {
+    setConsoleChatWidth(clampConsoleChatWidth(percent))
+  }, [clampConsoleChatWidth])
+  const stopConsoleResize = useCallback((): void => {
+    const pointerId = consolePointerIdRef.current
+    const divider = consoleDividerRef.current
+    consolePointerIdRef.current = null
+    setConsoleResizing(false)
+    if (pointerId !== null && divider?.hasPointerCapture(pointerId)) divider.releasePointerCapture(pointerId)
+  }, [])
+  useEffect(() => {
+    if (!consoleResizing) return
+    const move = (event: PointerEvent): void => {
+      const rect = consoleSplitRef.current?.getBoundingClientRect()
+      if (!rect?.width) return
+      event.preventDefault()
+      setConsoleChatPercent(((event.clientX - rect.left) / rect.width) * 100)
+    }
+    const stopOnHidden = (): void => { if (document.hidden) stopConsoleResize() }
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', stopConsoleResize, true)
+    window.addEventListener('pointercancel', stopConsoleResize, true)
+    window.addEventListener('blur', stopConsoleResize)
+    document.addEventListener('visibilitychange', stopOnHidden)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stopConsoleResize, true)
+      window.removeEventListener('pointercancel', stopConsoleResize, true)
+      window.removeEventListener('blur', stopConsoleResize)
+      document.removeEventListener('visibilitychange', stopOnHidden)
+    }
+  }, [consoleResizing, setConsoleChatPercent, stopConsoleResize])
+  useEffect(() => {
+    if (!inConsoleReader) stopConsoleResize()
+  }, [inConsoleReader, stopConsoleResize])
   useEffect(() => {
     let active = true
     void api['app:ping']().then((value) => { if (active) setRelease(value) }).catch(() => undefined)
@@ -899,13 +958,17 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [machineConnectOpen, setMachineConnectOpen] = useState(false)
   const [machineConnectStatus, setMachineConnectStatus] = useState('Подключите устройство, чтобы продолжить действие.')
   const [machineConnectBusy, setMachineConnectBusy] = useState(false)
+  const [machineDownloadBusy, setMachineDownloadBusy] = useState(false)
+  const machineConnectGeneration = useRef(0)
   const machineActionGuard = useRef(createMachineRequiredGuard(() => setMachineConnectOpen(true)))
   const requireMachine = useCallback((action: () => void): void => {
-    setMachineConnectStatus('Подключите устройство, чтобы продолжить действие.')
+    setMachineConnectStatus('Откройте приложение подключения или добавьте новое устройство по ссылке.')
+    setMachineDownloadBusy(false)
     machineActionGuard.current.require(operations.agents.some((agent) => agent.online), action)
   }, [operations.agents])
-  const finishPendingMachineAction = useCallback(async (agentId?: string): Promise<boolean> => {
+  const finishPendingMachineAction = useCallback(async (generation: number, agentId?: string): Promise<boolean> => {
     const agents = await api['agents:list']()
+    if (generation !== machineConnectGeneration.current || !machineActionGuard.current.pending()) return false
     operationsActions.applyAgents(agents)
     const connectedAgent = agentId
       ? agents.find((agent) => agent.id === agentId && agent.online)
@@ -913,47 +976,56 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!connectedAgent) return false
     if (settingsState.settings.defaultAgentId !== connectedAgent.id) {
       await settingsActions.updateSettings({ defaultAgentId: connectedAgent.id })
+      if (generation !== machineConnectGeneration.current || !machineActionGuard.current.pending()) return false
     }
     setMachineConnectOpen(false)
     setMachineConnectBusy(false)
+    machineConnectGeneration.current += 1
     machineActionGuard.current.resume()
     return true
   }, [api, operationsActions, settingsActions, settingsState.settings.defaultAgentId])
   const openLoginApplication = useCallback(async (): Promise<void> => {
+    const generation = ++machineConnectGeneration.current
     setMachineConnectBusy(true)
     setMachineConnectStatus('Создаём безопасную одноразовую ссылку…')
     try {
       const enrollment = await api['loginApplication:issueEnrollment']()
+      if (generation !== machineConnectGeneration.current) return
       window.location.href = enrollment.deepLink
       setMachineConnectStatus('Ожидаем подтверждение сервера. Если приложение не открылось, скачайте его.')
       const deadline = enrollment.expiresAt
       const poll = async (): Promise<void> => {
+        if (generation !== machineConnectGeneration.current) return
         if (Date.now() >= deadline) {
           setMachineConnectBusy(false)
-          setMachineConnectStatus('Ссылка истекла или приложение не ответило. Выпустите новую ссылку.')
+          setMachineConnectStatus('Ссылка истекла или приложение не ответило. Повторите подключение — будет выпущена новая ссылка.')
           return
         }
         try {
           const status = await api['loginApplication:enrollmentStatus']({ statusId: enrollment.statusId })
+          if (generation !== machineConnectGeneration.current) return
           if (status.status === 'completed') {
-            if (await finishPendingMachineAction(status.agentId)) return
+            if (await finishPendingMachineAction(generation, status.agentId)) return
+            if (generation !== machineConnectGeneration.current) return
             setMachineConnectStatus('Устройство зарегистрировано; ожидаем, когда машина появится в сети…')
           } else if (status.status === 'expired') {
             setMachineConnectBusy(false)
-            setMachineConnectStatus('Ссылка истекла. Нажмите «Открыть приложение» ещё раз.')
+            setMachineConnectStatus('Ссылка истекла. Нажмите «Подключить текущее устройство» ещё раз.')
             return
           }
         } catch (error) {
+          if (generation !== machineConnectGeneration.current) return
           setMachineConnectBusy(false)
-          setMachineConnectStatus(error instanceof Error ? error.message : String(error))
+          setMachineConnectStatus('Ошибка сети: ' + (error instanceof Error ? error.message : String(error)))
           return
         }
         window.setTimeout(() => void poll(), 1000)
       }
       window.setTimeout(() => void poll(), 700)
     } catch (error) {
+      if (generation !== machineConnectGeneration.current) return
       setMachineConnectBusy(false)
-      setMachineConnectStatus(error instanceof Error ? error.message : String(error))
+      setMachineConnectStatus('Не удалось создать ссылку: ' + (error instanceof Error ? error.message : String(error)))
     }
   }, [api, finishPendingMachineAction])
   useEffect(() => {
@@ -1197,6 +1269,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       openMachineConsole: (agentId) =>
         agentId ? operationsActions.openUtility('console', agentId) : operationsActions.openUtilityForActiveChat('console'),
       openKnowledgeBase: () => navigate('/kb'),
+      openImageStudio: session.authRequired ? () => navigate('/images') : null,
       openKbUsage: runtime.openKbUsage,
       logout: () => void runtime.logout(),
       openPalette: () => setPaletteOpen(true),
@@ -1330,6 +1403,33 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .catch(() => { /* store owns the visible error */ })
       .finally(() => { makeCreating.current = false })
   }
+  const imageStudioCreating = useRef(false)
+  const createImageStudioChat = (replace = false): void => {
+    if (imageStudioCreating.current) return
+    imageStudioCreating.current = true
+    void chatActions.newConversation('images')
+      .then((id) => { if (id) navigate(`/images/${id}`, { replace }) })
+      .catch(() => { /* store owns the visible error */ })
+      .finally(() => { imageStudioCreating.current = false })
+  }
+  useEffect(() => {
+    if (!authed || !inImageStudio || chat.conversationsStatus !== 'ready' || imageStudioCreating.current) return
+    const chats = chat.imageStudioConversations
+    const routed = chats.find((item) => item.id === routeImageStudioChatId)
+    if (routed) {
+      if (routed.id !== chat.activeId) void chatActions.selectConversation(routed.id)
+      try { localStorage.setItem(IMAGE_STUDIO_LAST_KEY, routed.id) } catch { /* приватный режим */ }
+      return
+    }
+    // Без id в адресе возвращаемся в последний открытый чат студии, а не в первый.
+    let last: string | null = null
+    try { last = localStorage.getItem(IMAGE_STUDIO_LAST_KEY) } catch { /* приватный режим */ }
+    const fallback = chats.find((item) => item.id === last) ?? chats[0]
+    if (fallback) { navigate(`/images/${fallback.id}`, { replace: true }); return }
+    createImageStudioChat(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inImageStudio, routeImageStudioChatId, chat.activeId, chat.imageStudioConversations, chat.conversationsStatus, chatActions, navigate])
+
   useEffect(() => {
     if (!authed || !inMake || chat.conversationsStatus !== 'ready' || makeCreating.current) return
     const chats = chat.makeConversations
@@ -1479,6 +1579,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const playwrightReaderActiveListed = chat.playwrightReaderConversations.some((c) => c.id === chat.activeId)
   const consoleReaderActiveListed = chat.consoleReaderConversations.some((c) => c.id === chat.activeId)
   const makeActiveListed = chat.makeConversations.some((c) => c.id === chat.activeId)
+  const imageStudioActiveListed = chat.imageStudioConversations.some((c) => c.id === chat.activeId)
   // Reader route is authoritative. While its asynchronous conversation selection is
   // pending, the previous ChatColumn must not remain interactive: otherwise a user
   // can submit a turn for the old activeId while already seeing the new Reader URL.
@@ -1496,7 +1597,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       chat.activeId === routeConsoleReaderChatId &&
       consoleReaderActiveListed)
   const makeRouteReady = !inMake || (routeMakeChatId !== null && chat.activeId === routeMakeChatId && makeActiveListed)
-  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady
+  const imageStudioRouteReady = !inImageStudio || (routeImageStudioChatId !== null && chat.activeId === routeImageStudioChatId && imageStudioActiveListed)
+  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady && imageStudioRouteReady
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
   // Каталог результатов активного чата — для чипа в шапке; обновляется при смене чата, закрытии настроек и после хода.
   const [activeStorage, setActiveStorage] = useState<ChatStorageView | null>(null)
@@ -1993,6 +2095,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     )
   }
 
+  const openCreateProject = (): void => requireMachine(() => {
+    setSidebarOpen(false)
+    setNewProjectOpen(true)
+    setProjectQuota(null)
+    void api['projects:quota']().then(setProjectQuota).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+    void projectsActions.loadProjectTypes()
+  })
+  const openCreateChat = (): void => requireMachine(() => {
+    setCreateChatError(null)
+    setCreateChatTitle('Новый разговор')
+    setCreateChatProjectId('')
+    setCreateChatPath('')
+    setCreateChatOpen(true)
+  })
+
   return (
     <div
       className={[
@@ -2002,7 +2119,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         inReader && 'app--web-reader',
         inPlaywrightReader && 'app--playwright-reader',
         inConsoleReader && 'app--console-reader',
-        inMake && 'app--make'
+        inMake && 'app--make',
+        // Студия картинок живёт в той же раскладке, что и Make: чат + панель.
+        inImageStudio && 'app--make app--image-studio'
       ].filter(Boolean).join(' ')}
       data-theme={settingsState.settings.theme}
       style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
@@ -2091,13 +2210,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             : [])
         ]}
         now={now ? now() : Date.now()}
-        onNew={() => requireMachine(() => {
-          setCreateChatError(null)
-          setCreateChatTitle('Новый разговор')
-          setCreateChatProjectId('')
-          setCreateChatPath('')
-          setCreateChatOpen(true)
-        })}
+        onNew={openCreateChat}
         onPick={(id) => {
           setSidebarOpen(false)
           navigate(`/chat/${id}`)
@@ -2136,6 +2249,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenPlaywrightReader={session.authRequired ? menu(() => navigate('/playwright-reader')) : undefined}
         onOpenConsoleReader={session.authRequired ? menu(() => navigate('/console-reader')) : undefined}
         onOpenMake={session.authRequired ? menu(() => navigate('/make')) : undefined}
+        onOpenImageStudio={session.authRequired ? menu(() => navigate('/images')) : undefined}
         onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenLocalApp={session.authRequired ? menu(() => {
           setMachineConnectStatus('Откройте приложение подключения или скачайте его.')
@@ -2193,14 +2307,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           if (projectId) navigate(`/projects/${projectId}`)
         }}
         onDeclineInvitation={(invitation) => { void projectsActions.declineInvitation(invitation.id) }}
-        onCreateProject={() => requireMachine(() => {
-          setSidebarOpen(false)
-          setNewProjectOpen(true)
-          setProjectQuota(null)
-          void api['projects:quota']().then(setProjectQuota).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
-          // Каталог типов нужен окну сразу; повторное открытие обновит список.
-          void projectsActions.loadProjectTypes()
-        })}
+        onCreateProject={openCreateProject}
         onOpenCommandPalette={() => {
           setSidebarOpen(false)
           setPaletteOpen(true)
@@ -2221,25 +2328,56 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
       {machineConnectOpen && (
-        <Dialog title="Подключить устройство" onClose={() => {
+        <Dialog title="Подключить устройство" className="machine-connect-dialog" onClose={() => {
+          machineConnectGeneration.current += 1
           machineActionGuard.current.cancel()
           setMachineConnectOpen(false)
           setMachineConnectBusy(false)
+          setMachineDownloadBusy(false)
         }} padded>
-          <p>{machineConnectStatus}</p>
-          <div className="dialog-actions">
-            <button type="button" onClick={() => {
-              void api['loginApplication:artifacts']({ platform: 'macos', arch: 'arm64' }).then(([artifact]) => {
-                if (!artifact?.available || !artifact.downloadUrl) {
-                  setMachineConnectStatus('Сборка macOS ARM64 сейчас недоступна.')
-                  return
-                }
-                window.location.href = artifact.downloadUrl
-              }).catch((error) => setMachineConnectStatus(error instanceof Error ? error.message : String(error)))
-            }}>Скачать приложение</button>
-            <button type="button" disabled={machineConnectBusy} onClick={() => void openLoginApplication()}>
-              {machineConnectBusy ? 'Ожидаем подключение…' : 'Открыть приложение'}
-            </button>
+          <div className="machine-connect-content">
+            <p>Откройте приложение подключения или добавьте новое устройство по ссылке.</p>
+            <div className="machine-connect-actions">
+              <button
+                className="vc-btn vc-btn--primary"
+                type="button"
+                disabled={machineDownloadBusy || machineConnectBusy}
+                aria-disabled={machineDownloadBusy || machineConnectBusy}
+                onClick={() => {
+                  const generation = machineConnectGeneration.current
+                  setMachineDownloadBusy(true)
+                  setMachineConnectStatus('Скачиваем приложение…')
+                  void api['loginApplication:artifacts']({ platform: 'macos', arch: 'arm64' }).then(([artifact]) => {
+                    if (generation !== machineConnectGeneration.current) return
+                    if (!artifact?.available || !artifact.downloadUrl) {
+                      setMachineConnectStatus('Сборка macOS ARM64 сейчас недоступна. Попробуйте ещё раз позже.')
+                      return
+                    }
+                    window.location.href = artifact.downloadUrl
+                    setMachineConnectStatus('Загрузка приложения началась. После установки повторите подключение по ссылке.')
+                  }).catch((error) => {
+                    if (generation !== machineConnectGeneration.current) return
+                    setMachineConnectStatus('Не удалось скачать приложение: ' + (error instanceof Error ? error.message : String(error)))
+                  }).finally(() => {
+                    if (generation === machineConnectGeneration.current) setMachineDownloadBusy(false)
+                  })
+                }}
+              >{machineDownloadBusy ? 'Скачиваем приложение…' : 'Скачать и открыть приложение'}</button>
+              <button
+                className="vc-btn vc-btn--secondary"
+                type="button"
+                disabled={machineConnectBusy || machineDownloadBusy}
+                aria-disabled={machineConnectBusy || machineDownloadBusy}
+                onClick={() => void openLoginApplication()}
+              >
+                {machineConnectBusy ? 'Создаём ссылку…' : 'Добавить новое устройство по ссылке'}
+              </button>
+            </div>
+            <p
+              className={`machine-connect-feedback${/не удалось|ошибка|недоступна|истекла/i.test(machineConnectStatus) ? ' machine-connect-feedback--error' : ''}`}
+              role={/не удалось|ошибка|недоступна|истекла/i.test(machineConnectStatus) ? 'alert' : 'status'}
+              aria-live="polite"
+            >{machineConnectStatus}</p>
           </div>
         </Dialog>
       )}
@@ -2300,13 +2438,40 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         </Suspense>
       )}
 
-      {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && (
-      <div className={inSplit ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inSplit ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
-      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : 'Сайт'}</button></div></nav>}
-      <div className="chat-split-chat">
+      {inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0 && (
+        <ToolFrame
+          title="Чаты"
+          variant="page"
+          testId="chats-empty"
+          className="shell-empty-page"
+          leading={<SidebarToggle className="sidebar-toggle" expanded={sidebarExpanded} onToggle={toggleSidebar} />}
+        >
+          <div className="shell-empty-content">
+            <EmptyState
+              icon="💬"
+              title="Новых чатов пока нет"
+              description="Новый разговор появится здесь после создания."
+              actionLabel="Добавить новый чат"
+              onAction={openCreateChat}
+            />
+          </div>
+        </ToolFrame>
+      )}
+      {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && !(inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0) && (
+      <div
+        ref={inConsoleReader ? consoleSplitRef : undefined}
+        className={inSplit ? `chat-split chat-split--${chatView}${inConsoleReader ? ' console-reader-workshop' : ''}` : 'chat-page'}
+        data-resizing={inConsoleReader && consoleResizing ? 'true' : undefined}
+        style={inSplit ? (inConsoleReader
+          ? { '--console-chat-width': `${consoleChatWidth}%` } as CSSProperties
+          : { '--preview-width': `${previewWidth}%` } as CSSProperties) : undefined}
+      >
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inConsoleReader ? 'Панели мастерской' : undefined}><button id={inConsoleReader ? 'console-reader-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inConsoleReader ? 'console-reader-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат</button><button id={inConsoleReader ? 'console-reader-console-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inConsoleReader ? 'console-reader-console-pane' : undefined} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
+      <div id={inConsoleReader ? 'console-reader-chat-pane' : undefined} role={inConsoleReader ? 'tabpanel' : undefined} aria-labelledby={inConsoleReader ? 'console-reader-chat-tab' : undefined} className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
       {inConsoleReader && <header className="web-recorder-selector console-reader-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
+      {inImageStudio && <header className="web-recorder-selector make-selector image-studio-selector"><strong>Студия</strong><label><span className="vc-sr-only">Чат студии картинок</span><select aria-label="Чат студии картинок" value={imageStudioActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/images/${event.target.value}`) }}>{!imageStudioActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.imageStudioConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createImageStudioChat()}>+ Новый</button></header>}
       {inMake && <header className="web-recorder-selector make-selector"><strong>Make</strong><label><span className="vc-sr-only">Проект Make</span><select aria-label="Проект Make" value={makeActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/make/${event.target.value}`) }}>{!makeActiveListed && <option value="" disabled>Проект не выбран</option>}{chat.makeConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createMakeChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
@@ -2392,6 +2557,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenMachines={session.authRequired ? () => navigate('/machines') : undefined}
         onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={shell.error}
+        errorFix={shell.errorFix}
+        // Кнопка «Исправить» отправляет подготовленный сервером промпт обычной
+        // репликой в этот же чат: модель правит на месте, ход помечен как
+        // исправление и системный preflight копии для него пропускается.
+        onFixError={(prompt) => { shellActions.dismissError(); void chatActions.submitFix(prompt) }}
         onDismissError={shellActions.dismissError}
         modelMissing={VOICE_INPUT_ENABLED && !settingsState.modelPresent}
         modelLabel={settingsState.settings.whisperModel}
@@ -2458,7 +2628,38 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         }
       /> : <div className="chat-route-loading" role="status">{inMake ? 'Открываем проект…' : 'Открываем выбранный Reader-разговор…'}</div>}
       </div>
-      {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
+      {inSplit && readerSurfaceReady && (inConsoleReader ? <div
+        ref={consoleDividerRef}
+        className="console-reader-divider"
+        hidden={compactChat}
+        role="separator"
+        aria-label="Изменить ширину панелей"
+        aria-orientation="vertical"
+        aria-valuemin={CONSOLE_READER_MIN_PERCENT}
+        aria-valuemax={CONSOLE_READER_MAX_PERCENT}
+        aria-valuenow={Math.round(consoleChatWidth)}
+        tabIndex={0}
+        onPointerDown={(event) => {
+          if (window.matchMedia('(max-width: 768px)').matches) return
+          event.preventDefault()
+          consolePointerIdRef.current = event.pointerId
+          event.currentTarget.setPointerCapture(event.pointerId)
+          setConsoleResizing(true)
+          const rect = consoleSplitRef.current?.getBoundingClientRect()
+          if (rect?.width) setConsoleChatPercent(((event.clientX - rect.left) / rect.width) * 100)
+        }}
+        onLostPointerCapture={stopConsoleResize}
+        onDoubleClick={() => setConsoleChatPercent(CONSOLE_READER_DEFAULT_CHAT_WIDTH)}
+        onKeyDown={(event) => {
+          const next = event.key === 'ArrowLeft' ? consoleChatWidth - CONSOLE_READER_KEYBOARD_STEP
+            : event.key === 'ArrowRight' ? consoleChatWidth + CONSOLE_READER_KEYBOARD_STEP
+              : event.key === 'Home' ? CONSOLE_READER_MIN_PERCENT
+                : event.key === 'End' ? CONSOLE_READER_MAX_PERCENT : null
+          if (next === null) return
+          event.preventDefault()
+          setConsoleChatPercent(next)
+        }}
+      ><span className="console-reader-divider__handle" aria-hidden="true" /></div> : <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>)}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:
@@ -2471,14 +2672,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         },
         ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
       } : {})} /></Suspense>}
-      {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
+      {inConsoleReader && readerSurfaceReady && chat.activeId && <div id="console-reader-console-pane" role="tabpanel" aria-labelledby="console-reader-console-tab" className="console-reader-console-host"><ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} /></div>}
+      {inConsoleReader && <div className="console-reader-drag-shield" aria-hidden="true" onPointerUp={stopConsoleResize} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
+      {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense>}
       {inReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
 
       {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}
-      {inProjects && !routeProjectId && firstProjectId === null && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectsEmptyPage invitationCount={projects.myInvitations.length} /></Suspense>}
+      {inProjects && !routeProjectId && firstProjectId === null && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectsEmptyPage invitationCount={projects.myInvitations.length} onCreateProject={openCreateProject} onToggleSidebar={toggleSidebar} sidebarExpanded={sidebarExpanded} /></Suspense>}
 
       {inProjects && routeProjectId && projectMissing && <Suspense fallback={<div role="status">Загрузка проектов…</div>}><ProjectNotFoundPage /></Suspense>}
 
@@ -2517,12 +2720,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onOpenChange={(open) => { if (!open && segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(open) }}
             mode={segments[2] === 'assistant' ? 'page' : 'embedded'}
             storageKey="voicechat.kanbanAssistantWidth"
-            assistantHeader={<ProjectAssistantChatSelector
-              projectId={routeProjectId!}
-              api={api}
-              selectedId={assistantConversationId}
-              onSelect={setAssistantConversationId}
-            />}
+            hideHeader
             widget={routeCode && projectFeatures.git ? (
                 routeCodeWorkspace
                   ? <GitPane
@@ -2680,6 +2878,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 api={api}
                 llmEngines={settingsState.llmEngines}
                 conversationId={assistantConversationId}
+                onSelectConversation={setAssistantConversationId}
+                onClose={() => { if (segments[2] === 'assistant') navigate(`/projects/${routeProjectId}`); setKanbanAssistantOpen(false) }}
                 onOpenTask={(taskId) => navigate(`/projects/${routeProjectId}/task/${taskId}`)}
                 onCommand={async (command: WidgetAssistantCommand) => {
                   rememberWidgetAction('assistant.command', command.type, 'taskId' in command ? command.taskId : undefined)

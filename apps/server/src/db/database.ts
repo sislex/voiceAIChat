@@ -49,6 +49,21 @@ import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
 import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
 import { testStages } from '../ci/testStages.js'
+
+export const TASK_COMMIT_COMMAND_NAME = 'Закоммитить работу в ветку задачи'
+export const TASK_COMMIT_COMMAND_SCRIPT = `set -eu
+cd -- "$SLUG"
+git config user.name "voicechat-ci"
+git config user.email "ci@voicechat.local"
+# Ветка задачи: модель обычно уже на ней, иначе поднимаем её на текущем HEAD.
+git checkout -B "$BRANCH"
+git add -A
+if git diff --cached --quiet; then
+  echo "Нет незакоммиченных изменений — коммит не нужен"
+  exit 0
+fi
+git commit -q -m "$TASK_KEY: работа CI-рана"
+git --no-pager log --oneline -1`
 import {
   DEFAULT_SETTINGS,
   normalizeChatInstructions,
@@ -60,6 +75,7 @@ import {
   type AgentCreated,
   type AgentPolicy,
   type Conversation,
+  type ConversationScope,
   type ContextChangeEvent,
   type ConversationStatus,
   DEFAULT_CONVERSATION_STATUS,
@@ -131,8 +147,12 @@ import {
   type CiCommandScope,
   type CiSlot,
   type CiSlotConfig,
+  type CiBrowserCheck,
   type CiProcessStage,
   CI_PROCESS_STAGES,
+  QA_CRITERION_TEST_TYPES,
+  DEFAULT_CI_BROWSER_CHECK,
+  normalizeCiBrowserCheck,
   normalizeCiProcessStages,
   type CiLlmConfig,
   DEFAULT_CI_CLAUDE_MODEL,
@@ -150,6 +170,9 @@ import {
   type TaskChatBadge,
   type TaskChatContext,
   type TaskChatCrumb,
+  type TaskActivity,
+  type TaskComment,
+  type TaskWorklogEntry,
   type TaskDesignLink,
   type ProjectDesignSource,
   type MakeTaskLink,
@@ -364,6 +387,7 @@ interface ConversationRow {
   preview_url: string | null
   task_id: string | null
   assistant_kind: string | null
+  scope: string
   assistant_autonomy: string | null
   status: string | null
   last_exec_target?: string | null
@@ -584,6 +608,8 @@ interface ProjectRow {
   merge_transport: string
   agent_plan_approval_mode: string
   test_command: string
+  component_qa_command: string
+  integration_test_command: string
   command_policy?: string | null
   production_deploy_command: string
   production_agent_id: string | null
@@ -604,6 +630,7 @@ interface ProjectRow {
   automated_qa_mode: string
   automated_qa_scenario_json: string
   autopilot_requires_manual_qa: number
+  autopilot_default: number
   autopilot_fix_limit: number
   done_retention_days: number | null
 }
@@ -1064,8 +1091,55 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'assistant_kind')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN assistant_kind TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'scope')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN scope TEXT NOT NULL DEFAULT 'chat'`)
+      this.db.exec(`UPDATE conversations SET scope = CASE
+        WHEN task_id IS NOT NULL AND project_id IS NOT NULL THEN 'kanban'
+        WHEN assistant_kind = 'kanban' AND project_id IS NOT NULL THEN 'kanban'
+        WHEN assistant_kind = 'make' THEN 'make'
+        WHEN assistant_kind = 'console-reader' THEN 'console'
+        WHEN assistant_kind = 'playwright-reader' THEN 'playwright-reader'
+        WHEN assistant_kind = 'web-recorder' THEN 'web-reader'
+        ELSE 'chat' END`)
+    }
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_user_scope_project_updated ON conversations(user_id, scope, project_id, updated_at DESC)`)
+    // В БД, созданных из schema.ts до появления студии картинок, список scope
+    // зажат CHECK-констрейнтом в DDL таблицы. SQLite не умеет расширять CHECK
+    // через ALTER, поэтому пересобираем таблицу: тот же DDL с новым списком,
+    // копия данных и родные индексы. В старых БД scope добавлялся ALTER-ом без
+    // CHECK — там пересборка не нужна и не запускается.
+    const convDdl = (this.db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'`).get() as { sql: string } | undefined)?.sql
+    if (convDdl && /scope IN \([^)]*\)/.test(convDdl) && !/scope IN \([^)]*'images'/.test(convDdl)) {
+      const newDdl = convDdl
+        .replace(/scope IN \([^)]*\)/, `scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')`)
+        .replace(/^CREATE TABLE ("conversations"|conversations)/, 'CREATE TABLE conversations_new')
+      const convIndexes = this.db.prepare(`SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='conversations' AND sql IS NOT NULL`).all() as Array<{ sql: string }>
+      this.db.exec('PRAGMA foreign_keys=OFF')
+      this.db.transaction(() => {
+        this.db.exec(newDdl)
+        this.db.exec(`INSERT INTO conversations_new SELECT * FROM conversations`)
+        this.db.exec(`DROP TABLE conversations`)
+        this.db.exec(`ALTER TABLE conversations_new RENAME TO conversations`)
+        for (const { sql } of convIndexes) this.db.exec(sql)
+      })()
+      this.db.exec('PRAGMA foreign_keys=ON')
+    }
     if (!convCols.some((c) => c.name === 'status')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
+    }
+    // Make-чат к машине не ходит (`turns.ts`: makeChat), поэтому оставшиеся с
+    // прежних времён привязки — мусор, который вводит в заблуждение: панель
+    // показывала машину и каталог, которых ход не использует. Явное «без машины»
+    // (`none`) сохраняем: это осознанный выбор пользователя, совпадающий с новым
+    // поведением. Идемпотентно — второй запуск не находит строк.
+    if (convCols.some((c) => c.name === 'assistant_kind')) {
+      this.db.exec(`
+        UPDATE conversations
+        SET exec_target = CASE WHEN exec_target = 'none' THEN exec_target ELSE NULL END,
+            workdir = NULL
+        WHERE assistant_kind = 'make'
+          AND ((exec_target IS NOT NULL AND exec_target <> 'none') OR workdir IS NOT NULL)
+      `)
     }
     // Проекты (итерация 2): папка на машину + машина по умолчанию.
     const projCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
@@ -1322,6 +1396,8 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'command_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN command_policy TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'component_qa_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN component_qa_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'integration_test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN integration_test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_environment_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_environment_mode TEXT NOT NULL DEFAULT 'legacy'`)
@@ -1382,12 +1458,14 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_command TEXT NOT NULL DEFAULT 'npm test'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_mode TEXT NOT NULL DEFAULT 'command'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_scenario_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_scenario_json TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_default')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_default INTEGER NOT NULL DEFAULT 0`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_requires_manual_qa')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_fix_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_fix_limit INTEGER NOT NULL DEFAULT 3`)
     const ciWorkspaceCols = this.db.prepare(`PRAGMA table_info(ci_workspaces)`).all() as Array<{ name: string }>
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'branch')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN branch TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'commit_sha')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN commit_sha TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'pushed')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN pushed INTEGER NOT NULL DEFAULT 0`)
+    if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'npm_cache_dir')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN npm_cache_dir TEXT`)
     const mergeRunCols = this.db.prepare(`PRAGMA table_info(merge_runs)`).all() as Array<{ name: string }>
     if (mergeRunCols.length) {
       this.db.exec(`DROP INDEX IF EXISTS idx_merge_runs_one_active_task`)
@@ -1431,6 +1509,13 @@ export class VoiceChatDb {
     if (ciLlmCols.length && !ciLlmCols.some((c) => c.name === 'clarify_max')) this.db.exec(`ALTER TABLE ci_llm_configs ADD COLUMN clarify_max INTEGER NOT NULL DEFAULT 3`)
     const ciCmdCols = this.db.prepare(`PRAGMA table_info(ci_commands)`).all() as Array<{ name: string }>
     if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'builtin')) this.db.exec(`ALTER TABLE ci_commands ADD COLUMN builtin TEXT`)
+    // Обязательный системный commit-step хранится в данных. Старый сокращённый
+    // скрипт (`git add -A`) оставлял ветку/коммит на усмотрение fix-модели, поэтому
+    // обновляем запись по её стабильному имени; условие сохраняет идемпотентность.
+    this.db.prepare(`UPDATE ci_commands
+      SET script = ?, version = version + 1, updated_at = ?
+      WHERE name = ? AND deleted_at IS NULL AND script <> ?`)
+      .run(TASK_COMMIT_COMMAND_SCRIPT, Date.now(), TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT)
     if (ciCmdCols.length && !ciCmdCols.some((c) => c.name === 'is_test')) {
       this.db.exec(`ALTER TABLE ci_commands ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0`)
       // Бэкфилл: гейт в уже заведённых справочниках помечаем сами — иначе после
@@ -1592,18 +1677,20 @@ export class VoiceChatDb {
     return row?.user_id ?? null
   }
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | null = null, projectId: string | null = null): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' | null = null, projectId: string | null = null, requestedScope?: ConversationScope): Conversation {
+    const scope = requestedScope ?? (assistantKind === 'make' ? 'make' : assistantKind === 'images' ? 'images' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'web-recorder' ? 'web-reader' : 'chat')
+    if (scope === 'kanban' && !projectId) throw new Error('projectId is required for kanban')
     const project = projectId ? this.getProject(userId, projectId) : null
-    if (projectId && (!project || assistantKind === 'playwright-reader')) throw new Error('project not found')
+    if (projectId && !project) throw new Error('project not found')
     const skillNames = project?.skills ?? []
     const id = this.newId()
     const ts = this.now()
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names)
-         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names, scope)
+         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames))
+      .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames), scope)
     // Дефолтный пресет контекста: применяется сразу при создании, иначе
     // «минимальный контекст» действует только после того, как человек вспомнит
     // про кнопку. Пункты безопасности пресет не трогает — их фильтрует запись.
@@ -1616,7 +1703,7 @@ export class VoiceChatDb {
       this.db.prepare(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`)
         .run(JSON.stringify(disabledContext), id, userId)
     }
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -1682,8 +1769,8 @@ export class VoiceChatDb {
     const id = this.newId()
     const ts = this.now()
     this.db.prepare(
-      `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind)
-       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban')`
+      `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind, scope)
+       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban', 'kanban')`
     ).run(id, `Ассистент · ${project.name}`, ts, ts, userId, projectId)
     return this.getConversation(userId, id)
   }
@@ -1695,7 +1782,9 @@ export class VoiceChatDb {
    * задачу вернули в работу, чат снова в списке. Доступ к скрытому чату
    * остаётся: `getConversation` его отдаёт, карточка задачи открывает.
    */
-  listConversations(userId: string, opts?: { includeCompleted?: boolean }): Conversation[] {
+  listConversations(userId: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Conversation[] {
+    const scope = opts?.scope ?? 'chat'
+    if (scope === 'kanban' && !opts?.projectId) return []
     const rows = this.db
       .prepare(
         `SELECT c.*,
@@ -1704,17 +1793,18 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader', 'make'))
+           AND c.scope = ?
+           AND (? <> 'kanban' OR c.project_id = ?)
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
-      .all(userId, opts?.includeCompleted ? 1 : 0) as Array<ConversationRow & { message_count: number }>
+      .all(userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0) as Array<ConversationRow & { message_count: number }>
     const costs = this.conversationCosts(rows)
     return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
   }
 
-  getConversation(userId: string, id: string): Conversation | null {
+  getConversation(userId: string, id: string, context?: { scope: ConversationScope; projectId?: string }): Conversation | null {
     const row = this.db
       .prepare(`SELECT c.*,
                        (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
@@ -1722,6 +1812,7 @@ export class VoiceChatDb {
                 FROM conversations c WHERE c.id = ? AND c.user_id = ?`)
       .get(id, userId) as ConversationRow | undefined
     if (!row) return null
+    if (context && (row.scope !== context.scope || (context.scope === 'kanban' && row.project_id !== context.projectId))) return null
     const count = (
       this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?`).get(id) as {
         n: number
@@ -1744,7 +1835,9 @@ export class VoiceChatDb {
    * только с `includeCompleted` — иначе выключенный фильтр возвращал бы их
    * через строку поиска.
    */
-  searchConversations(userId: string, query: string, opts?: { includeCompleted?: boolean }): Conversation[] {
+  searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Conversation[] {
+    const scope = opts?.scope ?? 'chat'
+    if (scope === 'kanban' && !opts?.projectId) return []
     const q = query.trim()
     if (!q) return this.listConversations(userId, opts)
     const like = `%${q.toLowerCase().replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
@@ -1756,7 +1849,8 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader', 'make'))
+           AND c.scope = ?
+           AND (? <> 'kanban' OR c.project_id = ?)
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
@@ -1764,7 +1858,7 @@ export class VoiceChatDb {
                        WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\'))
          ORDER BY c.updated_at DESC`
       )
-      .all(userId, opts?.includeCompleted ? 1 : 0, like, like) as Array<ConversationRow & { message_count: number }>
+      .all(userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0, like, like) as Array<ConversationRow & { message_count: number }>
     const costs = this.conversationCosts(rows)
     return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
   }
@@ -1786,11 +1880,15 @@ export class VoiceChatDb {
     permissionMode?: PermissionMode | null,
     llmEngineId?: string | null
   ): Conversation | null {
+    // Make-чату машина не назначается: ход её всё равно игнорирует, а запись
+    // в БД возвращала бы мусор, который чистит миграция. Явное «none» проходит.
+    const makeChat = (this.db.prepare(`SELECT assistant_kind FROM conversations WHERE id = ? AND user_id = ?`).get(id, userId) as { assistant_kind: string | null } | undefined)?.assistant_kind === 'make'
+    const target = makeChat && execTarget !== 'none' ? null : execTarget
     const fields = ['exec_target = ?']
-    const values: unknown[] = [execTarget]
+    const values: unknown[] = [target]
     if (workdir !== undefined) {
       fields.push('workdir = ?')
-      values.push(workdir)
+      values.push(makeChat ? null : workdir)
     }
     if (skillNames !== undefined) {
       fields.push('skill_names = ?')
@@ -3910,8 +4008,9 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       disabledContext: parseJsonValue<string[]>(row.disabled_context_json, []).filter((item): item is string => typeof item === 'string'),
+      scope: row.scope === 'kanban' || row.scope === 'make' || row.scope === 'images' || row.scope === 'console' || row.scope === 'playwright-reader' || row.scope === 'web-reader' ? row.scope : 'chat',
       projectId: row.project_id ?? null,
-      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' || row.assistant_kind === 'make' ? row.assistant_kind : null,
+      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' || row.assistant_kind === 'make' || row.assistant_kind === 'images' ? row.assistant_kind : null,
       // Дефолт — полная автономия: ассистент задуман действующим, а не советующим.
       assistantAutonomy: row.assistant_autonomy === 'confirm' ? 'confirm' : 'auto',
       previewUrl: row.preview_url ?? null,
@@ -4486,9 +4585,12 @@ export class VoiceChatDb {
       mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
+      componentQaCommand: r.component_qa_command || undefined,
+      integrationTestCommand: r.integration_test_command || undefined,
       automatedQaCommand: r.automated_qa_command || 'npm test',
       automatedQaMode: r.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
       automatedQaScenarios: parseAutomatedQaScenarios(parseJsonValue<unknown>(r.automated_qa_scenario_json, [])),
+      autoPilotDefault: r.autopilot_default !== 0,
       autoPilotRequiresManualQa: r.autopilot_requires_manual_qa !== 0,
       autoPilotFixLimit: Number.isInteger(r.autopilot_fix_limit) && r.autopilot_fix_limit >= 0 ? r.autopilot_fix_limit : 3,
       commandPolicy: parseProjectCommandPolicy(r.command_policy),
@@ -4736,9 +4838,12 @@ export class VoiceChatDb {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      componentQaCommand?: string
+      integrationTestCommand?: string
       automatedQaCommand?: string
       automatedQaMode?: AutomatedQaMode
       automatedQaScenarios?: AutomatedQaScenario[]
+      autoPilotDefault?: boolean
       autoPilotRequiresManualQa?: boolean
       autoPilotFixLimit?: number
       commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
@@ -4810,9 +4915,12 @@ export class VoiceChatDb {
       vals.push(fields.agentPlanApprovalMode)
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
+    if (fields.componentQaCommand !== undefined) { set.push('component_qa_command = ?'); vals.push(fields.componentQaCommand) }
+    if (fields.integrationTestCommand !== undefined) { set.push('integration_test_command = ?'); vals.push(fields.integrationTestCommand) }
     if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
     if (fields.automatedQaMode !== undefined) { set.push('automated_qa_mode = ?'); vals.push(fields.automatedQaMode === 'playwright' ? 'playwright' : 'command') }
     if (fields.automatedQaScenarios !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(fields.automatedQaScenarios.map(normalizeAutomatedQaScenario))) }
+    if (fields.autoPilotDefault !== undefined) { set.push('autopilot_default = ?'); vals.push(fields.autoPilotDefault ? 1 : 0) }
     if (fields.autoPilotRequiresManualQa !== undefined) { set.push('autopilot_requires_manual_qa = ?'); vals.push(fields.autoPilotRequiresManualQa ? 1 : 0) }
     if (fields.autoPilotFixLimit !== undefined) {
       if (!Number.isInteger(fields.autoPilotFixLimit) || fields.autoPilotFixLimit < 0) throw new Error('autoPilotFixLimit must be a non-negative integer')
@@ -5303,8 +5411,8 @@ export class VoiceChatDb {
       .get(taskId, userId) as { id: string } | undefined
     if (existing) {
       this.db
-        .prepare(`UPDATE conversations SET updated_at = ? WHERE id = ? AND user_id = ?`)
-        .run(this.now(), existing.id, userId)
+        .prepare(`UPDATE conversations SET updated_at = ?, scope = 'kanban', project_id = ? WHERE id = ? AND user_id = ?`)
+        .run(this.now(), projectId, existing.id, userId)
       return this.getConversation(userId, existing.id)
     }
     const id = this.newId()
@@ -5312,8 +5420,8 @@ export class VoiceChatDb {
     const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
     this.db
       .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id, scope)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'kanban')`
       )
       .run(id, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId)
     return this.getConversation(userId, id)
@@ -5482,11 +5590,21 @@ export class VoiceChatDb {
     return this.taskDesigns(taskId)
   }
 
+  /** Проверяет, что новую дизайн-связь создаёт владелец Make-проекта. */
+  assertTaskDesignSource(userId: string, projectId: string, taskId: string, conversationId: string): void {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    if (!this.getTask(projectId, taskId)) throw new Error('Задача не найдена в проекте')
+    const conv = this.db
+      .prepare(`SELECT id, assistant_kind, project_id, user_id FROM conversations WHERE id = ?`)
+      .get(conversationId) as { id: string; assistant_kind: string | null; project_id: string | null; user_id: string | null } | undefined
+    if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
+    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    if (conv.user_id !== userId) throw new Error('Можно связать только свой Make-проект')
+  }
+
   /**
-   * Связывает карточку со страницей Make-проекта. Источник обязан быть привязан
-   * к тому же проекту: иначе участники увидели бы в карточке дизайн, к которому
-   * у них нет доступа, — привязка Make-проекта к проекту и есть акт, открывающий
-   * его команде на чтение (см. `access` в routes/make.ts).
+   * Связывает карточку с принадлежащим пользователю Make-проектом, который
+   * привязан к тому же обычному проекту.
    */
   linkTaskDesign(
     userId: string,
@@ -5494,14 +5612,7 @@ export class VoiceChatDb {
     taskId: string,
     args: { conversationId: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string }
   ): TaskDesignLink[] {
-    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
-    const task = this.getTask(projectId, taskId)
-    if (!task) throw new Error('Задача не найдена в проекте')
-    const conv = this.db
-      .prepare(`SELECT id, assistant_kind, project_id FROM conversations WHERE id = ?`)
-      .get(args.conversationId) as { id: string; assistant_kind: string | null; project_id: string | null } | undefined
-    if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
-    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    this.assertTaskDesignSource(userId, projectId, taskId, args.conversationId)
     const legacyPath = (args.path ?? '').trim()
     const mode = args.mode ?? (legacyPath ? 'files' : 'whole_project')
     const inputPaths = args.paths ?? (legacyPath ? [legacyPath] : [])
@@ -5530,15 +5641,15 @@ export class VoiceChatDb {
     return this.taskDesigns(taskId)
   }
 
-  /** Make-проекты, привязанные к проекту: то, из чего карточка выбирает дизайн. */
+  /** Собственные Make-проекты пользователя, привязанные к проекту. */
   projectDesignSources(userId: string, projectId: string): ProjectDesignSource[] | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const rows = this.db
       .prepare(
         `SELECT id, title, user_id, updated_at FROM conversations
-          WHERE project_id = ? AND assistant_kind = ? ORDER BY updated_at DESC`
+          WHERE project_id = ? AND assistant_kind = ? AND user_id = ? ORDER BY updated_at DESC`
       )
-      .all(projectId, MAKE_KIND) as Array<{ id: string; title: string; user_id: string | null; updated_at: number }>
+      .all(projectId, MAKE_KIND, userId) as Array<{ id: string; title: string; user_id: string | null; updated_at: number }>
     return rows.map((r) => ({
       conversationId: r.id,
       title: r.title,
@@ -5837,6 +5948,7 @@ export class VoiceChatDb {
     if (itemType === 'story' && parent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
     if (itemType === 'task' && parent && parent.type !== 'story' && parent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
 
+    const autoPilotDefault = (this.db.prepare(`SELECT autopilot_default FROM projects WHERE id = ?`).get(projectId) as { autopilot_default: number } | undefined)?.autopilot_default === 1
     const id = this.newId()
     const ts = this.now()
     const created = this.db.transaction(() => {
@@ -5853,8 +5965,8 @@ export class VoiceChatDb {
         `UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`
       ).get(projectId) as { task_seq: number }).task_seq
       this.db.prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at, auto_pilot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`
       ).run(
         id, projectId, args.columnId, args.title, args.description ?? '',
         args.acceptanceCriteria ?? '', itemType, args.parentId ?? null,
@@ -5862,7 +5974,11 @@ export class VoiceChatDb {
         this.validateTaskAgent(userId, projectId, args.agentId),
         JSON.stringify(args.labels ?? []), JSON.stringify(skills),
         args.storyPoints ?? null, args.dueDate ?? null,
-        this.isDoneColumn(args.columnId) ? ts : null, seq, (max.m ?? 0) + RANK_STEP, ts, ts
+        this.isDoneColumn(args.columnId) ? ts : null, seq, (max.m ?? 0) + RANK_STEP, ts, ts,
+        // Автопроход наследуется от настройки проекта: иначе конвейер каждой новой
+        // карточки всё равно начинался с того, что человек включает флаг руками.
+        // Только задачи — эпик и история этапы не проходят.
+        itemType === 'task' && autoPilotDefault ? 1 : 0
       )
       this.db.prepare(
         `INSERT INTO task_creation_audit (id, project_id, task_id, created_by, created_by_name, assignee, source, assignment_method, created_at)
@@ -5968,8 +6084,51 @@ export class VoiceChatDb {
     set.push('updated_at = ?')
     vals.push(ts)
     this.db.prepare(`UPDATE tasks SET ${set.join(', ')} WHERE id = ? AND project_id = ?`).run(...vals, taskId, projectId)
+    // История изменений (вкладка «Активность», как в Jira): пишем только
+    // реально изменившиеся человекочитаемые поля — техника (позиции, ранги)
+    // человеку в истории не нужна.
+    this.recordTaskHistoryDiff(userId, projectId, taskId, current, fields, ts)
     this.touchProject(projectId, ts)
     return this.getTask(projectId, taskId)
+  }
+
+  /** Дифф видимых полей задачи → строки истории. Пустая строка и null равны. */
+  private recordTaskHistoryDiff(
+    actor: string,
+    projectId: string,
+    taskId: string,
+    before: Task,
+    fields: Record<string, unknown>,
+    at: number,
+    via: 'user' | 'model' = 'user'
+  ): void {
+    const norm = (value: unknown): string | null => {
+      if (value === undefined || value === null) return null
+      if (Array.isArray(value)) return value.length ? value.join(', ') : null
+      const text = String(value).trim()
+      return text === '' ? null : text
+    }
+    const watched: Array<[string, unknown, unknown]> = [
+      ['title', before.title, fields.title],
+      ['description', before.description, fields.description],
+      ['acceptanceCriteria', before.acceptanceCriteria, fields.acceptanceCriteria],
+      ['priority', before.priority, fields.priority],
+      ['assignee', before.assignee, fields.assignee],
+      ['storyPoints', before.storyPoints, fields.storyPoints],
+      ['dueDate', before.dueDate, fields.dueDate],
+      ['labels', before.labels, fields.labels],
+      ['skills', before.skills, fields.skills],
+      ['type', before.type, fields.type],
+      ['flagged', before.flagged, fields.flagged]
+    ]
+    const insert = this.db.prepare(`INSERT INTO task_history (id, project_id, task_id, actor, via, field, from_value, to_value, at) VALUES (?,?,?,?,?,?,?,?,?)`)
+    for (const [field, was, next] of watched) {
+      if (next === undefined) continue
+      const fromValue = norm(was)
+      const toValue = norm(next)
+      if (fromValue === toValue) continue
+      insert.run(this.newId(), projectId, taskId, actor, via, field, fromValue, toValue, at)
+    }
   }
 
   private renormalizeColumn(projectId: string, columnId: string): void {
@@ -5988,7 +6147,8 @@ export class VoiceChatDb {
     args: { columnId: string; afterId?: string | null; beforeId?: string | null }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
-    if (!this.getTask(projectId, taskId)) return null
+    const current = this.getTask(projectId, taskId)
+    if (!current) return null
     if (!this.columnInProject(projectId, args.columnId)) return null
     const ts = this.now()
     this.db.transaction(() => {
@@ -6032,9 +6192,102 @@ export class VoiceChatDb {
            WHERE id = ? AND project_id = ?`
         )
         .run(args.columnId, pos, ts, done, ts, taskId, projectId)
+      // История: перенос между колонками — главное событие жизни карточки.
+      // Перестановка внутри колонки историю не пишет: этап не изменился.
+      const fromColumn = this.db.prepare(`SELECT name FROM kanban_columns WHERE id = ?`).get(current.columnId) as { name: string } | undefined
+      const toColumn = this.db.prepare(`SELECT name FROM kanban_columns WHERE id = ?`).get(args.columnId) as { name: string } | undefined
+      if (current.columnId !== args.columnId) {
+        this.db.prepare(`INSERT INTO task_history (id, project_id, task_id, actor, via, field, from_value, to_value, at) VALUES (?,?,?,?,?,?,?,?,?)`)
+          .run(this.newId(), projectId, taskId, userId, 'user', 'column', fromColumn?.name ?? current.columnId, toColumn?.name ?? args.columnId, ts)
+      }
     })()
     this.touchProject(projectId, ts)
     return this.getTask(projectId, taskId)
+  }
+
+  // ---- Активность карточки: комментарии, ворклог, история (как в Jira) ----
+
+  /** Право редактировать чужую запись: автор, владелец проекта или админ. */
+  private canModerateTaskEntry(userId: string, projectId: string, author: string): boolean {
+    if (userId === author) return true
+    if (this.getUser(userId)?.role === 'admin') return true
+    const owner = this.db.prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`).get(projectId, userId)
+    return Boolean(owner)
+  }
+
+  taskActivity(userId: string, projectId: string, taskId: string): TaskActivity | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    const comments = (this.db.prepare(`SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC, rowid ASC`).all(taskId) as Array<Record<string, unknown>>)
+      .map((row) => ({ id: String(row.id), taskId, author: String(row.author), via: row.via === 'model' ? 'model' as const : 'user' as const, text: String(row.text), createdAt: Number(row.created_at), updatedAt: row.updated_at === null ? null : Number(row.updated_at) }))
+    const worklog = (this.db.prepare(`SELECT * FROM task_worklog WHERE task_id = ? ORDER BY started_at DESC, rowid DESC`).all(taskId) as Array<Record<string, unknown>>)
+      .map((row) => ({ id: String(row.id), taskId, author: String(row.author), minutes: Number(row.minutes), comment: String(row.comment), startedAt: Number(row.started_at), createdAt: Number(row.created_at), updatedAt: row.updated_at === null ? null : Number(row.updated_at) }))
+    const history = (this.db.prepare(`SELECT * FROM task_history WHERE task_id = ? ORDER BY at DESC, rowid DESC LIMIT 200`).all(taskId) as Array<Record<string, unknown>>)
+      .map((row) => ({ id: String(row.id), taskId, actor: String(row.actor), via: row.via === 'model' ? 'model' as const : 'user' as const, field: String(row.field), from: row.from_value === null ? null : String(row.from_value), to: row.to_value === null ? null : String(row.to_value), at: Number(row.at) }))
+    return { comments, worklog, history, totalMinutes: worklog.reduce((total, entry) => total + entry.minutes, 0) }
+  }
+
+  addTaskComment(userId: string, projectId: string, taskId: string, text: string, via: 'user' | 'model' = 'user'): TaskComment | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    const trimmed = text.trim()
+    if (!trimmed) throw new Error('Пустой комментарий сохранять нечего')
+    const id = this.newId(); const ts = this.now()
+    this.db.prepare(`INSERT INTO task_comments (id, project_id, task_id, author, via, text, created_at, updated_at) VALUES (?,?,?,?,?,?,?,NULL)`)
+      .run(id, projectId, taskId, userId, via, trimmed, ts)
+    this.touchProject(projectId, ts)
+    return { id, taskId, author: userId, via, text: trimmed, createdAt: ts, updatedAt: null }
+  }
+
+  updateTaskComment(userId: string, projectId: string, commentId: string, text: string): TaskComment | null {
+    const row = this.db.prepare(`SELECT * FROM task_comments WHERE id = ? AND project_id = ?`).get(commentId, projectId) as Record<string, unknown> | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return null
+    if (!this.canModerateTaskEntry(userId, projectId, String(row.author))) throw new Error('Комментарий может править автор, владелец проекта или админ')
+    const trimmed = text.trim()
+    if (!trimmed) throw new Error('Пустой комментарий сохранять нечего')
+    const ts = this.now()
+    this.db.prepare(`UPDATE task_comments SET text = ?, updated_at = ? WHERE id = ?`).run(trimmed, ts, commentId)
+    return { id: commentId, taskId: String(row.task_id), author: String(row.author), via: row.via === 'model' ? 'model' : 'user', text: trimmed, createdAt: Number(row.created_at), updatedAt: ts }
+  }
+
+  deleteTaskComment(userId: string, projectId: string, commentId: string): boolean {
+    const row = this.db.prepare(`SELECT author FROM task_comments WHERE id = ? AND project_id = ?`).get(commentId, projectId) as { author: string } | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return false
+    if (!this.canModerateTaskEntry(userId, projectId, row.author)) throw new Error('Комментарий может удалить автор, владелец проекта или админ')
+    return this.db.prepare(`DELETE FROM task_comments WHERE id = ?`).run(commentId).changes > 0
+  }
+
+  addTaskWorklog(userId: string, projectId: string, taskId: string, entry: { minutes: number; comment?: string; startedAt?: number }): TaskWorklogEntry | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    const minutes = Math.round(entry.minutes)
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60 * 31) throw new Error('Время — от 1 минуты до месяца')
+    const id = this.newId(); const ts = this.now()
+    const startedAt = entry.startedAt ?? ts
+    this.db.prepare(`INSERT INTO task_worklog (id, project_id, task_id, author, minutes, comment, started_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,NULL)`)
+      .run(id, projectId, taskId, userId, minutes, (entry.comment ?? '').trim(), startedAt, ts)
+    this.touchProject(projectId, ts)
+    return { id, taskId, author: userId, minutes, comment: (entry.comment ?? '').trim(), startedAt, createdAt: ts, updatedAt: null }
+  }
+
+  updateTaskWorklog(userId: string, projectId: string, entryId: string, patch: { minutes?: number; comment?: string; startedAt?: number }): TaskWorklogEntry | null {
+    const row = this.db.prepare(`SELECT * FROM task_worklog WHERE id = ? AND project_id = ?`).get(entryId, projectId) as Record<string, unknown> | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return null
+    if (!this.canModerateTaskEntry(userId, projectId, String(row.author))) throw new Error('Запись ворклога может править автор, владелец проекта или админ')
+    const minutes = patch.minutes === undefined ? Number(row.minutes) : Math.round(patch.minutes)
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 24 * 60 * 31) throw new Error('Время — от 1 минуты до месяца')
+    const ts = this.now()
+    const comment = patch.comment === undefined ? String(row.comment) : patch.comment.trim()
+    const startedAt = patch.startedAt ?? Number(row.started_at)
+    this.db.prepare(`UPDATE task_worklog SET minutes = ?, comment = ?, started_at = ?, updated_at = ? WHERE id = ?`).run(minutes, comment, startedAt, ts, entryId)
+    return { id: entryId, taskId: String(row.task_id), author: String(row.author), minutes, comment, startedAt, createdAt: Number(row.created_at), updatedAt: ts }
+  }
+
+  deleteTaskWorklog(userId: string, projectId: string, entryId: string): boolean {
+    const row = this.db.prepare(`SELECT author FROM task_worklog WHERE id = ? AND project_id = ?`).get(entryId, projectId) as { author: string } | undefined
+    if (!row || !this.isProjectMember(userId, projectId)) return false
+    if (!this.canModerateTaskEntry(userId, projectId, row.author)) throw new Error('Запись ворклога может удалить автор, владелец проекта или админ')
+    return this.db.prepare(`DELETE FROM task_worklog WHERE id = ?`).run(entryId).changes > 0
   }
 
   deleteTask(userId: string, projectId: string, taskId: string): boolean {
@@ -6247,6 +6500,19 @@ export class VoiceChatDb {
   setTaskProcessStages(taskId: string, stages: unknown): CiProcessStage[] {
     const normalized = normalizeCiProcessStages(stages)
     this.db.prepare(`INSERT INTO ci_task_process_stages (task_id, stages_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET stages_json=excluded.stages_json`).run(taskId, JSON.stringify(normalized))
+    return normalized
+  }
+
+  /** Браузерная проверка задачи; нет строки — режим «без браузера». */
+  getTaskBrowserCheck(taskId: string): CiBrowserCheck {
+    const row = this.db.prepare(`SELECT check_json FROM ci_task_browser_checks WHERE task_id = ?`).get(taskId) as { check_json: string } | undefined
+    if (!row) return { ...DEFAULT_CI_BROWSER_CHECK }
+    try { return normalizeCiBrowserCheck(JSON.parse(row.check_json)) } catch { return { ...DEFAULT_CI_BROWSER_CHECK } }
+  }
+
+  setTaskBrowserCheck(taskId: string, value: unknown): CiBrowserCheck {
+    const normalized = normalizeCiBrowserCheck(value)
+    this.db.prepare(`INSERT INTO ci_task_browser_checks (task_id, check_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET check_json=excluded.check_json`).run(taskId, JSON.stringify(normalized))
     return normalized
   }
 
@@ -6463,6 +6729,33 @@ export class VoiceChatDb {
     const counts: Record<string, number> = {}
     for (const row of rows) if (row.agent_id) counts[row.agent_id] = row.n
     return counts
+  }
+
+  /**
+   * Успешный прогон этого набора команд на этом коммите, если он уже был.
+   * Возвращается вместе с раном-источником: стадия пишет его в лог, чтобы
+   * переиспользование было видно человеку, а не выглядело как пропуск проверок.
+   */
+  findPassedGateResult(commitSha: string, signature: string): { runKind: string; runId: string; createdAt: number } | null {
+    if (!commitSha || !signature) return null
+    const row = this.db.prepare(`SELECT run_kind, run_id, created_at FROM ci_gate_results WHERE commit_sha = ? AND signature = ?`).get(commitSha, signature) as { run_kind: string; run_id: string; created_at: number } | undefined
+    return row ? { runKind: row.run_kind, runId: row.run_id, createdAt: row.created_at } : null
+  }
+
+  /** Запоминает зелёный прогон; повторная запись того же ключа безвредна. */
+  recordPassedGateResult(args: { projectId: string; taskId: string; commitSha: string; signature: string; commands: readonly string[]; runKind: string; runId: string }): void {
+    if (!args.commitSha || !args.signature) return
+    this.db.prepare(`INSERT INTO ci_gate_results (id, project_id, task_id, commit_sha, signature, commands_json, run_kind, run_id, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(commit_sha, signature) DO NOTHING`)
+      .run(this.newId(), args.projectId, args.taskId, args.commitSha, args.signature, JSON.stringify(args.commands), args.runKind, args.runId, this.now())
+  }
+
+  /** Закрыта ли задача (Done/Отменена) или её уже нет: рабочую копию и её
+   *  зависимости держим до этого момента — пост-development стадии выполняются
+   *  в том же checkout, что и development-ран. */
+  isTaskClosed(taskId: string): boolean {
+    const row = this.db.prepare(`SELECT c.semantic_type FROM tasks t LEFT JOIN kanban_columns c ON c.id = t.column_id WHERE t.id = ?`).get(taskId) as { semantic_type: string | null } | undefined
+    return !row || row.semantic_type === 'done' || row.semantic_type === 'cancelled'
   }
 
   getCiRunRaw(runId: string): CiRun | null {
@@ -6998,9 +7291,9 @@ export class VoiceChatDb {
 
   // --- Рабочие директории ---
 
-  createCiWorkspace(args: { projectId: string; taskId: string; agentId: string | null; path: string }): CiWorkspace {
+  createCiWorkspace(args: { projectId: string; taskId: string; agentId: string | null; path: string; npmCacheDir?: string | null }): CiWorkspace {
     const id = this.newId()
-    this.db.prepare(`INSERT INTO ci_workspaces (id, project_id, task_id, agent_id, path, state, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)`).run(id, args.projectId, args.taskId, args.agentId, args.path, this.now())
+    this.db.prepare(`INSERT INTO ci_workspaces (id, project_id, task_id, agent_id, path, npm_cache_dir, state, created_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`).run(id, args.projectId, args.taskId, args.agentId, args.path, args.npmCacheDir ?? null, this.now())
     return mapCiWorkspace(this.db.prepare(`SELECT * FROM ci_workspaces WHERE id = ?`).get(id) as CiWorkspaceRow)
   }
 
@@ -7467,6 +7760,31 @@ export class VoiceChatDb {
   }
 
   /** Единая отображаемая сводка одной задачи; null — значимого результата нет. */
+  /**
+   * Сколько событий данного типа записано у рана. Нужно автопроходу: сбой машины
+   * лечится повтором с упавшего шага (работа модели уже в рабочей копии), но
+   * число таких повторов обязано быть конечным — иначе сломанное окружение
+   * крутило бы ран по кругу.
+   */
+  countCiEvents(runId: string, type: string): number {
+    return Number((this.db.prepare(`SELECT COUNT(*) AS n FROM ci_events WHERE run_id = ? AND type = ?`).get(runId, type) as { n: number }).n)
+  }
+
+  /**
+   * Сколько последних ранов задачи подряд закончились провалом. Автопроходу это
+   * нужно как предохранитель: карточку в development надо подтолкнуть новым
+   * раном, но повторять это бесконечно на сломанной задаче нельзя.
+   */
+  countTrailingFailedCiRuns(taskId: string): number {
+    const rows = this.db.prepare(`SELECT status FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC`).all(taskId) as Array<{ status: string }>
+    let count = 0
+    for (const row of rows) {
+      if (row.status === 'failed' || row.status === 'timeout') count += 1
+      else break
+    }
+    return count
+  }
+
   latestCiRunSummary(taskId: string): CiRunSummary | null {
     const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC`).all(taskId) as CiRunRow[]
     const task = this.db.prepare(`SELECT column_id FROM tasks WHERE id = ?`).get(taskId) as { column_id: string } | undefined
@@ -8069,10 +8387,10 @@ export class VoiceChatDb {
     })()
   }
 
-  componentQaExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
+  componentQaExecutionContext(runId:string):CiStageExecutionContext|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.component_qa_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;component_qa_command:string|null}|undefined
     if (!row?.agent_id||!row.path) return null
-    return {agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run test:storybook'])}
+    return {agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.component_qa_command?.trim()||row.test_command||'',['npm run test:storybook'])}
   }
 
   markComponentQaRunning(id:string):void {
@@ -8214,9 +8532,9 @@ export class VoiceChatDb {
     })()
   }
 
-  integrationTestExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
-    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
-    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run affected-check'])}:null
+  integrationTestExecutionContext(runId:string):CiStageExecutionContext|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,w.npm_cache_dir,p.test_command,p.integration_test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;npm_cache_dir:string|null;test_command:string|null;integration_test_command:string|null}|undefined
+    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,npmCacheDir:row.npm_cache_dir,commands:testStages(row.integration_test_command?.trim()||row.test_command||'',['npm run affected-check'])}:null
   }
   markIntegrationTestRunning(id:string):void { this.db.prepare(`UPDATE integration_test_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id) }
   appendIntegrationTestLog(id:string,chunk:string):void { this.db.prepare(`UPDATE integration_test_runs SET log=substr(log||?,-500000) WHERE id=? AND status='running'`).run(chunk,id) }
@@ -8821,6 +9139,15 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM qa_stage_runs WHERE project_id=? AND task_id=? AND stage=? ORDER BY attempt DESC`).all(projectId, taskId, stage) as Record<string, unknown>[]).map((row) => this.mapQaStageRun(row))
   }
 
+  /**
+   * Проекты, где есть хоть одна карточка с автопроходом. Нужен фоновому тику:
+   * этап, упавший из-за уснувшей машины, иначе ждал бы следующего действия
+   * человека — а весь смысл автопрохода в том, чтобы человека не ждать.
+   */
+  autoPilotProjectIds(): string[] {
+    return (this.db.prepare(`SELECT DISTINCT project_id FROM tasks WHERE auto_pilot=1 AND type='task'`).all() as Array<{ project_id: string }>).map((row) => row.project_id)
+  }
+
   autoPilotSnapshot(projectId: string): Array<{ task: Task; stage: KanbanColumnSemanticType; userId: string; requiresManualQa: boolean }> {
     const project = this.db.prepare(`SELECT created_by,autopilot_requires_manual_qa FROM projects WHERE id=?`).get(projectId) as { created_by: string; autopilot_requires_manual_qa: number } | undefined
     if (!project) return []
@@ -9025,6 +9352,11 @@ export class VoiceChatDb {
   /** Идентификаторы всех ранов этапов — для уборки осиротевших снимков на диске. */
   qaStageRunIds(): Set<string> {
     return new Set((this.db.prepare(`SELECT id FROM qa_stage_runs`).all() as Array<{ id: string }>).map((row) => row.id))
+  }
+
+  /** Существующие раны CI — для уборки файлов, которые каскад БД не трогает. */
+  ciRunIds(): Set<string> {
+    return new Set((this.db.prepare(`SELECT id FROM ci_runs`).all() as Array<{ id: string }>).map((row) => row.id))
   }
 
   recoverableAutomatedQaRuns(): Array<{ id: string; userId: string; projectId: string }> {
@@ -9392,7 +9724,10 @@ interface QaIssueRow { id:string;result_id:string;classification:string;severity
 interface QaAttachmentRow { id:string;result_id:string;upload_id:string;name:string;mime_type:string;size:number;width:number|null;height:number|null;caption:string;author:string;created_at:number;commit_sha:string }
 
 function qaSnapshot(value:AcceptanceCriterionSnapshot):AcceptanceCriterionSnapshot {
-  const testType=value.testType==='automated'||value.testType==='mixed'||value.testType==='not_testable_in_app'?value.testType:'manual'
+  // Список типов один — общий контракт QA. Пока здесь была тройка legacy-значений,
+  // актуальные ui|api|integration|negative|regression молча превращались в manual,
+  // и сценарий, по которому запускается Component QA, терял свой тип при сохранении.
+  const testType=QA_CRITERION_TEST_TYPES.includes(value.testType)?value.testType:'manual'
   return {title:value.title.trim(),description:value.description.trim(),preconditions:value.preconditions.trim(),steps:value.steps.trim(),testData:value.testData.trim(),expectedResult:value.expectedResult.trim(),required:value.required!==false,testType}
 }
 function mapTaskRepository(r: Record<string, unknown>): TaskRepository {
@@ -9804,6 +10139,17 @@ export function projectKbSkeleton(name: string, description: string): string {
     'Пока не описано.',
     ''
   ].join('\n')
+}
+
+/** Где и что выполняет пост-development стадия (Component QA, интеграционные
+ *  тесты). `npmCacheDir` — кэш npm задачи из записи рабочей директории: стадия
+ *  ставит зависимости сама и берёт тот же кэш, что и development-ран. У старых
+ *  записей его нет — тогда npm работает со своим кэшем по умолчанию. */
+export interface CiStageExecutionContext {
+  agentId: string
+  workdir: string
+  npmCacheDir: string | null
+  commands: string[]
 }
 
 /** Всё, что нужно раннеру этапа Automated QA: где выполнять и что именно. */

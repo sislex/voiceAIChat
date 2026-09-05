@@ -66,6 +66,21 @@ describe('CodexCli', () => {
     expect(args[args.indexOf('resume') + 1]).toBe('thread-7')
   })
 
+  it('каждый HTTP-MCP получает default_tools_approval_mode=approve: без него codex exec отклоняет вызовы даже в read-only sandbox', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new CodexCli({ spawn }).send(
+      { prompt: 'x', sessionId: null, model: '', permissionMode: 'plan', kanbanMcpUrl: 'http://127.0.0.1:8787/mcp/kanban?k=s&conv=c1', kbMcpUrl: 'http://127.0.0.1:8787/mcp/kb?k=s' },
+      makeHandlers()
+    )
+    const args = argsOf(spawn)
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only')
+    expect(args).toContain('mcp_servers.kanban.url="http://127.0.0.1:8787/mcp/kanban?k=s&conv=c1"')
+    expect(args).toContain('mcp_servers.kanban.default_tools_approval_mode="approve"')
+    expect(args).toContain('mcp_servers.kb.default_tools_approval_mode="approve"')
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+  })
+
   it('remote → -c mcp_servers.remote.url + инструкция в stdin', async () => {
     const { child, stdin } = fakeChild()
     let input = ''

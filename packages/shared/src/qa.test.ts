@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, integrationTestGate, integrationTestSemanticVersion, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
+import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, gateSignature, integrationTestGate, integrationTestSemanticVersion, parseAutomationMarkers, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
 
 function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'>): QaSession {
   return {
@@ -60,11 +60,40 @@ describe('development readiness gate', () => {
       { id: 'code', kind: 'code' as const, status: 'available' as const, summary: 'Read', refs: ['qa.ts'], critical: true }
     ]
     expect(canConfirmDevelopmentReadiness(input).allowed).toBe(true)
+    input.sources.push({ id: 'design', kind: 'code', status: 'unavailable', summary: 'Живой шаблон нужен на реализации', refs: ['index.html'], critical: false })
+    expect(canConfirmDevelopmentReadiness(input).allowed).toBe(true)
+    expect(canConfirmDevelopmentReadiness(input).reasons).not.toContain('critical_source_unavailable:design')
     input.sources[1] = { ...input.sources[1], status: 'absent', summary: 'Файл не найден' }
     expect(canConfirmDevelopmentReadiness(input).reasons).toEqual(expect.arrayContaining([
       'missing_code_source', 'critical_source_unavailable:code'
     ]))
   })
+  // Расхождение гейтов: подготовка выпускала бриф без UI-сценария, а Component
+  // QA без него не запускался вовсе — задача застревала после разработки.
+  it('requires a required UI scenario when the task touches UI', () => {
+    const input = ready()
+    input.uiImpact = 'existing_components'
+    input.affectedComponents = [{
+      id: 'button', name: 'Button', storybookStoryId: 'button--default', reusable: true,
+      coverage: { states: true, variants: true, sizes: true, loading: true, empty: true, error: true, a11y: true },
+      exclusionReason: '', alternativeVerification: ''
+    }]
+    input.testCases = [testCase({ testType: 'manual', automatable: false, notAutomatedReason: 'Ручная проверка', alternativeManualVerification: 'По шагам' })]
+    expect(canConfirmDevelopmentReadiness(input).reasons).toContain('missing_required_component_scenarios')
+    // Ровно то же требование, что и у запуска этапа: причина совпадает дословно.
+    expect(componentQaLaunchReasons(input)).toContain('missing_required_component_scenarios')
+
+    input.testCases.push(testCase({ id: 'TC-2', testType: 'ui' }))
+    expect(canConfirmDevelopmentReadiness(input).reasons).not.toContain('missing_required_component_scenarios')
+    expect(componentQaLaunchReasons(input)).not.toContain('missing_required_component_scenarios')
+  })
+
+  it('does not demand a UI scenario when uiImpact is none', () => {
+    const input = ready()
+    input.testCases = [testCase({ testType: 'manual', automatable: false, notAutomatedReason: 'Ручная', alternativeManualVerification: 'Шаги' })]
+    expect(canConfirmDevelopmentReadiness(input).reasons).not.toContain('missing_required_component_scenarios')
+  })
+
   it('requires Storybook coverage or an explicit alternative for UI work', () => {
     const input = ready()
     input.uiImpact = 'new_components'
@@ -145,6 +174,28 @@ describe('component QA gate', () => {
 describe('integration test creation gate',()=>{
   it('accepts only test-directory or spec/test files in the committed diff',()=>{
     expect(validateIntegrationTestDiff(['apps/server/src/foo.ts','apps/server/src/foo.test.ts','tests/api.spec.ts'])).toEqual(['apps/server/src/foo.ts'])
+  })
+
+  it('маркеры покрытия дают явную пару кейс → файл',()=>{
+    const output = [
+      'packages/ui/src/a.test.tsx:// @testCase TC-1',
+      'packages/ui/src/a.test.tsx: * @testCase: TC-2',
+      'packages/ui/src/b.test.tsx:// @testCase TC-1',
+      'мусорная строка без маркера'
+    ].join('\n')
+    // Первый путь для кейса побеждает: ссылка обязана быть стабильной между прогонами.
+    expect(parseAutomationMarkers(output)).toEqual([
+      { testId: 'TC-1', path: 'packages/ui/src/a.test.tsx' },
+      { testId: 'TC-2', path: 'packages/ui/src/a.test.tsx' }
+    ])
+    expect(parseAutomationMarkers('')).toEqual([])
+  })
+
+  it('подпись гейта зависит только от набора команд',()=>{
+    expect(gateSignature([' npm test '])).toBe(gateSignature(['npm test']))
+    expect(gateSignature(['npm test'])).not.toBe(gateSignature(['npm test','npm run lint']))
+    expect(gateSignature(['a','b'])).not.toBe(gateSignature(['b','a']))
+    expect(gateSignature([])).toHaveLength(8)
   })
   it('pins the run to SHA and semantic automatable snapshot and reuses canCompleteAutomation',()=>{
     const cases=[testCase({automationLinks:[{testId:'TC-1',path:'tests/tc1.test.ts',updatedAt:1,commitSha:'abc'}]})]

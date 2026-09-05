@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-01
-checked: 4aab9ff7
+updated: 2026-09-03
+checked: 66b310c8
 areas:
   - apps/web
   - apps/desktop/src
@@ -71,11 +71,11 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 
 ## Login application (`apps/login-application`)
 
-Самостоятельное Electron-приложение принимает `voicechat-login://enroll` при cold start, через macOS `open-url` и single-instance callback. Оно погашает двухминутный opaque enrollment, сохраняет полученный machine token только через `safeStorage` и запускает `startConnection` из `apps/agent`; exec/fs/pty не копируются. Уже настроенная машина не перезаписывается. Альтернативная форма принимает адрес ChatAI, логин и пароль, создаёт текущую машину через REST, очищает поле пароля и ничего из credentials не сохраняет; аккаунты с 2FA направляются в deep-link flow из открытой web-сессии.
+Самостоятельное Electron-приложение принимает `voicechat-login://enroll` при cold start, через macOS `open-url` и single-instance callback. Оно погашает двухминутный opaque enrollment и только после успешного ответа применяет возвращённые `serverUrl` и machine token: token сохраняется через `safeStorage`, затем запускается `startConnection` из `apps/agent`; exec/fs/pty не копируются. Повторная доставка одной уже успешно обработанной ссылки идемпотентна. Если машина уже настроена, до redeem показывается системное подтверждение: отказ сохраняет старую конфигурацию, а согласие атомарно заменяет её зашифрованным файлом. Renderer-форма в `apps/login-application/src/renderer` предлагает сервер ChatAI, логин и пароль; кнопка активна только при заполненных обязательных полях. Она вызывает только preload-операции `configured` и `addCurrentDevice`, передаёт пароль в IPC-запросе и очищает его после завершения, ошибки и успешного подключения; credentials не сохраняются. Аккаунты с 2FA направляются в enrollment flow из открытой web-сессии.
 
-В URI находятся только краткоживущий enrollment secret, correlation id и origin сервера; постоянный machine token приходит в HTTPS-ответе redeem. Renderer видит только фиксированные операции preload и статусы, но не token store. `electron-builder.yml` регистрирует protocol и собирает только macOS ARM64 DMG. Пакет вне workspaces, имеет отдельный lockfile; команды проверки — `npm --prefix apps/login-application run typecheck`, `test`, `dist`, `smoke`.
+В URI находятся только краткоживущий enrollment `secret`, `correlationId` и `origin` сервера; старые имена query-параметров читаются на время обновления установленных приложений. HTTPS origin разрешён всегда, а HTTP — только для `localhost`, IPv6 loopback и диапазона `127.0.0.0/8` в development. Постоянный machine token приходит в ответе redeem. В desktop-host `voicechat-login://open` только раскрывает окно; enrollment-ссылка проходит `parse`/`enroll`, а её `serverUrl` применяется лишь после успешного `enroll` (`apps/desktop/src/main/remoteConfig.ts`). Renderer видит только фиксированные операции preload и статусы, но не token store. `electron-builder.yml` регистрирует protocol и собирает только macOS ARM64 DMG. Пакет вне workspaces, имеет отдельный lockfile; команды проверки — `npm --prefix apps/login-application run typecheck`, `test`, `dist`, `smoke`.
 
-Серверный реестр `/api/login-application/artifacts` выбирает platform/arch; сейчас доступна только `macos/arm64`. Отдельный download endpoint отдаёт `voicechat-login-macos-arm64.dmg`, настроенный через `VC_LOGIN_APPLICATION` или autodiscovery `apps/login-application/release`. Общий frontend dialog всегда предлагает «Скачать приложение» и «Открыть приложение»; успех подтверждается status и online-машиной, после чего continuation выполняется один раз.
+Серверный реестр `/api/login-application/artifacts` выбирает platform/arch; сейчас доступна только `macos/arm64`. Отдельный download endpoint отдаёт `voicechat-login-macos-arm64.dmg`, настроенный через `VC_LOGIN_APPLICATION` или autodiscovery `apps/login-application/release`. Диалог подключения устройства реализован в `packages/ui/src/App.tsx` на общем `Dialog`, поэтому закрывается штатной кнопкой и с клавиатуры. Production-мост использует `loginApplication:artifacts` для DMG, `loginApplication:issueEnrollment` для новой одноразовой ссылки и `loginApplication:enrollmentStatus` для polling результата. Состояния загрузки, ожидания, истечения и ошибок выводятся как live-region `status`/`alert`; закрытие инвалидирует текущий polling и отменяет отложенное действие. После completed enrollment UI дополнительно ждёт online-машину, выбирает её как default и выполняет continuation ровно один раз.
 
 ## Границы безопасности Electron
 

@@ -12,8 +12,10 @@ describe('buildUnixInstallScript', () => {
   })
 
   it('требует Node 22+ и умеет портативный', () => {
-    expect(linux).toContain('-ge 22')
+    expect(linux).toContain('[ "$major" -lt 22 ]')
     expect(linux).toContain('nodejs.org/dist/index.json')
+    expect(mac).toContain('/"v22\\./')
+    expect(linux).toContain("awk 'NR == 1")
     expect(linux).toContain('node-$NVER-linux-$NARCH.tar.gz')
     expect(mac).toContain('node-$NVER-darwin-$NARCH.tar.gz')
   })

@@ -104,6 +104,16 @@ export interface DevelopmentReadiness {
 export interface ReadinessCheck { allowed: boolean; reasons: string[] }
 
 /** Pure quality gate used before entering Ready for Development. */
+/**
+ * Сценарии, которые вправе прогонять Component QA: витрина проверяет UI, а не
+ * ручные шаги. Предикат общий для гейта подготовки и гейта запуска этапа —
+ * пока они расходились, подготовка успешно выпускала бриф, с которым Component
+ * QA не запускался никогда, и задача застревала после разработки.
+ */
+export function hasRequiredComponentScenario(testCases: readonly TestCaseDefinition[]): boolean {
+  return testCases.some((item) => item.required && (item.testType === 'ui' || item.testType === 'automated' || item.testType === 'mixed'))
+}
+
 export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): ReadinessCheck {
   const reasons: string[] = []
   if (!input.functionalRequirements.trim()) reasons.push('missing_functional_requirements')
@@ -123,6 +133,9 @@ export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): Rea
   if (!input.uiImpact) reasons.push('missing_ui_impact')
   if (input.uiImpact && input.uiImpact !== 'none') {
     if (input.affectedComponents.length === 0) reasons.push('missing_affected_components')
+    // Тот же список типов, что и у запуска Component QA: иначе бриф пройдёт
+    // подготовку, а этап откажется стартовать с `missing_required_component_scenarios`.
+    if (!hasRequiredComponentScenario(input.testCases)) reasons.push('missing_required_component_scenarios')
     for (const component of input.affectedComponents) {
       if (!component.storybookStoryId && (!component.exclusionReason.trim() || !component.alternativeVerification.trim() || !component.coverage || Object.keys(component.coverage).length === 0)) reasons.push(`missing_storybook_coverage:${component.id}`)
       if (component.reusable && input.uiImpact === 'new_components' && !component.storybookStoryId && !component.exclusionReason.trim()) reasons.push(`new_reusable_component_without_story:${component.id}`)
@@ -155,7 +168,7 @@ export function developmentReadinessGateResults(input: DevelopmentReadiness): Pr
     ['material_questions_closed', (r) => r.startsWith('open_material_question:')],
     ['contradictions_resolved', (r) => r === 'acceptance_criteria_conflict' || r === 'unresolved_material_contradiction'],
     ['acceptance_criteria_verifiable', (r) => r.startsWith('unverifiable_acceptance_criterion:')],
-    ['required_test_cases_complete', (r) => /^(missing_(stable_id|title|description|preconditions|test_data|steps|expected_result|required_test_cases)|missing_manual_justification)/.test(r)],
+    ['required_test_cases_complete', (r) => /^(missing_(stable_id|title|description|preconditions|test_data|steps|expected_result|required_test_cases|required_component_scenarios)|missing_manual_justification)/.test(r)],
     ['ui_impact_sufficient', (r) => r.includes('storybook') || r.includes('affected_components') || r.includes('ui_impact') || r.includes('reusable_component')],
     ['assumptions_allowed', (r) => r.startsWith('invalid_assumption:')],
     ['sensitive_data_redacted', () => false]
@@ -352,8 +365,7 @@ export function componentQaLaunchReasons(readiness: DevelopmentReadiness): strin
   const reasons: string[] = []
   if (!readiness.uiImpact) reasons.push('missing_ui_impact')
   if (!readiness.affectedComponents.length) reasons.push('missing_affected_components')
-  const componentCases = readiness.testCases.filter((item) => item.testType === 'ui' || item.testType === 'automated' || item.testType === 'mixed')
-  if (!componentCases.some((item) => item.required)) reasons.push('missing_required_component_scenarios')
+  if (!hasRequiredComponentScenario(readiness.testCases)) reasons.push('missing_required_component_scenarios')
   for (const component of readiness.affectedComponents) {
     if (!component.storybookStoryId) {
       if (!component.exclusionReason.trim()) reasons.push(`missing_exclusion_reason:${component.id}`)
@@ -435,6 +447,19 @@ export function integrationTestSemanticVersion(testCases: readonly TestCaseDefin
   for (let index=0; index<stable.length; index++) { hash ^= stable.charCodeAt(index); hash = Math.imul(hash,16777619) }
   return (hash>>>0).toString(16).padStart(8,'0')
 }
+/**
+ * Отпечаток набора команд стадии. Вместе с SHA коммита он задаёт вопрос «этот
+ * код уже проходил ровно эти проверки?»: пост-development стадии выполняются на
+ * неизменном коде development-рана, и без такого ключа один и тот же гейт
+ * монорепо гоняется по разу на каждой стадии и ещё раз на повторе.
+ */
+export function gateSignature(commands: readonly string[]): string {
+  const stable = JSON.stringify(commands.map((command) => command.trim()))
+  let hash = 2166136261
+  for (let index = 0; index < stable.length; index++) { hash ^= stable.charCodeAt(index); hash = Math.imul(hash, 16777619) }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
 export function integrationTestGate(run: IntegrationTestRun, currentSha: string, currentCases: readonly TestCaseDefinition[]): ReadinessCheck {
   const reasons:string[]=[]
   if (run.status!=='passed'&&run.status!=='skipped') reasons.push(`run_${run.status}`)
@@ -451,6 +476,31 @@ export function validateIntegrationTestDiff(paths: readonly string[], patterns: 
   /\.(test|spec)\.[cm]?[jt]sx?$/i
 ]): string[] {
   return paths.filter((path)=>!patterns.some((pattern)=>pattern.test(path)))
+}
+
+/**
+ * Маркер покрытия в тестовом файле: `@testCase <id>` в комментарии. Разработка
+ * ставит его рядом с тестом, который закрывает кейс из readiness, — иначе
+ * покрытие приходится синтезировать из диффа, приписывая первый попавшийся
+ * тестовый файл всем обязательным кейсам сразу (так и было до CHAT-411).
+ */
+export const AUTOMATION_MARKER = '@testCase'
+
+/**
+ * Разбор вывода `grep -HoE '@testCase[[:space:]]+…' -- <файлы>`: строки вида
+ * `path:@testCase TC-1`. Один тест может закрывать несколько кейсов, один кейс
+ * может закрываться несколькими файлами — побеждает первый встреченный путь,
+ * чтобы ссылка была стабильной между прогонами.
+ */
+export function parseAutomationMarkers(output: string): Array<{ testId: string; path: string }> {
+  const seen = new Map<string, string>()
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^(.+?):.*@testCase[\s:]+([A-Za-z0-9._-]+)/.exec(line.trim())
+    if (!match) continue
+    const [, path, testId] = match
+    if (!seen.has(testId)) seen.set(testId, path.trim())
+  }
+  return [...seen].map(([testId, path]) => ({ testId, path }))
 }
 
 export type QaResultStatus = 'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'

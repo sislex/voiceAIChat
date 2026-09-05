@@ -284,7 +284,8 @@ describe('Sidebar — режим «Проекты»', () => {
     // закрывается по потере фокуса.
     const onCreateProject = vi.fn()
     setup({ projects: [], mode: 'projects', onModeChange: vi.fn(), onCreateProject })
-    expect(screen.getByText('Проектов пока нет')).toBeInTheDocument()
+    expect(screen.getByText('Пока нет проектов — создайте первый')).toBeInTheDocument()
+    expect(screen.getByText('Проект появится в этом списке и объединит связанные чаты и задачи.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '+ Новый проект' }))
     expect(onCreateProject).toHaveBeenCalledTimes(1)
     expect(screen.queryByLabelText('Название нового проекта')).not.toBeInTheDocument()
@@ -555,7 +556,7 @@ describe('Sidebar — desktop resize и панели управления', () =
     fireEvent.click(screen.getByRole('button', { name: /Новый чат/ }))
     expect(onNew).toHaveBeenCalledTimes(1)
     view.rerender(<Sidebar {...view} onNew={onNew} onModeChange={onModeChange} mode="projects" onCreateProject={vi.fn()} />)
-    expect(screen.getByRole('button', { name: /Новый проект/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '+ Новый проект' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Новый чат/ })).not.toBeInTheDocument()
     expect(within(group).getByRole('button', { name: 'Проекты' })).toHaveClass('on')
   })

@@ -16,6 +16,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
 interface Seeded {
   api: FakeApi
   /** Старый разговор (не самый свежий). */
@@ -36,6 +42,30 @@ async function seededApi(): Promise<Seeded> {
   return { api, gifts: gifts.id, lisbon: lisbon.id }
 }
 
+describe('App — пустая главная страница чатов', () => {
+  it('показывает Make-состояние и открывает существующее создание разговора', async () => {
+    const api = createFakeApi([])
+    api['agents:list'] = async () => [{
+      id: 'test-mac',
+      name: 'Test Mac',
+      online: true,
+      createdAt: 1,
+      lastSeen: 1,
+      policy: DEFAULT_AGENT_POLICY
+    }]
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+
+    render(<App api={api} delays={SLOW} />)
+
+    const page = await screen.findByTestId('chats-empty')
+    expect(screen.getByRole('heading', { name: 'Чаты' })).toBeInTheDocument()
+    expect(page).toHaveTextContent('Новых чатов пока нет')
+    expect(page).toHaveTextContent('Новый разговор появится здесь после создания.')
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить новый чат' }))
+    expect(await screen.findByRole('button', { name: 'Создать разговор' })).toBeInTheDocument()
+  })
+})
+
 describe('App — machine-required guard', () => {
   it('при отсутствии online-машины приостанавливает создание чата и показывает единый web-диалог', async () => {
     const api = createFakeApi([])
@@ -45,8 +75,8 @@ describe('App — machine-required guard', () => {
     await screen.findByText('Текущий чат')
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByRole('dialog', { name: 'Подключить устройство' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Скачать приложение' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Открыть приложение' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Скачать и открыть приложение' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Добавить новое устройство по ссылке' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Создать разговор' })).not.toBeInTheDocument()
   })
 
@@ -83,10 +113,75 @@ describe('App — machine-required guard', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByRole('dialog', { name: 'Подключить устройство' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Открыть приложение' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить новое устройство по ссылке' }))
 
     await waitFor(() => expect(api._state.settings.defaultAgentId).toBe(currentMac.id), { timeout: 2_000 })
     expect(await screen.findByRole('button', { name: 'Создать разговор' })).toBeInTheDocument()
+  })
+
+  it('игнорирует запоздалый issue после закрытия диалога и отменяет continuation', async () => {
+    const issue = deferred<Awaited<ReturnType<FakeApi['loginApplication:issueEnrollment']>>>()
+    const api = createFakeApi([])
+    const status = vi.fn(api['loginApplication:enrollmentStatus'])
+    api['loginApplication:issueEnrollment'] = () => issue.promise
+    api['loginApplication:enrollmentStatus'] = status
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Текущий чат' })
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Текущий чат')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить новое устройство по ссылке' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Закрыть' }))
+    issue.resolve({
+      enrollmentToken: 'old-secret',
+      statusId: 'old-status',
+      expiresAt: Date.now() + 60_000,
+      deepLink: 'voicechat-login://enroll?v=1&secret=old-secret&correlationId=old-status&origin=http%3A%2F%2Flocalhost%3A8787'
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Подключить устройство' })).not.toBeInTheDocument())
+    expect(status).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Создать разговор' })).not.toBeInTheDocument()
+  })
+
+  it('игнорирует запоздалый ответ реестра артефактов после закрытия диалога', async () => {
+    const artifacts = deferred<Awaited<ReturnType<FakeApi['loginApplication:artifacts']>>>()
+    const api = createFakeApi([])
+    api['loginApplication:artifacts'] = () => artifacts.promise
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Текущий чат' })
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Текущий чат')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Скачать и открыть приложение' }))
+    expect(screen.getByRole('button', { name: 'Скачиваем приложение…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Добавить новое устройство по ссылке' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Закрыть' }))
+    artifacts.resolve([{
+      platform: 'macos',
+      arch: 'arm64',
+      available: false
+    }])
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Подключить устройство' })).not.toBeInTheDocument())
+    expect(screen.queryByText('Сборка macOS ARM64 сейчас недоступна.')).not.toBeInTheDocument()
+  })
+
+  it('объявляет ошибку скачивания и разрешает повторить действие', async () => {
+    const api = createFakeApi([])
+    api['loginApplication:artifacts'] = async () => { throw new Error('registry offline') }
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    await api['conversations:create']({ title: 'Текущий чат' })
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Текущий чат')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Скачать и открыть приложение' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось скачать приложение: registry offline')
+    expect(screen.getByRole('button', { name: 'Скачать и открыть приложение' })).toBeEnabled()
   })
 })
 
@@ -187,7 +282,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Создать разговор' }))
 
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
-    expect(create).toHaveBeenCalledWith({ title: 'Новый разговор', projectId: project.id })
+    expect(create).toHaveBeenCalledWith({ title: 'Новый разговор', scope: 'chat', projectId: project.id })
     const created = api._state.conversations.at(-1)
     expect(created?.projectId).toBe(project.id)
     expect(window.location.hash).toBe(`#/chat/${created?.id}`)
@@ -315,7 +410,7 @@ describe('App — отдельная страница Web Reader', () => {
     }
   })
 
-  it('селектор перечисляет typed и legacy reader-чаты и подсвечивает активный', async () => {
+  it('селектор перечисляет только scope=web-reader и отклоняет legacy chat из URL', async () => {
     const { api } = await seededApi()
     await api['conversations:create']({ title: 'Reader', assistantKind: 'web-recorder' })
     const legacy = await api['conversations:create']({ title: 'Старый ридер' })
@@ -324,9 +419,9 @@ describe('App — отдельная страница Web Reader', () => {
     render(<App api={api} delays={SLOW} />)
 
     const select = await screen.findByLabelText('Разговор Web Reader')
-    await waitFor(() => expect(select).toHaveValue(legacy.id))
+    await waitFor(() => expect(select).not.toHaveValue(legacy.id))
     expect(screen.getByRole('option', { name: 'Reader' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Старый ридер' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Старый ридер' })).not.toBeInTheDocument()
     // Обычные чаты в селектор не попадают, плейсхолдера при подсвеченном активном нет.
     expect(screen.queryByRole('option', { name: 'Поездка в Лиссабон' })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Чат не выбран' })).not.toBeInTheDocument()

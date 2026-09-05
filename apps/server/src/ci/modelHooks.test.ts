@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { EMPTY_CI_TOOL_CALLS, isTrimmedToolOutput, trimmedToolOutputOriginalChars, type MergeRun } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
-import { createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
+import { automationHint, createCiModelHooks, parseCiTestFailures } from './modelHooks.js'
 import { kbTaskQuery } from '../kb/taskQuery.js'
 import type { CiFixContext, CiModelContext, CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
@@ -175,6 +175,58 @@ describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
   })
 })
 
+describe('работа модели: браузерная проверка задачи', () => {
+  const PREVIEW_MCP = 'http://voicechat:8787/mcp/preview?k=secret'
+
+  it('без режима проверки инструментов браузера у хода нет', async () => {
+    const { ctx } = setup()
+    const rec = recorder()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.previewSurface).toBeUndefined()
+  })
+
+  it('режим chromium даёт ходу инструменты и поверхность изолированного браузера', async () => {
+    const { task, ctx } = setup()
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    const rec = recorder()
+    const tokens = broker()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: tokens }).modelWork(ctx)
+    expect(rec.last()?.previewMcpUrl).toContain(`${PREVIEW_MCP}&turn=`)
+    expect(rec.last()?.previewSurface).toBe('chromium')
+    // Токен адресует ход и после него жить не должен.
+    expect(tokens.live()).toEqual([])
+  })
+
+  it('режим user_panel оставляет поверхностью панель пользователя', async () => {
+    const { task, ctx } = setup()
+    db.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
+    const rec = recorder()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    expect(rec.last()?.previewSurface).toBe('panel')
+  })
+
+  it('без чата рана адресовать действия некому — инструментов нет', async () => {
+    const project = db.createProject(U, { name: 'P2' })
+    const board = db.getBoard(U, project.id)!
+    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    const run = db.createCiRun({
+      projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
+      slotProgress: { done: 0, total: 1, phase: 'В очереди' }
+    })
+    const ctx = {
+      runId: run.id, agentId: null, workspacePath: '/repos/p/1', env: {}, signal: new AbortController().signal,
+      parentStepId: 'step-1', log: () => {}, run, task, project: db.getProject(U, project.id)!,
+      askUser: async () => null, askPlanApproval: async () => null,
+      runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
+    } as unknown as CiModelContext
+    const rec = recorder()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+  })
+})
+
 describe('работа модели: машины проекта', () => {
   it('remote несёт project в mcpUrl и имена других машин проекта', async () => {
     const mac = db.createAgent(U, 'Мак')
@@ -245,6 +297,28 @@ describe('работа модели: машины проекта', () => {
     await hooksWith(rec.client).modelWork(ctx)
     expect(rec.last()!.remote?.mcpUrl).not.toContain('&project=')
     expect(rec.last()!.remote?.projectMachines).toBeUndefined()
+  })
+})
+
+describe('автотесты пишет разработка', () => {
+  const readiness = (cases: Array<{ id: string; title: string; required: boolean; automatable: boolean }>) =>
+    ({ testCases: cases } as unknown as import('@voicechat/shared').DevelopmentReadiness)
+
+  it('промпт называет обязательные автоматизируемые кейсы и требует маркер покрытия', () => {
+    const hint = automationHint(readiness([
+      { id: 'TC-1', title: 'Форма Make', required: true, automatable: true },
+      { id: 'TC-2', title: 'Только руками', required: true, automatable: false },
+      { id: 'TC-3', title: 'Необязательный', required: false, automatable: true }
+    ]))
+    expect(hint).toContain('TC-1 — Форма Make')
+    expect(hint).not.toContain('TC-2')
+    expect(hint).not.toContain('TC-3')
+    expect(hint).toContain('@testCase <id кейса>')
+  })
+
+  it('без обязательных автоматизируемых кейсов промпт не растёт', () => {
+    expect(automationHint(null)).toBe('')
+    expect(automationHint(readiness([{ id: 'TC-1', title: 'Руками', required: true, automatable: false }]))).toBe('')
   })
 })
 

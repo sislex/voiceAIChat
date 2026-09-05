@@ -198,9 +198,12 @@ export function registerProjectRoutes(
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      componentQaCommand?: string
+      integrationTestCommand?: string
       automatedQaCommand?: string
       automatedQaMode?: import('@voicechat/shared').AutomatedQaMode
       automatedQaScenario?: import('@voicechat/shared').AutomatedQaScenario
+      autoPilotDefault?: boolean
       autoPilotRequiresManualQa?: boolean
       autoPilotFixLimit?: number
       productionDeployCommand?: string
@@ -692,6 +695,80 @@ export function registerProjectRoutes(
     }
   })
 
+  // --- Активность карточки: комментарии, ворклог, история (как в Jira) ----
+  // История пишется сервером сама (updateTask/moveTask); здесь — чтение снимка
+  // тремя лентами и CRUD пользовательского содержимого. Ошибки прав из БД
+  // («может править автор, владелец или админ») отдаются как 403 словами.
+  const activityError = (reply: FastifyReply, error: unknown): FastifyReply => {
+    const message = errMessage(error)
+    return reply.code(message.includes('автор, владелец') ? 403 : 400).send({ error: message })
+  }
+
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/activity', async (req, reply) => {
+    const activity = db.taskActivity(uid(req), req.params.id, req.params.taskId)
+    return activity ?? nf(reply)
+  })
+
+  app.post<{ Params: { id: string; taskId: string }; Body: { text?: string } }>('/api/projects/:id/tasks/:taskId/comments', async (req, reply) => {
+    try {
+      const comment = db.addTaskComment(uid(req), req.params.id, req.params.taskId, String(req.body?.text ?? ''))
+      if (!comment) return nf(reply)
+      boardHub.emit(req.params.id)
+      return comment
+    } catch (error) { return activityError(reply, error) }
+  })
+
+  app.patch<{ Params: { id: string; taskId: string; commentId: string }; Body: { text?: string } }>('/api/projects/:id/tasks/:taskId/comments/:commentId', async (req, reply) => {
+    try {
+      const comment = db.updateTaskComment(uid(req), req.params.id, req.params.commentId, String(req.body?.text ?? ''))
+      if (!comment) return nf(reply)
+      boardHub.emit(req.params.id)
+      return comment
+    } catch (error) { return activityError(reply, error) }
+  })
+
+  app.delete<{ Params: { id: string; taskId: string; commentId: string } }>('/api/projects/:id/tasks/:taskId/comments/:commentId', async (req, reply) => {
+    try {
+      if (!db.deleteTaskComment(uid(req), req.params.id, req.params.commentId)) return nf(reply)
+      boardHub.emit(req.params.id)
+      return { ok: true as const }
+    } catch (error) { return activityError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string; taskId: string }; Body: { minutes?: number; comment?: string; startedAt?: number } }>('/api/projects/:id/tasks/:taskId/worklog', async (req, reply) => {
+    try {
+      const entry = db.addTaskWorklog(uid(req), req.params.id, req.params.taskId, {
+        minutes: Number(req.body?.minutes ?? 0),
+        ...(req.body?.comment !== undefined ? { comment: String(req.body.comment) } : {}),
+        ...(req.body?.startedAt !== undefined ? { startedAt: Number(req.body.startedAt) } : {})
+      })
+      if (!entry) return nf(reply)
+      boardHub.emit(req.params.id)
+      return entry
+    } catch (error) { return activityError(reply, error) }
+  })
+
+  app.patch<{ Params: { id: string; taskId: string; entryId: string }; Body: { minutes?: number; comment?: string; startedAt?: number } }>('/api/projects/:id/tasks/:taskId/worklog/:entryId', async (req, reply) => {
+    try {
+      const entry = db.updateTaskWorklog(uid(req), req.params.id, req.params.entryId, {
+        ...(req.body?.minutes !== undefined ? { minutes: Number(req.body.minutes) } : {}),
+        ...(req.body?.comment !== undefined ? { comment: String(req.body.comment) } : {}),
+        ...(req.body?.startedAt !== undefined ? { startedAt: Number(req.body.startedAt) } : {})
+      })
+      if (!entry) return nf(reply)
+      boardHub.emit(req.params.id)
+      return entry
+    } catch (error) { return activityError(reply, error) }
+  })
+
+  app.delete<{ Params: { id: string; taskId: string; entryId: string } }>('/api/projects/:id/tasks/:taskId/worklog/:entryId', async (req, reply) => {
+    try {
+      if (!db.deleteTaskWorklog(uid(req), req.params.id, req.params.entryId)) return nf(reply)
+      boardHub.emit(req.params.id)
+      return { ok: true as const }
+    } catch (error) { return activityError(reply, error) }
+  })
+
   app.post<{
     Params: { id: string }
     Body: { proposalId?: string; title?: string; description?: string; acceptanceCriteria?: string; sourceConversationId?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; selection?: TaskPreparationLlmSelection }
@@ -976,6 +1053,8 @@ export function registerProjectRoutes(
       const conversationId = req.body?.conversationId
       if (!conversationId) return badReq(reply, 'conversationId required')
       try {
+        const userId = uid(req)
+        db.assertTaskDesignSource(userId, req.params.id, req.params.taskId, conversationId)
         if (req.body?.mode === 'files') {
           if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
           const requested = req.body.paths ?? []
@@ -983,7 +1062,7 @@ export function registerProjectRoutes(
           const missing = requested.find((path) => !existing.has(path))
           if (missing) throw new Error(`Make-проект ${conversationId}: файл ${missing} не найден`)
         }
-        const links = db.linkTaskDesign(uid(req), req.params.id, req.params.taskId, {
+        const links = db.linkTaskDesign(userId, req.params.id, req.params.taskId, {
           conversationId,
           mode: req.body?.mode,
           paths: req.body?.paths,

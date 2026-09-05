@@ -10,14 +10,24 @@ function scenario(): ComponentQaScenarioSnapshot {
 
 type Outcome = CommandExecResult & { output?: string; advanceMs?: number }
 
-function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs?: number } = {}) {
+/** Стадии идут после установки зависимостей, поэтому `outcomes` описывают
+ *  только их: исход самой установки задаётся отдельно (`opts.install`). */
+function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs?: number; install?: Outcome; npmCacheDir?: string | null; cached?: boolean } = {}) {
   let t = 0
-  const run = { id: 'run1', status: 'queued', scenarios: [scenario()] } as unknown as ComponentQaRun
+  const run = { id: 'run1', status: 'queued', projectId: 'p1', taskId: 't1', commitSha: 'a'.repeat(40), scenarios: [scenario()] } as unknown as ComponentQaRun
   const finished: ComponentQaFinishInput[] = []
   const calls: CommandExecRequest[] = []
   const log: string[] = []
+  const stages = [opts.install ?? { exitCode: 0, timedOut: false }, ...outcomes]
+  const gateResults: Array<{ commitSha: string; signature: string; runId: string }> = []
   const db = {
-    componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', commands } : null),
+    componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands } : null),
+    findPassedGateResult: (commitSha: string, signature: string) => {
+      if (opts.cached) return { runKind: 'component_qa', runId: 'previous-run', createdAt: 0 }
+      const hit = gateResults.find((item) => item.commitSha === commitSha && item.signature === signature)
+      return hit ? { runKind: 'component_qa', runId: hit.runId, createdAt: 0 } : null
+    },
+    recordPassedGateResult: (args: { commitSha: string; signature: string; runId: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature, runId: args.runId }) },
     getComponentQaRun: () => run,
     markComponentQaRunning: () => { run.status = 'running' },
     appendComponentQaLog: (_id: string, _stream: 'stdout' | 'stderr', chunk: string) => { log.push(chunk) },
@@ -26,14 +36,17 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
   const executor = {
     run: vi.fn(async (req: CommandExecRequest, onChunk: (data: string) => void) => {
       calls.push(req)
-      const outcome = outcomes[calls.length - 1] ?? { exitCode: 0, timedOut: false }
+      const outcome = stages[calls.length - 1] ?? { exitCode: 0, timedOut: false }
       if (outcome.output) onChunk(outcome.output)
       t += outcome.advanceMs ?? 1000
       return { exitCode: outcome.exitCode, timedOut: outcome.timedOut }
     })
   }
   const runner = createComponentQaRunner({ db, executor, now: () => t, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) })
-  return { runner, run, finished, calls, log }
+  /** Вызовы и записи стадий проекта — без предваряющей установки зависимостей. */
+  const stageCalls = (): CommandExecRequest[] => calls.slice(1)
+  const stageRecords = (input: ComponentQaFinishInput) => input.commands.slice(1)
+  return { runner, run, finished, calls, log, stageCalls, stageRecords, gateResults }
 }
 
 describe('createComponentQaRunner', () => {
@@ -41,33 +54,35 @@ describe('createComponentQaRunner', () => {
     const s = setup(['npm run one', 'npm run two'], [{ exitCode: 0, timedOut: false, output: 'one ok\n' }, { exitCode: 0, timedOut: false, output: 'two ok\n' }])
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
-    expect(s.calls.map((call) => call.script)).toEqual(['npm run one', 'npm run two'])
+    expect(s.stageCalls().map((call) => call.script)).toEqual(['npm run one', 'npm run two'])
     expect(s.calls.every((call) => call.env.CI === '1')).toBe(true)
     const input = s.finished[0]
     expect(input.status).toBe('passed')
     expect(input.failureClassification).toBeNull()
     expect(input.commands.map((command) => ({ commandId: command.commandId, name: command.name, command: command.command, exitCode: command.exitCode, status: command.status, diagnostic: command.diagnostic }))).toEqual([
+      { commandId: 'install', name: 'Установка зависимостей', command: "npm_config_cache='/cache/task' npm ci --no-audit --no-fund", exitCode: 0, status: 'passed', diagnostic: '' },
       { commandId: 'stage-1', name: 'Стадия 1 из 2', command: 'npm run one', exitCode: 0, status: 'passed', diagnostic: '' },
       { commandId: 'stage-2', name: 'Стадия 2 из 2', command: 'npm run two', exitCode: 0, status: 'passed', diagnostic: '' }
     ])
-    expect(input.commands[0].stdout).toBe('one ok\n')
-    expect(input.commands[1].stdout).toBe('two ok\n')
+    expect(s.stageRecords(input)[0].stdout).toBe('one ok\n')
+    expect(s.stageRecords(input)[1].stdout).toBe('two ok\n')
     expect(input.commands[0].durationMs).toBe(1000)
     expect(input.scenarios[0].status).toBe('passed')
-    expect(s.log).toEqual(['one ok\n', 'two ok\n'])
+    // Эхо команды в потоковом логе отделяет установку от стадий проекта.
+    expect(s.log).toEqual(["$ npm_config_cache='/cache/task' npm ci --no-audit --no-fund\n", '$ npm run one\n', 'one ok\n', '$ npm run two\n', 'two ok\n'])
   })
 
   it('первый ненулевой код возврата прерывает оставшиеся стадии', async () => {
     const s = setup(['npm run one', 'npm run two', 'npm run three'], [{ exitCode: 0, timedOut: false }, { exitCode: 1, timedOut: false }])
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
-    expect(s.calls).toHaveLength(2)
+    expect(s.stageCalls()).toHaveLength(2)
     const input = s.finished[0]
     expect(input.status).toBe('failed')
     expect(input.failureClassification).toBe('implementation_defect')
     expect(input.blockerReasons).toEqual([])
-    expect(input.commands).toHaveLength(2)
-    expect(input.commands[1]).toMatchObject({ commandId: 'stage-2', status: 'failed', exitCode: 1, diagnostic: 'non_zero_exit' })
+    expect(s.stageRecords(input)).toHaveLength(2)
+    expect(input.commands[2]).toMatchObject({ commandId: 'stage-2', status: 'failed', exitCode: 1, diagnostic: 'non_zero_exit' })
     expect(input.scenarios[0]).toMatchObject({ status: 'failed', diagnostic: 'non_zero_exit' })
   })
 
@@ -79,30 +94,105 @@ describe('createComponentQaRunner', () => {
     expect(input.status).toBe('blocked')
     expect(input.failureClassification).toBe('infrastructure')
     expect(input.blockerReasons).toEqual(['command_timeout'])
-    expect(input.commands[0]).toMatchObject({ status: 'blocked', diagnostic: 'command_timeout' })
+    expect(s.stageRecords(input)[0]).toMatchObject({ status: 'blocked', diagnostic: 'command_timeout' })
   })
 
   it('потеря исполнителя даёт blocked/infrastructure с executor_disconnected', async () => {
     const s = setup(['npm run one', 'npm run two'], [{ exitCode: null, timedOut: false }])
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
-    expect(s.calls).toHaveLength(1)
+    expect(s.stageCalls()).toHaveLength(1)
     const input = s.finished[0]
     expect(input.status).toBe('blocked')
     expect(input.failureClassification).toBe('infrastructure')
     expect(input.blockerReasons).toEqual(['executor_disconnected'])
-    expect(input.commands[0]).toMatchObject({ status: 'blocked', exitCode: null, diagnostic: 'executor_disconnected' })
+    expect(s.stageRecords(input)[0]).toMatchObject({ status: 'blocked', exitCode: null, diagnostic: 'executor_disconnected' })
   })
 
   it('исчерпание общего бюджета рана блокирует следующую стадию без запуска', async () => {
-    const s = setup(['npm run one', 'npm run two'], [{ exitCode: 0, timedOut: false, advanceMs: 6000 }], { timeoutMs: 5000 })
+    const s = setup(['npm run one', 'npm run two'], [{ exitCode: 0, timedOut: false, advanceMs: 6000 }], { timeoutMs: 5000, install: { exitCode: 0, timedOut: false, advanceMs: 0 } })
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.stageCalls()).toHaveLength(1)
+    expect(s.stageCalls()[0].timeoutMs).toBe(5000)
+    const input = s.finished[0]
+    expect(input.status).toBe('blocked')
+    expect(s.stageRecords(input)[1]).toMatchObject({ commandId: 'stage-2', status: 'blocked', diagnostic: 'command_timeout' })
+  })
+
+  it('ставит зависимости перед стадиями тем же кэшем задачи', async () => {
+    const s = setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.calls[0]).toMatchObject({ script: "npm_config_cache='/cache/task' npm ci --no-audit --no-fund", workdir: '/ws', agentId: 'agent' })
+    expect(s.finished[0].status).toBe('passed')
+  })
+
+  it('без сохранённого кэша ставит зависимости кэшем npm по умолчанию', async () => {
+    const s = setup(['npm run one'], [{ exitCode: 0, timedOut: false }], { npmCacheDir: null })
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.calls[0].script).toBe('npm ci --no-audit --no-fund')
+  })
+
+  it('провал установки прерывает ран и не запускает стадии', async () => {
+    const s = setup(['npm run one'], [], { install: { exitCode: 1, timedOut: false, output: 'npm error lock file out of sync\n' } })
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.calls).toHaveLength(1)
-    expect(s.calls[0].timeoutMs).toBe(5000)
+    const input = s.finished[0]
+    expect(input.status).toBe('failed')
+    expect(input.commands).toHaveLength(1)
+    expect(input.commands[0]).toMatchObject({ commandId: 'install', status: 'failed', diagnostic: 'non_zero_exit' })
+  })
+
+  // Регрессия CHAT-411: пустой `node_modules` уводил ран в fix-loop как дефект
+  // реализации, и модель три круга искала причину в исправном коде.
+  it('нет бинаря из node_modules (127) → blocked/infrastructure, а не дефект', async () => {
+    const output = '> tsc --noEmit -p tsconfig.json\nsh: tsc: command not found\nnpm error code 127\n'
+    const s = setup(['npm run typecheck'], [{ exitCode: 127, timedOut: false, output }])
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     const input = s.finished[0]
     expect(input.status).toBe('blocked')
-    expect(input.commands[1]).toMatchObject({ commandId: 'stage-2', status: 'blocked', diagnostic: 'command_timeout' })
+    expect(input.failureClassification).toBe('infrastructure')
+    expect(input.blockerReasons).toEqual(['missing_dependencies'])
+    expect(s.stageRecords(input)[0]).toMatchObject({ status: 'blocked', diagnostic: 'missing_dependencies' })
+    expect(input.summary).toContain('заблокирован инфраструктурой')
+    expect(s.log.join('')).toContain('Авто-фикс не запускаю')
+  })
+
+  it('зелёный прогон запоминается для этого коммита и набора команд', async () => {
+    const s = setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.finished[0].status).toBe('passed')
+    expect(s.gateResults).toHaveLength(1)
+    expect(s.gateResults[0].commitSha).toBe('a'.repeat(40))
+  })
+
+  // Пост-development стадии идут по неизменному коду development-рана: повторный
+  // прогон того же набора команд ничего не выясняет, а стоит установки и гейта.
+  it('готовый результат того же коммита переиспользуется без прогона', async () => {
+    const s = setup(['npm run one', 'npm run two'], [], { cached: true })
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.calls).toHaveLength(0)
+    const input = s.finished[0]
+    expect(input.status).toBe('passed')
+    expect(input.failureClassification).toBeNull()
+    expect(input.commands.map((command) => command.commandId)).toEqual(['cache'])
+    expect(input.scenarios.every((item) => item.status === 'passed')).toBe(true)
+    expect(input.summary).toContain('результат прошлого прогона')
+    expect(s.log.join('')).toContain('уже пройдены')
+  })
+
+  it('провалившийся прогон в кэш не попадает', async () => {
+    const s = setup(['npm run one'], [{ exitCode: 1, timedOut: false }])
+    s.runner.launch('run1', 'user')
+    await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+    expect(s.finished[0].status).toBe('failed')
+    expect(s.gateResults).toHaveLength(0)
   })
 
   it('недоступный workspace даёт blocked с workspace_unavailable', () => {
@@ -113,13 +203,15 @@ describe('createComponentQaRunner', () => {
   })
 
   it('отмена через контроллер прерывает стадии без финализации рана', async () => {
-    const run = { id: 'run1', status: 'queued', scenarios: [scenario()] } as unknown as ComponentQaRun
+    const run = { id: 'run1', status: 'queued', projectId: 'p1', taskId: 't1', commitSha: 'a'.repeat(40), scenarios: [scenario()] } as unknown as ComponentQaRun
     const finished: ComponentQaFinishInput[] = []
     const executorRun = vi.fn((_req: CommandExecRequest, _onChunk: (data: string) => void, signal?: AbortSignal) =>
       new Promise<CommandExecResult>((resolve) => signal?.addEventListener('abort', () => resolve({ exitCode: null, timedOut: false }))))
     const runner = createComponentQaRunner({
       db: {
-        componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', commands: ['npm run one', 'npm run two'] }),
+        componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'] }),
+        findPassedGateResult: () => null,
+        recordPassedGateResult: () => {},
         getComponentQaRun: () => run,
         markComponentQaRunning: () => { run.status = 'running' },
         appendComponentQaLog: () => {},

@@ -117,7 +117,7 @@ export function TaskDesigns(props: TaskDesignsProps): JSX.Element {
             {item.fileStatuses?.filter((status) => !status.available).map((status) => <span key={status.path} className="task-designs-error">{status.error}</span>)}
             <Button size="sm" variant="ghost" onClick={() => { setAdding(true); setEditingId(item.id); setConversationId(item.conversationId); setMode(item.mode); setPaths(item.paths); setLabel(item.label); setError(null) }}>Изменить</Button>
             {props.onOpenMake && <Button size="sm" variant="ghost" onClick={() => props.onOpenMake?.(item.conversationId)}>Открыть в Make</Button>}
-            {item.mode === 'whole_project' && previewable('') && <a className="task-design__preview" href={makeDesignPreviewUrl(item.conversationId, '')} target="_blank" rel="noreferrer">Превью</a>}
+            {((item.mode === 'whole_project' && previewable('')) || (item.mode === 'files' && item.paths.some(previewable))) && <a className="task-design__preview" href={makeDesignPreviewUrl(item.conversationId, item.mode === 'files' ? item.paths.find(previewable) ?? '' : '')} target="_blank" rel="noreferrer">Превью</a>}
             <IconButton size="sm" title="Убрать дизайн" aria-label={`Убрать дизайн ${item.label || item.conversationTitle}`} onClick={() => void unlink(item.id)}><TrashIcon /></IconButton>
           </li>
         ))}

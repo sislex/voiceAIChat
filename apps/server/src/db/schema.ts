@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   preview_url       TEXT,
   task_id           TEXT,
   assistant_kind    TEXT,
+  scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')),
   -- Режим применения мутаций канбан-ассистентом: auto (сразу) или confirm.
   assistant_autonomy TEXT,
   status            TEXT NOT NULL DEFAULT 'developing'
@@ -484,9 +485,14 @@ CREATE TABLE IF NOT EXISTS projects (
   merge_transport TEXT NOT NULL DEFAULT 'local',
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',
   test_command TEXT NOT NULL DEFAULT '',
+  -- Пустое значение наследует test_command: пост-development стадии сужают гейт,
+  -- а не заводят вторую копию настройки.
+  component_qa_command TEXT NOT NULL DEFAULT '',
+  integration_test_command TEXT NOT NULL DEFAULT '',
   automated_qa_command TEXT NOT NULL DEFAULT 'npm test',
   automated_qa_mode TEXT NOT NULL DEFAULT 'command',
   automated_qa_scenario_json TEXT NOT NULL DEFAULT '',
+  autopilot_default INTEGER NOT NULL DEFAULT 0,
   autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0,
   autopilot_fix_limit INTEGER NOT NULL DEFAULT 3,
   production_deploy_command TEXT NOT NULL DEFAULT '',
@@ -653,6 +659,50 @@ CREATE INDEX IF NOT EXISTS idx_tasks_column
 -- Связь карточки с дизайном из Make: отдельная таблица, а не JSON в tasks, —
 -- панель Make спрашивает обратное направление («какие задачи ссылаются на эту
 -- страницу»), и по колонке JSON такой запрос не построить.
+-- Активность карточки как в Jira: комментарии, ворклог и история изменений.
+-- Три таблицы, а не одна лента: у комментария есть правка и удаление, у
+-- ворклога — минуты и дата работы, у истории — поле и пара значений; общая
+-- таблица заставила бы каждую сущность таскать чужие колонки.
+CREATE TABLE IF NOT EXISTS task_comments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  author TEXT NOT NULL,
+  -- Кто внёс: сам человек или модель канбан-ассистента от его имени.
+  via TEXT NOT NULL DEFAULT 'user',
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at);
+
+CREATE TABLE IF NOT EXISTS task_worklog (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  author TEXT NOT NULL,
+  minutes INTEGER NOT NULL,
+  comment TEXT NOT NULL DEFAULT '',
+  -- Когда работа была сделана (задаёт автор), а не когда запись создана.
+  started_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_task_worklog_task ON task_worklog(task_id, started_at);
+
+CREATE TABLE IF NOT EXISTS task_history (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  via TEXT NOT NULL DEFAULT 'user',
+  field TEXT NOT NULL,
+  from_value TEXT,
+  to_value TEXT,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history(task_id, at);
+
 CREATE TABLE IF NOT EXISTS task_designs (
   id              TEXT PRIMARY KEY,
   task_id         TEXT NOT NULL,
@@ -740,6 +790,15 @@ CREATE TABLE IF NOT EXISTS ci_task_process_stages (
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
+-- Браузерная проверка стадии разработки: режим, порт dev-сервера и стартовый путь.
+-- Отдельной таблицей, а не колонкой в tasks: настройка принадлежит CI-процессу
+-- задачи и уходит вместе с ней (как выбор этапов выше).
+CREATE TABLE IF NOT EXISTS ci_task_browser_checks (
+  task_id    TEXT PRIMARY KEY,
+  check_json TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ci_llm_configs (
   owner_type TEXT NOT NULL,
   owner_id   TEXT NOT NULL,
@@ -774,6 +833,9 @@ CREATE TABLE IF NOT EXISTS ci_workspaces (
   task_id            TEXT NOT NULL,
   agent_id           TEXT,
   path               TEXT NOT NULL,
+  -- Кэш npm задачи: рабочую копию сносит уборка, а кэш переиспользуют и
+  -- пост-development стадии (Component QA, интеграционные тесты).
+  npm_cache_dir      TEXT,
   branch             TEXT,
   commit_sha         TEXT,
   pushed             INTEGER NOT NULL DEFAULT 0,
@@ -784,6 +846,24 @@ CREATE TABLE IF NOT EXISTS ci_workspaces (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_ci_workspaces_project ON ci_workspaces(project_id, state);
+
+-- Результаты гейта по коммиту: пост-development стадии выполняются на неизменном
+-- коде development-рана, поэтому один и тот же набор команд не гоняется дважды.
+-- Пишутся только успешные прогоны: падение может быть флаки, и повтор обязан
+-- реально выполнить команды.
+CREATE TABLE IF NOT EXISTS ci_gate_results (
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL,
+  task_id      TEXT NOT NULL,
+  commit_sha   TEXT NOT NULL,
+  signature    TEXT NOT NULL,
+  commands_json TEXT NOT NULL DEFAULT '[]',
+  run_kind     TEXT NOT NULL,
+  run_id       TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_gate_results_key ON ci_gate_results(commit_sha, signature);
 
 CREATE TABLE IF NOT EXISTS ci_runs (
   id             TEXT PRIMARY KEY,

@@ -12,6 +12,7 @@ import type {
   ClaudeLogEntry,
   Conversation,
   ConversationStatus,
+  ConversationScope,
   LlmProvider,
   KbContextMode,
   Message,
@@ -148,7 +149,7 @@ export interface IpcInvokeMap {
    * «Готово»: по умолчанию сервер их не отдаёт (переключатель «Показывать чаты
    * завершённых задач»).
    */
-  'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
+  'conversations:list': { arg: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }; result: Conversation[] }
   /** Make: состояние проекта разговора (файлы, снимки, rev) и операции с файлами. */
   'make:state': { arg: { conversationId: string }; result: MakeProjectState }
   'make:read': { arg: { conversationId: string; path: string }; result: MakeFileContent }
@@ -205,7 +206,7 @@ export interface IpcInvokeMap {
   'make:import': { arg: { conversationId: string; dataBase64: string; mode: MakeImportMode }; result: MakeProjectState }
   /** Импорт страницы по URL: HTML + same-origin css/js/картинки. */
   'make:importUrl': { arg: { conversationId: string; url: string; mode: MakeImportMode }; result: MakeProjectState }
-  'conversations:create': { arg: { title?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
+  'conversations:create': { arg: { title?: string; scope?: ConversationScope; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
     arg: { idempotencyKey: string; title: string; projectId?: string | null; message: Omit<AddMessageArgs, 'conversationId'> }
@@ -228,7 +229,7 @@ export interface IpcInvokeMap {
   'widget:query': { arg: import('./widgetAssistant').WidgetToolQueryRequest; result: import('./widgetAssistant').WidgetToolQueryResult }
   'widget:get': { arg: import('./widgetAssistant').WidgetToolGetRequest; result: import('./widgetAssistant').WidgetToolGetResult }
   'widget:action': { arg: import('./widgetAssistant').WidgetToolActionRequest; result: import('./widgetAssistant').WidgetToolActionResult }
-  'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
+  'conversations:get': { arg: { id: string; scope?: ConversationScope; projectId?: string }; result: ConversationWithMessages | null }
   'conversations:contextSnapshot': { arg: { id: string }; result: import('./types').ConversationContextSnapshot | null }
   'conversations:setContextItem': { arg: { id: string; itemId: string; enabled: boolean }; result: import('./types').ConversationContextSnapshot | null }
   /** Чем контекст этого разговора отличается от другого (только чтение). */
@@ -245,7 +246,7 @@ export interface IpcInvokeMap {
    * Поиск разговоров по названию и содержимому сообщений (регистронезависимо).
    * Состав тот же, что у `conversations:list`, включая `includeCompleted`.
    */
-  'conversations:search': { arg: { query: string; includeCompleted?: boolean }; result: Conversation[] }
+  'conversations:search': { arg: { query: string; scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }; result: Conversation[] }
   /**
    * Полнотекстовый поиск по сообщениям (FTS5 на сервере). Пустой `query` —
    * пустой результат. `projectId`: undefined — по всем беседам, null — только
@@ -504,6 +505,8 @@ export interface IpcInvokeMap {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      componentQaCommand?: string
+      integrationTestCommand?: string
       productionDeployCommand?: string
       productionAgentId?: string | null
       productionEnvironmentMode?: 'legacy' | 'managed'
@@ -639,6 +642,14 @@ export interface IpcInvokeMap {
     }
     result: import('./types').TaskLaunchResult
   }
+  /** Активность карточки: три ленты одним снимком + CRUD комментариев и ворклога. */
+  'tasks:activity': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskActivity }
+  'tasks:commentAdd': { arg: { projectId: string; taskId: string; text: string }; result: import('./projects').TaskComment }
+  'tasks:commentUpdate': { arg: { projectId: string; taskId: string; commentId: string; text: string }; result: import('./projects').TaskComment }
+  'tasks:commentDelete': { arg: { projectId: string; taskId: string; commentId: string }; result: { ok: true } }
+  'tasks:worklogAdd': { arg: { projectId: string; taskId: string; minutes: number; comment?: string; startedAt?: number }; result: import('./projects').TaskWorklogEntry }
+  'tasks:worklogUpdate': { arg: { projectId: string; taskId: string; entryId: string; minutes?: number; comment?: string; startedAt?: number }; result: import('./projects').TaskWorklogEntry }
+  'tasks:worklogDelete': { arg: { projectId: string; taskId: string; entryId: string }; result: { ok: true } }
   'tasks:update': {
 
     arg: {
@@ -689,6 +700,28 @@ export interface IpcInvokeMap {
   /** Make-проекты, привязанные к проекту: выбор источника дизайна в карточке. */
   'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
+  /** Обмен с репозиторием проекта: листинг машины, копирование, статусы, возврат. */
+  /** Студия картинок: галерея разговора, генерация и правка по промпту. */
+  'imgstudio:list': { arg: { conversationId: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:read': { arg: { conversationId: string; path: string }; result: { path: string; dataBase64: string } }
+  'imgstudio:upload': { arg: { conversationId: string; path: string; dataBase64: string; source?: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:delete': { arg: { conversationId: string; path: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:rename': { arg: { conversationId: string; from: string; to: string }; result: import('./imageStudio').ImageStudioFile[] }
+  'imgstudio:generate': { arg: { conversationId: string; prompt: string; name?: string; references?: string[] }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:edit': { arg: { conversationId: string; path: string; prompt: string }; result: { file: import('./imageStudio').ImageStudioFile; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:cancel': { arg: { conversationId: string }; result: { cancelled: boolean } }
+  'imgstudio:publish': { arg: { conversationId: string; password?: string | null }; result: { url: string; publishedAt: number; views: number; passwordProtected: boolean } }
+  'imgstudio:publication': { arg: { conversationId: string }; result: { url: string | null; publishedAt?: number; views?: number; views7?: number; passwordProtected?: boolean } }
+  'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
+  'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
+  'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
+  'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number }> } }
+  'imgstudio:restore': { arg: { conversationId: string; name: string }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
+  /** Очистка корзины: без `name` — вся, с `name` — только этот файл. */
+  'imgstudio:purge': { arg: { conversationId: string; name?: string }; result: { removed: number; items: Array<{ name: string; deletedAt: number }> } }
+  'make:projectFiles': { arg: { conversationId: string; path?: string }; result: import('./make').MakeProjectFileEntry[] }
+  'make:projectLinks': { arg: { conversationId: string }; result: import('./make').MakeProjectLinkInfo[] }
+  'make:projectPull': { arg: { conversationId: string; paths: string[] }; result: import('./make').MakeProjectPullResult }
   'make:taskLinks': { arg: { conversationId: string; path?: string }; result: import('./projects').MakeTaskLink[] }
   'make:linkTask': { arg: { conversationId: string; taskId: string; path?: string; label?: string }; result: import('./projects').MakeTaskLink[] }
   /** Задачи проекта Make-чата — выбор в диалоге «Связать с задачей». */
@@ -727,6 +760,8 @@ export interface IpcSendMap {
     verbose?: boolean
     /** Цель именно этого хода: id машины, null — сервер, 'none' — без команд. */
     execTarget?: string | null
+    /** Ход-исправление грязной копии проекта: системный preflight пропускается. */
+    skipProjectSync?: boolean
     /** Неперсистентный безопасный контекст служебного ассистента виджета. */
     assistantContext?: import('./widgetAssistant').WidgetAssistantContext
   }
@@ -813,7 +848,8 @@ export interface IpcEventMap {
     message?: Message
   }
   /** Ошибка при запросе к Claude. */
-  'claude:error': { conversationId: string; message: string }
+  /** Ошибка хода; `fix` — готовое исправление для кнопки в баннере. */
+  'claude:error': { conversationId: string; message: string; fix?: { label: string; prompt: string; skipProjectSync?: boolean } }
   /** Запись активности агента (режим консоли). */
   'claude:log': { conversationId: string; entry: ClaudeLogEntry }
 
@@ -1435,6 +1471,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:get',
   'tasks:create',
   'tasks:createFromProposalInPreparation',
+  'tasks:activity',
+  'tasks:commentAdd',
+  'tasks:commentUpdate',
+  'tasks:commentDelete',
+  'tasks:worklogAdd',
+  'tasks:worklogUpdate',
+  'tasks:worklogDelete',
   'tasks:update',
   'tasks:move',
   'tasks:listPreparationRuns',
@@ -1452,6 +1495,25 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:linkDesign',
   'tasks:unlinkDesign',
   'projects:designSources',
+  'imgstudio:list',
+  'imgstudio:read',
+  'imgstudio:upload',
+  'imgstudio:delete',
+  'imgstudio:rename',
+  'imgstudio:generate',
+  'imgstudio:edit',
+  'imgstudio:cancel',
+  'imgstudio:publish',
+  'imgstudio:publication',
+  'imgstudio:unpublish',
+  'imgstudio:run',
+  'imgstudio:transfer',
+  'imgstudio:trash',
+  'imgstudio:restore',
+  'imgstudio:purge',
+  'make:projectFiles',
+  'make:projectLinks',
+  'make:projectPull',
   'make:taskLinks',
   'make:linkTask',
   'make:linkableTasks'

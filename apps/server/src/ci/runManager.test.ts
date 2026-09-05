@@ -6,13 +6,14 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
-import { PROD_REBUILD_TASK_TITLE, VoiceChatDb } from '../db/database.js'
+import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT, VoiceChatDb } from '../db/database.js'
 import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS, DEFAULT_SETTINGS, issueKey } from '@voicechat/shared'
 import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
 import { createCiRunManager } from './runManager.js'
+import type { BrowserRunnerClient } from '../browser/runnerClient.js'
 
 const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
@@ -23,6 +24,8 @@ let failManagedBootstrap = false
 let lowDisk = false
 let failClaude = false
 let failPush = false
+let commitTransportTimeoutOnce = false
+let commitFailureExitCode: number | null = null
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
 let failStep = false
 let repoMissing = false
@@ -38,6 +41,13 @@ let onExec: ((script: string) => void) | null = null
 let modelGate: Promise<void> | null = null
 let codexModel = ''
 let modelRequests: LlmRequest[] = []
+/** Сессии изолированного Chromium, которые ран попросил погасить. */
+let browserStops: string[] = []
+
+/** Раннер браузера здесь нужен одним методом: гашение сессии перед раном. */
+const fakeBrowserRunner = {
+  stop: async (sessionId: string) => { browserStops.push(sessionId); return true }
+} as unknown as BrowserRunnerClient
 
 const fakeClaude: LlmClient = {
   send: (req, handlers) => {
@@ -93,6 +103,13 @@ const ciExecutor: CommandExecutor = {
     if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
     // Падение шага «оставляет» в копии правки модели — как в реальном ране.
     if (req.script === 'TOGGLE' && failStep) { dirtyWorkspace = true; return { exitCode: 1, timedOut: false } }
+    if (req.script.includes('git checkout -B "$BRANCH"') && commitTransportTimeoutOnce && n === 1) {
+      return { exitCode: null, timedOut: true }
+    }
+    if (req.script.includes('git checkout -B "$BRANCH"') && commitFailureExitCode !== null) {
+      onChunk('fatal: не удалось переключить ветку\n')
+      return { exitCode: commitFailureExitCode, timedOut: false }
+    }
     if (req.script.includes('git push')) {
       if (!failPush) onChunk(`Ветка отправлена (${'a'.repeat(40)})\n`)
       return { exitCode: failPush ? 1 : 0, timedOut: false }
@@ -111,6 +128,8 @@ beforeEach(async () => {
   lowDisk = false
   failClaude = false
   failPush = false
+  commitTransportTimeoutOnce = false
+  commitFailureExitCode = null
   failStep = false
   repoMissing = false
   emptyModelWork = false
@@ -121,9 +140,10 @@ beforeEach(async () => {
   modelGate = null
   codexModel = ''
   modelRequests = []
+  browserStops = []
   counts.clear()
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => Date.now() })
-  app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-${Date.now()}`) }), db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex })
+  app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ci-${Date.now()}`) }), db, sessionSecret: SECRET, ciExecutor, claude: fakeClaude, codex: fakeCodex, browserRunner: fakeBrowserRunner })
   admin = signToken({ name: 'admin', role: 'admin' }, SECRET)
 })
 afterEach(async () => { await app.close(); db.close() })
@@ -249,6 +269,17 @@ describe('ci run manager', () => {
     })
   })
 
+  it('перед раном гасит сессию браузерной проверки задачи, а без режима chromium не трогает её', async () => {
+    const { project, task } = setup()
+    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    await waitRun(await run(project.id, task.id))
+    expect(browserStops).toEqual([`task-${task.id}`])
+
+    db.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
+    await waitRun(await run(project.id, task.id))
+    expect(browserStops).toEqual([`task-${task.id}`])
+  })
+
   it('подготавливает отсутствующий repos_root из существующей папки проекта', async () => {
     const { project, task, agent } = setup()
     db.setProjectMachineReposRoot('admin', project.id, agent.id, '')
@@ -366,19 +397,53 @@ describe('ci run manager', () => {
     expect(modelRequests).toHaveLength(0)
   })
 
-  it('после терминального статуса удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
+  // Пока задача не закрыта, зависимости нужны следующим этапам: Component QA и
+  // интеграционные тесты идут в этом же checkout (регрессия CHAT-411).
+  it('после успешного рана незакрытой задачи node_modules остаются на месте', async () => {
     const { project, task, agent } = setup()
     db.saveMachineStorage('admin', agent.id, '/storage', 1)
 
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('success')
-    for (let i = 0; i < 100 && !scripts.some((script) => script.includes('/node_modules')); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const cleanup = scripts.find((script) => script.includes('/node_modules'))
-    expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
-    expect(cleanup).not.toContain('.npm-cache')
+    expect(scripts.some((script) => script.includes('/node_modules'))).toBe(false)
+  })
+
+  it('у закрытой задачи удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    // Карточку закрывает merge-ран уже после development-рана, поэтому здесь
+    // подменяем сам признак: проверяем уборку, а не маршрут карточки по доске.
+    const isTaskClosed = db.isTaskClosed.bind(db)
+    db.isTaskClosed = () => true
+
+    try {
+      const runId = await run(project.id, task.id)
+      expect((await waitRun(runId)).run.status).toBe('success')
+      for (let i = 0; i < 100 && !scripts.some((script) => script.includes('/node_modules')); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+
+      const cleanup = scripts.find((script) => script.includes('/node_modules'))
+      expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
+      expect(cleanup).not.toContain('.npm-cache')
+    } finally {
+      db.isTaskClosed = isTaskClosed
+    }
+  })
+
+  it('задача считается закрытой только в Done и «Отменено»', () => {
+    const { project, task } = setup()
+    const columns = db.getBoard('admin', project.id)!.columns
+    expect(db.isTaskClosed(task.id)).toBe(false)
+    for (const semantic of ['done', 'cancelled'] as const) {
+      const column = columns.find((item) => item.semanticType === semantic)
+      if (!column) continue
+      db.moveTask('admin', project.id, task.id, { columnId: column.id })
+      expect(db.isTaskClosed(task.id)).toBe(true)
+    }
+    expect(db.isTaskClosed('нет такой задачи')).toBe(true)
   })
 
   it('ошибка записи managed storage обнаруживается до clone', async () => {
@@ -593,6 +658,45 @@ describe('ci run manager', () => {
     ws.close()
   })
 
+  it('таймаут транспорта commit-step повторяется без fix-loop в той же попытке', async () => {
+    const { project, task } = setup()
+    commitTransportTimeoutOnce = true
+    const cmd = db.createCiCommand('admin', {
+      scope: 'project', projectId: project.id, name: TASK_COMMIT_COMMAND_NAME, script: TASK_COMMIT_COMMAND_SCRIPT
+    })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run.status).toBe('success')
+    const persisted = db.getCiRun('admin', runId)!
+    expect(persisted.fixAttempts).toHaveLength(0)
+    expect(persisted.steps.find((step) => step.commandId === cmd.id)).toMatchObject({
+      status: 'success', exitCode: 0, attempt: 1, fixedByModel: false
+    })
+    expect(scripts.filter((script) => script === TASK_COMMIT_COMMAND_SCRIPT)).toHaveLength(2)
+  })
+
+  it('реальный отказ commit-step сохраняет stderr и exitCode до fix-loop', async () => {
+    const { project, task } = setup()
+    commitFailureExitCode = 128
+    db.updateCiSettings({ maxFixAttempts: 1 })
+    const cmd = db.createCiCommand('admin', {
+      scope: 'project', projectId: project.id, name: TASK_COMMIT_COMMAND_NAME, script: TASK_COMMIT_COMMAND_SCRIPT
+    })
+    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('failed')
+    const persisted = db.getCiRun('admin', runId)!
+    expect(persisted.steps.find((step) => step.commandId === cmd.id && step.initiatedBy === 'user')).toMatchObject({
+      status: 'failed', exitCode: 128, attempt: 1, fixedByModel: false
+    })
+    expect(persisted.fixAttempts.length).toBeGreaterThan(0)
+    const log = (await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/log` })).json() as Array<{ chunk: string }>
+    expect(log.some((line) => line.chunk.includes('fatal: не удалось переключить ветку'))).toBe(true)
+  })
+
   it('упавший слот «после»: резюме всё равно попадает в чат', async () => {
     const { project, task } = setup()
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'test', script: 'FAIL test' })
@@ -753,6 +857,41 @@ describe('ci run manager', () => {
 
     release()
     await waitRun(first.headers['x-ci-run-id'] as string)
+  })
+
+  it('быстрый parallel после ready → development продвигает автосозданный queued-run с тем же id', async () => {
+    const { project, task, readyColId } = setup()
+    const board = db.getBoard('admin', project.id)!
+    const development = board.columns.find((column) => column.semanticType === 'development')!
+    const blocker = db.createTask('admin', project.id, { columnId: readyColId, title: 'Занимает FIFO-слот' })!
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    let release: () => void = () => {}
+    modelGate = new Promise<void>((resolve) => { release = resolve })
+
+    const blockerRunId = await run(project.id, blocker.id)
+    for (let i = 0; i < 200 && !modelRequests.length; i++) await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const moved = await inj(admin, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${task.id}/move`,
+      payload: { columnId: development.id, fromColumnId: readyColId }
+    })
+    expect(moved.statusCode).toBe(200)
+    const queuedRunId = moved.headers['x-ci-run-id'] as string
+    expect(db.getCiRunRaw(queuedRunId)?.status).toBe('queued')
+
+    const promoted = await inj(admin, {
+      method: 'POST',
+      url: `/api/projects/${project.id}/tasks/${task.id}/ci/run`,
+      payload: { launch: 'parallel' }
+    })
+    expect(promoted.statusCode).toBe(202)
+    expect(promoted.json().id).toBe(queuedRunId)
+    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(1)
+
+    release()
+    expect((await waitRun(queuedRunId)).run.status).toBe('success')
+    expect((await waitRun(blockerRunId)).run.status).toBe('success')
   })
 
   it('ошибка автозапуска оставляет карточку в ready, а прочие переходы в development не создают ран', async () => {

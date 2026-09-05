@@ -450,6 +450,8 @@ export async function registerAgentRoutes(
     return {
       enrollmentToken: enrollment.token,
       statusId: enrollment.statusId,
+      secret: enrollment.token,
+      correlationId: enrollment.statusId,
       expiresAt: enrollment.expiresAt,
       deepLink: loginEnrollmentDeepLink(enrollment.token, enrollment.statusId, externalBase(req))
     }

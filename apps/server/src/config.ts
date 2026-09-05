@@ -56,6 +56,14 @@ export interface ServerConfig {
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
   /** Публичная база MCP-эндпоинтов для контейнера-исполнителя; без env остаётся loopback сервера. */
   mcpPublicBase?: string
+  /**
+   * Адрес сервера, видимый из контейнера browser-runner: по нему изолированный
+   * Chromium открывает прокси превью, когда проверяет dev-сервер машины. В
+   * compose совпадает с `mcpPublicBase`, но совпадать не обязан — исполнитель
+   * CLI и браузер живут в разных контейнерах и могут видеть сервер по разным
+   * именам. Без env берётся `mcpPublicBase`, затем loopback.
+   */
+  browserPreviewBase?: string
   /** MCP-инструменты БЗ для модели (mcp__kb__*); VC_KB_TOOL=off выключает срез целиком. */
   kbToolEnabled: boolean
   /** Пароль пользователя admin при сиде новой БД (пусто — без пароля). */
@@ -192,6 +200,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
+    browserPreviewBase: env.VC_BROWSER_PREVIEW_BASE,
     kbToolEnabled: env.VC_KB_TOOL !== 'off',
     adminPassword: env.VC_ADMIN_PASSWORD ?? '',
     minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),

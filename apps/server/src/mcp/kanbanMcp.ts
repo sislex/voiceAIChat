@@ -53,7 +53,7 @@ export interface KanbanRunLaunchers {
   /** Релизная ветка и выкладка в production; и то, и другое — только с подтверждением. */
   createReleaseBranch?(userId: string, projectId: string, branch: string, baseBranch?: string): Promise<{ id?: string; branch?: string; status?: string }>
   deployRelease?(userId: string, projectId: string, branch: string): Promise<{ id?: string; status?: string }>
-  startCi(userId: string, projectId: string, taskId: string, options: { launch: 'queue' | 'parallel'; agentId?: string }): { run: { id: string; status: string; agentId: string | null } } | { error: string }
+  startCi(userId: string, projectId: string, taskId: string, options: { launch: 'queue' | 'parallel'; agentId?: string; provider?: 'claude' | 'codex'; model?: string }): { run: { id: string; status: string; agentId: string | null } } | { error: string }
   cancelCi(userId: string, runId: string): boolean
   startMerge(userId: string, projectId: string, taskId: string, agentId: string | null): Promise<{ id: string; status: string }>
   startQa(userId: string, projectId: string, taskId: string, stage: 'component_qa' | 'integration_tests' | 'automated_qa'): Promise<{ id: string; status: string }>
@@ -624,6 +624,68 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           return applied(projectId, { moved: taskBrief(moved, projectName(), columnName(moved.columnId)) })
         }))
 
+        // --- Комментарии и ворклог карточки (Activity, как в Jira) ---------
+        // Чтение свободное; добавление/правка/удаление идут через политику
+        // автономии (в режиме подтверждений человек одобряет каждое). Записи
+        // модели помечаются via='model' — в ленте видно, кто автор.
+        server.registerTool('task_comments', {
+          description: 'Активность карточки: комментарии, ворклог и история изменений.',
+          inputSchema: { taskId: z.string() }
+        }, async (args) => toolJson(db.taskActivity(userId, projectId, args.taskId)))
+
+        server.registerTool('task_comment_add', {
+          description: 'Добавить комментарий к карточке от имени ассистента.',
+          inputSchema: { taskId: z.string(), text: z.string().describe('Текст комментария') }
+        }, async (args) => mutating('task_comment_add', args, async () => {
+          const gate = await allowMutation('Добавить комментарий к карточке', [{ field: 'comment', after: args.text.slice(0, 200) }])
+          if (!gate.ok) return gate.result
+          try {
+            const comment = db.addTaskComment(userId, projectId, args.taskId, args.text, 'model')
+            if (!comment) return toolText('Карточка не найдена в этом проекте.', true)
+            return applied(projectId, { comment })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('task_comment_update', {
+          description: 'Изменить текст комментария (только комментарии ассистента и автора-пользователя по его просьбе).',
+          inputSchema: { taskId: z.string(), commentId: z.string(), text: z.string() }
+        }, async (args) => mutating('task_comment_update', args, async () => {
+          const gate = await allowMutation('Изменить комментарий карточки', [{ field: 'comment', after: args.text.slice(0, 200) }])
+          if (!gate.ok) return gate.result
+          try {
+            const comment = db.updateTaskComment(userId, projectId, args.commentId, args.text)
+            if (!comment) return toolText('Комментарий не найден.', true)
+            return applied(projectId, { comment })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('task_comment_delete', {
+          description: 'Удалить комментарий карточки. Необратимо — спрашивается всегда.',
+          inputSchema: { taskId: z.string(), commentId: z.string() }
+        }, async (args) => mutating('task_comment_delete', args, async () => {
+          // Удаление необратимо: спрашиваем даже при полной автономии — как
+          // деплой и удаление карточек.
+          const gate = await allowMutation('Удалить комментарий карточки', [{ field: 'commentId', after: args.commentId }], { irreversible: true })
+          if (!gate.ok) return gate.result
+          try {
+            if (!db.deleteTaskComment(userId, projectId, args.commentId)) return toolText('Комментарий не найден.', true)
+            return applied(projectId, { deleted: args.commentId })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('task_worklog_add', {
+          description: 'Записать затраченное время в ворклог карточки (минуты).',
+          inputSchema: { taskId: z.string(), minutes: z.number().describe('Минуты, больше нуля'), comment: z.string().optional() }
+        }, async (args) => mutating('task_worklog_add', args, async () => {
+          const gate = await allowMutation('Записать время в ворклог', [{ field: 'minutes', after: args.minutes }])
+          if (!gate.ok) return gate.result
+          try {
+            const entry = db.addTaskWorklog(userId, projectId, args.taskId, { minutes: args.minutes, ...(args.comment ? { comment: args.comment } : {}) })
+            if (!entry) return toolText('Карточка не найдена в этом проекте.', true)
+            return applied(projectId, { entry })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
         server.registerTool('kanban_column_create', {
           description: 'Создать колонку доски.',
           inputSchema: { name: z.string().min(1) }
@@ -861,11 +923,11 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         // --- Оркестрация: план работ, который ассистент ведёт сам -------
 
         const PLAN_ITEMS = z.array(z.object({
-          kind: z.enum(['create_task', 'run_ci', 'run_qa', 'run_merge', 'wait_merge', 'run_preview']),
+          kind: z.enum(['create_task', 'run_preparation', 'run_ci', 'run_qa', 'run_merge', 'wait_merge', 'wait_column', 'run_preview']),
           title: z.string().min(1).describe('Что делает шаг — это увидит пользователь'),
           taskId: z.string().optional().describe('Задача шага; не нужен, если шаг зависит от create_task'),
           dependsOn: z.array(z.number().int().min(0)).optional().describe('Индексы шагов этого плана (с нуля), которые должны завершиться раньше'),
-          payload: z.record(z.string(), z.unknown()).optional().describe('create_task: title/description/acceptanceCriteria/columnId/autoPilot; run_ci: launch/agentId; run_qa: stage; run_preview: operation/scenario; любой шаг: retries (0–3) — сколько раз перезапустить после падения')
+          payload: z.record(z.string(), z.unknown()).optional().describe('create_task: title/description/acceptanceCriteria/columnId/autoPilot; run_preparation: без параметров (подготовка задачи; по её успеху карточка сама уходит в колонку ready); run_ci: launch (queue|parallel), agentId (машина), provider (claude|codex), model; run_qa: stage; wait_column: semantic (backlog|preparation|ready|development|…|done) или columnId — ждать, пока карточка не окажется в этой колонке; run_preview: operation/scenario; любой шаг: retries (0–3) — сколько раз перезапустить после падения')
         })).min(1).max(40)
 
         const planSummary = (plan: Orchestration): unknown => ({
@@ -887,7 +949,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         })
 
         server.registerTool('orchestration_start', {
-          description: 'Запустить план работ: сервер сам создаст задачи, запустит разработку и проверки, дождётся merge и продолжит — план переживает закрытие вкладки и рестарт. Шаг wait_merge держит зависящие шаги, пока ветка задачи не влита: так пересекающиеся задачи не идут одновременно. Итог плана придёт сообщением в этот чат.',
+          description: 'Запустить план работ: сервер сам создаст задачи, запустит подготовку, разработку и проверки, дождётся merge и продолжит — план переживает закрытие вкладки и рестарт. Шаг wait_merge держит зависящие шаги, пока ветка задачи не влита: так пересекающиеся задачи не идут одновременно. Шаг wait_column ждёт перехода карточки в колонку (например ready после подготовки) — так план реагирует на события доски. Итог плана придёт сообщением в этот чат.',
           inputSchema: { title: z.string().min(1), items: PLAN_ITEMS }
         }, async (args) => mutating('orchestration_start', args, async () => {
           const manager = deps.orchestration?.()

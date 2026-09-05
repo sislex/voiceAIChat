@@ -8,7 +8,7 @@
 //
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { aliasTargets, applyHostAlias, isBlockedAddress, parseHostAliases, validatePublicUrl } from './security.js'
+import { aliasTargets, applyHostAlias, isBlockedAddress, parseHostAliases, previewOriginTarget, validatePublicUrl } from './security.js'
 
 describe('решение перехватчика', () => {
   const aliases = parseHostAliases('89.125.68.35:8787=voicechat:8787')
@@ -39,5 +39,37 @@ describe('решение перехватчика', () => {
   })
   it('не-http отвергается до всякой сети', () => {
     expect(decide('file:///etc/passwd', [])).toBe('blockedbyclient')
+  })
+})
+
+// Браузерная проверка задачи ходит на сервер, а его имя в сети compose ведёт в
+// приватную сеть: без доверенного origin запрос резался собственным
+// SSRF-гейтом. Найдено живым прогоном — Chromium отвечал ERR_BLOCKED_BY_CLIENT.
+describe('доверенный origin сервера', () => {
+  it('разбирает адрес в host:port и подставляет порт по схеме', () => {
+    expect(previewOriginTarget('http://voicechat:8787')).toBe('voicechat:8787')
+    expect(previewOriginTarget('http://voicechat')).toBe('voicechat:80')
+    expect(previewOriginTarget('https://chatai.example.test/')).toBe('chatai.example.test:443')
+  })
+
+  it('мусор и не-HTTP схемы origin не задают', () => {
+    for (const raw of [undefined, '', 'не адрес', 'ftp://voicechat:21', 'voicechat:8787']) {
+      expect(previewOriginTarget(raw as string | undefined)).toBeNull()
+    }
+  })
+
+  it('доверенный origin пропускается, несмотря на приватный резолв; чужой приватный — нет', () => {
+    const targets = aliasTargets(new Map())
+    const origin = previewOriginTarget('http://voicechat:8787')!
+    targets.add(origin)
+    targets.add(origin.split(':')[0])
+    const decide = (raw: string, resolved: string[]): string => {
+      const url = validatePublicUrl(raw)
+      const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+      if (targets.has(`${url.hostname.toLowerCase()}:${port}`) || targets.has(url.hostname.toLowerCase())) return 'continue'
+      return resolved.some(isBlockedAddress) ? 'blockedbyclient' : 'continue'
+    }
+    expect(decide('http://voicechat:8787/api/preview?url=http%3A%2F%2Fx', ['192.168.65.254'])).toBe('continue')
+    expect(decide('http://internal-service:9000/', ['172.18.0.7'])).toBe('blockedbyclient')
   })
 })

@@ -8,6 +8,7 @@ export {
   ToastProvider,
   useToast,
   TOAST_DURATION_MS,
+  TOAST_ACTION_DURATION_MS,
   TOAST_VISIBLE_MAX,
   type ToastAction,
   type ToastApi,

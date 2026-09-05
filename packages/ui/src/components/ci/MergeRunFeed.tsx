@@ -32,6 +32,23 @@ export function mergeLlmFallbackMessage(run: MergeRun): string | null {
   return `LLM заменён: был запрошен ${requested}, но ${reason}; запущен ${run.llmProvider} · ${run.llmModel}.`
 }
 
+/**
+ * Длительность этапа. У незавершённого этапа её приходится считать до «сейчас»,
+ * но только пока жив сам ран: раньше этап без `finishedAt` тикал вечно, и у
+ * упавшего рана «База знаний» показывала 95+ минут спустя часы после остановки.
+ * Сервер теперь закрывает этапы при финализации, а здесь чинится и то, что уже
+ * записано в БД такими ранами.
+ */
+export function stageDuration(
+  stage: { durationMs: number | null; startedAt: number | null },
+  runFinishedAt: number | null,
+  now: number = Date.now()
+): number | null {
+  if (stage.durationMs !== null) return stage.durationMs
+  if (!stage.startedAt) return null
+  return Math.max(0, (runFinishedAt ?? now) - stage.startedAt)
+}
+
 export function mergeStatusTone(status: string): 'ok' | 'err' | 'warn' | 'run' {
   if (status === 'success') return 'ok'
   if (status === 'failed' || status === 'cancelled') return 'err'
@@ -149,7 +166,7 @@ export function MergeRunFeed({ runId, initialRun, machines = [], onRunChanged }:
           <li key={stage.stage} className={`merge-step merge-step--${stage.status}`}>
             <span className="merge-step-dot" aria-hidden />
             <span className="merge-step-name">{STAGE_LABEL[stage.stage] ?? stage.stage}</span>
-            <span className="merge-step-time">{fmtDuration(stage.durationMs ?? (stage.startedAt ? Date.now() - stage.startedAt : null))}</span>
+            <span className="merge-step-time">{fmtDuration(stageDuration(stage, run.finishedAt))}</span>
             {stage.message && <span className="merge-step-message">{stage.message}</span>}
           </li>
         ))}

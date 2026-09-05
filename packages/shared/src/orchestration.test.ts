@@ -39,6 +39,18 @@ describe('orchestrationPlanError', () => {
       .toContain('нужна задача')
   })
 
+  it('wait_column требует колонку, а run_preparation — задачу', () => {
+    expect(orchestrationPlanError([{ kind: 'wait_column', title: 'Ждать', taskId: 't1' }])).toContain('wait_column')
+    expect(orchestrationPlanError([{ kind: 'wait_column', title: 'Ждать', taskId: 't1', payload: { semantic: 'ready' } }])).toBeNull()
+    expect(orchestrationPlanError([{ kind: 'wait_column', title: 'Ждать', taskId: 't1', payload: { columnId: 'c1' } }])).toBeNull()
+    expect(orchestrationPlanError([{ kind: 'run_preparation', title: 'Подготовить' }])).toContain('нужна задача')
+    expect(orchestrationPlanError([
+      { kind: 'run_preparation', title: 'Подготовить', taskId: 't1' },
+      { kind: 'wait_column', title: 'Дождаться готовности', taskId: 't1', dependsOn: [0], payload: { semantic: 'ready' } },
+      { kind: 'run_ci', title: 'Разработка', taskId: 't1', dependsOn: [1], payload: { launch: 'parallel', provider: 'codex', model: 'gpt-5.6-sol' } }
+    ])).toBeNull()
+  })
+
   it('ловит цикл, самозависимость и ссылку в пустоту', () => {
     expect(orchestrationPlanError([
       { kind: 'create_task', title: 'A', dependsOn: [1] },

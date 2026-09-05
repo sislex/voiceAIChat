@@ -1,7 +1,12 @@
 // Чистая логика домена CI: бюджет уточняющих вопросов и полнота списков.
 import { describe, it, expect } from 'vitest'
 import {
+  ciBrowserCheckUrl,
+  normalizeCiBrowserCheck,
+  normalizeCiBrowserStartPath,
+  DEFAULT_CI_BROWSER_CHECK,
   canStartCiRun,
+  canStartParallelCiRun,
   extractImprovementFiles,
   canTransitionTestGroup,
   blockedGroupsAfterFailure,
@@ -147,6 +152,16 @@ describe('canStartCiRun', () => {
 
   it('покрыты все статусы: запуск закрыт ровно на активных', () => {
     for (const s of CI_STATUSES) expect(canStartCiRun({ status: s })).toBe(!isActiveCiStatus(s))
+  })
+})
+
+describe('canStartParallelCiRun', () => {
+  it('разрешает отсутствие, терминальный и queued-ран, но защищает выполняющийся и ожидающий ответа', () => {
+    expect(canStartParallelCiRun(null)).toBe(true)
+    expect(canStartParallelCiRun({ status: 'success' })).toBe(true)
+    expect(canStartParallelCiRun({ status: 'queued' })).toBe(true)
+    expect(canStartParallelCiRun({ status: 'running' })).toBe(false)
+    expect(canStartParallelCiRun({ status: 'awaiting_input' })).toBe(false)
   })
 })
 
@@ -776,5 +791,34 @@ describe('extractImprovementFiles', () => {
   it('ограничивает число файлов', () => {
     const log = Array.from({ length: 30 }, (_, i) => `src/file${i}.ts`).join(' ')
     expect(extractImprovementFiles(log, 5)).toHaveLength(5)
+  })
+})
+
+describe('браузерная проверка стадии разработки', () => {
+  it('принимает режим, порт и путь', () => {
+    expect(normalizeCiBrowserCheck({ mode: 'chromium', devServerPort: 8799, startPath: '/projects?tab=board' }))
+      .toEqual({ mode: 'chromium', devServerPort: 8799, startPath: '/projects?tab=board' })
+  })
+
+  it('битое значение означает «проверок нет», а не отказ', () => {
+    expect(normalizeCiBrowserCheck('сломано')).toEqual(DEFAULT_CI_BROWSER_CHECK)
+    expect(normalizeCiBrowserCheck({ mode: 'опера', devServerPort: 0 })).toEqual(DEFAULT_CI_BROWSER_CHECK)
+    expect(normalizeCiBrowserCheck({ mode: 'chromium', devServerPort: 70_000 }).devServerPort).toBe(DEFAULT_CI_BROWSER_CHECK.devServerPort)
+    expect(normalizeCiBrowserCheck({ mode: 'chromium', devServerPort: 5173.5 }).devServerPort).toBe(DEFAULT_CI_BROWSER_CHECK.devServerPort)
+  })
+
+  it('в путь не пускает чужой хост и схему', () => {
+    expect(normalizeCiBrowserStartPath('//evil.test/page')).toBe('/')
+    expect(normalizeCiBrowserStartPath('/http://evil.test')).toBe('/')
+    expect(normalizeCiBrowserStartPath('/путь с пробелом')).toBe('/')
+    expect(normalizeCiBrowserStartPath('board')).toBe('/board')
+    expect(normalizeCiBrowserStartPath('/' + 'x'.repeat(300))).toBe('/')
+  })
+
+  it('адрес собирается на машину задачи, а без неё и без режима его нет', () => {
+    const check = normalizeCiBrowserCheck({ mode: 'chromium', devServerPort: 5173, startPath: '/board' })
+    expect(ciBrowserCheckUrl(check, 'agent-1')).toBe('http://agent-1.machine.internal:5173/board')
+    expect(ciBrowserCheckUrl(check, null)).toBeNull()
+    expect(ciBrowserCheckUrl({ ...check, mode: 'off' }, 'agent-1')).toBeNull()
   })
 })
