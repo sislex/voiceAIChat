@@ -24,12 +24,19 @@ export function releaseCheckoutCommand(target:ReleaseProjectTarget):string {
   return `if [ ! -e ${quote(target.path)} ]; then mkdir -p ${quote(parent)} && git clone -- ${quote(target.gitUrl)} ${quote(target.path)}; elif [ -d ${quote(target.path)} ] && [ -z "$(find ${quote(target.path)} -mindepth 1 -maxdepth 1 -print -quit)" ]; then git clone -- ${quote(target.gitUrl)} ${quote(target.path)}; elif [ ! -d ${quote(`${target.path}/.git`)} ]; then echo 'Каталог release checkout уже существует, но не является пустым каталогом или Git-репозиторием'; exit 1; elif [ "$(git -C ${quote(target.path)} config --get remote.origin.url)" != ${quote(target.gitUrl)} ]; then echo 'Каталог release checkout содержит другой remote.origin.url и не будет перезаписан'; git -C ${quote(target.path)} config --get remote.origin.url; exit 1; else echo 'Release checkout уже подготовлен, повторный clone не требуется'; fi`
 }
 
-/** Изолирует kb:index от общего checkout и не перезаписывает конкурентно сдвинутую release-ветку. */
+/**
+ * Изолирует kb:index от общего checkout и не перезаписывает конкурентно сдвинутую
+ * release-ветку. Identity коммита задаётся флагами: на машине агента глобальный
+ * `user.email` может быть не настроен, и git отказывался угадывать его по хосту
+ * («unable to auto-detect email address») — сборка релиза падала на шаге БЗ,
+ * хотя к самому релизу это отношения не имеет. Так же поступает автолечение
+ * общей копии проекта в `projectMainRefreshScript`.
+ */
 export function releaseKnowledgeBaseCommand(target:ReleaseProjectTarget,releaseBranch:string):string {
   const branchRef=quote(`refs/heads/${releaseBranch}`)
   const fetchedRef=quote(`refs/voicechat/preflight/${releaseBranch}`)
   const refspec=quote(`+refs/heads/${releaseBranch}:refs/voicechat/preflight/${releaseBranch}`)
-  return at(target,`tmp="$(mktemp -d)" && cleanup(){ git update-ref -d ${fetchedRef} >/dev/null 2>&1 || true; git worktree remove --force "$tmp" >/dev/null 2>&1 || rmdir "$tmp" >/dev/null 2>&1 || true; } && trap cleanup EXIT && git fetch origin ${refspec} && expected="$(git rev-parse ${fetchedRef})" && git worktree add --detach "$tmp" "$expected" && cd "$tmp" && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git commit -m 'docs: обновить индекс БЗ перед релизом' && git push --force-with-lease=${branchRef}:$expected origin HEAD:${branchRef}; fi`)
+  return at(target,`tmp="$(mktemp -d)" && cleanup(){ git update-ref -d ${fetchedRef} >/dev/null 2>&1 || true; git worktree remove --force "$tmp" >/dev/null 2>&1 || rmdir "$tmp" >/dev/null 2>&1 || true; } && trap cleanup EXIT && git fetch origin ${refspec} && expected="$(git rev-parse ${fetchedRef})" && git worktree add --detach "$tmp" "$expected" && cd "$tmp" && npm run kb:index && changed="$(git status --porcelain --untracked-files=no)" && if [ -n "$changed" ]; then if [ "$changed" != " M docs/kb/README.md" ]; then echo "Release-preflight остановлен: kb:index изменил неожиданные файлы"; echo "$changed"; exit 1; fi; git add docs/kb/README.md && git -c user.name='voiceAIChat release' -c user.email='release@voicechat.local' commit -m 'docs: обновить индекс БЗ перед релизом' && git push --force-with-lease=${branchRef}:$expected origin HEAD:${branchRef}; fi`)
 }
 
 /** Использует уникальный ref попытки: глобальный FETCH_HEAD меняется любым параллельным fetch. */

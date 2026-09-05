@@ -27,6 +27,9 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).toContain("--force-with-lease='refs/heads/release/1.2.3':$expected")
     expect(command).not.toContain('FETCH_HEAD')
     expect(command).not.toContain('git checkout -B')
+    // На машине агента глобальный user.email может быть не настроен: без флагов
+    // git отказывается угадывать его по хосту, и сборка падает на шаге БЗ.
+    expect(command).toContain("git -c user.name='voiceAIChat release' -c user.email='release@voicechat.local' commit")
   })
 
   it('builds an idempotent checkout command that refuses a foreign origin',()=>{
