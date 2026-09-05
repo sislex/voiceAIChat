@@ -36,11 +36,14 @@ import { sweepQaScreenshots } from './ci/qaScreenshots.js'
 import { saveBrowserShot, sweepBrowserShots } from './browser/checkShots.js'
 import { automatedQaRemarks } from '@voicechat/shared'
 import { syncProjectWithRetry } from './projectSync.js'
+import { shouldResumeAfterInfraFailure } from './ci/autopilotResume.js'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
 const CHECK_BUDGET_MS = 90_000
 /** Как часто автопроход сам осматривает проекты (приход машины в онлайн board-события не даёт). */
 const AUTOPILOT_SWEEP_MS = 60_000
+/** Сколько раз автопроход возобновляет один ран после сбоя машины. */
+const AUTOPILOT_INFRA_RESUMES = 3
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { createAutomatedQaCheck } from './ci/automatedQaCheck.js'
 import { MergeRunManager } from './merge/runManager.js'
@@ -2114,8 +2117,32 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: error instanceof Error ? error.message : String(error), attempts: failed, limit })
     }
   }
+  /**
+   * Сбой машины посреди рана (ноутбук ушёл в сон, обрыв Wi-Fi) валит текущий шаг,
+   * но работа модели остаётся в рабочей копии. Новый ран заставил бы модель
+   * делать её заново — десятки минут в мусор, — поэтому автопроход возобновляет
+   * тот же ран с упавшего шага. Повторов конечное число: сломанное окружение не
+   * должно крутить ран по кругу.
+   */
+  const autoPilotResumeAfterInfraFailure = (userId: string, projectId: string, task: import('@voicechat/shared').Task): boolean => {
+    const last = db.latestCiRunSummary(task.id)
+    if (!last) return false
+    const allowed = shouldResumeAfterInfraFailure({
+      status: last.status,
+      infraErrors: db.countCiEvents(last.id, 'run.infra_error'),
+      resumes: db.countCiEvents(last.id, 'run.autopilot_infra_resume'),
+      limit: AUTOPILOT_INFRA_RESUMES
+    })
+    if (!allowed) return false
+    const resumed = ciRunManager.retryFromFailed(userId, last.id)
+    if ('error' in resumed) return false
+    db.addCiEvent({ projectId, runId: last.id, type: 'run.autopilot_infra_resume', actorType: 'system', payload: { taskId: task.id, status: last.status } })
+    emitBoard(projectId)
+    return true
+  }
   /** Готовая к разработке карточка сама встаёт в очередь development-рана. */
   const autoPilotDevelopment = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
     const result = ciRunManager.startForDevelopmentTransition(userId, projectId, task.id, true)
     if ('error' in result) {
       db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'ready', reason: result.error })
@@ -2151,6 +2178,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           if (needsMachine && !projectHasOnlineMachine(userId, projectId)) continue
           if (stage === 'backlog' || stage === 'preparation') autoPilotPreparation(userId, projectId, task)
           else if (stage === 'ready') autoPilotDevelopment(userId, projectId, task)
+          // В development координатор сам ранов не создаёт (это дело fix-loop и
+          // кнопок), но брошенный сбоем машины ран обязан продолжиться.
+          else if (stage === 'development') autoPilotResumeAfterInfraFailure(userId, projectId, task)
           else if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
           else if (stage === 'integration_tests') { const run=db.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
           else if (stage === 'automated_qa') { const run=db.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')automatedQaRunner.launch(run.id,userId) }
