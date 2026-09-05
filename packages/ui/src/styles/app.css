@@ -8391,3 +8391,46 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .gitpane-commit-meta { flex: none; color: var(--text-dim); font-size: 11px; }
 .gitpane-commit-files { list-style: none; margin: 0 0 0 var(--space-3, 12px); padding: 0; }
 .gitpane-commit-more { padding: 2px 6px; color: var(--text-dim); font-size: 11px; }
+
+/* Режим «Проект» в Make: компоненты рабочей копии, Storybook на машине, правка файла.
+   Раскладка повторяет «Компоненты»: список слева, кадр или редактор справа. */
+.mpc { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.mpc-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.mpc-ws { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mpc-ws-label { color: var(--text-dim); font-size: 12px; }
+.mpc-ws select { max-width: 260px; }
+.mpc-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(180px, 280px) 1fr; }
+.mpc-list { min-height: 0; overflow: auto; border-right: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.mpc-search { width: 100%; }
+.mpc-skeletons { display: flex; flex-direction: column; gap: 6px; }
+.mpc-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mpc-item > button { width: 100%; text-align: left; background: none; border: 0; color: inherit; padding: 6px 8px; border-radius: var(--radius-medium); cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.mpc-item > button:hover { background: var(--surface-hover); }
+.mpc-item--on > button { background: var(--surface-selected); }
+.mpc-item-title { font-size: 13px; }
+.mpc-item-path { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpc-stories { list-style: none; margin: 2px 0 6px; padding: 0 0 0 10px; display: flex; flex-direction: column; gap: 2px; }
+.mpc-story { width: 100%; text-align: left; background: none; border: 0; color: var(--text-dim); padding: 4px 8px; border-radius: var(--radius-medium); cursor: pointer; font-size: 12px; }
+.mpc-story:hover { background: var(--surface-hover); }
+.mpc-story--on { background: var(--surface-selected); color: var(--text); }
+.mpc-note { margin: 4px 0 0; font-size: 11px; color: var(--text-dim); }
+.mpc-main { min-height: 0; display: flex; flex-direction: column; }
+.mpc-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.mpc-tabs > button { background: none; border: 0; color: var(--text-dim); padding: 4px 10px; border-radius: var(--radius-medium); cursor: pointer; }
+.mpc-tabs > button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); }
+.mpc-tabs > button:disabled { opacity: .5; cursor: default; }
+.mpc-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: var(--bg); }
+.mpc-editor { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.mpc-editor-head { display: flex; align-items: center; gap: var(--space-2); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.mpc-editor-path { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpc-log { max-height: 50vh; overflow: auto; white-space: pre-wrap; font-size: 12px; background: var(--surface-hover); padding: 8px; border-radius: var(--radius-medium); }
+.mpc-ticket-note { margin: 0 0 var(--space-2); color: var(--text-dim); font-size: 13px; }
+.mpc-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--space-2); }
+.mpc-field > span { font-size: 12px; color: var(--text-dim); }
+.mpc-ticket-paths { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--text-dim); }
+
+@media (max-width: 768px) {
+  .mpc-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 38%) 1fr; }
+  .mpc-list { border-right: 0; border-bottom: 1px solid var(--border); }
+  .mpc-ws select { max-width: 150px; }
+}

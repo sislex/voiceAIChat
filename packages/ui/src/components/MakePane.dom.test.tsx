@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { createFakeApi } from '../test/fakeApi'
@@ -1062,5 +1062,17 @@ describe('MakePane: экспорт под хостинг и сравнение �
     const cmp = await screen.findByTestId('make-version-compare')
     expect((within(cmp).getByTitle('Версия из истории') as HTMLIFrameElement).getAttribute('src')).toContain(`/__snapshot__/${snap.id}/index.html`)
     expect((within(cmp).getByTitle('Текущая версия') as HTMLIFrameElement).getAttribute('src')).toContain('index.html?rev=')
+  })
+  it('вкладка «Проект» появляется только у Make-чата, привязанного к проекту', async () => {
+    renderPane()
+    await screen.findByTitle('Превью проекта')
+    expect(screen.queryByRole('tab', { name: 'Проект' })).toBeNull()
+
+    cleanup()
+    renderPane({ projectId: 'p1' })
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('tab', { name: 'Проект' }))
+    // Панель компонентов грузит рабочие копии сама — достаточно её опознать по селекту.
+    expect(await screen.findByLabelText('Рабочая копия проекта')).toBeTruthy()
   })
 })
