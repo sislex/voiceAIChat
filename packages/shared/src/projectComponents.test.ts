@@ -61,12 +61,15 @@ describe('parseStorybookIndex', () => {
 describe('адреса кадра', () => {
   it('ведёт на iframe.html машины через прокси превью', () => {
     expect(machineOrigin('agent-1', 6006)).toBe('http://agent-1.machine.internal:6006')
-    const url = projectStorybookFrameUrl('agent-1', 6006, 'ui-button--primary')
-    expect(url.startsWith('/api/preview?url=')).toBe(true)
-    const target = new URL(decodeURIComponent(url.slice('/api/preview?url='.length)))
+    const url = new URL(projectStorybookFrameUrl('agent-1', 6006, 'ui-button--primary'), 'http://chat.local')
+    expect(url.pathname).toBe('/api/preview')
+    const target = new URL(url.searchParams.get('url') ?? '')
     expect(target.host).toBe('agent-1.machine.internal:6006')
     expect(target.pathname).toBe('/iframe.html')
-    expect(target.searchParams.get('id')).toBe('ui-button--primary')
+    // Storybook читает выбор стори из адреса документа, то есть из НАШЕГО query.
+    expect(target.search).toBe('')
+    expect(url.searchParams.get('id')).toBe('ui-button--primary')
+    expect(url.searchParams.get('viewMode')).toBe('story')
   })
 })
 

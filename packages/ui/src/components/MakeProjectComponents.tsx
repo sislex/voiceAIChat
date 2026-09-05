@@ -16,6 +16,7 @@ import type { RendererApi } from '@shared/ipc'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
 import type { ProjectComponentEntry, ProjectComponentsListing, ProjectStorybookSession } from '@shared/projectComponents'
 import { projectStorybookFrameUrl } from '@shared/projectComponents'
+import { makeStorybookCommandKey } from '../store/contracts'
 import { loadView, type LoadStatus } from '../lib/loadState'
 import { usePolling } from '../lib/usePolling'
 import { CodeEditor } from './CodeEditor'
@@ -81,6 +82,14 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
   const [ticketTitle, setTicketTitle] = useState('')
   const [ticketNote, setTicketNote] = useState('')
   const [ticketBusy, setTicketBusy] = useState(false)
+  /**
+   * Команда запуска. Сервер её не угадывает: в монорепо `npm run storybook` живёт в
+   * пакете витрины, а не в корне. Запоминаем на проект — команда у команды одна.
+   */
+  const [command, setCommand] = useState<string>(() => {
+    try { return localStorage.getItem(makeStorybookCommandKey(projectId)) ?? '' } catch { return '' }
+  })
+  const [commandOpen, setCommandOpen] = useState(false)
   const [ticketError, setTicketError] = useState<string | null>(null)
   /** Пути, изменённые в этой панели: из них собирается коммит тикета. */
   const [changed, setChanged] = useState<string[]>([])
@@ -152,13 +161,15 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
     if (!workspaceId) return
     setSessionBusy(true)
     try {
-      setSession(await api['projects:storybookAction']({ id: projectId, workspace: workspaceId, action }))
+      setSession(await api['projects:storybookAction']({
+        id: projectId, workspace: workspaceId, action, ...(command.trim() ? { command: command.trim() } : {})
+      }))
     } catch (error) {
       toast.error(errorText(error))
     } finally {
       setSessionBusy(false)
     }
-  }, [api, projectId, workspaceId, toast])
+  }, [api, command, projectId, workspaceId, toast])
 
   const openComponent = useCallback(async (component: ProjectComponentEntry): Promise<void> => {
     setSelected({ path: component.path, storyId: component.stories[0]?.id ?? null })
@@ -261,12 +272,21 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
           </select>
         </label>
         <StatusPill tone={STATE_TONE[session?.state ?? 'stopped']}>
-          {STATE_LABEL[session?.state ?? 'stopped']}
+          {STATE_LABEL[session?.state ?? 'stopped']}{session?.adopted ? ' (запущен вне панели)' : ''}
         </StatusPill>
         {session?.state === 'running' || session?.state === 'starting' ? (
           <>
             <Button size="sm" variant="secondary" onClick={() => void act('restart')} loading={sessionBusy}>Перезапустить</Button>
-            <Button size="sm" variant="ghost" onClick={() => void act('stop')} loading={sessionBusy}>Остановить</Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void act('stop')}
+              loading={sessionBusy}
+              title={session?.adopted ? 'Storybook запущен вне панели — остановите его там же, где запускали' : undefined}
+              disabled={session?.adopted}
+            >
+              Остановить
+            </Button>
           </>
         ) : (
           <Button
@@ -279,6 +299,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
             Запустить Storybook
           </Button>
         )}
+        <Button size="sm" variant="ghost" onClick={() => setCommandOpen(true)}>Команда</Button>
         <Button size="sm" variant="ghost" onClick={() => setLogOpen(true)} disabled={!session?.log}>Лог</Button>
         {changed.length > 0 && (
           <Button
@@ -413,6 +434,32 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
           )}
         </div>
       </div>
+
+      {commandOpen && (
+        <Dialog
+          title="Команда запуска Storybook"
+          onClose={() => setCommandOpen(false)}
+          actions={<Button variant="primary" onClick={() => {
+            try { localStorage.setItem(makeStorybookCommandKey(projectId), command.trim()) } catch { /* приватный режим — команда останется на сеанс */ }
+            setCommandOpen(false)
+          }}>Запомнить</Button>}
+        >
+          <p className="mpc-ticket-note">
+            Выполняется в каталоге рабочей копии; порт, <code>--no-open</code> и <code>--ci</code>
+            панель добавит сама. В монорепо укажите пакет витрины — например
+            <code> npm run -w @voicechat/ui storybook --</code>.
+          </p>
+          <label className="mpc-field">
+            <span>Команда</span>
+            <input
+              value={command}
+              onChange={(event) => setCommand(event.target.value)}
+              placeholder="npm run storybook --"
+              autoFocus
+            />
+          </label>
+        </Dialog>
+      )}
 
       {logOpen && (
         <Dialog title="Лог запуска Storybook" onClose={() => setLogOpen(false)} size="lg">

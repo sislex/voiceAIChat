@@ -574,7 +574,7 @@ export interface IpcInvokeMap {
   'projects:components': { arg: { id: string; workspace: string }; result: ProjectComponentsListing }
   'projects:componentStories': { arg: { id: string; workspace: string; path: string }; result: ProjectComponentEntry }
   'projects:storybookSession': { arg: { id: string; workspace: string }; result: ProjectStorybookSession }
-  'projects:storybookAction': { arg: { id: string; workspace: string; action: ProjectStorybookAction; port?: number }; result: ProjectStorybookSession }
+  'projects:storybookAction': { arg: { id: string; workspace: string; action: ProjectStorybookAction; port?: number; command?: string }; result: ProjectStorybookSession }
   'projects:componentTicket': {
     arg: { id: string; workspace: string; title: string; description?: string; paths: string[]; labels?: string[] }
     result: ProjectComponentTicketResult

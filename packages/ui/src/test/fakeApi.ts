@@ -1332,6 +1332,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         ...componentsState.session,
         workspaceId: workspace,
         state: action === 'stop' ? 'stopped' : 'running',
+        adopted: false,
         readyAt: action === 'stop' ? null : makeStorybookSession().readyAt
       }
       return componentsState.session

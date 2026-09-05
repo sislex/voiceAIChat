@@ -854,7 +854,31 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffe
     text = /<\/body\s*>/i.test(text) ? text.replace(/<\/body\s*>/i, inspector + '</body>') : text + inspector
   }
   if (/text\/css/i.test(type)) text = rewriteCssUrls(text)
+  // ESM-модули dev-сервера на машине. Их импорты браузер резолвит сам: `/@vite/client`
+  // ушёл бы на origin ChatAI (404), а `./chunk.js` — относительно `/api/preview`.
+  // Поэтому спецификаторы переписываем так же, как ссылки в HTML. Только для машин:
+  // внешние сайты Reader этого не ждали, и трогать их поведение незачем.
+  if (isMachinePreviewHost(base.hostname) && /javascript|ecmascript/i.test(type)) text = rewriteModuleSpecifiers(text, base)
   return Buffer.from(text)
+}
+
+/** Хост машины: `<agentId>.machine.internal`. */
+export function isMachinePreviewHost(hostname: string): boolean {
+  return hostname.endsWith(MACHINE_PREVIEW_SUFFIX)
+}
+
+/**
+ * `import … from '…'`, `export … from '…'` и `import('…')` с путём (абсолютным или
+ * относительным). Голые имена пакетов не трогаем: dev-сервер их уже разрешил, а в
+ * статике они и не встречаются.
+ */
+export function rewriteModuleSpecifiers(code: string, base: URL): string {
+  const path = "(\\.{0,2}/[^'\"\n]*)"
+  const rewrite = (prefix: string, quote: string, value: string): string => prefix + quote + proxyUrl(value, base) + quote
+  return code
+    .replace(new RegExp(`(\\bfrom\\s*)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
+    .replace(new RegExp(`(\\bimport\\s*\\(\\s*)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
+    .replace(new RegExp(`(\\bimport\\s+)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
 }
 
 /**
@@ -1080,7 +1104,9 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           if (!deps.machines) throw new PreviewProxyError(502, 'Мост машин недоступен на этом сервере')
           const machine = await loadViaMachine(deps.machines, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
           const machineType = headerValue(machine.headers, 'content-type') ?? 'application/octet-stream'
-          const machineBody = /text\/(html|css)|application\/xhtml\+xml/i.test(machineType)
+          // JS у машины переписывается тоже: dev-сервер отдаёт ESM с абсолютными
+          // импортами, и без правки они ушли бы на origin ChatAI.
+          const machineBody = /text\/(html|css)|application\/xhtml\+xml|javascript|ecmascript/i.test(machineType)
             ? rewritePreviewBody(machine.body, machineType, machine.finalUrl)
             : machine.body
           reply.code(machine.status)

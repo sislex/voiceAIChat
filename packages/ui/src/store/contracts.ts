@@ -50,6 +50,13 @@ export const MAKE_SPLIT_KEY = 'vc.make.split'
 export const MAKE_SPLIT_PCT_KEY = 'vc.make.splitPct'
 
 /**
+ * Команда запуска Storybook в режиме «Репозиторий» — на проект: в монорепо витрина
+ * живёт не в корне, и сервер эту команду не угадывает.
+ */
+export const makeStorybookCommandKey = (projectId: string): string =>
+  `vc.make.storybookCommand.${encodeURIComponent(projectId)}`
+
+/**
  * Все ключи предпочтений интерфейса в одном месте — реестр для стража
  * `preferenceKeys.test.ts`. Он не даёт разъехаться двум вещам: одинаковому
  * ключу у разных фич (одна молча затирает другую) и ключу-литералу мимо этого

@@ -82,13 +82,13 @@ describe('ComponentTicketService', () => {
   })
 
   it('без колонки «Ожидает слияния» задача не заводится', async () => {
-    const { service } = harness()
-    const db = { getBoard: () => ({ columns: [], tasks: [] }) }
     const patched = new ComponentTicketService({
-      db: { ...(db as never), getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git' }) } as never,
+      db: {
+        getBoard: () => ({ columns: [], tasks: [] }),
+        getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git' })
+      } as never,
       git: { resolve: () => ({ agentId: 'a', path: '/repo' }) } as never
     })
-    void service
     await expect(patched.create('admin', 'p1', { workspaceId: 'project:a', title: 'Правка', paths: ['a.tsx'] }))
       .rejects.toThrow('Ожидает слияния')
   })
