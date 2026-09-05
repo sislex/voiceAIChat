@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
 updated: 2026-09-06
-checked: 67634a16
+checked: d6516b5b
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/server.ts
@@ -78,6 +78,14 @@ development-рана через `startForDevelopmentTransition`. До этого
 предел `AUTOPILOT_INFRA_RESUMES` не исчерпан. Каждое возобновление пишет
 `run.autopilot_infra_resume`, а считает их `db.countCiEvents(runId, type)`. Дефект
 кода так не лечится — для него остаётся обычный fix-loop.
+
+Перезапуск development-рана выдерживает паузу `AUTOPILOT_RETRY_BACKOFF_MS`
+(`retryAllowedNow`): без неё board-события гнали ретраи подряд, и лимит
+доработок сгорал за 14 секунд — вместо трёх осмысленных попыток задача получала
+три мгновенных отказа. Провал «Рабочая копия содержит локальные изменения»
+(`isDirtyWorkspaceFailure`) перезапуском не лечится вовсе: там лежит
+незакоммиченная работа модели, и решение — повтор с шага коммита либо сброс
+копии — принимает человек; автопроход только пишет `autopilot.stopped`.
 
 Карточка в `development` с упавшим раном и без активного — тоже тупик: fix-loop
 отрабатывает внутри рана, а следующий ран без человека не появлялся. Координатор

@@ -26,3 +26,36 @@ export function shouldResumeAfterInfraFailure(input: AutopilotResumeInput): bool
   if (input.infraErrors <= 0) return false
   return input.resumes < input.limit
 }
+
+/** Пауза между автоматическими перезапусками development-рана. */
+export const AUTOPILOT_RETRY_BACKOFF_MS = 120_000
+
+/**
+ * Грязная рабочая копия задачи — не повод жечь попытки: ран падает мгновенно, и
+ * три автоматических перезапуска сгорают за секунды (реальный случай CHAT-413 —
+ * работа модели осталась незакоммиченной после сна ноутбука). Решение здесь
+ * человеческое: сохранить работу повтором с шага коммита или сбросить копию.
+ */
+const DIRTY_WORKSPACE = /Рабочая копия содержит локальные изменения/i
+
+export function isDirtyWorkspaceFailure(error: string | null | undefined): boolean {
+  return Boolean(error && DIRTY_WORKSPACE.test(error))
+}
+
+export interface AutopilotRetryInput {
+  /** Когда завершился последний ран задачи; null — время неизвестно. */
+  finishedAt: number | null
+  now: number
+  backoffMs?: number
+}
+
+/**
+ * Перезапуск не раньше, чем через паузу после предыдущего провала. Без неё
+ * board-события гнали ретраи подряд, и лимит доработок исчерпывался за 14 секунд
+ * — вместо трёх осмысленных попыток задача получала три мгновенных отказа.
+ */
+export function retryAllowedNow(input: AutopilotRetryInput): boolean {
+  if (input.finishedAt == null) return true
+  const backoff = input.backoffMs ?? AUTOPILOT_RETRY_BACKOFF_MS
+  return input.now - input.finishedAt >= backoff
+}
