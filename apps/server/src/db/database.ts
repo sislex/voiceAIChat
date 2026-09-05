@@ -9104,6 +9104,15 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM qa_stage_runs WHERE project_id=? AND task_id=? AND stage=? ORDER BY attempt DESC`).all(projectId, taskId, stage) as Record<string, unknown>[]).map((row) => this.mapQaStageRun(row))
   }
 
+  /**
+   * Проекты, где есть хоть одна карточка с автопроходом. Нужен фоновому тику:
+   * этап, упавший из-за уснувшей машины, иначе ждал бы следующего действия
+   * человека — а весь смысл автопрохода в том, чтобы человека не ждать.
+   */
+  autoPilotProjectIds(): string[] {
+    return (this.db.prepare(`SELECT DISTINCT project_id FROM tasks WHERE auto_pilot=1 AND type='task'`).all() as Array<{ project_id: string }>).map((row) => row.project_id)
+  }
+
   autoPilotSnapshot(projectId: string): Array<{ task: Task; stage: KanbanColumnSemanticType; userId: string; requiresManualQa: boolean }> {
     const project = this.db.prepare(`SELECT created_by,autopilot_requires_manual_qa FROM projects WHERE id=?`).get(projectId) as { created_by: string; autopilot_requires_manual_qa: number } | undefined
     if (!project) return []

@@ -39,6 +39,8 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
 const CHECK_BUDGET_MS = 90_000
+/** Как часто автопроход сам осматривает проекты (приход машины в онлайн board-события не даёт). */
+const AUTOPILOT_SWEEP_MS = 60_000
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { createAutomatedQaCheck } from './ci/automatedQaCheck.js'
 import { MergeRunManager } from './merge/runManager.js'
@@ -2121,6 +2123,14 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     }
     if (!result.existing) emitBoard(projectId)
   }
+  /**
+   * Этап не запускается на спящей машине. Раньше упавший по «Машина отключилась
+   * во время выполнения команды» этап сразу перезапускался следующим board-событием
+   * и падал снова — так задача жгла круги доработки за чужой сбой. Пока online-машины
+   * у проекта нет, автопроход просто ждёт: фоновый тик вернётся к нему сам.
+   */
+  const projectHasOnlineMachine = (userId: string, projectId: string): boolean =>
+    db.listUsableAgents(userId, projectId).some((agent) => agentRegistry.isOnline(agent.id))
   const ticking = new Set<string>()
   /** Доска изменилась, пока шёл тик: пробуждение нельзя терять, иначе конвейер встаёт. */
   const pendingTicks = new Set<string>()
@@ -2131,6 +2141,14 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       try {
         for (const item of db.autoPilotSnapshot(projectId)) {
           const { task, stage, userId } = item
+          // Машина нужна не всем стадиям: пропуск ручного QA — чистая работа с
+          // доской, а подготовка требует копию проекта только у Git-проекта.
+          const needsMachine = stage === 'manual_qa'
+            ? false
+            : stage === 'backlog' || stage === 'preparation'
+              ? Boolean(db.getProject(userId, projectId)?.gitUrl)
+              : true
+          if (needsMachine && !projectHasOnlineMachine(userId, projectId)) continue
           if (stage === 'backlog' || stage === 'preparation') autoPilotPreparation(userId, projectId, task)
           else if (stage === 'ready') autoPilotDevelopment(userId, projectId, task)
           else if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
@@ -2146,6 +2164,16 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       }
     })
   }
+  // Board-события покрывают всё, что случилось в самом приложении, но не приход
+  // машины в онлайн: этап, брошенный уснувшим ноутбуком, ждал бы человека. Раз в
+  // минуту координатор сам проходит проекты с автопроходом — тик идемпотентен,
+  // и на живом конвейере этот проход ничего не делает.
+  const autoPilotTimer = setInterval(() => {
+    try { for (const projectId of db.autoPilotProjectIds()) autoPilotTick(projectId) }
+    catch (error) { app.log.warn({ error }, 'autopilot sweep failed') }
+  }, AUTOPILOT_SWEEP_MS)
+  autoPilotTimer.unref?.()
+  app.addHook('onClose', async () => clearInterval(autoPilotTimer))
   registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id),automatedQaScreenshotDir)
 
   // Запуск работ ассистентом и оркестратором идёт теми же путями, что кнопки в
