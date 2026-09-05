@@ -630,6 +630,7 @@ interface ProjectRow {
   automated_qa_mode: string
   automated_qa_scenario_json: string
   autopilot_requires_manual_qa: number
+  autopilot_default: number
   autopilot_fix_limit: number
   done_retention_days: number | null
 }
@@ -1457,6 +1458,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_command TEXT NOT NULL DEFAULT 'npm test'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_mode TEXT NOT NULL DEFAULT 'command'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_scenario_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_scenario_json TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_default')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_default INTEGER NOT NULL DEFAULT 0`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_requires_manual_qa')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_fix_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_fix_limit INTEGER NOT NULL DEFAULT 3`)
     const ciWorkspaceCols = this.db.prepare(`PRAGMA table_info(ci_workspaces)`).all() as Array<{ name: string }>
@@ -4588,6 +4590,7 @@ export class VoiceChatDb {
       automatedQaCommand: r.automated_qa_command || 'npm test',
       automatedQaMode: r.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
       automatedQaScenarios: parseAutomatedQaScenarios(parseJsonValue<unknown>(r.automated_qa_scenario_json, [])),
+      autoPilotDefault: r.autopilot_default !== 0,
       autoPilotRequiresManualQa: r.autopilot_requires_manual_qa !== 0,
       autoPilotFixLimit: Number.isInteger(r.autopilot_fix_limit) && r.autopilot_fix_limit >= 0 ? r.autopilot_fix_limit : 3,
       commandPolicy: parseProjectCommandPolicy(r.command_policy),
@@ -4840,6 +4843,7 @@ export class VoiceChatDb {
       automatedQaCommand?: string
       automatedQaMode?: AutomatedQaMode
       automatedQaScenarios?: AutomatedQaScenario[]
+      autoPilotDefault?: boolean
       autoPilotRequiresManualQa?: boolean
       autoPilotFixLimit?: number
       commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
@@ -4916,6 +4920,7 @@ export class VoiceChatDb {
     if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
     if (fields.automatedQaMode !== undefined) { set.push('automated_qa_mode = ?'); vals.push(fields.automatedQaMode === 'playwright' ? 'playwright' : 'command') }
     if (fields.automatedQaScenarios !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(fields.automatedQaScenarios.map(normalizeAutomatedQaScenario))) }
+    if (fields.autoPilotDefault !== undefined) { set.push('autopilot_default = ?'); vals.push(fields.autoPilotDefault ? 1 : 0) }
     if (fields.autoPilotRequiresManualQa !== undefined) { set.push('autopilot_requires_manual_qa = ?'); vals.push(fields.autoPilotRequiresManualQa ? 1 : 0) }
     if (fields.autoPilotFixLimit !== undefined) {
       if (!Number.isInteger(fields.autoPilotFixLimit) || fields.autoPilotFixLimit < 0) throw new Error('autoPilotFixLimit must be a non-negative integer')
@@ -5943,6 +5948,7 @@ export class VoiceChatDb {
     if (itemType === 'story' && parent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
     if (itemType === 'task' && parent && parent.type !== 'story' && parent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
 
+    const autoPilotDefault = (this.db.prepare(`SELECT autopilot_default FROM projects WHERE id = ?`).get(projectId) as { autopilot_default: number } | undefined)?.autopilot_default === 1
     const id = this.newId()
     const ts = this.now()
     const created = this.db.transaction(() => {
@@ -5959,8 +5965,8 @@ export class VoiceChatDb {
         `UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`
       ).get(projectId) as { task_seq: number }).task_seq
       this.db.prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at, auto_pilot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`
       ).run(
         id, projectId, args.columnId, args.title, args.description ?? '',
         args.acceptanceCriteria ?? '', itemType, args.parentId ?? null,
@@ -5968,7 +5974,11 @@ export class VoiceChatDb {
         this.validateTaskAgent(userId, projectId, args.agentId),
         JSON.stringify(args.labels ?? []), JSON.stringify(skills),
         args.storyPoints ?? null, args.dueDate ?? null,
-        this.isDoneColumn(args.columnId) ? ts : null, seq, (max.m ?? 0) + RANK_STEP, ts, ts
+        this.isDoneColumn(args.columnId) ? ts : null, seq, (max.m ?? 0) + RANK_STEP, ts, ts,
+        // Автопроход наследуется от настройки проекта: иначе конвейер каждой новой
+        // карточки всё равно начинался с того, что человек включает флаг руками.
+        // Только задачи — эпик и история этапы не проходят.
+        itemType === 'task' && autoPilotDefault ? 1 : 0
       )
       this.db.prepare(
         `INSERT INTO task_creation_audit (id, project_id, task_id, created_by, created_by_name, assignee, source, assignment_method, created_at)
