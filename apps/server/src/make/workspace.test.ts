@@ -13,6 +13,78 @@ async function fresh(): Promise<MakeWorkspaces> {
 }
 
 describe('MakeWorkspaces', () => {
+  // @testCase TC-01
+  it('normalizes old and damaged settings without rewriting them', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const settings = join(ws.dirOf(CONV), '.make', 'settings.json')
+    await writeFile(settings, JSON.stringify({ mode: 'designer', stack: 'bad', uiKit: 7 }), 'utf8')
+    expect(await ws.notes(CONV)).toMatchObject({ mode: 'designer', stack: 'html-js', uiKit: 'none' })
+    expect(await readFile(settings, 'utf8')).toBe(JSON.stringify({ mode: 'designer', stack: 'bad', uiKit: 7 }))
+    await writeFile(settings, '{broken', 'utf8')
+    expect(await ws.notes(CONV)).toMatchObject({ mode: 'balanced', stack: 'html-js', uiKit: 'none' })
+  })
+
+  // @testCase TC-03
+  it('round-trips partial stack settings and adds strict hints to every prompt', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { notes: 'не менять API', mode: 'developer', stack: 'react', uiKit: 'bootstrap' })
+    await ws.setNotes(CONV, { notes: 'не менять API v2' })
+    expect(await ws.notes(CONV)).toEqual({ notes: 'не менять API v2', mode: 'developer', stack: 'react', uiKit: 'bootstrap' })
+    const context = await ws.promptContext(CONV)
+    expect(context).toContain('Стек React 18')
+    expect(context).toContain('Bootstrap 5.3.3')
+    expect(context).toContain('Режим «Разработчик»')
+  })
+
+  // @testCase TC-04
+  it('warns for every JavaScript violation in the html stack', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { stack: 'html' })
+    await ws.write(CONV, 'bad.mjs', 'export {}')
+    await ws.write(CONV, 'index.html', '<SCRIPT type="module">alert(1)</SCRIPT>')
+    const issues = await ws.check(CONV)
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'bad.mjs', rule: 'html-no-script' }),
+      expect.objectContaining({ path: 'index.html', rule: 'html-no-script' })
+    ]))
+  })
+
+  // @testCase TC-05
+  it('requires a neighboring story for React components only', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { stack: 'react' })
+    await ws.write(CONV, 'src/components/Card.jsx', 'export const Card = () => null')
+    expect((await ws.check(CONV)).some((issue) => issue.rule === 'react-component-story')).toBe(true)
+    await ws.write(CONV, 'src/components/Card.stories.jsx', 'export const Default = {}')
+    expect((await ws.check(CONV)).some((issue) => issue.rule === 'react-component-story')).toBe(false)
+  })
+
+  // @testCase TC-09
+  it('takes a snapshot before replacing files for a stack template', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'index.html', '<h1>custom</h1>')
+    await ws.setNotes(CONV, { stack: 'react' })
+    await ws.applyTemplate(CONV, 'react')
+    expect((await ws.snapshots(CONV))[0]?.label).toBe('До смены стека')
+    expect((await ws.snapshotFile(CONV, (await ws.snapshots(CONV))[0]!.id, 'index.html')).content).toContain('custom')
+  })
+
+  // @testCase TC-13
+  it('rejects an incompatible template without changing files or snapshots', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { stack: 'html' })
+    const before = (await ws.read(CONV, 'index.html')).content
+    await expect(ws.applyTemplate(CONV, 'react')).rejects.toThrow(/несовместим/)
+    expect((await ws.read(CONV, 'index.html')).content).toBe(before)
+    expect(await ws.snapshots(CONV)).toHaveLength(0)
+  })
+
   it('снятая публикация не оживает от фонового счётчика просмотров', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)

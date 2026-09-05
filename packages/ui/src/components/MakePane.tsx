@@ -37,7 +37,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment, type MakePresenceClient, type MakeTestFile } from '@shared/make'
+import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTemplateCompatible, makeStackLabel, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment, type MakePresenceClient, type MakeTestFile, type MakeProjectNotes } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -232,6 +232,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
+  const [projectSettings, setProjectSettings] = useState<MakeProjectNotes | null>(null)
+  useEffect(() => { void api['make:notes']({ conversationId }).then(setProjectSettings).catch(() => undefined) }, [api, conversationId])
   const [taskLinksOpen, setTaskLinksOpen] = useState(false)
   /** Обмен с репозиторием проекта: компоненты и стили туда-обратно. */
   const [projectSyncOpen, setProjectSyncOpen] = useState(false)
@@ -1265,6 +1267,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           </button>
         ))}
       </div>
+      {projectSettings && <button type="button" className="make-stack-badge" aria-label={`Настройки проекта: ${makeStackLabel(projectSettings.stack, projectSettings.uiKit)}`} onClick={() => setNotesOpen(true)}>{makeStackLabel(projectSettings.stack, projectSettings.uiKit)}</button>}
       <span className="make-head-spacer" />
       {mode === 'preview' && (
         <>
@@ -1335,7 +1338,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               {story && item('Ссылка на стори', () => void shareStory(), { ariaLabel: 'Поделиться',  title: state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа' })}
               <hr />
             </>}
-            {item('🧠 Память проекта', () => setNotesOpen(true), { ariaLabel: 'Память проекта', title: 'Заметки для ассистента и режим «дизайнер / разработчик»' })}
+            {item('⚙ Настройки проекта', () => setNotesOpen(true), { ariaLabel: 'Настройки проекта', title: 'Стек, стилевая база, режим ассистента и заметки' })}
             {item('🗂 Задачи проекта', () => setTaskLinksOpen(true), { ariaLabel: 'Задачи проекта', title: 'Связать открытую страницу с карточкой доски и увидеть уже связанные' })}
             {item('⇅ Компоненты из проекта', () => setProjectSyncOpen(true), { ariaLabel: 'Компоненты из проекта', title: 'Скопировать компоненты и стили из репозитория проекта и править их в Make' })}
             {onInsertToChat && item('✦ Идеи для старта', () => setIdeasOpen(true), { ariaLabel: 'Идеи для старта' })}
@@ -1909,7 +1912,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           )}
         </Dialog>
       )}
-      {notesOpen && <MakeNotesDialog conversationId={conversationId} api={api} onClose={() => setNotesOpen(false)} />}
+      {notesOpen && <MakeNotesDialog conversationId={conversationId} api={api} onClose={() => setNotesOpen(false)} onSaved={setProjectSettings} />}
       {taskLinksOpen && <MakeTaskLinksDialog conversationId={conversationId} currentPath={selectedPath ?? ''} api={api} onOpenTask={onOpenTask} onClose={() => setTaskLinksOpen(false)} />}
       {projectSyncOpen && <MakeProjectSyncDialog conversationId={conversationId} api={api} onClose={() => setProjectSyncOpen(false)} />}
       {usageOpen && <MakeUsageDialog conversationId={conversationId} api={api} onClose={() => setUsageOpen(false)} onChanged={(next) => { setState(next); setPreviewRev(next.rev) }} />}
@@ -2111,7 +2114,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {templatesOpen && (
         <Dialog className="make-dialog" padded title="Шаблоны проекта" ariaLabel="Шаблоны проекта" size="md" onClose={() => setTemplatesOpen(false)} testId="make-templates">
           <ul className="make-templates" aria-label="Шаблоны">
-            {MAKE_TEMPLATES.map((t) => (
+            {MAKE_TEMPLATES.filter((t) => !projectSettings || isMakeTemplateCompatible(t, projectSettings.stack)).map((t) => (
               <li key={t.id} className="make-template">
                 <span className="make-template-meta"><strong>{t.title}</strong><small>{t.description}</small></span>
                 <Button size="sm" variant="secondary" onClick={() => void applyTemplate(t.id, t.title)}>Применить</Button>

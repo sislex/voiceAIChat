@@ -24,8 +24,10 @@ function renderPane(overrides: Partial<Parameters<typeof MakePane>[0]> = {}) {
 }
 
 describe('MakePane', () => {
+  // @testCase TC-11
   it('открывается на превью с iframe проекта; пресеты ширины и обновление меняют src', async () => {
     renderPane()
+    expect(await screen.findByRole('button', { name: 'Настройки проекта: HTML+CSS+JS · своя система' })).toBeInTheDocument()
     const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
     expect(frame.getAttribute('src')).toBe(`/api/preview/make/${CONV}/index.html?rev=0`)
     expect(frame.getAttribute('sandbox')).toContain('allow-scripts')
