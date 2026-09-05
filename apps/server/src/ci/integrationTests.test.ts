@@ -41,12 +41,14 @@ function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: st
       return { exitCode: outcome.exitCode, timedOut: outcome.timedOut }
     })
   }
+  const stageEvents: Array<{ projectId: string; taskId: string }> = []
   const completions: Array<{ passed: boolean; reason: string; classification?: string | null }> = []
   const runner = createIntegrationTestRunner({
     db, executor, now: () => 0,
+    qaStageChanged: (projectId, taskId) => { stageEvents.push({ projectId, taskId }) },
     completed: (_runId, _userId, passed, reason, classification) => { completions.push({ passed, reason, classification }) }
   })
-  return { runner, finished, calls, links, gateResults, completions }
+  return { runner, finished, calls, links, gateResults, stageEvents, completions }
 }
 
 describe('createIntegrationTestRunner', () => {
@@ -143,4 +145,14 @@ describe('createIntegrationTestRunner', () => {
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.finished[0]).toMatchObject({ status: 'failed', failureClassification: 'implementation_defect' })
   })
+})
+
+it('шлёт адресное событие этапа на старте и на завершении — панель живёт без опроса', async () => {
+  const s = setup(['npm run affected-check'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
+  s.runner.launch('run1', 'bob')
+  await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+  // Первое событие — переход в running, последнее — завершение рана.
+  expect(s.stageEvents.length).toBeGreaterThanOrEqual(2)
+  expect(s.stageEvents[0]).toEqual({ projectId: 'p1', taskId: 't1' })
+  expect(s.stageEvents.at(-1)).toEqual({ projectId: 'p1', taskId: 't1' })
 })

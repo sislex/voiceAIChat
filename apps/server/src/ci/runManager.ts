@@ -34,6 +34,8 @@ export interface CiRunManagerDeps {
   executor: CommandExecutor
   /** Дёрнуть обновление доски (сводка рана на карточке). */
   boardChanged: (projectId: string) => void
+  /** Ран завёл предложения улучшений — очередь на доске перечитает их по этому событию. */
+  improvementsChanged?: (projectId: string) => void
   /** Живой статус агента; offline CI не ставится в ожидание, а блокируется. */
   isAgentOnline?: (agentId: string) => boolean
   /**
@@ -2367,7 +2369,7 @@ fi`
       deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
       broadcast({ t: 'ci.done', runId, run }, userId)
       // Анализ best-effort: его сбой не меняет и не маскирует результат рана.
-      try { analyzeFinishedRun(runId, userId) } catch { /* предложения не блокируют workflow */ }
+      try { analyzeFinishedRun(runId, userId); deps.improvementsChanged?.(run.projectId) } catch { /* предложения не блокируют workflow */ }
       deps.boardChanged(run.projectId)
     }
   }
