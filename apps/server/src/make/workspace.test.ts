@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { MAKE_SCAFFOLD } from '@voicechat/shared'
+import { MAKE_BOOTSTRAP_CSS_URL, MAKE_SCAFFOLD } from '@voicechat/shared'
 import { MakeError, MakeWorkspaces, refererHost } from './workspace'
 
 const CONV = 'conv-1'
@@ -13,6 +13,79 @@ async function fresh(): Promise<MakeWorkspaces> {
 }
 
 describe('MakeWorkspaces', () => {
+  // @testCase TC-01
+  it('normalizes old and damaged settings without rewriting them', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const settings = join(ws.dirOf(CONV), '.make', 'settings.json')
+    await mkdir(join(ws.dirOf(CONV), '.make'), { recursive: true })
+    await writeFile(settings, JSON.stringify({ mode: 'designer', stack: 'bad', uiKit: 7 }), 'utf8')
+    expect(await ws.notes(CONV)).toMatchObject({ mode: 'designer', stack: 'html-js', uiKit: 'none' })
+    expect(await readFile(settings, 'utf8')).toBe(JSON.stringify({ mode: 'designer', stack: 'bad', uiKit: 7 }))
+    await writeFile(settings, '{broken', 'utf8')
+    expect(await ws.notes(CONV)).toMatchObject({ mode: 'balanced', stack: 'html-js', uiKit: 'none' })
+  })
+
+  // @testCase TC-03
+  it('round-trips partial stack settings and adds strict hints to every prompt', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { notes: 'не менять API', mode: 'developer', stack: 'react', uiKit: 'bootstrap' })
+    await ws.setNotes(CONV, { notes: 'не менять API v2' })
+    expect(await ws.notes(CONV)).toEqual({ notes: 'не менять API v2', mode: 'developer', stack: 'react', uiKit: 'bootstrap' })
+    const context = await ws.promptContext(CONV)
+    expect(context).toContain('Стек React 18')
+    expect(context).toContain('Bootstrap 5.3.3')
+    expect(context).toContain('Режим «Разработчик»')
+  })
+
+  // @testCase TC-04
+  it('warns for every JavaScript violation in the html stack', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { stack: 'html' })
+    await ws.write(CONV, 'bad.mjs', 'export {}')
+    await ws.write(CONV, 'index.html', '<SCRIPT type="module">alert(1)</SCRIPT>')
+    const issues = await ws.check(CONV)
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'bad.mjs', rule: 'html-no-script' }),
+      expect.objectContaining({ path: 'index.html', rule: 'html-no-script' })
+    ]))
+  })
+
+  // @testCase TC-05
+  it('requires a neighboring story for React components only', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { stack: 'react' })
+    await ws.write(CONV, 'src/components/Card.jsx', 'export const Card = () => null')
+    expect((await ws.check(CONV)).some((issue) => issue.rule === 'react-component-story')).toBe(true)
+    await ws.write(CONV, 'src/components/Card.stories.jsx', 'export const Default = {}')
+    expect((await ws.check(CONV)).some((issue) => issue.rule === 'react-component-story')).toBe(false)
+  })
+
+  // @testCase TC-09
+  it('takes a snapshot before replacing files for a stack template', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'index.html', '<h1>custom</h1>')
+    await ws.setNotes(CONV, { stack: 'react' })
+    await ws.applyTemplate(CONV, 'react')
+    expect((await ws.snapshots(CONV))[0]?.label).toBe('До смены стека')
+    expect((await ws.snapshotFile(CONV, (await ws.snapshots(CONV))[0]!.id, 'index.html')).content).toContain('custom')
+  })
+
+  // @testCase TC-13
+  it('rejects an incompatible template without changing files or snapshots', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setNotes(CONV, { stack: 'html' })
+    const before = (await ws.read(CONV, 'index.html')).content
+    await expect(ws.applyTemplate(CONV, 'react')).rejects.toThrow(/несовместим/)
+    expect((await ws.read(CONV, 'index.html')).content).toBe(before)
+    expect(await ws.snapshots(CONV)).toHaveLength(0)
+  })
+
   it('снятая публикация не оживает от фонового счётчика просмотров', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
@@ -285,10 +358,13 @@ describe('MakeWorkspaces', () => {
   it('applyTemplate заменяет файлы шаблоном и сохраняет снимок; неизвестный шаблон — not_found', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
+    await ws.setNotes(CONV, { uiKit: 'bootstrap' })
     const state = await ws.applyTemplate(CONV, 'dashboard')
     expect(state.files.map((f) => f.path)).toEqual(['app.js', 'index.html', 'styles.css'])
-    expect((await ws.read(CONV, 'index.html')).content).toContain('Дашборд')
-    expect(state.snapshots.map((s) => s.label)).toContain('Перед шаблоном «Дашборд»')
+    const html = (await ws.read(CONV, 'index.html')).content
+    expect(html).toContain('Дашборд')
+    expect(html).toContain(MAKE_BOOTSTRAP_CSS_URL)
+    expect(state.snapshots.map((s) => s.label)).toContain('До смены стека')
     await expect(ws.applyTemplate(CONV, 'nope')).rejects.toMatchObject({ code: 'not_found' })
   })
 
@@ -439,7 +515,7 @@ describe('MakeWorkspaces', () => {
     const ws = await fresh()
     await ws.ensure(CONV)
     await ws.write(CONV, 'styles.css', 'body{margin:0}')
-    expect(await ws.promptContext(CONV)).toBe('')
+    expect(await ws.promptContext(CONV)).toContain('Стек HTML+CSS+JS')
     await ws.write(CONV, 'styles.css', ':root { --accent: #f00; --gap: 8px; }')
     await ws.addComment(CONV, { selector: 'h1', elementLabel: '<h1> Привет', text: 'Крупнее', author: 'a' })
     const resolved = await ws.addComment(CONV, { selector: 'p', elementLabel: '<p>', text: 'Решено уже', author: 'a' })
@@ -595,7 +671,7 @@ describe('MakeWorkspaces', () => {
   it('заметки и режим: setNotes/appendNote, попадают в promptContext, не мешают list/reset', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
-    expect(await ws.notes(CONV)).toEqual({ notes: '', mode: 'balanced' })
+    expect(await ws.notes(CONV)).toEqual({ notes: '', mode: 'balanced', stack: 'html-js', uiKit: 'none' })
     await ws.setNotes(CONV, { mode: 'designer' })
     await ws.appendNote(CONV, 'акцент — синий')
     const n = await ws.notes(CONV)

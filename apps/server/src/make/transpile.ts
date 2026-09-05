@@ -40,7 +40,7 @@ function normalizeJoin(dir: string, spec: string): string {
 export async function compileDiagnostics(path: string, source: string): Promise<Array<{ line: number; column: number; message: string }>> {
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
   try {
-    await transform(source, { loader: ext === 'tsx' ? 'tsx' : ext === 'ts' ? 'ts' : 'jsx', format: 'esm', target: 'es2020', jsx: 'automatic', sourcefile: path, logLevel: 'silent' })
+    await transform(source, { loader: ext === 'tsx' ? 'tsx' : ext === 'ts' ? 'ts' : 'jsx', format: 'esm', target: 'es2020', jsx: 'automatic', tsconfigRaw: { compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false } }, sourcefile: path, logLevel: 'silent' })
     return []
   } catch (error) {
     const errors = (error as { errors?: Array<{ text: string; location?: { line: number; column: number } | null }> }).errors
@@ -61,6 +61,7 @@ export async function transpileForPreview(conversationId: string, path: string, 
       format: 'esm',
       target: 'es2020',
       jsx: 'automatic',
+      tsconfigRaw: { compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false } },
       sourcefile: path
     })
     code = rewriteRelativeImports(result.code, path, exists)
