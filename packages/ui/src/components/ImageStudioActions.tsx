@@ -2,7 +2,9 @@
 // проверка файлов, вид сетки, избранное, обновление, уведомления, клавиши,
 // пометки и корзина. Вынесено из панели — она держала эту разметку посреди
 // логики, и читать её приходилось целиком ради одной кнопки. Состояние и все
-// побочные эффекты остаются у панели.
+// побочные эффекты остаются у панели; здесь живёт только раскрытие меню «Ещё…»
+// — это вид, а не поведение галереи.
+import { useEffect, useRef, useState } from 'react'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
 export type GridBackground = 'checker' | 'light' | 'dark'
@@ -23,6 +25,8 @@ interface Props {
   hasPrompts: boolean
   gridBg: GridBackground
   dense: boolean
+  /** Миниатюры показывают картинку целиком, а не обрезают по квадрату. */
+  fit: boolean
   starsOnly: boolean
   /** Сколько лежит в корзине; 0 — счётчик не показываем. */
   trashCount: number
@@ -38,6 +42,7 @@ interface Props {
   onCopyPrompts: () => void
   onCycleGridBg: () => void
   onToggleDense: () => void
+  onToggleFit: () => void
   onToggleStarsOnly: () => void
   onReload: () => void
   onAskNotifications: () => void
@@ -65,30 +70,44 @@ interface Props {
 }
 
 export function ImageStudioActions({
-  busy, shownCount, totalCount, hasPrompts, gridBg, dense, starsOnly, trashCount, trashOpen,
+  busy, shownCount, totalCount, hasPrompts, gridBg, dense, fit, starsOnly, trashCount, trashOpen,
   canAskNotifications, onDownloadArchive, onCopyInventory, onDownloadInventory, onFindDuplicates, onVerifyFiles,
-  onCopyPrompts, onCycleGridBg, onToggleDense, onToggleStarsOnly, onReload, onAskNotifications,
+  onCopyPrompts, onCycleGridBg, onToggleDense, onToggleFit, onToggleStarsOnly, onReload, onAskNotifications,
   onOpenKeys, onOpenMarks, onOpenViews, viewsCount, onCopyViewLink,
   onSlideshow, pageSize, onPageSize, journalCount, onOpenJournal, hasNotes, onCopyNotes, onPrint, onToggleTrash
 }: Props): JSX.Element {
   const background = BACKGROUND_TITLES[gridBg]
+  // Редкие команды жили в общем ряду, и он разросся до трёх строк мелких
+  // кнопок: найти в такой стене нужную дороже, чем открыть меню.
+  const [more, setMore] = useState(false)
+  const moreRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!more) return
+    const close = (event: PointerEvent): void => {
+      if (!menuRef.current?.contains(event.target as Node) && event.target !== moreRef.current) setMore(false)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [more])
+
+  const item = (label: string, action: () => void, title?: string, disabled?: boolean): JSX.Element => (
+    <button type="button" role="menuitem" disabled={disabled} title={title} onClick={() => { setMore(false); action() }}>{label}</button>
+  )
+
   return <>
     <Button size="sm" variant="ghost" disabled={busy || shownCount === 0} onClick={onDownloadArchive}>Скачать архивом</Button>
-    <Button size="sm" variant="ghost" disabled={shownCount === 0} title="Markdown-таблица: имя, размер, пиксели, промпт, заметка" onClick={onCopyInventory}>
-      Список в буфер
-    </Button>
-    <Button size="sm" variant="ghost" disabled={shownCount === 0} title="Тот же список файлом .md" onClick={onDownloadInventory}>Список файлом</Button>
-    {totalCount >= 2 && <Button size="sm" variant="ghost" disabled={busy} title="Сравнить содержимое файлов и отметить лишние копии" onClick={onFindDuplicates}>
-      Найти дубликаты
-    </Button>}
-    {totalCount >= 2 && <Button size="sm" variant="ghost" disabled={busy} title="Прочитать все файлы и показать те, что не открываются" onClick={onVerifyFiles}>
-      Проверить файлы
-    </Button>}
-    {hasPrompts && <Button size="sm" variant="ghost" onClick={onCopyPrompts}>Промпты в буфер</Button>}
     <IconButton size="sm" aria-label={`Фон сетки: ${background} — сменить`} title={`Фон сетки: ${background}`} onClick={onCycleGridBg}>◧</IconButton>
     <IconButton size="sm" aria-label={dense ? 'Крупные карточки' : 'Мелкие карточки'} title={dense ? 'Крупнее' : 'Мельче'} onClick={onToggleDense}>
       {dense ? '▦' : '▤'}
     </IconButton>
+    <IconButton
+      size="sm"
+      aria-label={fit ? 'Обрезать миниатюры по квадрату' : 'Показывать миниатюры целиком'}
+      title={fit ? 'Миниатюры: целиком (клавиша o)' : 'Миниатюры: обрезаны (клавиша o)'}
+      aria-pressed={fit}
+      onClick={onToggleFit}
+    >{fit ? '▣' : '▢'}</IconButton>
     <IconButton size="sm" aria-label={starsOnly ? 'Показать все файлы' : 'Показать только избранные'} title={starsOnly ? 'Все файлы' : 'Только избранные'} aria-pressed={starsOnly} onClick={onToggleStarsOnly}>
       {starsOnly ? '★' : '☆'}
     </IconButton>
@@ -98,23 +117,60 @@ export function ImageStudioActions({
       <option value={300}>Страница: 300</option>
     </select>}
     <IconButton size="sm" aria-label="Обновить галерею" title="Обновить (r)" onClick={onReload}>↻</IconButton>
-    {canAskNotifications && <Button size="sm" variant="ghost" title="Показывать системное уведомление, когда картинка готова и вкладка в фоне" onClick={onAskNotifications}>
-      Уведомлять…
-    </Button>}
     <IconButton size="sm" aria-label="Горячие клавиши галереи" title="Клавиши (?)" onClick={onOpenKeys}>?</IconButton>
-    <Button size="sm" variant="ghost" title="Звёзды и заметки текстом: перенести в другой браузер" onClick={onOpenMarks}>Пометки…</Button>
-    <Button size="sm" variant="ghost" title="Клавиша v · запомнить нынешние фильтры и сортировку под именем и возвращаться к ним одним нажатием" onClick={onOpenViews}>
-      Виды…{viewsCount ? ` (${viewsCount})` : ''}
-    </Button>
-    {onCopyViewLink && <Button size="sm" variant="ghost" title="Ссылка, которая откроет галерею с этим же отбором — коллеге с доступом" onClick={onCopyViewLink}>
-      Ссылка на отбор
-    </Button>}
-    {hasNotes && <Button size="sm" variant="ghost" title="Все заметки галереи списком в Markdown" onClick={onCopyNotes}>Заметки в буфер</Button>}
-    {onSlideshow && <Button size="sm" variant="ghost" title="Показать отобранное по кадрам — с первого" onClick={onSlideshow}>Показ</Button>}
-    <Button size="sm" variant="ghost" title="Контактный лист: печать или PDF из окна печати браузера" disabled={shownCount === 0} onClick={onPrint}>Печать</Button>
-    {journalCount > 0 && <Button size="sm" variant="ghost" title="Что делали в галерее и что можно вернуть" onClick={onOpenJournal}>История ({journalCount})</Button>}
     <Button size="sm" variant="ghost" aria-expanded={trashOpen} title={trashCount ? `Клавиша t · в корзине файлов: ${trashCount} (хранятся 7 дней)` : 'Клавиша t · корзина пуста'} onClick={onToggleTrash}>
       Корзина…{trashCount ? ` (${trashCount})` : ''}
     </Button>
+    <span className="image-studio-toolbar-more">
+      <Button
+        size="sm"
+        variant="ghost"
+        ref={moreRef}
+        aria-expanded={more}
+        aria-haspopup="menu"
+        title="Выгрузки, проверки, виды, печать"
+        onClick={() => setMore((open) => !open)}
+      >Ещё…</Button>
+      {more && <div
+        className="image-studio-menu image-studio-toolbar-menu"
+        role="menu"
+        aria-label="Ещё действия галереи"
+        ref={(node) => {
+          menuRef.current = node
+          node?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.stopPropagation(); setMore(false); moreRef.current?.focus(); return }
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Tab'].includes(event.key)) return
+          event.stopPropagation()
+          const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not([disabled])')]
+          if (!items.length) return
+          const index = items.indexOf(document.activeElement as HTMLButtonElement)
+          const focus = (next: number): void => {
+            event.preventDefault()
+            items[(next + items.length) % items.length]?.focus()
+          }
+          if (event.key === 'ArrowDown') focus(index + 1)
+          else if (event.key === 'ArrowUp') focus(index - 1)
+          else if (event.key === 'Home') focus(0)
+          else if (event.key === 'End') focus(items.length - 1)
+          else focus(index + (event.shiftKey ? -1 : 1))
+        }}
+      >
+        {item('Список в буфер', onCopyInventory, 'Markdown-таблица: имя, размер, пиксели, промпт, заметка', shownCount === 0)}
+        {item('Список файлом', onDownloadInventory, 'Тот же список файлом .md', shownCount === 0)}
+        {totalCount >= 2 ? item('Найти дубликаты', onFindDuplicates, 'Сравнить содержимое файлов и отметить лишние копии', busy) : null}
+        {totalCount >= 2 ? item('Проверить файлы', onVerifyFiles, 'Прочитать все файлы и показать те, что не открываются', busy) : null}
+        {hasPrompts ? item('Промпты в буфер', onCopyPrompts) : null}
+        {item('Пометки…', onOpenMarks, 'Звёзды и заметки текстом: перенести в другой браузер')}
+        {item(`Виды…${viewsCount ? ` (${viewsCount})` : ''}`, onOpenViews, 'Клавиша v · запомнить нынешние фильтры и сортировку под именем')}
+        {onCopyViewLink ? item('Ссылка на отбор', onCopyViewLink, 'Ссылка, которая откроет галерею с этим же отбором') : null}
+        {hasNotes ? item('Заметки в буфер', onCopyNotes, 'Все заметки галереи списком в Markdown') : null}
+        {onSlideshow ? item('Показ', onSlideshow, 'Показать отобранное по кадрам — с первого') : null}
+        {item('Печать', onPrint, 'Контактный лист: печать или PDF из окна печати браузера', shownCount === 0)}
+        {journalCount > 0 ? item(`История (${journalCount})`, onOpenJournal, 'Что делали в галерее и что можно вернуть') : null}
+        {canAskNotifications ? item('Уведомлять…', onAskNotifications, 'Системное уведомление, когда картинка готова и вкладка в фоне') : null}
+      </div>}
+    </span>
   </>
 }
