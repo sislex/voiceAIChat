@@ -24,7 +24,7 @@ import { registerQaRoutes } from './routes/qa.js'
 import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
-import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
+import { knowledgeBaseTimeoutMs, ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
 import { releaseCiTarget, releaseProductionTarget } from './releases/targets.js'
 import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
@@ -2012,7 +2012,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     },
     isOnline: (agentId) => agentRegistry.isOnline(agentId),
     prepareKnowledgeBase: async (releaseBranch, target) => {
-      const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), 120_000)
+      // Лимит берётся из настроек шага, а не из константы: жёсткие 120 с убивали
+      // шаг с объявленным лимитом 10 минут ровно на 121-й секунде, и в логе
+      // оставался обрыв на середине push — искать причину было не по чему.
+      const limitMs = knowledgeBaseTimeoutMs(target)
+      const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), limitMs)
+      if (result.timedOut) throw new Error(`Release-preflight базы знаний не уложился в ${Math.round(limitMs / 1000)} с`)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
   })
