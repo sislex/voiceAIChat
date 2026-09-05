@@ -406,6 +406,33 @@ describe('студия картинок: публичная страница', (
     expect(page.body).toContain('<main class="grid">')
   })
 
+  it('файл галереи отдаётся с ETag и отвечает 304 на повторный запрос', async () => {
+    await store.writeBuffer(convId, 'кадр.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const url = `${pub.url}file?path=${encodeURIComponent('кадр.png')}`
+
+    const first = await app.inject({ method: 'GET', url })
+    expect(first.statusCode).toBe(200)
+    const etag = first.headers.etag as string
+    expect(etag).toMatch(/^"[0-9a-f]{40}"$/)
+    // `no-store` заставлял качать всю галерею заново на каждой прокрутке.
+    expect(first.headers['cache-control']).toBe('private, no-cache')
+
+    // Прямую ссылку на кадр достаточно один раз опубликовать, чтобы он ушёл
+    // в поиск по картинкам мимо приватности токена.
+    expect(first.headers['x-robots-tag']).toBe('noindex, noimageindex')
+
+    const again = await app.inject({ method: 'GET', url, headers: { 'if-none-match': etag } })
+    expect(again.statusCode).toBe(304)
+    expect(again.body).toBe('')
+
+    // Файл заменили под тем же именем — ETag меняется, и браузер получит новое тело.
+    await store.writeBuffer(convId, 'кадр.png', Buffer.concat([PNG_BYTES, Buffer.from([0])]))
+    const changed = await app.inject({ method: 'GET', url, headers: { 'if-none-match': etag } })
+    expect(changed.statusCode).toBe(200)
+    expect(changed.headers.etag).not.toBe(etag)
+  })
+
   it('поле пароля названо для читалки, а не только placeholder', async () => {
     await store.writeBuffer(convId, 'тайна.png', PNG_BYTES)
     const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: 'слово' } })).json() as { url: string }
