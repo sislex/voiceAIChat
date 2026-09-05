@@ -40,6 +40,10 @@ import type {
 } from './gitWorkspace'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
+  ProjectComponentEntry, ProjectComponentTicketResult, ProjectComponentsListing,
+  ProjectStorybookAction, ProjectStorybookSession
+} from './projectComponents'
+import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
   AdminLlmEngineInput,
@@ -566,6 +570,18 @@ export interface IpcInvokeMap {
   'projects:gitFileBytes': { arg: { id: string; workspace: string; path: string }; result: { path: string; dataBase64: string; size: number } }
   'projects:gitConflict': { arg: { id: string; workspace: string; path: string }; result: GitConflictStages }
   'projects:gitResolveConflict': { arg: { id: string; workspace: string; path: string; side: GitConflictSide }; result: GitWorkspaceStatus }
+  /**
+   * Компоненты рабочей копии для Make: список сториз (из живого Storybook либо из
+   * `git ls-files`), сессия Storybook на машине и быстрый тикет из правки.
+   */
+  'projects:components': { arg: { id: string; workspace: string }; result: ProjectComponentsListing }
+  'projects:componentStories': { arg: { id: string; workspace: string; path: string }; result: ProjectComponentEntry }
+  'projects:storybookSession': { arg: { id: string; workspace: string }; result: ProjectStorybookSession }
+  'projects:storybookAction': { arg: { id: string; workspace: string; action: ProjectStorybookAction; port?: number; command?: string }; result: ProjectStorybookSession }
+  'projects:componentTicket': {
+    arg: { id: string; workspace: string; title: string; description?: string; paths: string[]; labels?: string[] }
+    result: ProjectComponentTicketResult
+  }
   /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /**
@@ -1441,6 +1457,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:gitFileBytes',
   'projects:gitConflict',
   'projects:gitResolveConflict',
+  'projects:components',
+  'projects:componentStories',
+  'projects:storybookSession',
+  'projects:storybookAction',
+  'projects:componentTicket',
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',

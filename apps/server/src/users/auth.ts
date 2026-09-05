@@ -196,6 +196,9 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   if (/^\/api\/projects\/[^/]+\/releases\/deploy$/.test(url)) return 'production:deploy'
   if (/^\/api\/projects\/[^/]+\/releases(?:\/|$)/.test(url)) return 'release:prepare'
   if (/^\/api\/projects\/[^/]+\/git(?:\/|$)/.test(url)) return 'repository:write'
+  // Компоненты проекта в Make: правка файла идёт теми же git-маршрутами, а здесь
+  // остаются запуск Storybook на машине и тикет с веткой — та же цена ошибки.
+  if (/^\/api\/projects\/[^/]+\/components(?:\/|$)/.test(url)) return 'repository:write'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/retry$/.test(url)) return 'task:merge'
   if (/\/ci\/run(?:-on-machine)?$/.test(url) || /^\/api\/ci\/runs\/[^/]+\/(?:retry|retry-from-step|discard-and-retry)$/.test(url)) return 'workflow:start'
   if (method === 'POST' && /^\/api\/projects\/[^/]+\/tasks$/.test(url)) return 'task:create'
@@ -222,6 +225,7 @@ export function projectFeatureForRequest(_method: string, url: string): ProjectF
   if (/^\/api\/projects\/[^/]+\/(?:releases|production)(?:\/|$)/.test(url)) return 'releases'
   if (/^\/api\/projects\/[^/]+\/(?:machines|default-machine)(?:\/|$)/.test(url)) return 'machines'
   if (/^\/api\/projects\/[^/]+\/git(?:\/|$)/.test(url)) return 'git'
+  if (/^\/api\/projects\/[^/]+\/components(?:\/|$)/.test(url)) return 'git'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge(?:\/|$)/.test(url)) return 'git'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/qa(?:\/|$)/.test(url)) return 'qa'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/preview(?:\/|$)/.test(url)) return 'preview'

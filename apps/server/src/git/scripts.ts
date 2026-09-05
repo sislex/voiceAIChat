@@ -359,6 +359,23 @@ export function resolveConflictScript(path: string, side: 'ours' | 'theirs'): Gi
 }
 
 /**
+ * Файлы сториз рабочей копии для режима «Компоненты проекта» в Make. Ищем через
+ * `ls-files`, а не обходом дерева: панель Make показывает компоненты всего репозитория,
+ * а `tree` по уровням стоил бы десятков походов до машины. Вывод ограничен `head -c`,
+ * чтобы не упереться в потолок вывода exec на большом монорепо.
+ */
+export function storyFilesScript(maxBytes: number): GitScript {
+  return {
+    env: { VC_GIT_MAX: String(maxBytes) },
+    script: [
+      mark('stories_b64'),
+      `${READ} ls-files -z -- '*.stories.tsx' '*.stories.ts' '*.stories.jsx' '*.stories.js' | head -c "$VC_GIT_MAX" | base64 | tr -d '\\n'`,
+      markAfterB64('done')
+    ].join('\n')
+  }
+}
+
+/**
  * Окружение для любой git-команды панели.
  *
  * `GIT_TERMINAL_PROMPT=0` и `GIT_ASKPASS` — чтобы push без настроенного credential

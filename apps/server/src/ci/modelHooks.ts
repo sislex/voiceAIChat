@@ -211,7 +211,7 @@ function runTurn(
       toolResponses.sort((a, b) => b.chars - a.chars)
       if (toolResponses.length > CI_TOOL_RESPONSES_KEEP) toolResponses.length = CI_TOOL_RESPONSES_KEEP
     }
-    const finish = (r: { ok: boolean; cancelled?: boolean }): void => {
+    const finish = (r: { ok: boolean; cancelled?: boolean; error?: string }): void => {
       if (settled) return
       settled = true
       signal.removeEventListener('abort', onAbort)
@@ -241,7 +241,9 @@ function runTurn(
       },
       onError: (m) => {
         onLog('system', `Ошибка модели: ${m}\n`)
-        finish({ ok: false })
+        // Текст нужен вызывающему: обрыв канала до исполнителя — сбой транспорта,
+        // и ран лечится повтором того же шага, а не сменой модели.
+        finish({ ok: false, error: m })
       },
       onActivity: (e) => {
         // Единственное место, где мимо сервера проходит КАЖДЫЙ вызов инструмента
