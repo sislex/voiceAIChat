@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-05
-checked: 8fcbf480
+checked: 2e52bcd8
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -1311,7 +1311,7 @@ args в стори. Enum-подобные args: раннер собирает с
 размеры в байтах — иначе `isFresh` в тестах не срабатывает. **Мобильная раскладка** (≤768px): дерево/список
 сториз — верхняя полоса 38 % высоты, редактор/раннер — под ней; пресеты ширины превью скрыты.
 
-**Вкладка «Проект»: компоненты реального репозитория** (`mode: 'project'`, компонент
+**Вкладка «Репозиторий»: компоненты реального проекта** (`mode: 'project'`, компонент
 `packages/ui/src/components/MakeProjectComponents.tsx`, сториз `Make/ProjectComponents`,
 тест `MakeProjectComponents.dom.test.tsx`). Появляется только у Make-чата, привязанного к
 проекту: `App.tsx` отдаёт `MakePane` проп `projectId` из `activeConversation.projectId`, и
@@ -1323,9 +1323,20 @@ args в стори. Enum-подобные args: раннер собирает с
 Раскладка — как у «Компонентов»: слева список (поиск по названию и пути, стори раскрываются у
 выбранного), справа переключатель «Кадр | Код». **Кадр — настоящий Storybook проекта**, поднятый
 на машине: `projectStorybookFrameUrl` (`@shared/projectComponents`) собирает
-`/api/preview?url=http://<agentId>.machine.internal:<port>/iframe.html?id=<storyId>`, то есть
-тот же прокси и та же preview-cookie (`ensurePreview`), что у Web Reader. Открываем `iframe.html`,
-а не менеджер Storybook: менеджер тянул бы свой UI и вложенный кадр вторым уровнем через прокси.
+`/api/preview?url=<origin машины>/iframe.html&viewMode=story&id=<storyId>`, то есть тот же прокси
+и та же preview-cookie (`ensurePreview`), что у Web Reader. Открываем `iframe.html`, а не менеджер
+Storybook: менеджер тянул бы свой UI и вложенный кадр вторым уровнем через прокси.
+
+**`id` и `viewMode` лежат в НАШЕМ query, а не в адресе цели** — это проверено на стенде и иначе
+не работает. Storybook выбирает стори на клиенте, читая `location.search` уже отданного документа,
+а документ у нас отдаёт прокси: с параметрами внутри `url=` кадр показывал «No Preview — you either
+have no stories or none are selected». Сам `iframe.html` от query не зависит, поэтому дублирование
+безопасно.
+
+**Кнопка «Команда»** (диалог) задаёт команду запуска: в монорепо `npm run storybook` живёт в пакете
+витрины, а не в корне, и сервер её не угадывает — на стенде запуск по умолчанию честно падал с
+«Missing script: storybook». Команда запоминается на проект (`makeStorybookCommandKey` в
+`store/contracts.ts`), порт и `--no-open --ci` панель дописывает сама.
 
 Из этого следуют два видимых ограничения, и панель о них говорит вслух. WebSocket через
 `/api/preview` не проходит, поэтому **HMR не работает** — после сохранения файла панель сама

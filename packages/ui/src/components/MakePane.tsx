@@ -99,7 +99,7 @@ export interface MakePaneProps {
 }
 
 type Mode = 'preview' | 'code' | 'stories' | 'project' | 'history'
-const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Код', stories: 'Компоненты', project: 'Проект', history: 'История' }
+const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Код', stories: 'Компоненты', project: 'Репозиторий', history: 'История' }
 type Device = 'desktop' | 'tablet' | 'mobile' | 'all'
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390, all: null }
 const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон', all: 'Три ширины рядом' }

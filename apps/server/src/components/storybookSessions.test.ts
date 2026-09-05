@@ -5,7 +5,10 @@ interface Fake extends StorybookRegistry {
   emit: (event: { t: string; ptyId: string; data?: string; message?: string }) => void
   inputs: string[]
   killed: string[]
+  starts: string[]
   index: { status: number } | 'error'
+  /** Отвечает ли порт: до запуска — нет, иначе панель решит, что Storybook уже поднят. */
+  serving: boolean
 }
 
 function fakeRegistry(overrides: Partial<Fake> = {}): Fake {
@@ -16,14 +19,17 @@ function fakeRegistry(overrides: Partial<Fake> = {}): Fake {
   const fake: Fake = {
     inputs: [],
     killed: [],
+    starts: [],
     index: { status: 200 },
+    serving: false,
     emit: (event) => state.emitters.get(event.ptyId)?.(event),
-    ptyStart: (_agentId, ptyId, _cols, _rows, _cwd, emit) => { state.live.add(ptyId); state.emitters.set(ptyId, emit) },
-    ptyInput: (ptyId, data) => { fake.inputs.push(`${ptyId}:${data}`) },
-    ptyKill: (ptyId) => { state.live.delete(ptyId); fake.killed.push(ptyId) },
+    ptyStart: (_agentId, ptyId, _cols, _rows, _cwd, emit) => { state.live.add(ptyId); state.emitters.set(ptyId, emit); fake.starts.push(ptyId) },
+    // Команда «поднимает» dev-сервер: с этого момента порт отвечает.
+    ptyInput: (ptyId, data) => { fake.inputs.push(`${ptyId}:${data}`); if (data.includes('storybook')) fake.serving = true },
+    ptyKill: (ptyId) => { state.live.delete(ptyId); fake.killed.push(ptyId); fake.serving = false },
     ptyLive: (ptyId) => state.live.has(ptyId),
     http: async () => {
-      if (fake.index === 'error') throw new Error('нет ответа')
+      if (fake.index === 'error' || !fake.serving) throw new Error('нет ответа')
       return { status: fake.index.status, headers: {}, bodyBase64: Buffer.from(JSON.stringify({ v: 5, entries: {} })).toString('base64') }
     },
     isOnline: () => true,
@@ -38,7 +44,7 @@ const target = { agentId: 'agent-1', workspaceId: 'ws:1', path: '/repo' }
 describe('StorybookSessions', () => {
   it('до запуска отвечает «остановлен», а не пустотой', () => {
     const sessions = new StorybookSessions({ registry: fakeRegistry() })
-    const snapshot = sessions.snapshot('agent-1', 'ws:1')
+    const snapshot = sessions.snapshot('agent-1', 'ws:1', '/repo')
     expect(snapshot.state).toBe('stopped')
     expect(snapshot.machineName).toBe('MakBook')
     expect(snapshot.port).toBe(6006)
@@ -53,7 +59,7 @@ describe('StorybookSessions', () => {
     expect(registry.inputs[0]).toContain('npm run storybook -- --port 6006 --no-open --ci')
 
     await vi.advanceTimersByTimeAsync(20)
-    expect(sessions.snapshot('agent-1', 'ws:1').state).toBe('running')
+    expect(sessions.snapshot('agent-1', 'ws:1', '/repo').state).toBe('running')
     vi.useRealTimers()
   })
 
@@ -84,7 +90,7 @@ describe('StorybookSessions', () => {
     await sessions.start(target)
     registry.emit({ t: 'pty.output', ptyId: 'storybook:ws:1', data: '\x1b[32mstorybook\x1b[0m ошибка сборки' })
     registry.emit({ t: 'pty.exit', ptyId: 'storybook:ws:1' })
-    const snapshot = sessions.snapshot('agent-1', 'ws:1')
+    const snapshot = sessions.snapshot('agent-1', 'ws:1', '/repo')
     expect(snapshot.state).toBe('failed')
     expect(snapshot.error).toContain('не успев собраться')
     expect(snapshot.log).toBe('storybook ошибка сборки')
@@ -96,10 +102,33 @@ describe('StorybookSessions', () => {
     const registry = fakeRegistry()
     const sessions = new StorybookSessions({ registry, probeIntervalMs: 10 })
     await sessions.start(target)
-    const stopped = sessions.stop('agent-1', 'ws:1')
+    const stopped = sessions.stop('agent-1', 'ws:1', '/repo')
     expect(stopped.state).toBe('stopped')
     expect(registry.inputs.some((line) => line.endsWith('\x03'))).toBe(true)
     expect(registry.killed).toEqual(['storybook:ws:1'])
+    vi.useRealTimers()
+  })
+
+  it('подхватывает уже работающий Storybook вместо второго процесса', async () => {
+    const registry = fakeRegistry({ serving: true })
+    const sessions = new StorybookSessions({ registry })
+    const session = await sessions.start(target)
+    expect(session.state).toBe('running')
+    expect(session.adopted).toBe(true)
+    expect(registry.starts).toEqual([])
+    // Чужой процесс не убиваем: остановка только забывает сессию.
+    expect(sessions.stop('agent-1', 'ws:1', '/repo').state).toBe('stopped')
+    expect(registry.killed).toEqual([])
+  })
+
+  it('сессия привязана к каталогу копии: смена пути не выдаёт чужой Storybook за свой', async () => {
+    vi.useFakeTimers()
+    const registry = fakeRegistry()
+    const sessions = new StorybookSessions({ registry, probeIntervalMs: 10 })
+    await sessions.start(target)
+    await vi.advanceTimersByTimeAsync(20)
+    expect(sessions.snapshot('agent-1', 'ws:1', '/repo').state).toBe('running')
+    expect(sessions.snapshot('agent-1', 'ws:1', '/other').state).toBe('stopped')
     vi.useRealTimers()
   })
 
@@ -113,9 +142,9 @@ describe('StorybookSessions', () => {
     const registry = fakeRegistry()
     const sessions = new StorybookSessions({ registry, probeIntervalMs: 10 })
     await sessions.start(target)
-    expect(await sessions.index('agent-1', 'ws:1')).toBeNull()
+    expect(await sessions.index('agent-1', 'ws:1', '/repo')).toBeNull()
     await vi.advanceTimersByTimeAsync(20)
-    expect(await sessions.index('agent-1', 'ws:1')).toEqual({ v: 5, entries: {} })
+    expect(await sessions.index('agent-1', 'ws:1', '/repo')).toEqual({ v: 5, entries: {} })
     vi.useRealTimers()
   })
 })

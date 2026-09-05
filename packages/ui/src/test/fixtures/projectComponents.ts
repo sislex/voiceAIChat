@@ -39,6 +39,7 @@ export function makeStorybookSession(over: Partial<ProjectStorybookSession> = {}
     readyAt: T0 + 42_000,
     error: null,
     log: 'storybook v8.6.14\nLocal: http://localhost:6006/\n',
+    adopted: false,
     ...over
   }
 }

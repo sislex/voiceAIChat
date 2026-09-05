@@ -60,6 +60,12 @@ export interface ProjectStorybookSession {
   error: string | null
   /** Хвост вывода процесса без ANSI: без него «не запустилось» невозможно объяснить. */
   log: string
+  /**
+   * Storybook уже работал на этом порту, когда панель к нему подключилась: его
+   * запустили руками или он пережил перезапуск сервера. Такой процесс мы не убиваем —
+   * он не наш, и «Остановить» для него честно недоступна.
+   */
+  adopted: boolean
 }
 
 export type ProjectStorybookAction = 'start' | 'stop' | 'restart'
@@ -129,8 +135,11 @@ export function machineOrigin(agentId: string, port: number): string {
  * только компонент.
  */
 export function projectStorybookFrameUrl(agentId: string, port: number, storyId: string): string {
-  const target = `${machineOrigin(agentId, port)}/iframe.html?viewMode=story&id=${encodeURIComponent(storyId)}`
-  return `/api/preview?url=${encodeURIComponent(target)}`
+  const target = `${machineOrigin(agentId, port)}/iframe.html`
+  // `id` и `viewMode` идут в НАШ query, а не в адрес цели: Storybook выбирает стори на
+  // клиенте, читая `location.search` уже отданного документа, а там — адрес прокси.
+  // С параметрами внутри цели кадр показывал «No Preview» (проверено на стенде).
+  return `/api/preview?url=${encodeURIComponent(target)}&viewMode=story&id=${encodeURIComponent(storyId)}`
 }
 
 /** Признак файла сториз в репозитории (CSF любого из наших расширений). */

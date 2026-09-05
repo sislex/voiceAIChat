@@ -33,9 +33,13 @@ async function handle<T>(reply: FastifyReply, work: () => Promise<T> | T): Promi
 const required = (reply: FastifyReply, name: string): FastifyReply =>
   reply.code(400).send({ error: 'bad_request', message: `${name} обязателен` })
 
-/** Заголовок компонента, когда живого Storybook нет: путь без расширения сториз. */
+/**
+ * Заголовок компонента, когда живого Storybook нет. Имя файла, а не хвост пути:
+ * `src/AdminApp` из `packages/admin-app/src/AdminApp.stories.tsx` не говорит ничего,
+ * а путь и так показан второй строкой.
+ */
 function titleFromPath(path: string): string {
-  return path.replace(/\.stories\.(t|j)sx?$/i, '').split('/').filter(Boolean).slice(-2).join('/')
+  return path.replace(/\.stories\.(t|j)sx?$/i, '').split('/').filter(Boolean).pop() ?? path
 }
 
 export interface ProjectComponentsDeps {
@@ -59,10 +63,18 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
       if (!workspace) return required(reply, 'workspace')
       return handle(reply, async (): Promise<ProjectComponentsListing> => {
         const ref = git.resolve(uid(req), req.params.id, workspace, { write: false })
-        const index = await storybook.index(ref.agentId, workspace)
+        const session = await storybook.refresh(ref.agentId, workspace, ref.path)
+        const index = await storybook.index(ref.agentId, workspace, ref.path)
         const fromIndex = index ? parseStorybookIndex(index) : []
-        if (fromIndex.length) return { workspaceId: workspace, source: 'storybook', components: fromIndex, truncated: false }
         const files = await git.storyFiles(uid(req), req.params.id, workspace)
+        // Подхваченный Storybook мог быть запущен для другого каталога — тогда его
+        // компоненты не имеют отношения к этой копии. Признак принадлежности —
+        // пересечение путей файлов сториз; без него берём список из репозитория.
+        const known = new Set(files.paths)
+        const belongs = !session.adopted || fromIndex.some((entry) => entry.path && known.has(entry.path))
+        if (fromIndex.length && belongs) {
+          return { workspaceId: workspace, source: 'storybook', components: fromIndex, truncated: false }
+        }
         return {
           workspaceId: workspace,
           source: 'files',
@@ -101,7 +113,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
       if (!workspace) return required(reply, 'workspace')
       return handle(reply, async () => {
         const ref = git.resolve(uid(req), req.params.id, workspace, { write: false })
-        return await storybook.refresh(ref.agentId, workspace)
+        return await storybook.refresh(ref.agentId, workspace, ref.path)
       })
     }
   )
@@ -110,7 +122,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
    * Запуск/остановка. Требует того же права, что правка кода: это запуск процесса
    * в рабочей копии на чужой машине, а не чтение.
    */
-  app.post<{ Params: { id: string }; Body: { workspace?: string; action?: ProjectStorybookAction; port?: number } }>(
+  app.post<{ Params: { id: string }; Body: { workspace?: string; action?: ProjectStorybookAction; port?: number; command?: string } }>(
     '/api/projects/:id/components/storybook',
     async (req, reply) => {
       const workspace = req.body?.workspace
@@ -119,10 +131,17 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
       if (action !== 'start' && action !== 'stop' && action !== 'restart') {
         return reply.code(400).send({ error: 'bad_request', message: 'Неизвестное действие' })
       }
+      // Команда приходит с клиента: в монорепо `npm run storybook` живёт не в корне,
+      // а в пакете витрины, и угадать её сервер не может. Перевод строки запрещён —
+      // он разорвал бы строку-сентинел, по которой мы ловим падение команды.
+      const command = req.body?.command?.trim()
+      if (command && (command.length > 300 || /[\r\n]/.test(command))) {
+        return reply.code(400).send({ error: 'bad_request', message: 'Команда запуска слишком длинная или многострочная' })
+      }
       return handle(reply, async () => {
         const ref = git.resolve(uid(req), req.params.id, workspace, { write: action === 'stop' ? false : true })
-        if (action === 'stop') return storybook.stop(ref.agentId, workspace)
-        const input = { agentId: ref.agentId, workspaceId: workspace, path: ref.path, port: req.body?.port }
+        if (action === 'stop') return storybook.stop(ref.agentId, workspace, ref.path)
+        const input = { agentId: ref.agentId, workspaceId: workspace, path: ref.path, port: req.body?.port, ...(command ? { command } : {}) }
         return action === 'restart' ? await storybook.restart(input) : await storybook.start(input)
       })
     }
