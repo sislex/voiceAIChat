@@ -1,6 +1,7 @@
+import { DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { knowledgeBaseTimeoutMs, RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 
 let db:VoiceChatDb
 let projectId:string
@@ -30,6 +31,14 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     // На машине агента глобальный user.email может быть не настроен: без флагов
     // git отказывается угадывать его по хосту, и сборка падает на шаге БЗ.
     expect(command).toContain("git -c user.name='voiceAIChat release' -c user.email='release@voicechat.local' commit")
+  })
+
+  it('лимит шага БЗ берётся из настроек проекта, а не из константы',()=>{
+    // Жёсткие 120 с убивали шаг с объявленным лимитом 10 минут посреди git push.
+    expect(knowledgeBaseTimeoutMs({limits:{...DEFAULT_RELEASE_TIMEOUTS,knowledgeBaseMs:900_000}})).toBe(900_000)
+    expect(knowledgeBaseTimeoutMs({})).toBe(DEFAULT_RELEASE_TIMEOUTS.knowledgeBaseMs)
+    // Мусорное значение не должно превращаться в нулевой лимит.
+    expect(knowledgeBaseTimeoutMs({limits:{...DEFAULT_RELEASE_TIMEOUTS,knowledgeBaseMs:0}})).toBe(DEFAULT_RELEASE_TIMEOUTS.knowledgeBaseMs)
   })
 
   it('builds an idempotent checkout command that refuses a foreign origin',()=>{
