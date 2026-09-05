@@ -47,13 +47,28 @@ describe('NewTaskCardView', () => {
   // @testCase TC-UI-2
   it('собирает независимый выбор целого проекта и файлов', async () => {
     const change = vi.fn()
-    const cb = callbacks({ onChangeReworkDraft: change, onLoadMakeFiles: async () => ['src/App.tsx', 'src/styles.css'] })
+    const submit = vi.fn()
+    const cb = callbacks({ onChangeReworkDraft: change, onSubmitRework: submit, onLoadMakeFiles: async () => ['src/App.tsx', 'src/styles.css'] })
     const sources = { state: 'ready' as const, items: [{ conversationId: 'a', title: 'A', owner: 'me', own: true, updatedAt: 1 }, { conversationId: 'b', title: 'B', owner: 'me', own: true, updatedAt: 1 }] }
-    const { rerender } = render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={draft} makeSourcesState={sources} onVersionChange={vi.fn()} callbacks={cb} />)
-    fireEvent.click(screen.getByLabelText('A')); expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ makeSources: [{ conversationId: 'a', mode: 'whole_project', paths: [] }] }))
-    const selected = { ...draft, makeSources: [{ conversationId: 'a', mode: 'whole_project' as const, paths: [] }, { conversationId: 'b', mode: 'files' as const, paths: [] }] }
-    rerender(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={selected} makeSourcesState={sources} onVersionChange={vi.fn()} callbacks={cb} />)
-    expect(screen.getByRole('button', { name: 'Создать цикл' })).toBeDisabled()
+    const view = (value: TaskReworkDraft) => <NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={value} makeSourcesState={sources} onVersionChange={vi.fn()} callbacks={cb} />
+    const { rerender } = render(view(draft))
+    fireEvent.click(screen.getByLabelText('A'))
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ makeSources: [{ conversationId: 'a', mode: 'whole_project', paths: [] }] }))
+
+    const whole = { ...draft, description: 'Правка', makeSources: [{ conversationId: 'a', mode: 'whole_project' as const, paths: [] }, { conversationId: 'b', mode: 'whole_project' as const, paths: [] }] }
+    rerender(view(whole))
+    fireEvent.click(screen.getAllByLabelText('Отдельные файлы')[1]!)
+    const onePath = { ...whole, makeSources: [whole.makeSources[0]!, { conversationId: 'b', mode: 'files' as const, paths: [] }] }
+    rerender(view(onePath))
+    expect(await screen.findByLabelText('src/App.tsx')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('src/App.tsx'))
+    const twoPaths = { ...onePath, makeSources: [onePath.makeSources[0]!, { conversationId: 'b', mode: 'files' as const, paths: ['src/App.tsx'] }] }
+    rerender(view(twoPaths))
+    fireEvent.click(screen.getByLabelText('src/styles.css'))
+    const ready = { ...twoPaths, makeSources: [twoPaths.makeSources[0]!, { conversationId: 'b', mode: 'files' as const, paths: ['src/App.tsx', 'src/styles.css'] }] }
+    rerender(view(ready))
+    fireEvent.click(screen.getByRole('button', { name: 'Создать цикл' }))
+    expect(submit).toHaveBeenCalledWith(ready, expect.stringMatching(/^rework-task-1-/))
   })
 
   // @testCase TC-UI-3
