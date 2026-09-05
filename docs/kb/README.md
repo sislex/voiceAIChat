@@ -10,38 +10,38 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 39 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 247 коммит(ов) в areas после сверки: d799559c feat(server): автопроход ждёт машину и сам возвращается к брошенному этапу … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 248 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-03 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 4d06ce88 Merge main into CHAT-409 (task dfb010d9-9ebb-4807-a526-ae824f21925d) … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-04 | ⚠ 12 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: d799559c feat(server): автопроход ждёт машину и сам возвращается к брошенному этапу … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-05 | ⚠ 4 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 105 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 37 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 214 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 143 коммит(ов) в areas после сверки: d799559c feat(server): автопроход ждёт машину и сам возвращается к брошенному этапу … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 10 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 12 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 9 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1165 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-05 | ⚠ 4 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 2 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-05 | ✓ |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 3 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 238 коммит(ов) в areas после сверки: d799559c feat(server): автопроход ждёт машину и сам возвращается к брошенному этапу … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-04 | ⚠ 13 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-04 | ⚠ 6 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-05 | ⚠ 5 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 106 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 38 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 215 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 144 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 11 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 13 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 10 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1166 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-05 | ⚠ 5 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 3 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-05 | ⚠ 1 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 4 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 239 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 9 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-04 | ⚠ 1 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 4 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-04 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 193 коммит(ов) в areas после сверки: bfb7a86c Merge feat/image-studio-improvements-36 в CHAT-407 … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-04 | ⚠ 4 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 29 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-04 | ⚠ 5 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-04 | ⚠ код изменён 2026-09-05, сверка 2026-09-04 (по датам: правки того же дня не видны — поставь checked) |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 30 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 21 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 148 коммит(ов) в areas после сверки: d799559c feat(server): автопроход ждёт машину и сам возвращается к брошенному этапу … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 149 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 100 коммит(ов) в areas после сверки: d799559c feat(server): автопроход ждёт машину и сам возвращается к брошенному этапу … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-04 | ⚠ 10 коммит(ов) в areas после сверки: 64cf578f feat(projects): настройка «включать автопроход у новых задач» … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 101 коммит(ов) в areas после сверки: 0a6078fd fix(autopilot): брошенный сбоем машины ран продолжается с упавшего шага … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-05 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-04, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 607. Последние:
+Всего записей: 608. Последние:
 
+- [2026-09-05-pc-radvilovich-context-export-by-group.md](log/2026-09-05-pc-radvilovich-context-export-by-group.md) — context-export-by-group
 - [2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md](log/2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md) — qa-stage-cost
 - [2026-09-05-alexeys-macbook-air-2-autopilot-full-pipeline.md](log/2026-09-05-alexeys-macbook-air-2-autopilot-full-pipeline.md) — autopilot-full-pipeline
 - [2026-09-04-pc-radvilovich-macos-node-recovery.md](log/2026-09-04-pc-radvilovich-macos-node-recovery.md) — macos-node-recovery
@@ -72,7 +73,6 @@
 - [2026-09-04-alexeys-macbook-air-2-reliable-long-gates.md](log/2026-09-04-alexeys-macbook-air-2-reliable-long-gates.md) — reliable-long-gates
 - [2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md](log/2026-09-04-alexeys-macbook-air-2-merge-auto-fix-checks.md) — merge-auto-fix-checks
 - [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-54.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-54.md) — image-studio-improvements-54
-- [2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md](log/2026-09-04-alexeys-macbook-air-2-image-studio-improvements-53.md) — image-studio-improvements-53
 
 ## Исторические планы
 
