@@ -7760,6 +7760,16 @@ export class VoiceChatDb {
   }
 
   /** Единая отображаемая сводка одной задачи; null — значимого результата нет. */
+  /**
+   * Сколько событий данного типа записано у рана. Нужно автопроходу: сбой машины
+   * лечится повтором с упавшего шага (работа модели уже в рабочей копии), но
+   * число таких повторов обязано быть конечным — иначе сломанное окружение
+   * крутило бы ран по кругу.
+   */
+  countCiEvents(runId: string, type: string): number {
+    return Number((this.db.prepare(`SELECT COUNT(*) AS n FROM ci_events WHERE run_id = ? AND type = ?`).get(runId, type) as { n: number }).n)
+  }
+
   latestCiRunSummary(taskId: string): CiRunSummary | null {
     const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC`).all(taskId) as CiRunRow[]
     const task = this.db.prepare(`SELECT column_id FROM tasks WHERE id = ?`).get(taskId) as { column_id: string } | undefined
