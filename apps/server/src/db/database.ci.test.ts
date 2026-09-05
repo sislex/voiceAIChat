@@ -858,6 +858,24 @@ describe('ci: временная шкала задачи', () => {
     expect(db.countCiEvents(run.id, 'run.started')).toBe(0)
   })
 
+  it('лог рана отдаётся хвостом: полный лог длинного рана валил процесс', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    const step = db.addCiRunStep({ runId: run.id, slot: null, position: 1, kind: 'command', initiatedBy: 'system', title: 'Шаг', status: 'running' })
+    for (let i = 0; i < 30; i++) db.appendCiLog(run.id, step.id, 'stdout', `строка-${i}\n`)
+
+    // Хвост, а не начало: последние строки — то, ради чего лог и открывают.
+    const tail = db.getCiRunLog('alice', run.id, 10)
+    expect(tail).toHaveLength(10)
+    expect(tail[0]!.chunk).toBe('строка-20\n')
+    expect(tail.at(-1)!.chunk).toBe('строка-29\n')
+    // Порядок остаётся хронологическим, а не перевёрнутым.
+    expect(tail.map((line) => line.seq)).toEqual([...tail.map((line) => line.seq)].sort((a, b) => a - b))
+    // Мусорный лимит не отключает защиту.
+    expect(db.getCiRunLog('alice', run.id, 0).length).toBeGreaterThan(0)
+    expect(db.getCiRunLog('alice', run.id, -5).length).toBeGreaterThan(0)
+  })
+
   it('считает подряд упавшие раны задачи и останавливается на первом успехе', () => {
     const { p, task } = project()
     const mk = (status: 'failed' | 'success' | 'timeout' | 'cancelled') => {
