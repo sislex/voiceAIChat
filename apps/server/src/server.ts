@@ -24,7 +24,7 @@ import { registerQaRoutes } from './routes/qa.js'
 import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
-import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
+import { knowledgeBaseTimeoutMs, ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
 import { releaseCiTarget, releaseProductionTarget } from './releases/targets.js'
 import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
@@ -35,9 +35,15 @@ import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
 import { saveBrowserShot, sweepBrowserShots } from './browser/checkShots.js'
 import { automatedQaRemarks } from '@voicechat/shared'
+import { syncProjectWithRetry } from './projectSync.js'
+import { shouldResumeAfterInfraFailure } from './ci/autopilotResume.js'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
 const CHECK_BUDGET_MS = 90_000
+/** Как часто автопроход сам осматривает проекты (приход машины в онлайн board-события не даёт). */
+const AUTOPILOT_SWEEP_MS = 60_000
+/** Сколько раз автопроход возобновляет один ран после сбоя машины. */
+const AUTOPILOT_INFRA_RESUMES = 3
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { createAutomatedQaCheck } from './ci/automatedQaCheck.js'
 import { MergeRunManager } from './merge/runManager.js'
@@ -51,6 +57,9 @@ import { createAgentWatchdog } from './agents/watchdog.js'
 import { createCommandGate } from './agents/commandGate.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
+import { registerProjectComponentsRoutes } from './routes/projectComponents.js'
+import { StorybookSessions } from './components/storybookSessions.js'
+import { ComponentTicketService } from './components/componentTicket.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 import type { GeoResolver } from '@voicechat/sessions-core'
 import { SessionHub } from './users/sessionHub.js'
@@ -422,16 +431,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const key = [args.projectId, args.agentId, args.path, args.branch].join('\u0000')
     const activeRefresh = projectMainRefreshes.get(key)
     if (activeRefresh) return activeRefresh
-    const operation = (async () => {
     const script = projectMainRefreshScript(args.path, args.branch, args.gitUrl)
-    const result = await agentRegistry.exec(args.agentId, script, 120_000, undefined, { userId: args.userId, conversationId: args.conversationId, source: 'system' })
-    if (result.timedOut) throw new Error('Синхронизация с origin завершилась по таймауту')
-    if (result.exitCode !== 0) throw new Error(result.output.trim() || `Синхронизация с origin завершилась с кодом ${result.exitCode ?? 'unknown'}`)
-    const baseSha = result.output.match(/BASE_SHA=([0-9a-f]{40})/)?.[1]
-    if (!baseSha) throw new Error('Синхронизация не вернула SHA актуальной базовой ветки')
-    const autoHealed = result.output.match(/AUTOHEAL=(.*)/)?.[1]?.trim()
-    return { baseSha, ...(autoHealed ? { autoHealed } : {}) }
-    })()
+    const operation = syncProjectWithRetry(() =>
+      agentRegistry.exec(args.agentId, script, 120_000, undefined, { userId: args.userId, conversationId: args.conversationId, source: 'system' }))
     projectMainRefreshes.set(key, operation)
     void operation.finally(() => { if (projectMainRefreshes.get(key) === operation) projectMainRefreshes.delete(key) }).catch(() => {})
     return operation
@@ -1921,7 +1923,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   })
 
   let autoPilotTick: (projectId: string) => void = () => {}
-  const emitBoard = (projectId: string): void => { boardHub.emit(projectId); queueMicrotask(() => autoPilotTick(projectId)) }
+  // Координатор автопрохода будится подпиской на сам хаб, а не обёрткой над ним:
+  // раньше тик планировал только `emitBoard`, а завершение preparation-, CI-,
+  // QA- и merge-ранов зовёт `boardHub.emit` напрямую — автопроход не узнавал,
+  // что этап закончился, и стоял до следующего действия человека.
+  boardHub.onChange((projectId) => autoPilotTick(projectId))
+  const emitBoard = (projectId: string): void => boardHub.emit(projectId)
   const ciRunManager: CiRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
@@ -1968,7 +1975,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
-  registerProjectGitRoutes(app, new GitWorkspaceService({
+  const gitWorkspaces = new GitWorkspaceService({
     db,
     runtime: {
       exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
@@ -1980,7 +1987,28 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       nameOf: (agentId) => agentRegistry.nameOf(agentId)
     },
     gate: commandGate
-  }))
+  })
+  registerProjectGitRoutes(app, gitWorkspaces)
+
+  // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.
+  // Сессии живут в памяти процесса — перезапуск сервера оставляет dev-сервер сиротой,
+  // поэтому панель показывает «остановлен» и предлагает запустить заново.
+  const storybookSessions = new StorybookSessions({
+    registry: {
+      ptyStart: (agentId, ptyId, cols, rows, cwd, emit) => agentRegistry.ptyStart(agentId, ptyId, cols, rows, cwd, emit),
+      ptyInput: (ptyId, data) => agentRegistry.ptyInput(ptyId, data),
+      ptyKill: (ptyId) => agentRegistry.ptyKill(ptyId),
+      ptyLive: (ptyId) => agentRegistry.ptyLive(ptyId),
+      http: (agentId, request) => agentRegistry.http(agentId, request),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      nameOf: (agentId) => agentRegistry.nameOf(agentId)
+    }
+  })
+  registerProjectComponentsRoutes(app, {
+    git: gitWorkspaces,
+    storybook: storybookSessions,
+    tickets: new ComponentTicketService({ db, git: gitWorkspaces })
+  })
   const featurePreviews = new FeaturePreviewManager({
     db,
     executor: ciExecutor,
@@ -2009,7 +2037,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     },
     isOnline: (agentId) => agentRegistry.isOnline(agentId),
     prepareKnowledgeBase: async (releaseBranch, target) => {
-      const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), 120_000)
+      // Лимит берётся из настроек шага, а не из константы: жёсткие 120 с убивали
+      // шаг с объявленным лимитом 10 минут ровно на 121-й секунде, и в логе
+      // оставался обрыв на середине push — искать причину было не по чему.
+      const limitMs = knowledgeBaseTimeoutMs(target)
+      const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), limitMs)
+      if (result.timedOut) throw new Error(`Release-preflight базы знаний не уложился в ${Math.round(limitMs / 1000)} с`)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
   })
@@ -2078,24 +2111,155 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if(passed)return
     onAutoPilotFailure(runId,userId,'automated_qa',reason,{classification:verdict?.classification??null,remarks:verdict?automatedQaRemarks(verdict):''})
   }})
+  /**
+   * Начало конвейера у автопрохода: карточка в TODO или в подготовке сама уходит
+   * в работу. Раньше координатор начинался с `component_qa`, а старт подготовки и
+   * переход ready → development жили только в drag&drop-роуте доски, поэтому
+   * автопроход стоял до тех пор, пока человек не перетащит карточку руками.
+   *
+   * Ран подготовки уже идемпотентен (`launchTaskPreparation` переиспользует
+   * активный), поэтому повторные тики безопасны. Ожидание ответа на вопрос модели
+   * (`waiting_for_answer`) — осознанная остановка: там нужен человек, и
+   * перезапускать попытку нельзя. Упавшие попытки повторяются в пределах
+   * `autoPilotFixLimit` — инфраструктурный сбой (таймаут синхронизации с origin,
+   * отвалившаяся машина) не должен требовать ручного «Повторить», но и крутить
+   * бесконечный цикл на сломанном окружении координатор не имеет права.
+   */
+  const autoPilotPreparation = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (db.activeTaskPreparationRun(userId, projectId, task.id)) return
+    const runs = db.listTaskPreparationRuns(userId, projectId, task.id)
+    if (runs.some((run) => run.status === 'success' || run.status === 'completed')) return
+    const limit = db.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
+    const failed = runs.filter((run) => run.status === 'failed' || run.status === 'blocked').length
+    if (failed >= limit) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: 'Подготовка не прошла после автоматических повторов', attempts: failed, limit })
+      // Из TODO пути в decision_required нет (карту переходов автопроход не
+      // обходит): там карточка просто остаётся ждать человека с записью в аудите.
+      try { db.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.preparation_limit_exhausted') }
+      catch { /* переход недоступен из текущей колонки */ }
+      emitBoard(projectId)
+      return
+    }
+    try { launchTaskPreparation(userId, projectId, task.id) }
+    catch (error) {
+      // Причина запуска (нет машины, недоступная модель) не лечится повтором в том
+      // же тике: событие остаётся в аудите, а следующий board event попробует снова.
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: error instanceof Error ? error.message : String(error), attempts: failed, limit })
+    }
+  }
+  /**
+   * Сбой машины посреди рана (ноутбук ушёл в сон, обрыв Wi-Fi) валит текущий шаг,
+   * но работа модели остаётся в рабочей копии. Новый ран заставил бы модель
+   * делать её заново — десятки минут в мусор, — поэтому автопроход возобновляет
+   * тот же ран с упавшего шага. Повторов конечное число: сломанное окружение не
+   * должно крутить ран по кругу.
+   */
+  const autoPilotResumeAfterInfraFailure = (userId: string, projectId: string, task: import('@voicechat/shared').Task): boolean => {
+    const last = db.latestCiRunSummary(task.id)
+    if (!last) return false
+    const allowed = shouldResumeAfterInfraFailure({
+      status: last.status,
+      infraErrors: db.countCiEvents(last.id, 'run.infra_error'),
+      resumes: db.countCiEvents(last.id, 'run.autopilot_infra_resume'),
+      limit: AUTOPILOT_INFRA_RESUMES
+    })
+    if (!allowed) return false
+    const resumed = ciRunManager.retryFromFailed(userId, last.id)
+    if ('error' in resumed) return false
+    db.addCiEvent({ projectId, runId: last.id, type: 'run.autopilot_infra_resume', actorType: 'system', payload: { taskId: task.id, status: last.status } })
+    emitBoard(projectId)
+    return true
+  }
+  /**
+   * Карточка в development с упавшим раном и без активного — тупик: fix-loop уже
+   * отработал внутри рана, а следующий ран без человека не появлялся. Сначала
+   * пробуем продолжить брошенный ран, иначе ставим новый — но только пока подряд
+   * упавших ранов меньше лимита доработок: бесконечно долбиться в сломанную
+   * задачу автопроход не должен, для этого есть `decision_required`.
+   */
+  const autoPilotDevelopmentStuck = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    const last = db.latestCiRunSummary(task.id)
+    if (!last || (last.status !== 'failed' && last.status !== 'timeout')) return
+    const limit = db.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
+    const failures = db.countTrailingFailedCiRuns(task.id)
+    if (failures >= limit) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Подряд упавшие development-раны', failures, limit })
+      try { db.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted') }
+      catch { /* переход недоступен из текущей колонки */ }
+      emitBoard(projectId)
+      return
+    }
+    const started = ciRunManager.start(userId, projectId, task.id, { mode: 'development' })
+    if ('error' in started) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: started.error, failures, limit })
+      return
+    }
+    db.recordAutoPilotEvent(projectId, task.id, 'autopilot.development_retry', { runId: started.run.id, failures, limit })
+    emitBoard(projectId)
+  }
+  /** Готовая к разработке карточка сама встаёт в очередь development-рана. */
+  const autoPilotDevelopment = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    const result = ciRunManager.startForDevelopmentTransition(userId, projectId, task.id, true)
+    if ('error' in result) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'ready', reason: result.error })
+      return
+    }
+    if (!result.existing) emitBoard(projectId)
+  }
+  /**
+   * Этап не запускается на спящей машине. Раньше упавший по «Машина отключилась
+   * во время выполнения команды» этап сразу перезапускался следующим board-событием
+   * и падал снова — так задача жгла круги доработки за чужой сбой. Пока online-машины
+   * у проекта нет, автопроход просто ждёт: фоновый тик вернётся к нему сам.
+   */
+  const projectHasOnlineMachine = (userId: string, projectId: string): boolean =>
+    db.listUsableAgents(userId, projectId).some((agent) => agentRegistry.isOnline(agent.id))
   const ticking = new Set<string>()
+  /** Доска изменилась, пока шёл тик: пробуждение нельзя терять, иначе конвейер встаёт. */
+  const pendingTicks = new Set<string>()
   autoPilotTick = (projectId) => {
-    if (ticking.has(projectId)) return
+    if (ticking.has(projectId)) { pendingTicks.add(projectId); return }
     ticking.add(projectId)
     queueMicrotask(() => {
       try {
         for (const item of db.autoPilotSnapshot(projectId)) {
           const { task, stage, userId } = item
-          if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
+          // Машина нужна не всем стадиям: пропуск ручного QA — чистая работа с
+          // доской, а подготовка требует копию проекта только у Git-проекта.
+          const needsMachine = stage === 'manual_qa'
+            ? false
+            : stage === 'backlog' || stage === 'preparation'
+              ? Boolean(db.getProject(userId, projectId)?.gitUrl)
+              : true
+          if (needsMachine && !projectHasOnlineMachine(userId, projectId)) continue
+          if (stage === 'backlog' || stage === 'preparation') autoPilotPreparation(userId, projectId, task)
+          else if (stage === 'ready') autoPilotDevelopment(userId, projectId, task)
+          else if (stage === 'development') autoPilotDevelopmentStuck(userId, projectId, task)
+          else if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
           else if (stage === 'integration_tests') { const run=db.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
           else if (stage === 'automated_qa') { const run=db.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')automatedQaRunner.launch(run.id,userId) }
           else if (stage === 'manual_qa' && !item.requiresManualQa) db.transitionAutoPilotTask(projectId,task.id,'awaiting_merge','autopilot.skip_manual_qa')
           else if (stage === 'awaiting_merge') { const run=db.startMergeRun(userId,projectId,task.id); mergeRunManager.start(run) }
         }
       } catch (error) { app.log.warn({ projectId, error }, 'autopilot tick failed') }
-      finally { ticking.delete(projectId) }
+      finally {
+        ticking.delete(projectId)
+        if (pendingTicks.delete(projectId)) autoPilotTick(projectId)
+      }
     })
   }
+  // Board-события покрывают всё, что случилось в самом приложении, но не приход
+  // машины в онлайн: этап, брошенный уснувшим ноутбуком, ждал бы человека. Раз в
+  // минуту координатор сам проходит проекты с автопроходом — тик идемпотентен,
+  // и на живом конвейере этот проход ничего не делает.
+  const autoPilotTimer = setInterval(() => {
+    try { for (const projectId of db.autoPilotProjectIds()) autoPilotTick(projectId) }
+    catch (error) { app.log.warn({ error }, 'autopilot sweep failed') }
+  }, AUTOPILOT_SWEEP_MS)
+  autoPilotTimer.unref?.()
+  app.addHook('onClose', async () => clearInterval(autoPilotTimer))
   registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id),automatedQaScreenshotDir)
 
   // Запуск работ ассистентом и оркестратором идёт теми же путями, что кнопки в

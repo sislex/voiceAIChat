@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CI_INFRA_LABEL, classifyCiInfraFailure, formatCiInfraFailure } from './infraErrors.js'
+import { CI_INFRA_LABEL, classifyCiInfraFailure, classifyLlmTransportFailure, formatCiInfraFailure } from './infraErrors.js'
 import { createTestFixCycleCoordinator, createTestPipelineCoordinator } from './types.js'
 import type { TestGroupConfig, TestRun } from '@voicechat/shared'
 
@@ -15,6 +15,19 @@ const CACACHE_ENOENT = `npm warn tar TAR_ENTRY_ERROR ENOENT: no such file or dir
 npm error code ENOENT
 npm error ENOENT: no such file or directory, stat '/root/.npm/_cacache/content-v2/sha512/12/34/5678'
 `
+
+describe('обрыв соединения с исполнителем модели', () => {
+  it('признаётся инфраструктурным: повтор шага, а не смена модели', () => {
+    const failure = classifyLlmTransportFailure('Соединение с исполнителем Codex оборвалось до конца ответа — ход остановлен. Повторите запрос.')
+    expect(failure?.kind).toBe('llm_transport')
+    expect(failure?.hint).toContain('Повторить тот же шаг')
+  })
+
+  it('содержательный отказ модели инфраструктурой не считается', () => {
+    expect(classifyLlmTransportFailure('Модель отказалась выполнять запрос')).toBeNull()
+    expect(classifyLlmTransportFailure('')).toBeNull()
+  })
+})
 
 describe('classifyCiInfraFailure', () => {
   it('EEXIST в _cacache → инфраструктурный сбой npm_cache', () => {

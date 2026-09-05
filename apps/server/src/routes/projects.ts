@@ -203,6 +203,7 @@ export function registerProjectRoutes(
       automatedQaCommand?: string
       automatedQaMode?: import('@voicechat/shared').AutomatedQaMode
       automatedQaScenario?: import('@voicechat/shared').AutomatedQaScenario
+      autoPilotDefault?: boolean
       autoPilotRequiresManualQa?: boolean
       autoPilotFixLimit?: number
       productionDeployCommand?: string
