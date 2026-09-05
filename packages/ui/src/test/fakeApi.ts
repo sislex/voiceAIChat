@@ -395,8 +395,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:libraryExport': async ({ conversationId, name, paths }) => { const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); const item = { slug, name, files: paths, bytes: 0, sourceConversationId: conversationId, updatedAt: Date.now() }; library.set(slug, item); libraryFiles.set(slug, new Map(paths.map((p) => [p, makeFiles(conversationId).get(p) ?? '']))); return { item } },
     'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return { state: makeState(conversationId), mergedTokens: 0, autoImported: [] } },
     'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
-    'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' },
-    'make:setNotes': async ({ conversationId, notes, mode }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode }; makeNotes.set(conversationId, next); return next },
+    'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced', stack: 'html-js', uiKit: 'none' },
+    'make:setNotes': async ({ conversationId, notes, mode, stack, uiKit }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const, stack: 'html-js' as const, uiKit: 'none' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode, stack: stack ?? cur.stack, uiKit: uiKit ?? cur.uiKit }; makeNotes.set(conversationId, next); return next },
     'make:tests': async ({ conversationId }) => ({ files: [...makeFiles(conversationId).entries()].filter(([p]) => /\.test\.(jsx|tsx)$/i.test(p)).map(([p, c]) => ({ path: p, names: [...c.matchAll(/\btest\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!), component: null })) }),
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
     'make:share': async ({ conversationId }) => { if (!makeShare.has(conversationId)) makeShare.set(conversationId, { token: 'share123', createdAt: 1, url: '#/make-shared/share123' }); return makeState(conversationId) },
@@ -410,7 +410,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const conv = [...makeShare.entries()].find(([, s]) => s.token === token)?.[0] ?? (token === 'share123' ? 'make-1' : null)
       if (!conv) throw new Error('Ссылка недействительна или отозвана')
       const st = makeState(conv)
-      return { token, owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
+      return { token, stack: 'html-js', uiKit: 'none', owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
     },
     'make:sharedFile': async ({ path }) => { const content = makeFiles('make-1').get(path); if (content === undefined) throw new Error('Файл не найден'); return { path, content, size: new TextEncoder().encode(content).length, updatedAt: 1 } },
     'make:sharedStories': async () => ({ files: [] }),

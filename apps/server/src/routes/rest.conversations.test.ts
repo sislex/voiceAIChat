@@ -148,7 +148,7 @@ describe('REST: conversations/messages/settings', () => {
     const check = (await inj({ method: 'GET', url: `/api/make/${conv.id}/check` })).json() as { issues: unknown[] }
     expect(check.issues).toEqual([])
     const templated = (await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'landing' } })).json() as { snapshots: Array<{ label: string }> }
-    expect(templated.snapshots[0]?.label).toContain('Лендинг')
+    expect(templated.snapshots[0]?.label).toBe('До смены стека')
     // Загрузка бинарника: base64 → байты, отдаётся превью с image/png.
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3])
     const uploaded = (await inj({ method: 'POST', url: `/api/make/${conv.id}/upload`, payload: { path: 'img/logo.png', dataBase64: png.toString('base64') } })).json() as { files: Array<{ path: string }> }
@@ -157,6 +157,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(img.headers['content-type']).toMatch(/image\/png/)
     expect(img.rawPayload.equals(png)).toBe(true)
     // React: JSX транспилируется при отдаче, импорт без расширения дополняется; страница сториз собирается.
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { stack: 'react' } })
     await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'react' } })
     await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'src/Extra.jsx', content: "import { Button } from './components/Button'\nexport const X = () => <Button>x</Button>" } })
     const jsx = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/src/Extra.jsx` })
@@ -1510,11 +1511,9 @@ describe('REST: conversations/messages/settings', () => {
       }
     }
     const before = await snap()
-    // Пункт есть всегда, а блок — только когда мастерская что-то отдала. В
-    // тестовом сервере `makeContext` не подключён, поэтому проверяем пункт и
-    // честное описание, а не выдуманный текст.
+    // Пункт и обязательные stack/uiKit hints есть всегда, даже пока проект не содержит пользовательского контекста.
     expect(before.item).toBeDefined()
-    expect(before.blocks.some((block) => block.title === 'Контекст проекта Make')).toBe(false)
+    expect(before.blocks.some((block) => block.title === 'Контекст проекта Make')).toBe(true)
     // Динамика хода перечислена прямо: человек видит её следы в ответах.
     expect(before.omitted.some((line) => line.includes('Режим Make'))).toBe(true)
 
