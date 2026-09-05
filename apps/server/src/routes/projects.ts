@@ -1037,6 +1037,12 @@ export function registerProjectRoutes(
       const key = String(req.headers['idempotency-key'] ?? '').trim()
       if (!key) return badReq(reply, 'Idempotency-Key required')
       try {
+        const replay = db.taskReworkCycleByIdempotencyKey(uid(req), req.params.id, req.params.taskId, key)
+        if (replay) {
+          const task = db.getTaskDetail(uid(req), req.params.id, req.params.taskId)
+          if (!task) return nf(reply)
+          return { cycle: replay, task, replayed: true }
+        }
         const sources = Array.isArray(req.body?.makeSources) ? req.body.makeSources : []
         for (const source of sources) {
           db.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, source.conversationId)

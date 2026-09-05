@@ -148,7 +148,27 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
       onStartRework: () => { setError(null); setReworkOpen(true); void loadMakeSources() },
       onRetryMakeSources: () => { void loadMakeSources() },
       onLoadMakeFiles: async (conversationId) => (await window.api['tasks:reworkMakeFiles']({ projectId: props.task.projectId, taskId: props.task.id, conversationId })).map((item) => item.path),
-      onUploadAttachment: async (scope, file) => { const dataBase64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(reader.error); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.readAsDataURL(file) }); const uploaded = await window.api['tasks:uploadAttachment']({ projectId: props.task.projectId, taskId: props.task.id, scope, name: file.name, mimeType: file.type, dataBase64 }); if (scope === 'source') setSourceAttachments((all) => [...all, fileView(uploaded)]); else setDraft((value) => ({ ...value, attachments: [...value.attachments, fileView(uploaded)] })) },
+      onUploadAttachment: async (scope, file) => {
+        const temporaryId = `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const update = (map: (items: TaskCardViewModel['source']['attachments']) => TaskCardViewModel['source']['attachments']) => {
+          if (scope === 'source') setSourceAttachments(map)
+          else setDraft((value) => ({ ...value, attachments: map(value.attachments) }))
+        }
+        update((items) => [...items, { id: temporaryId, name: file.name, size: file.size, mimeType: file.type, status: 'uploading' }])
+        try {
+          const dataBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onerror = () => reject(reader.error)
+            reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+            reader.readAsDataURL(file)
+          })
+          const uploaded = await window.api['tasks:uploadAttachment']({ projectId: props.task.projectId, taskId: props.task.id, scope, name: file.name, mimeType: file.type, dataBase64 })
+          update((items) => items.map((item) => item.id === temporaryId ? fileView(uploaded) : item))
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : 'Не удалось загрузить файл'
+          update((items) => items.map((item) => item.id === temporaryId ? { ...item, status: 'error', error: message } : item))
+        }
+      },
       onDeleteAttachment: async (id) => { await window.api['tasks:deleteAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId: id }); setSourceAttachments((all) => all.filter((item) => item.id !== id)); setDraft((value) => ({ ...value, attachments: value.attachments.filter((item) => item.id !== id) })) },
       onChangeReworkDraft: setDraft,
       onCancelRework: () => setReworkOpen(false),

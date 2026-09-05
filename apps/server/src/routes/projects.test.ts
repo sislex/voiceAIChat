@@ -921,15 +921,20 @@ describe('дизайны карточки: REST', () => {
   })
 
   // @testCase TC-API-2
-  it('идемпотентный ключ не создаёт дубль, разные ключи получают разные sequence', async () => {
-    const { project, taskId } = await designScene()
+  it('идемпотентный ключ не создаёт дубль, разные конкурентные ключи получают разные sequence', async () => {
+    const { project, taskId, makeId } = await designScene()
     const url = `/api/projects/${project.id}/tasks/${taskId}/rework-cycles`
-    const payload = { description: 'Ещё правка', criteria: [], makeSources: [], attachmentIds: [] }
+    const payload = { description: 'Ещё правка', criteria: [], makeSources: [{ conversationId: makeId, mode: 'whole_project', paths: [] }], attachmentIds: [] }
     const first = await inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'same' }, payload })
+    db.deleteConversation('admin', makeId)
     const replay = await inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'same' }, payload })
-    const second = await inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'other' }, payload })
+    const [second, third] = await Promise.all([
+      inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'other-1' }, payload: { ...payload, makeSources: [] } }),
+      inj(adminTok, { method: 'POST', url, headers: { 'idempotency-key': 'other-2' }, payload: { ...payload, makeSources: [] } })
+    ])
     expect(replay.json()).toMatchObject({ cycle: { id: first.json().cycle.id, sequence: 1 }, replayed: true })
-    expect(second.json()).toMatchObject({ cycle: { sequence: 2 } })
+    expect([second.json().cycle.sequence, third.json().cycle.sequence].sort()).toEqual([2, 3])
+    expect(db.taskReworkCycles('admin', project.id, taskId)).toHaveLength(3)
   })
 
   // @testCase TC-NEG-1
