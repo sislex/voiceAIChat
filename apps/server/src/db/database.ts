@@ -7799,6 +7799,12 @@ export class VoiceChatDb {
     return count
   }
 
+  /** Когда завершился последний ран задачи: по нему автопроход выдерживает паузу между перезапусками. */
+  lastCiRunFinishedAt(taskId: string): number | null {
+    const row = this.db.prepare(`SELECT finished_at FROM ci_runs WHERE task_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1`).get(taskId) as { finished_at: number } | undefined
+    return row?.finished_at ?? null
+  }
+
   latestCiRunSummary(taskId: string): CiRunSummary | null {
     const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC`).all(taskId) as CiRunRow[]
     const task = this.db.prepare(`SELECT column_id FROM tasks WHERE id = ?`).get(taskId) as { column_id: string } | undefined
