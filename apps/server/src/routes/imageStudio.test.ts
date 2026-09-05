@@ -371,6 +371,29 @@ describe('студия картинок: OG-мета публичной стра
   })
 })
 
+describe('студия картинок: публичная страница', () => {
+  it('от дюжины файлов появляется поиск по имени, вес галереи — в заголовке', async () => {
+    for (let index = 0; index < 12; index += 1) await store.writeBuffer(convId, `кадр-${index}.png`, PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url, headers: { host: 'studio.test' } })
+
+    // Сотню кадров иначе листают руками: фильтр работает на самой странице.
+    expect(page.body).toContain('role="search"')
+    expect(page.body).toContain('data-name="кадр-0.png"')
+    expect(page.body).toContain('12 файлов')
+    expect(page.body).toContain('<main class="grid">')
+  })
+
+  it('маленькой галерее поиск не нужен', async () => {
+    await store.writeBuffer(convId, 'один.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url, headers: { host: 'studio.test' } })
+
+    expect(page.body).not.toContain('role="search"')
+    expect(page.body).toContain('1 файл')
+  })
+})
+
 describe('студия картинок: корзина', () => {
   it('удаление уводит в корзину, restore возвращает со свободным именем', async () => {
     await store.writeBuffer(convId, 'кот.png', PNG_BYTES)

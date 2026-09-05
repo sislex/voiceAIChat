@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 7 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 9 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 9 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1164 коммит(ов) в areas после сверки: 62c2251d perf(images): счёт средних цветов больше не занимает вкладку … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1165 коммит(ов) в areas после сверки: 7a48c8a7 fix(images): нормальные склонения и хеш вместо base64 в поиске дубликатов … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-05 | ⚠ 2 коммит(ов) в areas после сверки: 3449bea3 feat(images): общий враппер мастерской и разгрузка интерфейса студии … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 229 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 115 коммит(ов) в areas после сверки: 9f13622f fix(qa): тесты пишет разработка, стадии сужаются и не гоняют гейт дважды … |
@@ -34,9 +34,9 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 4 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 194 коммит(ов) в areas после сверки: 3449bea3 feat(images): общий враппер мастерской и разгрузка интерфейса студии … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-04 | ⚠ 4 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-05 | ⚠ 1 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 26 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 21 коммит(ов) в areas после сверки: cded23c3 fix(images): порядок «По цвету» больше не вешает панель, у счёта цветов есть индикатор … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-05 | ⚠ 2 коммит(ов) в areas после сверки: 7a48c8a7 fix(images): нормальные склонения и хеш вместо base64 в поиске дубликатов … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 27 коммит(ов) в areas после сверки: 7a48c8a7 fix(images): нормальные склонения и хеш вместо base64 в поиске дубликатов … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 22 коммит(ов) в areas после сверки: 7a48c8a7 fix(images): нормальные склонения и хеш вместо base64 в поиске дубликатов … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 146 коммит(ов) в areas после сверки: 469bfc64 fix(git): автолечение общей копии проекта и запрет доступа Make к репозиторию … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ✓ |
@@ -61,10 +61,11 @@
 
 ## Журнал сессий
 
-Всего записей: 618. Последние:
+Всего записей: 619. Последние:
 
 - [2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md](log/2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md) — workshop-wrapper-shared
 - [2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md](log/2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md) — qa-stage-cost
+- [2026-09-05-alexeys-macbook-air-2-public-gallery-search.md](log/2026-09-05-alexeys-macbook-air-2-public-gallery-search.md) — public-gallery-search
 - [2026-09-05-alexeys-macbook-air-2-image-studio-viewer-menu.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-viewer-menu.md) — image-studio-viewer-menu
 - [2026-09-05-alexeys-macbook-air-2-image-studio-viewer-layout-defects.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-viewer-layout-defects.md) — image-studio-viewer-layout-defects
 - [2026-09-05-alexeys-macbook-air-2-image-studio-view-list-and-props.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-view-list-and-props.md) — image-studio-view-list-and-props
@@ -72,7 +73,6 @@
 - [2026-09-05-alexeys-macbook-air-2-image-studio-toolbar-and-fit.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-toolbar-and-fit.md) — image-studio-toolbar-and-fit
 - [2026-09-05-alexeys-macbook-air-2-image-studio-tint-perf.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-tint-perf.md) — image-studio-tint-perf
 - [2026-09-05-alexeys-macbook-air-2-image-studio-tint-loop.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-tint-loop.md) — image-studio-tint-loop
-- [2026-09-05-alexeys-macbook-air-2-image-studio-plural-and-hash.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-plural-and-hash.md) — image-studio-plural-and-hash
 
 ## Исторические планы
 
