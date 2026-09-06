@@ -36,7 +36,7 @@ import { sweepQaScreenshots } from './ci/qaScreenshots.js'
 import { saveBrowserShot, sweepBrowserShots } from './browser/checkShots.js'
 import { automatedQaRemarks } from '@voicechat/shared'
 import { syncProjectWithRetry } from './projectSync.js'
-import { shouldResumeAfterInfraFailure } from './ci/autopilotResume.js'
+import { isDirtyWorkspaceFailure, retryAllowedNow, shouldResumeAfterInfraFailure } from './ci/autopilotResume.js'
 
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
 const CHECK_BUDGET_MS = 90_000
@@ -2181,6 +2181,13 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
     const last = db.latestCiRunSummary(task.id)
     if (!last || (last.status !== 'failed' && last.status !== 'timeout')) return
+    // Незакоммиченная работа модели в копии задачи: перезапуск падает мгновенно и
+    // только жжёт попытки, а сброс копии уничтожил бы саму работу.
+    if (isDirtyWorkspaceFailure(last.error)) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Рабочая копия задачи содержит несохранённые изменения', runId: last.id })
+      return
+    }
+    if (!retryAllowedNow({ finishedAt: db.lastCiRunFinishedAt(task.id), now: Date.now() })) return
     const limit = db.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
     const failures = db.countTrailingFailedCiRuns(task.id)
     if (failures >= limit) {
