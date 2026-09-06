@@ -13,15 +13,18 @@ async function fresh(): Promise<MakeWorkspaces> {
 }
 
 describe('MakeWorkspaces', () => {
-  // @testCase TC-01
-  it('normalizes old and damaged settings without rewriting them', async () => {
+  // @testCase TC-6
+  it('normalizes missing, unknown and damaged settings without rewriting them', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
     const settings = join(ws.dirOf(CONV), '.make', 'settings.json')
+    expect(await ws.notes(CONV)).toMatchObject({ mode: 'balanced', stack: 'html-js', uiKit: 'none' })
+
     await mkdir(join(ws.dirOf(CONV), '.make'), { recursive: true })
     await writeFile(settings, JSON.stringify({ mode: 'designer', stack: 'bad', uiKit: 7 }), 'utf8')
     expect(await ws.notes(CONV)).toMatchObject({ mode: 'designer', stack: 'html-js', uiKit: 'none' })
     expect(await readFile(settings, 'utf8')).toBe(JSON.stringify({ mode: 'designer', stack: 'bad', uiKit: 7 }))
+
     await writeFile(settings, '{broken', 'utf8')
     expect(await ws.notes(CONV)).toMatchObject({ mode: 'balanced', stack: 'html-js', uiKit: 'none' })
   })
