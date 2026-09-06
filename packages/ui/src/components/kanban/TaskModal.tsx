@@ -617,6 +617,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   ]
   const tabIds = tabItems.map((item) => item.id)
   /** Общие атрибуты панели вкладки: роль, связь с кнопкой и скрытие. */
+  // Настройки выполнения монтируются при первом заходе на вкладку и остаются.
+  const [settingsMounted, setSettingsMounted] = useState(activeTab === 'settings')
+  useEffect(() => { if (activeTab === 'settings') setSettingsMounted(true) }, [activeTab])
+
   const panelProps = (tab: TaskTab): { role: 'tabpanel'; id: string; 'aria-labelledby': string; hidden: boolean; tabIndex: number } => ({
     role: 'tabpanel', id: panelDomId(tab), 'aria-labelledby': tabDomId(tab), hidden: activeTab !== tab, tabIndex: 0
   })
@@ -1077,11 +1081,16 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
 
         {!props.draft && <section className="task-tab-panel" data-testid="task-settings-panel" {...panelProps('settings')}>
           <PanelHeading kicker="Конфигурация" title="Настройки выполнения" description="Изменения применятся к следующему запуску." />
-          <div className="task-settings-stack">
+          {/* Ленивый монтаж, как у временной шкалы: на «Подготовке» настройки
+              не видны, а их запросы (команды, конфигурация задачи, движок,
+              машины) уходили при каждом открытии карточки. Смонтировав один
+              раз, панель не размонтируем — переключение вкладок туда-обратно
+              не должно перечитывать то же самое. */}
+          {settingsMounted && <div className="task-settings-stack">
             <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
             <CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} />
             <CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} />
-          </div>
+          </div>}
         </section>}
         {!props.draft && <>
         <section className="task-tab-panel" data-testid="task-timeline-panel" {...panelProps('timeline')}>

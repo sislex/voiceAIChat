@@ -891,6 +891,33 @@ describe('TaskModal — вкладки и merge', () => {
     }
   })
 
+  // Панель настроек рендерилась всегда, поэтому её четыре запроса уходили при
+  // любом открытии карточки — даже когда человек смотрит «Подготовку».
+  it('настройки выполнения грузятся при первом открытии вкладки и только раз', async () => {
+    const ci = createFakeCi()
+    window.ci = ci
+    const commands = vi.spyOn(ci, 'listCommands')
+    const machines = vi.spyOn(ci, 'getTaskMachines')
+    const llm = vi.spyOn(ci, 'getTaskCiLlm')
+    render(<TaskModal {...props()} />)
+    expect(commands).not.toHaveBeenCalled()
+    expect(machines).not.toHaveBeenCalled()
+    expect(llm).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    await waitFor(() => expect(within(screen.getByTestId('task-settings-panel')).getByLabelText('Движок модели')).toBeInTheDocument())
+    expect(commands).toHaveBeenCalledTimes(1)
+    expect(machines).toHaveBeenCalledTimes(1)
+    expect(llm).toHaveBeenCalledTimes(1)
+
+    // Уход на другую вкладку и возврат ничего не перечитывают.
+    fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    expect(commands).toHaveBeenCalledTimes(1)
+    expect(machines).toHaveBeenCalledTimes(1)
+    expect(llm).toHaveBeenCalledTimes(1)
+  })
+
   it('машина и LLM размещены вертикально в настройках, черновик переживает переключение', async () => {
     render(<TaskModal {...props()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
@@ -1553,7 +1580,9 @@ describe('TaskModal — вкладка Merge', () => {
     expect(await screen.findByRole('option', { name: /MacBook/ })).toBeInTheDocument()
     const taskMachineCalls = getTaskMachines.mock.calls.length
     const mergeMachineCalls = getMergeMachines.mock.calls.length
-    await userEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    // Уходим на «Общее», а не на «Настройки»: те монтируются лениво и сами
+    // просят машины задачи — счёт вызовов перестал бы говорить о Merge-панели.
+    await userEvent.click(screen.getByRole('tab', { name: 'Общее' }))
     await userEvent.click(screen.getByRole('tab', { name: 'Merge' }))
 
     expect(screen.getByRole('option', { name: /MacBook/ })).toBeInTheDocument()
