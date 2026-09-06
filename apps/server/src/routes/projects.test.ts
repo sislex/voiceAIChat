@@ -6,7 +6,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
-import type { Board, ProjectDetail, ProjectSummary, Task } from '@voicechat/shared'
+import type { Board, BoardStatuses, ProjectDetail, ProjectSummary, Task } from '@voicechat/shared'
 import { BUILTIN_PROJECT_TYPE_IDS } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
@@ -297,6 +297,31 @@ describe('projects REST: доступ', () => {
     expect(((await inj(bobTok, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).length).toBe(0)
     expect((await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}` })).statusCode).toBe(404)
     expect((await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).statusCode).toBe(404)
+    expect((await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/board/statuses` })).statusCode).toBe(404)
+  })
+
+  it('доска приезжает двумя фазами: скелет карточек и состояние процессов', async () => {
+    const p = await createProject()
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const created = (await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'Фазы' }
+    })).json() as Task
+
+    const skeleton = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const card = skeleton.tasks.find((t) => t.id === created.id)!
+    expect(card.title).toBe('Фазы')
+    expect(card.columnId).toBe(board.columns[0].id)
+    // Первая фаза не ходит в раны и чаты — состояния в ней нет вовсе.
+    expect(card.latestRunResult).toBeUndefined()
+    expect(card.chatId).toBeUndefined()
+    expect(skeleton.ciRuns).toBeUndefined()
+
+    const statuses = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board/statuses` })).json() as BoardStatuses
+    expect(statuses.tasks.map((t) => t.taskId)).toEqual(skeleton.tasks.map((t) => t.id))
+    const status = statuses.tasks.find((t) => t.taskId === created.id)!
+    expect(status.latestRunResult).toBeNull()
+    expect(status.mergePermitted).toBe(true)
+    expect(statuses.ciRuns).toEqual([])
   })
 
   it('владелец добавляет участника; участник видит, но не управляет', async () => {
