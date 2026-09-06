@@ -610,6 +610,8 @@ export interface IpcInvokeMap {
   'columns:delete': { arg: { projectId: string; columnId: string }; result: void }
   /** Полная задача по id (тяжёлые поля, которых нет в лёгкой доске): грузит TaskModal. */
   'tasks:get': { arg: { projectId: string; taskId: string }; result: Task | null }
+  'tasks:listReworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
+  'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; input: import('./projects').CreateTaskReworkCycleInput }; result: import('./projects').TaskReworkCycle }
   'tasks:create': {
     arg: {
       projectId: string
@@ -1480,6 +1482,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'columns:reorder',
   'columns:delete',
   'tasks:get',
+  'tasks:listReworkCycles',
+  'tasks:createReworkCycle',
   'tasks:create',
   'tasks:createFromProposalInPreparation',
   'tasks:activity',

@@ -724,6 +724,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_task_designs_unique
 CREATE INDEX IF NOT EXISTS idx_task_designs_source
   ON task_designs(conversation_id, path);
 
+-- Неизменяемые ручные циклы доработки. JSON-поля являются снимком пользовательского
+-- запроса; upload metadata копируется отдельно, чтобы история переживала очистку файла.
+CREATE TABLE IF NOT EXISTS task_rework_cycles (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  description TEXT NOT NULL,
+  criteria_json TEXT NOT NULL DEFAULT '[]',
+  make_sources_json TEXT NOT NULL DEFAULT '[]',
+  implemented_result TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  preparation_run_id TEXT,
+  idempotency_key TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_rework_cycles_sequence ON task_rework_cycles(task_id, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_rework_cycles_idempotency ON task_rework_cycles(task_id, idempotency_key);
+
+CREATE TABLE IF NOT EXISTS task_rework_attachments (
+  id TEXT PRIMARY KEY,
+  cycle_id TEXT NOT NULL,
+  upload_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  FOREIGN KEY (cycle_id) REFERENCES task_rework_cycles(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_rework_attachments_cycle ON task_rework_attachments(cycle_id, position);
+
 CREATE TABLE IF NOT EXISTS task_creation_requests (
   actor TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,

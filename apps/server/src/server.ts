@@ -1122,13 +1122,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             : machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
           await agentRegistry.fsMkdir(writeAgentId, directory)
           await agentRegistry.fsWrite(writeAgentId, target, dataBase64)
-          const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime)
+          const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime, userId)
           return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size, agentId: rec.agentId }
         } catch (err) {
           return reply.code(503).send({ error: err instanceof Error ? err.message : String(err) }) as never
         }
       }
-      const rec = uploads.save(uploadName, bytes, safeMime)
+      const rec = uploads.save(uploadName, bytes, safeMime, userId)
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
@@ -2088,7 +2088,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         })
       : undefined,
     { cancel: (owner, planId) => orchestrationManager.cancel(owner, planId) },
-    makeWorkspaces)
+    makeWorkspaces,
+    uploads)
   mergeRunManager.reconcile()
   const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): void => {
     const run = stage === 'component_qa' ? db.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? db.getIntegrationTestRun(userId, runId) : db.getQaStageRun(userId, runId)
