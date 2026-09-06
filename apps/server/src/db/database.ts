@@ -1816,9 +1816,24 @@ export class VoiceChatDb {
    * задачу вернули в работу, чат снова в списке. Доступ к скрытому чату
    * остаётся: `getConversation` его отдаёт, карточка задачи открывает.
    */
-  listConversations(userId: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Conversation[] {
+  /**
+   * Список бесед, свежие сверху. Окно задаётся `since` (беседы не старее метки —
+   * так сайдбар берёт текущую неделю) или курсором `before` + `limit` — так
+   * догружается секция «Более старые» порциями. Без окна отдаётся всё: этим
+   * пользуются мосты и тесты.
+   */
+  listConversations(userId: string, opts?: {
+    scope?: ConversationScope
+    projectId?: string
+    includeCompleted?: boolean
+    since?: number
+    before?: { updatedAt: number; id: string }
+    limit?: number
+  }): Conversation[] {
     const scope = opts?.scope ?? 'chat'
     if (scope === 'kanban' && !opts?.projectId) return []
+    // Курсор — пара (updated_at, id): по одному времени страницы разъезжались бы
+    // на беседах, обновлённых в одну миллисекунду.
     const rows = this.db
       .prepare(
         `SELECT c.*,
@@ -1826,14 +1841,26 @@ export class VoiceChatDb {
                 (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
-         WHERE c.user_id = ?
-           AND c.scope = ?
-           AND (? <> 'kanban' OR c.project_id = ?)
+         WHERE c.user_id = @userId
+           AND c.scope = @scope
+           AND (@scope <> 'kanban' OR c.project_id = @projectId)
            AND ${NOT_CANCELLED_TASK_CHAT}
-           AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
-         ORDER BY c.updated_at DESC`
+           AND (@includeCompleted = 1 OR ${NOT_DONE_TASK_CHAT})
+           AND (@since IS NULL OR c.updated_at >= @since)
+           AND (@beforeAt IS NULL OR c.updated_at < @beforeAt OR (c.updated_at = @beforeAt AND c.id < @beforeId))
+         ORDER BY c.updated_at DESC, c.id DESC
+         LIMIT @limit`
       )
-      .all(userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0) as Array<ConversationRow & { message_count: number }>
+      .all({
+        userId,
+        scope,
+        projectId: opts?.projectId ?? null,
+        includeCompleted: opts?.includeCompleted ? 1 : 0,
+        since: opts?.since ?? null,
+        beforeAt: opts?.before?.updatedAt ?? null,
+        beforeId: opts?.before?.id ?? null,
+        limit: opts?.limit && opts.limit > 0 ? opts.limit : -1
+      }) as Array<ConversationRow & { message_count: number }>
     const costs = this.conversationCosts(rows)
     return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
   }
@@ -5916,7 +5943,7 @@ export class VoiceChatDb {
    * доске, но доску при этом не открывают — поэтому сводки нужны сразу, одним
    * запросом на весь список, а не по чату.
    */
-  taskChatBadges(userId: string): TaskChatBadge[] {
+  taskChatBadges(userId: string, opts?: { withRuns?: boolean }): TaskChatBadge[] {
     const rows = this.db
       .prepare(
         `SELECT c.id AS conversation_id, t.id AS task_id, t.project_id, t.seq, t.type,
@@ -5935,7 +5962,10 @@ export class VoiceChatDb {
       key: issueKey(r.project_name, { seq: r.seq }),
       type: normWorkItemType(r.type),
       columnSemantic: (r.column_semantic as TaskChatBadge['columnSemantic']) ?? null,
-      run: this.latestCiRunSummary(r.task_id)
+      // Сводка рана — по запросу: она собирается пятью запросами на задачу и
+      // весила 91% ответа (1.4 МБ из 1.5 МБ на боевом аккаунте), а список чатов
+      // рисует из неё только состояние подсветки.
+      ...(opts?.withRuns ? { run: this.latestCiRunSummary(r.task_id) } : {})
     }))
   }
 

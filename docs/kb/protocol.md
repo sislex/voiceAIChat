@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-06
-checked: af37f03e
+checked: 1795b514
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -59,6 +59,16 @@ URL руками. Параметризованные пути — функции
 (там же, функция `isPublic`): `/api/health`, `/api/session/*`, скачивание
 агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
 и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
+
+**Список бесед пагинируется.** `GET /api/conversations` понимает `since` (окно
+свежих — сайдбар грузит текущую неделю) и курсор `beforeAt` + `beforeId` с `limit`
+(секция «Более старые» по 20). Курсор — пара «время + id», иначе беседы с
+одинаковым `updated_at` теряются между страницами. Без параметров отдаётся всё:
+на этом держатся мосты и тесты.
+
+**`GET /api/conversations/task-chats` не отдаёт сводки ранов** — только ключ, тип
+и колонку. Сводка приезжает по `?withRuns=1`; она стоит пяти запросов на метку и
+весила 91% ответа. Поле `run` в `TaskChatBadge` опционально.
 
 Группы: сессия, разговоры и сообщения (+ поиск),
 идемпотентный импорт legacy-данных desktop (`POST /api/migrations/desktop`), вложения (`/api/uploads`),

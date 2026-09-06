@@ -332,6 +332,8 @@ describe('voiceStore — проекты и доска', () => {
 
   it('ссылка на чат другого проекта не меняет фильтр сайдбара', async () => {
     const { store } = makeStore()
+    // Список бесед открыт — значит индекс загружен (на доске его не грузят).
+    await store.actions.ensureConversationIndex()
     await store.actions.createProject({ name: 'P1' })
     const p1 = store.getState().projectDetail!.id
     await store.actions.setSidebarProject(p1)
@@ -523,6 +525,7 @@ describe('voiceStore — связка проекта с чатом', () => {
 describe('voiceStore — мультивыбор проектов в сайдбаре', () => {
   it('полный, частичный и пустой выбор фильтруют чаты, включая чат без проекта только полностью', async () => {
     const { store } = makeStore()
+    await store.actions.ensureConversationIndex()
     await store.actions.createProject({ name: 'P' })
     const pid = store.getState().projectDetail!.id
     await store.actions.syncSidebarProjects([pid, 'p2'])

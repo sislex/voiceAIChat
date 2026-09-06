@@ -600,7 +600,12 @@ export const REST = {
     `/api/ci/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}`,
   conversationTaskContext: (id: string) => `/api/conversations/${encodeURIComponent(id)}/task-context`,
   /** Метки всех чатов пользователя, привязанных к задачам (подсветка списка бесед). */
-  conversationTaskChats: '/api/conversations/task-chats'
+  /**
+   * Метки чатов задач. Сводки ранов по умолчанию не отдаются — они весили почти
+   * весь ответ; `withRuns` включает их для тех, кому состояние действительно нужно.
+   */
+  conversationTaskChats: (withRuns?: boolean) =>
+    `/api/conversations/task-chats${withRuns ? '?withRuns=1' : ''}`
 } as const
 
 // --- WebSocket -----------------------------------------------------------

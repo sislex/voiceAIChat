@@ -11,6 +11,7 @@
 
 import type { SttSegmentWire, UploadInfo } from '@shared/ipc'
 import type { TaskChatBadge, TaskChatContext } from '@shared/projects'
+import { localWeekStart, OLDER_CONVERSATIONS_PAGE } from '@shared/projects'
 import type { ActiveTurn, QueuedTurn, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { KbStatus, KbUsageQuery } from '@shared/kb'
@@ -167,6 +168,14 @@ export interface ChatState {
   imageStudioConversations: Conversation[]
   conversationsStatus: LoadStatus
   conversationsError: string | null
+  /**
+   * Секция «Более старые»: список грузится окном текущей недели, а всё, что
+   * старше, догружается порциями по требованию. Раньше сайдбар получал всю
+   * историю бесед разом — на боевом аккаунте это сотни записей на каждый вход.
+   */
+  olderStatus: LoadStatus
+  /** Есть ли ещё старые беседы за уже загруженной порцией. */
+  olderHasMore: boolean
   searchQuery: string
   searchScope: SearchScope
   messageSearch: MessageSearchState
@@ -223,6 +232,14 @@ export interface ChatState {
 export interface ChatActions {
   /** Загрузка индекса разговоров (защищённый bootstrap). */
   loadConversationIndex(): Promise<Conversation[]>
+  /**
+   * Индекс разговоров по требованию: грузит его один раз и только когда список
+   * чатов кому-то понадобился. На канбане чаты не показываются, а их загрузка —
+   * шесть запросов плюс метки, поэтому старт доски их больше не ждёт.
+   */
+  ensureConversationIndex(): Promise<Conversation[]>
+  /** Догрузить следующую порцию бесед секции «Более старые». */
+  loadOlderConversations(): Promise<void>
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
   scheduleConversationsRefresh(): void
   retryConversations(): Promise<void>
@@ -355,6 +372,8 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
     imageStudioConversations: [],
     conversationsStatus: 'loading',
     conversationsError: null,
+    olderStatus: 'idle',
+    olderHasMore: true,
     searchQuery: '',
     searchScope: 'chats',
     messageSearch: { ...EMPTY_MESSAGE_SEARCH },
@@ -525,9 +544,17 @@ export function createChatStore(deps: ChatDeps): ChatStore {
    */
   let conversationsFlight: { key: string; promise: Promise<void> } | null = null
 
+  /** Индекс грузится один раз: повторные входы в список не ходят на сервер снова. */
+  let indexLoaded = false
+  let indexFlight: Promise<Conversation[]> | null = null
+
   async function refreshConversations(
     options: { keepActiveListed?: boolean } = {}
   ): Promise<void> {
+    // Пока индекс никто не открывал (человек на доске), обновлять нечего:
+    // события доски исправно звали refresh, и список чатов вместе с метками
+    // грузился там, где его не показывают.
+    if (!indexLoaded && !indexFlight) return
     const key = `${getState().searchQuery.trim()}|${getState().showDoneTaskChats}|${options.keepActiveListed === true}`
     if (conversationsFlight?.key === key) return conversationsFlight.promise
     const promise = runRefreshConversations(options)
@@ -543,10 +570,13 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ conversationsStatus: 'loading', conversationsError: null })
     try {
       const includeCompleted = getState().showDoneTaskChats
-      const all = q
+      // Поиск ищет по всей истории; обычное обновление перечитывает окно недели
+      // и сохраняет уже догруженные старые беседы.
+      const fresh = q
         ? await client['conversations:search']({ query: q, scope: 'chat', includeCompleted })
-        : await client['conversations:list']({ scope: 'chat', includeCompleted })
+        : await client['conversations:list']({ scope: 'chat', includeCompleted, since: localWeekStart(now()) })
       if (core.disposed() || seq !== conversationsSeq) return
+      const all = q ? fresh : withLoadedOlder(fresh)
       if (keepActiveListed) {
         const activeId = getState().activeId
         const activeHidden = activeId != null && !q && !all.some((c) => c.id === activeId)
@@ -580,6 +610,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
    * перестал бы обновляться по событиям.
    */
   function scheduleConversationsRefresh(): void {
+    if (!indexLoaded && !indexFlight) return // список не показан — обновлять нечего
     if (conversationsRefreshTimer) return // окно уже открыто — повод склеится с прошлым
     conversationsRefreshTimer = setTimeout(() => {
       conversationsRefreshTimer = null
@@ -588,6 +619,100 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         /* ошибка уже в conversationsError; список на экране остаётся прежним */
       })
     }, CONVERSATIONS_REFRESH_DEBOUNCE_MS)
+  }
+
+  async function runLoadConversationIndex(): Promise<Conversation[]> {
+    setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
+    try {
+      const includeCompleted = getState().showDoneTaskChats
+      const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations, imageStudioConversations] = await Promise.all([
+        // Окно первой страницы — текущая неделя: ровно то, что сайдбар покажет
+        // сразу. Секция «Более старые» догрузит остальное, когда её раскроют.
+        client['conversations:list']({ scope: 'chat', includeCompleted, since: localWeekStart(now()) }),
+        client['conversations:list']({ scope: 'web-reader', includeCompleted }),
+        client['conversations:list']({ scope: 'playwright-reader', includeCompleted }),
+        client['conversations:list']({ scope: 'console', includeCompleted }),
+        client['conversations:list']({ scope: 'make', includeCompleted }),
+        client['conversations:list']({ scope: 'images', includeCompleted })
+      ])
+      setState({
+        conversations: sortConversations(filterBySidebarProjects(conversations)),
+        olderStatus: 'idle',
+        olderHasMore: true,
+        readerConversations,
+        playwrightReaderConversations,
+        consoleReaderConversations,
+        makeConversations,
+        imageStudioConversations,
+        conversationsStatus: 'ready',
+        conversationsError: null
+      })
+      indexLoaded = true
+      void loadTaskChatBadges()
+      return getState().conversations
+    } catch (err) {
+      // Иначе сайдбар остался бы со скелетоном навсегда.
+      setState({
+        loadingMessages: false,
+        conversationsStatus: 'error',
+        conversationsError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  }
+
+  /**
+   * Догрузка секции «Более старые» порциями. Курсор — самая старая из уже
+   * загруженных бесед (пара «время + id»), порция короче страницы означает, что
+   * дальше ничего нет.
+   */
+  async function loadOlderConversations(): Promise<void> {
+    if (getState().olderStatus === 'loading' || !getState().olderHasMore) return
+    const oldest = [...getState().conversations].sort((a, b) => a.updatedAt - b.updatedAt || (a.id < b.id ? -1 : 1))[0]
+    setState({ olderStatus: 'loading' })
+    try {
+      const page = await client['conversations:list']({
+        scope: 'chat',
+        includeCompleted: getState().showDoneTaskChats,
+        ...(oldest ? { before: { updatedAt: oldest.updatedAt, id: oldest.id } } : {}),
+        limit: OLDER_CONVERSATIONS_PAGE
+      })
+      if (core.disposed()) return
+      const known = new Set(getState().conversations.map((c) => c.id))
+      const added = filterBySidebarProjects(page).filter((c) => !known.has(c.id))
+      setState({
+        conversations: sortConversations([...getState().conversations, ...added]),
+        olderStatus: 'ready',
+        olderHasMore: page.length >= OLDER_CONVERSATIONS_PAGE
+      })
+    } catch {
+      // Секция сама покажет повтор: список текущей недели остаётся на месте.
+      if (!core.disposed()) setState({ olderStatus: 'error' })
+    }
+  }
+
+  /** Свежие сверху — тот же порядок, что у сервера. */
+  function sortConversations(items: Conversation[]): Conversation[] {
+    return [...items].sort((a, b) => b.updatedAt - a.updatedAt || (a.id < b.id ? 1 : -1))
+  }
+
+  /**
+   * Перечитанное окно недели плюс уже догруженные старые беседы: обновление
+   * списка не должно схлопывать секцию, которую человек раскрыл.
+   */
+  function withLoadedOlder(fresh: Conversation[]): Conversation[] {
+    const weekStart = localWeekStart(now())
+    const freshIds = new Set(fresh.map((c) => c.id))
+    const older = getState().conversations.filter((c) => c.updatedAt < weekStart && !freshIds.has(c.id))
+    return sortConversations([...fresh, ...older])
+  }
+
+  async function ensureConversationIndex(): Promise<Conversation[]> {
+    if (indexLoaded) return getState().conversations
+    if (indexFlight) return indexFlight
+    const flight = runLoadConversationIndex()
+    indexFlight = flight
+    try { return await flight } finally { if (indexFlight === flight) indexFlight = null }
   }
 
   /** Бейджи тянутся следом за каждым списком — параллельные вызовы схлопываем. */
@@ -1585,40 +1710,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     subscribe: core.subscribe,
     dispose: core.dispose,
     actions: {
-      async loadConversationIndex() {
-        setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
-        try {
-          const includeCompleted = getState().showDoneTaskChats
-          const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations, imageStudioConversations] = await Promise.all([
-            client['conversations:list']({ scope: 'chat', includeCompleted }),
-            client['conversations:list']({ scope: 'web-reader', includeCompleted }),
-            client['conversations:list']({ scope: 'playwright-reader', includeCompleted }),
-            client['conversations:list']({ scope: 'console', includeCompleted }),
-            client['conversations:list']({ scope: 'make', includeCompleted }),
-            client['conversations:list']({ scope: 'images', includeCompleted })
-          ])
-          setState({
-            conversations: filterBySidebarProjects(conversations),
-            readerConversations,
-            playwrightReaderConversations,
-            consoleReaderConversations,
-            makeConversations,
-            imageStudioConversations,
-            conversationsStatus: 'ready',
-            conversationsError: null
-          })
-          void loadTaskChatBadges()
-          return conversations
-        } catch (err) {
-          // Иначе сайдбар остался бы со скелетоном навсегда.
-          setState({
-            loadingMessages: false,
-            conversationsStatus: 'error',
-            conversationsError: err instanceof Error ? err.message : String(err)
-          })
-          throw err
-        }
-      },
+      loadConversationIndex: runLoadConversationIndex,
+      ensureConversationIndex,
+      loadOlderConversations,
       refreshConversations,
       scheduleConversationsRefresh,
       async retryConversations() {
@@ -2081,6 +2175,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         if (searchTimer) clearTimeout(searchTimer)
         conversationsRefreshTimer = null
         searchTimer = null
+        // Вход другим пользователем: чужой индекс не должен считаться загруженным.
+        indexLoaded = false
+        indexFlight = null
         selectToken++
         searchSeq++
         pendingDraftKey = null
