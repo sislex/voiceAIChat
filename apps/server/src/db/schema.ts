@@ -25,7 +25,15 @@ CREATE TABLE IF NOT EXISTS conversations (
   scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')),
   -- Режим применения мутаций канбан-ассистентом: auto (сразу) или confirm.
   assistant_autonomy TEXT,
-  status            TEXT NOT NULL DEFAULT 'developing'
+  status            TEXT NOT NULL DEFAULT 'developing',
+  -- Кэш стоимости беседы: пересчёт стоит скана всех её AI-сообщений с разбором
+  -- JSON-метаданных, а список сайдбара показывает итог в каждой строке.
+  -- cost_dirty ставится при любой записи сообщений, cost_prices_stamp ловит
+  -- смену прайса моделей.
+  cost_usd          REAL,
+  cost_status       TEXT,
+  cost_prices_stamp INTEGER,
+  cost_dirty        INTEGER NOT NULL DEFAULT 1
 );
 
 

@@ -143,6 +143,36 @@ describe('VoiceChatDb — разговоры', () => {
     expect(db.listConversations(U)[0]).toMatchObject({ costUsd: null, costStatus: 'partial' })
   })
 
+  it('кэш стоимости переживает повторный показ списка и протухает от правки сообщений', () => {
+    const conversation = db.createConversation(U, 'Кэш стоимости')
+    db.upsertModelPrice({
+      provider: 'claude', model: 'cache-model', inputPerMillion: 10,
+      cachedInputPerMillion: 0, cacheWritePerMillion: 0, outputPerMillion: 0,
+      sourceUrl: 'test', effectiveAt: 1
+    })
+    const message = db.addMessage(U, conversation.id, 'ai', 'Ответ', '10:00', 'claude', { model: 'cache-model', inputTokens: 1_000, outputTokens: 0 })
+    expect(db.listConversations(U)[0]).toMatchObject({ costUsd: 0.01, costStatus: 'known' })
+    // Повтор идёт уже по кэшу — результат обязан совпасть до копейки.
+    expect(db.listConversations(U)[0]).toMatchObject({ costUsd: 0.01, costStatus: 'known' })
+
+    // Правка метаданных хода не меняет число сообщений: кэш обязан протухнуть
+    // от самой записи, иначе список показывал бы старую цену.
+    db.updateMessageMeta(U, conversation.id, message.id, { model: 'cache-model', inputTokens: 2_000, outputTokens: 0 })
+    expect(db.listConversations(U)[0]).toMatchObject({ costUsd: 0.02, costStatus: 'known' })
+
+    // Новая цена модели обесценивает посчитанное: смену ловит отметка прайса.
+    db.upsertModelPrice({
+      provider: 'claude', model: 'cache-model', inputPerMillion: 20,
+      cachedInputPerMillion: 0, cacheWritePerMillion: 0, outputPerMillion: 0,
+      sourceUrl: 'test', effectiveAt: 2
+    })
+    expect(db.listConversations(U)[0]).toMatchObject({ costUsd: 0.04, costStatus: 'known' })
+
+    // Удаление хода тоже сбрасывает кэш.
+    db.deleteMessage(U, conversation.id, message.id)
+    expect(db.listConversations(U)[0]).toMatchObject({ costUsd: null, costStatus: 'unknown' })
+  })
+
   it('использует модель разговора только как fallback модели, сохраняя фактический provider хода', () => {
     const conversation = db.createConversation(U, 'Модели')
     db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'claude', 'same-model')
@@ -424,6 +454,8 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
       .replace(/scope IN \([^)]*\)/, `scope IN ('chat','kanban','make','console','playwright-reader','web-reader')`)
       .replace(/^CREATE TABLE ("conversations"|conversations)/, 'CREATE TABLE conversations_old')
     raw.exec('PRAGMA foreign_keys=OFF')
+    // В БД тех времён не было и триггеров кэша стоимости: с ними RENAME не пройдёт.
+    for (const suffix of ['ins', 'upd', 'del']) raw.exec(`DROP TRIGGER IF EXISTS trg_messages_cost_dirty_${suffix}`)
     raw.exec(oldDdl)
     raw.exec(`INSERT INTO conversations_old SELECT * FROM conversations`)
     raw.exec(`DROP TABLE conversations`)
