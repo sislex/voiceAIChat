@@ -30,7 +30,13 @@ export interface IntegrationTestRunnerDeps {
   timeoutMs?: number
   now?: () => number
   boardChanged?: (projectId: string) => void
-  completed?: (runId: string, userId: string, passed: boolean, reason: string) => void
+  /** Адресная инвалидация панели этапа: без неё она опрашивала бы состояние по таймеру. */
+  qaStageChanged?: (projectId: string, taskId: string) => void
+  /**
+   * Итог рана для автопрохода. `classification` отличает сбой окружения от
+   * дефекта реализации: за чужой сбой карточку в доработку возвращать нельзя.
+   */
+  completed?: (runId: string, userId: string, passed: boolean, reason: string, classification?: 'implementation_defect' | 'infrastructure' | null) => void
 }
 
 export interface IntegrationTestRunner {
@@ -53,14 +59,18 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       if (run) {
         deps.db.markIntegrationTestRunning(runId)
         deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
+        // Без этого уведомления автопроход не узнаёт, что этап кончился, и
+        // board-событие просто запускает следующий такой же ран по кругу.
+        deps.completed?.(runId, userId, false, 'Development workspace недоступен', 'infrastructure')
       }
-      if (run) deps.boardChanged?.(run.projectId)
+      if (run) { deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) }
       return
     }
     const controller = new AbortController()
     controllers.set(runId, controller)
     deps.db.markIntegrationTestRunning(runId)
     deps.boardChanged?.(run.projectId)
+    deps.qaStageChanged?.(run.projectId, run.taskId)
     void (async () => {
       const startedAt = now(), deadline = startedAt + budgetMs, total = context.commands.length
       const commands: IntegrationTestCommandResult[] = []
@@ -71,15 +81,15 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       }
       const diff=await inspect('git diff-tree --no-commit-id --name-only -r HEAD')
       if(controller.signal.aborted)return
-      if(diff.exitCode!==0||diff.timedOut){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось проверить git diff',failureClassification:'infrastructure',failureReason:diff.timedOut?'command_timeout':'executor_disconnected',blockerReasons:[diff.timedOut?'command_timeout':'executor_disconnected']});return}
+      if(diff.exitCode!==0||diff.timedOut){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось проверить git diff',failureClassification:'infrastructure',failureReason:diff.timedOut?'command_timeout':'executor_disconnected',blockerReasons:[diff.timedOut?'command_timeout':'executor_disconnected']});deps.completed?.(runId,userId,false,'Не удалось проверить git diff','infrastructure');deps.boardChanged?.(run.projectId);return}
       // Двойное экранирование в регулярке (`/\\r?\\n/`) искало литерал «\r», а не
       // перевод строки: многофайловый дифф приходил в валидацию одной склейкой,
       // и коммит разработки проезжал проверку, если где-то внутри встречался
       // тестовый путь. Проверено на CHAT-411.
       const changed=diff.output.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean),invalid=validateIntegrationTestDiff(changed)
-      if(invalid.length){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Изменены нетестовые файлы: '+invalid.join(', '),failureClassification:'implementation_defect',failureReason:'non_test_files_changed',blockerReasons:invalid.map((path)=>'non_test_file:'+path)});return}
+      if(invalid.length){const summary='Изменены нетестовые файлы: '+invalid.join(', ');deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'implementation_defect',failureReason:'non_test_files_changed',blockerReasons:invalid.map((path)=>'non_test_file:'+path)});deps.completed?.(runId,userId,false,summary,'implementation_defect');deps.boardChanged?.(run.projectId);return}
       const shaResult=await inspect('git rev-parse HEAD'),sha=shaResult.output.trim().split(/\s/)[0]??''
-      if(!sha){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось определить SHA тестового коммита',failureClassification:'infrastructure',failureReason:'executor_disconnected',blockerReasons:['executor_disconnected']});return}
+      if(!sha){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось определить SHA тестового коммита',failureClassification:'infrastructure',failureReason:'executor_disconnected',blockerReasons:['executor_disconnected']});deps.completed?.(runId,userId,false,'Не удалось определить SHA тестового коммита','infrastructure');deps.boardChanged?.(run.projectId);return}
       // Покрытие берём из маркеров `@testCase <id>` в самих тестах: разработка
       // ставит их рядом с тестом, закрывающим кейс. Fallback на прежний синтез
       // («первый тестовый путь всем обязательным кейсам») остаётся для веток,
@@ -159,11 +169,14 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         failureClassification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
         blockerReasons: infrastructure && failedStage ? [failedStage.diagnostic] : []
       })
-      deps.completed?.(runId, userId, passed, passed ? 'Integration tests пройдены' : failedStage?.diagnostic || 'Integration tests failed')
+      deps.completed?.(runId, userId, passed, passed ? 'Integration tests пройдены' : failedStage?.diagnostic || 'Integration tests failed', passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect')
     })().catch((error) => {
       const current = deps.db.getIntegrationTestRun(userId, runId)
-      if (current?.status === 'running') deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
-    }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId) })
+      if (current?.status === 'running') {
+        deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
+        deps.completed?.(runId, userId, false, String(error), 'infrastructure')
+      }
+    }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) })
   }
   return { launch, cancel: (runId) => controllers.get(runId)?.abort() }
 }

@@ -2,9 +2,11 @@
 // переименование, удаление и два действия модели — «нарисовать по промпту» и
 // «поправить выбранную по промпту». Доступ — владелец разговора; чужой и
 // несуществующий неотличимы (404), как везде в Make/чатах.
+import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
+import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
+import { SlidingWindowLimiter } from '../make/rateLimit.js'
 import { ImageStudioError, type ImageStudioStore } from '../images/studio.js'
 import type { ImageStudioGenerator } from '../llm/imageStudioGenerator.js'
 
@@ -13,6 +15,8 @@ export interface ImageStudioRoutesDeps {
   store: ImageStudioStore
   /** Генератор изображений; функцией — в тестах подменяется фейком. */
   generator?: (userId: string) => ImageStudioGenerator
+  /** Счётчик попыток пароля публичной галереи; в тестах — со своими часами. */
+  passwordLimiter?: SlidingWindowLimiter
 }
 
 function sendStudioError(reply: FastifyReply, error: unknown): FastifyReply {
@@ -209,14 +213,20 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   // Публичная страница галереи: без авторизации, по непубличному токену.
   // Только чтение и только картинки; noindex, чтобы ссылку не съели роботы.
+  /**
+   * Пароль публичной галереи можно было подбирать без счёта: у публичного
+   * превью Make лимит стоял, а здесь нет. Окно то же — десять попыток за
+   * десять минут на пару «IP + токен».
+   */
+  const passwordLimiter = deps.passwordLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
   const gateCookieName = (token: string): string => `vc_gal_${token}`
   const cookieValue = (req: FastifyRequest, name: string): string | null => {
     const m = (req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(`${name}=`))
     return m ? decodeURIComponent(m.slice(name.length + 1)) : null
   }
-  const passwordPage = (action: string, wrong: boolean): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
+  const passwordPage = (action: string, wrong: boolean, limited = 0): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}@media (prefers-color-scheme: dark){body{background:#111;color:#eee}form{background:#1c1c1c !important;box-shadow:none !important}input{background:#111;border-color:#333;color:#eee}}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
-<body><form method="post" action="${action}"><h1>Галерея защищена паролем</h1>${wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
+<body><form method="post" action="${action}"><h1>Галерея защищена паролем</h1>${limited ? `<p class="err">Слишком много попыток — подождите ${limited} с.</p>` : wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" aria-label="Пароль галереи" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
 
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
     app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
@@ -227,7 +237,15 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   app.post<{ Params: { token: string }; Body: { password?: string } }>('/g/:token/__auth__', async (req, reply) => {
     const conversationId = await store.publishedTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Галерея не найдена или снята')
+    const verdict = passwordLimiter.hit(`${req.ip}:${req.params.token}`)
+    if (!verdict.ok) {
+      return reply.code(429).header('retry-after', String(verdict.retryAfterSec))
+        .header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
+        .send(passwordPage(`/g/${req.params.token}/__auth__`, false, verdict.retryAfterSec))
+    }
     if (!(await store.verifyPublicPassword(conversationId, req.body?.password ?? ''))) return reply.redirect(`/g/${req.params.token}/?wrong=1`)
+    // Вошли — окно попыток по этому токену начинается заново.
+    passwordLimiter.forget(`${req.ip}:${req.params.token}`)
     const gate = await store.publicGate(conversationId)
     return reply
       .header('set-cookie', `${gateCookieName(req.params.token)}=${gate ?? ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`)
@@ -246,13 +264,18 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     const publication = await store.publication(conversationId)
     const files = await store.list(conversationId)
     const esc = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-    const cards = files.map((file) => `<figure><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
+    const cards = files.map((file) => `<figure data-name="${esc(file.path.toLowerCase())}"><a href="file?path=${encodeURIComponent(file.path)}" target="_blank" rel="noopener"><img loading="lazy" src="file?path=${encodeURIComponent(file.path)}" alt="${esc(file.path)}"></a><figcaption>${esc(file.path)} <a class="dl" href="file?path=${encodeURIComponent(file.path)}" download="${esc(file.path)}">скачать</a>${file.prompt ? `<small>${esc(file.prompt)}</small>` : ''}</figcaption></figure>`).join('')
     const title = publication?.title?.trim() || 'Галерея'
+    // Вес рядом с числом файлов: зритель решает, качать ли это на телефоне.
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+    const totalLabel = totalBytes >= 1024 * 1024
+      ? `${(totalBytes / 1024 / 1024).toFixed(1)} МБ`
+      : totalBytes >= 1024 ? `${Math.round(totalBytes / 1024)} КБ` : ''
     // OG-мета: мессенджеры делают fetch по ссылке и показывают карточку с
     // первой картинкой — «глухая» ссылка выглядит хуже.
     const origin = `${req.protocol}://${req.headers.host ?? ''}`
     const ogImage = files[0] ? `${origin}/g/${req.params.token}/file?path=${encodeURIComponent(files[0].path)}` : null
-    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Галерея из ${files.length} файл(ов)">${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}<style>
+    const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Галерея из ${countRu(files.length, 'файла', 'файлов', 'файлов')}">${ogImage ? `<meta property="og:image" content="${esc(ogImage)}">` : ''}<style>
       body{margin:0;padding:24px;font:14px/1.4 system-ui,sans-serif;background:#111;color:#eee}
       @media (prefers-color-scheme: light){body{background:#f6f7fb;color:#1a1d23}figure{background:#fff !important}figcaption small{color:#666 !important}}
       h1{font-size:18px;margin:0 0 16px}
@@ -262,7 +285,21 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       figcaption{margin-top:8px;word-break:break-word}
       figcaption small{display:block;color:#999;margin-top:2px}
       .dl{color:#8ab4f8;text-decoration:none;font-size:12px;margin-left:6px}
-    </style></head><body><h1>${esc(title)} · ${files.length} файл(ов)</h1><div class="grid">${cards}</div></body></html>`
+      .find{display:flex;gap:8px;align-items:center;margin:0 0 16px;flex-wrap:wrap}
+      .find input{flex:0 1 320px;padding:7px 10px;border:1px solid #333;border-radius:8px;background:#191919;color:inherit;font:inherit}
+      @media (prefers-color-scheme: light){.find input{background:#fff;border-color:#d5d8e0}}
+      .find small{color:#999}
+      figure[hidden]{display:none}
+    </style></head><body><h1>${esc(title)} · ${countRu(files.length, 'файл', 'файла', 'файлов')}${totalLabel ? ` · ${totalLabel}` : ''}</h1>${files.length >= 12 ? `<form class="find" role="search" onsubmit="return false"><label for="q">Поиск по имени</label><input id="q" type="search" autocomplete="off" placeholder="часть имени файла"><small id="found"></small></form>` : ''}<main class="grid">${cards}</main>${files.length >= 12 ? `<script>
+      // Фильтр по имени — на странице, без запросов: галерею на сотню кадров
+      // иначе листают руками. Имена лежат в data-name уже в нижнем регистре.
+      var q=document.getElementById('q'),found=document.getElementById('found'),cards=[].slice.call(document.querySelectorAll('figure'));
+      q.addEventListener('input',function(){
+        var needle=q.value.trim().toLowerCase(),shown=0;
+        cards.forEach(function(card){var hit=!needle||card.dataset.name.indexOf(needle)>=0;card.hidden=!hit;if(hit)shown++});
+        found.textContent=needle?('Найдено: '+shown):'';
+      });
+    </script>` : ''}</body></html>`
     return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex').send(html)
   })
 
@@ -274,7 +311,20 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     try {
       const data = await store.readBuffer(conversationId, req.query.path ?? '')
       if (!data) return reply.code(404).send({ error: 'файл не найден' })
-      return reply.header('content-type', imageStudioMime(req.query.path ?? '')).header('cache-control', 'no-store').send(data)
+      /**
+       * `no-store` заставлял зрителя качать всю галерею заново при каждом
+       * заходе и на каждой прокрутке — на девяноста кадрах это заметно даже
+       * локально. Отдаём ETag по содержимому и просим браузер переспрашивать
+       * (`no-cache`): картинку под тем же именем могли заменить, поэтому
+       * молча кэшировать надолго нельзя, а 304 стоит один запрос без тела.
+       */
+      const etag = `"${createHash('sha1').update(data).digest('hex')}"`
+      // Страница галереи помечена `noindex`, а сами картинки — нет: прямую
+      // ссылку на файл достаточно один раз где-то опубликовать, чтобы кадр
+      // ушёл в поиск по картинкам мимо всей приватности токена.
+      reply.header('etag', etag).header('cache-control', 'private, no-cache').header('x-robots-tag', 'noindex, noimageindex')
+      if (req.headers['if-none-match'] === etag) return reply.code(304).send()
+      return reply.header('content-type', imageStudioMime(req.query.path ?? '')).send(data)
     } catch (error) { return sendStudioError(reply, error) }
   })
 

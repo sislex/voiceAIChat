@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-04
-checked: 1ffda784
+updated: 2026-09-05
+checked: b2acc02f
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -554,12 +554,15 @@ publish не ротирует ссылку, unpublish гасит страниц�
 Итерация 14: публикация принимает `password` (undefined — не трогать, null —
 снять, строка ≥4 симв. — задать; хранится только хэш с солью) и снимок
 `title` чата (заголовок публичной страницы); страница и файлы под паролем
-отвечают 401 с формой (`POST /g/<token>/__auth__`, cookie-гейт
+отвечают 401 с формой (`POST /g/<token>/__auth__`; с 2026-09-05 попытки
+ограничены — десять за десять минут на «IP + токен», дальше 429 с `retry-after`, cookie-гейт
 `vc_gal_<token>` = sha256(gate:token:hash), Max-Age 30 дней — смена пароля
-разлогинивает всех); publication/publish отдают `passwordProtected`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+разлогинивает всех); publication/publish отдают `passwordProtected`. Файлы галереи (`GET /g/<token>/file?path=`) с 2026-09-05 отдаются с ETag и `private, no-cache` (повтор — 304) и помечены `x-robots-tag: noindex, noimageindex`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
 web-клиенте — авторизованный fetch → base64 (см. ui.md). Корзина: `GET
-/api/image-studio/:id/trash`, `POST .../restore` и (итерация 38, 2026-09-04)
-`POST .../trash/purge` — тело `{}` чистит корзину целиком, `{name}` — один файл;
+/api/image-studio/:id/trash` (элемент — `{name, deletedAt, size}`; размер
+добавлен 2026-09-05: корзина ест ту же квоту разговора, и «сколько освободит
+очистка» без него с экрана не ответить), `POST .../restore` и (итерация 38,
+2026-09-04) `POST .../trash/purge` — тело `{}` чистит корзину целиком, `{name}` — один файл;
 ответ `{removed, items}`. Очистка сделана отдельным методом, а не флагом
 удаления: иначе промах по кнопке «удалить» уносил бы файл совсем. Пустая
 корзина — не ошибка (кнопка не обязана знать про гонки), а неизвестное имя даёт

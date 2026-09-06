@@ -96,6 +96,27 @@ async function semanticOf(projectId: string, taskId: string): Promise<string> {
   return board.columns.find((column) => column.id === task.columnId)!.semanticType
 }
 
+describe('автопроход у новых задач', () => {
+  it('наследуется от настройки проекта и только задачами', async () => {
+    const project = (await inj({ method: 'POST', url: '/api/projects', payload: { name: 'P' } })).json() as ProjectDetail
+    await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { autoPilotDefault: true } })
+    const board = (await inj({ method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
+    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
+
+    const task = (await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: backlog.id, title: 'Задача' } })).json() as Task
+    // Эпик и история этапы конвейера не проходят, флаг им не нужен.
+    const epic = (await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: backlog.id, title: 'Эпик', type: 'epic' } })).json() as Task
+    expect(task.autoPilot).toBe(true)
+    expect(epic.autoPilot).toBe(false)
+  })
+
+  it('выключенная настройка оставляет новые задачи без автопрохода', async () => {
+    const { projectId, taskId } = await taskInBacklog()
+    const task = (await inj({ method: 'GET', url: `/api/projects/${projectId}/tasks/${taskId}` })).json() as Task
+    expect(task.autoPilot).toBe(false)
+  })
+})
+
 describe('автопроход: начало конвейера', () => {
   it('включённый автопроход сам уводит задачу из TODO в подготовку и запускает попытку', async () => {
     const { projectId, taskId } = await taskInBacklog()
