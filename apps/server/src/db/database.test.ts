@@ -18,6 +18,50 @@ function makeDb(): VoiceChatDb {
   })
 }
 
+describe('conversations: окно недели и курсорная догрузка', () => {
+  /** База с управляемыми часами: метка беседы — момент её создания. */
+  function withClock(): { db: VoiceChatDb; at: (mark: number, title: string) => string } {
+    let clock = 0
+    const d = new VoiceChatDb(':memory:', { now: () => clock })
+    d.createUser('alice', '', 'developer')
+    return { db: d, at: (mark, title) => { clock = mark; return d.createConversation('alice', title).id } }
+  }
+
+  it('since отдаёт только свежие, before+limit — следующую порцию старых', () => {
+    const { db: d, at } = withClock()
+    const week = 1_700_000_000_000
+    const ids = [
+      at(week + 3, 'Свежая 1'), at(week + 2, 'Свежая 2'), at(week + 1, 'Свежая 3'),
+      at(week - 1, 'Старая 1'), at(week - 2, 'Старая 2'), at(week - 3, 'Старая 3')
+    ]
+
+    const fresh = d.listConversations('alice', { scope: 'chat', since: week })
+    expect(fresh.map((c) => c.id)).toEqual(ids.slice(0, 3))
+
+    const oldest = fresh[fresh.length - 1]!
+    const page = d.listConversations('alice', { scope: 'chat', before: { updatedAt: oldest.updatedAt, id: oldest.id }, limit: 2 })
+    expect(page.map((c) => c.id)).toEqual(ids.slice(3, 5))
+
+    const last = page[page.length - 1]!
+    const tail = d.listConversations('alice', { scope: 'chat', before: { updatedAt: last.updatedAt, id: last.id }, limit: 2 })
+    // Порция короче лимита — дальше ничего нет.
+    expect(tail.map((c) => c.id)).toEqual(ids.slice(5))
+    d.close()
+  })
+
+  it('курсор различает беседы, обновлённые в одну миллисекунду', () => {
+    const { db: d, at } = withClock()
+    const same = 1_700_000_000_000
+    const ids = [at(same, 'Первая'), at(same, 'Вторая'), at(same, 'Третья')]
+    const first = d.listConversations('alice', { scope: 'chat', limit: 1 })
+    expect(first).toHaveLength(1)
+    const next = d.listConversations('alice', { scope: 'chat', before: { updatedAt: first[0]!.updatedAt, id: first[0]!.id }, limit: 5 })
+    // Ни одна беседа не потерялась и не пришла дважды.
+    expect([...first, ...next].map((c) => c.id).sort()).toEqual([...ids].sort())
+    d.close()
+  })
+})
+
 describe('VoiceChatDb — разговоры', () => {
   let db: VoiceChatDb
   beforeEach(() => {

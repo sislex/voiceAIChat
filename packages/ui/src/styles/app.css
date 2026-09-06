@@ -302,6 +302,24 @@
   background: var(--surface-hover);
   text-align: center;
 }
+/* Догрузка истории бесед: секция «Более старые» приходит порциями. */
+.convo-section-more {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 4px 10px 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.convo-section-more:hover,
+.convo-section-more:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
 .convo {
   margin: 2px 10px;
   padding: 10px 12px;

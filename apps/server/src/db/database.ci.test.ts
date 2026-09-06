@@ -531,7 +531,7 @@ describe('ci: reconciliation после рестарта сервера', () => 
 })
 
 describe('ci: метки чатов задач для списка бесед', () => {
-  it('отдаёт ключ, тип и последний ран по чату задачи; чужие чаты не выдаёт', () => {
+  it('отдаёт ключ, тип и колонку; ран — только по запросу; чужие чаты не выдаёт', () => {
     const { p, col, task } = project()
     const chat = db.openOrCreateTaskChat('alice', p.id, task.id)!
     // Обычный чат без задачи метки не получает.
@@ -539,12 +539,17 @@ describe('ci: метки чатов задач для списка бесед', 
 
     const before = db.taskChatBadges('alice')
     expect(before).toHaveLength(1)
-    expect(before[0]).toMatchObject({ conversationId: chat.id, taskId: task.id, projectId: p.id, key: 'P1-1', type: 'task', columnSemantic: 'backlog', run: null })
+    expect(before[0]).toMatchObject({ conversationId: chat.id, taskId: task.id, projectId: p.id, key: 'P1-1', type: 'task', columnSemantic: 'backlog' })
+    // Сводка рана стоит пяти запросов на задачу и списку чатов не нужна —
+    // по умолчанию поля нет вовсе.
+    expect(before[0]).not.toHaveProperty('run')
 
-    // Появился ран — в метке живёт та же сводка, что подсвечивает карточку.
     const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 1, total: 3, phase: 'Модель работает' } })
     db.updateCiRun(run.id, { status: 'awaiting_input' })
-    const after = db.taskChatBadges('alice')[0]
+    expect(db.taskChatBadges('alice')[0]).not.toHaveProperty('run')
+
+    // Кто просит состояние явно — получает ту же сводку, что подсвечивает карточку.
+    const after = db.taskChatBadges('alice', { withRuns: true })[0]
     expect(after.run).toMatchObject({ id: run.id, taskId: task.id, status: 'awaiting_input', awaitingInput: true })
     expect(after.run?.slotProgress.phase).toBe('Модель работает')
 
