@@ -21,17 +21,19 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
   const stages = [opts.install ?? { exitCode: 0, timedOut: false }, ...outcomes]
   const gateResults: Array<{ commitSha: string; signature: string; runId: string }> = []
   const db = {
-    componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: 'main' } : null),
-    findPassedGateResult: (commitSha: string, signature: string) => {
+    ci: {
+      componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: 'main' } : null),
+      findPassedGateResult: (commitSha: string, signature: string) => {
       if (opts.cached) return { runKind: 'component_qa', runId: 'previous-run', createdAt: 0 }
       const hit = gateResults.find((item) => item.commitSha === commitSha && item.signature === signature)
       return hit ? { runKind: 'component_qa', runId: hit.runId, createdAt: 0 } : null
     },
-    recordPassedGateResult: (args: { commitSha: string; signature: string; runId: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature, runId: args.runId }) },
-    getComponentQaRun: () => run,
-    markComponentQaRunning: () => { run.status = 'running' },
-    appendComponentQaLog: (_id: string, _stream: 'stdout' | 'stderr', chunk: string) => { log.push(chunk) },
-    finishComponentQaRun: (_userId: string, _runId: string, input: ComponentQaFinishInput) => { finished.push(input); run.status = input.status; return run }
+      recordPassedGateResult: (args: { commitSha: string; signature: string; runId: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature, runId: args.runId }) },
+      getComponentQaRun: () => run,
+      markComponentQaRunning: () => { run.status = 'running' },
+      appendComponentQaLog: (_id: string, _stream: 'stdout' | 'stderr', chunk: string) => { log.push(chunk) },
+      finishComponentQaRun: (_userId: string, _runId: string, input: ComponentQaFinishInput) => { finished.push(input); run.status = input.status; return run }
+    }
   }
   const executor = {
     run: vi.fn(async (req: CommandExecRequest, onChunk: (data: string) => void) => {
@@ -217,13 +219,15 @@ describe('createComponentQaRunner', () => {
       new Promise<CommandExecResult>((resolve) => signal?.addEventListener('abort', () => resolve({ exitCode: null, timedOut: false }))))
     const runner = createComponentQaRunner({
       db: {
-        componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'], ciBaseBranch: 'main' }),
-        findPassedGateResult: () => null,
-        recordPassedGateResult: () => {},
-        getComponentQaRun: () => run,
-        markComponentQaRunning: () => { run.status = 'running' },
-        appendComponentQaLog: () => {},
-        finishComponentQaRun: (_userId, _runId, input) => { finished.push(input); return run }
+        ci: {
+          componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'], ciBaseBranch: 'main' }),
+          findPassedGateResult: () => null,
+          recordPassedGateResult: () => {},
+          getComponentQaRun: () => run,
+          markComponentQaRunning: () => { run.status = 'running' },
+          appendComponentQaLog: () => {},
+          finishComponentQaRun: (_userId, _runId, input) => { finished.push(input); return run }
+        }
       },
       executor: { run: executorRun },
       now: () => 0
@@ -246,12 +250,14 @@ describe('createAutomatedQaRunner', () => {
     const log: Array<[string, string]> = []
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => context({ command: 'npm run affected-check' }),
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(),
-        appendAutomatedQaLog: (_id, stream, text) => log.push([stream, text]),
-        completeQaStageRun: complete,
-        updateQaStageRun: vi.fn()
+        qa: {
+          automatedQaExecutionContext: () => context({ command: 'npm run affected-check' }),
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: (_id, stream, text) => log.push([stream, text]),
+          completeQaStageRun: complete,
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn(async (_request, onChunk) => { onChunk('tests passed\n'); return { exitCode: 0, timedOut: false } }) },
       completed
@@ -269,9 +275,14 @@ describe('createAutomatedQaRunner', () => {
     const completed = vi.fn()
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => context(),
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: update
+        qa: {
+          automatedQaExecutionContext: () => context(),
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: update
+        }
       },
       executor: { run: vi.fn(async (_request, onChunk) => { onChunk('FAIL src/a.test.ts\n'); return { exitCode: 1, timedOut: false } }) },
       completed
@@ -288,9 +299,14 @@ describe('createAutomatedQaRunner', () => {
     const completed = vi.fn()
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => context(),
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+        qa: {
+          automatedQaExecutionContext: () => context(),
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn(async () => ({ exitCode: null, timedOut: true })) },
       completed
@@ -305,9 +321,14 @@ describe('createAutomatedQaRunner', () => {
     const update = vi.fn()
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => null,
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: update
+        qa: {
+          automatedQaExecutionContext: () => null,
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: update
+        }
       },
       executor: { run: vi.fn() },
       completed
@@ -323,10 +344,14 @@ describe('createAutomatedQaRunner', () => {
     const scenario = { startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Открыть доску', action: { kind: 'click' as const, selector: '#board' } }] }
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [scenario] }),
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: complete,
-        updateQaStageRun: (_id, patch) => { if (patch.progress) progress.push(patch.progress) }
+        qa: {
+          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [scenario] }),
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: complete,
+          updateQaStageRun: (_id, patch) => { if (patch.progress) progress.push(patch.progress) }
+        }
       },
       executor: { run: vi.fn() },
       scenarioRunner: {
@@ -349,9 +374,14 @@ describe('createAutomatedQaRunner', () => {
     const completed = vi.fn()
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Кнопка «Создать»', action: { kind: 'click', selector: '#create' } }] }] }),
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+        qa: {
+          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Кнопка «Создать»', action: { kind: 'click', selector: '#create' } }] }] }),
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn() },
       scenarioRunner: { run: async () => ({ steps: [{ id: 's1', title: 'Кнопка «Создать»', status: 'failed', detail: 'локатор не найден', durationMs: 12 }], screenshotUrl: null, pageErrors: [], blocked: null }) },
@@ -371,9 +401,14 @@ describe('createAutomatedQaRunner', () => {
     const completed = vi.fn()
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ name: 'Доска', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Создать', action: { kind: 'click', selector: '#create' } }] }] }),
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+        qa: {
+          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ name: 'Доска', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Создать', action: { kind: 'click', selector: '#create' } }] }] }),
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn() },
       scenarioRunner: { run: async () => ({
@@ -393,9 +428,14 @@ describe('createAutomatedQaRunner', () => {
     const completed = vi.fn()
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [] }] }),
-        getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+        qa: {
+          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [] }] }),
+          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn() },
       completed
@@ -415,12 +455,17 @@ describe('набор сценариев (круг 20)', () => {
     const seen: string[] = []
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => ctx([
+        qa: {
+          automatedQaExecutionContext: () => ctx([
           { name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's1', title: 'Логин', action: { kind: 'click', selector: '#a' } }] },
           { name: 'Доска', startUrl: 'http://b/', steps: [{ id: 's2', title: 'Карточка', action: { kind: 'click', selector: '#b' } }] }
         ]),
-        getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: complete, updateQaStageRun: vi.fn()
+          getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: complete,
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn() },
       scenarioRunner: {
@@ -442,12 +487,17 @@ describe('набор сценариев (круг 20)', () => {
     const seen: string[] = []
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => ctx([
+        qa: {
+          automatedQaExecutionContext: () => ctx([
           { name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's1', title: 'Логин', action: { kind: 'click', selector: '#a' } }] },
           { name: 'Доска', startUrl: 'http://b/', steps: [{ id: 's2', title: 'Карточка', action: { kind: 'click', selector: '#b' } }] }
         ]),
-        getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+          getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn() },
       scenarioRunner: {
@@ -471,9 +521,14 @@ describe('набор сценариев (круг 20)', () => {
     const completed = vi.fn()
     const runner = createAutomatedQaRunner({
       db: {
-        automatedQaExecutionContext: () => ctx([]),
-        getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
-        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+        qa: {
+          automatedQaExecutionContext: () => ctx([]),
+          getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
+          markAutomatedQaRunning: vi.fn(),
+          appendAutomatedQaLog: vi.fn(),
+          completeQaStageRun: vi.fn(),
+          updateQaStageRun: vi.fn()
+        }
       },
       executor: { run: vi.fn() },
       scenarioRunner: { run: async () => ({ steps: [], screenshotUrl: null, pageErrors: [], blocked: null }) },

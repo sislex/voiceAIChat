@@ -59,16 +59,16 @@ export class ComponentTicketService {
     // Право на запись в копию проверяем до создания задачи: иначе на доске остался бы
     // мусорный тикет без ветки, и человек не понял бы, почему «Слить» недоступно.
     const ref = this.deps.git.resolve(userId, projectId, input.workspaceId, { write: true })
-    const project = this.deps.db.getProject(userId, projectId)
+    const project = this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new GitError(404, 'not_found', 'Проект не найден')
     if (!project.gitUrl) throw new GitError(409, 'git_url_missing', 'У проекта не задан адрес репозитория — ветку некуда отправлять')
 
-    const board = this.deps.db.getBoard(userId, projectId)
+    const board = this.deps.db.tasks.getBoard(userId, projectId)
     const column = board?.columns.find((c) => c.semanticType === 'awaiting_merge')
     if (!column) throw new GitError(409, 'column_missing', 'На доске нет колонки «Ожидает слияния» — задачу некуда положить')
 
     const baseBranch = project.ciBaseBranch || 'main'
-    const task = this.deps.db.createTask(userId, projectId, {
+    const task = this.deps.db.tasks.createTask(userId, projectId, {
       columnId: column.id,
       title,
       description: input.description?.trim() || undefined,
@@ -85,8 +85,8 @@ export class ComponentTicketService {
       const push = await this.deps.git.push(userId, projectId, input.workspaceId, branch)
       // Запись ревизии делает сам сервис только для копий задач (`ws:`); для общей копии
       // проекта её нет, поэтому источник для merge-рана заводим здесь явно.
-      const workspace = this.deps.db.createCiWorkspace({ projectId, taskId: task.id, agentId: ref.agentId, path: ref.path })
-      this.deps.db.updateCiWorkspaceRevision(workspace.id, branch, push.sha || commit.sha, true)
+      const workspace = this.deps.db.ci.createCiWorkspace({ projectId, taskId: task.id, agentId: ref.agentId, path: ref.path })
+      this.deps.db.ci.updateCiWorkspaceRevision(workspace.id, branch, push.sha || commit.sha, true)
       return {
         taskId: task.id,
         taskNumber: task.seq ?? 0,

@@ -9,9 +9,9 @@ interface CreateBody { machineId?: string; storageId?: string; sources?: Array<{
 
 export function registerStorageMigrationRoutes(app: FastifyInstance, db: VoiceChatDb, agents: AgentRegistry, manager: StorageMigrationManager): void {
   const ownerContext = async (userId: string, machineId: string, storageId: string) => {
-    if (!db.listAgents(userId).some((agent) => agent.id === machineId)) throw new Error('Machine not found')
+    if (!db.machines.listAgents(userId).some((agent) => agent.id === machineId)) throw new Error('Machine not found')
     if (!agents.isOnline(machineId)) throw new Error('Machine offline')
-    const storage = db.listMachineStorages(userId, machineId).find((candidate) => candidate.id === storageId)
+    const storage = db.machines.listMachineStorages(userId, machineId).find((candidate) => candidate.id === storageId)
     if (!storage) throw new Error('MachineStorage not found')
     const platform = agents.platformOf(machineId) ?? 'linux'
     const allowedDirs = agents.policyOf(machineId)?.allowedDirs ?? []

@@ -7,22 +7,22 @@ let ids = 0
 beforeEach(() => {
   ids = 0
   db = new VoiceChatDb(':memory:', { newId: () => `qa-${++ids}`, now: () => 1_000 + ids })
-  db.createUser('owner', '', 'developer')
-  db.createUser('developer', '', 'developer')
+  db.identity.createUser('owner', '', 'developer')
+  db.identity.createUser('developer', '', 'developer')
 })
 afterEach(() => db.close())
 
 function fixture() {
-  const project = db.createProject('owner', { name: 'QA' })
-  db.addMember('owner', project.id, 'developer')
-  const ready = db.getBoard('owner', project.id)!.columns.find((c) => c.semanticType === 'ready')!
-  const task = db.createTask('owner', project.id, { columnId: ready.id, title: 'Feature' })!
+  const project = db.projects.createProject('owner', { name: 'QA' })
+  db.projects.addMember('owner', project.id, 'developer')
+  const ready = db.tasks.getBoard('owner', project.id)!.columns.find((c) => c.semanticType === 'ready')!
+  const task = db.tasks.createTask('owner', project.id, { columnId: ready.id, title: 'Feature' })!
   const base = {
     title: 'Cancel run', description: 'User can cancel', preconditions: 'running task',
     steps: 'click Cancel', testData: 'seed-v1', expectedResult: 'run stops',
     required: true, testType: 'manual' as const
   }
-  const criterion = db.createAcceptanceCriterion('owner', project.id, task.id, base)!
+  const criterion = db.qa.createAcceptanceCriterion('owner', project.id, task.id, base)!
   return { project, task, criterion, base }
 }
 
@@ -33,13 +33,13 @@ describe('manual QA persistence and workflow', () => {
   it('сохраняет актуальные типы сценариев и сводит к manual только неизвестный', () => {
     const { project, task } = fixture()
     for (const testType of ['ui', 'api', 'integration', 'negative', 'regression'] as const) {
-      const created = db.createAcceptanceCriterion('owner', project.id, task.id, {
+      const created = db.qa.createAcceptanceCriterion('owner', project.id, task.id, {
         title: `Сценарий ${testType}`, description: 'Описание', preconditions: 'Открыт экран',
         steps: 'Шаги', testData: 'Данные', expectedResult: 'Результат', required: true, testType
       })!
       expect(created.testType).toBe(testType)
     }
-    const broken = db.createAcceptanceCriterion('owner', project.id, task.id, {
+    const broken = db.qa.createAcceptanceCriterion('owner', project.id, task.id, {
       title: 'Неизвестный тип', description: 'Описание', preconditions: 'Открыт экран',
       steps: 'Шаги', testData: 'Данные', expectedResult: 'Результат', required: true,
       testType: 'выдумка' as unknown as 'manual'
@@ -48,28 +48,28 @@ describe('manual QA persistence and workflow', () => {
   })
 
   it('requires detailed scenarios before moving from component QA to manual QA', () => {
-    const project = db.createProject('owner', { name: 'QA preparation' })
-    const preparation = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'component_qa')!
-    const task = db.createTask('owner', project.id, { columnId: preparation.id, title: 'Feature' })!
-    expect(() => db.completeQaPreparation('owner', project.id, task.id)).toThrow(/хотя бы один сценарий/)
-    db.createAcceptanceCriterion('owner', project.id, task.id, {
+    const project = db.projects.createProject('owner', { name: 'QA preparation' })
+    const preparation = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'component_qa')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: preparation.id, title: 'Feature' })!
+    expect(() => db.qa.completeQaPreparation('owner', project.id, task.id)).toThrow(/хотя бы один сценарий/)
+    db.qa.createAcceptanceCriterion('owner', project.id, task.id, {
       title: 'Happy path', description: 'Проверка формы', preconditions: 'Открыть https://preview.test/form',
       steps: '1. Заполнить поле\n2. Нажать Сохранить', testData: 'Название: QA', expectedResult: 'Форма сохранена без ошибки',
       required: true, testType: 'manual'
     })
-    db.completeQaPreparation('owner', project.id, task.id)
-    const board = db.getBoard('owner', project.id)!
+    db.qa.completeQaPreparation('owner', project.id, task.id)
+    const board = db.tasks.getBoard('owner', project.id)!
     const column = board.columns.find((item) => item.id === board.tasks.find((item) => item.id === task.id)!.columnId)
     expect(column?.semanticType).toBe('manual_qa')
   })
 
   it('versions semantic changes and stales active session without inheriting pass', () => {
     const { project, task, criterion, base } = fixture()
-    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1', previewId: 'p', previewSha: 'abc' })!
-    db.saveQaResult('owner', project.id, task.id, session.results[0].id, 1, { status: 'passed', draft: false })
-    const revised = db.reviseAcceptanceCriterion('owner', project.id, task.id, criterion.id, { ...base, expectedResult: 'run stops within 1s', reason: 'timeout agreed' })!
+    const session = db.qa.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1', previewId: 'p', previewSha: 'abc' })!
+    db.qa.saveQaResult('owner', project.id, task.id, session.results[0].id, 1, { status: 'passed', draft: false })
+    const revised = db.qa.reviseAcceptanceCriterion('owner', project.id, task.id, criterion.id, { ...base, expectedResult: 'run stops within 1s', reason: 'timeout agreed' })!
     expect(revised.currentVersion).toBe(2)
-    const state = db.getQaTaskState('owner', project.id, task.id)!
+    const state = db.qa.getQaTaskState('owner', project.id, task.id)!
     expect(state.sessions[0].status).toBe('stale')
     expect(state.sessions[0].results[0].status).toBe('passed')
     expect(state.versions.map((v) => v.version)).toEqual([2, 1])
@@ -77,43 +77,43 @@ describe('manual QA persistence and workflow', () => {
 
   it('enforces optimistic concurrency and blocks incomplete merge', () => {
     const { project, task } = fixture()
-    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
-    expect(() => db.completeQaSession('owner', project.id, task.id, session.id, '')).toThrow(/not_tested/)
-    const result = db.saveQaResult('owner', project.id, task.id, session.results[0].id, 1, { status: 'in_progress', draft: true, executedSteps: 'opened' })
+    const session = db.qa.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
+    expect(() => db.qa.completeQaSession('owner', project.id, task.id, session.id, '')).toThrow(/not_tested/)
+    const result = db.qa.saveQaResult('owner', project.id, task.id, session.results[0].id, 1, { status: 'in_progress', draft: true, executedSteps: 'opened' })
     expect(result.revision).toBe(2)
-    expect(() => db.saveQaResult('owner', project.id, task.id, result.id, 1, { status: 'passed' })).toThrow(/revision conflict/)
-    db.saveQaResult('owner', project.id, task.id, result.id, 2, { status: 'passed', draft: false })
-    db.completeQaSession('owner', project.id, task.id, session.id, 'verified')
-    const column = db.getBoard('owner', project.id)!.columns.find((c) => c.id === db.getBoard('owner', project.id)!.tasks[0].columnId)
+    expect(() => db.qa.saveQaResult('owner', project.id, task.id, result.id, 1, { status: 'passed' })).toThrow(/revision conflict/)
+    db.qa.saveQaResult('owner', project.id, task.id, result.id, 2, { status: 'passed', draft: false })
+    db.qa.completeQaSession('owner', project.id, task.id, session.id, 'verified')
+    const column = db.tasks.getBoard('owner', project.id)!.columns.find((c) => c.id === db.tasks.getBoard('owner', project.id)!.tasks[0].columnId)
     expect(column?.semanticType).toBe('awaiting_merge')
   })
 
   it('requires structured fail and routes implementation defect to development', () => {
     const { project, task } = fixture()
-    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
+    const session = db.qa.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
     const id = session.results[0].id
-    expect(() => db.saveQaResult('owner', project.id, task.id, id, 1, { status: 'failed', draft: false })).toThrow(/missing QA fields/)
-    db.saveQaResult('owner', project.id, task.id, id, 1, {
+    expect(() => db.qa.saveQaResult('owner', project.id, task.id, id, 1, { status: 'failed', draft: false })).toThrow(/missing QA fields/)
+    db.qa.saveQaResult('owner', project.id, task.id, id, 1, {
       status: 'failed', draft: false, executedSteps: 'click Cancel', actualResult: 'still running', comment: 'Cancel does not stop the run',
       classification: 'implementation_defect', severity: 'major', frequency: 'always', reproduction: 'start then cancel'
     })
-    const state = db.getQaTaskState('owner', project.id, task.id)!
+    const state = db.qa.getQaTaskState('owner', project.id, task.id)!
     expect(state.sessions[0].results[0].issue?.classification).toBe('implementation_defect')
-    const taskColumn = db.getBoard('owner', project.id)!.columns.find((c) => c.id === db.getBoard('owner', project.id)!.tasks[0].columnId)
+    const taskColumn = db.tasks.getBoard('owner', project.id)!.columns.find((c) => c.id === db.tasks.getBoard('owner', project.id)!.tasks[0].columnId)
     expect(taskColumn?.semanticType).toBe('manual_qa')
   })
 
   it('validates blocked comments, ownership, status and audits previous/new values', () => {
     const { project, task } = fixture()
-    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
+    const session = db.qa.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
     const result = session.results[0]
-    expect(() => db.saveQaResult('owner', project.id, task.id, result.id, 1, {
+    expect(() => db.qa.saveQaResult('owner', project.id, task.id, result.id, 1, {
       status: 'blocked', draft: false, blockerReason: 'Preview down', blockerType: 'environment', blockerOwner: 'ops'
     })).toThrow(/comment/)
-    expect(() => db.saveQaResult('developer', project.id, task.id, result.id, 1, { status: 'passed', draft: false })).toThrow(/permission/)
-    expect(() => db.saveQaResult('owner', project.id, 'another-task', result.id, 1, { status: 'passed', draft: false })).toThrow(/not found/)
-    expect(() => db.saveQaResult('owner', project.id, task.id, result.id, 1, { status: 'unknown' as never, draft: false })).toThrow(/invalid QA result status/)
-    db.saveQaResult('owner', project.id, task.id, result.id, 1, {
+    expect(() => db.qa.saveQaResult('developer', project.id, task.id, result.id, 1, { status: 'passed', draft: false })).toThrow(/permission/)
+    expect(() => db.qa.saveQaResult('owner', project.id, 'another-task', result.id, 1, { status: 'passed', draft: false })).toThrow(/not found/)
+    expect(() => db.qa.saveQaResult('owner', project.id, task.id, result.id, 1, { status: 'unknown' as never, draft: false })).toThrow(/invalid QA result status/)
+    db.qa.saveQaResult('owner', project.id, task.id, result.id, 1, {
       status: 'blocked', draft: false, comment: 'Preview down', blockerReason: 'Preview down', blockerType: 'environment', blockerOwner: 'ops'
     })
     const raw = (db as unknown as { db: { prepare(sql: string): { get(...values: unknown[]): { payload_json: string } } } }).db
@@ -128,39 +128,39 @@ describe('manual QA persistence and workflow', () => {
 
   it('binds screenshot metadata to project/result and denies outsiders', () => {
     const { project, task } = fixture()
-    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
-    const attachment = db.addQaAttachment('owner', project.id, task.id, session.results[0].id, { uploadId: 'opaque-upload', name: '../../proof.png', mimeType: 'image/png', size: 42, caption: 'Cancel result' })
-    expect(db.getQaAttachment('owner', attachment.id)?.uploadId).toBe('opaque-upload')
-    expect(db.getQaAttachment('developer', attachment.id)?.taskId).toBe(task.id)
-    db.createUser('outsider', '', 'developer')
-    expect(db.getQaAttachment('outsider', attachment.id)).toBeNull()
+    const session = db.qa.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
+    const attachment = db.qa.addQaAttachment('owner', project.id, task.id, session.results[0].id, { uploadId: 'opaque-upload', name: '../../proof.png', mimeType: 'image/png', size: 42, caption: 'Cancel result' })
+    expect(db.qa.getQaAttachment('owner', attachment.id)?.uploadId).toBe('opaque-upload')
+    expect(db.qa.getQaAttachment('developer', attachment.id)?.taskId).toBe(task.id)
+    db.identity.createUser('outsider', '', 'developer')
+    expect(db.qa.getQaAttachment('outsider', attachment.id)).toBeNull()
   })
 
   it('does not let an ordinary developer attest QA', () => {
     const { project, task } = fixture()
-    expect(() => db.startQaSession('developer', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })).toThrow(/permission/)
+    expect(() => db.qa.startQaSession('developer', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })).toThrow(/permission/)
   })
 
   it('deduplicates QA preparation by task and SHA and stales a session for a new SHA', () => {
     const { project, task } = fixture()
-    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
-    const first = db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')!
-    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')).toBeNull()
-    db.recordQaPreparationAttempt(first.id, 1, 'Жду результаты…', 'Невалидный JSON')
-    db.finishQaPreparationRun(first.id, 'failed', 'Невалидный JSON')
-    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc', true)?.id).toBe(first.id)
-    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc', true)).toBeNull()
-    expect(db.failInterruptedQaPreparationRuns()).toEqual([first.id])
-    const state = db.getQaTaskState('owner', project.id, task.id)!
+    const session = db.qa.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
+    const first = db.qa.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')!
+    expect(db.qa.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc')).toBeNull()
+    db.qa.recordQaPreparationAttempt(first.id, 1, 'Жду результаты…', 'Невалидный JSON')
+    db.qa.finishQaPreparationRun(first.id, 'failed', 'Невалидный JSON')
+    expect(db.qa.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc', true)?.id).toBe(first.id)
+    expect(db.qa.startQaPreparationRun(project.id, task.id, 'feature/1', 'abc', true)).toBeNull()
+    expect(db.qa.failInterruptedQaPreparationRuns()).toEqual([first.id])
+    const state = db.qa.getQaTaskState('owner', project.id, task.id)!
     expect(state.preparation).toMatchObject({ status: 'failed', canRetry: true, error: 'Подготовка прервана перезапуском сервера' })
-    expect(db.startQaPreparationRun(project.id, task.id, 'feature/1', 'def')).not.toBeNull()
-    expect(db.getQaTaskState('owner', project.id, task.id)?.sessions.find((item) => item.id === session.id)?.status).toBe('stale')
+    expect(db.qa.startQaPreparationRun(project.id, task.id, 'feature/1', 'def')).not.toBeNull()
+    expect(db.qa.getQaTaskState('owner', project.id, task.id)?.sessions.find((item) => item.id === session.id)?.status).toBe('stale')
   })
 
   it('uses the pushed workspace machine for a merge run instead of the project default', () => {
-    const project = db.createProject('owner', { name: 'Merge' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const project = db.projects.createProject('owner', { name: 'Merge' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('default-agent', 'Default', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
@@ -169,118 +169,118 @@ describe('manual QA persistence and workflow', () => {
     raw.prepare(`UPDATE projects SET git_url=?,default_agent_id=? WHERE id=?`).run('git@example/repo.git', 'default-agent', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-179', '1'.repeat(40), 1, 'released', 2)
 
-    expect(db.startMergeRun('owner', project.id, task.id).agentId).toBe('workspace-agent')
-    const moved = db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!
-    expect(db.getBoard('owner', project.id)!.columns.find((item) => item.id === moved.columnId)?.semanticType).toBe('merge')
+    expect(db.ci.startMergeRun('owner', project.id, task.id).agentId).toBe('workspace-agent')
+    const moved = db.tasks.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!
+    expect(db.tasks.getBoard('owner', project.id)!.columns.find((item) => item.id === moved.columnId)?.semanticType).toBe('merge')
   })
 
   it('считает подряд упавшие merge-раны и помнит время последнего', () => {
-    const project = db.createProject('owner', { name: 'Merge counters' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
-    const agent = db.createAgent('owner', 'Mac')
+    const project = db.projects.createProject('owner', { name: 'Merge counters' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.machines.createAgent('owner', 'Mac')
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('ws-counters', project.id, task.id, agent.id, '/repos/task', 'CHAT-900', '1'.repeat(40), 1, 'released', 1)
 
-    expect(db.countTrailingFailedMergeRuns(task.id)).toBe(0)
-    expect(db.lastMergeRunFinishedAt(task.id)).toBeNull()
+    expect(db.ci.countTrailingFailedMergeRuns(task.id)).toBe(0)
+    expect(db.ci.lastMergeRunFinishedAt(task.id)).toBeNull()
 
-    const first = db.startMergeRun('owner', project.id, task.id)
+    const first = db.ci.startMergeRun('owner', project.id, task.id)
     raw.prepare(`UPDATE merge_runs SET status='failed',finished_at=? WHERE id=?`).run(500, first.id)
-    const second = db.startMergeRun('owner', project.id, task.id)
+    const second = db.ci.startMergeRun('owner', project.id, task.id)
     raw.prepare(`UPDATE merge_runs SET status='failed',finished_at=? WHERE id=?`).run(900, second.id)
 
-    expect(db.countTrailingFailedMergeRuns(task.id)).toBe(2)
-    expect(db.lastMergeRunFinishedAt(task.id)).toBe(900)
+    expect(db.ci.countTrailingFailedMergeRuns(task.id)).toBe(2)
+    expect(db.ci.lastMergeRunFinishedAt(task.id)).toBe(900)
 
     // Успех обнуляет хвост: считаем только последние подряд идущие провалы.
-    const third = db.startMergeRun('owner', project.id, task.id)
+    const third = db.ci.startMergeRun('owner', project.id, task.id)
     raw.prepare(`UPDATE merge_runs SET status='success',finished_at=? WHERE id=?`).run(1200, third.id)
-    expect(db.countTrailingFailedMergeRuns(task.id)).toBe(0)
+    expect(db.ci.countTrailingFailedMergeRuns(task.id)).toBe(0)
   })
 
   it('records the actual Codex model from global settings for a merge run', () => {
-    const project = db.createProject('owner', { name: 'Merge Codex' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
-    const agent = db.createAgent('owner', 'Mac')
+    const project = db.projects.createProject('owner', { name: 'Merge Codex' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.machines.createAgent('owner', 'Mac')
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-codex', project.id, task.id, agent.id, '/repos/task', 'CHAT-266', '1'.repeat(40), 1, 'released', 1)
-    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' })
+    db.settings.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' })
 
-    expect(db.startMergeRun('owner', project.id, task.id)).toMatchObject({
+    expect(db.ci.startMergeRun('owner', project.id, task.id)).toMatchObject({
       llmProvider: 'codex', llmModel: 'gpt-5.6-sol',
       requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: null
     })
   })
 
   it('uses the effective kb_update stage LLM for a merge run', () => {
-    const project = db.createProject('owner', { name: 'Merge stage LLM' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
-    const agent = db.createAgent('owner', 'Mac')
+    const project = db.projects.createProject('owner', { name: 'Merge stage LLM' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.machines.createAgent('owner', 'Mac')
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-stage-llm', project.id, task.id, agent.id, '/repos/task', 'CHAT-274', '1'.repeat(40), 1, 'released', 1)
-    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
-    db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-sol' })
+    db.settings.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
+    db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-sol' })
 
-    expect(db.startMergeRun('owner', project.id, task.id)).toMatchObject({
+    expect(db.ci.startMergeRun('owner', project.id, task.id)).toMatchObject({
       llmProvider: 'codex', llmModel: 'gpt-5.6-sol',
       requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: null
     })
   })
 
   it('inherits the latest development LLM when kb_update has no override', () => {
-    const project = db.createProject('owner', { name: 'Merge development LLM' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
-    const agent = db.createAgent('owner', 'Mac')
+    const project = db.projects.createProject('owner', { name: 'Merge development LLM' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.machines.createAgent('owner', 'Mac')
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-development-llm', project.id, task.id, agent.id, '/repos/task', 'CHAT-274-dev', '2'.repeat(40), 1, 'released', 1)
     raw.prepare(`INSERT INTO ci_runs (id,project_id,task_id,status,triggered_by,llm_provider,llm_model,mode,created_at) VALUES (?,?,?,'success','owner','codex','gpt-5.6-sol','development',?)`).run('development-llm', project.id, task.id, 2)
-    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
+    db.settings.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
 
-    expect(db.startMergeRun('owner', project.id, task.id)).toMatchObject({
+    expect(db.ci.startMergeRun('owner', project.id, task.id)).toMatchObject({
       llmProvider: 'codex', llmModel: 'gpt-5.6-sol',
       requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: null
     })
   })
 
   it('gives a per-run override priority and records an allowed provider fallback', () => {
-    const project = db.createProject('owner', { name: 'Merge override' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
-    const agent = db.createAgent('owner', 'Mac')
+    const project = db.projects.createProject('owner', { name: 'Merge override' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.machines.createAgent('owner', 'Mac')
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-override', project.id, task.id, agent.id, '/repos/task', 'CHAT-266', '1'.repeat(40), 1, 'released', 1)
-    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
+    db.settings.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
 
-    const overridden = db.startMergeRun('owner', project.id, task.id, null, { provider: 'codex', model: 'gpt-5.6-luna' })
+    const overridden = db.ci.startMergeRun('owner', project.id, task.id, null, { provider: 'codex', model: 'gpt-5.6-luna' })
     expect(overridden).toMatchObject({ llmProvider: 'codex', llmModel: 'gpt-5.6-luna', requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-luna', llmFallbackReason: null })
-    db.updateMergeRun(overridden.id, { status: 'failed', stage: 'failed' })
-    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
-    db.setUserLlmAccess('owner', [{ provider: 'codex', modelId: '*' }])
+    db.ci.updateMergeRun(overridden.id, { status: 'failed', stage: 'failed' })
+    db.tasks.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    db.identity.setUserLlmAccess('owner', [{ provider: 'codex', modelId: '*' }])
 
-    const fallback = db.startMergeRun('owner', project.id, task.id, null, { provider: 'codex', model: 'gpt-5.6-sol' })
+    const fallback = db.ci.startMergeRun('owner', project.id, task.id, null, { provider: 'codex', model: 'gpt-5.6-sol' })
     expect(fallback).toMatchObject({ llmProvider: 'claude', llmModel: 'sonnet', requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: 'provider_unavailable' })
   })
 
   it('allows the owner personal workspace machine and exposes a newer source after a successful merge', () => {
-    const project = db.createProject('owner', { name: 'Repeated merge' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
-    const personal = db.createAgent('owner', 'Personal Mac')
+    const project = db.projects.createProject('owner', { name: 'Repeated merge' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const personal = db.machines.createAgent('owner', 'Personal Mac')
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-old', project.id, task.id, personal.id, '/repos/task', 'CHAT-194', '1'.repeat(40), 1, 'released', 1)
 
-    const merged = db.startMergeRun('owner', project.id, task.id)
+    const merged = db.ci.startMergeRun('owner', project.id, task.id)
     expect(merged).toMatchObject({ agentId: personal.id, machineName: 'Personal Mac' })
-    db.updateMergeRun(merged.id, { status: 'success', stage: 'success', mergeSha: '2'.repeat(40) })
-    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    db.ci.updateMergeRun(merged.id, { status: 'success', stage: 'success', mergeSha: '2'.repeat(40) })
+    db.tasks.moveMergeTask(project.id, task.id, 'awaiting_merge')
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-new', project.id, task.id, personal.id, '/repos/task', 'CHAT-194', '3'.repeat(40), 1, 'released', 2)
 
-    expect(db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)).toMatchObject({
+    expect(db.tasks.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)).toMatchObject({
       mergeSourceSha: '3'.repeat(40),
       mergedSourceSha: '1'.repeat(40),
       mergedSha: '2'.repeat(40),
@@ -289,53 +289,53 @@ describe('manual QA persistence and workflow', () => {
   })
 
   it('lets a conflict retry pin the resolved branch SHA during fetch', () => {
-    const project = db.createProject('owner', { name: 'Merge retry' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const project = db.projects.createProject('owner', { name: 'Merge retry' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-179', '1'.repeat(40), 1, 'released', 2)
-    const failed = db.startMergeRun('owner', project.id, task.id)
-    db.updateMergeRun(failed.id, { status: 'decision_required', stage: 'decision_required', conflicts: ['file.ts'] })
+    const failed = db.ci.startMergeRun('owner', project.id, task.id)
+    db.ci.updateMergeRun(failed.id, { status: 'decision_required', stage: 'decision_required', conflicts: ['file.ts'] })
 
-    expect(db.retryMergeRun('owner', failed.id).sourceSha).toBeNull()
+    expect(db.ci.retryMergeRun('owner', failed.id).sourceSha).toBeNull()
   })
 
   it('unpins the source SHA when retrying a stale-source run, but keeps it for ordinary failures', () => {
-    const project = db.createProject('owner', { name: 'Merge stale retry' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const project = db.projects.createProject('owner', { name: 'Merge stale retry' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-179', '1'.repeat(40), 1, 'released', 2)
 
-    const stale = db.startMergeRun('owner', project.id, task.id)
-    db.updateMergeRun(stale.id, { status: 'decision_required', stage: 'decision_required', error: 'stale source: ветка изменилась после development-рана' })
-    const unpinned = db.retryMergeRun('owner', stale.id)
+    const stale = db.ci.startMergeRun('owner', project.id, task.id)
+    db.ci.updateMergeRun(stale.id, { status: 'decision_required', stage: 'decision_required', error: 'stale source: ветка изменилась после development-рана' })
+    const unpinned = db.ci.retryMergeRun('owner', stale.id)
     expect(unpinned.sourceSha).toBeNull()
-    db.updateMergeRun(unpinned.id, { status: 'cancelled', stage: 'cancelled' })
-    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    db.ci.updateMergeRun(unpinned.id, { status: 'cancelled', stage: 'cancelled' })
+    db.tasks.moveMergeTask(project.id, task.id, 'awaiting_merge')
 
-    const failed = db.startMergeRun('owner', project.id, task.id)
-    db.updateMergeRun(failed.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
-    const pinned = db.retryMergeRun('owner', failed.id)
+    const failed = db.ci.startMergeRun('owner', project.id, task.id)
+    db.ci.updateMergeRun(failed.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
+    const pinned = db.ci.retryMergeRun('owner', failed.id)
     expect(pinned.sourceSha).toBe('1'.repeat(40))
 
-    db.updateMergeRun(pinned.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
-    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
-    expect(db.retryMergeRun('owner', pinned.id, null, true).sourceSha).toBeNull()
-    expect(db.listMergeRuns('owner', project.id, task.id).length).toBeGreaterThanOrEqual(4)
-    expect(db.listMergeRuns('stranger', project.id, task.id)).toHaveLength(0)
+    db.ci.updateMergeRun(pinned.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
+    db.tasks.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    expect(db.ci.retryMergeRun('owner', pinned.id, null, true).sourceSha).toBeNull()
+    expect(db.ci.listMergeRuns('owner', project.id, task.id).length).toBeGreaterThanOrEqual(4)
+    expect(db.ci.listMergeRuns('stranger', project.id, task.id)).toHaveLength(0)
   })
 
   it('starts a merge run on an explicitly chosen project machine and rejects unbound ones', () => {
-    const project = db.createProject('owner', { name: 'Merge machine choice' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const project = db.projects.createProject('owner', { name: 'Merge machine choice' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('other-agent', 'Other', 'x', 1, 'owner')
@@ -344,85 +344,85 @@ describe('manual QA persistence and workflow', () => {
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-180', '1'.repeat(40), 1, 'released', 2)
 
-    expect(() => db.startMergeRun('owner', project.id, task.id, 'ghost-agent')).toThrow('merge machine is not available to user or project')
-    const run = db.startMergeRun('owner', project.id, task.id, 'other-agent')
+    expect(() => db.ci.startMergeRun('owner', project.id, task.id, 'ghost-agent')).toThrow('merge machine is not available to user or project')
+    const run = db.ci.startMergeRun('owner', project.id, task.id, 'other-agent')
     expect(run.agentId).toBe('other-agent')
-    expect(db.getProjectMachine(project.id, 'other-agent')).toMatchObject({ reposRoot: '/other-repos' })
-    db.updateMergeRun(run.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
-    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
-    expect(db.retryMergeRun('owner', run.id).agentId).toBe('other-agent')
+    expect(db.machines.getProjectMachine(project.id, 'other-agent')).toMatchObject({ reposRoot: '/other-repos' })
+    db.ci.updateMergeRun(run.id, { status: 'failed', stage: 'failed', error: 'Проверки упали (exit 1)' })
+    db.tasks.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    expect(db.ci.retryMergeRun('owner', run.id).agentId).toBe('other-agent')
   })
 
   it('prefers the latest pushed workspace even when a newer unpushed one exists', () => {
-    const project = db.createProject('owner', { name: 'Pushed workspace wins' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const project = db.projects.createProject('owner', { name: 'Pushed workspace wins' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('pushed', project.id, task.id, 'agent-a', '/repos/task', 'CHAT-182', '1'.repeat(40), 1, 'released', 1)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('fresh', project.id, task.id, 'agent-a', '/repos/task', null, null, 0, 'active', 2)
 
-    expect(db.findLatestCiWorkspace(project.id, task.id)?.id).toBe('fresh')
-    expect(db.findLatestPushedCiWorkspace(project.id, task.id)?.id).toBe('pushed')
+    expect(db.ci.findLatestCiWorkspace(project.id, task.id)?.id).toBe('fresh')
+    expect(db.ci.findLatestPushedCiWorkspace(project.id, task.id)?.id).toBe('pushed')
   })
 
   it('tracks task repositories per machine until confirmed deletion', () => {
-    const project = db.createProject('owner', { name: 'Task repos' })
-    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
-    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
-    db.upsertTaskRepository(project.id, task.id, 'agent-x', '/repos/chatai/CHAT-1', 'dev-workspace')
-    db.upsertTaskRepository(project.id, task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1', 'merge-clone')
-    expect(db.listActiveTaskRepositories(task.id)).toHaveLength(2)
+    const project = db.projects.createProject('owner', { name: 'Task repos' })
+    const awaiting = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    db.tasks.upsertTaskRepository(project.id, task.id, 'agent-x', '/repos/chatai/CHAT-1', 'dev-workspace')
+    db.tasks.upsertTaskRepository(project.id, task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1', 'merge-clone')
+    expect(db.tasks.listActiveTaskRepositories(task.id)).toHaveLength(2)
 
-    db.markTaskRepositoryDeleted(task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1')
-    expect(db.listActiveTaskRepositories(task.id)).toHaveLength(1)
-    const all = db.listTaskRepositories('owner', project.id, task.id)
+    db.tasks.markTaskRepositoryDeleted(task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1')
+    expect(db.tasks.listActiveTaskRepositories(task.id)).toHaveLength(1)
+    const all = db.tasks.listTaskRepositories('owner', project.id, task.id)
     expect(all).toHaveLength(2)
     expect(all.find((repo) => repo.agentId === 'agent-y')?.state).toBe('deleted')
-    expect(db.listTaskRepositories('stranger', project.id, task.id)).toHaveLength(0)
+    expect(db.tasks.listTaskRepositories('stranger', project.id, task.id)).toHaveLength(0)
 
-    db.upsertTaskRepository(project.id, task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1', 'merge-clone')
-    expect(db.listActiveTaskRepositories(task.id)).toHaveLength(2)
+    db.tasks.upsertTaskRepository(project.id, task.id, 'agent-y', '/repos2/chatai/CHAT-1.merge-r1', 'merge-clone')
+    expect(db.tasks.listActiveTaskRepositories(task.id)).toHaveLength(2)
   })
 
   it('keeps three QA stage histories independent, idempotent and gate-driven', () => {
-    const project = db.createProject('owner', { name: 'QA stages' })
-    const board = db.getBoard('owner', project.id)!
+    const project = db.projects.createProject('owner', { name: 'QA stages' })
+    const board = db.tasks.getBoard('owner', project.id)!
     const component = board.columns.find((column) => column.semanticType === 'component_qa')!
-    const task = db.createTask('owner', project.id, { columnId: component.id, title: 'Feature' })!
+    const task = db.tasks.createTask('owner', project.id, { columnId: component.id, title: 'Feature' })!
 
-    const first = db.startQaStageRun('owner', project.id, task.id, 'component_qa')
-    expect(db.startQaStageRun('owner', project.id, task.id, 'component_qa').id).toBe(first.id)
+    const first = db.qa.startQaStageRun('owner', project.id, task.id, 'component_qa')
+    expect(db.qa.startQaStageRun('owner', project.id, task.id, 'component_qa').id).toBe(first.id)
     expect(first).toMatchObject({ kind: 'componentQaRun', attempt: 1, canCancel: true })
-    db.cancelQaStageRun('owner', first.id)
-    const retry = db.retryQaStageRun('owner', first.id)!
+    db.qa.cancelQaStageRun('owner', first.id)
+    const retry = db.qa.retryQaStageRun('owner', first.id)!
     expect(retry).toMatchObject({ stage: 'component_qa', attempt: 2 })
-    db.completeQaStageRun('owner', retry.id, { gatePassed: false, gateReasons: ['dom_failed'] })
-    expect(db.getQaStageRun('owner', retry.id)).toMatchObject({ status: 'gate_failed', gateReasons: ['dom_failed'] })
-    expect(db.getBoard('owner', project.id)!.columns.find((column) => column.id === db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!.columnId)?.semanticType).toBe('component_qa')
+    db.qa.completeQaStageRun('owner', retry.id, { gatePassed: false, gateReasons: ['dom_failed'] })
+    expect(db.qa.getQaStageRun('owner', retry.id)).toMatchObject({ status: 'gate_failed', gateReasons: ['dom_failed'] })
+    expect(db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.id === db.tasks.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!.columnId)?.semanticType).toBe('component_qa')
 
-    const passed = db.retryQaStageRun('owner', retry.id)!
-    db.completeQaStageRun('owner', passed.id, { gatePassed: true, components: ['TaskModal'] })
-    expect(db.getBoard('owner', project.id)!.columns.find((column) => column.id === db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!.columnId)?.semanticType).toBe('integration_tests')
-    const integration = db.startQaStageRun('owner', project.id, task.id, 'integration_tests')
-    expect(db.listQaStageRuns('owner', project.id, task.id, 'component_qa')).toHaveLength(3)
-    expect(db.listQaStageRuns('owner', project.id, task.id, 'integration_tests')).toHaveLength(1)
-    db.completeQaStageRun('owner', integration.id, { testCases: [] })
-    expect(db.getQaStageRun('owner', integration.id)).toMatchObject({ status: 'gate_failed', gateReasons: ['missing_required_test_cases'] })
+    const passed = db.qa.retryQaStageRun('owner', retry.id)!
+    db.qa.completeQaStageRun('owner', passed.id, { gatePassed: true, components: ['TaskModal'] })
+    expect(db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.id === db.tasks.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!.columnId)?.semanticType).toBe('integration_tests')
+    const integration = db.qa.startQaStageRun('owner', project.id, task.id, 'integration_tests')
+    expect(db.qa.listQaStageRuns('owner', project.id, task.id, 'component_qa')).toHaveLength(3)
+    expect(db.qa.listQaStageRuns('owner', project.id, task.id, 'integration_tests')).toHaveLength(1)
+    db.qa.completeQaStageRun('owner', integration.id, { testCases: [] })
+    expect(db.qa.getQaStageRun('owner', integration.id)).toMatchObject({ status: 'gate_failed', gateReasons: ['missing_required_test_cases'] })
   })
 
   it('marks unfinished QA stage runs interrupted after restart reconciliation', () => {
-    const project = db.createProject('owner', { name: 'QA recovery' })
-    const component = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'component_qa')!
-    const task = db.createTask('owner', project.id, { columnId: component.id, title: 'Feature' })!
-    const run = db.startQaStageRun('owner', project.id, task.id, 'component_qa')
-    expect(db.failInterruptedQaStageRuns()).toEqual([run.id])
-    expect(db.getQaStageRun('owner', run.id)).toMatchObject({ status: 'interrupted', canRetry: true })
+    const project = db.projects.createProject('owner', { name: 'QA recovery' })
+    const component = db.tasks.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'component_qa')!
+    const task = db.tasks.createTask('owner', project.id, { columnId: component.id, title: 'Feature' })!
+    const run = db.qa.startQaStageRun('owner', project.id, task.id, 'component_qa')
+    expect(db.qa.failInterruptedQaStageRuns()).toEqual([run.id])
+    expect(db.qa.getQaStageRun('owner', run.id)).toMatchObject({ status: 'interrupted', canRetry: true })
   })
 
   function componentFixture(uiImpact:'none'|'existing_components'='existing_components') {
-    const project=db.createProject('owner',{name:'Component QA'})
-    const column=db.getBoard('owner',project.id)!.columns.find((item)=>item.semanticType==='component_qa')!
-    const task=db.createTask('owner',project.id,{columnId:column.id,title:'Button'})!
+    const project=db.projects.createProject('owner',{name:'Component QA'})
+    const column=db.tasks.getBoard('owner',project.id)!.columns.find((item)=>item.semanticType==='component_qa')!
+    const task=db.tasks.createTask('owner',project.id,{columnId:column.id,title:'Button'})!
     const raw=(db as unknown as {db:{prepare(sql:string):{run(...values:unknown[]):unknown}}}).db
     const readiness={functionalRequirements:'Button works',acceptanceCriteria:'Visible',acceptanceCriteriaConflict:false,uiImpact,
       testCases:uiImpact==='none'?[]:[{id:'TC-COMP',title:'Default',description:'',preconditions:'Storybook',testData:'fixture',steps:'render',expectedResult:'visible',required:true,testType:'ui',automatable:true,automationLinks:[],notAutomatedReason:'',alternativeManualVerification:'',comments:''}],
@@ -435,33 +435,33 @@ describe('manual QA persistence and workflow', () => {
 
   it('creates one active Component QA run pinned to the development SHA',()=>{
     const {project,task}=componentFixture()
-    const first=db.startComponentQaRun('owner',project.id,task.id)
-    const second=db.startComponentQaRun('owner',project.id,task.id)
+    const first=db.ci.startComponentQaRun('owner',project.id,task.id)
+    const second=db.ci.startComponentQaRun('owner',project.id,task.id)
     expect(second.id).toBe(first.id)
     expect(first).toMatchObject({status:'queued',commitSha:'a'.repeat(40),developmentRunId:'dev-component',attempt:1})
-    expect(db.getComponentQaTaskState('owner',project.id,task.id)?.activeRun?.id).toBe(first.id)
+    expect(db.tasks.getComponentQaTaskState('owner',project.id,task.id)?.activeRun?.id).toBe(first.id)
   })
 
   it('audits uiImpact none as skipped and moves to integration tests',()=>{
     const {project,task}=componentFixture('none')
-    const run=db.startComponentQaRun('owner',project.id,task.id)
+    const run=db.ci.startComponentQaRun('owner',project.id,task.id)
     expect(run).toMatchObject({status:'skipped',uiImpact:'none'})
-    const board=db.getBoard('owner',project.id)!
+    const board=db.tasks.getBoard('owner',project.id)!
     const moved=board.tasks.find((item)=>item.id===task.id)!
     expect(board.columns.find((item)=>item.id===moved.columnId)?.semanticType).toBe('integration_tests')
   })
 
   it('marks interrupted execution as infrastructure and permits retry',()=>{
     const {project,task}=componentFixture()
-    const run=db.startComponentQaRun('owner',project.id,task.id)
-    db.markComponentQaRunning(run.id)
-    expect(db.failInterruptedComponentQaRuns()).toEqual([run.id])
-    expect(db.getComponentQaRun('owner',run.id)).toMatchObject({status:'blocked',failureClassification:'infrastructure',canRetry:true})
+    const run=db.ci.startComponentQaRun('owner',project.id,task.id)
+    db.ci.markComponentQaRunning(run.id)
+    expect(db.ci.failInterruptedComponentQaRuns()).toEqual([run.id])
+    expect(db.ci.getComponentQaRun('owner',run.id)).toMatchObject({status:'blocked',failureClassification:'infrastructure',canRetry:true})
   })
 
   function integrationFixture(automatable=true){
     const {project,task,raw}=componentFixture('none')
-    const integration=db.getBoard('owner',project.id)!.columns.find((item)=>item.semanticType==='integration_tests')!
+    const integration=db.tasks.getBoard('owner',project.id)!.columns.find((item)=>item.semanticType==='integration_tests')!
     raw.prepare(`UPDATE tasks SET column_id=? WHERE id=?`).run(integration.id,task.id)
     const testCase={id:'TC-INT',title:'API flow',description:'',preconditions:'server',testData:'fixture',steps:'request',expectedResult:'200',required:true,testType:'integration',automatable,automationLinks:[],notAutomatedReason:automatable?'':'External hardware',alternativeManualVerification:automatable?'':'Run device checklist',comments:''}
     const readiness={functionalRequirements:'API works',acceptanceCriteria:'200',acceptanceCriteriaConflict:false,uiImpact:'none',testCases:[testCase],affectedComponents:[]}
@@ -470,23 +470,23 @@ describe('manual QA persistence and workflow', () => {
   }
   it('creates one active integration-test run and enforces physical idempotency',()=>{
     const {project,task}=integrationFixture()
-    const first=db.startIntegrationTestRun('owner',project.id,task.id),second=db.startIntegrationTestRun('owner',project.id,task.id)
+    const first=db.ci.startIntegrationTestRun('owner',project.id,task.id),second=db.ci.startIntegrationTestRun('owner',project.id,task.id)
     expect(second.id).toBe(first.id)
     expect(first).toMatchObject({status:'queued',commitSha:'a'.repeat(40),developmentRunId:'dev-component'})
   })
   it('audits a valid no-automation branch as skipped and moves to Automated QA',()=>{
     const {project,task}=integrationFixture(false)
-    expect(db.startIntegrationTestRun('owner',project.id,task.id).status).toBe('skipped')
-    const board=db.getBoard('owner',project.id)!,moved=board.tasks.find((item)=>item.id===task.id)!
+    expect(db.ci.startIntegrationTestRun('owner',project.id,task.id).status).toBe('skipped')
+    const board=db.tasks.getBoard('owner',project.id)!,moved=board.tasks.find((item)=>item.id===task.id)!
     expect(board.columns.find((item)=>item.id===moved.columnId)?.semanticType).toBe('automated_qa')
   })
   it('stales the previous integration run after a workspace SHA change',()=>{
     const {project,task,raw}=integrationFixture()
-    const run=db.startIntegrationTestRun('owner',project.id,task.id)
-    db.markIntegrationTestRunning(run.id)
+    const run=db.ci.startIntegrationTestRun('owner',project.id,task.id)
+    db.ci.markIntegrationTestRunning(run.id)
     raw.prepare(`UPDATE ci_workspaces SET commit_sha=? WHERE id='ws-component'`).run('b'.repeat(40))
-    const next=db.startIntegrationTestRun('owner',project.id,task.id)
-    expect(db.getIntegrationTestRun('owner',run.id)).toMatchObject({status:'stale',staleReason:'sha_changed'})
+    const next=db.ci.startIntegrationTestRun('owner',project.id,task.id)
+    expect(db.ci.getIntegrationTestRun('owner',run.id)).toMatchObject({status:'stale',staleReason:'sha_changed'})
     expect(next.id).not.toBe(run.id)
   })
 })

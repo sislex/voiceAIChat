@@ -55,16 +55,16 @@ describe('REST: хранилище машины', () => {
         }
       }
     }
-    agentRegistry.register(machineId, 'Мак', socket, db.listAgents(U).find((item) => item.id === machineId)!.policy, '0.11.0')
+    agentRegistry.register(machineId, 'Мак', socket, db.machines.listAgents(U).find((item) => item.id === machineId)!.policy, '0.11.0')
     return { directories, files, setFailWrite: (value: boolean) => { writeBlocked = value } }
   }
 
   it('готовит marker до записи в БД, сохраняет id и проверяет фактический status', async () => {
-    const machine = db.createAgent(U, 'Мак')
+    const machine = db.machines.createAgent(U, 'Мак')
     const fs = connectFs(machine.id)
     const first = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })
     expect(first.statusCode).toBe(200)
-    expect(db.listMachineStorages(U, machine.id)).toHaveLength(1)
+    expect(db.machines.listMachineStorages(U, machine.id)).toHaveLength(1)
     expect(fs.directories).toContain('/Users/me/ChatAI/.voicechat/temporary')
     const second = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI/' } })
     expect(second.json().id).toBe(first.json().id)
@@ -73,7 +73,7 @@ describe('REST: хранилище машины', () => {
   })
 
   it('материализует каталоги и project marker до сохранения машины проекта', async () => {
-    const machine = db.createAgent(U, 'Project machine')
+    const machine = db.machines.createAgent(U, 'Project machine')
     const fs = connectFs(machine.id)
     const storageResponse = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })
     const projectResponse = await inj({ method: 'POST', url: '/api/projects', payload: { name: 'Managed project' } })
@@ -89,7 +89,7 @@ describe('REST: хранилище машины', () => {
   })
 
   it('показывает зарегистрированное хранилище только для чтения', async () => {
-    const machine = db.createAgent(U, 'Read only')
+    const machine = db.machines.createAgent(U, 'Read only')
     const fs = connectFs(machine.id)
     const created = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Volumes/ReadOnly/ChatAI' } })
     expect(created.statusCode).toBe(200)
@@ -100,21 +100,21 @@ describe('REST: хранилище машины', () => {
   })
 
   it('не оставляет ready-запись при ошибке прав', async () => {
-    const machine = db.createAgent(U, 'Закрытый диск')
+    const machine = db.machines.createAgent(U, 'Закрытый диск')
     connectFs(machine.id, true)
     const response = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Volumes/Locked/ChatAI' } })
     expect(response.statusCode).toBe(400)
     expect(response.json().error).toMatch(/Нет прав/)
-    expect(db.listMachineStorages(U, machine.id)).toEqual([])
+    expect(db.machines.listMachineStorages(U, machine.id)).toEqual([])
   })
 
   it('bootstrap проектного чата создаёт каталоги окружений, но не пишет environment.json (иначе poisoned manifest → деплой 400)', async () => {
-    const machine = db.createAgent(U, 'Мак')
+    const machine = db.machines.createAgent(U, 'Мак')
     const fs = connectFs(machine.id)
     const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
-    const project = db.createProject(U, { name: 'ChatAI', gitUrl: 'https://example.com/repo.git' })
-    const conv = db.createConversation(U, 'C')
-    db.setConversationProject(U, conv.id, project.id)
+    const project = db.projects.createProject(U, { name: 'ChatAI', gitUrl: 'https://example.com/repo.git' })
+    const conv = db.chat.createConversation(U, 'C')
+    db.chat.setConversationProject(U, conv.id, project.id)
     const res = await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })
     expect(res.statusCode).toBe(200)
     const written = [...fs.files.keys()]
@@ -126,8 +126,8 @@ describe('REST: хранилище машины', () => {
   })
 
   it('copy-to копирует файл на другую машину: в указанный каталог или в ChatAI/incoming цели', async () => {
-    const source = db.createAgent(U, 'Мак')
-    const target = db.createAgent(U, 'Прод')
+    const source = db.machines.createAgent(U, 'Мак')
+    const target = db.machines.createAgent(U, 'Прод')
     const sourceFs = connectFs(source.id)
     const targetFs = connectFs(target.id)
     sourceFs.files.set('/Users/me/report.txt', Buffer.from('hello').toString('base64'))
@@ -144,15 +144,15 @@ describe('REST: хранилище машины', () => {
     expect(auto.json().path).toBe('/root/ChatAI/incoming/report.txt')
     // та же машина и офлайн-цель отклоняются
     expect((await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: source.id } })).statusCode).toBe(400)
-    const offline = db.createAgent(U, 'Спит')
+    const offline = db.machines.createAgent(U, 'Спит')
     expect((await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: offline.id } })).statusCode).toBe(409)
   })
 
   it('GET storage отдаёт карточке чата абсолютные каталоги и статус хранилища', async () => {
-    const machine = db.createAgent(U, 'Мак')
+    const machine = db.machines.createAgent(U, 'Мак')
     connectFs(machine.id)
     const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
-    const conv = db.createConversation(U, 'C')
+    const conv = db.chat.createConversation(U, 'C')
     expect((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).statusCode).toBe(404)
     await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })
     const view = (await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).json()
@@ -179,7 +179,7 @@ describe('REST: журнал команд машины', () => {
         }
       }
     }
-    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    agentRegistry.register(created.id, 'M', socket, db.machines.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
     expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'uptime' } })).statusCode).toBe(200)
     expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'false' } })).statusCode).toBe(200)
     const all = (await inj({ method: 'GET', url: `/api/agents/${created.id}/commands` })).json()
@@ -193,8 +193,8 @@ describe('REST: журнал команд машины', () => {
     expect(csv.body.split('\n')[0]).toBe('startedAt,user,source,command,exitCode,timedOut,durationMs,conversationId,error')
     expect(csv.body).toContain('"uptime","0"')
     // чужая машина — 404
-    db.createUser('user2', '', 'developer')
-    const other = db.createAgent('user2', 'X')
+    db.identity.createUser('user2', '', 'developer')
+    const other = db.machines.createAgent('user2', 'X')
     expect((await inj({ method: 'GET', url: `/api/agents/${other.id}/commands` })).statusCode).toBe(404)
   })
 })
@@ -207,10 +207,10 @@ describe('REST: доступ участников к машине проекта
       if (m.t === 'exec.start') agentRegistry.handleMessage(machine.id, { t: 'exec.done', execId: m.execId!, exitCode: 0 })
       else if (m.opId) agentRegistry.handleMessage(machine.id, { t: 'fs.result', opId: m.opId, result: { root: '/', cwd: m.path ?? '/', entries: [] } })
     } }
-    agentRegistry.register(machine.id, 'Общая', socket, db.listAgents(U).find((a) => a.id === machine.id)!.policy, '0.15.0')
-    const project = db.createProject(U, { name: 'Shared' })
-    db.createUser('dev2', '', 'developer')
-    db.addMember(U, project.id, 'dev2')
+    agentRegistry.register(machine.id, 'Общая', socket, db.machines.listAgents(U).find((a) => a.id === machine.id)!.policy, '0.15.0')
+    const project = db.projects.createProject(U, { name: 'Shared' })
+    db.identity.createUser('dev2', '', 'developer')
+    db.projects.addMember(U, project.id, 'dev2')
     const devToken = signToken({ name: 'dev2', role: 'developer' }, SECRET)
     const asDev = (opts: InjOpts) => app.inject({ ...opts, headers: { authorization: `Bearer ${devToken}`, ...(opts.headers ?? {}) } })
 
@@ -230,8 +230,8 @@ describe('REST: доступ участников к машине проекта
     expect(batch.json().totals).toMatchObject({ ok: 0, skipped: 1 })
     expect(batch.json().items[0].error).toContain('Только чтение')
     // машины в контексте чата помечены ownership/access
-    const conv = db.createConversation('dev2', 'C')
-    db.setConversationProject('dev2', conv.id, project.id)
+    const conv = db.chat.createConversation('dev2', 'C')
+    db.chat.setConversationProject('dev2', conv.id, project.id)
     const listed = (await asDev({ method: 'GET', url: `/api/conversations/${conv.id}/machines${q}` })).json()
     expect(listed.find((m: { id: string }) => m.id === machine.id)).toMatchObject({ ownership: 'project', access: 'read' })
 
@@ -252,12 +252,12 @@ describe('REST: групповая команда (п.15)', () => {
     const offline = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Спит' } })).json()
     const connect = (id: string, exitCode: number) => {
       const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') { agentRegistry.handleMessage(id, { t: 'exec.chunk', execId: m.execId!, stream: 'stdout', data: `из ${id}` }); agentRegistry.handleMessage(id, { t: 'exec.done', execId: m.execId!, exitCode }) } } }
-      agentRegistry.register(id, 'M', socket, db.listAgents(U).find((a) => a.id === id)!.policy, '0.15.0')
+      agentRegistry.register(id, 'M', socket, db.machines.listAgents(U).find((a) => a.id === id)!.policy, '0.15.0')
     }
     connect(one.id, 0)
     connect(two.id, 3)
-    db.createUser('user4', '', 'developer')
-    const foreign = db.createAgent('user4', 'Чужая')
+    db.identity.createUser('user4', '', 'developer')
+    const foreign = db.machines.createAgent('user4', 'Чужая')
     const res = await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [one.id, two.id, offline.id, foreign.id, one.id], command: 'uptime' } })
     expect(res.statusCode).toBe(200)
     const body = res.json()
@@ -269,10 +269,10 @@ describe('REST: групповая команда (п.15)', () => {
     expect(byId[offline.id].error).toContain('не в сети')
     expect(byId[foreign.id]).toMatchObject({ ran: false, error: 'Машина недоступна' })
     // журнал команд получил обе выполненные команды
-    expect(db.listMachineCommands(one.id).map((r) => r.command)).toEqual(['uptime'])
+    expect(db.machines.listMachineCommands(one.id).map((r) => r.command)).toEqual(['uptime'])
     // пустое тело и политика
     expect((await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [], command: 'ls' } })).statusCode).toBe(400)
-    const project = db.createProject(U, { name: 'PB' })
+    const project = db.projects.createProject(U, { name: 'PB' })
     await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } } })
     const denied = await inj({ method: 'POST', url: `/api/agents/exec-batch?projectId=${project.id}`, payload: { machineIds: [one.id], command: 'uptime' } })
     expect(denied.statusCode).toBe(403)
@@ -283,8 +283,8 @@ describe('REST: политика команд проекта и роли (п.10)
   it('deny проекта отклоняет команду консоли с 403 до exec; PATCH проекта и PUT ролей сохраняют правила', async () => {
     const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
     const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: m.execId!, exitCode: 0 }) } }
-    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
-    const project = db.createProject(U, { name: 'P' })
+    agentRegistry.register(created.id, 'M', socket, db.machines.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    const project = db.projects.createProject(U, { name: 'P' })
     const patched = await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } } })
     expect(patched.statusCode).toBe(200)
     expect(patched.json().commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
@@ -305,15 +305,15 @@ describe('REST: токены агентов (срок, отзыв, привяз�
     expect(rotated.expiresAt).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60_000)
     const listed = (await inj({ method: 'GET', url: '/api/agents' })).json()
     expect(listed[0].tokenExpiresAt).toBe(rotated.expiresAt)
-    expect(db.findAgentByTokenHash(hashAgentToken(rotated.token))?.id).toBe(created.id)
+    expect(db.machines.findAgentByTokenHash(hashAgentToken(rotated.token))?.id).toBe(created.id)
     expect((await inj({ method: 'DELETE', url: `/api/agents/${created.id}/token` })).json()).toEqual({ ok: true })
-    expect(db.findAgentByTokenHash(hashAgentToken(rotated.token))).toBeNull()
+    expect(db.machines.findAgentByTokenHash(hashAgentToken(rotated.token))).toBeNull()
     expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/pin-ip`, payload: { pin: true } })).statusCode).toBe(200)
     expect((await inj({ method: 'GET', url: '/api/agents' })).json()[0].pinIp).toBe(true)
     const events = (await inj({ method: 'GET', url: '/api/admin/security' })).json().events.map((e: { type: string }) => e.type)
     expect(events).toEqual(expect.arrayContaining(['agent_token_rotated', 'agent_token_revoked']))
-    db.createUser('user3', '', 'developer')
-    const other = db.createAgent('user3', 'X')
+    db.identity.createUser('user3', '', 'developer')
+    const other = db.machines.createAgent('user3', 'X')
     expect((await inj({ method: 'DELETE', url: `/api/agents/${other.id}/token` })).statusCode).toBe(404)
     expect((await inj({ method: 'POST', url: `/api/admin/machines/${other.id}/token/revoke` })).json()).toEqual({ ok: true })
   })
@@ -323,7 +323,7 @@ describe('REST: метрики машин для админки', () => {
   it('stats и Prometheus-метрики агрегируют журнал команд и статус реестра', async () => {
     const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
     const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: m.execId!, exitCode: 1 }) } }
-    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    agentRegistry.register(created.id, 'M', socket, db.machines.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
     await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'false' } })
     const stats = (await inj({ method: 'GET', url: '/api/admin/machines/stats' })).json()
     expect(stats.totals).toEqual({ machines: 1, online: 1, commands24h: 1, errors24h: 1 })
@@ -347,8 +347,8 @@ describe('REST: утилиты машины (exec/fs)', () => {
     expect(own.json().error).toContain('не в сети')
 
     // Чужая машина (создана под user) → 404 для admin.
-    db.createUser('user', '', 'developer')
-    const other = db.createAgent('user', 'UserBox')
+    db.identity.createUser('user', '', 'developer')
+    const other = db.machines.createAgent('user', 'UserBox')
     const foreign = await inj({
       method: 'POST',
       url: `/api/agents/${other.id}/exec`,

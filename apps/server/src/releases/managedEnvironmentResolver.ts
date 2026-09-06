@@ -14,9 +14,9 @@ export class ManagedEnvironmentResolver {
   // Иначе managed-релиз, доживший до health_check, ложно падал «Production-
   // конфигурация недоступна после рестарта», хотя деплой уже применён.
   resolve(userId:string,projectId:string,kind:'production'|'staging',opts:{requireOnline?:boolean}={}){
-    const project=this.db.getProject(userId,projectId)
+    const project=this.db.projects.getProject(userId,projectId)
     if(!project?.productionAgentId||!project.gitUrl)throw new Error('Managed-машина или gitUrl не настроены')
-    const machine=this.db.getProjectMachine(projectId,project.productionAgentId)
+    const machine=this.db.machines.getProjectMachine(projectId,project.productionAgentId)
     if(!machine?.storageId||!machine.storageRoot)throw new Error('Для managed-окружения не настроено MachineStorage выбранной машины')
     if(opts.requireOnline!==false&&!this.releases.isOnline(machine.agentId))throw new Error('Managed-машина offline')
     const platform=platformFor(machine.storageRoot)

@@ -110,7 +110,7 @@ interface ContextSnapshotOptions {
 
 function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, options: ContextSnapshotOptions = {}): ConversationContextSnapshot | null {
   const { isOnline, kbStatus, cliMcpServers = [], viewer = userId, makeContext = null } = options
-  const conversation = db.getConversation(userId, conversationId)
+  const conversation = db.chat.getConversation(userId, conversationId)
   if (!conversation) return null
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
   // не считается включённым в следующий ход (includedInNextTurn=false).
@@ -137,19 +137,19 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     const lockReason = toggleable ? null : contextLockReason(value.id)
     return { ...value, toggleable, enabled, lockReason, effect: toggleable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled }
   }
-  const settings = db.getSettings(userId)
+  const settings = db.settings.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
-  const role = db.getUser(viewer)?.role ?? 'developer'
+  const role = db.identity.getUser(viewer)?.role ?? 'developer'
   // Make-чат к машине не подключается (`turns.ts`: makeChat), поэтому снимок не
   // показывает ни её, ни remote-инструменты как доступные: иначе панель обещала
   // бы Bash на машине, которого ход не даёт.
   const makeChat = conversation.assistantKind === 'make'
-  const resolution = makeChat ? null : db.resolveConversationMachine(userId, conversationId, { isOnline })
-  const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
+  const resolution = makeChat ? null : db.chat.resolveConversationMachine(userId, conversationId, { isOnline })
+  const agent = resolution?.agentId ? db.machines.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
-  const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
+  const project = conversation.projectId ? db.projects.getProject(userId, conversation.projectId) : null
   const projectLlm = project && conversation.llmProvider === null
-    ? db.getCiLlmConfig('project', project.id)
+    ? db.ci.getCiLlmConfig('project', project.id)
     : null
   /**
    * Движок — с учётом прав пользователя, как в ходе (`turns.ts`): если
@@ -158,7 +158,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
    * codex человеку, у которого он закрыт, — а отвечал claude.
    */
   const wantedProvider = conversation.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
-  const llmAccess = db.getUserLlmAccess(userId)
+  const llmAccess = db.identity.getUserLlmAccess(userId)
   const fallbackProvider = firstAllowedProvider(llmAccess)
   const provider: LlmProvider = isProviderAllowed(llmAccess, wantedProvider) || !fallbackProvider ? wantedProvider : fallbackProvider
   const selectedModel = conversation.llmProvider === provider
@@ -171,7 +171,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
    * видно только по факту исполнения.
    */
   const wantedEngineId = conversation.llmEngineId ?? projectLlm?.llmEngineId ?? settings.llmEngineId ?? null
-  const engineResolution = db.resolveLlmEngine(wantedEngineId, provider, role)
+  const engineResolution = db.llm.resolveLlmEngine(wantedEngineId, provider, role)
   // Модель Claude приводится к алиасу меню тем же `claudeModelAlias`, что и в
   // ходе: сохранённое старое значение («opus») исполнитель резолвит в «opus[1m]»,
   // и показывать сырое значение значит называть не ту модель.
@@ -204,22 +204,22 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const kbMode: KbContextMode = disabled.has('knowledge-mode') ? 'off' : (conversation.kbContextMode ?? 'auto')
   const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
   const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
-  const messages = db.listMessages(userId, conversationId)
+  const messages = db.chat.listMessages(userId, conversationId)
   // Тот же разбор resume-id, что и у хода модели (`turns.ts`), и тот же билдер
   // истории: иначе размер в панели не совпадёт с отправленным.
   const resumeId = resumeSessionIdFor(conversation.claudeSessionId ?? null, provider)
   const historyText = buildConversationPrompt(messages)
   // Контекст задачи — тот же блок, что уходит в ход: раньше предпросмотр про
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
-  const linkedTask = conversation.taskId && conversation.projectId ? db.getCiTask(userId, conversation.projectId, conversation.taskId) : null
+  const linkedTask = conversation.taskId && conversation.projectId ? db.tasks.getCiTask(userId, conversation.projectId, conversation.taskId) : null
   const makeSources = taskMakeSources(linkedTask?.designs ?? [])
   /** Связи макета задачи: по ним ход подключает read-only Make-источники. */
   const taskDesigns = conversation.taskId && conversation.projectId
-    ? (db.getCiTask(userId, conversation.projectId, conversation.taskId)?.designs ?? [])
+    ? (db.tasks.getCiTask(userId, conversation.projectId, conversation.taskId)?.designs ?? [])
     : []
   const taskContext = (() => {
     if (!conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
-    const tc = db.getTaskChatContext(userId, conversationId, isOnline)
+    const tc = db.tasks.getTaskChatContext(userId, conversationId, isOnline)
     if (!tc) return null
     return taskContextBlock({
       context: tc,
@@ -481,7 +481,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   ]
   // Рост контекста: размеры промптов последних ходов. Отвечает на «почему стало
   // дороже» — из meta.request, без досчёта.
-  const prices = db.listModelPrices()
+  const prices = db.llm.listModelPrices()
   const turnSizes: ContextTurnSize[] = [...messages]
     .reverse()
     .filter((message) => message.role === 'ai' && message.meta?.request)
@@ -707,7 +707,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     foreign: viewer !== userId,
     turnSizes,
     lastTurn,
-    changes: db.listConversationContextEvents(userId, conversationId, 20),
+    changes: db.chat.listConversationContextEvents(userId, conversationId, 20),
     // Тот же список, что уйдёт исполнителю (`turns.ts` → LlmRequest.disallowedTools).
     disallowedTools: [
       ...[...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null),
@@ -818,7 +818,7 @@ export async function registerRest(
     /** Чтение файла на машине (реестр агентов живёт в server.ts). */
     fsRead?: (agentId: string, path: string) => Promise<{ dataBase64?: string }>
     /** Живой статус машин (online, версия, телеметрия): реестр агентов живёт в server.ts. */
-    liveAgents?: (agents: ReturnType<VoiceChatDb['listAgents']>) => AgentInfo[]
+    liveAgents?: (agents: ReturnType<VoiceChatDb['machines']['listAgents']>) => AgentInfo[]
     /**
      * Контекст Make-проекта для предпросмотра: тот же текст, что ход добавляет
      * к промпту. Мастерская живёт в `server.ts`, поэтому приходит функцией.
@@ -864,7 +864,7 @@ export async function registerRest(
         return proxyError(reply, err) as never
       }
     }
-    const workdir = db.getSettings(userId).workdir
+    const workdir = db.settings.getSettings(userId).workdir
     const roots = [profile(req).home, join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
     const res = readUserFile(req.query.path ?? '', roots)
     if (!res.ok) {
@@ -888,7 +888,7 @@ export async function registerRest(
         return value !== undefined && Number.isFinite(parsed) ? parsed : undefined
       }
       const beforeAt = num(req.query.beforeAt)
-      return db.listConversations(uid(req), {
+      return db.chat.listConversations(uid(req), {
         scope,
         projectId: req.query.projectId,
         includeCompleted: queryFlag(req.query.includeCompleted),
@@ -900,7 +900,7 @@ export async function registerRest(
   )
    app.post<{ Body: DesktopMigrationBundle }>(REST.desktopMigration, async (req, reply) => {
     if (!req.body || !Array.isArray(req.body.conversations)) return reply.code(400).send({ error: 'invalid migration bundle' })
-    return db.importDesktopData(uid(req), req.body)
+    return db.chat.importDesktopData(uid(req), req.body)
   })
 
   app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' } }>(REST.conversations, async (req, reply) => {
@@ -910,7 +910,7 @@ export async function registerRest(
       : parseConversationScope(req.body.scope)
     if (!scope || (scope === 'kanban' && !req.body?.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
     try {
-      const conversation = db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope)
+      const conversation = db.chat.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope)
       // Новый Make-чат стартует от актуального main: копию обновляет сервер один
       // раз здесь, потому что сама модель Make к репозиторию доступа не имеет.
       if (kind === 'make' && conversation?.projectId) opts.refreshProjectMain?.(uid(req), conversation.projectId)
@@ -923,21 +923,21 @@ export async function registerRest(
 
   app.get<{ Params: { projectId: string }; Querystring: { conversationId?: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
     const userId = uid(req)
-    const privateConversation = db.ensureKanbanAssistantConversation(userId, req.params.projectId)
-    const requested = req.query.conversationId ? db.getConversation(userId, req.query.conversationId, { scope: 'kanban', projectId: req.params.projectId }) : null
+    const privateConversation = db.chat.ensureKanbanAssistantConversation(userId, req.params.projectId)
+    const requested = req.query.conversationId ? db.chat.getConversation(userId, req.query.conversationId, { scope: 'kanban', projectId: req.params.projectId }) : null
     const conversation = requested?.projectId === req.params.projectId && requested.scope === 'kanban'
       ? requested
       : privateConversation
     if (!conversation) return reply.code(404).send({ error: 'not found' })
-    const project = db.getCiLlmConfig('project', req.params.projectId) ?? db.ciLlmDefaultsForUser(userId)
-    const settings = db.getSettings(userId)
+    const project = db.ci.getCiLlmConfig('project', req.params.projectId) ?? db.ci.ciLlmDefaultsForUser(userId)
+    const settings = db.settings.getSettings(userId)
     const provider = conversation.llmProvider ?? project.provider
     const model = conversation.llmProvider
       ? (conversation.llmModel ?? (provider === 'codex' ? settings.codexModel : settings.model))
       : project.model
     return {
       conversation,
-      messages: db.listMessages(userId, conversation.id),
+      messages: db.chat.listMessages(userId, conversation.id),
       effectiveLlm: {
         llmEngineId: conversation.llmEngineId ?? project.llmEngineId ?? settings.llmEngineId,
         provider,
@@ -951,7 +951,7 @@ export async function registerRest(
   // быть «делай сам» в одном проекте и «спрашивай» в другом.
   app.post<{ Params: { id: string }; Body: { autonomy?: string } }>('/api/conversations/:id/assistant-autonomy', async (req, reply) => {
     const autonomy = req.body?.autonomy === 'confirm' ? 'confirm' : 'auto'
-    const updated = db.setConversationAutonomy(uid(req), req.params.id, autonomy)
+    const updated = db.chat.setConversationAutonomy(uid(req), req.params.id, autonomy)
     return updated ?? reply.code(404).send({ error: 'not found' })
   })
 
@@ -963,7 +963,7 @@ export async function registerRest(
       return reply.code(400).send({ error: 'idempotencyKey, title and message are required' })
     }
     try {
-      return db.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message)
+      return db.chat.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message)
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
     }
@@ -972,7 +972,7 @@ export async function registerRest(
   app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req, reply) => {
     const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
     if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
-    return db.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
+    return db.chat.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
   })
 
   /**
@@ -984,7 +984,7 @@ export async function registerRest(
     Querystring: { q?: string; projectId?: string; conversationId?: string; limit?: string; cursor?: string }
   }>(REST.messagesSearch, async (req) => {
     const { q, projectId, conversationId, limit, cursor } = req.query
-    return db.searchMessages(uid(req), {
+    return db.chat.searchMessages(uid(req), {
       q: q ?? '',
       projectId: projectId === undefined ? undefined : projectId === '' || projectId === 'none' ? null : projectId,
       ...(conversationId ? { conversationId } : {}),
@@ -996,9 +996,9 @@ export async function registerRest(
   app.get<{ Params: { id: string }; Querystring: { scope?: string; projectId?: string } }>('/api/conversations/:id', async (req, reply) => {
     const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
     if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
-    const conversation = db.getConversation(uid(req), req.params.id, { scope, projectId: req.query.projectId })
+    const conversation = db.chat.getConversation(uid(req), req.params.id, { scope, projectId: req.query.projectId })
     if (!conversation) return reply.code(404).send({ error: 'not found' })
-    return { conversation, messages: db.listMessages(uid(req), req.params.id) }
+    return { conversation, messages: db.chat.listMessages(uid(req), req.params.id) }
   })
 
   /**
@@ -1009,9 +1009,9 @@ export async function registerRest(
    */
   const contextOwnerFor = (req: Parameters<typeof uid>[0], conversationId: string): string | null => {
     const viewer = uid(req)
-    if (db.getConversation(viewer, conversationId)) return viewer
-    if ((db.getUser(viewer)?.role ?? 'developer') !== 'admin') return null
-    return db.conversationOwner(conversationId)
+    if (db.chat.getConversation(viewer, conversationId)) return viewer
+    if ((db.identity.getUser(viewer)?.role ?? 'developer') !== 'admin') return null
+    return db.chat.conversationOwner(conversationId)
   }
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/context-snapshot', async (req, reply) => {
@@ -1024,7 +1024,7 @@ export async function registerRest(
     // отдельным блоком. Читается с диска, поэтому здесь, а не внутри снимка:
     // сам снимок синхронный. Ошибка чтения не должна ломать экран — тогда
     // блока просто не будет, как и в ходе (там та же `.catch`).
-    const makeConv = owner ? db.getConversation(owner, req.params.id) : null
+    const makeConv = owner ? db.chat.getConversation(owner, req.params.id) : null
     const makeContextText = makeConv?.assistantKind === 'make' && opts.makeContext
       ? await opts.makeContext(req.params.id).catch(() => '')
       : null
@@ -1040,7 +1040,7 @@ export async function registerRest(
     // люди, и журнал должен показать именно того, кто нажал.
     const owner = contextOwnerFor(req, req.params.id)
     if (!owner) return reply.code(404).send({ error: 'not found' })
-    const updated = db.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
+    const updated = db.chat.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
     const snapshot = contextSnapshot(db, owner, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe(), viewer: uid(req) })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
@@ -1056,7 +1056,7 @@ export async function registerRest(
     const userId = uid(req)
     const here = contextSnapshot(db, userId, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe() })
     const there = contextSnapshot(db, userId, req.params.otherId, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe() })
-    const otherConversation = db.getConversation(userId, req.params.otherId)
+    const otherConversation = db.chat.getConversation(userId, req.params.otherId)
     if (!here || !there || !otherConversation) return reply.code(404).send({ error: 'not found' })
     const itemsOf = (snapshot: ConversationContextSnapshot): Map<string, ContextSnapshotItem> =>
       new Map(snapshot.groups.flatMap((group) => group.items).map((item) => [item.id, item]))
@@ -1091,8 +1091,8 @@ export async function registerRest(
    */
   app.post<{ Params: { id: string }; Body: { fromConversationId?: string } }>('/api/conversations/:id/context-copy', async (req, reply) => {
     const userId = uid(req)
-    const target = db.getConversation(userId, req.params.id)
-    const source = req.body?.fromConversationId ? db.getConversation(userId, req.body.fromConversationId) : null
+    const target = db.chat.getConversation(userId, req.params.id)
+    const source = req.body?.fromConversationId ? db.chat.getConversation(userId, req.body.fromConversationId) : null
     if (!target || !source) return reply.code(404).send({ error: 'not found' })
     if (source.id === target.id) return reply.code(400).send({ error: 'Разговор-источник совпадает с текущим' })
     const wanted = new Set((source.disabledContext ?? []).filter(isContextToggleable))
@@ -1101,7 +1101,7 @@ export async function registerRest(
       const shouldBeEnabled = !wanted.has(itemId)
       const enabledNow = !current.has(itemId)
       if (enabledNow === shouldBeEnabled) continue // уже как надо
-      db.setConversationContextEnabled(userId, target.id, itemId, shouldBeEnabled, userId)
+      db.chat.setConversationContextEnabled(userId, target.id, itemId, shouldBeEnabled, userId)
     }
     const snapshot = contextSnapshot(db, userId, target.id, { isOnline: opts.isAgentOnline, kbStatus: kbStatusSafe() })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
@@ -1116,7 +1116,7 @@ export async function registerRest(
    */
   app.post<{ Params: { id: string }; Body: { draft?: string } }>('/api/conversations/:id/context-kb-preview', async (req, reply) => {
     const userId = uid(req)
-    const conversation = db.getConversation(userId, req.params.id)
+    const conversation = db.chat.getConversation(userId, req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
     const disabled = new Set(conversation.disabledContext ?? [])
     const mode = disabled.has('knowledge-mode') ? 'off' : (conversation.kbContextMode ?? 'auto')
@@ -1157,13 +1157,13 @@ export async function registerRest(
    */
   app.get<{ Params: { id: string } }>('/api/conversations/:id/agents-chain', async (req, reply) => {
     const userId = uid(req)
-    const conversation = db.getConversation(userId, req.params.id)
+    const conversation = db.chat.getConversation(userId, req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
-    const resolution = db.resolveConversationMachine(userId, req.params.id, { ...(opts.isAgentOnline ? { isOnline: opts.isAgentOnline } : {}) })
-    const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
+    const resolution = db.chat.resolveConversationMachine(userId, req.params.id, { ...(opts.isAgentOnline ? { isOnline: opts.isAgentOnline } : {}) })
+    const project = conversation.projectId ? db.projects.getProject(userId, conversation.projectId) : null
     const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
-    const workdir = conversation.workdir ?? projectMachine?.path ?? db.getSettings(userId).workdir ?? null
-    const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
+    const workdir = conversation.workdir ?? projectMachine?.path ?? db.settings.getSettings(userId).workdir ?? null
+    const agent = resolution?.agentId ? db.machines.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
     const machineName = agent?.name ?? null
     if (!workdir) return { machineName, workdir: null, files: [], unavailable: 'Рабочая директория не задана: цепочку читать негде.' } satisfies AgentsChainResult
     if (!resolution?.agentId || resolution.error || !opts.fsRead) {
@@ -1207,21 +1207,21 @@ export async function registerRest(
     '/api/conversations/:id',
     async (req, reply) => {
       const userId = uid(req)
-      const current = db.getConversation(userId, req.params.id)
+      const current = db.chat.getConversation(userId, req.params.id)
       if (!current) return reply.code(404).send({ error: 'not found' })
       if (
         req.body.execTarget !== undefined &&
         req.body.execTarget !== null &&
         req.body.execTarget !== 'none' &&
-        !db.canUseAgent(userId, req.body.execTarget, current.projectId)
+        !db.machines.canUseAgent(userId, req.body.execTarget, current.projectId)
       ) {
         return reply.code(403).send({ error: 'machine is not available for this conversation' })
       }
-      if (typeof req.body.title === 'string') db.renameConversation(userId, req.params.id, req.body.title)
-      if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
+      if (typeof req.body.title === 'string') db.chat.renameConversation(userId, req.params.id, req.body.title)
+      if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') db.chat.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.execTarget !== undefined) {
-        const role = db.getUser(uid(req))?.role ?? 'developer'
-        if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
+        const role = db.identity.getUser(uid(req))?.role ?? 'developer'
+        if (req.body.llmEngineId && !db.llm.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
           return reply.code(403).send({ error: 'llm engine is not available for role' })
         }
         // Неизвестное значение движка приравниваем к «из общих настроек».
@@ -1238,7 +1238,7 @@ export async function registerRest(
             : req.body.permissionMode === 'plan' || req.body.permissionMode === 'acceptEdits' || req.body.permissionMode === 'bypassPermissions'
               ? req.body.permissionMode
               : null
-        db.setConversationExecTarget(
+        db.chat.setConversationExecTarget(
           uid(req),
           req.params.id,
           req.body.execTarget,
@@ -1250,7 +1250,7 @@ export async function registerRest(
           req.body.llmEngineId
         )
       }
-      const conversation = db.getConversation(uid(req), req.params.id)
+      const conversation = db.chat.getConversation(uid(req), req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       // Журнал контекста: смена настроек разговора — такое же изменение того,
       // что получит модель, как и тумблер источника. Раньше «кто понизил режим
@@ -1268,7 +1268,7 @@ export async function registerRest(
         ...(req.body.execTarget !== undefined ? [['machine', conversation.execTarget ?? 'резолвер сервера'] as [string, string]] : [])
       ]
       for (const [itemId, value] of settingEvents) {
-        if (typeof value === 'string') db.recordConversationSettingEvent(uid(req), req.params.id, itemId, value, uid(req))
+        if (typeof value === 'string') db.chat.recordConversationSettingEvent(uid(req), req.params.id, itemId, value, uid(req))
       }
       return conversation
     }
@@ -1279,19 +1279,19 @@ export async function registerRest(
   // параметрическому — «task-chats» не будет прочитан как id беседы.
   app.get<{ Querystring: { withRuns?: string } }>(
     REST.conversationTaskChats(),
-    async (req) => db.taskChatBadges(uid(req), { withRuns: req.query.withRuns === '1' || req.query.withRuns === 'true' })
+    async (req) => db.tasks.taskChatBadges(uid(req), { withRuns: req.query.withRuns === '1' || req.query.withRuns === 'true' })
   )
 
   // Контекст задачи для шапки связанного чата (проект/эпик/стори/этап/машина/ран).
   app.get<{ Params: { id: string } }>('/api/conversations/:id/task-context', async (req, reply) => {
-    if (!db.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
-    return db.getTaskChatContext(uid(req), req.params.id, opts.isAgentOnline)
+    if (!db.chat.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
+    return db.tasks.getTaskChatContext(uid(req), req.params.id, opts.isAgentOnline)
   })
 
   app.post<{ Params: { id: string }; Body: { projectId?: string | null } }>(
     '/api/conversations/:id/project',
     async (req, reply) => {
-      const conversation = db.setConversationProject(uid(req), req.params.id, req.body?.projectId ?? null)
+      const conversation = db.chat.setConversationProject(uid(req), req.params.id, req.body?.projectId ?? null)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
     }
@@ -1311,7 +1311,7 @@ export async function registerRest(
           return reply.code(400).send({ error: 'previewUrl must be an http/https URL' })
         }
       }
-      const conversation = db.setConversationPreviewUrl(uid(req), req.params.id, previewUrl)
+      const conversation = db.chat.setConversationPreviewUrl(uid(req), req.params.id, previewUrl)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
     }
@@ -1324,7 +1324,7 @@ export async function registerRest(
       if (!CONVERSATION_STATUSES.some((s) => s.id === status)) {
         return reply.code(400).send({ error: 'invalid status' })
       }
-      const conversation = db.setConversationStatus(uid(req), req.params.id, status as ConversationStatus)
+      const conversation = db.chat.setConversationStatus(uid(req), req.params.id, status as ConversationStatus)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
     }
@@ -1332,7 +1332,7 @@ export async function registerRest(
 
   app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
     try {
-      db.deleteConversation(uid(req), req.params.id)
+      db.chat.deleteConversation(uid(req), req.params.id)
       return { ok: true }
     } catch (err) {
       return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) })
@@ -1349,20 +1349,20 @@ export async function registerRest(
       let effectiveEngine = engine
       let effectiveTarget = execTarget
       if (role === 'ai' && (engine === undefined || execTarget === undefined)) {
-        const conversation = db.getConversation(userId, req.params.id)
+        const conversation = db.chat.getConversation(userId, req.params.id)
         if (engine === undefined) {
-          const settings = db.getSettings(userId)
+          const settings = db.settings.getSettings(userId)
           const projectLlm = conversation?.projectId && conversation.llmProvider === null
-            ? db.getCiLlmConfig('project', conversation.projectId) ?? db.ciLlmDefaultsForUser(userId)
+            ? db.ci.getCiLlmConfig('project', conversation.projectId) ?? db.ci.ciLlmDefaultsForUser(userId)
             : null
           effectiveEngine = conversation?.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
         }
         if (execTarget === undefined) {
-          const machine = db.resolveConversationMachine(userId, req.params.id)
+          const machine = db.chat.resolveConversationMachine(userId, req.params.id)
           effectiveTarget = machine?.source === 'disabled' ? 'none' : machine?.agentId ?? null
         }
       }
-      return db.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
+      return db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
     }
   )
 
@@ -1371,7 +1371,7 @@ export async function registerRest(
     async (req, reply) => {
       if (!req.body?.meta) return reply.code(400).send({ error: 'meta required' })
       try {
-        return db.updateMessageMeta(uid(req), req.params.id, req.params.messageId, req.body.meta)
+        return db.chat.updateMessageMeta(uid(req), req.params.id, req.params.messageId, req.body.meta)
       } catch {
         return reply.code(404).send({ error: 'not found' })
       }
@@ -1381,10 +1381,10 @@ export async function registerRest(
   app.delete<{ Params: { id: string; messageId: string } }>(
     '/api/conversations/:id/messages/:messageId',
     async (req) => {
-      db.deleteMessage(uid(req), req.params.id, req.params.messageId)
+      db.chat.deleteMessage(uid(req), req.params.id, req.params.messageId)
       // История изменилась — сбрасываем сессию Claude, чтобы следующий запрос
       // пересобрал контекст из БД (модель «забудет» удалённое).
-      db.setClaudeSession(uid(req), req.params.id, null)
+      db.chat.setClaudeSession(uid(req), req.params.id, null)
       return { ok: true }
     }
   )
@@ -1450,14 +1450,14 @@ export async function registerRest(
     } catch (err) {
       return proxyError(reply, err)
     }
-    const conv = db.createConversation(u, ccResumeTitle(items))
+    const conv = db.chat.createConversation(u, ccResumeTitle(items))
     const now = Date.now()
     for (const m of ccResumeMessages(items)) {
-      db.addMessage(u, conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
+      db.chat.addMessage(u, conv.id, m.role, m.text, ccTimeLabel(m.ts, now))
     }
     // Привязка к session-id CC → следующий ход пойдёт через `claude --resume <id>`.
-    db.setClaudeSession(u, conv.id, id)
-    return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
+    db.chat.setClaudeSession(u, conv.id, id)
+    return { conversation: db.chat.getConversation(u, conv.id), messages: db.chat.listMessages(u, conv.id) }
   })
 
   // --- Проводник Codex ---------------------------------------------------
@@ -1505,18 +1505,18 @@ export async function registerRest(
     } catch (err) {
       return proxyError(reply, err)
     }
-    const conv = db.createConversation(u, cxResumeTitle(items))
+    const conv = db.chat.createConversation(u, cxResumeTitle(items))
     const now = Date.now()
     for (const m of cxResumeMessages(items)) {
-      db.addMessage(u, conv.id, m.role, m.text, cxTimeLabel(m.ts, now), m.role === 'ai' ? 'codex' : undefined)
+      db.chat.addMessage(u, conv.id, m.role, m.text, cxTimeLabel(m.ts, now), m.role === 'ai' ? 'codex' : undefined)
     }
     // Привязка к session-id Codex (префикс провайдера) → следующий ход пойдёт
     // через `codex exec resume <id>` (см. resumeIdFor в session.ts).
-    db.setClaudeSession(u, conv.id, `codex:${id}`)
-    return { conversation: db.getConversation(u, conv.id), messages: db.listMessages(u, conv.id) }
+    db.chat.setClaudeSession(u, conv.id, `codex:${id}`)
+    return { conversation: db.chat.getConversation(u, conv.id), messages: db.chat.listMessages(u, conv.id) }
   })
 
-  app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'developer'))
+  app.get(REST.llmEngines, async (req) => db.llm.listLlmEnginesForRole(db.identity.getUser(uid(req))?.role ?? 'developer'))
 
   /**
    * Ссылки на машины живут в чужой таблице и могут исчезнуть мимо UI (удаление
@@ -1525,17 +1525,17 @@ export async function registerRest(
    * выбранная машина по умолчанию. Чиним лениво — на первом же чтении.
    */
   const settingsWithLiveAgents = (userId: string): Settings => {
-    const settings = db.getSettings(userId)
-    const alive = new Set(db.listAgents(userId).map((agent) => agent.id))
+    const settings = db.settings.getSettings(userId)
+    const alive = new Set(db.machines.listAgents(userId).map((agent) => agent.id))
     const execTarget = settings.execTarget && !alive.has(settings.execTarget) ? null : settings.execTarget
     const defaultAgentId = settings.defaultAgentId && !alive.has(settings.defaultAgentId) ? null : settings.defaultAgentId
     if (execTarget === settings.execTarget && defaultAgentId === settings.defaultAgentId) return settings
     const repaired = { ...settings, execTarget, defaultAgentId }
-    db.saveSettings(userId, repaired)
+    db.settings.saveSettings(userId, repaired)
     return repaired
   }
   app.get(REST.settings, async (req) => settingsWithLiveAgents(uid(req)))
-  const myLlmAccess = async (req: Parameters<typeof uid>[0]) => db.getUserLlmAccess(uid(req))
+  const myLlmAccess = async (req: Parameters<typeof uid>[0]) => db.identity.getUserLlmAccess(uid(req))
   app.get(REST.llmAccess, myLlmAccess)
   app.get(REST.meLlmAccess, myLlmAccess)
 
@@ -1552,7 +1552,7 @@ export async function registerRest(
     const from = number(query.from)
     const to = number(query.to)
     if ((query.from && from === undefined) || (query.to && to === undefined)) return reply.code(400).send({ error: 'from and to must be timestamps' })
-    return db.usageReport(userId, unit as UsageUnit, from, to, query.conversationId || undefined)
+    return db.chat.usageReport(userId, unit as UsageUnit, from, to, query.conversationId || undefined)
   }
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.usage, async (req, reply) => usageForMe(uid(req), req.query, reply))
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.meUsage, async (req, reply) => usageForMe(uid(req), req.query, reply))
@@ -1563,9 +1563,9 @@ export async function registerRest(
   // закрыт привилегией users:manage.
   app.get(REST.meProfile, async (req): Promise<UserProfileInfo> => {
     const name = uid(req)
-    const user = db.getUser(name)
-    const agents = opts.liveAgents ? opts.liveAgents(db.listAgents(name)) : db.listAgents(name).map((agent) => ({ ...agent, online: opts.isAgentOnline?.(agent.id) ?? false }))
-    const activity = db.sessionActivity().get(name)
+    const user = db.identity.getUser(name)
+    const agents = opts.liveAgents ? opts.liveAgents(db.machines.listAgents(name)) : db.machines.listAgents(name).map((agent) => ({ ...agent, online: opts.isAgentOnline?.(agent.id) ?? false }))
+    const activity = db.identity.sessionActivity().get(name)
     return {
       name,
       role: user?.role ?? 'observer',
@@ -1575,7 +1575,7 @@ export async function registerRest(
       email: user?.email ?? null,
       lastLogin: user?.lastLogin ?? null,
       llmLimitUsd: user?.llmLimitUsd ?? null,
-      conversationCount: db.conversationCounts().get(name) ?? 0,
+      conversationCount: db.chat.conversationCounts().get(name) ?? 0,
       agents,
       lastSeenAt: activity?.lastSeen ?? null,
       liveSessions: activity?.live ?? 0
@@ -1583,7 +1583,7 @@ export async function registerRest(
   })
   app.get<{ Querystring: { limit?: string } }>(REST.meSecurity, async (req): Promise<SecurityEvent[]> => {
     const limit = Number(req.query.limit)
-    return db.listSecurityEvents({ user: uid(req), limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200 })
+    return db.identity.listSecurityEvents({ user: uid(req), limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200 })
   })
 
   // Тело — патч, а не полная замена: неизвестные серверу поля не приходят, а
@@ -1591,18 +1591,18 @@ export async function registerRest(
   // клиент со старой сборкой (или не догрузивший настройки) больше не в силах
   // стереть чужие поля записи.
   app.put<{ Body: Partial<Settings> }>(REST.settings, async (req, reply) => {
-    const role = db.getUser(uid(req))?.role ?? 'developer'
+    const role = db.identity.getUser(uid(req))?.role ?? 'developer'
     // Патч сначала приводится к контракту: значение не того типа или не из
     // набора не должно осесть в записи (она мержится, и мусор остался бы навсегда).
     const patch = sanitizeSettingsPatch(req.body)
-    if (patch.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === patch.llmEngineId)) {
+    if (patch.llmEngineId && !db.llm.listLlmEnginesForRole(role).some((engine) => engine.id === patch.llmEngineId)) {
       return reply.code(403).send({ error: 'llm engine is not available for role' })
     }
-    const generatedFilesTtlDays = patch.generatedFilesTtlDays ?? db.getSettings(uid(req)).generatedFilesTtlDays
+    const generatedFilesTtlDays = patch.generatedFilesTtlDays ?? db.settings.getSettings(uid(req)).generatedFilesTtlDays
     if (!Number.isInteger(generatedFilesTtlDays) || generatedFilesTtlDays < 1 || generatedFilesTtlDays > 3650) {
       return reply.code(400).send({ error: 'generatedFilesTtlDays must be an integer from 1 to 3650' })
     }
-    const raw = patch.personalization ?? db.getSettings(uid(req)).personalization
+    const raw = patch.personalization ?? db.settings.getSettings(uid(req)).personalization
     const preferredName = raw.preferredName?.trim().replace(/\s+/g, ' ') || null
     const currentYear = new Date().getUTCFullYear()
     const validParts =
@@ -1615,7 +1615,7 @@ export async function registerRest(
       ['neutral', 'friendly', 'business', 'plain'].includes(raw.tone)
     if (preferredName && preferredName.length > 80) return reply.code(400).send({ error: 'preferredName is too long' })
     if (!validParts || !validDate || !validEnums) return reply.code(400).send({ error: 'invalid personalization' })
-    db.saveSettings(uid(req), { ...db.getSettings(uid(req)), ...patch, generatedFilesTtlDays, personalization: { ...raw, preferredName } })
+    db.settings.saveSettings(uid(req), { ...db.settings.getSettings(uid(req)), ...patch, generatedFilesTtlDays, personalization: { ...raw, preferredName } })
     return settingsWithLiveAgents(uid(req))
   })
 }

@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-09-07
-checked: 68b0ada1
+checked: 33a7972d
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -11,6 +11,7 @@ areas:
   - apps/server/src/projects
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
+  - apps/server/src/db/repos
   - packages/ui/src/components/ProjectPage.tsx
   - packages/ui/src/components/ProjectBoard.tsx
   - packages/ui/src/components/ProjectSettings.tsx
@@ -61,7 +62,7 @@ areas:
 
 ## Квота собственных проектов
 
-Для ролей `developer`/`tester`/`observer` действует квота на проекты, где пользователь состоит владельцем. Подсчёт идёт по членствам с ролью `owner` (`VoiceChatDb.countOwnedProjects` в `apps/server/src/db/database.ts`), поэтому удаление собственного проекта освобождает место. Значение по умолчанию `DEFAULT_OWNED_PROJECT_LIMIT = 5` задано в `packages/shared/src/projects.ts`, текущее значение хранится в `app_config` под ключом `projects.ownedLimit`; роль `admin` не ограничивается.
+Для ролей `developer`/`tester`/`observer` действует квота на проекты, где пользователь состоит владельцем. Подсчёт идёт по членствам с ролью `owner` (`ProjectsRepo.countOwnedProjects` в `apps/server/src/db/database.ts`), поэтому удаление собственного проекта освобождает место. Значение по умолчанию `DEFAULT_OWNED_PROJECT_LIMIT = 5` задано в `packages/shared/src/projects.ts`, текущее значение хранится в `app_config` под ключом `projects.ownedLimit`; роль `admin` не ограничивается.
 
 `POST /api/projects` в `apps/server/src/routes/projects.ts` читает настройку на каждый запрос и при исчерпании отвечает `409` с человеческим объяснением, а не ошибкой права. `GET /api/projects/quota` (мост `projects:quota`) возвращает `{ owned, limit, unlimited }`: `NewProjectDialog` предупреждает при последнем свободном месте, а при исчерпании показывает причину и блокирует кнопку создания. Серверная проверка остаётся обязательной независимо от состояния интерфейса.
 
@@ -222,7 +223,7 @@ Make-проект хранится в `task_designs`; актуальный ко�
 `task_designs`, в том числе исторические связи с Make-проектом другого владельца,
 продолжают возвращаться участникам карточки и использоваться task-run. Сам
 привязанный Make-проект по-прежнему доступен участникам обычного проекта на чтение:
-`VoiceChatDb.isMakeProjectViewer` пускает участника в `access(…, 'viewer')`
+`ChatRepo.isMakeProjectViewer` пускает участника в `access(…, 'viewer')`
 роутов Make, включая `GET /api/preview/make/:id/*`.
 
 **Где в интерфейсе.** В карточке — секция «Дизайн»
@@ -398,13 +399,13 @@ Escape; нажатие внутри контейнера не закрывает
 
 ### Проект при создании обычного разговора
 
-`POST /api/conversations` принимает необязательный `projectId` и передаёт его в `VoiceChatDb.createConversation` (`apps/server/src/routes/rest.ts`, `apps/server/src/db/database.ts`). Непустой идентификатор разрешён только для проекта, доступного текущему пользователю: проверка выполняется до `INSERT`, а недоступный или несуществующий проект возвращает 404, поэтому строка разговора не появляется. Создание без проекта остаётся допустимым и сохраняет `conversations.project_id` как `NULL`.
+`POST /api/conversations` принимает необязательный `projectId` и передаёт его в `ChatRepo.createConversation` (`apps/server/src/routes/rest.ts`, `apps/server/src/db/database.ts`). Непустой идентификатор разрешён только для проекта, доступного текущему пользователю: проверка выполняется до `INSERT`, а недоступный или несуществующий проект возвращает 404, поэтому строка разговора не появляется. Создание без проекта остаётся допустимым и сохраняет `conversations.project_id` как `NULL`.
 
-Успешное создание атомарно записывает `project_id` вместе со снимком `skill_names` из проекта и возвращает `Conversation` с тем же `projectId`. Это прямой путь создания обычного разговора; отдельные ограничения специализированных assistant kinds остаются в `VoiceChatDb.createConversation`.
+Успешное создание атомарно записывает `project_id` вместе со снимком `skill_names` из проекта и возвращает `Conversation` с тем же `projectId`. Это прямой путь создания обычного разговора; отдельные ограничения специализированных assistant kinds остаются в `ChatRepo.createConversation`.
 
 Доступ — по членству, а не по единственному владельцу: гейты
 `isProjectMember` / единый публичный серверный
-`VoiceChatDb.isProjectOwner(userId, projectId)` из `apps/server/src/db/database.ts`.
+`ProjectsRepo.isProjectOwner(userId, projectId)` из `apps/server/src/db/database.ts`.
 Аргументы передаются именно в порядке «пользователь, проект»; метод проверяет строку
 `project_members` с совпадающими `username`, `project_id` и `role='owner'`, а не
 `projects.created_by` или прежний `ownerId`. Любой участник работает с доской/задачами/колонками; правка
@@ -695,7 +696,7 @@ Reconnect → полная сверка списка. Инцидент-фон: �
 Важно: общий `POST /api/projects/:id/tasks/:taskId/move` не является универсальным
 workflow-гейтом. `apps/server/src/routes/projects.ts` отдельно обслуживает
 `ready` → `development`, возврат активной разработки в backlog и запуск
-preparation-run, но общий fallback напрямую вызывает `VoiceChatDb.moveTask`.
+preparation-run, но общий fallback напрямую вызывает `TasksRepo.moveTask`.
 Метод БД проверяет членство, существование задачи и принадлежность целевой колонки
 проекту, рассчитывает позицию и меняет колонку, но не вызывает
 `canTransitionWorkflow` и не проверяет Component QA, Integration Tests,
@@ -831,7 +832,7 @@ Done ставит её заново; перенос между done-колонк
 
 Черновик использует ту же `TaskModal` и классы `.jmodal-*`, что карточки на доске: заголовок, описание, критерии, исполнитель, приоритет, метки, навыки, родитель, оценка и срок редактируются стандартными контролами. Для `taskLaunch` карточка скрывает вкладки уже созданной задачи и серверные панели CI/QA/Merge, не создаёт связанный чат и добавляет в стандартный footer три действия выбора. Движок и модель показываются в панели подробностей; закрытие по стандартному Esc, крестику или overlay не сохраняет черновик. Ошибка создания или серверной валидации показывается тостом, но `taskProposal` не очищается: форма остаётся открытой с заголовком, остальными полями и выбранным исполнителем; pending-флаг снимается для повторной попытки.
 
-Серверная граница назначения находится в `VoiceChatDb.createTask` и `updateTask` (`apps/server/src/db/database.ts`). Пользовательское создание передаёт `source`: `created_by` и исторический снимок `created_by_name` берутся только из серверной сессии, а поле `createdBy` в REST-теле отклоняется. Отсутствующий или `null` `assignee` означает автоматическое назначение на создателя; явный исполнитель допустим только как активный, незаблокированный участник того же проекта, иначе вся транзакция откатывается. Внутренний вызов без `source` считается системным: автора и случайного исполнителя у него нет, аудит получает способ `system`.
+Серверная граница назначения находится в `TasksRepo.createTask` и `updateTask` (`apps/server/src/db/database.ts`). Пользовательское создание передаёт `source`: `created_by` и исторический снимок `created_by_name` берутся только из серверной сессии, а поле `createdBy` в REST-теле отклоняется. Отсутствующий или `null` `assignee` означает автоматическое назначение на создателя; явный исполнитель допустим только как активный, незаблокированный участник того же проекта, иначе вся транзакция откатывается. Внутренний вызов без `source` считается системным: автора и случайного исполнителя у него нет, аудит получает способ `system`.
 
 Создание задачи, увеличение project task sequence, строка `task_creation_audit` и привязка `task_creation_requests` выполняются одной SQLite-транзакцией. Заголовок `Idempotency-Key` уникален в рамках инициатора: повтор возвращает исходную задачу и не создаёт второй аудит. Аудит хранит проект, задачу, автора и его историческое имя, итогового исполнителя, источник и способ `automatic`, `explicit` либо `system`. Миграция добавляет nullable-поля автора без бэкфилла и не меняет старые `assignee`; поэтому неизвестный legacy-автор отображается как «Нет данных». Переназначение через `updateTask` меняет только `assignee`.
 

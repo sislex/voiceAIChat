@@ -108,16 +108,16 @@ afterEach(async () => {
 
 /** Проект с машиной и встроенным шагом базы знаний в слоте «после модели». */
 function setup(): { projectId: string; taskId: string } {
-  const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.createAgent('admin', 'M')
-  db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.getBoard('admin', project.id)!
+  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = db.machines.createAgent('admin', 'M')
+  db.machines.linkMachine('admin', project.id, agent.id)
+  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const board = db.tasks.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
-  const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
-  db.setCiSlotCommands('project', project.id, 'after_model', [CI_KB_UPDATE_COMMAND_ID])
+  const task = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
+  db.ci.setCiSlotCommands('project', project.id, 'after_model', [CI_KB_UPDATE_COMMAND_ID])
   return { projectId: project.id, taskId: task.id }
 }
 
@@ -126,7 +126,7 @@ async function runToEnd(projectId: string, taskId: string): Promise<string> {
   expect(res.statusCode).toBe(202)
   const runId = res.json().id as string
   for (let i = 0; i < 300; i++) {
-    const run = db.getCiRunRaw(runId)
+    const run = db.ci.getCiRunRaw(runId)
     if (run && ['success', 'failed', 'cancelled', 'timeout'].includes(run.status)) return runId
     await new Promise((r) => setTimeout(r, 10))
   }
@@ -134,17 +134,17 @@ async function runToEnd(projectId: string, taskId: string): Promise<string> {
 }
 
 function kbStep(runId: string): { status: string; log: string } {
-  const detail = db.getCiRun('admin', runId)!
+  const detail = db.ci.getCiRun('admin', runId)!
   const step = detail.steps.find((s) => s.title === CI_KB_UPDATE_COMMAND_NAME)!
   expect(step).toBeTruthy()
-  const log = db.getCiRunLog('admin', runId).filter((l) => l.stepId === step.id).map((l) => l.chunk).join('')
+  const log = db.ci.getCiRunLog('admin', runId).filter((l) => l.stepId === step.id).map((l) => l.chunk).join('')
   return { status: step.status, log }
 }
 
 describe.skip('legacy development-шаг «Актуализировать базу знаний»', () => {
   it('встроенная команда есть в справочнике и не предлагается модели как инструмент', async () => {
     await boot()
-    const cmd = db.getCiCommand('admin', CI_KB_UPDATE_COMMAND_ID)!
+    const cmd = db.ci.getCiCommand('admin', CI_KB_UPDATE_COMMAND_ID)!
     expect(cmd.builtin).toBe('kb_update')
     expect(cmd.scope).toBe('global')
     expect(cmd.availableToModel).toBe(false)
@@ -155,19 +155,19 @@ describe.skip('legacy development-шаг «Актуализировать баз
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
 
-    expect(db.getCiRunRaw(runId)!.status).toBe('success')
+    expect(db.ci.getCiRunRaw(runId)!.status).toBe('success')
     const step = kbStep(runId)
     expect(step.status).toBe('success')
     expect(step.log).toContain('CI-раннер (создана)')
 
     // Кроме заготовки, которую заводит сам проект, появилась статья шага.
-    const doc = db.kbDocuments({ scope: 'project', projectId }).find((d) => d.title === 'CI-раннер')!
+    const doc = db.kb.kbDocuments({ scope: 'project', projectId }).find((d) => d.title === 'CI-раннер')!
     expect(doc).toBeTruthy()
     expect(doc.scope).toBe('project')
     expect(doc.projectId).toBe(projectId)
     expect(doc.areas).toEqual(['apps/server/src/ci'])
     // Раздел определяет сервер: в личных знаниях пользователя статей не появляется.
-    expect(db.kbDocuments({ scope: 'user' })).toHaveLength(0)
+    expect(db.kb.kbDocuments({ scope: 'user' })).toHaveLength(0)
 
     // Промпт шага содержит диф и правила ведения файловых тем.
     const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
@@ -183,8 +183,8 @@ describe.skip('legacy development-шаг «Актуализировать баз
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
 
-    expect(db.getCiRunRaw(runId)!.status).toBe('success')
-    expect(db.ciRunKbGaps(runId).map((g) => g.question)).toEqual(['кто собирает диф шага'])
+    expect(db.ci.getCiRunRaw(runId)!.status).toBe('success')
+    expect(db.ci.ciRunKbGaps(runId).map((g) => g.question)).toEqual(['кто собирает диф шага'])
     const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
     expect(kbPrompt).toContain('Пробелы базы знаний в этом ране')
     expect(kbPrompt).toContain('выяснено: сервер скриптом KB_DIFF_SCRIPT, не модель')
@@ -201,7 +201,7 @@ describe.skip('legacy development-шаг «Актуализировать баз
     const step = kbStep(runId)
     expect(step.status).toBe('success')
     expect(step.log).toContain('Пробелов базы знаний за ран: 1')
-    expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(true)
+    expect(db.kb.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(true)
     const kbPrompt = prompts.find((p) => p.startsWith('Ты ведёшь базу знаний'))!
     expect(kbPrompt).toContain('ответа база не дала')
   })
@@ -210,12 +210,12 @@ describe.skip('legacy development-шаг «Актуализировать баз
     await boot()
     diffBundle = BUNDLE_EMPTY
     const { projectId, taskId } = setup()
-    db.updateProject('admin', projectId, { ciKbContextMode: 'off' })
+    db.projects.updateProject('admin', projectId, { ciKbContextMode: 'off' })
     const runId = await runToEnd(projectId, taskId)
     const step = kbStep(runId)
     expect(step.status).toBe('success')
     expect(step.log).toContain('Нечего обновлять')
-    expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
+    expect(db.kb.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
     expect(prompts.some((p) => p.startsWith('Ты ведёшь базу знаний'))).toBe(false)
   })
 
@@ -237,7 +237,7 @@ describe.skip('legacy development-шаг «Актуализировать баз
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
 
-    expect(db.getCiRunRaw(runId)!.status).toBe('failed')
+    expect(db.ci.getCiRunRaw(runId)!.status).toBe('failed')
     const step = kbStep(runId)
     expect(step.status).toBe('failed')
     expect(step.log).toContain('Корень рабочей копии KB недоступен')
@@ -249,11 +249,11 @@ describe.skip('legacy development-шаг «Актуализировать баз
     modelReply = 'я не понял задачу'
     const { projectId, taskId } = setup()
     const runId = await runToEnd(projectId, taskId)
-    expect(db.getCiRunRaw(runId)!.status).toBe('failed')
+    expect(db.ci.getCiRunRaw(runId)!.status).toBe('failed')
     const step = kbStep(runId)
     expect(step.status).toBe('failed')
     expect(step.log).toContain('Ошибка:')
-    expect(db.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
+    expect(db.kb.kbDocuments({ scope: 'project', projectId }).some((d) => d.title === 'CI-раннер')).toBe(false)
   })
 
   it('исключение в хуке валит ран и не запускает следующие команды', async () => {
@@ -261,10 +261,10 @@ describe.skip('legacy development-шаг «Актуализировать баз
       throw new Error('база знаний недоступна')
     })
     const { projectId, taskId } = setup()
-    const after = db.createCiCommand('admin', { scope: 'project', projectId, name: 'После БЗ', script: 'echo after' })
-    db.setCiSlotCommands('project', projectId, 'after_model', [CI_KB_UPDATE_COMMAND_ID, after.id])
+    const after = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'После БЗ', script: 'echo after' })
+    db.ci.setCiSlotCommands('project', projectId, 'after_model', [CI_KB_UPDATE_COMMAND_ID, after.id])
     const runId = await runToEnd(projectId, taskId)
-    expect(db.getCiRunRaw(runId)!.status).toBe('failed')
+    expect(db.ci.getCiRunRaw(runId)!.status).toBe('failed')
     const step = kbStep(runId)
     expect(step.status).toBe('failed')
     expect(step.log).toContain('база знаний недоступна')

@@ -8,7 +8,7 @@ let projectId:string
 const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main',testCommand:'npm run verify:release',gitUrl:'git@example/repo.git',prepareCheckout:false})
 const prod=():ProductionTarget=>({...ci(),agentId:'prod',path:'/prod',deployCommand:'npm run deploy:prod',healthCheckCommand:'npm run health:prod',expectedRepository:'git@example/repo.git'})
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0))
-beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.createUser('owner','','developer');projectId=db.createProject('owner',{name:'P'}).id})
+beforeEach(()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});db.identity.createUser('owner','','developer');projectId=db.projects.createProject('owner',{name:'P'}).id})
 afterEach(()=>db.close())
 
 describe('ReleaseManager separated preparation and deploy',()=>{
@@ -76,7 +76,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(commands.indexOf(install)).toBeLessThan(commands.indexOf(stage))
     expect(commands.indexOf(stage)).toBeLessThan(commands.indexOf(cleanup))
     expect(commands.join('\n')).not.toContain("git checkout --detach 'prepared-sha' && (npm run shared")
-    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
+    expect(db.releases.getProjectRelease('owner',projectId,release.id)?.status).toBe('ready')
   })
 
   it('logs a reproducible dependency installation failure and cleans the isolated worktree',async()=>{
@@ -95,7 +95,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const target={...ci(),testCommand:'npm run verify:release'}
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
     await tick();await tick()
-    const stored=db.getProjectRelease('owner',projectId,release.id)
+    const stored=db.releases.getProjectRelease('owner',projectId,release.id)
     expect(commands).toContain(releaseRegressionInstallCommand(target,release.id))
     expect(commands).not.toContain(releaseRegressionStageCommand(target,release.id,target.testCommand))
     expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
@@ -121,7 +121,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await tick();await tick()
     expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
     expect(commands.join('\n')).not.toMatch(/git checkout --detach 'prepared-sha' &&/)
-    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('failed')
+    expect(db.releases.getProjectRelease('owner',projectId,release.id)?.status).toBe('failed')
   })
 
   it('cleans the isolated regression worktree after a timed out stage',async()=>{
@@ -141,8 +141,8 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
     await tick();await tick()
     expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
-    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('failed')
-    expect(db.getProjectRelease('owner',projectId,release.id)?.steps.find(step=>step.kind==='regression')?.log).toContain('превысила лимит')
+    expect(db.releases.getProjectRelease('owner',projectId,release.id)?.status).toBe('failed')
+    expect(db.releases.getProjectRelease('owner',projectId,release.id)?.steps.find(step=>step.kind==='regression')?.log).toContain('превысила лимит')
   })
 
   it('prepares KB and runs regression while creating the branch',async()=>{
@@ -164,7 +164,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(runtime.prepareKnowledgeBase).toHaveBeenCalledWith('release/1.2.3',ci())
     expect(commands.some(command=>command.includes('npm run verify:release'))).toBe(true)
     expect(commands.some(command=>command.includes('affected-check'))).toBe(false)
-    const stored=db.getProjectRelease('owner',projectId,release.id)
+    const stored=db.releases.getProjectRelease('owner',projectId,release.id)
     expect(stored?.status).toBe('ready')
     expect(stored?.steps.find(step=>step.kind==='regression')?.log).toContain('active package: server')
   })
@@ -180,7 +180,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   it('passes the release branch version to production without merging main or creating a tag',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('ls-remote')?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.27\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.27","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
-    const prepared=db.createProjectRelease('owner',projectId,{branch:'release/0.1.27',version:'0.1.27',sha:'fixed-sha',status:'ready'})
+    const prepared=db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.27',version:'0.1.27',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const attempt=await manager.start('owner',ci(),prod(),'release/0.1.27')
     await tick();await tick()
@@ -188,7 +188,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
     expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.27 commit=fixed-sha source=release-manager' && npm run deploy:prod")
     expect(commands.join('\n')).not.toContain('install -m 755 scripts/prod/deploy.sh')
-    expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
+    expect(db.releases.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('released')
     expect(prepared.status).toBe('ready')
   })
 
@@ -202,13 +202,13 @@ describe('ReleaseManager separated preparation and deploy',()=>{
       if(command.includes("df -Pk"))return{exitCode:0,output:'1000000\n'}
       return{exitCode:0,output:'ok'}
     }}
-    db.createProjectRelease('owner',projectId,{branch:'release/0.1.50',version:'0.1.50',sha:'fixed-sha',status:'ready'})
+    db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.50',version:'0.1.50',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const attempt=await manager.start('owner',ci(),prod(),'release/0.1.50')
     await tick();await tick()
     expect(pruned).toBe(true)
     expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
-    const release=db.getProjectRelease('owner',projectId,attempt.id)
+    const release=db.releases.getProjectRelease('owner',projectId,attempt.id)
     expect(release?.status).toBe('failed')
     expect(release?.steps.find(step=>step.kind==='building')?.log).toMatch(/свободно 2\.9 ГБ, нужно не меньше 5\.0 ГБ/)
   })
@@ -216,7 +216,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   it('refreshes the installed production launcher from the verified release checkout',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('ls-remote')?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.44\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.44","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
-    db.createProjectRelease('owner',projectId,{branch:'release/0.1.44',version:'0.1.44',sha:'fixed-sha',status:'ready'})
+    db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.44',version:'0.1.44',sha:'fixed-sha',status:'ready'})
     const target={...prod(),deployCommand:'git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy'}
     await new ReleaseManager(db,runtime).start('owner',ci(),target,'release/0.1.44')
     await tick();await tick()
@@ -226,31 +226,31 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   it('does not release when health reports the expected commit with another version',async()=>{
     const limits={checkoutMs:1_000,knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_000}
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.35\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
-    db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.35',sha:'fixed-sha',status:'ready'})
+    db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.35',sha:'fixed-sha',status:'ready'})
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),{...prod(),limits},'release/0.1.35')
     await new Promise(resolve=>setTimeout(resolve,1_050))
-    const stored=db.getProjectRelease('owner',projectId,attempt.id)
+    const stored=db.releases.getProjectRelease('owner',projectId,attempt.id)
     expect(stored?.status).toBe('failed')
     expect(stored?.steps.find(step=>step.kind==='health_check')?.log).toContain('version=0.1.0')
   })
 
   it('resumes an active health check after server restart and verifies the expected commit and version',async()=>{
-    const release=db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'health_check'})
-    db.setProjectReleaseStep(release.id,'health_check','running','waiting','owner')
+    const release=db.releases.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'health_check'})
+    db.releases.setProjectReleaseStep(release.id,'health_check','running','waiting','owner')
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'{"ok":true,"version":"1.0.0","commit":"fixed-sha"}'})}
     const manager=new ReleaseManager(db,runtime)
     manager.reconcile(()=>prod())
     await tick();await tick()
-    expect(db.getProjectRelease('owner',projectId,release.id)?.status).toBe('released')
+    expect(db.releases.getProjectRelease('owner',projectId,release.id)?.status).toBe('released')
   })
 
   it('blocks mismatched prepared version before changing production',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return {exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.35\n'}}}
-    db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.0',sha:'fixed-sha',status:'ready'})
+    db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.0',sha:'fixed-sha',status:'ready'})
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/0.1.35')).rejects.toThrow('Версия подготовки 0.1.0 не соответствует ветке release/0.1.35 (0.1.35)')
     expect(commands).toEqual([])
-    const list=db.listProjectReleaseSummaries('owner',projectId)
+    const list=db.releases.listProjectReleaseSummaries('owner',projectId)
     expect(list).toHaveLength(1)
     expect(list[0]).toEqual(expect.objectContaining({id:expect.any(String),branch:'release/0.1.35',sha:'fixed-sha',status:'ready',previousReleaseId:null,durationMs:null}))
     expect(list[0]).not.toHaveProperty('steps')
@@ -259,7 +259,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
 
   it('blocks changed SHA, offline production and concurrent deploy',async()=>{
     const runtime:ReleaseRuntime={isOnline:()=>false,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'moved-sha\trefs/heads/release/1.0.0\n'})}
-    db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
+    db.releases.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')).rejects.toThrow('offline')
     runtime.isOnline=()=>true
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')).rejects.toThrow('SHA')
@@ -267,11 +267,11 @@ describe('ReleaseManager separated preparation and deploy',()=>{
 
   it('numbers a retry deploy after a failed attempt without hitting the unique constraint',async()=>{
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{if(target.agentId==='ci')return {exitCode:0,output:'fixed-sha\trefs/heads/release/2.0.0\n'};return command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"2.0.0","commit":"fixed-sha"}'}:{exitCode:1,output:'dirty checkout'}}}
-    db.createProjectRelease('owner',projectId,{branch:'release/2.0.0',version:'2.0.0',sha:'fixed-sha',status:'ready'})
+    db.releases.createProjectRelease('owner',projectId,{branch:'release/2.0.0',version:'2.0.0',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const failed=await manager.start('owner',ci(),prod(),'release/2.0.0')
     await tick();await tick()
-    expect(db.getProjectRelease('owner',projectId,failed.id)?.status).toBe('failed')
+    expect(db.releases.getProjectRelease('owner',projectId,failed.id)?.status).toBe('failed')
     expect(failed.attempt).toBe(2)
     const retry=await manager.start('owner',ci(),prod(),'release/2.0.0')
     expect(retry.attempt).toBe(3)
@@ -280,10 +280,10 @@ describe('ReleaseManager separated preparation and deploy',()=>{
   it('fails before build when production checkout validation fails',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{commands.push(command);if(target.agentId==='ci')return {exitCode:0,output:'fixed-sha\trefs/heads/release/1.0.0\n'};return {exitCode:1,output:'dirty checkout'}}}
-    db.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
+    db.releases.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')
     await tick();await tick()
-    expect(db.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('failed')
+    expect(db.releases.getProjectRelease('owner',projectId,attempt.id)?.status).toBe('failed')
     expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
   })
 })

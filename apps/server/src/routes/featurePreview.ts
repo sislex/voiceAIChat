@@ -75,11 +75,11 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     if (!loopback || isLocalPreview(env.agentId, localAgentId)) {
       const url = loopback ? `http://127.0.0.1:${service.hostPort}` : internalUrl
       const result: PreviewAccessResult = { connectionType: 'direct', state: 'connected', url, tunnelId: null, manualCommand: null, internalUrl, localAgentId, error: null }
-      db.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.open.direct', { environmentId: env.id, service: kind })
+      db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.open.direct', { environmentId: env.id, service: kind })
       return result
     }
 
-    const project = db.getProject(userId, req.params.projectId)
+    const project = db.projects.getProject(userId, req.params.projectId)
     const machine = project?.machines.find((item) => item.agentId === env.agentId)
     const missingSshSettings: Array<'hostname' | 'user'> = []
     if (!machine?.sshHost?.trim()) missingSshSettings.push('hostname')
@@ -90,7 +90,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
       ? `Заполните в настройках машины: ${missingSshSettings.includes('hostname') ? 'SSH hostname/IP' : ''}${missingSshSettings.length === 2 ? ' и ' : ''}${missingSshSettings.includes('user') ? 'SSH-пользователя' : ''}`
       : manualCommand ? null : 'SSH hostname/IP или SSH-пользователь имеют недопустимый формат'
 
-    const localAgent = localAgentId && localAgentId !== env.agentId && db.listAgents(userId).some((agent) => agent.id === localAgentId) && agents.isOnline(localAgentId)
+    const localAgent = localAgentId && localAgentId !== env.agentId && db.machines.listAgents(userId).some((agent) => agent.id === localAgentId) && agents.isOnline(localAgentId)
       ? { id: localAgentId }
       : null
     if (!localAgent) {
@@ -99,9 +99,9 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     }
     const tunnelId = createHash('sha256').update(`${userId}:${env.id}:${env.builtCommitSha}:${kind}`).digest('hex').slice(0, 32)
     try {
-      const port = await agents.createTunnel(tunnelId, localAgent.id, env.agentId, service.hostPort, () => Boolean(previews.get(userId, req.params.projectId, req.params.taskId)), () => db.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.close', { environmentId: env.id, tunnelId }))
+      const port = await agents.createTunnel(tunnelId, localAgent.id, env.agentId, service.hostPort, () => Boolean(previews.get(userId, req.params.projectId, req.params.taskId)), () => db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.close', { environmentId: env.id, tunnelId }))
       const result: PreviewAccessResult = { connectionType: 'tunnel', state: 'connected', url: `http://127.0.0.1:${port}`, tunnelId, manualCommand: null, internalUrl, localAgentId: localAgent.id, error: null }
-      db.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.open', { environmentId: env.id, service: kind, tunnelId, localAgentId: localAgent.id })
+      db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.open', { environmentId: env.id, service: kind, tunnelId, localAgentId: localAgent.id })
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

@@ -76,17 +76,17 @@ beforeEach(() => {
   let id = 0
   let clock = 1_000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser(U, '', 'developer')
+  db.identity.createUser(U, '', 'developer')
 })
 afterEach(() => db.close())
 
 /** Проект + задача + ран заданного режима БЗ; ctx — как его собирает runManager. */
 function setup(kbContextMode: 'auto' | 'manual' | 'off' = 'auto', signal = new AbortController().signal, taskOver: { description?: string; acceptanceCriteria?: string } = {}) {
-  const project = db.createProject(U, { name: 'P' })
-  const board = db.getBoard(U, project.id)!
-  const task = db.createTask(U, project.id, { title: 'Кнопка «Выполнить»', columnId: board.columns[0].id, description: 'Ран должен ходить в БЗ', acceptanceCriteria: 'Обращения видны', ...taskOver })!
-  const conv = db.createConversation(U, 'Чат задачи')
-  const run = db.createCiRun({
+  const project = db.projects.createProject(U, { name: 'P' })
+  const board = db.tasks.getBoard(U, project.id)!
+  const task = db.tasks.createTask(U, project.id, { title: 'Кнопка «Выполнить»', columnId: board.columns[0].id, description: 'Ран должен ходить в БЗ', acceptanceCriteria: 'Обращения видны', ...taskOver })!
+  const conv = db.chat.createConversation(U, 'Чат задачи')
+  const run = db.ci.createCiRun({
     projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
     conversationId: conv.id, kbContextMode, slotProgress: { done: 0, total: 2, phase: 'В очереди' }
   })
@@ -100,7 +100,7 @@ function setup(kbContextMode: 'auto' | 'manual' | 'off' = 'auto', signal = new A
     log: () => {},
     run,
     task,
-    project: db.getProject(U, project.id)!,
+    project: db.projects.getProject(U, project.id)!,
     askUser: async () => null,
     askPlanApproval: async () => null,
     runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -127,11 +127,11 @@ function hooksWith(claude: LlmClient, over: Record<string, unknown> = {}) {
 
 describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
   it('remote mcpUrl, kbMcpUrl и ciMcpUrl строятся от публичной базы, секрет сохраняется', async () => {
-    const project = db.createProject(U, { name: 'P' })
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const conv = db.createConversation(U, 'Чат задачи')
-    const run = db.createCiRun({
+    const project = db.projects.createProject(U, { name: 'P' })
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const conv = db.chat.createConversation(U, 'Чат задачи')
+    const run = db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: U, prevColumnId: null,
       conversationId: conv.id, kbContextMode: 'manual', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
@@ -145,7 +145,7 @@ describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
       log: () => {},
       run,
       task,
-      project: db.getProject(U, project.id)!,
+      project: db.projects.getProject(U, project.id)!,
       askUser: async () => null,
       askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -188,7 +188,7 @@ describe('работа модели: браузерная проверка за�
 
   it('режим chromium даёт ходу инструменты и поверхность изолированного браузера', async () => {
     const { task, ctx } = setup()
-    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
     const tokens = broker()
     await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: tokens }).modelWork(ctx)
@@ -200,24 +200,24 @@ describe('работа модели: браузерная проверка за�
 
   it('режим user_panel оставляет поверхностью панель пользователя', async () => {
     const { task, ctx } = setup()
-    db.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
+    db.ci.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
     await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
     expect(rec.last()?.previewSurface).toBe('panel')
   })
 
   it('без чата рана адресовать действия некому — инструментов нет', async () => {
-    const project = db.createProject(U, { name: 'P2' })
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
-    const run = db.createCiRun({
+    const project = db.projects.createProject(U, { name: 'P2' })
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    const run = db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
       slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
     const ctx = {
       runId: run.id, agentId: null, workspacePath: '/repos/p/1', env: {}, signal: new AbortController().signal,
-      parentStepId: 'step-1', log: () => {}, run, task, project: db.getProject(U, project.id)!,
+      parentStepId: 'step-1', log: () => {}, run, task, project: db.projects.getProject(U, project.id)!,
       askUser: async () => null, askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
     } as unknown as CiModelContext
@@ -229,16 +229,16 @@ describe('работа модели: браузерная проверка за�
 
 describe('работа модели: машины проекта', () => {
   it('remote несёт project в mcpUrl и имена других машин проекта', async () => {
-    const mac = db.createAgent(U, 'Мак')
-    const srv = db.createAgent(U, 'Сервер')
-    const project = db.createProject(U, { name: 'P' })
-    db.linkMachine(U, project.id, mac.id)
-    db.linkMachine(U, project.id, srv.id)
-    db.setProjectMachinePath(U, project.id, srv.id, '/srv/proj')
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const conv = db.createConversation(U, 'Чат задачи')
-    const run = db.createCiRun({
+    const mac = db.machines.createAgent(U, 'Мак')
+    const srv = db.machines.createAgent(U, 'Сервер')
+    const project = db.projects.createProject(U, { name: 'P' })
+    db.machines.linkMachine(U, project.id, mac.id)
+    db.machines.linkMachine(U, project.id, srv.id)
+    db.machines.setProjectMachinePath(U, project.id, srv.id, '/srv/proj')
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const conv = db.chat.createConversation(U, 'Чат задачи')
+    const run = db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: mac.id, triggeredBy: U, prevColumnId: null,
       conversationId: conv.id, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
@@ -252,7 +252,7 @@ describe('работа модели: машины проекта', () => {
       log: () => {},
       run,
       task,
-      project: db.getProject(U, project.id)!,
+      project: db.projects.getProject(U, project.id)!,
       askUser: async () => null,
       askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -267,13 +267,13 @@ describe('работа модели: машины проекта', () => {
   })
 
   it('единственная машина проекта — прежний remote без project и списка', async () => {
-    const mac = db.createAgent(U, 'Мак')
-    const project = db.createProject(U, { name: 'P' })
-    db.linkMachine(U, project.id, mac.id)
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const conv = db.createConversation(U, 'Чат задачи')
-    const run = db.createCiRun({
+    const mac = db.machines.createAgent(U, 'Мак')
+    const project = db.projects.createProject(U, { name: 'P' })
+    db.machines.linkMachine(U, project.id, mac.id)
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const conv = db.chat.createConversation(U, 'Чат задачи')
+    const run = db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: mac.id, triggeredBy: U, prevColumnId: null,
       conversationId: conv.id, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
@@ -287,7 +287,7 @@ describe('работа модели: машины проекта', () => {
       log: () => {},
       run,
       task,
-      project: db.getProject(U, project.id)!,
+      project: db.projects.getProject(U, project.id)!,
       askUser: async () => null,
       askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -382,7 +382,7 @@ describe('работа модели: база знаний по режимам �
     expect(rec.last()!.kbMcpUrl).toBeDefined()
     expect(rec.last()!.prompt).not.toContain('### CI-раннер')
     expect(rec.last()!.prompt).toContain('единственный путь')
-    expect(db.kbUsageReport(U, conv.id)!.totals.queries).toBe(0)
+    expect(db.kb.kbUsageReport(U, conv.id)!.totals.queries).toBe(0)
   })
 
   it('off: ни инструментов, ни контекста, телеметрия пустая', async () => {
@@ -393,7 +393,7 @@ describe('работа модели: база знаний по режимам �
     expect(rec.last()!.kbMode).toBeUndefined()
     expect(rec.last()!.prompt).not.toContain('### CI-раннер')
     expect(rec.last()!.prompt).not.toContain('Начни работу с базы знаний')
-    expect(db.kbUsageReport(U, conv.id)!.totals.queries).toBe(0)
+    expect(db.kb.kbUsageReport(U, conv.id)!.totals.queries).toBe(0)
   })
 
   it('VC_KB_TOOL=off глушит инструменты и в ране', async () => {
@@ -419,7 +419,7 @@ describe('работа модели: база знаний по режимам �
     const r = await hooksWith(rec.client, { kb }).modelWork(ctx)
     expect(r.ok).toBe(true)
     expect(rec.last()!.prompt).not.toContain('### CI-раннер')
-    expect(db.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ status: 'error', error: 'индекс недоступен' })
+    expect(db.kb.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ status: 'error', error: 'индекс недоступен' })
   })
 
   it('ран без связанного чата: инструменты выданы, телеметрия молча пропущена', async () => {
@@ -435,7 +435,7 @@ describe('работа модели: база знаний по режимам �
   it('обращение записано с ci_run_id и ci_step_id — оно попадёт в отчёты рана и задачи', async () => {
     const { ctx, run } = setup('auto')
     await hooksWith(recorder().client).modelWork(ctx)
-    const report = db.kbUsageRunReport(U, run.id)!
+    const report = db.kb.kbUsageRunReport(U, run.id)!
     expect(report.totals.queries).toBe(1)
     expect(report.recent[0]).toMatchObject({ source: 'auto', ciRunId: run.id, ciStepId: 'step-1' })
   })
@@ -590,7 +590,7 @@ describe.skip('legacy: глобальная модель по стадии ра�
     await hooks.kbUpdate(withAgent(ctx))
     expect(rec.models()).toEqual(['opus', 'haiku', 'sonnet'])
     // В отчёте видно, чем считалась каждая стадия: модель пишется в строку расхода.
-    expect(db.listCiRunUsage(run.id).map((u) => [u.kind, u.model])).toEqual([
+    expect(db.ci.listCiRunUsage(run.id).map((u) => [u.kind, u.model])).toEqual([
       ['model_work', 'opus'], ['summary', 'haiku'], ['kb_update', 'sonnet']
     ])
   })
@@ -598,7 +598,7 @@ describe.skip('legacy: глобальная модель по стадии ра�
   it('настройка переопределяет стадию, в том числе разработку', async () => {
     const rec = recorder()
     const { ctx } = setup('off')
-    db.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
     const hooks = hooksWith(rec.client, { kb: undefined })
     await hooks.modelWork(ctx)
     expect(rec.last()!.model).toBe('haiku')
@@ -610,7 +610,7 @@ describe.skip('legacy: глобальная модель по стадии ра�
   it('модели, которой у движка рана нет, стадия не получает — идёт на модели рана', async () => {
     const rec = recorder()
     const { ctx } = setup('off')
-    db.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'gpt-5.4', summary: 'сонет' } })
+    db.ci.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'gpt-5.4', summary: 'сонет' } })
     const hooks = hooksWith(rec.client, { kb: undefined, executor: diffExecutor })
     await hooks.modelSummary(ctx)
     expect(rec.last()!.model).toBe('opus')
@@ -636,13 +636,13 @@ describe.skip('legacy: глобальная модель по стадии ра�
     }
     const lines: string[] = []
     const { ctx, run } = setup('off')
-    db.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
     const logCtx = { ...ctx, log: (_step: string, _stream: string, chunk: string) => lines.push(chunk) } as unknown as CiModelContext
     expect(await hooksWith(flaky, { kb: undefined }).modelWork(logCtx)).toEqual({ ok: true })
     expect(seen).toEqual(['haiku', 'opus'])
     expect(lines.join('')).toContain('повторяю на модели рана')
     // Пустой ход строкой расхода не становится — в отчёте только состоявшийся.
-    expect(db.listCiRunUsage(run.id).map((u) => u.model)).toEqual(['opus'])
+    expect(db.ci.listCiRunUsage(run.id).map((u) => u.model)).toEqual(['opus'])
   })
 
   it('откат помнится до конца хука: второй ход диалога к сломанной модели не идёт', async () => {
@@ -663,7 +663,7 @@ describe.skip('legacy: глобальная модель по стадии ра�
       }
     }
     const { ctx } = setup('off')
-    db.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
     const askCtx = { ...ctx, askUser: async () => 'ветка a' } as unknown as CiModelContext
     expect(await hooksWith(flaky, { kb: undefined }).modelWork(askCtx)).toEqual({ ok: true })
     expect(seen).toEqual(['haiku', 'opus', 'opus'])
@@ -690,17 +690,17 @@ describe('расход хода: модель, время, семантика в
 
   /** Ран через исполнителя: провайдер codex, модель задаётся явно (бывает пустой). */
   function codexRun(llmModel: string) {
-    const project = db.createProject(U, { name: 'P' })
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const run = db.createCiRun({
+    const project = db.projects.createProject(U, { name: 'P' })
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const run = db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
       llmProvider: 'codex', llmModel, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: '' }
     })
     const ctx = {
       runId: run.id, agentId: null, workspacePath: '/repos/p/1', env: { BRANCH: 'b' },
       signal: new AbortController().signal, parentStepId: 'step-1', log: () => {}, run, task,
-      project: db.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
+      project: db.projects.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
     } as unknown as CiModelContext
     return { run, ctx }
@@ -713,7 +713,7 @@ describe('расход хода: модель, время, семантика в
     let clock = 5_000
     await hooksWith(codexLike([]), { kb: undefined, now: () => (clock += 250) }).modelWork(ctx)
 
-    const rows = db.listCiRunUsage(run.id)
+    const rows = db.ci.listCiRunUsage(run.id)
     expect(rows).toHaveLength(1)
     // 1000 пришедших минус 800 из кэша: у claude вход и так без кэша.
     expect(rows[0]).toMatchObject({ model: 'gpt-5.4', inputTokens: 200, cacheReadTokens: 800, inputSemantics: 'no_cache', numTurns: 1 })
@@ -724,7 +724,7 @@ describe('расход хода: модель, время, семантика в
   it('модель, которую не назвал ни CLI, ни настройка рана, становится unknown', async () => {
     const { run, ctx } = codexRun('')
     await hooksWith(codexLike([]), { kb: undefined }).modelWork(ctx)
-    expect(db.listCiRunUsage(run.id)[0].model).toBe('unknown')
+    expect(db.ci.listCiRunUsage(run.id)[0].model).toBe('unknown')
   })
 
   it('вызовы инструментов копятся по видам за ран, а не теряются', async () => {
@@ -734,13 +734,13 @@ describe('расход хода: модель, время, семантика в
     await hooks.modelWork(ctx)
     await hooks.modelSummary(ctx) // второй ход добавляет свои вызовы к тем же счётчикам
 
-    expect(db.ciRunToolCalls(run.id)).toEqual({ bash: 2, read: 4, grep: 0, edit: 2, kb: 2, other: 2, denied: 0 })
+    expect(db.ci.ciRunToolCalls(run.id)).toEqual({ bash: 2, read: 4, grep: 0, edit: 2, kb: 2, other: 2, denied: 0 })
   })
 
   it('ход без вызовов не создаёт счётчик: «нет строки» ≠ «ноль вызовов»', async () => {
     const { run, ctx } = codexRun('gpt-5.4')
     await hooksWith(codexLike([]), { kb: undefined }).modelWork(ctx)
-    expect(db.ciRunToolCalls(run.id)).toBeNull()
+    expect(db.ci.ciRunToolCalls(run.id)).toBeNull()
   })
 
   it('ход из одних отказов всё равно пишет счётчик — иначе отказов никто не видит', async () => {
@@ -761,22 +761,22 @@ describe('расход хода: модель, время, семантика в
       }
     }
     await hooksWith(denials, { kb: undefined }).modelWork(ctx)
-    expect(db.ciRunToolCalls(run.id)).toEqual({ ...EMPTY_CI_TOOL_CALLS, denied: 1 })
+    expect(db.ci.ciRunToolCalls(run.id)).toEqual({ ...EMPTY_CI_TOOL_CALLS, denied: 1 })
   })
 
   it('сломанная запись метрики не роняет ход модели', async () => {
     const { ctx } = codexRun('gpt-5.4')
     const hooks = hooksWith(codexLike(['remote:read']), { kb: undefined })
     // Обе метрики хода падают — ход обязан завершиться успехом (правило расхода).
-    db.addCiRunUsage = () => { throw new Error('БД недоступна') }
-    db.addCiRunToolCalls = () => { throw new Error('БД недоступна') }
+    db.ci.addCiRunUsage = () => { throw new Error('БД недоступна') }
+    db.ci.addCiRunToolCalls = () => { throw new Error('БД недоступна') }
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
   })
 
   it('сломанная запись тяжёлого ответа тоже не роняет ход', async () => {
     const { ctx } = codexRun('gpt-5.4')
     const hooks = hooksWith(withResponses([{ tool: 'remote:bash', detail: 'x'.repeat(5000) }]), { kb: undefined })
-    db.addCiRunToolResponse = () => { throw new Error('БД недоступна') }
+    db.ci.addCiRunToolResponse = () => { throw new Error('БД недоступна') }
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
   })
 })
@@ -821,8 +821,8 @@ describe('объём ответов инструментов и тяжёлые �
     await hooksWith(client, { kb: undefined }).modelWork(ctx)
 
     // Ответы пришли в обратном порядке — сшивка по id всё равно верна.
-    expect(db.ciRunToolChars(run.id)).toMatchObject({ bash: 30_000, read: 4000, other: 0 })
-    const heaviest = db.ciRunToolResponses(run.id)
+    expect(db.ci.ciRunToolChars(run.id)).toMatchObject({ bash: 30_000, read: 4000, other: 0 })
+    const heaviest = db.ci.ciRunToolResponses(run.id)
     expect(heaviest.map((r) => [r.kind, r.chars])).toEqual([['bash', 30_000], ['read', 4000]])
     expect(heaviest[0].label).toContain('remote:bash')
     expect(heaviest[0].stepId).toBe('step-1')
@@ -831,35 +831,35 @@ describe('объём ответов инструментов и тяжёлые �
   it('без id вызова (codex) сшивка идёт по порядку', async () => {
     const { run, ctx } = setup('off')
     await hooksWith(withResponses([{ tool: 'remote:bash', detail: 'B'.repeat(9000) }]), { kb: undefined }).modelWork(ctx)
-    expect(db.ciRunToolChars(run.id)).toMatchObject({ bash: 9000 })
+    expect(db.ci.ciRunToolChars(run.id)).toMatchObject({ bash: 9000 })
   })
 
   it('у рана без метрики объёма — null, а не нули', async () => {
     const { run, ctx } = setup('off')
     await hooksWith(recorder().client, { kb: undefined }).modelWork(ctx)
-    expect(db.ciRunToolChars(run.id)).toBeNull()
-    expect(db.ciRunToolResponses(run.id)).toEqual([])
+    expect(db.ci.ciRunToolChars(run.id)).toBeNull()
+    expect(db.ci.ciRunToolResponses(run.id)).toEqual([])
   })
 
   it('в БД остаётся верхушка по объёму, а не вся лента вызовов', async () => {
     const { run, ctx } = setup('off')
     const many = Array.from({ length: 9 }, (_, i) => ({ tool: 'remote:bash', detail: 'x'.repeat(3000 + i * 1000), id: `t${i}` }))
     await hooksWith(withResponses(many), { kb: undefined }).modelWork(ctx)
-    const rows = db.ciRunToolResponses(run.id, 50)
+    const rows = db.ci.ciRunToolResponses(run.id, 50)
     expect(rows).toHaveLength(5) // CI_TOOL_RESPONSES_KEEP
     expect(rows[0].chars).toBe(11_000)
     expect(rows.at(-1)!.chars).toBe(7000)
   })
 
   it('вывод команды справочника обрезается по настройке, полный лог остаётся в ленте', async () => {
-    db.updateCiSettings({ bashOutputLimitChars: 2000 })
-    const project = db.createProject(U, { name: 'P' })
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const cmd = db.createCiCommand(U, {
+    db.ci.updateCiSettings({ bashOutputLimitChars: 2000 })
+    const project = db.projects.createProject(U, { name: 'P' })
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    const cmd = db.ci.createCiCommand(U, {
       scope: 'project', projectId: project.id, name: 'Установить зависимости', script: 'npm ci', availableToModel: true
     })
-    const run = db.createCiRun({
+    const run = db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
       kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: '' }
     })
@@ -868,7 +868,7 @@ describe('объём ответов инструментов и тяжёлые �
     const ctx = {
       runId: run.id, agentId: 'agent-1', workspacePath: '/repos/p/1', env: { BRANCH: 'b' },
       signal: new AbortController().signal, parentStepId: 'step-1', log: () => {}, run, task,
-      project: db.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
+      project: db.projects.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: fullOutput })
     } as unknown as CiModelContext
     // Инструмент команд публикуется на время хода: токен рана лежит в ciMcpUrl.
@@ -953,7 +953,7 @@ describe('пробелы базы знаний доходят до шага ак
     const hooks = hooksWith(stage.client, { kb, executor: diffExecutor })
 
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
-    expect(db.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'empty' })
+    expect(db.kb.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'empty' })
     expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true })
 
     const prompt = stage.kbPrompt()
@@ -971,8 +971,8 @@ describe('пробелы базы знаний доходят до шага ак
     const hooks = hooksWith(stage.client, { executor: diffExecutor })
 
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
-    expect(db.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'delivered' })
-    expect(db.ciRunKbGaps(run.id)).toEqual([
+    expect(db.kb.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'delivered' })
+    expect(db.ci.ciRunKbGaps(run.id)).toEqual([
       { question: 'лимиты fix-loop', answer: 'maxFixAttempts и fixTimeLimitMs из настроек CI', topic: 'ci-runner' }
     ])
 
@@ -982,7 +982,7 @@ describe('пробелы базы знаний доходят до шага ак
     expect(prompt).toContain('выяснено: maxFixAttempts и fixTimeLimitMs из настроек CI')
     expect(prompt).toContain('куда писать по мнению модели: ci-runner')
     // Пополнение состоялось: статья раздела проекта записана сервером.
-    expect(db.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
+    expect(db.kb.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
   })
 
   it('валидирует все проектные документы до записи и пишет точную причину только в технический лог', async () => {
@@ -996,7 +996,7 @@ describe('пробелы базы знаний доходят до шага ак
     }))
     const { ctx } = setup('off')
     const log: string[] = []
-    const save = vi.spyOn(db, 'saveKbDocument')
+    const save = vi.spyOn(db.kb, 'saveKbDocument')
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate({
       ...withAgent(ctx),
       log: (_stepId: string, _stream: string, chunk: string) => log.push(chunk)
@@ -1045,8 +1045,8 @@ describe('пробелы базы знаний доходят до шага ак
     expect(stage.requests[1]?.kbMcpUrl).toBeUndefined()
     expect(stage.requests[1]?.prompt).toContain('"note":"string"')
     expect(stage.requests[1]?.prompt).toContain('Неизвестные поля запрещены')
-    expect(db.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
-    expect(db.listCiRunUsage(run.id)).toHaveLength(2)
+    expect(db.kb.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
+    expect(db.ci.listCiRunUsage(run.id)).toHaveLength(2)
     expect(logs.join('')).toContain(`[${_code}]`)
     expect(logs.join('')).toContain('sessionId доступен')
     expect(logs.join('')).toMatch(/Repair финального JSON завершил ход за \d+ мс/)
@@ -1057,13 +1057,13 @@ describe('пробелы базы знаний доходят до шага ак
     const main = 'отчёт\n\`\`\`json\n{}\n\`\`\`\n\`\`\`json\n{}\n\`\`\`'
     const stage = repairClient(main, KB_REPLY)
     const { ctx, project } = setup('off')
-    const save = vi.spyOn(db, 'saveKbDocument')
+    const save = vi.spyOn(db.kb, 'saveKbDocument')
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
 
     expect(result).toEqual({ ok: false, message: 'В ответе модели несколько JSON-кандидатов — статьи раздела проекта не сохранены' })
     expect(stage.requests).toHaveLength(1)
     expect(save).not.toHaveBeenCalled()
-    expect(db.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(false)
+    expect(db.kb.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(false)
   })
 
   it('без sessionId сохраняет исходный fail-closed и не начинает независимый ход', async () => {
@@ -1082,7 +1082,7 @@ describe('пробелы базы знаний доходят до шага ак
       ]
     }))
     const { ctx } = setup('off')
-    const save = vi.spyOn(db, 'saveKbDocument')
+    const save = vi.spyOn(db.kb, 'saveKbDocument')
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
     expect(result).toEqual({ ok: false, message: 'Модель повторно не вернула корректный JSON — статьи раздела проекта не сохранены' })
     expect(stage.requests).toHaveLength(2)
@@ -1144,7 +1144,7 @@ describe('пробелы базы знаний доходят до шага ак
     expect(await hooksWith(stage.client, { executor: diffExecutor }).attemptFix(fixCtx)).toEqual({ fixed: true })
     // Формат блока в промпте правки: без него модели нечем назвать пробел.
     expect(stage.workPrompt()).toContain('```kb-gaps')
-    expect(db.ciRunKbGaps(run.id).map((g) => g.question)).toEqual(['почему падает npm ci'])
+    expect(db.ci.ciRunKbGaps(run.id).map((g) => g.question)).toEqual(['почему падает npm ci'])
   })
 
   it('правок кода нет, но пробел есть — шаг всё равно идёт и пишет только пробел', async () => {
@@ -1169,7 +1169,7 @@ describe('пробелы базы знаний доходят до шага ак
   it('сломанная запись пробелов не роняет ход модели', async () => {
     const stage = twoStage(gapsBlock('вопрос', 'ответ'))
     const { ctx } = setup('auto')
-    db.addCiRunKbGaps = () => { throw new Error('БД недоступна') }
+    db.ci.addCiRunKbGaps = () => { throw new Error('БД недоступна') }
     expect(await hooksWith(stage.client).modelWork(ctx)).toEqual({ ok: true })
   })
 })
@@ -1192,12 +1192,12 @@ describe('merge kb_update: движок наследуется от development-
 
   /** development-ран задачи на заданном движке + merge-ран, запущенный ДРУГИМ пользователем. */
   function mergeSetup(llm: { llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string }) {
-    const project = db.createProject(U, { name: 'P' })
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    db.createUser(MERGE_USER, '', 'developer')
-    db.addMember(U, project.id, MERGE_USER)
-    db.createCiRun({
+    const project = db.projects.createProject(U, { name: 'P' })
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
+    db.identity.createUser(MERGE_USER, '', 'developer')
+    db.projects.addMember(U, project.id, MERGE_USER)
+    db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: U, prevColumnId: null,
       slotProgress: { done: 0, total: 1, phase: 'В очереди' }, ...llm
     })
@@ -1225,7 +1225,7 @@ describe('merge kb_update: движок наследуется от development-
 
   it('не перечитывает оверрайд этапа проекта после создания merge-рана', async () => {
     const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
+    db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
@@ -1239,8 +1239,8 @@ describe('merge kb_update: движок наследуется от development-
 
   it('не перечитывает оверрайд этапа задачи после создания merge-рана', async () => {
     const { project, task, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
-    db.setCiStageLlmConfig('task', task.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-luna' })
+    db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
+    db.ci.setCiStageLlmConfig('task', task.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-luna' })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
@@ -1255,7 +1255,7 @@ describe('merge kb_update: движок наследуется от development-
     // Переопределена ТОЛЬКО модель этапа. Провайдер и исполнитель обязаны
     // остаться от development-рана, иначе codex-модель уедет в Claude CLI.
     const { project, run } = mergeSetup({ llmEngineId: 'engine-1', llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.setCiStageLlmConfig('project', project.id, 'kb_update', { model: 'gpt-5.6-luna' })
+    db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { model: 'gpt-5.6-luna' })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
@@ -1268,7 +1268,7 @@ describe('merge kb_update: движок наследуется от development-
 
   it('не перечитывает модель проекта после создания merge-рана', async () => {
     const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })

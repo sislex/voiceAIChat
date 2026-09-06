@@ -152,42 +152,42 @@ const inj = (token: string, opts: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | '
   app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
 
 function setup() {
-  const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.createAgent('admin', 'M')
-  db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.setProjectMachinePath('admin', project.id, agent.id, '/existing/project')
-  db.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.getBoard('admin', project.id)!
+  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = db.machines.createAgent('admin', 'M')
+  db.machines.linkMachine('admin', project.id, agent.id)
+  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  db.machines.setProjectMachinePath('admin', project.id, agent.id, '/existing/project')
+  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const board = db.tasks.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
-  const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
+  const task = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
   return { project, task, agent, readyColId: ready.id }
 }
 
 it('новый менеджер после рестарта возвращает незапущенный ран в очередь и прерывает активный', async () => {
   const { project, task, agent, readyColId } = setup()
-  const development = db.getBoard('admin', project.id)!.columns.find((column) => column.semanticType === 'development')!
-  db.moveTask('admin', project.id, task.id, { columnId: development.id })
-  const queued = db.createCiRun({
+  const development = db.tasks.getBoard('admin', project.id)!.columns.find((column) => column.semanticType === 'development')!
+  db.tasks.moveTask('admin', project.id, task.id, { columnId: development.id })
+  const queued = db.ci.createCiRun({
     projectId: project.id, taskId: task.id, agentId: agent.id, triggeredBy: 'admin',
     prevColumnId: readyColId, runColumnId: development.id,
     slotProgress: { done: 0, total: 2, phase: 'В очереди' }
   })
-  const activeTask = db.createTask('admin', project.id, { columnId: development.id, title: 'Уже начата' })!
-  const interrupted = db.createCiRun({
+  const activeTask = db.tasks.createTask('admin', project.id, { columnId: development.id, title: 'Уже начата' })!
+  const interrupted = db.ci.createCiRun({
     projectId: project.id, taskId: activeTask.id, agentId: agent.id, triggeredBy: 'admin',
     prevColumnId: readyColId, runColumnId: development.id,
     slotProgress: { done: 0, total: 2, phase: 'Работа' }
   })
-  db.updateCiRun(interrupted.id, { status: 'running', startedAt: Date.now() - 1000 })
-  db.addCiRunStep({ runId: interrupted.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'running' })
+  db.ci.updateCiRun(interrupted.id, { status: 'running', startedAt: Date.now() - 1000 })
+  db.ci.addCiRunStep({ runId: interrupted.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'running' })
 
   let columnAtModel: string | null = null
   const restarted = createCiRunManager({
     db, executor: ciExecutor, boardChanged: () => {},
     modelWork: async () => {
-      columnAtModel = db.getCiTask('admin', project.id, task.id)?.columnId ?? null
+      columnAtModel = db.tasks.getCiTask('admin', project.id, task.id)?.columnId ?? null
       return { ok: true }
     },
     modelSummary: async () => 'готово'
@@ -196,21 +196,21 @@ it('новый менеджер после рестарта возвращает
 
   expect(result.queued.map((run) => run.id)).toEqual([queued.id])
   expect(result.interrupted.map((run) => run.id)).toEqual([interrupted.id])
-  expect(db.getCiRunRaw(queued.id)?.status).toBe('queued')
-  expect(db.getCiTask('admin', project.id, task.id)?.columnId).toBe(readyColId)
-  expect(db.getCiRunRaw(interrupted.id)).toMatchObject({
+  expect(db.ci.getCiRunRaw(queued.id)?.status).toBe('queued')
+  expect(db.tasks.getCiTask('admin', project.id, task.id)?.columnId).toBe(readyColId)
+  expect(db.ci.getCiRunRaw(interrupted.id)).toMatchObject({
     status: 'interrupted',
     slotProgress: { phase: 'Прерван перезапуском сервера' }
   })
 
-  await vi.waitFor(() => expect(db.getCiRunRaw(queued.id)?.status).not.toBe('queued'))
+  await vi.waitFor(() => expect(db.ci.getCiRunRaw(queued.id)?.status).not.toBe('queued'))
   expect(columnAtModel).toBe(development.id)
 })
 
 it('каталог машин задачи объединяет личные и проектные машины без дублей', async () => {
   const { project, task } = setup()
-  const personal = db.createAgent('admin', 'Личный ноутбук')
-  const foreign = db.createAgent('other', 'Чужая машина')
+  const personal = db.machines.createAgent('admin', 'Личный ноутбук')
+  const foreign = db.machines.createAgent('other', 'Чужая машина')
   const response = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/machines` })
 
   expect(response.statusCode).toBe(200)
@@ -225,8 +225,8 @@ it('каталог машин задачи объединяет личные и 
 
 it('задача без override использует project default, а не персональный default инициатора', async () => {
   const { project, task, agent } = setup()
-  const personal = db.createAgent('admin', 'Персональная')
-  db.setUserProjectDefaultMachine('admin', project.id, personal.id)
+  const personal = db.machines.createAgent('admin', 'Персональная')
+  db.machines.setUserProjectDefaultMachine('admin', project.id, personal.id)
 
   const response = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/ci/run` })
   expect(response.statusCode).toBe(202)
@@ -252,16 +252,16 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 describe('ci run manager', () => {
   it('заново разрешает project default при каждом запуске задачи без override', async () => {
     const { project, task, agent } = setup()
-    const second = db.createAgent('admin', 'M2')
-    db.linkMachine('admin', project.id, second.id)
-    db.setProjectMachineReposRoot('admin', project.id, second.id, '/repos-2')
-    db.setProjectMachinePath('admin', project.id, second.id, '/existing/project-2')
+    const second = db.machines.createAgent('admin', 'M2')
+    db.machines.linkMachine('admin', project.id, second.id)
+    db.machines.setProjectMachineReposRoot('admin', project.id, second.id, '/repos-2')
+    db.machines.setProjectMachinePath('admin', project.id, second.id, '/existing/project-2')
 
     const firstId = await run(project.id, task.id)
     expect((await inj(admin, { method: 'GET', url: `/api/ci/runs/${firstId}` })).json().run.agentId).toBe(agent.id)
     await waitRun(firstId)
 
-    db.setProjectDefaultMachine('admin', project.id, second.id)
+    db.projects.setProjectDefaultMachine('admin', project.id, second.id)
     const secondId = await run(project.id, task.id)
     expect((await inj(admin, { method: 'GET', url: `/api/ci/runs/${secondId}` })).json().run).toMatchObject({
       agentId: second.id,
@@ -271,18 +271,18 @@ describe('ci run manager', () => {
 
   it('перед раном гасит сессию браузерной проверки задачи, а без режима chromium не трогает её', async () => {
     const { project, task } = setup()
-    db.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
     await waitRun(await run(project.id, task.id))
     expect(browserStops).toEqual([`task-${task.id}`])
 
-    db.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
+    db.ci.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
     await waitRun(await run(project.id, task.id))
     expect(browserStops).toEqual([`task-${task.id}`])
   })
 
   it('подготавливает отсутствующий repos_root из существующей папки проекта', async () => {
     const { project, task, agent } = setup()
-    db.setProjectMachineReposRoot('admin', project.id, agent.id, '')
+    db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '')
     const runId = await run(project.id, task.id)
     await waitRun(runId)
 
@@ -292,7 +292,7 @@ describe('ci run manager', () => {
 
   it('bootstrap managed workspace стартует из storage root и согласует env', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
 
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
@@ -311,9 +311,9 @@ describe('ci run manager', () => {
 
   it('managed retry переиспользует стабильный чистый checkout, а частичная структура не считается Git checkout', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
-    const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
+    const clone = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
 
     const first = await run(project.id, task.id)
     expect((await waitRun(first)).run.status).toBe('success')
@@ -333,7 +333,7 @@ describe('ci run manager', () => {
 
   it('синхронизирует существующий чистый checkout с актуальной базовой веткой без git pull', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
 
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('success')
@@ -352,7 +352,7 @@ describe('ci run manager', () => {
 
   it.each(['tracked', 'untracked'])('%s dirty managed checkout останавливает ран до синхронизации', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
     dirtyWorkspace = true
 
     const runId = await run(project.id, task.id)
@@ -368,7 +368,7 @@ describe('ci run manager', () => {
 
   it.each(['fetch', 'checkout', 'reset'] as const)('ошибка git %s завершает подготовку до модели', async (stage) => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
     syncFailure = stage
 
     const runId = await run(project.id, task.id)
@@ -381,14 +381,14 @@ describe('ci run manager', () => {
 
   it('нехватка места останавливает ран с понятным сообщением до clone', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
-    const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
+    const clone = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
     lowDisk = true
 
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
-    const log = db.getCiRunLog('admin', runId).map((line) => line.chunk).join('')
+    const log = db.ci.getCiRunLog('admin', runId).map((line) => line.chunk).join('')
 
     expect(detail.run.status).toBe('failed')
     expect(scripts[0]).toContain('df -Pk .')
@@ -401,7 +401,7 @@ describe('ci run manager', () => {
   // интеграционные тесты идут в этом же checkout (регрессия CHAT-411).
   it('после успешного рана незакрытой задачи node_modules остаются на месте', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
 
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('success')
@@ -412,11 +412,11 @@ describe('ci run manager', () => {
 
   it('у закрытой задачи удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
     // Карточку закрывает merge-ран уже после development-рана, поэтому здесь
     // подменяем сам признак: проверяем уборку, а не маршрут карточки по доске.
-    const isTaskClosed = db.isTaskClosed.bind(db)
-    db.isTaskClosed = () => true
+    const isTaskClosed = db.tasks.isTaskClosed.bind(db.tasks)
+    db.tasks.isTaskClosed = () => true
 
     try {
       const runId = await run(project.id, task.id)
@@ -429,26 +429,26 @@ describe('ci run manager', () => {
       expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
       expect(cleanup).not.toContain('.npm-cache')
     } finally {
-      db.isTaskClosed = isTaskClosed
+      db.tasks.isTaskClosed = isTaskClosed
     }
   })
 
   it('задача считается закрытой только в Done и «Отменено»', () => {
     const { project, task } = setup()
-    const columns = db.getBoard('admin', project.id)!.columns
-    expect(db.isTaskClosed(task.id)).toBe(false)
+    const columns = db.tasks.getBoard('admin', project.id)!.columns
+    expect(db.tasks.isTaskClosed(task.id)).toBe(false)
     for (const semantic of ['done', 'cancelled'] as const) {
       const column = columns.find((item) => item.semanticType === semantic)
       if (!column) continue
-      db.moveTask('admin', project.id, task.id, { columnId: column.id })
-      expect(db.isTaskClosed(task.id)).toBe(true)
+      db.tasks.moveTask('admin', project.id, task.id, { columnId: column.id })
+      expect(db.tasks.isTaskClosed(task.id)).toBe(true)
     }
-    expect(db.isTaskClosed('нет такой задачи')).toBe(true)
+    expect(db.tasks.isTaskClosed('нет такой задачи')).toBe(true)
   })
 
   it('ошибка записи managed storage обнаруживается до clone', async () => {
     const { project, task, agent } = setup()
-    db.saveMachineStorage('admin', agent.id, '/read-only', 1)
+    db.machines.saveMachineStorage('admin', agent.id, '/read-only', 1)
     failManagedBootstrap = true
 
     const runId = await run(project.id, task.id)
@@ -462,40 +462,40 @@ describe('ci run manager', () => {
 
   it('при запуске переносит карточку в development и наследует модель проекта', async () => {
     const { project, task } = setup()
-    db.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
+    db.settings.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
     // Модель проекта — третий уровень после настроек этапа задачи и проекта.
-    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     // Колонку снимаем в момент запроса к модели: к концу успешного рана карточка
     // уходит в «Ожидает мержа», и проверка после `waitRun` ловила бы уже её.
     let columnAtModel: string | null = null
-    onModelSend = () => { if (columnAtModel === null) columnAtModel = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
+    onModelSend = () => { if (columnAtModel === null) columnAtModel = db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
-    const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    const development = db.tasks.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     expect(columnAtModel).toBe(development.id)
     expect(detail.run.status).toBe('success')
     expect(detail.run).toMatchObject({ llmProvider: 'claude', llmModel: 'opus' })
-    expect(db.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'opus' })
+    expect(db.ci.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'opus' })
     expect(modelRequests[0]?.model).toBe('opus')
   })
 
   it('задачная модель имеет приоритет над проектной в базовом снимке', async () => {
     const { project, task } = setup()
-    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
-    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
     expect(detail.run).toMatchObject({ llmProvider: 'claude', llmModel: 'sonnet' })
-    expect(db.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'sonnet' })
+    expect(db.ci.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'sonnet' })
   })
 
   it('сохраняет literal Claude default в базовом снимке', async () => {
     const { project, task } = setup()
-    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'default', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'default', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
     expect(detail.run).toMatchObject({ llmProvider: 'claude', llmModel: 'default' })
-    expect(db.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'default' })
+    expect(db.ci.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'default' })
   })
 
   it('разовый выбор окна запуска фиксирует пару модели только в новом ране', async () => {
@@ -520,7 +520,7 @@ describe('ci run manager', () => {
 
   it('DELETE ci/llm снимает переопределение задачи и возвращает наследование', async () => {
     const { project, task } = setup()
-    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.4', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     await inj(admin, { method: 'PUT', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm`, payload: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 } })
     const before = await inj(admin, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/llm` })
     expect(before.json()).toMatchObject({ config: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 }, overridden: true })
@@ -553,7 +553,7 @@ describe('ci run manager', () => {
     const workRequest = modelRequests.find((req) => req.permissionMode === 'acceptEdits')!
     expect(workRequest.cwd).toBeUndefined()
     expect(workRequest.remote?.mcpUrl).toContain('cwd=%2Frepos%2Fp%2FP-1')
-    const chat = db.getConversation('admin', db.getCiRunRaw(runId)!.conversationId!)!
+    const chat = db.chat.getConversation('admin', db.ci.getCiRunRaw(runId)!.conversationId!)!
     expect(chat.execTarget).toBeTruthy()
     expect(chat.workdir).toBe('/repos/p/P-1')
     // Лог рана содержит строки.
@@ -564,7 +564,7 @@ describe('ci run manager', () => {
 
   it('выполняет только выбранные этапы, сохраняя их относительный порядок', async () => {
     const { project, task } = setup()
-    db.setTaskProcessStages(task.id, ['summary', 'model_work'])
+    db.ci.setTaskProcessStages(task.id, ['summary', 'model_work'])
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
 
@@ -584,8 +584,8 @@ describe('ci run manager', () => {
     const detail = await waitRun(runId)
     expect(detail.run.status).toBe('failed')
     expect(modelRequests).toHaveLength(0)
-    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(readyColId)
-    const steps = db.getCiRun('admin', runId)!.steps
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(readyColId)
+    const steps = db.ci.getCiRun('admin', runId)!.steps
     expect(steps.find((step) => step.title === 'Проверка рабочей директории модели')?.status).toBe('failed')
   })
 
@@ -594,9 +594,9 @@ describe('ci run manager', () => {
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
-    const chatId = db.getCiRunRaw(runId)!.conversationId!
+    const chatId = db.ci.getCiRunRaw(runId)!.conversationId!
     expect(chatId).toBeTruthy()
-    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
+    const summary = db.chat.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
     expect(summary.role).toBe('ai')
     expect(summary.meta!.ciRunSummary).toEqual({ runId })
     // Шапка сообщения — ключ и заголовок задачи, дальше текст модели.
@@ -610,7 +610,7 @@ describe('ci run manager', () => {
   it('резюме приходит по WS сообщением chat.message — открытый чат обновляется сам', async () => {
     const { project, task } = setup()
     // Чат создаём заранее, чтобы знать его id до старта рана.
-    const chat = db.openOrCreateTaskChat('admin', project.id, task.id)!
+    const chat = db.chat.openOrCreateTaskChat('admin', project.id, task.id)!
     await app.listen({ port: 0, host: '127.0.0.1' })
     const port = (app.server.address() as AddressInfo).port
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${admin}`)
@@ -631,8 +631,8 @@ describe('ci run manager', () => {
 
   it('WS snapshot меняет фактическую модель при переходе model_work → summary', async () => {
     const { project, task } = setup()
-    db.setCiStageLlmConfig('task', task.id, 'model_work', { provider: 'codex', model: 'gpt-5.6-sol' })
-    db.setCiStageLlmConfig('task', task.id, 'summary', { provider: 'claude', model: 'sonnet' })
+    db.ci.setCiStageLlmConfig('task', task.id, 'model_work', { provider: 'codex', model: 'gpt-5.6-sol' })
+    db.ci.setCiStageLlmConfig('task', task.id, 'summary', { provider: 'claude', model: 'sonnet' })
     let releaseModel!: () => void
     modelGate = new Promise<void>((resolve) => { releaseModel = resolve })
     await app.listen({ port: 0, host: '127.0.0.1' })
@@ -661,15 +661,15 @@ describe('ci run manager', () => {
   it('таймаут транспорта commit-step повторяется без fix-loop в той же попытке', async () => {
     const { project, task } = setup()
     commitTransportTimeoutOnce = true
-    const cmd = db.createCiCommand('admin', {
+    const cmd = db.ci.createCiCommand('admin', {
       scope: 'project', projectId: project.id, name: TASK_COMMIT_COMMAND_NAME, script: TASK_COMMIT_COMMAND_SCRIPT
     })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
 
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
     expect(detail.run.status).toBe('success')
-    const persisted = db.getCiRun('admin', runId)!
+    const persisted = db.ci.getCiRun('admin', runId)!
     expect(persisted.fixAttempts).toHaveLength(0)
     expect(persisted.steps.find((step) => step.commandId === cmd.id)).toMatchObject({
       status: 'success', exitCode: 0, attempt: 1, fixedByModel: false
@@ -680,15 +680,15 @@ describe('ci run manager', () => {
   it('реальный отказ commit-step сохраняет stderr и exitCode до fix-loop', async () => {
     const { project, task } = setup()
     commitFailureExitCode = 128
-    db.updateCiSettings({ maxFixAttempts: 1 })
-    const cmd = db.createCiCommand('admin', {
+    db.ci.updateCiSettings({ maxFixAttempts: 1 })
+    const cmd = db.ci.createCiCommand('admin', {
       scope: 'project', projectId: project.id, name: TASK_COMMIT_COMMAND_NAME, script: TASK_COMMIT_COMMAND_SCRIPT
     })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
 
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('failed')
-    const persisted = db.getCiRun('admin', runId)!
+    const persisted = db.ci.getCiRun('admin', runId)!
     expect(persisted.steps.find((step) => step.commandId === cmd.id && step.initiatedBy === 'user')).toMatchObject({
       status: 'failed', exitCode: 128, attempt: 1, fixedByModel: false
     })
@@ -699,22 +699,22 @@ describe('ci run manager', () => {
 
   it('упавший слот «после»: резюме всё равно попадает в чат', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'test', script: 'FAIL test' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'test', script: 'FAIL test' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('failed')
-    const chatId = db.getCiRunRaw(runId)!.conversationId!
-    expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true)
+    const chatId = db.ci.getCiRunRaw(runId)!.conversationId!
+    expect(db.chat.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true)
   })
 
   it('legacy kb_update из старого снимка слота не создаёт шаг development-рана', async () => {
     const { project, task } = setup()
-    db.setCiSlotCommands('task', task.id, 'after_model', [CI_KB_UPDATE_COMMAND_ID])
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [CI_KB_UPDATE_COMMAND_ID])
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
     expect(detail.run.status).toBe('success')
-    const persistedSteps = db.getCiRun('admin', runId)!.steps
+    const persistedSteps = db.ci.getCiRun('admin', runId)!.steps
     expect(persistedSteps.some((step) => step.title === 'Актуализировать базу знаний')).toBe(false)
     expect(persistedSteps.filter((step) => step.title === 'Отправить ветку задачи в origin')).toHaveLength(1)
   })
@@ -722,24 +722,24 @@ describe('ci run manager', () => {
   it('падение в слоте «до» → ран failed и откат задачи в предыдущую колонку', async () => {
     const { project, task } = setup()
     // Двигаем задачу в development, чтобы откат был виден.
-    const devCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
-    db.moveTask('admin', project.id, task.id, { columnId: devCol.id })
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'clone', script: 'FAIL clone' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
+    const devCol = db.tasks.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    db.tasks.moveTask('admin', project.id, task.id, { columnId: devCol.id })
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'clone', script: 'FAIL clone' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('failed')
     // model_work НЕ должен появиться (слот «до» упал).
     expect(d.steps.map((s) => s.kind)).not.toContain('model_work')
     // Задача откатилась в колонку, где была на старте рана (development).
-    const t = db.getBoard('admin', project.id)!.tasks.find((x) => x.id === task.id)!
+    const t = db.tasks.getBoard('admin', project.id)!.tasks.find((x) => x.id === task.id)!
     expect(t.columnId).toBe(devCol.id)
   })
 
   it('allow_failure: упавшая команда не останавливает ран', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'lint', script: 'FAIL lint', allowFailure: true })
-    db.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'lint', script: 'FAIL lint', allowFailure: true })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
@@ -747,62 +747,62 @@ describe('ci run manager', () => {
 
   it('legacy cleanup не выполняется, workspace сохраняется, branch пушится один раз', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const detail = await waitRun(runId)
     expect(detail.run.status).toBe('success')
     expect(scripts).not.toContain('rm -rf')
     expect(scripts.filter((x) => x.includes('git push origin "HEAD:refs/heads/$BRANCH"'))).toHaveLength(1)
-    const persistedSteps = db.getCiRun('admin', runId)!.steps
+    const persistedSteps = db.ci.getCiRun('admin', runId)!.steps
     expect(persistedSteps.some((step) => step.title === 'cleanup')).toBe(false)
     expect(persistedSteps.filter((step) => step.title === 'Отправить ветку задачи в origin')).toHaveLength(1)
-    const report = db.listCiWorkspaceReport('admin', project.id)
+    const report = db.ci.listCiWorkspaceReport('admin', project.id)
     expect(report.some((w) => w.state === 'active')).toBe(true)
-    expect(db.findLatestPushedCiWorkspace(project.id, task.id)?.commitSha).toMatch(/^[0-9a-f]{40}$/)
+    expect(db.ci.findLatestPushedCiWorkspace(project.id, task.id)?.commitSha).toMatch(/^[0-9a-f]{40}$/)
   })
 
   it('пуш ветки не удался → cleanup не выполняется, рабочая директория сохранена', async () => {
     const { project, task } = setup()
     failPush = true
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('failed')
     expect(scripts).not.toContain('rm -rf')
-    const report = db.listCiWorkspaceReport('admin', project.id)
+    const report = db.ci.listCiWorkspaceReport('admin', project.id)
     expect(report.some((w) => w.state === 'released')).toBe(false)
   })
 
   it('модель работала, а в рабочей копии пусто → ран failed, слот «после» пропущен, копия сохранена', async () => {
     const { project, task } = setup()
     emptyModelWork = true
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'cleanup', script: 'rm -rf', isCleanup: true })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     // Вызовы инструментов считает разбор потока CLI, а фейковая модель его не
     // даёт — поднимаем счётчик рана в момент самой проверки.
     onExec = (script) => {
       if (!script.includes('commits=$(git log')) return
-      const runs = db.listCiRunsForTask('admin', project.id, task.id)
-      if (runs[0]) db.addCiRunToolCalls(runs[0].id, { bash: 12 })
+      const runs = db.ci.listCiRunsForTask('admin', project.id, task.id)
+      if (runs[0]) db.ci.addCiRunToolCalls(runs[0].id, { bash: 12 })
     }
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('failed')
     // Ни пуша ветки, ни удаления копии: слот «после» не запускался вовсе.
     expect(scripts).not.toContain('rm -rf')
-    expect(db.listCiWorkspaceReport('admin', project.id).some((w) => w.state === 'released')).toBe(false)
-    const steps = db.getCiRun('admin', runId)!.steps
+    expect(db.ci.listCiWorkspaceReport('admin', project.id).some((w) => w.state === 'released')).toBe(false)
+    const steps = db.ci.getCiRun('admin', runId)!.steps
     expect(steps.find((s) => s.title === 'Проверка результата модели')?.status).toBe('failed')
     expect(new Set(steps.map((s) => s.position)).size).toBe(steps.length)
     // Карточка осталась в рабочей колонке, а не уехала в «Готово»/«Ожидает мержа».
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     const development = board.columns.find((c) => c.semanticType === 'development')!
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
     // Причина доезжает до чата отдельной строкой резюме, а не только в ленту.
-    const chatId = db.getCiRunRaw(runId)!.conversationId!
-    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary?.runId === runId)!
+    const chatId = db.ci.getCiRunRaw(runId)!.conversationId!
+    const summary = db.chat.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary?.runId === runId)!
     expect(summary.text).toContain('Работа не сдана')
   })
 
@@ -812,18 +812,18 @@ describe('ci run manager', () => {
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
-    const steps = db.getCiRun('admin', runId)!.steps
+    const steps = db.ci.getCiRun('admin', runId)!.steps
     expect(steps.find((s) => s.title === 'Проверка результата модели')?.status).toBe('success')
   })
 
   it('пока модель разбирается с упавшим шагом, в прогрессе рана поднят fixing', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'build', script: 'FLAKY build' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'build', script: 'FLAKY build' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     // Снимок сводки доски на каждый запрос к модели: первый — работа, второй — fix-loop.
     const fixingSeen: boolean[] = []
     onModelSend = () => {
-      const summary = db.latestCiRunSummaries(project.id)[0]
+      const summary = db.ci.latestCiRunSummaries(project.id)[0]
       if (summary) fixingSeen.push(summary.slotProgress.fixing === true)
     }
     const runId = await run(project.id, task.id)
@@ -832,12 +832,12 @@ describe('ci run manager', () => {
     expect(fixingSeen[0]).toBe(false)
     expect(fixingSeen).toContain(true)
     // После fix-loop флаг снят — карточка снова «голубая».
-    expect(db.getCiRunRaw(runId)!.slotProgress.fixing).toBe(false)
+    expect(db.ci.getCiRunRaw(runId)!.slotProgress.fixing).toBe(false)
   })
 
   it('ready → development автоматически создаёт один queued development-run и возвращает его id', async () => {
     const { project, task, readyColId } = setup()
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     const development = board.columns.find((column) => column.semanticType === 'development')!
     let release: () => void = () => {}
     modelGate = new Promise<void>((resolve) => { release = resolve })
@@ -851,9 +851,9 @@ describe('ci run manager', () => {
     expect(second.statusCode).toBe(200)
     expect(first.headers['x-ci-run-id']).toBeTruthy()
     expect(second.headers['x-ci-run-id']).toBe(first.headers['x-ci-run-id'])
-    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(1)
-    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(development.id)
-    expect(db.getCiRunRaw(first.headers['x-ci-run-id'] as string)?.prevColumnId).toBe(readyColId)
+    expect(db.ci.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(1)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(development.id)
+    expect(db.ci.getCiRunRaw(first.headers['x-ci-run-id'] as string)?.prevColumnId).toBe(readyColId)
 
     release()
     await waitRun(first.headers['x-ci-run-id'] as string)
@@ -861,10 +861,10 @@ describe('ci run manager', () => {
 
   it('быстрый parallel после ready → development продвигает автосозданный queued-run с тем же id', async () => {
     const { project, task, readyColId } = setup()
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     const development = board.columns.find((column) => column.semanticType === 'development')!
-    const blocker = db.createTask('admin', project.id, { columnId: readyColId, title: 'Занимает FIFO-слот' })!
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    const blocker = db.tasks.createTask('admin', project.id, { columnId: readyColId, title: 'Занимает FIFO-слот' })!
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     let release: () => void = () => {}
     modelGate = new Promise<void>((resolve) => { release = resolve })
 
@@ -878,7 +878,7 @@ describe('ci run manager', () => {
     })
     expect(moved.statusCode).toBe(200)
     const queuedRunId = moved.headers['x-ci-run-id'] as string
-    expect(db.getCiRunRaw(queuedRunId)?.status).toBe('queued')
+    expect(db.ci.getCiRunRaw(queuedRunId)?.status).toBe('queued')
 
     const promoted = await inj(admin, {
       method: 'POST',
@@ -887,7 +887,7 @@ describe('ci run manager', () => {
     })
     expect(promoted.statusCode).toBe(202)
     expect(promoted.json().id).toBe(queuedRunId)
-    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(1)
+    expect(db.ci.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(1)
 
     release()
     expect((await waitRun(queuedRunId)).run.status).toBe('success')
@@ -895,27 +895,27 @@ describe('ci run manager', () => {
   })
 
   it('ошибка автозапуска оставляет карточку в ready, а прочие переходы в development не создают ран', async () => {
-    const project = db.createProject('admin', { name: 'Без машины', gitUrl: 'git@github.com:x/y.git' })
-    const board = db.getBoard('admin', project.id)!
+    const project = db.projects.createProject('admin', { name: 'Без машины', gitUrl: 'git@github.com:x/y.git' })
+    const board = db.tasks.getBoard('admin', project.id)!
     const ready = board.columns.find((column) => column.semanticType === 'ready')!
     const development = board.columns.find((column) => column.semanticType === 'development')!
-    const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T без машины' })!
+    const task = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T без машины' })!
     const readyColId = ready.id
 
     const failed = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id } })
     expect(failed.statusCode).toBe(409)
     expect(failed.json().error).toContain('машина')
-    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(readyColId)
-    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).toBe(readyColId)
+    expect(db.ci.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
 
     const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
-    db.moveTask('admin', project.id, task.id, { columnId: backlog.id })
+    db.tasks.moveTask('admin', project.id, task.id, { columnId: backlog.id })
     const ordinary = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id } })
     expect(ordinary.statusCode).toBe(200)
-    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
+    expect(db.ci.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
     const reorder = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/move`, payload: { columnId: development.id } })
     expect(reorder.statusCode).toBe(200)
-    expect(db.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
+    expect(db.ci.listCiRunsForTask('admin', project.id, task.id)).toHaveLength(0)
   })
 
   it('второй запуск той же задачи отклоняется 409, пока первый не закончился', async () => {
@@ -930,7 +930,7 @@ describe('ci run manager', () => {
     expect(second.statusCode).toBe(409)
     expect(second.json().error).toContain('уже выполняется')
     // Ран у задачи ровно один — второй даже не создался.
-    expect(db.latestCiRunSummaries(project.id).filter((x) => x.taskId === task.id)).toHaveLength(1)
+    expect(db.ci.latestCiRunSummaries(project.id).filter((x) => x.taskId === task.id)).toHaveLength(1)
 
     release()
     expect((await waitRun(r1)).run.status).toBe('success')
@@ -940,19 +940,19 @@ describe('ci run manager', () => {
   })
   it('перенос из development в TODO снимает ожидающий ран, но не прячет уже запущенный', async () => {
     const { project, task } = setup()
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     const todo = board.columns.find((column) => column.semanticType === 'backlog')!
     const ready = board.columns.find((column) => column.semanticType === 'ready')!
-    const queuedTask = db.createTask('admin', project.id, { columnId: ready.id, title: 'В очереди' })!
-    const plainTask = db.createTask('admin', project.id, { columnId: ready.id, title: 'Без рана' })!
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    const queuedTask = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'В очереди' })!
+    const plainTask = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'Без рана' })!
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     let release: () => void = () => {}
     modelGate = new Promise<void>((res) => { release = res })
 
     const runningRun = await run(project.id, task.id)
     for (let i = 0; i < 200 && !modelRequests.length; i++) await new Promise((res) => setTimeout(res, 5))
     const queuedRun = await run(project.id, queuedTask.id)
-    expect(db.getCiRunRaw(queuedRun)!.status).toBe('queued')
+    expect(db.ci.getCiRunRaw(queuedRun)!.status).toBe('queued')
 
     const dequeueByMove = await inj(admin, {
       method: 'POST',
@@ -960,9 +960,9 @@ describe('ci run manager', () => {
       payload: { columnId: todo.id }
     })
     expect(dequeueByMove.statusCode).toBe(200)
-    expect(db.getCiRunRaw(queuedRun)!.status).toBe('cancelled')
-    expect(db.getCiRun('admin', queuedRun)!.steps).toEqual([])
-    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === queuedTask.id)!.columnId).toBe(todo.id)
+    expect(db.ci.getCiRunRaw(queuedRun)!.status).toBe('cancelled')
+    expect(db.ci.getCiRun('admin', queuedRun)!.steps).toEqual([])
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((item) => item.id === queuedTask.id)!.columnId).toBe(todo.id)
 
     const runningByMove = await inj(admin, {
       method: 'POST',
@@ -971,16 +971,16 @@ describe('ci run manager', () => {
     })
     expect(runningByMove.statusCode).toBe(409)
     expect(runningByMove.json().error).toContain('сначала остановите')
-    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).not.toBe(todo.id)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((item) => item.id === task.id)!.columnId).not.toBe(todo.id)
 
-    db.moveTask('admin', project.id, plainTask.id, { columnId: board.columns.find((column) => column.semanticType === 'development')!.id })
+    db.tasks.moveTask('admin', project.id, plainTask.id, { columnId: board.columns.find((column) => column.semanticType === 'development')!.id })
     const plainMove = await inj(admin, {
       method: 'POST',
       url: `/api/projects/${project.id}/tasks/${plainTask.id}/move`,
       payload: { columnId: todo.id }
     })
     expect(plainMove.statusCode).toBe(200)
-    expect(db.getBoard('admin', project.id)!.tasks.find((item) => item.id === plainTask.id)!.columnId).toBe(todo.id)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((item) => item.id === plainTask.id)!.columnId).toBe(todo.id)
 
     release()
     expect((await waitRun(runningRun)).run.status).toBe('success')
@@ -988,29 +988,29 @@ describe('ci run manager', () => {
 
   it('fix-loop: модель чинит упавший шаг → ран success, зафиксирована попытка', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'build', script: 'FLAKY build' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'build', script: 'FLAKY build' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
-    const detail = db.getCiRun('admin', runId)!
+    const detail = db.ci.getCiRun('admin', runId)!
     expect(detail.fixAttempts.length).toBeGreaterThanOrEqual(1)
     expect(detail.fixAttempts.some((f) => f.result === 'fixed')).toBe(true)
   })
 
   it('исчерпание max_fix_attempts → ран failed и откат задачи', async () => {
     const { project, task } = setup()
-    db.updateCiSettings({ maxFixAttempts: 1 })
-    const devCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
-    db.moveTask('admin', project.id, task.id, { columnId: devCol.id })
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'clone', script: 'FAIL clone' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
+    db.ci.updateCiSettings({ maxFixAttempts: 1 })
+    const devCol = db.tasks.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    db.tasks.moveTask('admin', project.id, task.id, { columnId: devCol.id })
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'clone', script: 'FAIL clone' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('failed')
-    const detail = db.getCiRun('admin', runId)!
+    const detail = db.ci.getCiRun('admin', runId)!
     expect(detail.fixAttempts.some((f) => f.result === 'gave_up')).toBe(true)
-    const t = db.getBoard('admin', project.id)!.tasks.find((x) => x.id === task.id)!
+    const t = db.tasks.getBoard('admin', project.id)!.tasks.find((x) => x.id === task.id)!
     expect(t.columnId).toBe(devCol.id)
   })
   it('успешный development-run переводит карточку в Component QA', async () => {
@@ -1018,7 +1018,7 @@ describe('ci run manager', () => {
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     const manualQa = board.columns.find((c) => c.semanticType === 'component_qa')!
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(manualQa.id)
     // Причина переноса видна в ленте рана.
@@ -1028,12 +1028,12 @@ describe('ci run manager', () => {
 
   it.skip('legacy: merge выполнялся внутри разработки', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     const done = board.columns.find((c) => c.semanticType === 'done')!
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(done.id)
     // Перенос ровно один: карточка не заезжает сначала в «Ожидает мержа».
@@ -1041,42 +1041,42 @@ describe('ci run manager', () => {
     expect(log.some((l) => l.chunk.includes('переехала в «Готово»'))).toBe(true)
     expect(log.some((l) => l.chunk.includes('ждёт мержа'))).toBe(false)
     // Резюме записано ДО переноса — иначе оно ушло бы в скрытый чат завершённой задачи.
-    const chatId = db.getCiRunRaw(runId)!.conversationId!
-    expect(db.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary)).toBe(true)
+    const chatId = db.ci.getCiRunRaw(runId)!.conversationId!
+    expect(db.chat.listMessages('admin', chatId).some((m) => m.meta?.ciRunSummary)).toBe(true)
   })
 
   it.skip('legacy: отсутствие done при merge внутри разработки', async () => {
     const { project, task } = setup()
-    const devCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
-    const real = db.getColumnIdBySemantic.bind(db)
-    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'done' ? null : real(pid, semantic)))
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const devCol = db.tasks.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
+    const real = db.projects.getColumnIdBySemantic.bind(db.projects)
+    const spy = vi.spyOn(db.projects, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'done' ? null : real(pid, semantic)))
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const d = await waitRun(await run(project.id, task.id))
     expect(d.run.status).toBe('success')
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(devCol.id)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(devCol.id)
     spy.mockRestore()
   })
 
   it.skip('legacy: падение merge внутри разработки', async () => {
     const { project, task, readyColId } = setup()
-    db.updateCiSettings({ maxFixAttempts: 1 })
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'FAIL git merge --no-edit' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    db.ci.updateCiSettings({ maxFixAttempts: 1 })
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'FAIL git merge --no-edit' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('failed')
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
   })
 
   it('нет колонки qa_preparation в проекте — ран success и карточка не двигается', async () => {
     const { project, task } = setup()
-    const real = db.getColumnIdBySemantic.bind(db)
-    const spy = vi.spyOn(db, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'component_qa' ? null : real(pid, semantic)))
+    const real = db.projects.getColumnIdBySemantic.bind(db.projects)
+    const spy = vi.spyOn(db.projects, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'component_qa' ? null : real(pid, semantic)))
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     const development = board.columns.find((c) => c.semanticType === 'development')!
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(development.id)
     spy.mockRestore()
@@ -1094,8 +1094,8 @@ describe('ci run manager', () => {
 
   it('dirty workspace: по подтверждению сбрасывает файлы и запускает новый полный ран', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'checkout', script: 'DIRTY' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'checkout', script: 'DIRTY' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [cmd.id])
     const runId = await run(project.id, task.id)
     const failed = await waitRun(runId)
     expect(failed.run.status).toBe('failed')
@@ -1107,10 +1107,10 @@ describe('ci run manager', () => {
 
   it('ошибка модели останавливает after-слот; выбор другой модели продолжает с model_work', async () => {
     const { project, task } = setup()
-    const before = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'prepare', script: 'PREPARE' })
-    const after = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'tests', script: 'TESTS' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [before.id])
-    db.setCiSlotCommands('task', task.id, 'after_model', [after.id])
+    const before = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'prepare', script: 'PREPARE' })
+    const after = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'tests', script: 'TESTS' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [before.id])
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [after.id])
     failClaude = true
     const runId = await run(project.id, task.id)
     const failed = await waitRun(runId)
@@ -1127,17 +1127,17 @@ describe('ci run manager', () => {
     expect(scripts.filter((x) => x === 'PREPARE')).toHaveLength(1)
     expect(scripts).toContain('TESTS')
     expect(codexModel).toBe('')
-    expect(db.getCiRunRaw(runId)).toMatchObject({ llmProvider: 'codex', llmModel: '' })
+    expect(db.ci.getCiRunRaw(runId)).toMatchObject({ llmProvider: 'codex', llmModel: '' })
   })
 
   it('модель вызывает команду справочника как MCP-инструмент → вложенный шаг model_command', async () => {
     const { project, task } = setup()
     // Команда доступна модели, но НЕ привязана к слотам (вызывается самой моделью).
-    db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'model-tool', script: 'echo tool', availableToModel: true })
+    db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'model-tool', script: 'echo tool', availableToModel: true })
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')
-    const detail = db.getCiRun('admin', runId)!
+    const detail = db.ci.getCiRun('admin', runId)!
     const modelWork = detail.steps.find((s) => s.kind === 'model_work')!
     const nested = detail.steps.find((s) => s.kind === 'model_command' && s.parentStepId === modelWork.id)
     expect(nested).toBeTruthy()
@@ -1145,10 +1145,10 @@ describe('ci run manager', () => {
   })
   it('повтор с упавшего шага: тот же ран возобновляется, успешный шаг не перезапускается', async () => {
     const { project, task } = setup()
-    db.updateCiSettings({ maxFixAttempts: 0 }) // без авто-фикса — чтобы ран упал
-    const ok = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'ok', script: 'echo ok' })
-    const flaky = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'flaky', script: 'FLAKY build' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [ok.id, flaky.id])
+    db.ci.updateCiSettings({ maxFixAttempts: 0 }) // без авто-фикса — чтобы ран упал
+    const ok = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'ok', script: 'echo ok' })
+    const flaky = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'flaky', script: 'FLAKY build' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [ok.id, flaky.id])
     const runId = await run(project.id, task.id)
     const d1 = await waitRun(runId)
     expect(d1.run.status).toBe('failed')
@@ -1168,9 +1168,9 @@ describe('ci run manager', () => {
 
   /** Команда мержа ветки задачи в прод-ветку (шаг раннер узнаёт по названию/скрипту). */
   const mergeCommand = (projectId: string) =>
-    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
   const openRebuildTasks = (projectId: string) => {
-    const board = db.getBoard('admin', projectId)!
+    const board = db.tasks.getBoard('admin', projectId)!
     const done = board.columns.find((c) => c.semanticType === 'done')!
     return board.tasks.filter((t) => t.title === PROD_REBUILD_TASK_TITLE && t.columnId !== done.id)
   }
@@ -1178,8 +1178,8 @@ describe('ci run manager', () => {
   it.skip('legacy: разработка сама заводила задачу пересборки прода', async () => {
     const { project, task, readyColId } = setup()
     const merge = mergeCommand(project.id)
-    db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
-    const second = db.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
+    db.ci.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
+    const second = db.tasks.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
 
     const firstRun = await run(project.id, task.id)
     expect((await waitRun(firstRun)).run.status).toBe('success')
@@ -1202,7 +1202,7 @@ describe('ci run manager', () => {
   it.skip('legacy: повтор разработки после встроенного merge', async () => {
     const { project, task } = setup()
     const merge = mergeCommand(project.id)
-    db.setCiSlotCommands('task', task.id, 'after_model', [merge.id])
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [merge.id])
     expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
     expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
     const rebuild = openRebuildTasks(project.id)
@@ -1213,8 +1213,8 @@ describe('ci run manager', () => {
   it('успешный шаг пересборки прода в ране — автозадача не заводится', async () => {
     const { project, task } = setup()
     const merge = mergeCommand(project.id)
-    const rebuild = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Обновить прод-контейнер', script: 'docker compose up --build -d' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [merge.id, rebuild.id])
+    const rebuild = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Обновить прод-контейнер', script: 'docker compose up --build -d' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [merge.id, rebuild.id])
     expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
     expect(openRebuildTasks(project.id).length).toBe(0)
   })
@@ -1228,21 +1228,21 @@ describe('ci run manager', () => {
   it.skip('legacy: новая автозадача после встроенного merge', async () => {
     const { project, task, readyColId } = setup()
     const merge = mergeCommand(project.id)
-    db.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
+    db.ci.setCiSlotCommands('project', project.id, 'after_model', [merge.id])
     expect((await waitRun(await run(project.id, task.id))).run.status).toBe('success')
     const first = openRebuildTasks(project.id)[0]
-    const doneCol = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'done')!
-    db.moveTask('admin', project.id, first.id, { columnId: doneCol.id })
+    const doneCol = db.tasks.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'done')!
+    db.tasks.moveTask('admin', project.id, first.id, { columnId: doneCol.id })
 
-    const second = db.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
+    const second = db.tasks.createTask('admin', project.id, { columnId: readyColId, title: 'T2' })!
     expect((await waitRun(await run(project.id, second.id))).run.status).toBe('success')
     const open = openRebuildTasks(project.id)
     expect(open.length).toBe(1)
     expect(open[0].id).not.toBe(first.id)
     expect(open[0].description.split('\n').filter((l) => l.startsWith('- '))).toEqual([`- ${issueKey(project.name, second)}: T2`])
     // Закрытая карточка не дополняется.
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).toContain('T1')
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).not.toContain('T2')
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).toContain('T1')
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === first.id)!.description).not.toContain('T2')
   })
 })
 
@@ -1278,12 +1278,12 @@ describe('ci run manager: база знаний', () => {
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('success')
 
-    const report = db.kbUsageRunReport('admin', runId)!
+    const report = db.kb.kbUsageRunReport('admin', runId)!
     expect(report.totals.queries).toBeGreaterThan(0)
     expect(report.recent.every((q) => q.ciRunId === runId)).toBe(true)
     expect(report.sections[0]).toMatchObject({ documentId: 'ci-runner', anchor: 'model' })
     // Тот же ран виден и в агрегате по задаче (блок в модалке).
-    expect(db.kbUsageTaskReport('admin', project.id, task.id)!.runs).toBe(1)
+    expect(db.kb.kbUsageTaskReport('admin', project.id, task.id)!.runs).toBe(1)
     // И в промпте модели: блок контекста ушёл вместе с задачей.
     expect(modelRequests[0].prompt).toContain('### CI-раннер / Работа модели')
     expect(modelRequests[0].kbMcpUrl).toContain('/mcp/kb?k=')
@@ -1294,8 +1294,8 @@ describe('ci run manager: база знаний', () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)
     await waitRun(runId)
-    const chatId = db.getCiRunRaw(runId)!.conversationId!
-    const summary = db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
+    const chatId = db.ci.getCiRunRaw(runId)!.conversationId!
+    const summary = db.chat.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!
     expect(summary.text).toMatch(/БЗ: \d+ обращений, \d+ разделов, ≈\d+ токенов/)
     // Попадание — часть той же строки: без доли счётчик разделов не говорит,
     // пригодился ли хоть один из них.
@@ -1305,15 +1305,15 @@ describe('ci run manager: база знаний', () => {
   it('режим «off» у проекта: ни контекста, ни инструментов, телеметрия пустая', async () => {
     await rebuild(kbStub(async () => [hit]))
     const { project, task } = setup()
-    db.updateProject('admin', project.id, { ciKbContextMode: 'off' })
+    db.projects.updateProject('admin', project.id, { ciKbContextMode: 'off' })
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('success')
-    expect(db.getCiRunRaw(runId)!.kbContextMode).toBe('off')
+    expect(db.ci.getCiRunRaw(runId)!.kbContextMode).toBe('off')
     expect(modelRequests[0].kbMcpUrl).toBeUndefined()
     expect(modelRequests[0].prompt).not.toContain('### CI-раннер')
-    expect(db.kbUsageRunReport('admin', runId)!.totals.queries).toBe(0)
-    const chatId = db.getCiRunRaw(runId)!.conversationId!
-    expect(db.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!.text).not.toContain('БЗ:')
+    expect(db.kb.kbUsageRunReport('admin', runId)!.totals.queries).toBe(0)
+    const chatId = db.ci.getCiRunRaw(runId)!.conversationId!
+    expect(db.chat.listMessages('admin', chatId).find((m) => m.meta?.ciRunSummary)!.text).not.toContain('БЗ:')
   })
 
   it('сломанная база знаний не меняет статус рана', async () => {
@@ -1321,7 +1321,7 @@ describe('ci run manager: база знаний', () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('success')
-    expect(db.kbUsageRunReport('admin', runId)!.totals.errors).toBeGreaterThan(0)
+    expect(db.kb.kbUsageRunReport('admin', runId)!.totals.errors).toBeGreaterThan(0)
   })
 
   it('отчёты по ране и задаче: свой — 200, чужой — 404', async () => {
@@ -1329,7 +1329,7 @@ describe('ci run manager: база знаний', () => {
     const { project, task } = setup()
     const runId = await run(project.id, task.id)
     await waitRun(runId)
-    db.createUser('bob', '', 'developer')
+    db.identity.createUser('bob', '', 'developer')
     const bob = signToken({ name: 'bob', role: 'developer' }, SECRET)
 
     const mine = await inj(admin, { method: 'GET', url: `/api/ci/runs/${runId}/kb-usage` })
@@ -1351,42 +1351,42 @@ describe('ci run manager: база знаний', () => {
 describe('карточка после падения, отмены и повтора', () => {
   /** Пайплайн «сломанный шаг + мерж» в слоте «после» — как боевой. */
   function pipeline(projectId: string, taskId: string): void {
-    const gate = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Запустить тестирование', script: 'TOGGLE' })
-    const merge = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
-    db.setCiSlotCommands('task', taskId, 'after_model', [gate.id, merge.id])
+    const gate = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Запустить тестирование', script: 'TOGGLE' })
+    const merge = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+    db.ci.setCiSlotCommands('task', taskId, 'after_model', [gate.id, merge.id])
   }
 
   it('ран упал → починили → новый ран доводит карточку до «Готово», лозенг свежий', async () => {
     const { project, task, readyColId } = setup()
-    db.updateCiSettings({ maxFixAttempts: 1 })
+    db.ci.updateCiSettings({ maxFixAttempts: 1 })
     pipeline(project.id, task.id)
     failStep = true
 
     const first = await run(project.id, task.id)
     expect((await waitRun(first)).run.status).toBe('failed')
     // Исход B: карточка вернулась туда, где была, мержа не было.
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
 
     failStep = false
     dirtyWorkspace = false // пользователь устранил локальные изменения
     const second = await run(project.id, task.id)
     expect((await waitRun(second)).run.status).toBe('success')
-    const board = db.getBoard('admin', project.id)!
+    const board = db.tasks.getBoard('admin', project.id)!
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'component_qa')!.id)
     // Сводка на доске — про новый ран, а не про упавший.
-    const summary = db.latestCiRunSummary(task.id)!
+    const summary = db.ci.latestCiRunSummary(task.id)!
     expect(summary.id).toBe(second)
     expect(summary.status).toBe('success')
-    expect(db.latestCiRunSummaries(project.id).find((x) => x.taskId === task.id)!.id).toBe(second)
+    expect(db.ci.latestCiRunSummaries(project.id).find((x) => x.taskId === task.id)!.id).toBe(second)
   })
 
   it('повторный ран после падения останавливается на dirty checkout до clone', async () => {
     const { project, task } = setup()
-    db.updateCiSettings({ maxFixAttempts: 1 })
-    const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
-    db.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
-    const gate = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Запустить тестирование', script: 'TOGGLE' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [gate.id])
+    db.ci.updateCiSettings({ maxFixAttempts: 1 })
+    const clone = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
+    db.ci.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
+    const gate = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Запустить тестирование', script: 'TOGGLE' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [gate.id])
     failStep = true
 
     const first = await run(project.id, task.id)
@@ -1404,20 +1404,20 @@ describe('карточка после падения, отмены и повто
 
   it('повтор с упавшего шага: карточка уходит в разработку и после успеха доезжает до «Готово»', async () => {
     const { project, task, readyColId } = setup()
-    db.updateCiSettings({ maxFixAttempts: 1 })
+    db.ci.updateCiSettings({ maxFixAttempts: 1 })
     pipeline(project.id, task.id)
     failStep = true
 
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('failed')
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
     const prepRunsBeforeRetry = scripts.filter((script) => script.includes('fetch origin main')).length
 
     failStep = false
-    const columns = db.getBoard('admin', project.id)!.columns
+    const columns = db.tasks.getBoard('admin', project.id)!.columns
     // Колонку снимаем в момент повторяемого шага: к концу рана карточка уже в «Готово».
     let columnAtStep: string | null = null
-    onExec = (script) => { if (script === 'TOGGLE') columnAtStep = db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
+    onExec = (script) => { if (script === 'TOGGLE') columnAtStep = db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId }
     const retry = await inj(admin, { method: 'POST', url: `/api/ci/runs/${runId}/retry-from-step` })
     expect(retry.statusCode).toBe(202)
 
@@ -1426,15 +1426,15 @@ describe('карточка после падения, отмены и повто
     expect(scripts.filter((script) => script.includes('fetch origin main'))).toHaveLength(prepRunsBeforeRetry)
     // Повтор — это работа, а не простой: карточка вернулась в разработку на время рана.
     expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
-    expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'component_qa')!.id)
-    expect(db.latestCiRunSummary(task.id)!.status).toBe('success')
+    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'component_qa')!.id)
+    expect(db.ci.latestCiRunSummary(task.id)!.status).toBe('success')
   })
 
   it('берёт выбранную машину карточки, разрешает личную и отклоняет чужую', async () => {
     const { project, task } = setup()
-    const selected = db.createAgent('admin', 'Вторая машина')
-    db.linkMachine('admin', project.id, selected.id)
-    db.setProjectMachineReposRoot('admin', project.id, selected.id, '/repos-2')
+    const selected = db.machines.createAgent('admin', 'Вторая машина')
+    db.machines.linkMachine('admin', project.id, selected.id)
+    db.machines.setProjectMachineReposRoot('admin', project.id, selected.id, '/repos-2')
     const saved = await inj(admin, {
       method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { agentId: selected.id }
     })
@@ -1442,15 +1442,15 @@ describe('карточка после падения, отмены и повто
     expect(saved.json().agentId).toBe(selected.id)
 
     const runId = await run(project.id, task.id)
-    expect(db.getCiRunRaw(runId)!.agentId).toBe(selected.id)
+    expect(db.ci.getCiRunRaw(runId)!.agentId).toBe(selected.id)
 
-    const personal = db.createAgent('admin', 'Личная не в проекте')
+    const personal = db.machines.createAgent('admin', 'Личная не в проекте')
     const accepted = await inj(admin, {
       method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { agentId: personal.id }
     })
     expect(accepted.statusCode).toBe(200)
 
-    const foreign = db.createAgent('other', 'Чужая')
+    const foreign = db.machines.createAgent('other', 'Чужая')
     const rejected = await inj(admin, {
       method: 'PATCH', url: `/api/projects/${project.id}/tasks/${task.id}`, payload: { agentId: foreign.id }
     })

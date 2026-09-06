@@ -4,7 +4,7 @@
 // приходит из FileKnowledgeBaseService) и статьи из БД (разделы «Настройки
 // пользователя» и «Разработка проекта»). Этот класс — единственное место, где
 // решается, что пользователю видно: статью проекта отдаём, только если проект
-// есть в `view.projectIds` (их собирает вызывающий через db.getProject/
+// есть в `view.projectIds` (их собирает вызывающий через db.projects.getProject/
 // listProjects), персональную — только владельцу.
 //
 // Фильтры `scope`/`projectId` в запросе СУЖАЮТ выдачу и никогда её не расширяют:
@@ -50,9 +50,9 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
   ) {}
 
   private stored(): { rows: KbStoredDocument[]; indexed: Map<string, IndexedDocument> } {
-    const version = this.db.kbDocumentsVersion()
+    const version = this.db.kb.kbDocumentsVersion()
     if (!this.cache || this.cache.version !== version) {
-      const rows = this.db.kbDocuments()
+      const rows = this.db.kb.kbDocuments()
       this.cache = { version, rows, indexed: new Map(rows.map((row) => [row.id, indexStored(row)])) }
     }
     return this.cache

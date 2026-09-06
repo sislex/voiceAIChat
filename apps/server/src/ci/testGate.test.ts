@@ -105,15 +105,15 @@ const inj = (opts: { method: 'GET' | 'POST'; url: string; payload?: object }) =>
   app.inject({ ...opts, headers: { authorization: `Bearer ${admin}` } })
 
 function setup(): { projectId: string; taskId: string } {
-  const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.createAgent('admin', 'M')
-  db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.getBoard('admin', project.id)!
+  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = db.machines.createAgent('admin', 'M')
+  db.machines.linkMachine('admin', project.id, agent.id)
+  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const board = db.tasks.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
-  const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
+  const task = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
   return { projectId: project.id, taskId: task.id }
 }
 
@@ -127,8 +127,8 @@ function afterSlot(projectId: string, taskId: string): void {
     ['Влить ветку задачи в прод-ветку', 'git merge --no-edit "$BRANCH"'],
     ['Обновить прод-контейнер', 'npm run docker']
   ]
-  const ids = names.map(([name, script]) => db.createCiCommand('admin', { scope: 'project', projectId, name, script }).id)
-  db.setCiSlotCommands('task', taskId, 'after_model', ids)
+  const ids = names.map(([name, script]) => db.ci.createCiCommand('admin', { scope: 'project', projectId, name, script }).id)
+  db.ci.setCiSlotCommands('task', taskId, 'after_model', ids)
 }
 
 async function run(projectId: string, taskId: string): Promise<string> {
@@ -161,10 +161,10 @@ describe.skip('legacy after_model gate (обязательный гейт пер
 
   it('доступная модели команда-проверка публикуется и запускается вложенным шагом', async () => {
     const { projectId, taskId } = setup()
-    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Установить зависимости', script: 'npm ci', availableToModel: true })
-    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Запустить тестирование (npm test)', script: GATE, availableToModel: true })
-    db.createCiCommand('admin', { scope: 'project', projectId, name: 'Проверка типов', script: 'npm run typecheck', availableToModel: false })
-    expect(db.getCiSettings().maxModelCommandCalls).toBeGreaterThanOrEqual(2)
+    db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Установить зависимости', script: 'npm ci', availableToModel: true })
+    db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Запустить тестирование (npm test)', script: GATE, availableToModel: true })
+    db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Проверка типов', script: 'npm run typecheck', availableToModel: false })
+    expect(db.ci.getCiSettings().maxModelCommandCalls).toBeGreaterThanOrEqual(2)
     runModelCommand = true
     const runId = await run(projectId, taskId)
     expect((await waitRun(runId)).run.status).toBe('success')
@@ -173,7 +173,7 @@ describe.skip('legacy after_model gate (обязательный гейт пер
     expect(toolNames).not.toContain('Проверка типов')
     expect(scripts).toContain('npm ci')
     expect(scripts).toContain(GATE)
-    const commandStep = db.getCiRun('admin', runId)!.steps.find((s) => s.kind === 'model_command' && s.title === 'Запустить тестирование (npm test)')
+    const commandStep = db.ci.getCiRun('admin', runId)!.steps.find((s) => s.kind === 'model_command' && s.title === 'Запустить тестирование (npm test)')
     expect(commandStep).toMatchObject({ title: 'Запустить тестирование (npm test)', status: 'success' })
   })
 
@@ -191,7 +191,7 @@ describe.skip('legacy after_model gate (обязательный гейт пер
       'git commit -am wip',
       'git push origin HEAD'
     ])
-    const detail = db.getCiRun('admin', runId)!
+    const detail = db.ci.getCiRun('admin', runId)!
     expect(detail.fixAttempts).toHaveLength(1)
     expect(detail.fixAttempts[0]).toMatchObject({ attemptNo: 1, result: 'fixed' })
     expect(detail.fixAttempts[0].diagnosis).toContain('диагноз')
@@ -208,7 +208,7 @@ describe.skip('legacy after_model gate (обязательный гейт пер
     runTargeted = true
     const runId = await run(projectId, taskId)
     expect((await waitRun(runId)).run.status).toBe('success')
-    const attempt = db.getCiRun('admin', runId)!.fixAttempts[0]!
+    const attempt = db.ci.getCiRun('admin', runId)!.fixAttempts[0]!
     expect(attempt.targetedTests).toHaveLength(1)
     expect(attempt.targetedTests[0]).toMatchObject({ exitCode: 0, timedOut: false })
     expect(attempt.targetedTests[0].command).toContain('src/x1.test.ts')
@@ -256,7 +256,7 @@ describe.skip('legacy after_model gate (обязательный гейт пер
     expect(scripts.filter((s) => s === GATE)).toHaveLength(11)
     // До остальных шагов слота ран не дошёл.
     expect(scripts).not.toContain('git commit -am wip')
-    const detail = db.getCiRun('admin', runId)!
+    const detail = db.ci.getCiRun('admin', runId)!
     expect(detail.fixAttempts).toHaveLength(10)
     expect(detail.fixAttempts.slice(0, -1).every((f) => f.result === 'retrying')).toBe(true)
     expect(detail.fixAttempts.at(-1)?.result).toBe('gave_up')
@@ -270,7 +270,7 @@ describe.skip('legacy after_model gate (обязательный гейт пер
     const runId = await run(projectId, taskId)
     expect((await waitRun(runId)).run.status).toBe('failed')
     expect(scripts.filter((s) => s === GATE)).toHaveLength(1)
-    expect(db.getCiRun('admin', runId)!.fixAttempts).toHaveLength(0)
+    expect(db.ci.getCiRun('admin', runId)!.fixAttempts).toHaveLength(0)
     expect(fixRequests()).toHaveLength(0)
   })
 })

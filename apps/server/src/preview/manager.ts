@@ -122,13 +122,13 @@ export class FeaturePreviewManager {
     renameSync(temp, this.deps.storePath)
   }
   get(userId: string, projectId: string, taskId: string): PreviewEnvironment | null {
-    if (!this.deps.db.getProject(userId, projectId)) return null
+    if (!this.deps.db.projects.getProject(userId, projectId)) return null
     const env = this.data.environments.find((item) => item.projectId === projectId && item.taskId === taskId) ?? null
     if (env) this.refreshStale(env)
     return env ? structuredClone(env) : null
   }
   private refreshStale(env: PreviewEnvironment): void {
-    const workspace = this.deps.db.findActiveCiWorkspace(env.projectId, env.taskId)
+    const workspace = this.deps.db.ci.findActiveCiWorkspace(env.projectId, env.taskId)
     if (!workspace || workspace.path !== env.workspacePath || isPreviewBusy(env.state) || !env.builtCommitSha) return
     // Exact SHA is refreshed by explicit health/reconcile; a changed workspace record is immediately stale.
     if (workspace.agentId !== env.agentId && env.state === 'running') {
@@ -141,7 +141,7 @@ export class FeaturePreviewManager {
   }
   private async managedPaths(_userId: string, projectId: string, taskId: string, previewId: string, agentId: string) {
     if (!this.deps.isOnline(agentId)) throw new Error('Машина не в сети')
-    const machine = this.deps.db.getProjectMachine(projectId, agentId)
+    const machine = this.deps.db.machines.getProjectMachine(projectId, agentId)
     if (!machine?.storageId) throw new Error('Для нового preview не настроено MachineStorage выбранной машины')
     if (!machine.storageRoot) throw new Error('MachineStorage выбранной машины недоступно')
     if (!this.deps.fsRead || !this.deps.fsWrite || !this.deps.fsMkdir || !this.deps.fsRename || !this.deps.fsDelete) throw new Error('Файловая проверка MachineStorage недоступна')
@@ -192,9 +192,9 @@ export class FeaturePreviewManager {
     await this.deps.fsDelete!(env.agentId, paths.previewRoot)
   }
   async operate(userId: string, projectId: string, taskId: string, operation: PreviewOperation, args: { idempotencyKey?: string; scenario?: string; agentId?: string } = {}): Promise<PreviewEnvironment> {
-    const project = this.deps.db.getProject(userId, projectId)
+    const project = this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new Error('Проект не найден или нет доступа')
-    const board = this.deps.db.getBoard(userId, projectId)
+    const board = this.deps.db.tasks.getBoard(userId, projectId)
     const task = board?.tasks.find((item) => item.id === taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
     const idem = args.idempotencyKey ? `${userId}:${projectId}:${taskId}:${operation}:${args.idempotencyKey}` : null
@@ -208,8 +208,8 @@ export class FeaturePreviewManager {
       if (activeRun?.operation === operation && (!args.agentId || args.agentId === env.agentId)) return structuredClone(env)
       throw new Error('Для preview уже выполняется изменяющая операция')
     }
-    const activeWorkspace = this.deps.db.findActiveCiWorkspace(projectId, taskId)
-    const sourceWorkspace = activeWorkspace ?? this.deps.db.findLatestCiWorkspace(projectId, taskId)
+    const activeWorkspace = this.deps.db.ci.findActiveCiWorkspace(projectId, taskId)
+    const sourceWorkspace = activeWorkspace ?? this.deps.db.ci.findLatestCiWorkspace(projectId, taskId)
     const targetAgentId = args.agentId ?? env?.agentId ?? activeWorkspace?.agentId ?? task.agentId ?? project.defaultAgentId
     if (!targetAgentId) throw new Error('Выберите машину для тестового окружения')
     if (!this.deps.isOnline(targetAgentId)) throw new Error('Машина не в сети')
@@ -292,7 +292,7 @@ export class FeaturePreviewManager {
   }
   cancel(userId: string, projectId: string, taskId: string): boolean {
     const env = this.data.environments.find((item) => item.projectId === projectId && item.taskId === taskId)
-    if (!env || !this.deps.db.getProject(userId, projectId)) return false
+    if (!env || !this.deps.db.projects.getProject(userId, projectId)) return false
     const ctl = this.active.get(env.id)
     if (!ctl) return true
     const run = [...env.runs].reverse().find((item) => item.status === 'running' || item.status === 'queued' || item.status === 'cancelling')
@@ -372,7 +372,7 @@ export class FeaturePreviewManager {
         }
         await this.command(env, run, 'case "$(uname -s)" in Darwin) open -a Docker ;; Linux) sudo -n systemctl start docker || sudo -n service docker start ;; *) echo "Автоматический запуск Docker на этой платформе не поддерживается"; exit 72 ;; esac; i=0; until docker info >/dev/null 2>&1; do i=$((i+1)); [ "$i" -ge 60 ] && { echo "Docker запущен, но Engine не стал доступен за 120 секунд"; exit 70; }; sleep 2; done', 150_000, signal)
         env.state = 'stopped'; env.healthStatus = 'unknown'; env.lastError = null
-        this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, false)
+        this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, false)
         this.step(run, operation, 'succeeded', 'Docker готов к работе')
         run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save(); return
       }
@@ -446,7 +446,7 @@ export class FeaturePreviewManager {
         env.state = env.builtCommitSha === sha ? 'running' : 'stale'; env.staleReason = env.state === 'stale' ? 'commit_changed' : null; env.healthStatus = 'healthy'
       }
       if (operation !== 'start' && operation !== 'rebuild') this.step(run, operation, 'succeeded', 'Операция завершена')
-      this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
+      this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
       run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save(); await this.publishReportManifest(env, run, 'success')
     } catch (error) {
       const message = redact(error instanceof Error ? error.message : String(error))
@@ -467,7 +467,7 @@ export class FeaturePreviewManager {
       }
       this.event(run, 'status', cancelled ? 'Операция отменена' : `Операция завершилась ошибкой: ${message}`)
       env.state = 'failed'; env.healthStatus = 'unhealthy'; env.lastError = { type: run.errorType, message }; env.updatedAt = this.now()
-      this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, false); this.save(); await this.publishReportManifest(env, run, cancelled ? 'cancelled' : 'failed')
+      this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, false); this.save(); await this.publishReportManifest(env, run, cancelled ? 'cancelled' : 'failed')
     } finally { this.active.delete(env.id) }
   }
   async reconcile(): Promise<void> {
@@ -480,7 +480,7 @@ export class FeaturePreviewManager {
         if (run) { const current = run.currentStepId; if (current) this.step(run, current, 'failed', 'Сервер перезапущен во время операции', env.lastError.message); this.skipPending(run, 'Не выполнено после перезапуска сервера'); run.status = 'failed'; run.errorType = 'connection_lost'; run.errorMessage = env.lastError.message; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', env.lastError.message); interrupted.push({ env, run }) }
       }
       if (!this.deps.isOnline(env.agentId)) { env.state = 'failed'; env.lastError = { type: 'machine_unavailable', message: 'Машина недоступна при reconciliation' } }
-      this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
+      this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
     }
     this.save()
     for (const item of interrupted) await this.publishReportManifest(item.env, item.run, 'interrupted')

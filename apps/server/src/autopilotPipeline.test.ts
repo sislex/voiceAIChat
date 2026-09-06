@@ -143,10 +143,10 @@ describe('автопроход: начало конвейера', () => {
     const { projectId, taskId } = await taskInBacklog()
     // Git-проекту нужна копия на машине: без online-машины запускать нечего, и
     // прежний перезапуск «на автомате» только сжигал круги за чужой сбой.
-    const agent = db.createAgent('admin', 'Спящий ноутбук')
-    db.linkMachine('admin', projectId, agent.id)
-    db.setProjectMachinePath('admin', projectId, agent.id, '/srv/app')
-    db.updateProject('admin', projectId, { gitUrl: 'git@github.com:x/y.git' })
+    const agent = db.machines.createAgent('admin', 'Спящий ноутбук')
+    db.machines.linkMachine('admin', projectId, agent.id)
+    db.machines.setProjectMachinePath('admin', projectId, agent.id, '/srv/app')
+    db.projects.updateProject('admin', projectId, { gitUrl: 'git@github.com:x/y.git' })
 
     await enableAutoPilot(projectId, taskId)
     await new Promise((resolve) => setTimeout(resolve, 80))

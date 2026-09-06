@@ -101,7 +101,7 @@ describe('WS: живые изменения списка сессий', () => {
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50))
 
   it('отзыв своей сессии доезжает адресно, соседняя получает только инвалидацию', async () => {
-    db.createUser('wsuser', 'ws-user-pass-2026', 'developer')
+    db.identity.createUser('wsuser', 'ws-user-pass-2026', 'developer')
     const login = async (ua: string): Promise<string> =>
       (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'wsuser', password: 'ws-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
     const victimToken = await login('Phone/1.0')
@@ -111,7 +111,7 @@ describe('WS: живые изменения списка сессий', () => {
     const victimFrames = collect(victim)
     const observerFrames = collect(observer)
 
-    const victimSid = db.listSessions('wsuser').find((s) => s.userAgent === 'Phone/1.0')!.sid
+    const victimSid = db.identity.listSessions('wsuser').find((s) => s.userAgent === 'Phone/1.0')!.sid
     await app.inject({ method: 'DELETE', url: `/api/session/${victimSid}`, headers: { authorization: `Bearer ${observerToken}` } })
     await settle()
 
@@ -123,7 +123,7 @@ describe('WS: живые изменения списка сессий', () => {
   })
 
   it('«выйти везде» адресно гасит каждую убитую вкладку', async () => {
-    db.createUser('bulk', 'bulk-user-pass-2026', 'developer')
+    db.identity.createUser('bulk', 'bulk-user-pass-2026', 'developer')
     const login = async (ua: string): Promise<string> =>
       (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'bulk', password: 'bulk-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
     const phoneToken = await login('Phone/1.0')
@@ -132,7 +132,7 @@ describe('WS: живые изменения списка сессий', () => {
     const laptop = await connect(port, laptopToken)
     const phoneFrames = collect(phone)
     const laptopFrames = collect(laptop)
-    const phoneSid = db.listSessions('bulk').find((s) => s.userAgent === 'Phone/1.0')!.sid
+    const phoneSid = db.identity.listSessions('bulk').find((s) => s.userAgent === 'Phone/1.0')!.sid
 
     // «Выйти на других» с ноутбука: телефон мёртв и должен узнать это сразу.
     await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${laptopToken}` } })
@@ -146,8 +146,8 @@ describe('WS: живые изменения списка сессий', () => {
   })
 
   it('чужому пользователю кадры не приходят', async () => {
-    db.createUser('mine', 'mine-user-pass-2026', 'developer')
-    db.createUser('other', 'other-user-pass-2026', 'developer')
+    db.identity.createUser('mine', 'mine-user-pass-2026', 'developer')
+    db.identity.createUser('other', 'other-user-pass-2026', 'developer')
     const mineToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'mine', password: 'mine-user-pass-2026' } })).json().token as string
     const otherToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other', password: 'other-user-pass-2026' } })).json().token as string
     const otherWs = await connect(port, otherToken)
@@ -160,11 +160,11 @@ describe('WS: живые изменения списка сессий', () => {
   })
 
   it('переименование и админский отзыв тоже обновляют список живьём', async () => {
-    db.createUser('renamer', 'renamer-pass-2026-ok', 'developer')
+    db.identity.createUser('renamer', 'renamer-pass-2026-ok', 'developer')
     const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'renamer', password: 'renamer-pass-2026-ok' } })).json().token as string
     const ws = await connect(port, token)
     const frames = collect(ws)
-    const sid = db.listSessions('renamer')[0]!.sid
+    const sid = db.identity.listSessions('renamer')[0]!.sid
     await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}` } })
     await settle()
     expect(frames).toEqual([{ t: 'sessions.update', v: 1 }])
@@ -218,7 +218,7 @@ describe('WS: auth status', () => {
 
 describe('WS: Claude-стрим', () => {
   it('claude.send → token×2 + done; session-id сохранён в БД', async () => {
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const ws = await connect()
     const events: unknown[] = []
     const done = new Promise<void>((resolve) => {
@@ -240,7 +240,7 @@ describe('WS: Claude-стрим', () => {
     }
     expect(doneMsg.text).toBe('Привет')
     // session-id записан с префиксом провайдера
-    expect(db.getConversation(U, conv.id)?.claudeSessionId).toBe('claude:sess-xyz')
+    expect(db.chat.getConversation(U, conv.id)?.claudeSessionId).toBe('claude:sess-xyz')
     // без verbose активность НЕ шлётся в глобальную консоль (событие claude.log)…
     expect(events.some((e) => (e as { t: string }).t === 'claude.log')).toBe(false)
     // …но собирается всегда и персистится в meta сохранённого сообщения (для подробного вида)
@@ -248,7 +248,7 @@ describe('WS: Claude-стрим', () => {
   })
 
   it('claude.send с verbose → приходит claude.log', async () => {
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const ws = await connect()
     const logs: unknown[] = []
     const done = new Promise<void>((resolve) => {
@@ -275,7 +275,7 @@ describe('WS: Claude-стрим', () => {
 
 describe('WS /agent: смена политики с машины', () => {
   it('agent.setPolicy сохраняется в БД владельца', async () => {
-    const created = db.createAgent('admin', 'Box') // admin засеян buildServer
+    const created = db.machines.createAgent('admin', 'Box') // admin засеян buildServer
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent`)
     await new Promise((r) => ws.on('open', r as () => void))
     const registered = new Promise<void>((res) => {
@@ -299,10 +299,10 @@ describe('WS /agent: смена политики с машины', () => {
       })
     )
     // Ждём применения (сообщение обрабатывается асинхронно).
-    for (let i = 0; i < 20 && db.listAgents('admin')[0]?.policy.allowWrite !== false; i++) {
+    for (let i = 0; i < 20 && db.machines.listAgents('admin')[0]?.policy.allowWrite !== false; i++) {
       await new Promise((r) => setTimeout(r, 25))
     }
-    expect(db.listAgents('admin')[0].policy.allowWrite).toBe(false)
+    expect(db.machines.listAgents('admin')[0].policy.allowWrite).toBe(false)
     ws.close()
   })
 })
@@ -326,9 +326,9 @@ describe('WS: роль user не выполняет на сервере (фор�
     })
     await rapp.listen({ port: 0, host: '127.0.0.1' })
     const rport = (rapp.server.address() as AddressInfo).port
-    if (role === 'developer') rdb.createUser('developer', '', 'developer') // admin засеян buildServer'ом
-    const conv = rdb.createConversation(role, 'Чат')
-    if (convMode) rdb.setConversationExecTarget(role, conv.id, null, undefined, undefined, undefined, undefined, convMode)
+    if (role === 'developer') rdb.identity.createUser('developer', '', 'developer') // admin засеян buildServer'ом
+    const conv = rdb.chat.createConversation(role, 'Чат')
+    if (convMode) rdb.chat.setConversationExecTarget(role, conv.id, null, undefined, undefined, undefined, undefined, convMode)
     const ws = await connect(rport, signToken({ name: role, role }, SECRET))
     const done = new Promise<string>((resolve) => {
       ws.on('message', (d) => {
@@ -430,7 +430,7 @@ describe('WS: блок STT/TTS при нехватке ресурсов конт
 describe('WS: выбор движка Codex', () => {
   it('llmProvider=codex → используется codex-клиент; session-id с префиксом codex', async () => {
     const cdb = new VoiceChatDb(':memory:')
-    cdb.saveSettings(U, { ...cdb.getSettings(U), llmProvider: 'codex', codexModel: 'gpt-5-codex' })
+    cdb.settings.saveSettings(U, { ...cdb.settings.getSettings(U), llmProvider: 'codex', codexModel: 'gpt-5-codex' })
     const mockCodex: LlmClient = {
       send(req, h) {
         // модель берётся из codexModel
@@ -448,7 +448,7 @@ describe('WS: выбор движка Codex', () => {
     })
     await capp.listen({ port: 0, host: '127.0.0.1' })
     const cport = (capp.server.address() as AddressInfo).port
-    const conv = cdb.createConversation(U, 'Чат')
+    const conv = cdb.chat.createConversation(U, 'Чат')
     const ws = await connect(cport)
     const done = new Promise<{ text: string; engine?: string }>((resolve) => {
       ws.on('message', (d) => {
@@ -463,7 +463,7 @@ describe('WS: выбор движка Codex', () => {
     // движок ответа запечён в событие claude.done
     expect(doneMsg.engine).toBe('codex')
     // session-id сохранён с префиксом codex и моделью из codexModel
-    expect(cdb.getConversation(U, conv.id)?.claudeSessionId).toBe('codex:thread-gpt-5-codex')
+    expect(cdb.chat.getConversation(U, conv.id)?.claudeSessionId).toBe('codex:thread-gpt-5-codex')
     await capp.close()
     cdb.close()
   })
@@ -552,7 +552,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
   it('обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 60))
-    const conv = sdb.createConversation(U, 'Чат')
+    const conv = sdb.chat.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
     ws.send(
       JSON.stringify({
@@ -565,7 +565,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     await closeWs(ws) // «обновление страницы» посреди генерации
     await wait(90)
 
-    const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
+    const saved = sdb.chat.listMessages(U, conv.id).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(saved[0].text).toBe('Часть ответа')
     expect(saved[0].engine).toBe('claude')
@@ -585,7 +585,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
       }
     }
     const { sapp, sdb, sport } = await buildSlow(controlledClaude)
-    const conv = sdb.createConversation(U, 'Чат')
+    const conv = sdb.chat.createConversation(U, 'Чат')
     const ws1 = await connectTo(sport)
     // Ждём сами дельты, а не фиксированную паузу: под нагрузкой (полный прогон
     // сюиты) вторая не успевала за 25 мс и в накопленном тексте была одна «Ча».
@@ -646,7 +646,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     }
     expect(doneMsg.text).toBe('Часть ответа')
     expect(doneMsg.message?.role).toBe('ai')
-    const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
+    const saved = sdb.chat.listMessages(U, conv.id).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(doneMsg.message?.id).toBe(saved[0].id)
     await cleanupSlow(sapp, sdb, [ws2])
@@ -654,7 +654,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
   it('claude.cancel с conversationId снимает ход: partial сохраняется как interrupted и поздний done игнорируется', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча'], 'Часть ответа', 60))
-    const conv = sdb.createConversation(U, 'Чат')
+    const conv = sdb.chat.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
     const events: Array<{ t: string; text?: string }> = []
     let firstTokenResolve: (() => void) | undefined
@@ -678,7 +678,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     ws.send(JSON.stringify({ t: 'claude.cancel', conversationId: conv.id }))
     await cancelledDone
     await wait(80) // финал мока уже не должен записать второе сообщение
-    const saved = sdb.listMessages(U, conv.id).filter((m) => m.role === 'ai')
+    const saved = sdb.chat.listMessages(U, conv.id).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(saved[0]).toMatchObject({ text: 'Ча', meta: { interrupted: true } })
     expect(events.filter((event) => event.t === 'claude.done')).toHaveLength(1)
@@ -693,7 +693,7 @@ describe('WS: relay действий веб-превью', () => {
     app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, previewRelay: relay })
     await app.listen({ port: 0, host: '127.0.0.1' })
     const p2 = (app.server.address() as AddressInfo).port
-    db.createUser('bob', '', 'developer')
+    db.identity.createUser('bob', '', 'developer')
 
     const mine = await connect(p2)
     const other = await connect(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
@@ -724,8 +724,8 @@ describe('WS: кадры использования базы знаний', () =
     app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, kbUsage: tracker })
     await app.listen({ port: 0, host: '127.0.0.1' })
     const p2 = (app.server.address() as AddressInfo).port
-    db.createUser('bob', '', 'developer')
-    const conv = db.createConversation(U, 'Чат')
+    db.identity.createUser('bob', '', 'developer')
+    const conv = db.chat.createConversation(U, 'Чат')
 
     const mine = await connect(p2)
     const other = await connect(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
@@ -749,8 +749,8 @@ describe('WS: кадры использования базы знаний', () =
 
 describe('сброс пароля по подтверждённому email', () => {
   it('не раскрывает наличие адреса, шлёт ссылку и одноразово меняет пароль с отзывом сессий', async () => {
-    db.createEmailVerification({ token: 'verify-reset-user', name: 'reset-user', email: 'reset@example.test', password: 'old-password-1', ttlMs: 60_000 })
-    expect(db.redeemEmailVerification('verify-reset-user', 'developer')).not.toBeNull()
+    db.identity.createEmailVerification({ token: 'verify-reset-user', name: 'reset-user', email: 'reset@example.test', password: 'old-password-1', ttlMs: 60_000 })
+    expect(db.identity.redeemEmailVerification('verify-reset-user', 'developer')).not.toBeNull()
 
     const existing = await app.inject({ method: 'POST', url: '/api/session/reset/request', payload: { email: 'reset@example.test' } })
     const missing = await app.inject({ method: 'POST', url: '/api/session/reset/request', payload: { email: 'missing@example.test' } })
@@ -765,19 +765,19 @@ describe('сброс пароля по подтверждённому email', ()
     const oldToken = login.json<{ token: string }>().token
     const changed = await app.inject({ method: 'POST', url: '/api/session/reset/email', payload: { token, password: 'new-password-2' } })
     expect(changed.statusCode).toBe(200)
-    expect(db.verifyUserPassword('reset-user', 'new-password-2')).not.toBeNull()
+    expect(db.identity.verifyUserPassword('reset-user', 'new-password-2')).not.toBeNull()
     expect((await app.inject({ method: 'GET', url: '/api/settings', headers: { authorization: `Bearer ${oldToken}` } })).statusCode).toBe(401)
 
     const reused = await app.inject({ method: 'POST', url: '/api/session/reset/email', payload: { token, password: 'another-password-3' } })
     expect(reused.statusCode).toBe(400)
     expect(reused.json<{ error: string }>().error).toMatch(/уже использована/)
-    expect(db.listSecurityEvents({ user: 'reset-user', limit: 10 }).some((event) => event.type === 'password_reset' && event.details.includes('email'))).toBe(true)
+    expect(db.identity.listSecurityEvents({ user: 'reset-user', limit: 10 }).some((event) => event.type === 'password_reset' && event.details.includes('email'))).toBe(true)
   })
 
   it('отличает истёкшую ссылку и ограничивает запросы', async () => {
-    db.createEmailVerification({ token: 'verify-expired-user', name: 'expired-user', email: 'expired@example.test', password: 'old-password-1', ttlMs: 60_000 })
-    expect(db.redeemEmailVerification('verify-expired-user', 'developer')).not.toBeNull()
-    db.createPasswordResetToken('expired-user', 'expired-token', -1)
+    db.identity.createEmailVerification({ token: 'verify-expired-user', name: 'expired-user', email: 'expired@example.test', password: 'old-password-1', ttlMs: 60_000 })
+    expect(db.identity.redeemEmailVerification('verify-expired-user', 'developer')).not.toBeNull()
+    db.identity.createPasswordResetToken('expired-user', 'expired-token', -1)
     const expired = await app.inject({ method: 'POST', url: '/api/session/reset/email', payload: { token: 'expired-token', password: 'new-password-2' } })
     expect(expired.statusCode).toBe(410)
     expect(expired.json<{ error: string }>().error).toMatch(/истекла/)
