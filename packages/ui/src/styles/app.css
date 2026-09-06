@@ -9218,6 +9218,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .mpc-story:hover { background: var(--surface-hover); }
 .mpc-story--on { background: var(--surface-selected); color: var(--text); }
 .mpc-note { margin: 4px 0 0; font-size: 11px; color: var(--text-dim); }
+.mpc-access { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 .mpc-main { min-height: 0; display: flex; flex-direction: column; }
 .mpc-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .mpc-tabs > button { background: none; border: 0; color: var(--text-dim); padding: 4px 10px; border-radius: var(--radius-medium); cursor: pointer; }

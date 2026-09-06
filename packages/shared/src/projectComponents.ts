@@ -93,6 +93,45 @@ export interface ProjectComponentTicketResult {
 const STORY_ID_SEPARATOR = '--'
 
 /**
+ * Как открывается кадр стори.
+ *
+ * `direct` — Storybook слушает на той же машине, где открыт браузер: идём на
+ * `127.0.0.1` напрямую, без чужих посредников. `tunnel` — companion-агент рядом с
+ * браузером поднял локальный порт до машины Storybook (тот же приём, что у
+ * feature-preview). `proxy` — последний вариант: HTTP через агента и наш прокси;
+ * работает всегда, но каждый модуль Vite идёт отдельным round-trip до машины, и на
+ * медленном канале кадр не успевает собраться.
+ */
+export type ProjectStorybookAccessKind = 'direct' | 'tunnel' | 'proxy'
+
+export interface ProjectStorybookAccess {
+  kind: ProjectStorybookAccessKind
+  /** База для кадра: origin (direct/tunnel) либо путь прокси. */
+  url: string
+  /** Идентификатор туннеля — нужен, чтобы закрыть его при выходе. */
+  tunnelId: string | null
+  /** Причина, почему выбран именно этот путь: показывается человеку. */
+  note: string
+}
+
+/**
+ * Принадлежит ли запись индекса этой рабочей копии.
+ *
+ * Сравниваем по суффиксу, а не по точному пути: Storybook запускают из пакета
+ * (`packages/ui`), и `importPath` тогда относителен пакету — `src/components/X.stories.tsx`
+ * против `packages/ui/src/components/X.stories.tsx` у `git ls-files`. На проде из-за
+ * точного сравнения живой индекс считался чужим, и список падал в разбор файлов.
+ */
+export function storyPathMatches(indexPath: string, repoPaths: Iterable<string>): boolean {
+  const needle = indexPath.replace(/^\.\//, '')
+  if (!needle) return false
+  for (const path of repoPaths) {
+    if (path === needle || path.endsWith('/' + needle) || needle.endsWith('/' + path)) return true
+  }
+  return false
+}
+
+/**
  * Идентификатор стори по правилам `@storybook/csf` (`toId`): и заголовок, и имя
  * приводятся к нижнему регистру, пунктуация схлопывается в дефисы. Повторяем алгоритм
  * у себя, чтобы не тащить рантайм Storybook в общий пакет.
@@ -134,6 +173,14 @@ export function machineOrigin(agentId: string, port: number): string {
  * тянет свой UI и вложенный iframe вторым уровнем через тот же прокси, а нам нужен
  * только компонент.
  */
+/**
+ * Кадр по прямому адресу (direct/tunnel): Storybook сам читает `id` из query, а
+ * прокси-шимов тут нет — origin настоящий.
+ */
+export function storybookFrameUrlAt(origin: string, storyId: string): string {
+  return `${origin.replace(/\/$/, '')}/iframe.html?viewMode=story&id=${encodeURIComponent(storyId)}`
+}
+
 export function projectStorybookFrameUrl(agentId: string, port: number, storyId: string): string {
   const target = `${machineOrigin(agentId, port)}/iframe.html`
   // `id` и `viewMode` идут в НАШ query, а не в адрес цели: Storybook выбирает стори на
