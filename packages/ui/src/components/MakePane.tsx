@@ -62,7 +62,8 @@ export interface MakePaneProps {
   api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks' | 'make:projectFiles' | 'make:projectLinks' | 'make:projectPull'
   | 'projects:gitWorkspaces' | 'projects:components' | 'projects:componentStories'
   | 'projects:storybookSession' | 'projects:storybookAction'
-  | 'projects:gitFile' | 'projects:gitSaveFile' | 'projects:componentTicket'>
+  | 'projects:gitFile' | 'projects:gitSaveFile' | 'projects:componentTicket'
+  | 'projects:storybookOpen' | 'projects:storybookCloseTunnel'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void

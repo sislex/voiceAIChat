@@ -2007,7 +2007,15 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   registerProjectComponentsRoutes(app, {
     git: gitWorkspaces,
     storybook: storybookSessions,
-    tickets: new ComponentTicketService({ db, git: gitWorkspaces })
+    tickets: new ComponentTicketService({ db, git: gitWorkspaces }),
+    tunnels: {
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      // Туннель поднимает только своя машина пользователя: чужой агент слушать порт не должен.
+      ownsAgent: (userId, agentId) => db.listAgents(userId).some((agent) => agent.id === agentId),
+      create: (id, sourceAgentId, targetAgentId, targetPort, authorize) =>
+        agentRegistry.createTunnel(id, sourceAgentId, targetAgentId, targetPort, authorize),
+      close: (id) => agentRegistry.closeTunnel(id)
+    }
   })
   const featurePreviews = new FeaturePreviewManager({
     db,
