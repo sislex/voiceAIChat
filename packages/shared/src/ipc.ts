@@ -40,6 +40,10 @@ import type {
 } from './gitWorkspace'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
+  ProjectComponentEntry, ProjectComponentTicketResult, ProjectComponentsListing,
+  ProjectStorybookAction, ProjectStorybookSession
+} from './projectComponents'
+import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
   AdminLlmEngineInput,
@@ -566,6 +570,23 @@ export interface IpcInvokeMap {
   'projects:gitFileBytes': { arg: { id: string; workspace: string; path: string }; result: { path: string; dataBase64: string; size: number } }
   'projects:gitConflict': { arg: { id: string; workspace: string; path: string }; result: GitConflictStages }
   'projects:gitResolveConflict': { arg: { id: string; workspace: string; path: string; side: GitConflictSide }; result: GitWorkspaceStatus }
+  /**
+   * Компоненты рабочей копии для Make: список сториз (из живого Storybook либо из
+   * `git ls-files`), сессия Storybook на машине и быстрый тикет из правки.
+   */
+  'projects:components': { arg: { id: string; workspace: string }; result: ProjectComponentsListing }
+  'projects:componentStories': { arg: { id: string; workspace: string; path: string }; result: ProjectComponentEntry }
+  'projects:storybookSession': { arg: { id: string; workspace: string }; result: ProjectStorybookSession }
+  'projects:storybookAction': { arg: { id: string; workspace: string; action: ProjectStorybookAction; port?: number; command?: string }; result: ProjectStorybookSession }
+  'projects:storybookOpen': {
+    arg: { id: string; workspace: string; localAgentId?: string | null }
+    result: import('./projectComponents').ProjectStorybookAccess
+  }
+  'projects:storybookCloseTunnel': { arg: { id: string; tunnelId: string; workspace: string }; result: { closed: boolean } }
+  'projects:componentTicket': {
+    arg: { id: string; workspace: string; title: string; description?: string; paths: string[]; labels?: string[] }
+    result: ProjectComponentTicketResult
+  }
   /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /**
@@ -699,7 +720,7 @@ export interface IpcInvokeMap {
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number }> } }
+  'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number; size: number }> } }
   'imgstudio:restore': { arg: { conversationId: string; name: string }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
   /** Очистка корзины: без `name` — вся, с `name` — только этот файл. */
   'imgstudio:purge': { arg: { conversationId: string; name?: string }; result: { removed: number; items: Array<{ name: string; deletedAt: number }> } }
@@ -948,6 +969,10 @@ export interface RendererBoardBridge {
   onPreparationRunUpdated(cb: (m: { projectId: string; taskId: string; runId: string }) => void): () => void
   /** Адресная инвалидация списка репозиториев задачи. */
   onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
+  /** Адресная инвалидация состояния QA-этапа: панель перечитывает снимок вместо опроса. */
+  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
+  /** Адресная инвалидация очереди «Улучшения» проекта. */
+  onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
   /** Успешное восстановление WS после уже состоявшегося подключения. */
   onReconnect(cb: () => void): () => void
 }
@@ -1435,6 +1460,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:gitFileBytes',
   'projects:gitConflict',
   'projects:gitResolveConflict',
+  'projects:components',
+  'projects:componentStories',
+  'projects:storybookSession',
+  'projects:storybookAction',
+  'projects:storybookOpen',
+  'projects:storybookCloseTunnel',
+  'projects:componentTicket',
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',

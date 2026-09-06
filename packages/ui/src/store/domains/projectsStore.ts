@@ -302,7 +302,19 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     else if (run.status === 'failed') notify({ kind: 'error', text: `Merge ${run.sourceBranch} завершился с ошибкой: ${run.error ?? 'см. вкладку Merge задачи'}` })
   })
   if (unsubscribeMerge) core.onDispose(unsubscribeMerge)
-  const BOARD_CHANGE_DEBOUNCE_MS = 50
+  // Дебаунс с гарантией: активный ран шлёт board.changed непрерывно, и при 50 мс
+  // доска перезапрашивалась почти на каждое событие (8 раз за 6 секунд на стенде).
+  // Пауза в 400 мс склеивает поток, но одного дебаунса мало: пока события идут
+  // подряд, он откладывал бы обновление бесконечно и доска замерла бы до тишины.
+  // Поэтому есть потолок ожидания — раз в 2 секунды снимок берётся в любом случае.
+  const BOARD_CHANGE_DEBOUNCE_MS = 400
+  /** Не чаще одного снимка в этот интервал, пока события идут подряд. */
+  const BOARD_MIN_INTERVAL_MS = 1500
+  /** И не реже: событие не может ждать снимка дольше, иначе доска «замрёт». */
+  const BOARD_MAX_WAIT_MS = 2000
+  /** Время первого события, ещё не попавшего в снимок; 0 — все учтены. */
+  let boardDirtySince = 0
+  let lastBoardSyncAt = 0
   let boardGeneration = 0
   let boardTimer: ReturnType<typeof setTimeout> | null = null
   let boardFlight: { generation: number; promise: Promise<void> } | null = null
@@ -311,6 +323,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   function clearBoardSync(): void {
     boardGeneration++
     boardPending = false
+    boardDirtySince = 0
     if (boardTimer) clearTimeout(boardTimer)
     boardTimer = null
   }
@@ -367,11 +380,20 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       boardPending = true
       return
     }
+    const now = Date.now()
+    if (!boardDirtySince) boardDirtySince = now
     if (boardTimer) clearTimeout(boardTimer)
+    // Пауза после последнего события, но не чаще минимального интервала и не позже
+    // потолка ожидания: поток событий рана склеивается, одиночное изменение приходит
+    // почти сразу, а непрерывный поток всё равно обновляет доску раз в ~1,5–2 с.
+    const throttled = Math.max(BOARD_CHANGE_DEBOUNCE_MS, BOARD_MIN_INTERVAL_MS - (now - lastBoardSyncAt))
+    const wait = Math.max(0, Math.min(throttled, boardDirtySince + BOARD_MAX_WAIT_MS - now))
     boardTimer = setTimeout(() => {
       boardTimer = null
+      boardDirtySince = 0
+      lastBoardSyncAt = Date.now()
       void syncBoard()
-    }, BOARD_CHANGE_DEBOUNCE_MS)
+    }, wait)
   }
 
   const unsubscribeBoardChanged = boardBridge?.onChanged(({ projectId }) => {
@@ -419,17 +441,31 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     void refreshProjects().catch(() => {})
   }
 
+  /**
+   * Список проектов запрашивают из нескольких мест сразу (bootstrap, открытие
+   * диалога чата, реакция на закрытый доступ). Параллельные вызовы схлопываем в
+   * один запрос: на старте их было два подряд, и оба возвращали одно и то же.
+   */
+  let projectsFlight: Promise<ProjectSummary[]> | null = null
+
   async function refreshProjects(): Promise<ProjectSummary[]> {
+    if (projectsFlight) return projectsFlight
     setState({ projectsStatus: 'loading', projectsError: null })
-    try {
-      const projects = await client['projects:list']()
-      setState({ projects, projectsLoaded: true, projectsStatus: 'ready', projectsError: null })
-      return projects
-    } catch (err) {
-      // Ошибку держим в сторе: пустой список и сломанное чтение — разные экраны.
-      setState({ projectsStatus: 'error', projectsError: err instanceof Error ? err.message : String(err) })
-      throw err
-    }
+    const flight = (async () => {
+      try {
+        const projects = await client['projects:list']()
+        setState({ projects, projectsLoaded: true, projectsStatus: 'ready', projectsError: null })
+        return projects
+      } catch (err) {
+        // Ошибку держим в сторе: пустой список и сломанное чтение — разные экраны.
+        setState({ projectsStatus: 'error', projectsError: err instanceof Error ? err.message : String(err) })
+        throw err
+      } finally {
+        projectsFlight = null
+      }
+    })()
+    projectsFlight = flight
+    return flight
   }
 
   async function refreshBoard(): Promise<void> {

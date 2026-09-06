@@ -6,7 +6,7 @@
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
 import { createHash } from 'node:crypto'
-import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectPullResult } from '@voicechat/shared'
+import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectNotes, MakeProjectPullResult } from '@voicechat/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '../make/rateLimit.js'
 import { MAKE_PROJECT_SYNC_MAX_FILES, MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_COMMENTS_PAGE, MAKE_SNAPSHOT_PREVIEW, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
@@ -558,7 +558,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const owner = db.conversationOwner(conversationId) ?? ''
       const conv = owner ? db.getConversation(owner, conversationId) : null
       const state = await workspaces.state(conversationId)
-      return { token: req.params.token, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
+      const settings = await workspaces.notes(conversationId)
+      return { token: req.params.token, stack: settings.stack, uiKit: settings.uiKit, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
     } catch (error) { return sendError(reply, error) }
   })
   app.get<{ Params: { token: string }; Querystring: { path?: string } }>('/api/make/shared/:token/file', async (req, reply) => {
@@ -730,10 +731,18 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.notes(req.params.id) } catch (error) { return sendError(reply, error) }
   })
-  app.put<{ Params: { id: string }; Body: { notes?: string; mode?: string } | undefined }>('/api/make/:id/notes', async (req, reply) => {
+  app.put<{ Params: { id: string }; Body: { notes?: string; mode?: string; stack?: string; uiKit?: string } | undefined }>('/api/make/:id/notes', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'editor'))) return reply
     const mode = req.body?.mode === 'designer' || req.body?.mode === 'developer' || req.body?.mode === 'balanced' ? req.body.mode : undefined
-    try { await workspaces.ensure(req.params.id); return await workspaces.setNotes(req.params.id, { ...(typeof req.body?.notes === 'string' ? { notes: req.body.notes } : {}), ...(mode ? { mode } : {}) }) } catch (error) { return sendError(reply, error) }
+    try {
+      await workspaces.ensure(req.params.id)
+      return await workspaces.setNotes(req.params.id, {
+        ...(typeof req.body?.notes === 'string' ? { notes: req.body.notes } : {}),
+        ...(mode ? { mode } : {}),
+        ...(typeof req.body?.stack === 'string' ? { stack: req.body.stack as MakeProjectNotes['stack'] } : {}),
+        ...(typeof req.body?.uiKit === 'string' ? { uiKit: req.body.uiKit as MakeProjectNotes['uiKit'] } : {})
+      })
+    } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/tests', async (req, reply) => {
@@ -780,7 +789,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   }
   const passwordPage = (action: string, wrong: boolean, limited = 0): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
-<body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${limited ? `<p class="err">Слишком много попыток — подождите ${limited} с.</p>` : wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
+<body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${limited ? `<p class="err">Слишком много попыток — подождите ${limited} с.</p>` : wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" aria-label="Пароль проекта" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
 
   /** Ответ мок-API (п.29): JSON, статус и заголовки из конверта, искусственная задержка — как у настоящего бэкенда. */
   const sendMock = async (reply: FastifyReply, mock: MockResponse): Promise<unknown> => {

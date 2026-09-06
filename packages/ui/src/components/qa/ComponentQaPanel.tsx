@@ -4,7 +4,7 @@ import { QA_RUN_STATUS_LABELS, QA_STEP_STATUS_LABELS } from '@shared/qa'
 import { Skeleton } from '@voicechat/ui-kit'
 import { AttemptHistory, Button, EmptyState, ErrorState, FeedItem, FeedLog, MetricGrid, PanelHeading, QaScore, ResultTable, StatusPill, type ResultRow } from '@voicechat/ui-kit'
 import { COMPONENT_QA_SCENARIO_LABEL, qaRunTone, qaScenarioTone, qaStepTone } from './qaTone'
-import { usePolling } from '../../lib/usePolling'
+import { useQaStageUpdates } from './useQaStageUpdates'
 
 export function ComponentQaPanel(props:{projectId:string;taskId:string;active:boolean;onFixStarted?:(id:string)=>void}):JSX.Element {
   const [state,setState]=useState<ComponentQaTaskState|null>(null)
@@ -26,7 +26,7 @@ export function ComponentQaPanel(props:{projectId:string;taskId:string;active:bo
   useEffect(()=>{void load()},[load])
   // Опрос встаёт вместе со вкладкой браузера: карточка, оставленная открытой,
   // стучала в сервер каждые две секунды и в фоне.
-  usePolling(()=>void load(),{ enabled: Boolean(state?.activeRun), intervalMs: 2000 })
+  useQaStageUpdates({ projectId: props.projectId, taskId: props.taskId, stage: 'component_qa', onUpdate: () => void load(), active: Boolean(state?.activeRun) })
   if (!window.qa?.getComponent) return <section className="component-qa-panel">
     <EmptyState compact icon="🧪" title="Component QA недоступен" description="Мост QA не подключён в этой сборке." testId="component-qa-unavailable" />
   </section>
