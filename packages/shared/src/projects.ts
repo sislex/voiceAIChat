@@ -880,6 +880,45 @@ export function designPromptLines(designs: TaskDesignLink[], _previewUrl?: (conv
   })
 }
 
+export interface TaskAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  status: 'ready' | 'missing'
+}
+
+export interface TaskReworkMakeSource {
+  conversationId: string
+  title: string
+  mode: 'whole_project' | 'files'
+  paths: string[]
+}
+
+export interface TaskReworkCycle {
+  id: string
+  taskId: string
+  sequence: number
+  description: string
+  criteria: string[]
+  makeSources: TaskReworkMakeSource[]
+  attachments: TaskAttachment[]
+  implementedResult?: string
+  createdBy: string
+  createdAt: number
+  preparationRunId: string | null
+}
+
+export interface CreateTaskReworkCycleInput {
+  description: string
+  criteria?: string[]
+  makeMode: 'whole_project' | 'files'
+  makePaths?: string[]
+  makeSources?: TaskReworkMakeSource[]
+  uploadIds?: string[]
+  idempotencyKey: string
+}
+
 /** Задача канбан-доски. Статус задачи = её колонка (columnId). */
 export interface Task {
   id: string
@@ -963,6 +1002,8 @@ export interface Task {
   designs?: TaskDesignLink[]
   /** Последний актуальный результат всех серверных этапов; отсутствие данных не является ошибкой. */
   latestRunResult?: TaskRunResult | null
+  /** Подтверждённые исходные вложения задачи. */
+  attachments?: TaskAttachment[]
 }
 
 /**
