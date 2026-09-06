@@ -432,6 +432,7 @@ export const REST = {
   projectTasks: (id: string) => `/api/projects/${encodeURIComponent(id)}/tasks`,
   projectTask: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`,
+  projectTaskReworkCycles: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`,
   projectTaskMove: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
   projectTaskChat: (id: string, taskId: string) =>

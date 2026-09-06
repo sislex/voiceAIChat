@@ -16,7 +16,7 @@ const model: TaskCardViewModel = {
   actions: { canRework: true, hasActiveRun: false, safeActiveRunActions: [] }
 }
 function callbacks(over: Partial<TaskCardCallbacks> = {}): TaskCardCallbacks {
-  return { onClose: vi.fn(), onChangeTab: vi.fn(), onOpenRun: vi.fn(), onOpenMake: vi.fn(), onStartRework: vi.fn(), onChangeReworkDraft: vi.fn(), onSubmitRework: vi.fn(), onCancelRework: vi.fn(), ...over }
+  return { onClose: vi.fn(), onChangeTab: vi.fn(), onOpenRun: vi.fn(), onOpenMake: vi.fn(), onStartRework: vi.fn(), onChangeReworkDraft: vi.fn(), onAddReworkFiles: vi.fn(), onRemoveReworkFile: vi.fn(), onRetryReworkFile: vi.fn(), onRetryHistory: vi.fn(), onSubmitRework: vi.fn(), onCancelRework: vi.fn(), ...over }
 }
 
 describe('NewTaskCardView', () => {
@@ -27,12 +27,45 @@ describe('NewTaskCardView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'На доработку' }))
     expect(cb.onStartRework).toHaveBeenCalledOnce()
   })
+  // @testCase TC-REG-1
   it('переключает представление без доменной мутации', () => {
     const change = vi.fn()
     render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={change} callbacks={callbacks()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Старая' }))
     expect(change).toHaveBeenCalledWith('legacy')
   })
+  // @testCase TC-UI-1
+  it('создаёт цикл с критерием и готовым вложением', () => {
+    const submit = vi.fn()
+    const filled = { ...draft, description: 'Исправить карточку', criteria: ['Файл виден'], makeMode: 'files' as const, makePaths: ['src/Card.tsx'], attachments: [{ id: 'upload-1', name: 'evidence.png', mimeType: 'image/png', size: 10, status: 'ready' as const }] }
+    render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={filled} onVersionChange={vi.fn()} callbacks={callbacks({ onSubmitRework: submit })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Создать цикл' }))
+    expect(screen.getByDisplayValue('src/Card.tsx')).toBeInTheDocument()
+    expect(submit).toHaveBeenCalledWith(filled, expect.stringMatching(/^rework-task-1-/))
+  })
+
+  // @testCase TC-UI-2
+  it('показывает ошибку сохранения, не очищая черновик', () => {
+    const filled = { ...draft, description: 'Сохранённый текст', criteria: ['Первый', 'Второй'], attachments: [{ id: 'upload-1', name: 'ready.txt', status: 'ready' as const }] }
+    render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen reworkDraft={filled} reworkError="Сеть недоступна" onVersionChange={vi.fn()} callbacks={callbacks()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Сеть недоступна')
+    expect(screen.getByDisplayValue('Сохранённый текст')).toBeInTheDocument()
+    expect(screen.getByText('ready.txt')).toBeInTheDocument()
+  })
+
+  // @testCase TC-UI-3
+  it('показывает серверную историю и missing-вложение', () => {
+    const cycle = { id: 'c1', sequence: 1, description: 'Повторная доработка', criteria: ['Файл виден'], makeSources: [], attachments: [{ id: 'gone', name: 'old.png', status: 'missing' as const }], createdBy: 'alex', createdAt: 1, preparationRunId: null }
+    const serverModel = { ...model, source: { ...model.source, attachments: [{ id: 'source', name: 'original.pdf', status: 'ready' as const }] }, cycles: [cycle] }
+    const cb = callbacks()
+    const view = render(<NewTaskCardView model={serverModel} activeTab="history" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(screen.getByText('Повторная доработка')).toBeInTheDocument()
+    expect(screen.getByText('Файл отсутствует')).toBeInTheDocument()
+    view.rerender(<NewTaskCardView model={serverModel} activeTab="files" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(screen.getByText('original.pdf')).toBeInTheDocument()
+  })
+
+  // @testCase TC-NEG-1
   it('при активном ране не подтверждает доработку', () => {
     const submit = vi.fn()
     render(<NewTaskCardView model={{ ...model, actions: { canRework: true, hasActiveRun: true, reworkBlockedReason: 'Ран активен', safeActiveRunActions: ['keep_running'] } }} activeTab="overview" version="new" reworkOpen reworkDraft={{ ...draft, description: 'Правка' }} onVersionChange={vi.fn()} callbacks={callbacks({ onSubmitRework: submit })} />)
