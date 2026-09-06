@@ -37,6 +37,16 @@ describe('MakePane', () => {
     expect(screen.getByTitle('Превью проекта').getAttribute('src')).toContain('rev=1')
   })
 
+  // @testCase TC-REG-01
+  it('открывает настройки из бейджа и обновляет его после сохранения Bootstrap', async () => {
+    renderPane()
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки проекта: HTML+CSS+JS · своя система' }))
+    const dialog = await screen.findByTestId('make-notes')
+    await userEvent.selectOptions(within(dialog).getByRole('combobox', { name: 'Стилевая база' }), 'bootstrap')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
+    expect(await screen.findByRole('button', { name: /Настройки проекта: .*Bootstrap/ })).toBeInTheDocument()
+  })
+
   it('режим «Код»: дерево файлов, редактор, сохранение через кнопку и Ctrl+S', async () => {
     const { api } = renderPane()
     await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
