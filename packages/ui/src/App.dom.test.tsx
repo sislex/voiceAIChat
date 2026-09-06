@@ -1008,7 +1008,7 @@ describe('App — Sidebar в рабочих split-режимах', () => {
 
       await userEvent.click(open)
       const sidebar = screen.getByRole('complementary')
-      await userEvent.click(within(sidebar).getByRole('button', { name: /Более старые/ }))
+      // Секции больше не сворачиваются: список бесед листают, а не раскрывают.
       await userEvent.click(within(sidebar).getByText('Обычный разговор'))
       await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\//))
       await waitFor(() => expect(document.querySelector('.app')).not.toHaveClass('app--sidebar-collapsed'))

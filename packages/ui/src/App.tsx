@@ -2270,9 +2270,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         conversationsStatus={chat.conversationsStatus}
         conversationsError={chat.conversationsError}
         onRetryConversations={() => void chatActions.retryConversations()}
-        olderStatus={chat.olderStatus}
-        olderHasMore={chat.olderHasMore}
-        onLoadOlder={() => void chatActions.loadOlderConversations()}
+        moreStatus={chat.moreStatus}
+        hasMoreConversations={chat.hasMoreConversations}
+        onLoadMore={() => void chatActions.loadMoreConversations()}
         activeId={chat.activeId}
         taskBadges={chat.taskChatBadges}
         ciSummaries={projects.ciSummaries}
