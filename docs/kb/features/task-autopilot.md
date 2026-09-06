@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
 updated: 2026-09-06
-checked: d6516b5b
+checked: f332e8bc
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/server.ts
@@ -101,6 +101,9 @@ development-рана через `startForDevelopmentTransition`. До этого
 карточка уходит в `decision_required` (из `backlog` такого перехода нет, поэтому
 там она просто остаётся с записью в аудите).
 
+Оба runner-а передают в `completed` ещё и `classification`: без неё отвалившаяся
+посреди шага машина («Машина отключилась во время выполнения команды») шла в
+fix-loop как дефект кода и жгла цикл доработки за чужой сбой (прод, CHAT-413).
 Runner Component QA и Integration Tests обязаны звать `completed` **на каждом**
 исходе, включая ранние выходы (`blocked`: недоступный workspace, сломанный
 `git diff`, изменённые нетестовые файлы). Молчание в этих ветках оставляло
