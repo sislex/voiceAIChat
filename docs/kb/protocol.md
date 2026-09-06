@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-06
-checked: 1795b514
+updated: 2026-09-07
+checked: 01753b91
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -60,9 +60,9 @@ URL руками. Параметризованные пути — функции
 агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
 и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
 
-**Список бесед пагинируется.** `GET /api/conversations` понимает `since` (окно
-свежих — сайдбар грузит текущую неделю) и курсор `beforeAt` + `beforeId` с `limit`
-(секция «Более старые» по 20). Курсор — пара «время + id», иначе беседы с
+**Список бесед пагинируется.** `GET /api/conversations` понимает `limit` (сайдбар
+берёт последние 20 и добавляет по 20 при прокрутке), курсор `beforeAt` + `beforeId`
+и окно `since` (осталось в контракте, клиент им сейчас не пользуется). Курсор — пара «время + id», иначе беседы с
 одинаковым `updated_at` теряются между страницами. Без параметров отдаётся всё:
 на этом держатся мосты и тесты.
 

@@ -1140,8 +1140,8 @@ export function localWeekStart(now: number): number {
   return date.getTime()
 }
 
-/** Сколько старых бесед приносит одна догрузка секции «Более старые». */
-export const OLDER_CONVERSATIONS_PAGE = 20
+/** Размер страницы списка бесед: столько показывается сразу и столько добавляет прокрутка. */
+export const CONVERSATIONS_PAGE = 20
 
 /** Полночь текущего дня для `ts` (тот же часовой пояс, что и `endOfDay`). */
 function startOfDay(ts: number): number {
