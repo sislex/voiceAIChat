@@ -120,14 +120,23 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>(props.loadReworkCycles ? 'loading' : 'ready')
   const requestKey = useRef<string | null>(null)
   const pendingFiles = useRef(new Map<string, File>())
+  // Загрузчик держим в ref: родитель передаёт стрелку, новую на каждый свой
+  // рендер, и эффект с ней в зависимостях перечитывал историю доработок раз в
+  // секунду, пока карточка открыта.
+  const loadCycles = useRef(props.loadReworkCycles)
+  useEffect(() => { loadCycles.current = props.loadReworkCycles }, [props.loadReworkCycles])
   const loadHistory = (): void => {
-    if (!props.loadReworkCycles) return
+    const load = loadCycles.current
+    if (!load) return
     setHistoryState('loading')
-    void props.loadReworkCycles(props.task.id).then((items) => {
+    void load(props.task.id).then((items) => {
       setCycles(items.map(reworkView).sort((a, b) => a.sequence - b.sequence)); setHistoryState('ready')
     }).catch(() => setHistoryState('error'))
   }
-  useEffect(loadHistory, [props.task.id, props.loadReworkCycles])
+  // Перечитываем на смене карточки и когда сама задача изменилась: её снимок
+  // приходит с доски по board.changed, то есть по вебсокету и только пока
+  // карточка открыта.
+  useEffect(loadHistory, [props.task.id, props.task.updatedAt])
   const baseModel = useMemo(() => buildTaskCardViewModel(props, cycles), [props, cycles])
   const model = historyState === 'loading' ? { ...baseModel, loadState: 'loading' as const }
     : historyState === 'error' ? { ...baseModel, loadState: 'error' as const, error: 'Не удалось загрузить историю доработок.' }

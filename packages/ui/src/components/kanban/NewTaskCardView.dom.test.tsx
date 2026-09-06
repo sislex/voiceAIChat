@@ -176,6 +176,27 @@ function openAndDescribe(description = createdCycle.description): void {
   fireEvent.change(screen.getByLabelText('Описание доработки'), { target: { value: description } })
 }
 
+describe('TaskCardContainer история доработок', () => {
+  // Родитель отдаёт загрузчик инлайн-стрелкой, новой на каждый его рендер: с ней
+  // в зависимостях эффекта история перечитывалась примерно раз в секунду.
+  it('не перезапрашивает историю на ререндере родителя, но перечитывает изменённую задачу', async () => {
+    const loadReworkCycles = vi.fn().mockResolvedValue([])
+    const base = containerProps({ loadReworkCycles })
+    const { rerender } = renderWithProviders(<TaskCardContainer {...base} />)
+    await waitFor(() => expect(loadReworkCycles).toHaveBeenCalledTimes(1))
+
+    // Новая ссылка на тот же загрузчик — это просто рендер родителя.
+    rerender(<TaskCardContainer {...containerProps({ loadReworkCycles: (taskId: string) => loadReworkCycles(taskId) })} />)
+    rerender(<TaskCardContainer {...containerProps({ loadReworkCycles: (taskId: string) => loadReworkCycles(taskId) })} />)
+    expect(loadReworkCycles).toHaveBeenCalledTimes(1)
+
+    // Задача изменилась (снимок доски пришёл по вебсокету) — история перечитывается.
+    const next = containerProps({ loadReworkCycles })
+    rerender(<TaskCardContainer {...next} task={{ ...next.task, updatedAt: next.task.updatedAt + 1 }} />)
+    await waitFor(() => expect(loadReworkCycles).toHaveBeenCalledTimes(2))
+  })
+})
+
 describe('TaskCardContainer rework orchestration', () => {
   // @testCase TC-API-1
   it('передаёт taskId, полный draft и idempotencyKey в callback создания', async () => {
