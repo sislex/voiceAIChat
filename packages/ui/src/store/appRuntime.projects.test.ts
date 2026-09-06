@@ -48,6 +48,49 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required'])
   })
 
+  it('openProject без доски берёт только детали, ensureBoard догружает её один раз', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    const board = vi.spyOn(api, 'board:get')
+    const view = vi.spyOn(api, 'board:getView')
+    const statuses = vi.spyOn(api, 'board:getStatuses')
+    const detail = vi.spyOn(api, 'projects:get')
+
+    // Релизы/настройки/код: доска не показывается — и не грузится.
+    await store.actions.openProject(id, { board: false })
+    expect(store.getState().activeProjectId).toBe(id)
+    expect(store.getState().projectDetail?.id).toBe(id)
+    expect(store.getState().board).toBeNull()
+    expect(store.getState().boardLoading).toBe(false)
+    expect(board).not.toHaveBeenCalled()
+    expect(view).not.toHaveBeenCalled()
+    expect(statuses).not.toHaveBeenCalled()
+    expect(detail.mock.calls.length).toBe(1)
+
+    // Переход на вкладку доски догружает её, детали не перечитываются.
+    await store.actions.ensureBoard(id)
+    expect(store.getState().board?.columns.length).toBeGreaterThan(0)
+    expect(board.mock.calls.length).toBe(1)
+    expect(detail.mock.calls.length).toBe(1)
+
+    // Повторный вход на ту же вкладку доску не перезапрашивает.
+    await store.actions.ensureBoard(id)
+    expect(board.mock.calls.length).toBe(1)
+  })
+
+  it('ensureBoard на чужом проекте открывает его целиком', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const first = store.getState().projectDetail!.id
+    await store.actions.createProject({ name: 'P2' })
+    const second = store.getState().projectDetail!.id
+    await store.actions.openProject(first, { board: false })
+    await store.actions.ensureBoard(second)
+    expect(store.getState().activeProjectId).toBe(second)
+    expect(store.getState().board?.columns.length).toBeGreaterThan(0)
+  })
+
   it('доска рисуется по скелету, состояние карточек догружается второй фазой', async () => {
     const { store, api } = makeStore()
     await store.actions.createProject({ name: 'P1' })

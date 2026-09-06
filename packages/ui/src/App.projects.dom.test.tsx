@@ -95,6 +95,21 @@ describe('App — страница проекта по URL', () => {
     expect(toggle).toHaveAttribute('title', 'Закрыть боковую панель')
   })
 
+  it('#/projects/:id/releases не грузит доску, переход на «Канбан» её догружает', async () => {
+    const { api, projectId } = await renderWithProject()
+    const boardCalls: string[] = []
+    const real = api['board:get']
+    api['board:get'] = async (arg) => { boardCalls.push(arg.id); return real(arg) }
+    window.location.hash = `#/projects/${projectId}/releases`
+    // Дождались самой страницы релизов: детали проекта пришли, доска — нет.
+    await screen.findByRole('heading', { name: 'Релизы' })
+    expect(boardCalls).toEqual([])
+
+    await userEvent.click(within(tabs()).getByRole('tab', { name: 'Канбан' }))
+    await waitFor(() => expect(screen.getByTestId('kanban-board')).toBeInTheDocument())
+    expect(boardCalls).toEqual([projectId])
+  })
+
   it('на десктопе переключатель сворачивает и возвращает Sidebar без сброса позиции доски', async () => {
     const { projectId } = await renderWithProject()
     window.location.hash = `#/projects/${projectId}`
