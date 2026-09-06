@@ -177,13 +177,19 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
    * браузер, кадр берётся напрямую и мост не нужен вовсе. Storybook (Vite) отдаёт
    * CORS, поэтому ответ читается; чужая машина ответит ошибкой или не ответит.
    */
-  const probeDirect = useCallback(async (port: number): Promise<boolean> => {
+  const probeDirect = useCallback(async (port: number, storyIds: string[]): Promise<boolean> => {
     if (typeof window === 'undefined' || typeof AbortController === 'undefined') return false
     const controller = new AbortController()
     const timer = window.setTimeout(() => controller.abort(), 1500)
     try {
       const res = await fetch(`http://127.0.0.1:${port}/index.json`, { signal: controller.signal, mode: 'cors' })
-      return res.ok
+      if (!res.ok) return false
+      const index = await res.json() as { entries?: Record<string, unknown>; stories?: Record<string, unknown> }
+      const stories = index.entries ?? index.stories
+      // Порт мог занять Storybook другого проекта: прямой кадр годится только
+      // когда его индекс знает выбранную стори. Неизвестный формат оставляем
+      // совместимым со старыми версиями Storybook.
+      return !stories || storyIds.some((storyId) => Object.prototype.hasOwnProperty.call(stories, storyId))
     } catch {
       return false
     } finally {
@@ -191,12 +197,15 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
     }
   }, [])
 
+  const listedStoryIds = useMemo(() => listing?.components.flatMap((component) => component.stories.map((story) => story.id)) ?? [], [listing])
+  const listedStoryIdsKey = listedStoryIds.join('\n')
+
   useEffect(() => {
-    if (!session || session.state !== 'running' || !workspaceId) { setAccess(null); return }
+    if (!session || session.state !== 'running' || !workspaceId || !listedStoryIds.length) { setAccess(null); return }
     let alive = true
     let opened: ProjectStorybookAccess | null = null
     void (async () => {
-      if (await probeDirect(session.port)) {
+      if (await probeDirect(session.port, listedStoryIds)) {
         if (alive) setAccess({ kind: 'direct', url: `http://127.0.0.1:${session.port}`, tunnelId: null, note: 'Storybook на этой же машине — кадр берётся напрямую.' })
         return
       }
@@ -215,7 +224,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
       // Туннель живёт, пока открыта вкладка: чужой порт на машине не бросаем.
       if (opened?.tunnelId) void api['projects:storybookCloseTunnel']({ id: projectId, tunnelId: opened.tunnelId, workspace: workspaceId }).catch(() => undefined)
     }
-  }, [api, projectId, workspaceId, session?.state, session?.port, session?.agentId, probeDirect])
+  }, [api, projectId, workspaceId, session?.state, session?.port, session?.agentId, listedStoryIdsKey, probeDirect])
 
   const act = useCallback(async (action: 'start' | 'stop' | 'restart'): Promise<void> => {
     if (!workspaceId) return
