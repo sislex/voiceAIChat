@@ -351,12 +351,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // запрос заведомо вернёт пустой список — и это был один лишний round-trip на
   // каждое открытие карточки в бэклоге.
   const hadRun = Boolean(props.ciSummary || task.latestRunResult)
+  // Список тянем только когда открыли вкладку «Улучшения»: карточку открывают
+  // ради описания и ранов, а этот запрос уходил при каждом её открытии.
+  const improvementsSeen = seenTabs.has('improvements')
   const loadImprovements = (): void => {
-    if (props.draft || !hadRun || !window.ci?.listTaskImprovements) return
+    if (props.draft || !hadRun || !improvementsSeen || !window.ci?.listTaskImprovements) return
     setImprovementsError(null)
     void window.ci.listTaskImprovements(task.projectId, task.id).then(setImprovements).catch((error) => setImprovementsError(errorMessage(error)))
   }
-  useEffect(loadImprovements, [task.id, props.ciSummary?.status, hadRun])
+  useEffect(loadImprovements, [task.id, props.ciSummary?.status, hadRun, improvementsSeen])
   const setImprovementStatus = (id: string, status: ImprovementStatus): void => {
     if (improvementPending) return
     setImprovementPending(id); setImprovementsError(null)

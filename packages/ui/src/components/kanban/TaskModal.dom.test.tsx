@@ -311,15 +311,19 @@ describe('TaskModal — что грузится при открытии карт
     expect(calls()).toMatchObject({ kb: 1, report: 1 })
   })
 
-  it('улучшения запрашиваются только у задачи, у которой был ран', async () => {
+  it('улучшения запрашиваются только у задачи с раном и только на своей вкладке', async () => {
     const { calls } = spies()
     const { unmount } = render(<TaskModal {...props()} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     expect(calls().improvements).toBe(0)
     unmount()
 
-    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    // Ран есть, но карточку открыли на другой вкладке — запроса всё равно нет.
+    const withRun = render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    expect(calls().improvements).toBe(0)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     await waitFor(() => expect(calls().improvements).toBe(1))
+    withRun.unmount()
   })
 
   it('QA-этапы не опрашиваются у задачи, у которой не было ни одного рана', async () => {
