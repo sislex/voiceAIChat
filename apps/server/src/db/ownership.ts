@@ -1,7 +1,7 @@
 // Карта владения таблицами SQLite: у каждой таблицы ровно один доменный репозиторий
 // (apps/server/src/db/repos/<домен>.ts), и только он имеет право писать в неё. Чужие таблицы
 // репозиторий читает напрямую (JOIN) — это допускается, но считается и не должно расти;
-// чужие записи — долг, перечисленный ниже поимённо. Проверяет ownership.test.ts; зачем всё
+// писать в чужую таблицу нельзя вовсе — только через метод владельца. Проверяет ownership.test.ts; зачем всё
 // это — docs/plans/db-repositories.md.
 //
 // Меняешь схему — сначала впиши таблицу сюда, иначе гейт не пропустит.
@@ -23,25 +23,17 @@ export const TABLE_OWNER: Record<RepoDomain, readonly string[]> = {
 }
 
 /**
- * Записи в чужие таблицы, которые пока живут внутри репозитория-не-владельца (каскады удаления
- * аккаунта и машины, создание проекта с заготовкой статьи KB, переходы задач из CI). Список —
- * трещотка: убрал запись из кода — убери и здесь, иначе тест упадёт и напомнит, что долг закрыт.
+ * Записей в чужие таблицы нет — гейт ownership.test.ts требует ровно ноль. Появилась нужда
+ * изменить чужую таблицу — добавь метод у владельца и позови его через this.repos.<домен>.
  */
-export const KNOWN_CROSS_WRITES: Partial<Record<RepoDomain, readonly string[]>> = {
-  identity: ['agents', 'conversations', 'project_invitations', 'project_members', 'projects', 'settings', 'tasks'],
-  machines: ['ci_runs', 'ci_test_runs', 'ci_workspaces', 'conversation_workspaces', 'conversations', 'projects'],
-  projects: ['kb_documents', 'tasks'],
-  tasks: ['projects'],
-  ci: ['task_preparation_runs', 'tasks']
-}
 
 /** Сколько чужих таблиц репозиторий читает напрямую. Верхняя планка; снижать можно, повышать — с обоснованием в PR. */
 export const CROSS_READ_BUDGET: Record<RepoDomain, number> = {
-  identity: 5,
+  identity: 0,
   settings: 0,
   llm: 0,
   chat: 5,
-  machines: 4,
+  machines: 3,
   projects: 5,
   tasks: 17,
   ci: 7,

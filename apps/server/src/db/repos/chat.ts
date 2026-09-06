@@ -1493,4 +1493,14 @@ export class ChatRepo extends BaseRepo {
       .get(conversationId, MAKE_KIND) as { project_id: string | null } | undefined
     return Boolean(conv?.project_id && this.repos.projects.isProjectMember(userId, conv.project_id))
   }
+
+  /** Каскад удаления аккаунта: все разговоры пользователя; messages/speakers уйдут по ON DELETE CASCADE. */
+  deleteConversationsOfUser(userId: string): void {
+    this.db.prepare(`DELETE FROM conversations WHERE user_id = ?`).run(userId)
+  }
+
+  /** Машина удаляется — её рабочие каталоги у разговоров больше не существуют (зовётся из machines.deleteAgent). */
+  clearConversationWorkspacesOfMachine(machineId: string): void {
+    this.db.prepare(`DELETE FROM conversation_workspaces WHERE machine_id = ?`).run(machineId)
+  }
 }

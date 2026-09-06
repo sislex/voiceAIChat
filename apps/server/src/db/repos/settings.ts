@@ -62,4 +62,9 @@ export class SettingsRepo extends BaseRepo {
   setAppConfig(key: string, value: string): void {
     this.db.prepare(`INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value)
   }
+
+  /** Каскад удаления аккаунта: запись настроек пользователя. */
+  deleteUserSettings(userId: string): void {
+    this.db.prepare(`DELETE FROM settings WHERE key = ?`).run(settingsKey(userId))
+  }
 }

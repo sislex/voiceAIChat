@@ -23,8 +23,8 @@
 
 Правило: у каждой таблицы **ровно один** репозиторий-владелец, и только он пишет в неё. Чтение
 чужих таблиц через `JOIN` допускается, но считается (`CROSS_READ_BUDGET`) и не должно расти.
-Чужие записи — поимённый долг в `KNOWN_CROSS_WRITES`; список — трещотка: убрал запись из
-кода — убери и из манифеста, иначе гейт напомнит.
+Запись в чужую таблицу гейт не пропускает вовсе (с круга 2): нужно изменить чужие данные —
+у владельца появляется метод, и его зовут через `this.repos.<домен>`.
 
 | Репозиторий | Таблицы | Будущий сервис |
 |---|---|---|
@@ -45,19 +45,19 @@ Make в БД таблиц не имеет: его состояние — фай�
 
 ### Что получилось после разреза
 
-| Репозиторий | Строк | Членов | Пишет в чужие таблицы | Читает чужих таблиц |
+| Репозиторий | Строк | Членов | Пишет в чужие таблицы (после круга 2) | Читает чужих таблиц |
 |---|---|---|---|---|
-| `tasks` | ~2 050 | 102 | `projects` | 17 |
-| `ci` | ~1 800 | 129 | `tasks`, `task_preparation_runs` | 7 |
-| `chat` | ~1 500 | 61 | — | 5 |
-| `projects` | ~1 300 | 69 | `kb_documents`, `tasks` | 5 |
-| `machines` | ~700 | 54 | `ci_runs`, `ci_test_runs`, `ci_workspaces`, `conversation_workspaces`, `conversations`, `projects` (каскад `deleteAgent`) | 4 |
-| `kb` | ~600 | 19 | — | 3 |
-| `identity` | ~590 | 65 | `agents`, `conversations`, `project_*`, `projects`, `settings`, `tasks` (каскад `deleteUserData`) | 5 |
+| `tasks` | ~2 100 | 107 | — | 17 |
+| `ci` | ~1 830 | 130 | — | 7 |
+| `chat` | ~1 500 | 63 | — | 5 |
+| `projects` | ~1 300 | 72 | — | 5 |
+| `machines` | ~720 | 55 | — | 3 |
+| `kb` | ~650 | 20 | — | 3 |
+| `identity` | ~570 | 65 | — | 0 |
 | `qa` | ~500 | 37 | — | 4 |
 | `llm` | ~150 | 12 | — | 0 |
 | `releases` | ~100 | 12 | — | 0 |
-| `settings` | ~65 | 5 | — | 0 |
+| `settings` | ~70 | 6 | — | 0 |
 
 Ядро `database.ts` (~890 строк) — конструктор, `migrate()` (пишет в 13 таблиц разных доменов —
 это ожидаемо для миграций и в гейт не входит), `runOnce`, `close`. Общие типы строк и чистые
@@ -73,7 +73,7 @@ Make в БД таблиц не имеет: его состояние — фай�
 | 2 | Каждая таблица схемы имеет ровно одного владельца — `ownership.ts` + тест | ✅ |
 | 3 | Все ~4 800 обращений на сервере переведены с `db.<метод>()` на `db.<домен>.<метод>()` — кросс-доменные вызовы видны по месту вызова | ✅ |
 | 4 | Репозитории не импортируют друг друга; соседи — только через `this.repos.<домен>` | ✅ |
-| 5 | Кросс-доменные записи перечислены поимённо (`KNOWN_CROSS_WRITES`) и не могут расти молча | ✅ |
+| 5 | Кросс-доменные записи перечислены поимённо (`KNOWN_CROSS_WRITES`) и не могут расти молча — список закрыт кругом 2 | ✅ |
 | 6 | Бюджет чужих чтений на репозиторий (`CROSS_READ_BUDGET`) — трещотка | ✅ |
 | 7 | `better-sqlite3` импортируется только внутри `src/db` | ✅ |
 | 8 | Моки БД в тестах — той же формы `{ домен: { метод } }`, что и реальный объект | ✅ |
@@ -85,19 +85,22 @@ Make в БД таблиц не имеет: его состояние — фай�
 
 ## Круг 2 — закрыть долг кросс-доменных записей
 
-Каждая строка `KNOWN_CROSS_WRITES` — это место, где один домен правит данные другого в обход
-владельца. Пока это одна SQLite и одна транзакция — работает; при выносе домена в свой сервис
-работать перестанет. Закрывать по одному, каждый пункт — отдельный шаг с тестом:
+Каждая строка `KNOWN_CROSS_WRITES` была местом, где один домен правит данные другого в обход
+владельца. Пока это одна SQLite и одна транзакция — работало; при выносе домена в свой сервис
+работать перестало бы. Закрыто по одному; SQL внутри новых методов владельцев — тот же, что
+был в чужом месте, поэтому поведение не менялось, менялся адрес. Каскады по-прежнему идут в
+одной транзакции инициатора (репозитории делят соединение), но теперь initiator знает только
+«кого позвать», а не «какие таблицы править».
 
 | № | Пункт | Статус |
 |---|---|---|
-| 1 | `identity.deleteUserData` → вызывает `chat/machines/projects/tasks/settings.deleteForUser(userId)` у владельцев | ☐ |
-| 2 | `machines.deleteAgent` → `chat.detachAgent`, `ci.releaseAgentWorkspaces`, `projects.unlinkAgent` | ☐ |
-| 3 | `projects.createProject` не пишет `kb_documents` — заготовку статьи создаёт `kb` по событию | ☐ |
-| 4 | `projects.removeMember` не трогает `tasks` — снятие исполнителя делает `tasks` | ☐ |
-| 5 | `tasks.createTask` не пишет `projects` (счётчик `seq`) — владелец выдаёт номер | ☐ |
-| 6 | `ci.startMergeRun` / `recordIntegrationAutomationLinks` не пишут `tasks`/`task_preparation_runs` | ☐ |
-| 7 | `KNOWN_CROSS_WRITES` пуст; проверка в тесте становится строгим `toEqual([])` | ☐ |
+| 1 | `identity.deleteUserData` → `chat.deleteConversationsOfUser`, `machines.deleteAgentsOfUser`, `settings.deleteUserSettings`, `tasks.unassignUser`, `projects.detachDeletedUser` | ✅ |
+| 2 | `machines.deleteAgent` → `chat.clearConversationWorkspacesOfMachine` + `clearConversationExecTargetForAgent`, `ci.detachAgent`, `projects.detachAgent` | ✅ |
+| 3 | `projects.createProject` не пишет `kb_documents` — заготовку статьи создаёт `kb.seedProjectOverview`; `projectKbSkeleton` переехал в `kb` | ✅ |
+| 4 | `projects.removeMember` не трогает `tasks` — `tasks.unassignUserInProject` | ✅ |
+| 5 | `tasks.createTask` не пишет `projects` — номер выдаёт `projects.nextTaskSeq` | ✅ |
+| 6 | `ci.startMergeRun` → `tasks.placeTaskInSemanticColumn`; `recordIntegrationAutomationLinks` → `tasks.preparationReadiness` / `savePreparationReadiness` | ✅ |
+| 7 | `KNOWN_CROSS_WRITES` убран из манифеста; гейт требует ровно ноль чужих записей | ✅ |
 
 ## Круг 3 — асинхронные порты
 
