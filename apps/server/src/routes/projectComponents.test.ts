@@ -18,7 +18,7 @@ let adminTok: string
 let bobTok: string
 let testerTok: string
 
-function inj(token: string, opts: { method: 'GET' | 'POST'; url: string; payload?: object }) {
+function inj(token: string, opts: { method: 'GET' | 'POST' | 'DELETE'; url: string; payload?: object }) {
   return app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
 }
 
@@ -125,5 +125,40 @@ describe('REST компонентов проекта', () => {
       payload: { workspace: 'ws:missing', action: 'start' }
     })
     expect(start.statusCode).toBe(404)
+  })
+
+  it('открытие кадра требует запущенного Storybook и живой копии', async () => {
+    const project = await createProject()
+    const res = await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${project.id}/components/storybook/open`,
+      payload: { workspace: 'ws:missing' }
+    })
+    expect(res.statusCode).toBe(404)
+    expect(res.json()).toMatchObject({ code: 'workspace_not_found' })
+
+    const noWorkspace = await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${project.id}/components/storybook/open`, payload: {}
+    })
+    expect(noWorkspace.statusCode).toBe(400)
+  })
+
+  it('туннель кадра нельзя закрыть чужим и без рабочей копии', async () => {
+    const project = await createProject()
+    const stranger = await inj(bobTok, {
+      method: 'DELETE', url: `/api/projects/${project.id}/components/storybook/tunnels/abc?workspace=ws:x`
+    })
+    expect(stranger.statusCode).toBe(404)
+
+    const noWorkspace = await inj(adminTok, {
+      method: 'DELETE', url: `/api/projects/${project.id}/components/storybook/tunnels/abc`
+    })
+    expect(noWorkspace.statusCode).toBe(400)
+
+    // Копия участнику видна, но её не существует — резолвер отвечает раньше туннеля.
+    const unknown = await inj(adminTok, {
+      method: 'DELETE', url: `/api/projects/${project.id}/components/storybook/tunnels/abc?workspace=ws:missing`
+    })
+    expect(unknown.statusCode).toBe(404)
+    expect(unknown.json()).toMatchObject({ code: 'workspace_not_found' })
   })
 })
