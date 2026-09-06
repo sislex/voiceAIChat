@@ -14,7 +14,7 @@ function setup(thresholdMs = 10 * 60_000) {
   const logged: unknown[] = []
   const published: Array<{ m: ServerMessage; user: string }> = []
   const wd = createAgentWatchdog({
-    db: { listAllAgents: () => agents, logMachineEvent: (e) => logged.push(e) },
+    db: {machines:{listAllAgents: () => agents,logMachineEvent: (e) => logged.push(e)}},
     registry: { isOnline: (id) => online.has(id), onChange: (cb) => { changeListeners.add(cb); return () => changeListeners.delete(cb) } },
     publish: (m, user) => published.push({ m, user }),
     thresholdMs,

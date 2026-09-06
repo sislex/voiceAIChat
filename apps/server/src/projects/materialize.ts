@@ -23,7 +23,7 @@ export async function materializeProjectMachine(
   directories?: ProjectMachineDirectoryAssignments
 ): Promise<void> {
   if (!agents.isOnline(agentId)) throw new Error('Машина не в сети: каталоги нельзя подготовить')
-  const storage = db.listMachineStorages(userId, agentId).find((item) => item.id === storageId)
+  const storage = db.machines.listMachineStorages(userId, agentId).find((item) => item.id === storageId)
   if (!storage) throw new Error('Хранилище не принадлежит выбранной машине')
   const platform = agents.platformOf(agentId) ?? 'linux'
   const separator = platform === 'win32' ? '\\' : '/'
@@ -35,7 +35,7 @@ export async function materializeProjectMachine(
   if (storageMarker.id !== storage.id || storageMarker.formatVersion !== storage.formatVersion) throw new Error('Marker хранилища отсутствует или конфликтует')
   const recommendations = recommendedProjectMachineDirectories(storage.rootPath, projectId, platform)
   const defaults = Object.fromEntries(Object.entries(recommendations).map(([kind, path]) => [kind, { path, override: false }])) as ProjectMachineDirectoryAssignments
-  const current = db.getProject(userId, projectId)?.machines.find((item) => item.agentId === agentId)
+  const current = db.projects.getProject(userId, projectId)?.machines.find((item) => item.agentId === agentId)
   const changingStorage = !!current?.storageId && current.storageId !== storageId
   let candidate = directories && changingStorage
     ? Object.fromEntries(Object.entries(defaults).map(([kind, value]) => [kind, directories[kind as ProjectMachineDirectoryKind]?.override ? directories[kind as ProjectMachineDirectoryKind] : value])) as ProjectMachineDirectoryAssignments

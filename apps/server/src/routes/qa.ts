@@ -17,17 +17,17 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
 export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage)=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
-    const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
+    const state = db.qa.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
     return state ?? reply.code(404).send({ error: 'task not found' })
   })
   app.get<{ Params: TaskParams }>(`${base}/component`, async (req, reply) => {
-    const state=db.getComponentQaTaskState(uid(req),req.params.projectId,req.params.taskId)
+    const state=db.tasks.getComponentQaTaskState(uid(req),req.params.projectId,req.params.taskId)
     return state ?? reply.code(404).send({error:'task not found'})
   })
   app.post<{ Params: TaskParams }>(`${base}/component/runs`, async (req,reply)=>{
     try {
       const userId=uid(req)
-      const run=db.startComponentQaRun(userId,req.params.projectId,req.params.taskId)
+      const run=db.ci.startComponentQaRun(userId,req.params.projectId,req.params.taskId)
       if (run.status==='queued') launchComponentQa?.(run.id,userId)
       boardChanged?.(req.params.projectId)
       qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa')
@@ -35,54 +35,54 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     } catch(error) { return qaError(reply,error) }
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/cancel`,async(req,reply)=>{
-    try { cancelComponentQa?.(req.params.runId); const run=db.cancelComponentQaRun(uid(req),req.params.runId); boardChanged?.(req.params.projectId); qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa'); return run }
+    try { cancelComponentQa?.(req.params.runId); const run=db.ci.cancelComponentQaRun(uid(req),req.params.runId); boardChanged?.(req.params.projectId); qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa'); return run }
     catch(error) { return qaError(reply,error) }
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/complete`,async(req,reply)=>{
-    try { const run=db.completeComponentQaRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId); boardChanged?.(req.params.projectId); qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa'); return run }
+    try { const run=db.tasks.completeComponentQaRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId); boardChanged?.(req.params.projectId); qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa'); return run }
     catch(error) { return qaError(reply,error) }
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/fix`,async(req,reply)=>{
     try {
-      const userId=uid(req), run=db.getComponentQaRun(userId,req.params.runId)
+      const userId=uid(req), run=db.ci.getComponentQaRun(userId,req.params.runId)
       if (!run||run.taskId!==req.params.taskId) throw new Error('component QA run not found')
       if (!['failed','blocked'].includes(run.status)) throw new Error('component QA run must be failed or blocked')
-      if (run.linkedFixRunId) return db.getCiRun(userId,run.linkedFixRunId) ?? reply.code(409).send({error:'Связанный ран не найден'})
+      if (run.linkedFixRunId) return db.ci.getCiRun(userId,run.linkedFixRunId) ?? reply.code(409).send({error:'Связанный ран не найден'})
       const started=ci.start(userId,req.params.projectId,req.params.taskId,{mode:'development'})
       if ('error' in started) return reply.code(409).send({error:started.error})
-      db.updateCiRun(started.run.id,{fixContext:{
+      db.ci.updateCiRun(started.run.id,{fixContext:{
         stepId:'component_qa:'+run.id,
         logTail:[run.summary,run.log,...run.commands.map((command)=>command.command+'\n'+command.diagnostic+'\n'+command.stdout+'\n'+command.stderr),...run.artifacts.map((artifact)=>artifact.kind+': '+(artifact.url||artifact.path))].filter(Boolean).join('\n').slice(-50000),
         failures:run.scenarios.filter((item)=>item.status==='failed'||item.status==='blocked').map((item)=>({packageName:null,file:null,testName:item.testCase.title,command:run.commands[0]?.command??null,message:item.actualResult||item.diagnostic||item.status})),
         updatedAt:Date.now()
       }})
-      db.linkComponentQaFixRun(userId,run.id,started.run.id)
+      db.ci.linkComponentQaFixRun(userId,run.id,started.run.id)
       return reply.code(202).send(started.run)
     } catch(error) { return qaError(reply,error) }
   })
 
   app.get<{Params:TaskParams}>(`${base}/integration`,async(req,reply)=>
-    db.getIntegrationTestTaskState(uid(req),req.params.projectId,req.params.taskId)??reply.code(404).send({error:'task not found'}))
+    db.ci.getIntegrationTestTaskState(uid(req),req.params.projectId,req.params.taskId)??reply.code(404).send({error:'task not found'}))
   app.post<{Params:TaskParams}>(`${base}/integration/runs`,async(req,reply)=>{
-    try{const userId=uid(req),run=db.startIntegrationTestRun(userId,req.params.projectId,req.params.taskId);if(run.status==='queued')launchIntegrationTests?.(run.id,userId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return reply.code(run.status==='queued'||run.status==='running'?202:200).send(run)}
+    try{const userId=uid(req),run=db.ci.startIntegrationTestRun(userId,req.params.projectId,req.params.taskId);if(run.status==='queued')launchIntegrationTests?.(run.id,userId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return reply.code(run.status==='queued'||run.status==='running'?202:200).send(run)}
     catch(error){return qaError(reply,error)}
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/cancel`,async(req,reply)=>{
-    try{cancelIntegrationTests?.(req.params.runId);const run=db.cancelIntegrationTestRun(uid(req),req.params.runId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return run}catch(error){return qaError(reply,error)}
+    try{cancelIntegrationTests?.(req.params.runId);const run=db.ci.cancelIntegrationTestRun(uid(req),req.params.runId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return run}catch(error){return qaError(reply,error)}
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/complete`,async(req,reply)=>{
-    try{const run=db.completeIntegrationTestRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return run}catch(error){return qaError(reply,error)}
+    try{const run=db.ci.completeIntegrationTestRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return run}catch(error){return qaError(reply,error)}
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/fix`,async(req,reply)=>{
     try{
-      const userId=uid(req),run=db.getIntegrationTestRun(userId,req.params.runId)
+      const userId=uid(req),run=db.ci.getIntegrationTestRun(userId,req.params.runId)
       if(!run||run.taskId!==req.params.taskId)throw new Error('integration test run not found')
       if(!['failed','blocked'].includes(run.status))throw new Error('integration test run must be failed or blocked')
-      if(run.linkedFixRunId)return db.getCiRun(userId,run.linkedFixRunId)??reply.code(409).send({error:'Связанный ран не найден'})
+      if(run.linkedFixRunId)return db.ci.getCiRun(userId,run.linkedFixRunId)??reply.code(409).send({error:'Связанный ран не найден'})
       const started=ci.start(userId,req.params.projectId,req.params.taskId,{mode:'development'})
       if('error'in started)return reply.code(409).send({error:started.error})
-      db.updateCiRun(started.run.id,{fixContext:{stepId:`integration_tests:${run.id}`,logTail:[run.summary,run.log,...run.commands.map((command)=>command.command+'\n'+command.diagnostic+'\n'+command.stdout+'\n'+command.stderr)].filter(Boolean).join('\n').slice(-50000),failures:run.testCases.filter((item)=>item.required&&item.automatable&&!item.automationLinks.some((link)=>link.commitSha===run.commitSha)).map((item)=>({packageName:null,file:null,testName:item.title,command:run.commands[0]?.command??null,message:'automation missing or failed'})),updatedAt:Date.now()}})
-      db.linkIntegrationTestFixRun(userId,run.id,started.run.id)
+      db.ci.updateCiRun(started.run.id,{fixContext:{stepId:`integration_tests:${run.id}`,logTail:[run.summary,run.log,...run.commands.map((command)=>command.command+'\n'+command.diagnostic+'\n'+command.stdout+'\n'+command.stderr)].filter(Boolean).join('\n').slice(-50000),failures:run.testCases.filter((item)=>item.required&&item.automatable&&!item.automationLinks.some((link)=>link.commitSha===run.commitSha)).map((item)=>({packageName:null,file:null,testName:item.title,command:run.commands[0]?.command??null,message:'automation missing or failed'})),updatedAt:Date.now()}})
+      db.ci.linkIntegrationTestFixRun(userId,run.id,started.run.id)
       return reply.code(202).send(started.run)
     }catch(error){return qaError(reply,error)}
   })
@@ -91,7 +91,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     `${base}/criteria`,
     async (req, reply) => {
       try {
-        const criterion = db.createAcceptanceCriterion(uid(req), req.params.projectId, req.params.taskId, req.body)
+        const criterion = db.qa.createAcceptanceCriterion(uid(req), req.params.projectId, req.params.taskId, req.body)
         return criterion ?? reply.code(404).send({ error: 'task not found' })
       } catch (error) { return qaError(reply, error) }
     }
@@ -100,68 +100,68 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     `${base}/criteria/:criterionId`,
     async (req, reply) => {
       try {
-        const criterion = db.reviseAcceptanceCriterion(uid(req), req.params.projectId, req.params.taskId, req.params.criterionId, req.body)
+        const criterion = db.qa.reviseAcceptanceCriterion(uid(req), req.params.projectId, req.params.taskId, req.params.criterionId, req.body)
         return criterion ?? reply.code(404).send({ error: 'criterion not found' })
       } catch (error) { return qaError(reply, error) }
     }
   )
   app.post<{ Params: TaskParams }>(`${base}/preparation/complete`, async (req, reply) => {
     try {
-      return db.completeQaPreparation(uid(req), req.params.projectId, req.params.taskId)
+      return db.qa.completeQaPreparation(uid(req), req.params.projectId, req.params.taskId)
         ?? reply.code(404).send({ error: 'task not found' })
     } catch (error) { return qaError(reply, error) }
   })
   app.post<{ Params: TaskParams }>(`${base}/preparation/retry`, async (req, reply) => {
     try {
       const userId = uid(req)
-      const state = db.getQaTaskState(userId, req.params.projectId, req.params.taskId)
+      const state = db.qa.getQaTaskState(userId, req.params.projectId, req.params.taskId)
       if (!state) return reply.code(404).send({ error: 'task not found' })
       const run = state.preparation
       if (run?.status === 'running') return reply.code(202).send(run)
       if (!run || run.status !== 'failed' || !retryPreparation) return reply.code(409).send({ error: 'Повтор подготовки сейчас недоступен' })
       if (!retryPreparation({ userId, projectId: req.params.projectId, taskId: req.params.taskId, branch: run.branch, commitSha: run.commitSha })) {
-        const active = db.getQaTaskState(userId, req.params.projectId, req.params.taskId)?.preparation
+        const active = db.qa.getQaTaskState(userId, req.params.projectId, req.params.taskId)?.preparation
         return active?.status === 'running' ? reply.code(202).send(active) : reply.code(409).send({ error: 'Подготовка уже запущена' })
       }
-      return reply.code(202).send(db.getQaTaskState(userId, req.params.projectId, req.params.taskId)?.preparation)
+      return reply.code(202).send(db.qa.getQaTaskState(userId, req.params.projectId, req.params.taskId)?.preparation)
     } catch (error) { return qaError(reply, error) }
   })
   app.post<{ Params: TaskParams; Body: { branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null } }>(
     `${base}/sessions`,
     async (req, reply) => {
       try {
-        const session = db.startQaSession(uid(req), { projectId: req.params.projectId, taskId: req.params.taskId, ...req.body })
+        const session = db.qa.startQaSession(uid(req), { projectId: req.params.projectId, taskId: req.params.taskId, ...req.body })
         if (session) boardChanged?.(req.params.projectId)
         return session ?? reply.code(404).send({ error: 'task not found' })
       } catch (error) { return qaError(reply, error) }
     }
   )
-  app.patch<{ Params: TaskParams & { resultId: string }; Body: { revision: number; patch: Parameters<VoiceChatDb['saveQaResult']>[5] } }>(
+  app.patch<{ Params: TaskParams & { resultId: string }; Body: { revision: number; patch: Parameters<VoiceChatDb['qa']['saveQaResult']>[5] } }>(
     `${base}/results/:resultId`,
     async (req, reply) => {
       try {
-        return db.saveQaResult(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, req.body.revision, req.body.patch)
+        return db.qa.saveQaResult(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, req.body.revision, req.body.patch)
       } catch (error) { return qaError(reply, error) }
     }
   )
   app.patch<{ Params: TaskParams & { sessionId: string }; Body: { additionalIssues?: string } }>(`${base}/sessions/:sessionId`, async (req, reply) => {
-    try { return db.saveQaAdditionalIssues(uid(req), req.params.projectId, req.params.taskId, req.params.sessionId, req.body?.additionalIssues ?? '') }
+    try { return db.qa.saveQaAdditionalIssues(uid(req), req.params.projectId, req.params.taskId, req.params.sessionId, req.body?.additionalIssues ?? '') }
     catch (error) { return qaError(reply, error) }
   })
   app.post<{ Params: TaskParams & { sessionId: string } }>(`${base}/sessions/:sessionId/fix`, async (req, reply) => {
     try {
-      const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
+      const state = db.qa.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
       const session = state?.sessions.find((item) => item.id === req.params.sessionId)
       if (!session) throw new Error('QA session not found')
       const failed = session.results.filter((result) => result.status === 'failed')
       const linked = session.linkedFixRunId ?? failed.map((result) => result.issue?.linkedFixRunId).find(Boolean)
-      if (linked) return db.getCiRun(uid(req), linked) ?? reply.code(409).send({ error: 'Связанный ран не найден' })
+      if (linked) return db.ci.getCiRun(uid(req), linked) ?? reply.code(409).send({ error: 'Связанный ран не найден' })
       if (state?.activeSession?.id !== session.id) throw new Error('QA session is stale or closed')
       if (!failed.length && !session.additionalIssues?.trim()) throw new Error('Нет ошибок или дополнительных замечаний')
       if (failed.some((result) => !result.comment.trim())) throw new Error('Для каждого неработающего теста нужен комментарий')
       const started = ci.start(uid(req), req.params.projectId, req.params.taskId, { mode: 'development' })
       if ('error' in started) return reply.code(409).send({ error: started.error })
-      db.linkQaFixRun(uid(req), req.params.projectId, req.params.taskId, session.id, started.run.id)
+      db.qa.linkQaFixRun(uid(req), req.params.projectId, req.params.taskId, session.id, started.run.id)
       return reply.code(202).send(started.run)
     } catch (error) { return qaError(reply, error) }
   })
@@ -169,7 +169,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     `${base}/sessions/:sessionId/complete`,
     async (req, reply) => {
       try {
-        const session=db.completeQaSession(uid(req), req.params.projectId, req.params.taskId, req.params.sessionId, req.body?.summary ?? '')
+        const session=db.qa.completeQaSession(uid(req), req.params.projectId, req.params.taskId, req.params.sessionId, req.body?.summary ?? '')
         boardChanged?.(req.params.projectId)
         return session
       } catch (error) { return qaError(reply, error) }
@@ -187,14 +187,14 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
         const extension = extname(upload.name).toLowerCase()
         const expectedExtension = detected === 'image/png' ? '.png' : detected === 'image/jpeg' ? ['.jpg', '.jpeg'].includes(extension) : extension === '.webp'
         if (!detected || detected !== upload.mimeType || !expectedExtension) return reply.code(400).send({ error: 'invalid screenshot format' })
-        return db.addQaAttachment(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, {
+        return db.qa.addQaAttachment(uid(req), req.params.projectId, req.params.taskId, req.params.resultId, {
           uploadId: upload.id, name: basename(upload.name), mimeType: detected, size: bytes.byteLength, caption: req.body.caption
         })
       } catch (error) { return qaError(reply, error) }
     }
   )
   app.get<{ Params: { attachmentId: string } }>('/api/qa/attachments/:attachmentId', async (req, reply) => {
-    const attachment = db.getQaAttachment(uid(req), req.params.attachmentId)
+    const attachment = db.qa.getQaAttachment(uid(req), req.params.attachmentId)
     if (!attachment) return reply.code(404).send({ error: 'attachment not found' })
     const upload = uploads.get(attachment.uploadId)
     if (!upload || upload.agentId) return reply.code(404).send({ error: 'attachment file not found' })
@@ -206,19 +206,19 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
   app.get<{ Params: TaskParams & { stage: string } }>(`${base}/runs/:stage`, async (req, reply) => {
     const stage = stageOf(req.params.stage)
     if (!stage) return reply.code(404).send({ error: 'unknown QA stage' })
-    return db.listQaStageRuns(uid(req), req.params.projectId, req.params.taskId, stage)
+    return db.qa.listQaStageRuns(uid(req), req.params.projectId, req.params.taskId, stage)
   })
   app.get<{ Params: TaskParams & { stage: string } }>(`${base}/runs/:stage/current`, async (req, reply) => {
     const stage = stageOf(req.params.stage)
     if (!stage) return reply.code(404).send({ error: 'unknown QA stage' })
-    return db.listQaStageRuns(uid(req), req.params.projectId, req.params.taskId, stage)[0] ?? reply.code(404).send({ error: 'run not found' })
+    return db.qa.listQaStageRuns(uid(req), req.params.projectId, req.params.taskId, stage)[0] ?? reply.code(404).send({ error: 'run not found' })
   })
   app.post<{ Params: TaskParams & { stage: string } }>(`${base}/runs/:stage`, async (req, reply) => {
     try {
       const stage = stageOf(req.params.stage)
       if (!stage) return reply.code(404).send({ error: 'unknown QA stage' })
       const userId = uid(req)
-      const run=db.startQaStageRun(userId, req.params.projectId, req.params.taskId, stage)
+      const run=db.qa.startQaStageRun(userId, req.params.projectId, req.params.taskId, stage)
       if (stage === 'automated_qa' && (run.status === 'queued' || run.status === 'running')) launchAutomatedQa?.(run.id, userId)
       boardChanged?.(req.params.projectId)
       qaStageChanged?.(req.params.projectId, req.params.taskId, stage)
@@ -228,7 +228,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
   app.delete<{ Params: { runId: string } }>('/api/qa/runs/:runId', async (req, reply) => {
     try {
       cancelAutomatedQa?.(req.params.runId)
-      const run=db.cancelQaStageRun(uid(req), req.params.runId)
+      const run=db.qa.cancelQaStageRun(uid(req), req.params.runId)
       if (run) { boardChanged?.(run.projectId); qaStageChanged?.(run.projectId, run.taskId, run.stage) }
       return run ?? reply.code(404).send({ error: 'run not found' })
     }
@@ -237,7 +237,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
   app.post<{ Params: { runId: string } }>('/api/qa/runs/:runId/retry', async (req, reply) => {
     try {
       const userId = uid(req)
-      const run = db.retryQaStageRun(userId, req.params.runId)
+      const run = db.qa.retryQaStageRun(userId, req.params.runId)
       if (run?.stage === 'automated_qa' && (run.status === 'queued' || run.status === 'running')) launchAutomatedQa?.(run.id, userId)
       if (run) { boardChanged?.(run.projectId); qaStageChanged?.(run.projectId, run.taskId, run.stage) }
       return run ? reply.code(202).send(run) : reply.code(404).send({ error: 'run not found' })
@@ -246,7 +246,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
   // Снимок вердикта Playwright-этапа. Лежит файлом на диске: base64 в
   // result_json раздувал бы строку рана на каждую попытку.
   app.get<{ Params: { runId: string } }>('/api/qa/runs/:runId/screenshot', async (req, reply) => {
-    const run = db.getQaStageRun(uid(req), req.params.runId)
+    const run = db.qa.getQaStageRun(uid(req), req.params.runId)
     if (!run || !automatedQaScreenshotDir) return reply.code(404).send({ error: 'screenshot not found' })
     // runId — идентификатор из БД, но путь всё равно собирается из basename:
     // роут не должен зависеть от того, что туда однажды попадёт.
@@ -256,7 +256,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
   })
   app.post<{ Params: { runId: string }; Body: { answer?: string } }>('/api/qa/runs/:runId/answer', async (req, reply) => {
     try {
-      const run=db.answerQaStageRun(uid(req), req.params.runId, req.body?.answer ?? '')
+      const run=db.qa.answerQaStageRun(uid(req), req.params.runId, req.body?.answer ?? '')
       if (run) { boardChanged?.(run.projectId); qaStageChanged?.(run.projectId, run.taskId, run.stage) }
       return run ?? reply.code(404).send({ error: 'run not found' })
     }

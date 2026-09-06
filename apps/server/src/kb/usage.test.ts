@@ -23,7 +23,7 @@ function collector(): { frames: Array<{ m: ServerMessage; owner: string }>; list
 describe('createKbUsageTracker', () => {
   it('begin рассылает pending, complete — терминальный кадр с тем же id', () => {
     const db = makeDb()
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     const sink = collector()
     tracker.subscribe(sink.listen)
@@ -50,7 +50,7 @@ describe('createKbUsageTracker', () => {
     expect(done.query.estimatedTokens).toBe(estimateKbTokens(400))
     expect(done.query.sections).toHaveLength(1)
     // Строка появилась в БД один раз — pending в неё не писался.
-    const report = db.kbUsageReport(U, conv.id)!
+    const report = db.kb.kbUsageReport(U, conv.id)!
     expect(report.recent).toHaveLength(1)
     expect(report.recent[0].id).toBe(handle.id)
     db.close()
@@ -58,22 +58,22 @@ describe('createKbUsageTracker', () => {
 
   it('повторный терминальный вызов игнорируется (одна строка на обращение)', () => {
     const db = makeDb()
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     const handle = tracker.begin({ userId: U, conversationId: conv.id, source: 'tool_search' }, 'ws')
     handle.complete({ deliveredChars: 10 })
     handle.fail('поздняя ошибка')
-    expect(db.kbUsageReport(U, conv.id)!.totals).toMatchObject({ queries: 1, delivered: 1, errors: 0 })
+    expect(db.kb.kbUsageReport(U, conv.id)!.totals).toMatchObject({ queries: 1, delivered: 1, errors: 0 })
     db.close()
   })
 
   it('empty и fail пишут статус и причину, но не текст', () => {
     const db = makeDb()
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').empty('low-confidence', 'medium')
     tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').fail('kb.context упала')
-    const recent = db.kbUsageReport(U, conv.id)!.recent
+    const recent = db.kb.kbUsageReport(U, conv.id)!.recent
     expect(recent.map((q) => q.status).sort()).toEqual(['empty', 'error'])
     expect(recent.every((q) => q.chars === 0 && q.error)).toBe(true)
     // Уверенность у пустой выдачи — такой же факт, как у доставленной: без неё
@@ -85,10 +85,10 @@ describe('createKbUsageTracker', () => {
 
   it('пустая выдача по бюджету называет свою причину', () => {
     const db = makeDb()
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').empty('budget', 'high')
-    expect(db.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({
+    expect(db.kb.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({
       status: 'empty', confidence: 'high', error: 'найденное не поместилось в бюджет контекста'
     })
     db.close()
@@ -96,9 +96,11 @@ describe('createKbUsageTracker', () => {
 
   it('НЕ выбрасывает при сломанной БД — БЗ не имеет права ронять ход', () => {
     const broken = {
-      kbUsageLastSeq: () => { throw new Error('БД закрыта') },
-      addKbUsage: () => { throw new Error('БД закрыта') },
-      attachKbUsageTurn: () => { throw new Error('БД закрыта') }
+      kb: {
+        kbUsageLastSeq: () => { throw new Error('БД закрыта') },
+        addKbUsage: () => { throw new Error('БД закрыта') },
+        attachKbUsageTurn: () => { throw new Error('БД закрыта') }
+      }
     } as unknown as VoiceChatDb
     const tracker = createKbUsageTracker({ db: broken })
     const sink = collector()
@@ -115,21 +117,21 @@ describe('createKbUsageTracker', () => {
 
   it('упавший слушатель не мешает записи обращения', () => {
     const db = makeDb()
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     tracker.subscribe(() => { throw new Error('сокет закрыт') })
     const ok = vi.fn()
     tracker.subscribe(ok)
     expect(() => tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').complete({ deliveredChars: 5 })).not.toThrow()
     expect(ok).toHaveBeenCalledTimes(2)
-    expect(db.kbUsageReport(U, conv.id)!.totals.queries).toBe(1)
+    expect(db.kb.kbUsageReport(U, conv.id)!.totals.queries).toBe(1)
     db.close()
   })
 
   it('pending предсказывает seq за уже записанными обращениями', () => {
     const db = makeDb()
-    const conv = db.createConversation(U, 'Чат')
-    db.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', query: 'старое', chars: 10 })
+    const conv = db.chat.createConversation(U, 'Чат')
+    db.kb.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', query: 'старое', chars: 10 })
     const tracker = createKbUsageTracker({ db })
     const sink = collector()
     tracker.subscribe(sink.listen)
@@ -142,11 +144,11 @@ describe('createKbUsageTracker', () => {
 
   it('attachTurn дописывает итоги хода в его обращения', () => {
     const db = makeDb()
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     tracker.begin({ userId: U, conversationId: conv.id, turnId: 't1', source: 'auto' }, 'q').complete({ deliveredChars: 100 })
     tracker.attachTurn({ turnId: 't1', messageId: 'm1', promptChars: 2000, turnInputTokens: 700 })
-    expect(db.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ messageId: 'm1', promptChars: 2000, turnInputTokens: 700 })
+    expect(db.kb.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ messageId: 'm1', promptChars: 2000, turnInputTokens: 700 })
     db.close()
   })
 })

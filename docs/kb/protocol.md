@@ -356,7 +356,7 @@ csrf», а `POST …/qa/integration/runs` — 403. Регрессия закре
 
 Что изменилось в админских ответах вместе с этим: `AdminUserInfo` расширяет
 `UserProfileInfo` и содержит `lastSeenAt`/`liveSessions` (агрегат
-`db.sessionActivity()`), у машин заполняется `telemetry` (для строки ОС), а
+`db.identity.sessionActivity()`), у машин заполняется `telemetry` (для строки ОС), а
 `POST /api/admin/users/:name/block` принимает необязательный `reason` — он
 пишется в `details` события безопасности, а не в колонку `users.lock_reason`:
 та занята машинным поводом авто-замка (`auto`/`inactive`), и человеческий текст

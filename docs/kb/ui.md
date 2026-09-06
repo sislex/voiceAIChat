@@ -25,6 +25,7 @@ areas:
   - packages/shared/src/webRecorder.ts
   - packages/shared/src/types.ts
   - apps/server/src/db/database.ts
+  - apps/server/src/db/repos
   - apps/server/src/routes/rest.ts
 ---
 

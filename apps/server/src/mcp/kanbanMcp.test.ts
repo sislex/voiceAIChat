@@ -40,12 +40,12 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('ann', '', 'developer')
-  const project = db.createProject('ann', { name: 'Chat' })!
+  db.identity.createUser('ann', '', 'developer')
+  const project = db.projects.createProject('ann', { name: 'Chat' })!
   projectId = project.id
-  columnId = db.getBoard('ann', projectId)!.columns[0]!.id
-  taskId = db.createTask('ann', projectId, { columnId, title: 'Починить логин' })!.id
-  conv = db.ensureKanbanAssistantConversation('ann', projectId)!.id
+  columnId = db.tasks.getBoard('ann', projectId)!.columns[0]!.id
+  taskId = db.tasks.createTask('ann', projectId, { columnId, title: 'Починить логин' })!.id
+  conv = db.chat.ensureKanbanAssistantConversation('ann', projectId)!.id
   contexts = new WidgetContextStore()
   ui = new WidgetUiRelay()
   uiActions = []
@@ -90,11 +90,11 @@ describe('kanbanMcp', () => {
     expect((await rpc(INIT, `?k=wrong&conv=${conv}`)).statusCode).toBe(403)
     expect((await rpc(INIT, `?k=${SECRET}&conv=missing`)).statusCode).toBe(404)
     // Разговор без проекта: канбану нечего показывать.
-    const loose = db.createConversation('ann', 'Просто чат')
+    const loose = db.chat.createConversation('ann', 'Просто чат')
     expect((await rpc(INIT, `?k=${SECRET}&conv=${loose.id}`)).statusCode).toBe(404)
     // Чужая специализированная поверхность не получает инструменты канбана.
-    const make = db.createConversation('ann', 'Make', 'make')
-    db.setConversationProject('ann', make.id, projectId)
+    const make = db.chat.createConversation('ann', 'Make', 'make')
+    db.chat.setConversationProject('ann', make.id, projectId)
     expect((await rpc(INIT, `?k=${SECRET}&conv=${make.id}`)).statusCode).toBe(404)
   })
 
@@ -177,18 +177,18 @@ describe('kanbanMcp', () => {
     expect(created.created.title).toBe('Корзина')
     expect(uiActions).toHaveLength(0)
     expect(boardEvents).toEqual([projectId])
-    expect(db.getBoard('ann', projectId)!.tasks.map((task) => task.title)).toContain('Корзина')
+    expect(db.tasks.getBoard('ann', projectId)!.tasks.map((task) => task.title)).toContain('Корзина')
   })
 
   it('в режиме подтверждений изменение уходит пользователю и отказ его отменяет', async () => {
-    db.setConversationAutonomy('ann', conv, 'confirm')
+    db.chat.setConversationAutonomy('ann', conv, 'confirm')
     await rpc(INIT)
     uiReply = () => ({ ok: true, result: { surface: null, confirmed: false } })
     const declined = resultText((await rpc(call('kanban_task_update', { taskId, title: 'Другое имя' }))).json())
     expect(declined.isError).toBe(true)
     expect(declined.text).toContain('отклонил')
     expect(uiActions[0]!.action.kind).toBe('confirm')
-    expect(db.getTaskDetail('ann', projectId, taskId)!.title).toBe('Починить логин')
+    expect(db.tasks.getTaskDetail('ann', projectId, taskId)!.title).toBe('Починить логин')
 
     uiReply = () => ({ ok: true, result: { surface: null, confirmed: true } })
     const accepted = resultJson<{ updated: { title: string } }>((await rpc(call('kanban_task_update', { taskId, title: 'Другое имя' }))).json())
@@ -197,8 +197,8 @@ describe('kanbanMcp', () => {
 
   it('комментарии карточки: модель добавляет, правит и удаляет с подтверждением', async () => {
     await rpc(INIT)
-    const board = db.getBoard('ann', projectId)!
-    const taskId = db.createTask('ann', projectId, { columnId: board.columns[0]!.id, title: 'С комментами' })!.id
+    const board = db.tasks.getBoard('ann', projectId)!
+    const taskId = db.tasks.createTask('ann', projectId, { columnId: board.columns[0]!.id, title: 'С комментами' })!.id
 
     // Добавление и правка — обычные мутации (в автономии идут без вопросов).
     const added = resultJson<{ comment: { id: string; via: string; author: string } }>((await rpc(call('task_comment_add', { taskId, text: 'Предлагаю уточнить критерии' }))).json())
@@ -217,7 +217,7 @@ describe('kanbanMcp', () => {
     const deleted = resultJson<{ deleted: string }>((await rpc(call('task_comment_delete', { taskId, commentId: added.comment.id }))).json())
     expect(deleted.deleted).toBe(added.comment.id)
     expect(uiActions.map((entry) => entry.action.kind)).toEqual(['confirm'])
-    expect(db.taskActivity('ann', projectId, taskId)!.comments).toEqual([])
+    expect(db.tasks.taskActivity('ann', projectId, taskId)!.comments).toEqual([])
 
     // Ворклог от модели.
     const entry = resultJson<{ entry: { minutes: number } }>((await rpc(call('task_worklog_add', { taskId, minutes: 45, comment: 'ревью' }))).json())
@@ -236,15 +236,15 @@ describe('kanbanMcp', () => {
     const blocked = resultText((await rpc(call('kanban_task_create', { title: 'Не должно появиться' }), `?k=${SECRET}&conv=${conv}&turn=t1&ro=1`)).json())
     expect(blocked.isError).toBe(true)
     expect(blocked.text).toContain('План')
-    expect(db.getBoard('ann', projectId)!.tasks).toHaveLength(1)
+    expect(db.tasks.getBoard('ann', projectId)!.tasks).toHaveLength(1)
   })
 
   it('перенос уважает карту переходов workflow', async () => {
-    const board = db.getBoard('ann', projectId)!
+    const board = db.tasks.getBoard('ann', projectId)!
     const development = board.columns.find((column) => column.semanticType === 'development')
     const done = board.columns.find((column) => column.semanticType === 'done')
     if (!development || !done) return
-    db.moveTask('ann', projectId, taskId, { columnId: development.id })
+    db.tasks.moveTask('ann', projectId, taskId, { columnId: development.id })
     await rpc(INIT)
     const blocked = resultText((await rpc(call('kanban_task_move', { taskId, columnId: done.id }))).json())
     expect(blocked.isError).toBe(true)
@@ -267,9 +267,9 @@ describe('kanbanMcp', () => {
   })
 
   it('создание задачи-дубликата блокируется, пока модель не подтвердит разницу', async () => {
-    const board = db.getBoard('ann', projectId)!
+    const board = db.tasks.getBoard('ann', projectId)!
     const development = board.columns.find((column) => column.semanticType === 'development')
-    if (development) db.moveTask('ann', projectId, taskId, { columnId: development.id })
+    if (development) db.tasks.moveTask('ann', projectId, taskId, { columnId: development.id })
     await rpc(INIT)
 
     const blocked = resultJson<{ created: null; blockedBySimilar: Array<{ key: string; state: string; blocking: boolean }> }>(
@@ -277,7 +277,7 @@ describe('kanbanMcp', () => {
     )
     expect(blocked.created).toBeNull()
     expect(blocked.blockedBySimilar[0]!.state).toBe('in_progress')
-    expect(db.getBoard('ann', projectId)!.tasks).toHaveLength(1)
+    expect(db.tasks.getBoard('ann', projectId)!.tasks).toHaveLength(1)
 
     const forced = resultJson<{ created: { title: string } }>(
       (await rpc(call('kanban_task_create', { title: 'Починить логин на телефоне', acknowledgeSimilar: true }))).json()
@@ -286,10 +286,10 @@ describe('kanbanMcp', () => {
   })
 
   it('kanban_find_similar отличает «сделано и вмержено» от «сделано, но не вмержено»', async () => {
-    const board = db.getBoard('ann', projectId)!
+    const board = db.tasks.getBoard('ann', projectId)!
     const done = board.columns.find((column) => column.semanticType === 'done')
     if (!done) return
-    db.moveTask('ann', projectId, taskId, { columnId: done.id })
+    db.tasks.moveTask('ann', projectId, taskId, { columnId: done.id })
     await rpc(INIT)
     const hits = resultJson<{ hits: Array<{ state: string; blocking: boolean }>; advice: string }>(
       (await rpc(call('kanban_find_similar', { title: 'Починить логин' }))).json()
@@ -300,7 +300,7 @@ describe('kanbanMcp', () => {
   })
 
   it('пароли тестовых учёток проекту не отдаются', async () => {
-    db.updateProject('ann', projectId, { testUsers: [{ role: 'admin', name: 'qa', password: 'secret' }] })
+    db.projects.updateProject('ann', projectId, { testUsers: [{ role: 'admin', name: 'qa', password: 'secret' }] })
     await rpc(INIT)
     const detail = resultJson<{ testUsers: Array<Record<string, unknown>> }>((await rpc(call('project_api_get', { key: 'project' }))).json())
     expect(detail.testUsers[0]).toMatchObject({ name: 'qa' })
@@ -362,7 +362,7 @@ describe('kanbanMcp', () => {
     const second = resultText((await rpc(call('kanban_task_create', { title: 'Корзина' }))).json())
     expect(second.text).toContain('Повтор того же вызова')
     expect(second.text).toContain(first.created.id)
-    expect(db.getBoard('ann', projectId)!.tasks.filter((task) => task.title === 'Корзина')).toHaveLength(1)
+    expect(db.tasks.getBoard('ann', projectId)!.tasks.filter((task) => task.title === 'Корзина')).toHaveLength(1)
 
     // Другой ход — другой ключ: там это уже осознанное повторное действие.
     const other = resultJson<{ created: { id: string } }>((await rpc(call('kanban_task_create', { title: 'Корзина' }), `?k=${SECRET}&conv=${conv}&turn=t2`)).json())
@@ -370,7 +370,7 @@ describe('kanbanMcp', () => {
   })
 
   it('отказ не запоминается: после «нет» пользователь может согласиться', async () => {
-    db.setConversationAutonomy('ann', conv, 'confirm')
+    db.chat.setConversationAutonomy('ann', conv, 'confirm')
     await rpc(INIT)
     uiReply = () => ({ ok: true, result: { surface: null, confirmed: false } })
     expect(resultText((await rpc(call('kanban_task_update', { taskId, title: 'Новое' }))).json()).isError).toBe(true)
@@ -387,9 +387,9 @@ describe('kanbanMcp', () => {
   })
 
   it('релизные инструменты закрыты для не-владельца и спрашивают подтверждение у владельца', async () => {
-    db.createUser('bob', '', 'developer')
-    db.addMember('ann', projectId, 'bob')
-    const memberConv = db.ensureKanbanAssistantConversation('bob', projectId)!.id
+    db.identity.createUser('bob', '', 'developer')
+    db.projects.addMember('ann', projectId, 'bob')
+    const memberConv = db.chat.ensureKanbanAssistantConversation('bob', projectId)!.id
     await rpc(INIT, `?k=${SECRET}&conv=${memberConv}&turn=t1`)
     const forbidden = resultText((await rpc(call('release_deploy', { branch: 'release/1.0.0' }), `?k=${SECRET}&conv=${memberConv}&turn=t1`)).json())
     expect(forbidden.isError).toBe(true)

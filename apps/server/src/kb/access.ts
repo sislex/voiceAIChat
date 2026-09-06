@@ -13,7 +13,7 @@ export function kbViewOf(db: VoiceChatDb, userId: string, filter: { scope?: stri
   const scope = isKbScope(filter.scope) ? filter.scope : undefined
   return {
     userId,
-    projectIds: db.listProjects(userId).map((project) => project.id),
+    projectIds: db.projects.listProjects(userId).map((project) => project.id),
     ...(scope ? { scope } : {}),
     ...(filter.projectId ? { projectId: filter.projectId } : {})
   }
@@ -41,5 +41,5 @@ export function kbWriteDenial(
   if (target.scope === 'usage') return user.role === 'admin' ? null : 'раздел «Использование» правит только администратор'
   if (target.scope === 'user') return null
   if (!target.projectId) return 'для проектной статьи нужен projectId'
-  return db.getProject(user.name, target.projectId) ? null : 'нет доступа к проекту'
+  return db.projects.getProject(user.name, target.projectId) ? null : 'нет доступа к проекту'
 }

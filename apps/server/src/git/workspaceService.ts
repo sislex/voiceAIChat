@@ -110,7 +110,7 @@ export class GitWorkspaceService {
    * поэтому список открывается мгновенно даже там, где машины офлайн.
    */
   listWorkspaces(userId: string, projectId: string): GitWorkspaceRef[] {
-    const project = this.deps.db.getProject(userId, projectId)
+    const project = this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new GitError(404, 'not_found', 'Проект не найден')
     const refs: GitWorkspaceRef[] = []
     const seen = new Set<string>()
@@ -121,12 +121,12 @@ export class GitWorkspaceService {
       seen.add(key)
       refs.push(ref)
     }
-    for (const workspace of this.deps.db.listCiWorkspaceReport(userId, projectId)) {
+    for (const workspace of this.deps.db.ci.listCiWorkspaceReport(userId, projectId)) {
       if (!workspace.agentId) continue
       add(this.refFromCiWorkspace(userId, project, workspace.id))
     }
-    for (const task of this.deps.db.getBoard(userId, projectId)?.tasks ?? []) {
-      for (const repository of this.deps.db.listTaskRepositories(userId, projectId, task.id)) {
+    for (const task of this.deps.db.tasks.getBoard(userId, projectId)?.tasks ?? []) {
+      for (const repository of this.deps.db.tasks.listTaskRepositories(userId, projectId, task.id)) {
         if (repository.state !== 'active') continue
         add(this.refFromTaskRepository(userId, project, repository.id))
       }
@@ -141,7 +141,7 @@ export class GitWorkspaceService {
    * машина позволяла запись: иначе операция отклоняется до похода на машину.
    */
   resolve(userId: string, projectId: string, workspaceId: string, opts: { write: boolean }): GitWorkspaceRef {
-    const project = this.deps.db.getProject(userId, projectId)
+    const project = this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new GitError(404, 'not_found', 'Проект не найден')
     const parsed = parseGitWorkspaceId(workspaceId)
     if (!parsed) throw new GitError(404, 'workspace_not_found', 'Рабочая копия не найдена')
@@ -179,7 +179,7 @@ export class GitWorkspaceService {
       throw error
     }
     if (ref.released) return this.emptyStatus(userId, projectId, ref, 'workspace_released', null)
-    const baseBranch = this.deps.db.getProject(userId, projectId)?.ciBaseBranch ?? 'main'
+    const baseBranch = this.deps.db.projects.getProject(userId, projectId)?.ciBaseBranch ?? 'main'
     const result = await this.run(userId, projectId, ref, statusScript(baseBranch), READ_TIMEOUT_MS)
     const sections = splitGitSections(result.output)
     if (!sections.repo || !/true/.test(sections.repo)) {
@@ -199,7 +199,7 @@ export class GitWorkspaceService {
       ref,
       problem: null,
       detail: null,
-      gitUrl: this.deps.db.getProject(userId, projectId)?.gitUrl ?? null,
+      gitUrl: this.deps.db.projects.getProject(userId, projectId)?.gitUrl ?? null,
       baseBranch,
       branch: parsed.head.branch,
       detached: parsed.head.detached || (!parsed.head.branch && head !== null),
@@ -360,7 +360,7 @@ export class GitWorkspaceService {
     }
     const before = await this.status(userId, projectId, workspaceId)
     if (before.changes.length === 0) throw new GitError(409, 'nothing_to_commit', 'В рабочей копии нет изменений')
-    const user = this.deps.db.getUser(userId)
+    const user = this.deps.db.identity.getUser(userId)
     const script = commitScript({
       message, paths, all,
       user: userId,
@@ -625,9 +625,9 @@ export class GitWorkspaceService {
     // а сервер может перезапуститься посреди push — тогда два git-процесса встретятся
     // в одном каталоге на index.lock, и вторая операция упадёт непонятной ошибкой.
     const holder = `${userId}:${process.pid}:${this.now()}`
-    const lock = this.deps.db.acquireGitWorkspaceLock(ref.agentId, ref.path, holder, script.script.slice(0, 40), LOCK_TTL_MS)
+    const lock = this.deps.db.machines.acquireGitWorkspaceLock(ref.agentId, ref.path, holder, script.script.slice(0, 40), LOCK_TTL_MS)
     if (!lock) {
-      const busy = this.deps.db.gitWorkspaceLockHolder(ref.agentId, ref.path)
+      const busy = this.deps.db.machines.gitWorkspaceLockHolder(ref.agentId, ref.path)
       throw new GitError(409, 'git_busy', busy
         ? `В этой рабочей копии уже идёт операция (${busy.holder.split(':')[0]}) — дождитесь её окончания`
         : 'Другая операция в этой рабочей копии ещё выполняется')
@@ -640,7 +640,7 @@ export class GitWorkspaceService {
       if (error instanceof GitError) throw error
       throw new GitError(409, 'machine_error', error instanceof Error ? error.message : String(error))
     } finally {
-      this.deps.db.releaseGitWorkspaceLock(ref.agentId, ref.path, holder)
+      this.deps.db.machines.releaseGitWorkspaceLock(ref.agentId, ref.path, holder)
     }
   }
 
@@ -664,7 +664,7 @@ export class GitWorkspaceService {
   private emptyStatus(
     userId: string, projectId: string, ref: GitWorkspaceRef | null, problem: GitWorkspaceProblem, detail: string | null
   ): GitWorkspaceStatus {
-    const project = this.deps.db.getProject(userId, projectId)
+    const project = this.deps.db.projects.getProject(userId, projectId)
     return {
       ref, problem, detail,
       gitUrl: project?.gitUrl ?? null,
@@ -677,17 +677,17 @@ export class GitWorkspaceService {
   /** Ветка и SHA рабочей копии в БД: их читает merge-ран, поэтому запись обязательна. */
   private recordRevision(ref: GitWorkspaceRef, branch: string | null, sha: string, pushed: boolean): void {
     if (ref.kind !== 'task-workspace' || !ref.id.startsWith('ws:') || !branch) return
-    this.deps.db.updateCiWorkspaceRevision(ref.id.slice(3), branch, sha, pushed)
+    this.deps.db.ci.updateCiWorkspaceRevision(ref.id.slice(3), branch, sha, pushed)
   }
 
   /** Регистрируем копию как dev-workspace задачи — то же делает merge-ран. */
   private registerRepository(ref: GitWorkspaceRef): void {
     if (!ref.taskId) return
-    this.deps.db.upsertTaskRepository(ref.projectId, ref.taskId, ref.agentId, ref.path, 'dev-workspace')
+    this.deps.db.tasks.upsertTaskRepository(ref.projectId, ref.taskId, ref.agentId, ref.path, 'dev-workspace')
   }
 
   private audit(userId: string, projectId: string, ref: GitWorkspaceRef, type: string, payload: Record<string, unknown>): void {
-    this.deps.db.addCiEvent({
+    this.deps.db.ci.addCiEvent({
       projectId, type, actorType: 'user', actorId: userId,
       payload: { ...payload, workspace: ref.id, path: ref.path, agentId: ref.agentId }
     })
@@ -695,22 +695,22 @@ export class GitWorkspaceService {
     // хосте, и владелец машины должен видеть её там же, где входы и подключения
     // агентов, а не только в событиях проекта.
     const details = [type, ref.path, ...Object.entries(payload).map(([key, value]) => `${key}=${String(value)}`)].join(' · ')
-    this.deps.db.logSecurityEvent({ user: userId, type: 'git_workspace_mutation', details })
+    this.deps.db.identity.logSecurityEvent({ user: userId, type: 'git_workspace_mutation', details })
   }
 
   private machineAccess(userId: string, project: { id: string; machines: { agentId: string; ownership?: string; sharedWithProject?: boolean }[] }, agentId: string):
     { online: boolean; writable: boolean; readOnlyReason: string | null; machineName: string | null } | null {
     const linked = project.machines.some((machine) => machine.agentId === agentId)
-    if (!linked && !this.deps.db.canUseAgent(userId, agentId, project.id)) return null
-    if (!this.deps.db.canUseAgent(userId, agentId, project.id)) return null
+    if (!linked && !this.deps.db.machines.canUseAgent(userId, agentId, project.id)) return null
+    if (!this.deps.db.machines.canUseAgent(userId, agentId, project.id)) return null
     const policy = this.deps.runtime.policyOf(agentId)
     // Три независимых условия, и ни одно не перекрывает другое: полномочие роли,
     // режим доступа машины проекту и её собственная политика записи. UI получает
     // готовый флаг с причиной — иначе он показывал бы активную кнопку, а отказ
     // приходил бы тостом уже после клика.
-    const role = this.deps.db.getUser(userId)?.role
+    const role = this.deps.db.identity.getUser(userId)?.role
     const permitted = role ? hasProjectPermission(role, 'repository:write') : false
-    const shared = this.deps.db.canWriteAgent(userId, agentId, project.id)
+    const shared = this.deps.db.machines.canWriteAgent(userId, agentId, project.id)
     const policyAllows = policy?.allowWrite !== false
     return {
       online: this.deps.runtime.isOnline(agentId),
@@ -728,19 +728,19 @@ export class GitWorkspaceService {
 
   private busyFor(userId: string, projectId: string, taskId: string | null): GitWorkspaceRef['busy'] {
     if (!taskId) return null
-    const ci = this.deps.db.activeCiRunForTask(taskId)
+    const ci = this.deps.db.ci.activeCiRunForTask(taskId)
     if (ci) return { kind: 'ci', runId: ci.id, status: ci.status }
-    const task = this.deps.db.getTaskDetail(userId, projectId, taskId)
+    const task = this.deps.db.tasks.getTaskDetail(userId, projectId, taskId)
     const mergeRunId = task?.activeMergeRunId ?? null
     return mergeRunId ? { kind: 'merge', runId: mergeRunId, status: 'running' } : null
   }
 
   private refFromCiWorkspace(userId: string, project: { id: string; machines: { agentId: string }[] }, workspaceId: string): GitWorkspaceRef | null {
-    const workspace = this.deps.db.getCiWorkspaceById(workspaceId)
+    const workspace = this.deps.db.ci.getCiWorkspaceById(workspaceId)
     if (!workspace || workspace.projectId !== project.id || !workspace.agentId) return null
     const access = this.machineAccess(userId, project, workspace.agentId)
     if (!access) return null
-    const task = this.deps.db.getTaskDetail(userId, project.id, workspace.taskId)
+    const task = this.deps.db.tasks.getTaskDetail(userId, project.id, workspace.taskId)
     return {
       id: buildGitWorkspaceId({ kind: 'ci-workspace', ciWorkspaceId: workspace.id }),
       kind: 'task-workspace',
@@ -764,12 +764,12 @@ export class GitWorkspaceService {
   }
 
   private refFromTaskRepository(userId: string, project: { id: string; machines: { agentId: string }[] }, repositoryId: string): GitWorkspaceRef | null {
-    const repository = this.deps.db.getTaskRepositoryById(repositoryId)
+    const repository = this.deps.db.tasks.getTaskRepositoryById(repositoryId)
     if (!repository || repository.projectId !== project.id) return null
     const access = this.machineAccess(userId, project, repository.agentId)
     if (!access) return null
-    const task = this.deps.db.getTaskDetail(userId, project.id, repository.taskId)
-    const workspace = this.deps.db.findActiveCiWorkspace(project.id, repository.taskId)
+    const task = this.deps.db.tasks.getTaskDetail(userId, project.id, repository.taskId)
+    const workspace = this.deps.db.ci.findActiveCiWorkspace(project.id, repository.taskId)
     return {
       id: buildGitWorkspaceId({ kind: 'task-repository', taskRepositoryId: repository.id }),
       kind: repository.kind === 'merge-clone' ? 'merge-clone' : 'task-workspace',
@@ -799,7 +799,7 @@ export class GitWorkspaceService {
    * заполняет, поэтому основной путь — legacy `conversations.workdir` + машина чата.
    */
   private refFromConversation(userId: string, project: { id: string; machines: { agentId: string }[] }, conversationId: string): GitWorkspaceRef | null {
-    const conversation = this.deps.db.getConversation(userId, conversationId)
+    const conversation = this.deps.db.chat.getConversation(userId, conversationId)
     if (!conversation) return null
     if (conversation.projectId && conversation.projectId !== project.id) return null
     const agentId = conversation.execTarget && conversation.execTarget !== 'none' ? conversation.execTarget : null
@@ -833,7 +833,7 @@ export class GitWorkspaceService {
 
   /** Общая папка проекта на машине: та же, что берут релизы. */
   private refFromProjectMachine(userId: string, project: { id: string; machines: { agentId: string }[] }, agentId: string): GitWorkspaceRef | null {
-    const machine = this.deps.db.getProjectMachine(project.id, agentId)
+    const machine = this.deps.db.machines.getProjectMachine(project.id, agentId)
     if (!machine) return null
     const path = machine.directories?.projectWorkdir.path || machine.path
     if (!path) return null

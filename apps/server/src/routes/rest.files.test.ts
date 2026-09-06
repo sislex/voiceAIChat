@@ -62,10 +62,10 @@ describe('REST: чтение файла с диска сервера (/api/files
 
 describe('REST: задачи из предложений улучшений', () => {
   it('создаёт атомарно, возвращает идемпотентный результат и отклоняет повторный переход', async () => {
-    const project = db.createProject(U, { name: 'P' })
-    const column = db.getBoard(U, project.id)!.columns[0]!
-    const source = db.createTask(U, project.id, { columnId: column.id, title: 'Source' })!
-    const improvement = db.upsertTaskImprovement({
+    const project = db.projects.createProject(U, { name: 'P' })
+    const column = db.tasks.getBoard(U, project.id)!.columns[0]!
+    const source = db.tasks.createTask(U, project.id, { columnId: column.id, title: 'Source' })!
+    const improvement = db.tasks.upsertTaskImprovement({
       projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
       title: 'Улучшить ретраи', description: 'Подробности', fingerprint: 'rest-retry',
       evidence: ['Ошибка видима'], suggestedAction: 'create_chatai_task'
@@ -81,11 +81,11 @@ describe('REST: задачи из предложений улучшений', ()
   })
 
   it('очередь проекта, создание одной кнопкой в backlog и удаление предложения', async () => {
-    const project = db.createProject(U, { name: 'P' })
-    const board = db.getBoard(U, project.id)!
+    const project = db.projects.createProject(U, { name: 'P' })
+    const board = db.tasks.getBoard(U, project.id)!
     const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
-    const source = db.createTask(U, project.id, { columnId: backlog.id, title: 'Source' })!
-    const improvement = db.upsertTaskImprovement({
+    const source = db.tasks.createTask(U, project.id, { columnId: backlog.id, title: 'Source' })!
+    const improvement = db.tasks.upsertTaskImprovement({
       projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
       title: 'Стабилизировать: npm test', description: 'Подробности', fingerprint: 'rest-queue',
       evidence: ['Статус шага: failed'], files: ['apps/server/src/turns.ts'], acceptanceCriteria: 'Шаг проходит.', suggestedAction: 'create_chatai_task'
@@ -103,7 +103,7 @@ describe('REST: задачи из предложений улучшений', ()
     const badBody = await inj({ method: 'POST', url: `/api/improvements/${improvement.id}/create-task`, payload: { title: 42 } })
     expect(badBody.statusCode).toBe(400)
 
-    const second = db.upsertTaskImprovement({
+    const second = db.tasks.upsertTaskImprovement({
       projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
       title: 'Второе', description: 'D', fingerprint: 'rest-queue-2', evidence: [], suggestedAction: 'create_chatai_task'
     })
@@ -114,14 +114,14 @@ describe('REST: задачи из предложений улучшений', ()
   })
 
   it('«создать и подготовить»: отказ подготовки не откатывает созданную задачу', async () => {
-    const project = db.createProject(U, { name: 'P' })
-    const board = db.getBoard(U, project.id)!
+    const project = db.projects.createProject(U, { name: 'P' })
+    const board = db.tasks.getBoard(U, project.id)!
     const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
     // Пользователю закрыты оба провайдера: запуск подготовки детерминированно
     // отказывает ещё до обращения к CLI, а тест не порождает процессов.
-    db.setUserLlmAccess(U, [{ provider: 'claude', modelId: '*' }, { provider: 'codex', modelId: '*' }])
-    const source = db.createTask(U, project.id, { columnId: backlog.id, title: 'Source' })!
-    const improvement = db.upsertTaskImprovement({
+    db.identity.setUserLlmAccess(U, [{ provider: 'claude', modelId: '*' }, { provider: 'codex', modelId: '*' }])
+    const source = db.tasks.createTask(U, project.id, { columnId: backlog.id, title: 'Source' })!
+    const improvement = db.tasks.upsertTaskImprovement({
       projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
       title: 'Третье', description: 'D', fingerprint: 'rest-prepare', evidence: [], suggestedAction: 'create_chatai_task'
     })
@@ -130,21 +130,21 @@ describe('REST: задачи из предложений улучшений', ()
     const body = res.json()
     expect(body).toMatchObject({ created: true, preparationStarted: false, task: { columnId: backlog.id } })
     expect(String(body.preparationError)).toMatch(/недоступен/)
-    expect(db.getBoard(U, project.id)!.tasks.some((task) => task.id === body.task.id)).toBe(true)
+    expect(db.tasks.getBoard(U, project.id)!.tasks.some((task) => task.id === body.task.id)).toBe(true)
   })
 })
 
 describe('REST: машины настроек разговора', () => {
   it('обычный чат видит только личные машины, проектный — личные и проектные без дублей', async () => {
-    db.createUser('owner', '', 'developer')
-    db.createUser('outsider', '', 'developer')
-    const own = db.createAgent(U, 'Личная')
-    const shared = db.createAgent('owner', 'Проектная')
-    const hidden = db.createAgent('outsider', 'Чужая')
-    const project = db.createProject('owner', { name: 'Shared' })
-    db.linkMachine('owner', project.id, shared.id)
-    db.addMember('owner', project.id, U)
-    const plain = db.createConversation(U, 'Обычный')
+    db.identity.createUser('owner', '', 'developer')
+    db.identity.createUser('outsider', '', 'developer')
+    const own = db.machines.createAgent(U, 'Личная')
+    const shared = db.machines.createAgent('owner', 'Проектная')
+    const hidden = db.machines.createAgent('outsider', 'Чужая')
+    const project = db.projects.createProject('owner', { name: 'Shared' })
+    db.machines.linkMachine('owner', project.id, shared.id)
+    db.projects.addMember('owner', project.id, U)
+    const plain = db.chat.createConversation(U, 'Обычный')
 
     const plainMachines = (await inj({ method: 'GET', url: `/api/conversations/${plain.id}/machines` })).json()
     expect(plainMachines.map((a: { id: string }) => a.id)).toEqual([own.id])
@@ -156,11 +156,11 @@ describe('REST: машины настроек разговора', () => {
   })
 
   it('не даёт неучастнику увидеть проектную машину или сохранить недоступную', async () => {
-    db.createUser('owner', '', 'developer')
-    const foreign = db.createAgent('owner', 'Серверная')
-    const project = db.createProject('owner', { name: 'Private' })
-    db.linkMachine('owner', project.id, foreign.id)
-    const conversation = db.createConversation(U, 'Чат')
+    db.identity.createUser('owner', '', 'developer')
+    const foreign = db.machines.createAgent('owner', 'Серверная')
+    const project = db.projects.createProject('owner', { name: 'Private' })
+    db.machines.linkMachine('owner', project.id, foreign.id)
+    const conversation = db.chat.createConversation(U, 'Чат')
 
     const list = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/machines?projectId=${project.id}` })).json()
     expect(list.some((a: { id: string }) => a.id === foreign.id)).toBe(false)
@@ -171,7 +171,7 @@ describe('REST: машины настроек разговора', () => {
       payload: { execTarget: foreign.id }
     })
     expect(denied.statusCode).toBe(403)
-    expect(db.getConversation(U, conversation.id)?.execTarget).toBeNull()
+    expect(db.chat.getConversation(U, conversation.id)?.execTarget).toBeNull()
   })
 })
 

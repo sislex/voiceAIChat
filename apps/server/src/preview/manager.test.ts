@@ -12,12 +12,20 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 function setup(result: { exitCode: number | null; timedOut: boolean } = { exitCode: 0, timedOut: false }) {
   const dir = mkdtempSync(join(tmpdir(), 'preview-test-')); dirs.push(dir)
   const db = {
-    getProject: () => ({ id: 'p1', name: 'Project', gitUrl: 'https://example.test/repo.git', ciBranchTemplate: '{task_number}', defaultAgentId: 'a1', machines: [{ agentId: 'a1', reposRoot: '/repos', path: '/repos/project', storageId: 's1' }, { agentId: 'a2', reposRoot: '/other', path: '/other/project', storageId: 's2' }] }),
-    getProjectMachine: (_projectId: string, agentId: string) => ({ agentId, path: agentId === 'a1' ? '/repos/project' : '/other/project', reposRoot: agentId === 'a1' ? '/repos' : '/other', storageId: agentId === 'a1' ? 's1' : 's2', storageRoot: agentId === 'a1' ? '/storage' : '/storage-2', storageFormatVersion: 1, directories: null }),
-    getBoard: () => ({ tasks: [{ id: 't1', type: 'task', seq: 1, title: 'Task one', agentId: 'a1' }, { id: 't2', type: 'task', seq: 2, title: 'Task two', agentId: 'a1' }] }),
-    findActiveCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true }),
-    findLatestCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true }),
-    setTaskPreviewReady: vi.fn()
+    projects: {
+      getProject: () => ({ id: 'p1', name: 'Project', gitUrl: 'https://example.test/repo.git', ciBranchTemplate: '{task_number}', defaultAgentId: 'a1', machines: [{ agentId: 'a1', reposRoot: '/repos', path: '/repos/project', storageId: 's1' }, { agentId: 'a2', reposRoot: '/other', path: '/other/project', storageId: 's2' }] })
+    },
+    machines: {
+      getProjectMachine: (_projectId: string, agentId: string) => ({ agentId, path: agentId === 'a1' ? '/repos/project' : '/other/project', reposRoot: agentId === 'a1' ? '/repos' : '/other', storageId: agentId === 'a1' ? 's1' : 's2', storageRoot: agentId === 'a1' ? '/storage' : '/storage-2', storageFormatVersion: 1, directories: null })
+    },
+    tasks: {
+      getBoard: () => ({ tasks: [{ id: 't1', type: 'task', seq: 1, title: 'Task one', agentId: 'a1' }, { id: 't2', type: 'task', seq: 2, title: 'Task two', agentId: 'a1' }] }),
+      setTaskPreviewReady: vi.fn()
+    },
+    ci: {
+      findActiveCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true }),
+      findLatestCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true })
+    }
   } as unknown as VoiceChatDb
   let n = 0
   const executor: CommandExecutor = {

@@ -53,15 +53,15 @@ const inj = (opts: { method: 'GET' | 'POST' | 'PUT' | 'DELETE'; url: string; pay
   app.inject({ ...opts, headers: { authorization: `Bearer ${admin}` } })
 
 function setup(): { projectId: string; taskId: string } {
-  const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.createAgent('admin', 'M')
-  db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.getBoard('admin', project.id)!
+  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = db.machines.createAgent('admin', 'M')
+  db.machines.linkMachine('admin', project.id, agent.id)
+  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const board = db.tasks.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
-  const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
+  const task = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
   return { projectId: project.id, taskId: task.id }
 }
 
@@ -137,14 +137,14 @@ describe('уточняющие вопросы модели', () => {
 
   it('степень уточнения «без вопросов» не даёт хинта и не тормозит ран', async () => {
     const { projectId, taskId } = setup()
-    db.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'none', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'none', clarifyMax: 3 })
     replies = [`Нужно уточнить.\n\n${QUESTION_BLOCK}`]
     const runId = await startRun(projectId, taskId)
 
     const detail = await waitTerminal(runId)
     expect(detail.run.status).toBe('success')
     expect(requests[0].prompt).not.toContain('```questions')
-    expect(db.listCiInteractions(runId)).toHaveLength(0)
+    expect(db.ci.listCiInteractions(runId)).toHaveLength(0)
   })
 
   it('бюджет ограничивает число пауз', async () => {
@@ -158,14 +158,14 @@ describe('уточняющие вопросы модели', () => {
     }
     const detail = await waitTerminal(runId)
     expect(detail.run.status).toBe('success')
-    expect(db.listCiInteractions(runId)).toHaveLength(3)
+    expect(db.ci.listCiInteractions(runId)).toHaveLength(3)
   })
 })
 
 describe('гейт одобрения плана', () => {
   it('план ждёт одобрения, затем тот же ран продолжает разработкой', async () => {
     const { projectId, taskId } = setup()
-    db.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'plan', clarifyLevel: 'none', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'plan', clarifyLevel: 'none', clarifyMax: 3 })
     replies = ['План: 1) сделать 2) проверить', 'реализовано']
     const runId = await startRun(projectId, taskId)
 
@@ -188,7 +188,7 @@ describe('гейт одобрения плана', () => {
 
   it('доработка плана возвращает модель в режим планирования с комментарием', async () => {
     const { projectId, taskId } = setup()
-    db.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'plan', clarifyLevel: 'none', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'plan', clarifyLevel: 'none', clarifyMax: 3 })
     replies = ['План v1', 'План v2', 'реализовано']
     const runId = await startRun(projectId, taskId)
 
@@ -206,9 +206,9 @@ describe('гейт одобрения плана', () => {
 
   it('отклонение плана останавливает ран, слот «после» не запускается', async () => {
     const { projectId, taskId } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId, name: 'after', script: 'echo after', availableToModel: false })
-    db.setCiSlotCommands('project', projectId, 'after_model', [cmd.id])
-    db.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'plan', clarifyLevel: 'none', clarifyMax: 3 })
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'after', script: 'echo after', availableToModel: false })
+    db.ci.setCiSlotCommands('project', projectId, 'after_model', [cmd.id])
+    db.ci.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'plan', clarifyLevel: 'none', clarifyMax: 3 })
     replies = ['План v1']
     const runId = await startRun(projectId, taskId)
 
@@ -218,12 +218,12 @@ describe('гейт одобрения плана', () => {
     const detail = await waitTerminal(runId)
     expect(detail.run.status).toBe('cancelled')
     expect(detail.steps.some((st) => st.kind === 'command' && st.title === 'after')).toBe(false)
-    expect(db.getCiInteraction(pending.id)?.status).toBe('cancelled')
+    expect(db.ci.getCiInteraction(pending.id)?.status).toBe('cancelled')
   })
 
   it('разовый оверрайд режима в запросе перебивает настройку задачи', async () => {
     const { projectId, taskId } = setup()
-    db.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'none', clarifyMax: 3 })
+    db.ci.setCiLlmConfig('project', projectId, { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'none', clarifyMax: 3 })
     replies = ['План v1', 'реализовано']
     const runId = await startRun(projectId, taskId, { mode: 'plan' })
     const pending = await waitPending(runId)
