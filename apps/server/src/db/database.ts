@@ -8719,6 +8719,27 @@ export class VoiceChatDb {
     return next
   }
 
+  /**
+   * Сколько последних merge-ранов задачи подряд закончились провалом. Нужен
+   * автопроходу: карточку в колонке merge надо подтолкнуть новым раном, но
+   * повторять это бесконечно на сломанном окружении нельзя.
+   */
+  countTrailingFailedMergeRuns(taskId: string): number {
+    const rows = this.db.prepare(`SELECT status FROM merge_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as Array<{ status: string }>
+    let count = 0
+    for (const row of rows) {
+      if (row.status === 'failed' || row.status === 'timeout') count += 1
+      else break
+    }
+    return count
+  }
+
+  /** Когда завершился последний merge-ран задачи: по нему выдерживается пауза между попытками. */
+  lastMergeRunFinishedAt(taskId: string): number | null {
+    const row = this.db.prepare(`SELECT finished_at FROM merge_runs WHERE task_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1`).get(taskId) as { finished_at: number } | undefined
+    return row?.finished_at ?? null
+  }
+
   listMergeRuns(userId: string, projectId: string, taskId: string, limit = 20): MergeRun[] {
     if (!this.isProjectMember(userId, projectId)) return []
     return (this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND project_id=? ORDER BY created_at DESC LIMIT ?`).all(taskId, projectId, limit) as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
