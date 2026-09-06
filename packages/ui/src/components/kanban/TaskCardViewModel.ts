@@ -96,6 +96,10 @@ export interface TaskCardCallbacks {
   onOpenMake(conversationId: string): void
   onStartRework(): void
   onChangeReworkDraft(draft: TaskReworkDraft): void
+  onAddReworkFiles(files: FileList | null): void
+  onRemoveReworkFile(fileId: string): void
+  onRetryReworkFile(fileId: string): void
+  onRetryHistory(): void
   onSubmitRework(draft: TaskReworkDraft, idempotencyKey: string): void | Promise<void>
   onCancelRework(): void
 }

@@ -29,7 +29,7 @@ const meta: Meta<typeof NewTaskCardView> = {
     model, activeTab: 'overview', version: 'new', reworkOpen: false,
     reworkDraft: { description: '', criteria: [], makeMode: 'whole_project', makePaths: [], attachments: [] },
     onVersionChange: vi.fn(),
-    callbacks: { onClose: vi.fn(), onChangeTab: vi.fn(), onOpenRun: vi.fn(), onOpenMake: vi.fn(), onStartRework: vi.fn(), onChangeReworkDraft: vi.fn(), onSubmitRework: vi.fn(), onCancelRework: vi.fn() }
+    callbacks: { onClose: vi.fn(), onChangeTab: vi.fn(), onOpenRun: vi.fn(), onOpenMake: vi.fn(), onStartRework: vi.fn(), onChangeReworkDraft: vi.fn(), onAddReworkFiles: vi.fn(), onRemoveReworkFile: vi.fn(), onRetryReworkFile: vi.fn(), onRetryHistory: vi.fn(), onSubmitRework: vi.fn(), onCancelRework: vi.fn() }
   }
 }
 export default meta
