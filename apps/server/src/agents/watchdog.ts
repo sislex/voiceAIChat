@@ -6,8 +6,10 @@ import type { MachineStatusEvent, ServerMessage } from '@voicechat/shared'
 
 export interface WatchdogDeps {
   db: {
-    listAllAgents(): Array<{ id: string; name: string; lastSeen: number | null; userId: string | null }>
-    logMachineEvent(e: { machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }): void
+    machines: {
+      listAllAgents(): Array<{ id: string; name: string; lastSeen: number | null; userId: string | null }>
+      logMachineEvent(e: { machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }): void
+    }
   }
   registry: {
     isOnline(id: string): boolean
@@ -36,7 +38,7 @@ export function createAgentWatchdog(deps: WatchdogDeps): AgentWatchdog {
   const tick = (): MachineStatusEvent[] => {
     const events: MachineStatusEvent[] = []
     const at = now()
-    for (const agent of deps.db.listAllAgents()) {
+    for (const agent of deps.db.machines.listAllAgents()) {
       // Машина, у которой агента никогда не было, не «пропала» — её ещё не подключали.
       if (!agent.userId || agent.lastSeen === null) continue
       if (deps.registry.isOnline(agent.id) || alertedSince.has(agent.id)) continue
@@ -44,7 +46,7 @@ export function createAgentWatchdog(deps: WatchdogDeps): AgentWatchdog {
       if (offlineForMs < deps.thresholdMs) continue
       alertedSince.set(agent.id, agent.lastSeen)
       const event: MachineStatusEvent = { machineId: agent.id, machineName: agent.name, state: 'offline', at, offlineForMs }
-      deps.db.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'offline', at, offlineForMs })
+      deps.db.machines.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'offline', at, offlineForMs })
       deps.publish({ t: 'machine.status', event }, agent.userId)
       events.push(event)
     }
@@ -55,12 +57,12 @@ export function createAgentWatchdog(deps: WatchdogDeps): AgentWatchdog {
   const offChange = deps.registry.onChange(() => {
     if (alertedSince.size === 0) return
     const at = now()
-    for (const agent of deps.db.listAllAgents()) {
+    for (const agent of deps.db.machines.listAllAgents()) {
       const since = alertedSince.get(agent.id)
       if (since === undefined || !deps.registry.isOnline(agent.id) || !agent.userId) continue
       alertedSince.delete(agent.id)
       const event: MachineStatusEvent = { machineId: agent.id, machineName: agent.name, state: 'online', at, offlineForMs: at - since }
-      deps.db.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'online', at, offlineForMs: at - since })
+      deps.db.machines.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'online', at, offlineForMs: at - since })
       deps.publish({ t: 'machine.status', event }, agent.userId)
     }
   })

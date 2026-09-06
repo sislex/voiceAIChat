@@ -26,8 +26,8 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('bob', '', 'developer')
-  db.createUser('tess', '', 'tester')
+  db.identity.createUser('bob', '', 'developer')
+  db.identity.createUser('tess', '', 'tester')
   app = await buildServer({
     config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-git-${Date.now()}-${id}`) }),
     db,
@@ -88,7 +88,7 @@ describe('REST панели кода', () => {
 
   it('тестировщику запись запрещена глобальным гейтом права, чтение — нет', async () => {
     const project = await createProject()
-    db.addMember('admin', project.id, 'tess')
+    db.projects.addMember('admin', project.id, 'tess')
     const read = await inj(testerTok, { method: 'GET', url: `/api/projects/${project.id}/git/workspaces` })
     expect(read.statusCode).toBe(200)
     for (const url of ['git/commit', 'git/push', 'git/checkout', 'git/file', 'git/branch']) {

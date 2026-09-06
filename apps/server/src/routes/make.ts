@@ -178,7 +178,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   /** Разговор пользователя вида Make, иначе 404 (чужой и несуществующий неотличимы). */
   const own = (userId: string, id: string, reply: FastifyReply): boolean => {
-    const conversation = db.getConversation(userId, id)
+    const conversation = db.chat.getConversation(userId, id)
     if (!conversation || conversation.assistantKind !== 'make') {
       void reply.code(404).send({ error: 'conversation not found' })
       return false
@@ -189,15 +189,15 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
    * зритель — только чтение. Публикация, шаринг, очистка и удаление остаются за владельцем (`own`).
    */
   const access = async (userId: string, id: string, reply: FastifyReply, level: 'editor' | 'viewer'): Promise<boolean> => {
-    const mine = db.getConversation(userId, id)
+    const mine = db.chat.getConversation(userId, id)
     if (mine && mine.assistantKind === 'make') return true
-    const owner = db.conversationOwner(id)
+    const owner = db.chat.conversationOwner(id)
     if (owner) {
       const role = await workspaces.shareRole(id, userId)
       if (role === 'editor' || (role === 'viewer' && level === 'viewer')) return true
       // Make-проект, привязанный к проекту, читают все его участники: карточка
       // задачи ссылается на дизайн, и он обязан открываться у всей команды.
-      if (level === 'viewer' && db.isMakeProjectViewer(userId, id)) return true
+      if (level === 'viewer' && db.chat.isMakeProjectViewer(userId, id)) return true
     }
     void reply.code(404).send({ error: 'conversation not found' })
     return false
@@ -388,9 +388,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   /** Машина проекта Make-чата: агент, корень и доступность. Ошибка — словами. */
   const projectMachine = (userId: string, conversationId: string): { agentId: string; root: string } | { error: string } => {
-    const conversation = db.getConversation(userId, conversationId)
+    const conversation = db.chat.getConversation(userId, conversationId)
     if (!conversation?.projectId) return { error: 'Чат не привязан к проекту — копировать не из чего.' }
-    const project = db.getProject(userId, conversation.projectId)
+    const project = db.projects.getProject(userId, conversation.projectId)
     if (!project) return { error: 'Проект недоступен.' }
     const machines = project.machines.filter((machine) => machine.canUse !== false && machine.path.trim())
     const machine = machines.find((candidate) => candidate.agentId === project.defaultAgentId) ?? machines[0]
@@ -500,34 +500,34 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/task-links', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     const path = typeof req.query.path === 'string' ? req.query.path : undefined
-    return db.makeTaskLinks(req.params.id, path)
+    return db.tasks.makeTaskLinks(req.params.id, path)
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/task-links/tasks', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    return db.makeLinkableTasks(uid(req), req.params.id)
+    return db.tasks.makeLinkableTasks(uid(req), req.params.id)
   })
 
   app.post<{ Params: { id: string }; Body: { taskId?: string; path?: string; label?: string } }>('/api/make/:id/task-links', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    const projectId = db.makeConversationProject(req.params.id)
+    const projectId = db.chat.makeConversationProject(req.params.id)
     const taskId = req.body?.taskId
     if (!taskId || !projectId) return reply.code(400).send({ error: 'Make-проект не привязан к проекту' })
     try {
-      db.linkTaskDesign(uid(req), projectId, taskId, { conversationId: req.params.id, path: req.body?.path, label: req.body?.label })
+      db.tasks.linkTaskDesign(uid(req), projectId, taskId, { conversationId: req.params.id, path: req.body?.path, label: req.body?.label })
       deps.boardChanged?.(projectId)
-      return db.makeTaskLinks(req.params.id, typeof req.body?.path === 'string' ? req.body.path : undefined)
+      return db.tasks.makeTaskLinks(req.params.id, typeof req.body?.path === 'string' ? req.body.path : undefined)
     } catch (error) { return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
   app.delete<{ Params: { id: string; linkId: string } }>('/api/make/:id/task-links/:linkId', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    const projectId = db.makeConversationProject(req.params.id)
-    const link = db.makeTaskLinks(req.params.id).find((l) => l.id === req.params.linkId)
+    const projectId = db.chat.makeConversationProject(req.params.id)
+    const link = db.tasks.makeTaskLinks(req.params.id).find((l) => l.id === req.params.linkId)
     if (!projectId || !link) return reply.code(404).send({ error: 'Связь не найдена' })
-    db.unlinkTaskDesign(uid(req), projectId, link.taskId, link.id)
+    db.tasks.unlinkTaskDesign(uid(req), projectId, link.taskId, link.id)
     deps.boardChanged?.(projectId)
-    return db.makeTaskLinks(req.params.id)
+    return db.tasks.makeTaskLinks(req.params.id)
   })
 
   // Read-only ссылка внутри ChatAI (п.33): владелец создаёт/отзывает, любой вошедший читает по токену.
@@ -538,7 +538,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.post<{ Params: { id: string }; Body: { user?: string; role?: 'editor' | 'viewer' | null } | undefined }>('/api/make/:id/share/grants', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     const user = String(req.body?.user ?? '').trim()
-    if (user && !db.getUser(user)) return reply.code(404).send({ error: `Пользователь «${user}» не найден` })
+    if (user && !db.identity.getUser(user)) return reply.code(404).send({ error: `Пользователь «${user}» не найден` })
     const role = req.body?.role === 'editor' || req.body?.role === 'viewer' ? req.body.role : null
     try { await workspaces.ensure(req.params.id); return await workspaces.setShareGrant(req.params.id, user, role) } catch (error) { return sendError(reply, error) }
   })
@@ -555,8 +555,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const conversationId = await sharedConv(req.params.token, reply)
     if (!conversationId) return reply
     try {
-      const owner = db.conversationOwner(conversationId) ?? ''
-      const conv = owner ? db.getConversation(owner, conversationId) : null
+      const owner = db.chat.conversationOwner(conversationId) ?? ''
+      const conv = owner ? db.chat.getConversation(owner, conversationId) : null
       const state = await workspaces.state(conversationId)
       const settings = await workspaces.notes(conversationId)
       return { token: req.params.token, stack: settings.stack, uiKit: settings.uiKit, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
@@ -834,7 +834,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       if (typeof b.text !== 'string' || !b.text.trim()) return reply.code(400).send({ error: 'Нужен текст комментария' })
       try {
         const item = await workspaces.addGuestComment(conversationId, { selector: String(b.selector ?? 'body').slice(0, 500), elementLabel: String(b.elementLabel ?? '').slice(0, 160), text: b.text, guestName: String(b.name ?? '').slice(0, 60) })
-        const owner = db.conversationOwner(conversationId)
+        const owner = db.chat.conversationOwner(conversationId)
         if (owner) hub.changed(owner, conversationId, 0, [COMMENTS_SYNC_PATH])
         return reply.code(201).send({ ok: true, id: item.id, pending: true })
       } catch (error) { return sendError(reply, error) }

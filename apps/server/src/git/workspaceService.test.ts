@@ -56,41 +56,53 @@ function setup(options: {
   const security: Array<{ type: string; details: string }> = []
   const locks: Map<string, { holder: string; operation: string }> = options.locks ?? new Map()
   const db = {
-    getProject: () => ({ id: 'p1', gitUrl: 'https://github.com/x/y.git', ciBaseBranch: 'main', defaultAgentId: 'a1', machines: [{ agentId: 'a1' }], role: 'owner' }),
-    getBoard: () => ({ columns: [], tasks: [{ id: 't1' }] }),
-    listCiWorkspaceReport: () => [{ id: 'ws-1', agentId: 'a1' }],
-    getCiWorkspaceById: (id: string) => id === 'ws-1'
-      ? { id: 'ws-1', projectId: 'p1', taskId: 't1', agentId: 'a1', path: '/repo/task', branch: 'feature/x', commitSha: SHA, pushed: false, state: options.workspaceState ?? 'active' }
-      : null,
-    findActiveCiWorkspace: () => ({ id: 'ws-1', path: '/repo/task', branch: 'feature/x', commitSha: SHA, pushed: false }),
-    getTaskRepositoryById: (id: string) => id === 'repo-1'
+    projects: {
+      getProject: () => ({ id: 'p1', gitUrl: 'https://github.com/x/y.git', ciBaseBranch: 'main', defaultAgentId: 'a1', machines: [{ agentId: 'a1' }], role: 'owner' })
+    },
+    tasks: {
+      getBoard: () => ({ columns: [], tasks: [{ id: 't1' }] }),
+      getTaskRepositoryById: (id: string) => id === 'repo-1'
       ? { id: 'repo-1', projectId: 'p1', taskId: 't1', agentId: 'a1', machineName: 'Mac', path: '/repo/clone', kind: options.repositoryKind ?? 'merge-clone', state: 'active', createdAt: 1, deletedAt: null }
       : null,
-    listTaskRepositories: () => [{ id: 'repo-1', state: 'active' }],
-    getTaskDetail: () => ({ id: 't1', title: 'Панель кода', seq: 42, activeMergeRunId: options.activeMergeRunId ?? null }),
-    activeCiRunForTask: () => options.activeCiRun ?? null,
-    getConversation: () => ({ id: 'conv-1', title: 'Чат', projectId: 'p1', execTarget: 'a1', workdir: '/repo/chat', workspace: null }),
-    getProjectMachine: () => ({ agentId: 'a1', path: '/repo/project', reposRoot: null, storageId: null, storageRoot: null, storageFormatVersion: null, directories: null }),
-    getUser: () => ({ name: 'bob', email: 'bob@example.com', role: options.role ?? 'developer' }),
-    canUseAgent: () => true,
-    canWriteAgent: () => options.canWrite !== false,
-    updateCiWorkspaceRevision: (id: string, branch: string, sha: string, pushed: boolean) => revisions.push({ id, branch, sha, pushed }),
-    upsertTaskRepository: (_p: string, _t: string, agentId: string, path: string, kind: string) => repositories.push({ agentId, path, kind }),
-    addCiEvent: (args: { type: string; payload?: Record<string, unknown> }) => events.push({ type: args.type, payload: args.payload }),
-    logSecurityEvent: (event: { type: string; details?: string }) => security.push({ type: event.type, details: event.details ?? '' }),
-    acquireGitWorkspaceLock: (agentId: string, path: string, holder: string, operation: string, ttlMs: number) => {
+      listTaskRepositories: () => [{ id: 'repo-1', state: 'active' }],
+      getTaskDetail: () => ({ id: 't1', title: 'Панель кода', seq: 42, activeMergeRunId: options.activeMergeRunId ?? null }),
+      upsertTaskRepository: (_p: string, _t: string, agentId: string, path: string, kind: string) => repositories.push({ agentId, path, kind })
+    },
+    ci: {
+      listCiWorkspaceReport: () => [{ id: 'ws-1', agentId: 'a1' }],
+      getCiWorkspaceById: (id: string) => id === 'ws-1'
+      ? { id: 'ws-1', projectId: 'p1', taskId: 't1', agentId: 'a1', path: '/repo/task', branch: 'feature/x', commitSha: SHA, pushed: false, state: options.workspaceState ?? 'active' }
+      : null,
+      findActiveCiWorkspace: () => ({ id: 'ws-1', path: '/repo/task', branch: 'feature/x', commitSha: SHA, pushed: false }),
+      activeCiRunForTask: () => options.activeCiRun ?? null,
+      updateCiWorkspaceRevision: (id: string, branch: string, sha: string, pushed: boolean) => revisions.push({ id, branch, sha, pushed }),
+      addCiEvent: (args: { type: string; payload?: Record<string, unknown> }) => events.push({ type: args.type, payload: args.payload })
+    },
+    chat: {
+      getConversation: () => ({ id: 'conv-1', title: 'Чат', projectId: 'p1', execTarget: 'a1', workdir: '/repo/chat', workspace: null })
+    },
+    machines: {
+      getProjectMachine: () => ({ agentId: 'a1', path: '/repo/project', reposRoot: null, storageId: null, storageRoot: null, storageFormatVersion: null, directories: null }),
+      canUseAgent: () => true,
+      canWriteAgent: () => options.canWrite !== false,
+      acquireGitWorkspaceLock: (agentId: string, path: string, holder: string, operation: string, ttlMs: number) => {
       const key = `${agentId}::${path}`
       if (locks.has(key)) return null
       locks.set(key, { holder, operation })
       return { expiresAt: 1000 + ttlMs }
     },
-    releaseGitWorkspaceLock: (agentId: string, path: string, holder: string) => {
+      releaseGitWorkspaceLock: (agentId: string, path: string, holder: string) => {
       const key = `${agentId}::${path}`
       if (locks.get(key)?.holder === holder) locks.delete(key)
     },
-    gitWorkspaceLockHolder: (agentId: string, path: string) => {
+      gitWorkspaceLockHolder: (agentId: string, path: string) => {
       const held = locks.get(`${agentId}::${path}`)
       return held ? { ...held, expiresAt: 9_999 } : null
+    }
+    },
+    identity: {
+      getUser: () => ({ name: 'bob', email: 'bob@example.com', role: options.role ?? 'developer' }),
+      logSecurityEvent: (event: { type: string; details?: string }) => security.push({ type: event.type, details: event.details ?? '' })
     }
   }
   const exec = vi.fn(async () => {

@@ -3,7 +3,7 @@
 //
 // Устройство как у хуков CI (ci/modelHooks.ts): один ход инъектируемого
 // LlmClient с проброшенным remote-bash MCP на машину проекта, ответ — JSON со
-// статьями. Правку базы делает сервер (db.saveKbDocument), а не модель: так
+// статьями. Правку базы делает сервер (db.kb.saveKbDocument), а не модель: так
 // раздел и владелец статьи не зависят от того, что модель себе придумала.
 //
 // Прогон длинный, поэтому HTTP его не ждёт: состояние живёт в памяти процесса
@@ -119,9 +119,9 @@ export class KbResearchManager {
 
   private async execute(userId: string, project: ProjectDetail, target: { agentId: string; workdir: string }, run: KbResearchRun): Promise<void> {
     const { db } = this.deps
-    const existingDocs = db.kbDocuments({ scope: 'project', projectId: project.id })
+    const existingDocs = db.kb.kbDocuments({ scope: 'project', projectId: project.id })
     const existing = existingDocs.map((doc) => ({ id: doc.id, title: doc.title, updatedAt: doc.updatedAt }))
-    const config = db.getCiLlmConfig('project', project.id)
+    const config = db.ci.getCiLlmConfig('project', project.id)
     const client = config?.provider === 'codex' ? this.deps.codex : this.deps.claude
     const model = config?.provider === 'codex' ? config.model : config?.model || DEFAULT_CI_CLAUDE_MODEL
     // Режим «по изменениям с коммита» переиспользует промпт шага CI-рана
@@ -194,11 +194,11 @@ export class KbResearchManager {
 
   /** Записывает статьи в раздел проекта. Чужой id молча превращается в новую статью. */
   private apply(projectId: string, userId: string, documents: ResearchDocument[]): KbResearchRun['documents'] {
-    const own = new Set(this.deps.db.kbDocuments({ scope: 'project', projectId }).map((doc) => doc.id))
+    const own = new Set(this.deps.db.kb.kbDocuments({ scope: 'project', projectId }).map((doc) => doc.id))
     const today = new Date(this.now()).toISOString().slice(0, 10)
     return documents.map((item) => {
       const id = item.id && own.has(item.id) ? item.id : null
-      const saved = this.deps.db.saveKbDocument({
+      const saved = this.deps.db.kb.saveKbDocument({
         id,
         scope: 'project',
         projectId,

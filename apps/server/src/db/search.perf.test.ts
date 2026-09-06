@@ -42,11 +42,11 @@ describe.runIf(ENABLED)('searchMessages — 100k сообщений', () => {
     try {
       const file = join(dir, 'db.sqlite')
       const db = new VoiceChatDb(file)
-      db.createUser('alice', '', 'developer')
-      db.createUser('bob', '', 'developer')
+      db.identity.createUser('alice', '', 'developer')
+      db.identity.createUser('bob', '', 'developer')
       const convIds = Array.from({ length: CONVERSATIONS }, (_, i) =>
         // Каждая десятая беседа — чужая: фильтр по владельцу работает на реальных данных.
-        db.createConversation(i % 10 === 0 ? 'bob' : 'alice', `Беседа ${i}`).id
+        db.chat.createConversation(i % 10 === 0 ? 'bob' : 'alice', `Беседа ${i}`).id
       )
 
       // Словарь: часть слов — искомые термины, остальные — шум. Частота слова
@@ -81,16 +81,16 @@ describe.runIf(ENABLED)('searchMessages — 100k сообщений', () => {
       raw.prepare(`UPDATE fts_state SET last_rowid = 0, max_rowid = 0, done = 0 WHERE name = 'messages'`).run()
       raw.close()
       const indexStart = Date.now()
-      db.ensureMessagesIndexed()
+      db.chat.ensureMessagesIndexed()
       const indexMs = Date.now() - indexStart
 
       // Прогрев: первый запрос платит за чтение страниц индекса с диска.
-      db.searchMessages('alice', { q: 'миграция ' })
+      db.chat.searchMessages('alice', { q: 'миграция ' })
 
       const queries = ['миграция ', 'канбан схема ', 'очередь релиз ревью ', 'мигра', 'схема ']
       const timings = queries.map((q) => {
         const started = performance.now()
-        const res = db.searchMessages('alice', { q })
+        const res = db.chat.searchMessages('alice', { q })
         const ms = Math.round((performance.now() - started) * 10) / 10
         expect(res.hits.length).toBeGreaterThan(0)
         return { q, ms, hits: res.hits.length }

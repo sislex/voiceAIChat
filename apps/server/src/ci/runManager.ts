@@ -194,7 +194,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     for (const { waiter } of eligible) {
       const activeRun = active.get(waiter.runId)
       if (!activeRun || boardOrder.has(activeRun.projectId)) continue
-      const board = deps.db.getBoard(activeRun.userId, activeRun.projectId)
+      const board = deps.db.tasks.getBoard(activeRun.userId, activeRun.projectId)
       const development = board?.columns.find((column) => column.semanticType === 'development')
       if (!board || !development) continue
       boardOrder.set(
@@ -216,7 +216,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   }
   async function acquireSlot(slot: RunSlot): Promise<void> {
     if (slot.held || slot.abandoned || slot.bypass) return
-    const limit = deps.db.getCiSettings().maxConcurrentRuns
+    const limit = deps.db.ci.getCiSettings().maxConcurrentRuns
     if (running < limit && mayRunDuringProdDrain(slot.runId)) {
       running++
       slot.held = true
@@ -267,7 +267,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (prodDrain && prodDrain.runId !== runId) return signal.aborted ? null : () => {}
 
     const blockers = new Set(
-      [...active.keys()].filter((id) => id !== runId && !isTerminalCiStatus(deps.db.getCiRunRaw(id)?.status ?? 'failed'))
+      [...active.keys()].filter((id) => id !== runId && !isTerminalCiStatus(deps.db.ci.getCiRunRaw(id)?.status ?? 'failed'))
     )
     let wake = (): void => {}
     prodDrain = { runId, blockers, wake }
@@ -275,7 +275,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const message = blockers.size
       ? 'Перед пересборкой production освобождаю слот и жду завершения ' + blockers.size + ' ранов очереди…\n'
       : 'Перед пересборкой production очередь пуста; запускаю эксклюзивно.\n'
-    const line = deps.db.appendCiLog(runId, stepId, 'system', message)
+    const line = deps.db.ci.appendCiLog(runId, stepId, 'system', message)
     broadcast({ t: 'ci.log', runId, line }, userId)
 
     if (blockers.size > 0) {
@@ -380,14 +380,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     broadcast({ t: 'ci.step', runId: step.runId, step }, userId)
     // Компактные поверхности не подписаны на ленту конкретного рана. Обновляем
     // серверный snapshot доски после каждого значимого перехода шага.
-    const run = deps.db.getCiRunRaw(step.runId)
+    const run = deps.db.ci.getCiRunRaw(step.runId)
     if (run) deps.boardChanged(run.projectId)
   }
   /** Стадия меняет фактическую модель без изменения базового ci_run. */
   function emitStage(runId: string, userId: string): void {
     const message = snapshot(userId, runId)
     if (message) broadcast(message, userId)
-    const run = deps.db.getCiRunRaw(runId)
+    const run = deps.db.ci.getCiRunRaw(runId)
     if (run) deps.boardChanged(run.projectId)
   }
 
@@ -395,11 +395,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const launchOptions = typeof options === 'string' ? { mode: options } : options
     const modeOverride = launchOptions?.mode
     const launch: CiRunLaunch = launchOptions?.launch === 'parallel' ? 'parallel' : 'queue'
-    const project = deps.db.getProject(userId, projectId)
+    const project = deps.db.projects.getProject(userId, projectId)
     if (!project) return { error: 'Проект недоступен' }
-    const task = deps.db.getCiTask(userId, projectId, taskId)
+    const task = deps.db.tasks.getCiTask(userId, projectId, taskId)
     if (!task) return { error: 'Задача не найдена' }
-    const board = deps.db.getBoard(userId, projectId)
+    const board = deps.db.tasks.getBoard(userId, projectId)
     const taskColumn = board?.columns.find((column) => column.id === task.columnId)
     if (taskColumn?.semanticType === 'backlog' || taskColumn?.semanticType === 'preparation') {
       return { error: 'Development-run нельзя запускать из TODO или Подготовки к разработке' }
@@ -408,7 +408,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Для parallel незакреплённая задача выбирает доступную online-машину с
     // учётом текущей загрузки. Выбор завершается до продвижения queued-рана:
     // ошибка машины не должна вынимать его из FIFO.
-    const usableAgents = deps.db.listUsableAgents(userId, projectId)
+    const usableAgents = deps.db.machines.listUsableAgents(userId, projectId)
     let agentId: string | null = null
     let agentSelectionSource: 'explicit' | 'task_pinned' | 'project_default' | 'fallback'
     if (launchOptions?.agentId) {
@@ -421,7 +421,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const onlineAgentIds = usableAgents
         .filter((agent) => !deps.isAgentOnline || deps.isAgentOnline(agent.id))
         .map((agent) => agent.id)
-      agentId = pickCiRunAgent(onlineAgentIds, project.defaultAgentId, deps.db.countActiveCiRunsByAgent())
+      agentId = pickCiRunAgent(onlineAgentIds, project.defaultAgentId, deps.db.ci.countActiveCiRunsByAgent())
       agentSelectionSource = agentId === project.defaultAgentId ? 'project_default' : 'fallback'
     } else {
       agentId = project.defaultAgentId
@@ -432,7 +432,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         ? 'Нет доступной online-машины для параллельного запуска'
         : 'машина проекта по умолчанию не задана. Выберите машину задачи или настройте проект' }
     }
-    if (!deps.db.canUseAgent(userId, agentId, projectId)) {
+    if (!deps.db.machines.canUseAgent(userId, agentId, projectId)) {
       return { error: 'Выбранная машина больше недоступна для этой задачи' }
     }
     const selectedAgent = usableAgents.find((agent) => agent.id === agentId)
@@ -447,10 +447,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (launch === 'parallel') {
       for (const [id, activeRun] of active) {
         if (activeRun.taskId !== taskId || isClosingRun(id, activeRun)) continue
-        const row = deps.db.getCiRunRaw(id)
+        const row = deps.db.ci.getCiRunRaw(id)
         if (row?.status === 'queued' && promoteQueuedRun(id, agentId)) {
-          deps.db.updateCiRun(id, { agentSelectionSource })
-          deps.db.addCiEvent({
+          deps.db.ci.updateCiRun(id, { agentSelectionSource })
+          deps.db.ci.addCiEvent({
             projectId,
             runId: id,
             type: 'run.promoted_parallel',
@@ -458,7 +458,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
             actorId: userId,
             payload: { agentId, bypassQueue: true }
           })
-          const promoted = deps.db.getCiRunRaw(id)!
+          const promoted = deps.db.ci.getCiRunRaw(id)!
           emitRun(promoted, activeRun.userId)
           return { run: promoted }
         }
@@ -468,32 +468,32 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
     // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    const slots = deps.db.resolveTaskSlots(projectId, taskId)
-    const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
-    const role = deps.db.getUser(userId)?.role ?? 'developer'
+    const slots = deps.db.ci.resolveTaskSlots(projectId, taskId)
+    const taskCi = deps.db.ci.resolveTaskLlmConfig(projectId, taskId, userId)
+    const role = deps.db.identity.getUser(userId)?.role ?? 'developer'
     // Обычный запуск наследует пару задачи → проекта → пользователя. Окно создания
     // задачи передаёт разовый выбор, который фиксируется только в этом ране.
     const requestedProvider = launchOptions?.provider ?? taskCi.provider
     const requestedModel = launchOptions?.model ?? taskCi.model
-    const access = deps.db.getUserLlmAccess(userId)
+    const access = deps.db.identity.getUserLlmAccess(userId)
     const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
     if (!provider) return { error: 'Нет доступных движков и моделей' }
     const model = clampModel(access, provider, requestedModel)
     if (!model) return { error: 'Нет доступных моделей для движка' }
     const requestedEngineId = taskCi.llmEngineId
-    const engineResolution = deps.db.resolveLlmEngine(requestedEngineId, provider, role)
+    const engineResolution = deps.db.llm.resolveLlmEngine(requestedEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
     // если пользователь уже открывал карточку, вернётся существующий чат.
     let conversationId: string | null = null
     try {
-      conversationId = deps.db.openOrCreateTaskChat(userId, projectId, taskId)?.id ?? null
+      conversationId = deps.db.chat.openOrCreateTaskChat(userId, projectId, taskId)?.id ?? null
     } catch {
       conversationId = null
     }
-    const developmentColumnId = deps.db.getColumnIdBySemantic(projectId, 'development')
+    const developmentColumnId = deps.db.projects.getColumnIdBySemantic(projectId, 'development')
     const runColumnId = developmentColumnId ?? task.columnId
-    const run = deps.db.createCiRun({
+    const run = deps.db.ci.createCiRun({
       projectId,
       taskId,
       agentId,
@@ -516,10 +516,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       slotProgress: { done: 0, total, phase: 'В очереди' }
     })
     if (developmentColumnId && developmentColumnId !== task.columnId) {
-      deps.db.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
+      deps.db.tasks.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }
-    if (engineResolution.substituted) deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${requestedEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
-    deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId, launch, agentId } })
+    if (engineResolution.substituted) deps.db.ci.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${requestedEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
+    deps.db.ci.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId, launch, agentId } })
     emitRun(run, userId)
 
     const ctl = new AbortController()
@@ -529,17 +529,17 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   }
 
   function startForDevelopmentTransition(userId: string, projectId: string, taskId: string, createIfMissing = true): { run: CiRun; existing: boolean } | { error: string } {
-    const existing = deps.db.activeCiRunForTask(taskId)
+    const existing = deps.db.ci.activeCiRunForTask(taskId)
     if (existing) return { run: existing, existing: true }
     if (!createIfMissing) return { error: 'Активный development-run для этого перехода не найден' }
     try {
       const result = start(userId, projectId, taskId)
       if ('run' in result) return { run: result.run, existing: false }
-      const raced = deps.db.activeCiRunForTask(taskId)
+      const raced = deps.db.ci.activeCiRunForTask(taskId)
       return raced ? { run: raced, existing: true } : result
     } catch (error) {
       // Если другой синхронный запрос успел создать ран, переиспользуем его.
-      const raced = deps.db.activeCiRunForTask(taskId)
+      const raced = deps.db.ci.activeCiRunForTask(taskId)
       if (raced) return { run: raced, existing: true }
       return { error: error instanceof Error ? error.message : String(error) }
     }
@@ -552,10 +552,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * перезапуск на другой машине означал бы потерю его работы.
    */
   function forceStartOnMachine(userId: string, projectId: string, taskId: string, agentId: string): { run: CiRun } | { error: string } {
-    const project = deps.db.getProject(userId, projectId)
+    const project = deps.db.projects.getProject(userId, projectId)
     if (!project) return { error: 'Проект недоступен' }
-    if (!deps.db.getCiTask(userId, projectId, taskId)) return { error: 'Задача не найдена' }
-    if (!deps.db.canUseAgent(userId, agentId, projectId)) {
+    if (!deps.db.tasks.getCiTask(userId, projectId, taskId)) return { error: 'Задача не найдена' }
+    if (!deps.db.machines.canUseAgent(userId, agentId, projectId)) {
       return { error: 'Выбранная машина больше недоступна для этой задачи' }
     }
     if (deps.isAgentOnline && !deps.isAgentOnline(agentId)) {
@@ -566,11 +566,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       // Проверка статуса и продвижение — синхронно, в одном ходе event loop:
       // если execute уже стартовал (в том числе прямо сейчас на другой машине),
       // promoteQueuedRun не найдёт ран в очереди и запуск честно откажет.
-      const row = deps.db.getCiRunRaw(id)
+      const row = deps.db.ci.getCiRunRaw(id)
       if (row && row.status === 'queued' && promoteQueuedRun(id, agentId)) {
-        deps.db.updateCiRun(id, { agentSelectionSource: 'explicit_bypass' })
-        deps.db.addCiEvent({ projectId, runId: id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId, bypassQueue: true } })
-        const promoted = deps.db.getCiRunRaw(id)!
+        deps.db.ci.updateCiRun(id, { agentSelectionSource: 'explicit_bypass' })
+        deps.db.ci.addCiEvent({ projectId, runId: id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId, bypassQueue: true } })
+        const promoted = deps.db.ci.getCiRunRaw(id)!
         emitRun(promoted, a.userId)
         return { run: promoted }
       }
@@ -578,9 +578,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
     const result = start(userId, projectId, taskId, { launch: 'parallel', agentId })
     if ('run' in result) {
-      deps.db.updateCiRun(result.run.id, { agentSelectionSource: 'explicit_bypass' })
-      deps.db.addCiEvent({ projectId, runId: result.run.id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId, bypassQueue: true } })
-      const marked = deps.db.getCiRunRaw(result.run.id)!
+      deps.db.ci.updateCiRun(result.run.id, { agentSelectionSource: 'explicit_bypass' })
+      deps.db.ci.addCiEvent({ projectId, runId: result.run.id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId, bypassQueue: true } })
+      const marked = deps.db.ci.getCiRunRaw(result.run.id)!
       emitRun(marked, userId)
       return { run: marked }
     }
@@ -597,7 +597,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const index = waiters.findIndex((waiter) => waiter.slot === slot)
     if (index < 0) return false
     // Машина меняется до пробуждения: execute читает запись рана уже после него.
-    deps.db.updateCiRun(runId, { agentId })
+    deps.db.ci.updateCiRun(runId, { agentId })
     slot.bypass = true
     const [waiter] = waiters.splice(index, 1)
     waiter.wake('promoted')
@@ -614,7 +614,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const current = active.get(runId)
     if (!current?.workspacePath) return
     try {
-      const row = deps.db.getCiRunRaw(runId)
+      const row = deps.db.ci.getCiRunRaw(runId)
       if (!row?.agentId || !isTerminalCiStatus(row.status)) return
       // Пока задача жива, `node_modules` — не мусор: следом за development-раном
       // в этом же checkout идут Component QA и интеграционные тесты. Снос сразу
@@ -622,7 +622,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       // found`, код 127), и падение уходило в fix-loop как дефект реализации
       // (CHAT-411, три круга подряд). Закрытая задача убирает копию целиком —
       // `releaseTaskRepositories` в merge-ране.
-      if (!deps.db.isTaskClosed(row.taskId)) return
+      if (!deps.db.tasks.isTaskClosed(row.taskId)) return
       const nodeModules = `${current.workspacePath}/node_modules`
       await deps.executor.run({
         agentId: row.agentId,
@@ -690,7 +690,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    */
   function isClosingRun(runId: string, a: ActiveRun): boolean {
     if (a.abort.signal.aborted) return true
-    const status = deps.db.getCiRunRaw(runId)?.status
+    const status = deps.db.ci.getCiRunRaw(runId)?.status
     return status != null && isTerminalCiStatus(status)
   }
 
@@ -727,23 +727,23 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * незавершённые шаги → `cancelled`, задача возвращается в исходную колонку.
    */
   function hardCancel(runId: string, userId: string): void {
-    const row = deps.db.getCiRunRaw(runId)
+    const row = deps.db.ci.getCiRunRaw(runId)
     if (!row || isTerminalCiStatus(row.status)) return
-    const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+    const steps = deps.db.ci.getCiRun(userId, runId)?.steps ?? []
     const live = steps.filter((st) => st.status === 'running' || st.status === 'queued')
     const lastLive = live[live.length - 1]
     if (lastLive) {
-      const line = deps.db.appendCiLog(runId, lastLive.id, 'system', `Исполнитель не завершился за ${Math.round(cancelGraceMs / 1000)} с после отмены — ран закрыт принудительно.\n`)
+      const line = deps.db.ci.appendCiLog(runId, lastLive.id, 'system', `Исполнитель не завершился за ${Math.round(cancelGraceMs / 1000)} с после отмены — ран закрыт принудительно.\n`)
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
     for (const st of live) {
-      const upd = deps.db.updateCiRunStep(st.id, { status: 'cancelled', finishedAt: now() })
+      const upd = deps.db.ci.updateCiRunStep(st.id, { status: 'cancelled', finishedAt: now() })
       if (upd) emitStep(upd, userId)
     }
     const sp = row.slotProgress
-    const withPhase = deps.db.updateCiRun(runId, { slotProgress: { ...sp, phase: 'Ран отменён', fixing: false } })
+    const withPhase = deps.db.ci.updateCiRun(runId, { slotProgress: { ...sp, phase: 'Ран отменён', fixing: false } })
     if (withPhase) emitRun(withPhase, userId)
-    deps.db.addCiEvent({ projectId: row.projectId, runId, type: 'run.cancel_forced', actorType: 'system', payload: { graceMs: cancelGraceMs } })
+    deps.db.ci.addCiEvent({ projectId: row.projectId, runId, type: 'run.cancel_forced', actorType: 'system', payload: { graceMs: cancelGraceMs } })
     rollbackTask(runId, userId, row.prevColumnId)
     finalize(runId, userId, 'cancelled')
   }
@@ -754,7 +754,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   /** Best-effort очистка после штатной отмены; ошибка не меняет статус cancelled. */
   async function resetCancelledWorkspace(runId: string, userId: string): Promise<void> {
     let run: CiRun | null
-    try { run = deps.db.getCiRunRaw(runId) } catch { return }
+    try { run = deps.db.ci.getCiRunRaw(runId) } catch { return }
     const current = active.get(runId)
     if (!run || run.status !== 'cancelled' || !run.agentId || !current?.workspacePath) return
     const repoPath = current.workspacePath
@@ -764,20 +764,20 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         env: {}, timeoutMs: cancelGraceMs, secrets: []
       }, () => {})
       const ok = result.exitCode === 0
-      deps.db.addCiEvent({
+      deps.db.ci.addCiEvent({
         projectId: run.projectId, runId, type: ok ? 'workspace.reset_after_cancel' : 'workspace.reset_after_cancel_failed',
         actorType: 'system', payload: { path: repoPath, ...(ok ? {} : { exitCode: result.exitCode }) }
       })
       if (!ok) {
-        const step = [...(deps.db.getCiRun(userId, runId)?.steps ?? [])].reverse()[0]
+        const step = [...(deps.db.ci.getCiRun(userId, runId)?.steps ?? [])].reverse()[0]
         if (step) {
-          const line = deps.db.appendCiLog(runId, step.id, 'system', 'Не удалось автоматически сбросить рабочую копию после отмены. В следующем ране используйте кнопку «Сбросить рабочую копию».\n')
+          const line = deps.db.ci.appendCiLog(runId, step.id, 'system', 'Не удалось автоматически сбросить рабочую копию после отмены. В следующем ране используйте кнопку «Сбросить рабочую копию».\n')
           broadcast({ t: 'ci.log', runId, line }, userId)
         }
       }
     } catch (error) {
       try {
-        deps.db.addCiEvent({
+        deps.db.ci.addCiEvent({
           projectId: run.projectId, runId, type: 'workspace.reset_after_cancel_failed',
           actorType: 'system', payload: { path: repoPath, error: error instanceof Error ? error.message : String(error) }
         })
@@ -786,13 +786,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   }
 
   async function discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }> {
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     if (!detail || detail.run.status !== 'failed') return { error: 'Действие доступно только для упавшего рана' }
     const dirtyStep = [...detail.steps].reverse().find((step) => step.kind === 'command' && step.status === 'failed' && step.exitCode === 66)
     if (!dirtyStep) return { error: 'Ран не остановлен из-за локальных изменений' }
     if (hasActiveRunForTask(detail.run.taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    const project = deps.db.getProject(userId, detail.run.projectId)
-    const workspace = detail.run.workspaceId ? deps.db.getCiWorkspaceById(detail.run.workspaceId) : null
+    const project = deps.db.projects.getProject(userId, detail.run.projectId)
+    const workspace = detail.run.workspaceId ? deps.db.ci.getCiWorkspaceById(detail.run.workspaceId) : null
     if (!project || !workspace || !detail.run.agentId) return { error: 'Рабочая директория рана недоступна' }
     if (project.role !== 'owner') return { error: 'Сброс рабочей копии доступен только владельцу проекта' }
     const repoPath = workspace.path
@@ -801,14 +801,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     let result: Awaited<ReturnType<CommandExecutor['run']>>
     try {
       result = await deps.executor.run({ agentId: detail.run.agentId, script, workdir: workspace.path, env: {}, timeoutMs: 120_000, secrets: [] }, (data) => {
-        const line = deps.db.appendCiLog(runId, dirtyStep.id, 'system', data)
+        const line = deps.db.ci.appendCiLog(runId, dirtyStep.id, 'system', data)
         broadcast({ t: 'ci.log', runId, line }, userId)
       }, ctl.signal)
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
     if (result.exitCode !== 0) return { error: `Не удалось откатить изменения (exit ${result.exitCode ?? 'unknown'})` }
-    deps.db.addCiEvent({ projectId: detail.run.projectId, runId, type: 'workspace.discarded', actorType: 'user', actorId: userId, payload: { path: repoPath } })
+    deps.db.ci.addCiEvent({ projectId: detail.run.projectId, runId, type: 'workspace.discarded', actorType: 'user', actorId: userId, payload: { path: repoPath } })
     return start(userId, detail.run.projectId, detail.run.taskId)
   }
 
@@ -818,7 +818,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * сменил статус на running, клиент получает именно running, а не ложный успех.
    */
   function dequeue(userId: string, runId: string): import('@voicechat/shared').CiQueueRemovalResult {
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     if (!detail) return { status: 'not_found' }
     const row = detail.run
     if (row.status === 'cancelled') return { status: 'removed', run: row }
@@ -831,13 +831,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // безопасно «отменить» этим действием, так как он уже не принадлежит очереди.
     if (!a || a.userId !== userId) return { status: 'not_queued', run: row }
     a.abort.abort()
-    const backlogColumnId = deps.db.getColumnIdBySemantic(row.projectId, 'backlog')
+    const backlogColumnId = deps.db.projects.getColumnIdBySemantic(row.projectId, 'backlog')
     if (backlogColumnId) {
-      try { deps.db.moveTask(userId, row.projectId, row.taskId, { columnId: backlogColumnId }) } catch { /* колонка могла исчезнуть */ }
+      try { deps.db.tasks.moveTask(userId, row.projectId, row.taskId, { columnId: backlogColumnId }) } catch { /* колонка могла исчезнуть */ }
     }
-    deps.db.addCiEvent({ projectId: row.projectId, runId, type: 'run.dequeued', actorType: 'user', actorId: userId, payload: { backlogColumnId } })
+    deps.db.ci.addCiEvent({ projectId: row.projectId, runId, type: 'run.dequeued', actorType: 'user', actorId: userId, payload: { backlogColumnId } })
     finalize(runId, userId, 'cancelled')
-    return { status: 'removed', run: deps.db.getCiRunRaw(runId)! }
+    return { status: 'removed', run: deps.db.ci.getCiRunRaw(runId)! }
   }
 
   function cancel(userId: string, runId: string): boolean {
@@ -845,20 +845,20 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!a || a.userId !== userId) return false
     // Отметка в ленте: отмена в фазе модели не мгновенна (сначала гасится процесс
     // CLI на машине), и без строки лога UI выглядит как «кнопка не сработала».
-    const liveSteps = (deps.db.getCiRun(userId, runId)?.steps ?? []).filter((st) => st.status === 'running')
+    const liveSteps = (deps.db.ci.getCiRun(userId, runId)?.steps ?? []).filter((st) => st.status === 'running')
     const last = liveSteps[liveSteps.length - 1]
     if (last) {
-      const line = deps.db.appendCiLog(runId, last.id, 'system', 'Отмена рана: останавливаю шаг…\n')
+      const line = deps.db.ci.appendCiLog(runId, last.id, 'system', 'Отмена рана: останавливаю шаг…\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
-    deps.db.addCiEvent({ projectId: a.projectId, runId, type: 'run.cancel_requested', actorType: 'user', actorId: userId, payload: {} })
+    deps.db.ci.addCiEvent({ projectId: a.projectId, runId, type: 'run.cancel_requested', actorType: 'user', actorId: userId, payload: {} })
     a.abort.abort()
     // Ран мог стоять на паузе: без этого промис ожидания никогда не разрешится.
     resolvePending(runId, null)
     // Ран, который ещё не начинал работу, закрываем прямо здесь: иначе он висит
     // `queued` до освобождения слота сервера, и карточка после «Отменить»
     // показывает «в очереди». Догнавший позже `execute` статус не перепишет.
-    const row = deps.db.getCiRunRaw(runId)
+    const row = deps.db.ci.getCiRunRaw(runId)
     if (row && row.status === 'queued') {
       rollbackTask(runId, userId, row.prevColumnId)
       finalize(runId, userId, 'cancelled')
@@ -871,7 +871,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const waiter = pendingInteractions.get(runId)
     if (!waiter) return
     pendingInteractions.delete(runId)
-    if (!interaction) deps.db.cancelCiInteraction(waiter.interactionId)
+    if (!interaction) deps.db.ci.cancelCiInteraction(waiter.interactionId)
     waiter.resolve(interaction)
   }
 
@@ -880,18 +880,18 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * `answerCiInteraction` обновляет строку только пока она `pending`.
    */
   function answerInteraction(userId: string, runId: string, interactionId: string, answer: CiInteractionAnswer): { interaction: CiInteraction } | { error: string } {
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     if (!detail) return { error: 'Ран недоступен' }
-    const existing = deps.db.getCiInteraction(interactionId)
+    const existing = deps.db.ci.getCiInteraction(interactionId)
     if (!existing || existing.runId !== runId) return { error: 'Вопрос не найден' }
     if (existing.status !== 'pending') return { error: 'На этот вопрос уже ответили' }
     const decision = answer.decision === 'approved' || answer.decision === 'rework' ? answer.decision : null
     if (existing.kind === 'plan_approval' && !decision) return { error: 'Нужно решение по плану' }
     const text = (answer.text ?? '').trim()
-    const updated = deps.db.answerCiInteraction(interactionId, { userId, text: text || null, decision })
+    const updated = deps.db.ci.answerCiInteraction(interactionId, { userId, text: text || null, decision })
     if (!updated) return { error: 'На этот вопрос уже ответили' }
     broadcast({ t: 'ci.interaction', runId, interaction: updated }, detail.run.triggeredBy)
-    deps.db.addCiEvent({ projectId: detail.run.projectId, runId, type: 'run.interaction_answered', actorType: 'user', actorId: userId, payload: { interactionId, kind: existing.kind, decision } })
+    deps.db.ci.addCiEvent({ projectId: detail.run.projectId, runId, type: 'run.interaction_answered', actorType: 'user', actorId: userId, payload: { interactionId, kind: existing.kind, decision } })
     // Ответ виден и в чате: иначе лента и чат разойдутся.
     const answerLine = existing.kind === 'plan_approval'
       ? `${decision === 'approved' ? 'План одобрен.' : 'План на доработку.'}${text ? `\n${text}` : ''}`
@@ -906,7 +906,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   /** Повтор с упавшего шага: тот же ран, переиспользуем рабочую директорию,
    *  перезапускаем стоп-шаг и всё после него; успешные ранее шаги сохраняются. */
   function retryFromFailed(userId: string, runId: string, model?: { provider: 'claude' | 'codex'; model: string; llmEngineId?: string | null }): { run: CiRun } | { error: string } {
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     if (!detail) return { error: 'Ран недоступен' }
     const run = detail.run
     if (!isTerminalCiStatus(run.status) || run.status === 'success' || run.status === 'cancelled') {
@@ -920,7 +920,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       .filter((st) => st.kind === 'command' && st.commandId != null && (st.status === 'failed' || st.status === 'timeout'))
       .sort((a2, b2) => b2.position - a2.position)
       .find((st) => {
-        const c = deps.db.getCiCommand(userId, st.commandId as string)
+        const c = deps.db.ci.getCiCommand(userId, st.commandId as string)
         return c ? !c.allowFailure : true
       })
     let resume: ResumePoint
@@ -930,17 +930,17 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       const selectedModel = model ? model.model.trim() : run.llmModel
       if (provider !== 'claude' && provider !== 'codex') return { error: 'Неизвестный провайдер модели' }
       if (provider === 'claude' && !selectedModel) return { error: 'Модель Claude не выбрана' }
-      const role = deps.db.getUser(userId)?.role ?? 'developer'
-      const resolvedEngine = deps.db.resolveLlmEngine(model?.llmEngineId ?? run.llmEngineId, provider, role)
+      const role = deps.db.identity.getUser(userId)?.role ?? 'developer'
+      const resolvedEngine = deps.db.llm.resolveLlmEngine(model?.llmEngineId ?? run.llmEngineId, provider, role)
       if (model?.llmEngineId && !resolvedEngine.engine) return { error: 'Исполнитель недоступен для роли' }
-      deps.db.updateCiRun(run.id, { llmEngineId: resolvedEngine.engine?.id ?? null, llmProvider: provider, llmModel: selectedModel })
+      deps.db.ci.updateCiRun(run.id, { llmEngineId: resolvedEngine.engine?.id ?? null, llmProvider: provider, llmModel: selectedModel })
       resume = { kind: 'model' }
       eventPayload = { step: 'model_work', provider, model: selectedModel }
     } else {
       if (!failedCommand || !failedCommand.slot) return { error: 'Не найден упавший шаг для повтора' }
       const failed = failedCommand
       const slot = failed.slot as CiSlot
-      const slotIds = deps.db.resolveTaskSlots(run.projectId, run.taskId)[slot === 'before_model' ? 'beforeModel' : 'afterModel']
+      const slotIds = deps.db.ci.resolveTaskSlots(run.projectId, run.taskId)[slot === 'before_model' ? 'beforeModel' : 'afterModel']
       const index = Math.max(0, slotIds.indexOf(failed.commandId as string))
       resume = { kind: 'command', slot, index }
       eventPayload = { slot, index }
@@ -949,11 +949,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Повтор — продолжение той же работы, поэтому карточка возвращается в
     // разработку так же, как при новом ране: иначе задача остаётся в колонке,
     // куда её вернул откат после падения, и на доске ран не виден.
-    const developmentColumnId = deps.db.getColumnIdBySemantic(run.projectId, 'development')
-    const retryTask = deps.db.getCiTask(userId, run.projectId, run.taskId)
+    const developmentColumnId = deps.db.projects.getColumnIdBySemantic(run.projectId, 'development')
+    const retryTask = deps.db.tasks.getCiTask(userId, run.projectId, run.taskId)
     if (developmentColumnId && retryTask && retryTask.columnId !== developmentColumnId) {
       try {
-        deps.db.moveTask(userId, run.projectId, run.taskId, { columnId: developmentColumnId })
+        deps.db.tasks.moveTask(userId, run.projectId, run.taskId, { columnId: developmentColumnId })
       } catch {
         /* колонка могла исчезнуть — не критично */
       }
@@ -961,8 +961,8 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
 
     const ctl = new AbortController()
     active.set(run.id, { userId, projectId: run.projectId, taskId: run.taskId, abort: ctl })
-    deps.db.addCiEvent({ projectId: run.projectId, runId: run.id, type: 'run.retry_from_step', actorType: 'user', actorId: userId, payload: eventPayload })
-    const queued = deps.db.updateCiRun(run.id, { status: 'queued' })!
+    deps.db.ci.addCiEvent({ projectId: run.projectId, runId: run.id, type: 'run.retry_from_step', actorType: 'user', actorId: userId, payload: eventPayload })
+    const queued = deps.db.ci.updateCiRun(run.id, { status: 'queued' })!
     emitRun(queued, userId)
 
     enqueue(run.id, userId, ctl, resume)
@@ -970,7 +970,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   }
 
   function progress(runId: string, done: number, total: number, phase: string, userId: string): void {
-    const run = deps.db.updateCiRun(runId, { slotProgress: { done, total, phase } })
+    const run = deps.db.ci.updateCiRun(runId, { slotProgress: { done, total, phase } })
     if (run) emitRun(run, userId)
   }
 
@@ -989,7 +989,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     parentStepId: string | null,
     signal: AbortSignal
   ): Promise<{ status: CiStatus; exitCode: number | null; output: string; stepId: string }> {
-    const step = deps.db.addCiRunStep({
+    const step = deps.db.ci.addCiRunStep({
       runId,
       slot,
       position,
@@ -1003,7 +1003,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       status: 'running'
     })
     const started = now()
-    deps.db.updateCiRunStep(step.id, { startedAt: started })
+    deps.db.ci.updateCiRunStep(step.id, { startedAt: started })
     emitStep({ ...step, status: 'running', startedAt: started }, userId)
 
     // Пересборка production не должна стартовать поверх уже идущих/ожидающих
@@ -1013,7 +1013,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (isProdRebuild(command.name, command.script)) {
       releaseProdDrain = await drainForProdRebuild(runId, userId, step.id, signal)
       if (!releaseProdDrain) {
-        const upd = deps.db.updateCiRunStep(step.id, { status: 'cancelled', finishedAt: now() })
+        const upd = deps.db.ci.updateCiRunStep(step.id, { status: 'cancelled', finishedAt: now() })
         if (upd) emitStep(upd, userId)
         return { status: 'cancelled', exitCode: null, output: '', stepId: step.id }
       }
@@ -1024,12 +1024,12 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     let releaseShared: LockRelease | null = null
     if (isSharedResourceCommand(command)) {
       releaseShared = await acquireSharedLock(runId, signal, () => {
-        const line = deps.db.appendCiLog(runId, step.id, 'system', 'Шаг работает с общим ресурсом — жду, пока его освободит другой ран…\n')
+        const line = deps.db.ci.appendCiLog(runId, step.id, 'system', 'Шаг работает с общим ресурсом — жду, пока его освободит другой ран…\n')
         broadcast({ t: 'ci.log', runId, line }, userId)
       })
       if (!releaseShared) {
         releaseProdDrain?.()
-        const upd = deps.db.updateCiRunStep(step.id, { status: 'cancelled', finishedAt: now() })
+        const upd = deps.db.ci.updateCiRunStep(step.id, { status: 'cancelled', finishedAt: now() })
         if (upd) emitStep(upd, userId)
         return { status: 'cancelled', exitCode: null, output: '', stepId: step.id }
       }
@@ -1057,12 +1057,12 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       }
     }
     const cwd = command.workdir ? `${commandRoot}/${command.workdir}` : commandRoot
-    const settings = deps.db.getCiSettings()
+    const settings = deps.db.ci.getCiSettings()
     const timeoutMs = (command.timeoutSec ?? settings.defaultStepTimeoutSec) * 1000
     const collected: string[] = []
     const onChunk = (data: string): void => {
       collected.push(data)
-      const line = deps.db.appendCiLog(runId, step.id, 'stdout', data)
+      const line = deps.db.ci.appendCiLog(runId, step.id, 'stdout', data)
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
     let exitCode: number | null = null
@@ -1088,7 +1088,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       // не строкой stdout: без этого он не попадёт ни в output шага, ни в
       // классификатор инфраструктурных ошибок, ни в контекст fix-loop.
       collected.push(msg + '\n')
-      const line = deps.db.appendCiLog(runId, step.id, 'system', msg + '\n')
+      const line = deps.db.ci.appendCiLog(runId, step.id, 'system', msg + '\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
       exitCode = null
     } finally {
@@ -1097,14 +1097,14 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
     const finished = now()
     const status: CiStatus = timedOut ? 'timeout' : exitCode === 0 ? 'success' : 'failed'
-    const updated = deps.db.updateCiRunStep(step.id, { status, exitCode, finishedAt: finished, durationMs: finished - started })
+    const updated = deps.db.ci.updateCiRunStep(step.id, { status, exitCode, finishedAt: finished, durationMs: finished - started })
     if (updated) emitStep(updated, userId)
     if (status === 'success' && command.isCleanup) {
-      const run = deps.db.getCiRunRaw(runId)
-      if (run?.workspaceId) deps.db.releaseCiWorkspace(run.workspaceId, step.id)
+      const run = deps.db.ci.getCiRunRaw(runId)
+      if (run?.workspaceId) deps.db.ci.releaseCiWorkspace(run.workspaceId, step.id)
       // Клон удалён успешно: чат задачи возвращаем к безопасной папке проекта,
       // иначе следующая команда чата уйдёт в уже несуществующий каталог.
-      if (run?.conversationId) deps.db.restoreTaskChatWorkdir(userId, run.conversationId, run.projectId)
+      if (run?.conversationId) deps.db.chat.restoreTaskChatWorkdir(userId, run.conversationId, run.projectId)
     }
     return { status, exitCode, output: collected.join(''), stepId: step.id }
   }
@@ -1144,14 +1144,14 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
   ): Promise<boolean> {
     // Без машины команды не выполнялись вовсе — сохранять нечего.
     if (!agentId) return true
-    const step = deps.db.addCiRunStep({
+    const step = deps.db.ci.addCiRunStep({
       runId, slot, position, kind: 'command', initiatedBy: 'system',
       title: 'Отправить ветку задачи в origin', status: 'running'
     })
     emitStep(step, userId)
     const started = now()
     const logLine = (stream: 'stdout' | 'system', chunk: string): void => {
-      const line = deps.db.appendCiLog(runId, step.id, stream, chunk)
+      const line = deps.db.ci.appendCiLog(runId, step.id, stream, chunk)
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
     let exitCode: number | null = null
@@ -1169,21 +1169,21 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
     const ok = exitCode === 0
     if (ok) {
       const sha = output.match(/\(([0-9a-f]{7,64})\)/)?.[1]
-      const runRow = deps.db.getCiRunRaw(runId)
+      const runRow = deps.db.ci.getCiRunRaw(runId)
       const workspaceId = runRow?.workspaceId
-      if (sha && workspaceId) deps.db.recordCiWorkspaceRevision(workspaceId, env.BRANCH ?? '', sha)
+      if (sha && workspaceId) deps.db.ci.recordCiWorkspaceRevision(workspaceId, env.BRANCH ?? '', sha)
       // Managed-запись рабочей копии чата задачи: до этого таблица
       // `conversation_workspaces` не заполнялась никем, и UI (бейдж чата, панель кода)
       // держался на legacy `conversations.workdir`. Пишем ровно там, где всё известно
       // достоверно: ветка отправлена, SHA подтверждён сверкой с origin.
       const branch = env.BRANCH ?? ''
       if (sha && /^[0-9a-f]{40}$/.test(sha) && branch && agentId && runRow?.conversationId) {
-        const storageId = deps.db.getProjectMachine(runRow.projectId, agentId)?.storageId
+        const storageId = deps.db.machines.getProjectMachine(runRow.projectId, agentId)?.storageId
         // Без MachineStorage managed-режима нет — остаётся legacy workdir, и это
         // честнее, чем записать половину привязки.
         if (storageId) {
           try {
-            deps.db.saveConversationWorkspace({
+            deps.db.chat.saveConversationWorkspace({
               conversationId: runRow.conversationId,
               projectId: runRow.projectId,
               machineId: agentId,
@@ -1201,7 +1201,7 @@ echo "Ветка $BRANCH отправлена в origin ($head)"`
       }
     }
     if (!ok) logLine('system', 'Ветка не отправлена — рабочая директория сохранена, работа модели не потеряна\n')
-    const upd = deps.db.updateCiRunStep(step.id, { status: ok ? 'success' : 'failed', exitCode, finishedAt: now(), durationMs: now() - started })
+    const upd = deps.db.ci.updateCiRunStep(step.id, { status: ok ? 'success' : 'failed', exitCode, finishedAt: now(), durationMs: now() - started })
     if (upd) emitStep(upd, userId)
     return ok
   }
@@ -1255,14 +1255,14 @@ fi`
   ): Promise<boolean> {
     // Без машины модель ничего и не могла сделать — проверять нечего.
     if (!agentId) return true
-    const step = deps.db.addCiRunStep({
+    const step = deps.db.ci.addCiRunStep({
       runId, slot: null, position, kind: 'command', initiatedBy: 'system',
       title: 'Проверка результата модели', workdir: repoPath, status: 'running'
     })
     emitStep(step, userId)
     const started = now()
     const logLine = (stream: 'stdout' | 'system', chunk: string): void => {
-      const line = deps.db.appendCiLog(runId, step.id, stream, chunk)
+      const line = deps.db.ci.appendCiLog(runId, step.id, stream, chunk)
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
     let exitCode: number | null = null
@@ -1277,7 +1277,7 @@ fi`
       logLine('system', (err instanceof Error ? err.message : String(err)) + '\n')
     }
     const finish = (status: CiStatus): void => {
-      const upd = deps.db.updateCiRunStep(step.id, { status, exitCode, finishedAt: now(), durationMs: now() - started })
+      const upd = deps.db.ci.updateCiRunStep(step.id, { status, exitCode, finishedAt: now(), durationMs: now() - started })
       if (upd) emitStep(upd, userId)
     }
     if (signal.aborted) {
@@ -1285,7 +1285,7 @@ fi`
       return false
     }
     if (exitCode === 70) {
-      const calls = deps.db.ciRunToolCalls(runId)
+      const calls = deps.db.ci.ciRunToolCalls(runId)
       const total = calls ? Object.values(calls).reduce((sum, n) => sum + n, 0) : 0
       if (total > 0) {
         logLine(
@@ -1313,10 +1313,10 @@ fi`
 
   /** Отметить, что модель разбирается с упавшим шагом (карточка мигает красным медленно). */
   function setFixing(runId: string, userId: string, fixing: boolean, phase?: string): void {
-    const row = deps.db.getCiRunRaw(runId)
+    const row = deps.db.ci.getCiRunRaw(runId)
     if (!row) return
     const sp = row.slotProgress
-    const run = deps.db.updateCiRun(runId, { slotProgress: { ...sp, phase: phase ?? sp.phase, fixing } })
+    const run = deps.db.ci.updateCiRun(runId, { slotProgress: { ...sp, phase: phase ?? sp.phase, fixing } })
     if (run) emitRun(run, userId)
   }
 
@@ -1328,37 +1328,37 @@ fi`
       env,
       signal,
       addStep: (a) => {
-        const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+        const steps = deps.db.ci.getCiRun(userId, runId)?.steps ?? []
         const position = steps.length
-        const step = deps.db.addCiRunStep({ runId, slot: a.slot, position, kind: a.kind, parentStepId: a.parentStepId ?? null, initiatedBy: a.initiatedBy ?? 'model', commandId: a.commandId ?? null, commandSnapshot: a.commandSnapshot ?? null, title: a.title, workdir: a.workdir ?? null, status: 'running' })
+        const step = deps.db.ci.addCiRunStep({ runId, slot: a.slot, position, kind: a.kind, parentStepId: a.parentStepId ?? null, initiatedBy: a.initiatedBy ?? 'model', commandId: a.commandId ?? null, commandSnapshot: a.commandSnapshot ?? null, title: a.title, workdir: a.workdir ?? null, status: 'running' })
         emitStep(step, userId)
         return step
       },
       finishStep: (stepId, status, exitCode) => {
-        const upd = deps.db.updateCiRunStep(stepId, { status, exitCode: exitCode ?? null, finishedAt: now() })
+        const upd = deps.db.ci.updateCiRunStep(stepId, { status, exitCode: exitCode ?? null, finishedAt: now() })
         if (upd) emitStep(upd, userId)
       },
       log: (stepId, stream, chunk) => {
-        const line = deps.db.appendCiLog(runId, stepId, stream, chunk)
+        const line = deps.db.ci.appendCiLog(runId, stepId, stream, chunk)
         broadcast({ t: 'ci.log', runId, line }, userId)
       },
       runCommandById: async (commandId, parentStepId) => {
-        const command = deps.db.getCiCommand(userId, commandId)
+        const command = deps.db.ci.getCiCommand(userId, commandId)
         if (!command) return { exitCode: null, timedOut: false, output: 'Команда не найдена' }
-        const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+        const steps = deps.db.ci.getCiRun(userId, runId)?.steps ?? []
         const r = await runCommandStep(runId, userId, agentId, machines, commandWorkspacePath, env, null, steps.length, command, 'model', parentStepId, signal)
         return { exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
       },
       setModelSessionId: (sessionId) => {
         modelSessions.set(runId, sessionId)
-        deps.db.updateCiRun(runId, { modelSessionId: sessionId })
+        deps.db.ci.updateCiRun(runId, { modelSessionId: sessionId })
       },
       recordFix: (a) => {
-        const attempt = deps.db.addCiFixAttempt(a)
+        const attempt = deps.db.ci.addCiFixAttempt(a)
         broadcast({ t: 'ci.fix', runId, attempt }, userId)
       },
       suggest: (commandId, runStepId, reason, proposedScript) => {
-        deps.db.addCiSuggestion({ commandId, runStepId, reason, proposedScript })
+        deps.db.ci.addCiSuggestion({ commandId, runStepId, reason, proposedScript })
       },
       askUser: async (stepId, questions) => {
         const it = await waitForUser(runId, userId, stepId, { kind: 'clarify', questions }, signal)
@@ -1387,8 +1387,8 @@ fi`
     signal: AbortSignal
   ): Promise<CiInteraction | null> {
     if (signal.aborted) return null
-    const run = deps.db.getCiRunRaw(runId)
-    const interaction = deps.db.addCiInteraction({
+    const run = deps.db.ci.getCiRunRaw(runId)
+    const interaction = deps.db.ci.addCiInteraction({
       runId,
       stepId,
       kind: payload.kind,
@@ -1412,16 +1412,16 @@ fi`
         runId,
         interactionId: interaction.id
       })
-      if (messageId) deps.db.setCiInteractionMessage(interaction.id, run.conversationId, messageId)
+      if (messageId) deps.db.ci.setCiInteractionMessage(interaction.id, run.conversationId, messageId)
     }
 
     const phase = payload.kind === 'plan_approval' ? 'План готов — ждёт одобрения' : 'Модель ждёт ответа'
-    const before = deps.db.getCiRunRaw(runId)
+    const before = deps.db.ci.getCiRunRaw(runId)
     const progressNow = before?.slotProgress ?? { done: 0, total: 0, phase }
-    const paused = deps.db.updateCiRun(runId, { status: 'awaiting_input', slotProgress: { ...progressNow, phase } })
+    const paused = deps.db.ci.updateCiRun(runId, { status: 'awaiting_input', slotProgress: { ...progressNow, phase } })
     if (paused) emitRun(paused, userId)
-    broadcast({ t: 'ci.interaction', runId, interaction: deps.db.getCiInteraction(interaction.id) ?? interaction }, userId)
-    deps.db.addCiEvent({
+    broadcast({ t: 'ci.interaction', runId, interaction: deps.db.ci.getCiInteraction(interaction.id) ?? interaction }, userId)
+    deps.db.ci.addCiEvent({
       projectId: before?.projectId ?? '',
       runId,
       type: 'run.interaction_asked',
@@ -1429,7 +1429,7 @@ fi`
       payload: { kind: payload.kind, interactionId: interaction.id }
     })
 
-    const waitMs = deps.db.getCiSettings().interactionWaitMs
+    const waitMs = deps.db.ci.getCiSettings().interactionWaitMs
     const slot = runSlots.get(runId)
     if (slot) releaseSlot(slot)
     let answered: CiInteraction | null = null
@@ -1447,7 +1447,7 @@ fi`
         })
         if (waitMs > 0) {
           timer = setTimeout(() => {
-            const line = deps.db.appendCiLog(runId, stepId, 'system', 'Ответ пользователя не получен — продолжаю без уточнений\n')
+            const line = deps.db.ci.appendCiLog(runId, stepId, 'system', 'Ответ пользователя не получен — продолжаю без уточнений\n')
             broadcast({ t: 'ci.log', runId, line }, userId)
             resolvePending(runId, null)
           }, waitMs)
@@ -1461,21 +1461,21 @@ fi`
     }
 
     if (answered) {
-      const after = deps.db.getCiRunRaw(runId)
-      const resumed = deps.db.updateCiRun(runId, {
+      const after = deps.db.ci.getCiRunRaw(runId)
+      const resumed = deps.db.ci.updateCiRun(runId, {
         status: 'running',
         slotProgress: { ...(after?.slotProgress ?? progressNow), phase: 'Модель работает' }
       })
       if (resumed) emitRun(resumed, userId)
     } else {
-      const dropped = deps.db.getCiInteraction(interaction.id)
+      const dropped = deps.db.ci.getCiInteraction(interaction.id)
       if (dropped) broadcast({ t: 'ci.interaction', runId, interaction: dropped }, userId)
     }
     return answered
   }
 
   function reconcile(): { queued: CiRun[]; interrupted: CiRun[] } {
-    const result = deps.db.reconcileInterruptedCiRuns()
+    const result = deps.db.ci.reconcileInterruptedCiRuns()
     for (const run of result.queued) {
       // Пока восстановленный ран ждёт слот, карточка не должна изображать уже
       // начавшуюся работу. execute вернёт её в runColumnId непосредственно перед стартом.
@@ -1488,7 +1488,7 @@ fi`
   }
 
   async function execute(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
-    const runRow = deps.db.getCiRunRaw(runId)
+    const runRow = deps.db.ci.getCiRunRaw(runId)
     if (!runRow) return
     // Ран отменили, пока он стоял в очереди проекта: не начинаем вовсе, иначе
     // подготовка упадёт на отменённой команде и статус будет failed вместо cancelled.
@@ -1500,8 +1500,8 @@ fi`
       }
       return
     }
-    const project = deps.db.getProject(userId, runRow.projectId)
-    const task = deps.db.getCiTask(userId, runRow.projectId, runRow.taskId)
+    const project = deps.db.projects.getProject(userId, runRow.projectId)
+    const task = deps.db.tasks.getCiTask(userId, runRow.projectId, runRow.taskId)
     if (!project || !task) {
       finalize(runId, userId, 'failed', 'Проект или задача были удалены до начала рана.')
       return
@@ -1510,17 +1510,17 @@ fi`
       const base: CiStageLlmSnapshot = {
         llmEngineId: runRow.llmEngineId ?? null,
         provider: runRow.llmProvider,
-        model: resolveCiStageModel(stage, deps.db.getCiSettings().stageModels, runRow)
+        model: resolveCiStageModel(stage, deps.db.ci.getCiSettings().stageModels, runRow)
       }
-      return deps.db.resolveTaskStageLlmConfig(runRow.projectId, runRow.taskId, stage, base)
+      return deps.db.ci.resolveTaskStageLlmConfig(runRow.projectId, runRow.taskId, stage, base)
     }
     // Машина рана зафиксирована при запуске (выбор карточки, автоподбор или
     // принудительный запуск); NULL остался только у ранов до появления выбора.
     const agentId = runRow.agentId
     // Повторный гейт непосредственно перед первой командой защищает ран, который
     // ждал в очереди во время удаления машины, смены владельца или отзыва членства.
-    if (!agentId || !deps.db.canUseAgent(userId, agentId, runRow.projectId) || (deps.isAgentOnline && !deps.isAgentOnline(agentId))) {
-      deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.machine_unavailable', actorType: 'system', payload: { agentId, message: 'Машина выполнения больше недоступна или offline' } })
+    if (!agentId || !deps.db.machines.canUseAgent(userId, agentId, runRow.projectId) || (deps.isAgentOnline && !deps.isAgentOnline(agentId))) {
+      deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.machine_unavailable', actorType: 'system', payload: { agentId, message: 'Машина выполнения больше недоступна или offline' } })
       finalize(runId, userId, 'failed', !agentId ? 'Для рана не выбрана машина выполнения.' : 'Машина выполнения недоступна или находится офлайн.')
       return
     }
@@ -1529,7 +1529,7 @@ fi`
     const legacyRepoRoot = machine?.reposRoot?.trim().replace(/[\\/]+$/, '') || machinePath.replace(/[\\/][^\\/]+$/, '')
     // Новые workspace живут в выбранном MachineStorage. Старый reposRoot остаётся
     // безопасным fallback: существующие абсолютные пути не мигрируют автоматически.
-    const managedStorage = deps.db.listMachineStorages(userId, agentId)[0]
+    const managedStorage = deps.db.machines.listMachineStorages(userId, agentId)[0]
     const projectSlug = slugify(project.name)
     const taskNumber = issueKey(project.name, task)
     const taskKey = `${projectSlug}-${task.seq ?? 0}`
@@ -1579,9 +1579,9 @@ fi`
     // ждём его, вместо того чтобы валить конфликтом изоляции ран, запущенный
     // сразу после «Отменить».
     if (clash && isClosingRun(clash[0], clash[1])) {
-      const waitRow = deps.db.getCiRunRaw(runId)
+      const waitRow = deps.db.ci.getCiRunRaw(runId)
       if (waitRow) {
-        const waiting = deps.db.updateCiRun(runId, { slotProgress: { ...waitRow.slotProgress, phase: 'Жду освобождения рабочей директории' } })
+        const waiting = deps.db.ci.updateCiRun(runId, { slotProgress: { ...waitRow.slotProgress, phase: 'Жду освобождения рабочей директории' } })
         if (waiting) emitRun(waiting, userId)
       }
       const attempts = Math.ceil((cancelGraceMs + 1_000) / 50)
@@ -1606,15 +1606,15 @@ fi`
     }
 
     const started = now()
-    const currentTask = deps.db.getCiTask(userId, runRow.projectId, runRow.taskId)
+    const currentTask = deps.db.tasks.getCiTask(userId, runRow.projectId, runRow.taskId)
     if (runRow.runColumnId && currentTask && currentTask.columnId !== runRow.runColumnId) {
       try {
-        deps.db.moveTask(userId, runRow.projectId, runRow.taskId, { columnId: runRow.runColumnId })
+        deps.db.tasks.moveTask(userId, runRow.projectId, runRow.taskId, { columnId: runRow.runColumnId })
       } catch {
         /* колонка могла исчезнуть после постановки в очередь */
       }
     }
-    let run = deps.db.updateCiRun(runId, { status: 'running', startedAt: started })!
+    let run = deps.db.ci.updateCiRun(runId, { status: 'running', startedAt: started })!
     emitRun(run, userId)
 
     // Рабочая директория: подготовка по стратегии повтора + запись workspace.
@@ -1631,7 +1631,7 @@ fi`
     // Связанный чат задачи должен выполнять команды там же, где модель CI: внутри
     // клонированного репозитория, а не в каталоге-контейнере workspace.
     if (runRow.conversationId) {
-      deps.db.setConversationExecTarget(userId, runRow.conversationId, agentId, repoPath, task.skills)
+      deps.db.chat.setConversationExecTarget(userId, runRow.conversationId, agentId, repoPath, task.skills)
     }
     const guardExisting = [
       `if git -C ${shq(repoPath)} rev-parse --is-inside-work-tree >/dev/null 2>&1; then`,
@@ -1658,17 +1658,17 @@ fi`
     const prep = `${cachePrep}\n${workspacePrep}`
     if (!resume) {
       // Новый ран: создаём запись рабочей директории. При повторе — переиспользуем.
-      const ws = deps.db.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath, npmCacheDir })
-      deps.db.updateCiRun(runId, { workspaceId: ws.id })
+      const ws = deps.db.ci.createCiWorkspace({ projectId: runRow.projectId, taskId: runRow.taskId, agentId: agentId ?? null, path: workspacePath, npmCacheDir })
+      deps.db.ci.updateCiRun(runId, { workspaceId: ws.id })
     }
 
-    const slots = deps.db.resolveTaskSlots(runRow.projectId, runRow.taskId)
+    const slots = deps.db.ci.resolveTaskSlots(runRow.projectId, runRow.taskId)
     // Браузерная проверка начинается с чистой страницы: сброс здесь, а не в
     // конце прошлого рана, — тогда он работает и после падения сервера.
-    if (!resume && deps.db.getTaskBrowserCheck(runRow.taskId).mode === 'chromium') {
+    if (!resume && deps.db.ci.getTaskBrowserCheck(runRow.taskId).mode === 'chromium') {
       deps.resetBrowserCheck?.({ userId, taskId: runRow.taskId })
     }
-    const enabledStages = new Set(deps.db.getTaskProcessStages(runRow.taskId))
+    const enabledStages = new Set(deps.db.ci.getTaskProcessStages(runRow.taskId))
     const total = (enabledStages.has('before_model') ? slots.beforeModel.length : 0)
       + (enabledStages.has('model_work') ? 1 : 0)
       + (enabledStages.has('after_model') ? slots.afterModel.length : 0)
@@ -1677,7 +1677,7 @@ fi`
     // Точка возобновления при «повторе с упавшего шага»: сколько шагов уже пройдено
     // и с какого номера нумеровать новые шаги (чтобы не пересекаться со старыми).
     let done = resume ? (resume.kind === 'model' ? beforeLen : resume.slot === 'before_model' ? resume.index : beforeLen + (enabledStages.has('model_work') ? 1 : 0) + resume.index) : 0
-    const posBase = resume ? (deps.db.getCiRun(userId, runId)?.steps.length ?? 0) : 0
+    const posBase = resume ? (deps.db.ci.getCiRun(userId, runId)?.steps.length ?? 0) : 0
     // Системные шаги, вставленные между командами слота, сдвигают позиции в ленте.
     let extraSteps = 0
     // Исход встроенного KB-шага приходит в итоговое сообщение даже если после
@@ -1694,7 +1694,7 @@ fi`
 
     // Системный шаг подготовки директории (пропускаем при повторе — директория есть).
     if (enabledStages.has('before_model') && !resume && repoRoot && agentId) {
-      const prepStep = deps.db.addCiRunStep({ runId, slot: 'before_model', position: 0, kind: 'command', initiatedBy: 'system', title: 'Подготовка рабочей директории', status: 'running' })
+      const prepStep = deps.db.ci.addCiRunStep({ runId, slot: 'before_model', position: 0, kind: 'command', initiatedBy: 'system', title: 'Подготовка рабочей директории', status: 'running' })
       emitStep(prepStep, userId)
       const ps = now()
       try {
@@ -1702,11 +1702,11 @@ fi`
         // вложенный managed environment до первого bootstrap ещё не существует.
         const prepWorkdir = managedStorage?.rootPath ?? (machinePath || repoRoot.replace(/[\\/][^\\/]+$/, '') || '/')
         const r = await deps.executor.run({ agentId, script: prep, workdir: prepWorkdir, env, timeoutMs: 60_000, secrets: [] }, (d) => {
-          const line = deps.db.appendCiLog(runId, prepStep.id, 'stdout', d)
+          const line = deps.db.ci.appendCiLog(runId, prepStep.id, 'stdout', d)
           broadcast({ t: 'ci.log', runId, line }, userId)
         }, signal)
         const st: CiStatus = r.exitCode === 0 ? 'success' : 'failed'
-        const upd = deps.db.updateCiRunStep(prepStep.id, { status: st, exitCode: r.exitCode, finishedAt: now(), durationMs: now() - ps })!
+        const upd = deps.db.ci.updateCiRunStep(prepStep.id, { status: st, exitCode: r.exitCode, finishedAt: now(), durationMs: now() - ps })!
         emitStep(upd, userId)
         if (st !== 'success') {
           if (signal.aborted) {
@@ -1717,7 +1717,7 @@ fi`
           return
         }
       } catch {
-        deps.db.updateCiRunStep(prepStep.id, { status: signal.aborted ? 'cancelled' : 'failed', finishedAt: now() })
+        deps.db.ci.updateCiRunStep(prepStep.id, { status: signal.aborted ? 'cancelled' : 'failed', finishedAt: now() })
         if (signal.aborted) {
           finishCancelled()
           return
@@ -1732,7 +1732,7 @@ fi`
       for (let i = startIndex; i < commandIds.length; i++) {
         if (signal.aborted) return finishCancelled()
         progress(runId, done, total, `${phaseLabel} (${i + 1}/${commandIds.length})`, userId)
-        const command = deps.db.getCiCommand(userId, commandIds[i])
+        const command = deps.db.ci.getCiCommand(userId, commandIds[i])
         if (!command) {
           done++
           continue
@@ -1759,16 +1759,16 @@ fi`
           // в fix-loop не отдаём: модель ищет причину в проекте и жжёт ходы зря.
           const infra = classifyCiInfraFailure({ exitCode: res.exitCode, output: res.output })
           if (infra) {
-            const line = deps.db.appendCiLog(runId, res.stepId, 'system', formatCiInfraFailure(infra))
+            const line = deps.db.ci.appendCiLog(runId, res.stepId, 'system', formatCiInfraFailure(infra))
             broadcast({ t: 'ci.log', runId, line }, userId)
-            deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: infra.kind, stepId: res.stepId, exitCode: res.exitCode } })
+            deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: infra.kind, stepId: res.stepId, exitCode: res.exitCode } })
             progress(runId, done, total, `Инфраструктурная ошибка машины — ${CI_INFRA_LABEL[infra.kind]}`, userId)
             const infraStatus: CiStatus = res.status === 'timeout' ? 'timeout' : 'failed'
             if (slot === 'before_model') {
               rollbackAndFail(runId, userId, runRow.prevColumnId, 'infra_error', infraStatus)
               return false
             }
-            deps.db.updateCiRun(runId, { status: infraStatus })
+            deps.db.ci.updateCiRun(runId, { status: infraStatus })
             return false
           }
           // fix-loop (если подключён) на упавший шаг.
@@ -1781,7 +1781,7 @@ fi`
               return false
             }
             // Слот «после» упал → ран failed, но резюме всё равно сформируется.
-            deps.db.updateCiRun(runId, { status: failStatus })
+            deps.db.ci.updateCiRun(runId, { status: failStatus })
             return false
           }
         }
@@ -1798,23 +1798,23 @@ fi`
     // честно стартовал в родительской папке, не находил репозиторий и пустой ран
     // всё равно доходил до merge/success.
     if (enabledStages.has('before_model')) {
-    const repoStep = deps.db.addCiRunStep({ runId, slot: 'before_model', position: posBase + done + 1 + extraSteps++, kind: 'command', initiatedBy: 'system', title: 'Проверка рабочей директории модели', workdir: repoPath, status: 'running' })
+    const repoStep = deps.db.ci.addCiRunStep({ runId, slot: 'before_model', position: posBase + done + 1 + extraSteps++, kind: 'command', initiatedBy: 'system', title: 'Проверка рабочей директории модели', workdir: repoPath, status: 'running' })
     emitStep(repoStep, userId)
     const repoStarted = now()
     let repoReady = false
     try {
       if (!agentId) throw new Error('У проекта не задана машина по умолчанию для выполнения')
       const check = await deps.executor.run({ agentId, script: 'git rev-parse --show-toplevel >/dev/null', workdir: repoPath, env, timeoutMs: 30_000, secrets: [] }, (data) => {
-        const line = deps.db.appendCiLog(runId, repoStep.id, 'stdout', data)
+        const line = deps.db.ci.appendCiLog(runId, repoStep.id, 'stdout', data)
         broadcast({ t: 'ci.log', runId, line }, userId)
       }, signal)
       repoReady = check.exitCode === 0
-      const upd = deps.db.updateCiRunStep(repoStep.id, { status: repoReady ? 'success' : 'failed', exitCode: check.exitCode, finishedAt: now(), durationMs: now() - repoStarted })
+      const upd = deps.db.ci.updateCiRunStep(repoStep.id, { status: repoReady ? 'success' : 'failed', exitCode: check.exitCode, finishedAt: now(), durationMs: now() - repoStarted })
       if (upd) emitStep(upd, userId)
     } catch (err) {
-      const line = deps.db.appendCiLog(runId, repoStep.id, 'system', `${err instanceof Error ? err.message : String(err)}\n`)
+      const line = deps.db.ci.appendCiLog(runId, repoStep.id, 'system', `${err instanceof Error ? err.message : String(err)}\n`)
       broadcast({ t: 'ci.log', runId, line }, userId)
-      const upd = deps.db.updateCiRunStep(repoStep.id, { status: signal.aborted ? 'cancelled' : 'failed', finishedAt: now(), durationMs: now() - repoStarted })
+      const upd = deps.db.ci.updateCiRunStep(repoStep.id, { status: signal.aborted ? 'cancelled' : 'failed', finishedAt: now(), durationMs: now() - repoStarted })
       if (upd) emitStep(upd, userId)
     }
     if (!repoReady) {
@@ -1838,15 +1838,15 @@ fi`
     let emptyWork = false
     if (enabledStages.has('model_work') && !(resume?.kind === 'command' && resume.slot === 'after_model')) {
       progress(runId, done, total, 'Модель работает', userId)
-      const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
+      const mwStep = deps.db.ci.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
       emitStep(mwStep, userId)
       const mwStart = now()
       const mwLlm = stageLlm('model_work')
-      const mwStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'model_work', llm: mwLlm })
-      deps.db.updateCiStageRun(mwStage.id, { status: 'running', startedAt: mwStart })
+      const mwStage = deps.db.ci.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'model_work', llm: mwLlm })
+      deps.db.ci.updateCiStageRun(mwStage.id, { status: 'running', startedAt: mwStart })
       emitStage(runId, userId)
       if (deps.modelWork) {
-        const ctx: CiModelContext = { ...prim, run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: mwLlm.llmEngineId, llmProvider: mwLlm.provider, llmModel: mwLlm.model }, task, project, parentStepId: mwStep.id }
+        const ctx: CiModelContext = { ...prim, run: { ...deps.db.ci.getCiRunRaw(runId)!, llmEngineId: mwLlm.llmEngineId, llmProvider: mwLlm.provider, llmModel: mwLlm.model }, task, project, parentStepId: mwStep.id }
         try {
           const r = await deps.modelWork(ctx)
           modelOk = r.ok
@@ -1857,13 +1857,13 @@ fi`
           modelError = error instanceof Error ? error.message : String(error)
         }
       } else {
-        const line = deps.db.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
+        const line = deps.db.ci.appendCiLog(runId, mwStep.id, 'system', 'Работа модели пропущена (хук не подключён)\n')
         broadcast({ t: 'ci.log', runId, line }, userId)
       }
       const stepStatus: CiStatus = modelOk ? 'success' : modelCancelled || signal.aborted ? 'cancelled' : 'failed'
       const mwFinished = now()
-      const upd = deps.db.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: mwFinished, durationMs: mwFinished - mwStart })!
-      deps.db.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
+      const upd = deps.db.ci.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: mwFinished, durationMs: mwFinished - mwStart })!
+      deps.db.ci.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
       emitStage(runId, userId)
       emitStep(upd, userId)
       // Отмена пользователем: слот «после» и резюме не запускаем, карточку возвращаем.
@@ -1883,9 +1883,9 @@ fi`
         // возобновил тот же шаг, а человек не искал причину в промпте.
         const transport = classifyLlmTransportFailure(modelError)
         if (transport) {
-          const line = deps.db.appendCiLog(runId, mwStep.id, 'system', formatCiInfraFailure(transport))
+          const line = deps.db.ci.appendCiLog(runId, mwStep.id, 'system', formatCiInfraFailure(transport))
           broadcast({ t: 'ci.log', runId, line }, userId)
-          deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: transport.kind, stepId: mwStep.id } })
+          deps.db.ci.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.infra_error', actorType: 'system', payload: { kind: transport.kind, stepId: mwStep.id } })
           progress(runId, done, total, `Инфраструктурная ошибка — ${CI_INFRA_LABEL[transport.kind]}`, userId)
         } else {
           progress(runId, done, total, 'Ошибка модели — выберите другую модель и повторите шаг', userId)
@@ -1928,16 +1928,16 @@ fi`
     // 4) Резюме модели.
     if (enabledStages.has('summary') && !signal.aborted) {
       progress(runId, done, total, 'Резюме', userId)
-      const sumStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
+      const sumStep = deps.db.ci.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
       emitStep(sumStep, userId)
       const summaryStarted = now()
       const summaryLlm = stageLlm('summary')
-      const summaryStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'summary', llm: summaryLlm })
-      deps.db.updateCiStageRun(summaryStage.id, { status: 'running', startedAt: summaryStarted })
+      const summaryStage = deps.db.ci.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'summary', llm: summaryLlm })
+      deps.db.ci.updateCiStageRun(summaryStage.id, { status: 'running', startedAt: summaryStarted })
       emitStage(runId, userId)
       let summaryText = 'Ран завершён.'
       if (deps.modelSummary) {
-        const ctx: CiModelContext = { ...prim, run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: summaryLlm.llmEngineId, llmProvider: summaryLlm.provider, llmModel: summaryLlm.model }, task, project, parentStepId: sumStep.id }
+        const ctx: CiModelContext = { ...prim, run: { ...deps.db.ci.getCiRunRaw(runId)!, llmEngineId: summaryLlm.llmEngineId, llmProvider: summaryLlm.provider, llmModel: summaryLlm.model }, task, project, parentStepId: sumStep.id }
         try {
           summaryText = await deps.modelSummary(ctx)
         } catch {
@@ -1952,11 +1952,11 @@ fi`
           `мержа и пересборки прода не было. Рабочая копия ${repoPath} сохранена для разбора, ` +
           'карточка осталась в работе.'
       }
-      const line = deps.db.appendCiLog(runId, sumStep.id, 'system', summaryText + '\n')
+      const line = deps.db.ci.appendCiLog(runId, sumStep.id, 'system', summaryText + '\n')
       broadcast({ t: 'ci.log', runId, line }, userId)
       const summaryFinished = now()
-      const upd = deps.db.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })!
-      deps.db.updateCiStageRun(summaryStage.id, { status: 'success', outcome: summaryText, finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })
+      const upd = deps.db.ci.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })!
+      deps.db.ci.updateCiStageRun(summaryStage.id, { status: 'success', outcome: summaryText, finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })
       emitStage(runId, userId)
       emitStep(upd, userId)
       postSummaryMessage(runId, userId, project.name, task, summaryText, kbUpdateSummary)
@@ -2008,29 +2008,29 @@ fi`
     signal: AbortSignal
   ): Promise<boolean> {
     if (!deps.attemptFix) return false
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     const failedStep = detail?.steps.slice().reverse().find((s) => s.status === 'failed' || s.status === 'timeout')
     if (!failedStep) return false
     const prim = makePrimitives(runId, userId, agentId, project.machines, modelWorkspacePath, commandWorkspacePath, env, signal)
     // Шаг гейта (тесты/typecheck/линт) отличаем от обычного: vitest печатает
     // много, и по сорока строкам хвоста упавших тестов не видно.
-    const failedCommand = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
+    const failedCommand = failedStep.commandId ? deps.db.ci.getCiCommand(userId, failedStep.commandId) : null
     const isTestStep = isVerificationCommand(failedCommand ?? { name: failedStep.title, script: failedStep.commandSnapshot })
     const logTail = deps.db
-      .getCiRunLog(userId, runId)
+      .ci.getCiRunLog(userId, runId)
       .filter((l) => l.stepId === failedStep.id)
       .slice(isTestStep ? -400 : -40)
       .map((l) => l.chunk)
       .join('')
-    const fixBase = deps.db.getCiRunRaw(runId)!
-    const fixLlm = deps.db.resolveTaskStageLlmConfig(project.id, task.id, 'fix', {
+    const fixBase = deps.db.ci.getCiRunRaw(runId)!
+    const fixLlm = deps.db.ci.resolveTaskStageLlmConfig(project.id, task.id, 'fix', {
       llmEngineId: fixBase.llmEngineId ?? null,
       provider: fixBase.llmProvider,
-      model: resolveCiStageModel('fix', deps.db.getCiSettings().stageModels, fixBase)
+      model: resolveCiStageModel('fix', deps.db.ci.getCiSettings().stageModels, fixBase)
     })
     const ctx: CiFixContext = {
       ...prim,
-      run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: fixLlm.llmEngineId, llmProvider: fixLlm.provider, llmModel: fixLlm.model },
+      run: { ...deps.db.ci.getCiRunRaw(runId)!, llmEngineId: fixLlm.llmEngineId, llmProvider: fixLlm.provider, llmModel: fixLlm.model },
       task,
       project,
       parentStepId: failedStep.id,
@@ -2039,7 +2039,7 @@ fi`
       modelSessionId: modelSessions.get(runId) ?? detail?.run.modelSessionId ?? null,
       isTestStep,
       setFixContext: (context) => {
-        deps.db.updateCiRun(runId, { fixContext: context })
+        deps.db.ci.updateCiRun(runId, { fixContext: context })
       },
       runTargetedTest: async (command) => {
         const denial = targetedTestDenial(command)
@@ -2088,28 +2088,28 @@ fi`
         return chunks.join('').split(/\r?\n/).map((line) => line.slice(3).trim()).filter(Boolean).slice(0, 100)
       },
       rerunFailedStep: async () => {
-        const command = failedStep.commandId ? deps.db.getCiCommand(userId, failedStep.commandId) : null
+        const command = failedStep.commandId ? deps.db.ci.getCiCommand(userId, failedStep.commandId) : null
         if (!command) return { stepId: failedStep.id, exitCode: null, timedOut: false, output: 'Команда повторного шага не найдена.' }
         const r = await runCommandStep(runId, userId, agentId, project.machines, commandWorkspacePath, env, failedStep.slot, failedStep.position, command, 'model', null, signal)
         return { stepId: r.stepId, exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
       }
     }
     const fixStarted = now()
-    const fixStage = deps.db.createCiStageRun({ runId, taskId: task.id, stage: 'fix', llm: fixLlm })
-    deps.db.updateCiStageRun(fixStage.id, { status: 'running', startedAt: fixStarted })
+    const fixStage = deps.db.ci.createCiStageRun({ runId, taskId: task.id, stage: 'fix', llm: fixLlm })
+    deps.db.ci.updateCiStageRun(fixStage.id, { status: 'running', startedAt: fixStarted })
     emitStage(runId, userId)
     setFixing(runId, userId, true, 'Модель исправляет ошибку')
     let fixed = false
     try {
       const r = await deps.attemptFix(ctx)
       fixed = r.fixed
-      if (fixed) deps.db.updateCiRunStep(failedStep.id, { fixedByModel: true, status: 'success' })
+      if (fixed) deps.db.ci.updateCiRunStep(failedStep.id, { fixedByModel: true, status: 'success' })
     } catch {
       fixed = false
     }
     const fixFinished = now()
     const fixStatus: CiStatus = signal.aborted ? 'cancelled' : fixed ? 'success' : 'failed'
-    deps.db.updateCiStageRun(fixStage.id, { status: fixStatus, outcome: fixed ? 'Ошибка исправлена' : 'Не удалось исправить ошибку', finishedAt: fixFinished, durationMs: fixFinished - fixStarted })
+    deps.db.ci.updateCiStageRun(fixStage.id, { status: fixStatus, outcome: fixed ? 'Ошибка исправлена' : 'Не удалось исправить ошибку', finishedAt: fixFinished, durationMs: fixFinished - fixStarted })
     emitStage(runId, userId)
     setFixing(runId, userId, false, fixed ? 'Ошибка исправлена — продолжаю' : 'Не удалось исправить ошибку')
     return fixed
@@ -2134,23 +2134,23 @@ fi`
    * закрывает ран как `failed`, и до этого места мы не доходим.
    */
   function settleTaskColumn(runId: string, userId: string): void {
-    const row = deps.db.getCiRunRaw(runId)
+    const row = deps.db.ci.getCiRunRaw(runId)
     if (!row) return
-    const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+    const steps = deps.db.ci.getCiRun(userId, runId)?.steps ?? []
     const merged = steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')
-    const columnId = deps.db.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'component_qa')
+    const columnId = deps.db.projects.getColumnIdBySemantic(row.projectId, merged ? 'done' : 'component_qa')
     if (!columnId) return
-    const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
+    const task = deps.db.tasks.getCiTask(userId, row.projectId, row.taskId)
     if (!task || task.columnId === columnId) return
     try {
-      deps.db.moveTask(userId, row.projectId, row.taskId, { columnId })
+      deps.db.tasks.moveTask(userId, row.projectId, row.taskId, { columnId })
     } catch {
       return /* колонка могла исчезнуть между запросом и переносом */
     }
-    deps.db.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.component_qa', actorType: 'system', payload: { columnId } })
+    deps.db.ci.addCiEvent({ projectId: row.projectId, runId, type: merged ? 'run.task_done' : 'run.component_qa', actorType: 'system', payload: { columnId } })
     const last = steps[steps.length - 1]
     if (last) {
-      const line = deps.db.appendCiLog(
+      const line = deps.db.ci.appendCiLog(
         runId, last.id, 'system',
         merged
           ? 'Ветка задачи влита в прод-ветку — карточка переехала в «Готово»\n'
@@ -2169,24 +2169,24 @@ fi`
    * запускаем — это решение человека, наше дело не потерять её из виду.
    */
   function queueProdRebuild(runId: string, userId: string): void {
-    const row = deps.db.getCiRunRaw(runId)
+    const row = deps.db.ci.getCiRunRaw(runId)
     if (!row) return
-    const steps = deps.db.getCiRun(userId, runId)?.steps ?? []
+    const steps = deps.db.ci.getCiRun(userId, runId)?.steps ?? []
     if (!steps.some((st) => isMergeToBaseStep(st) && st.status === 'success')) return
     if (steps.some((st) => isProdRebuildStep(st) && st.status === 'success')) return
-    const project = deps.db.getProject(userId, row.projectId)
-    const task = deps.db.getCiTask(userId, row.projectId, row.taskId)
+    const project = deps.db.projects.getProject(userId, row.projectId)
+    const task = deps.db.tasks.getCiTask(userId, row.projectId, row.taskId)
     if (!project || !task) return
     // Ран самой автозадачи в её же список не пишем.
     if (task.title === PROD_REBUILD_TASK_TITLE) return
-    let res: ReturnType<VoiceChatDb['ensureProdRebuildTask']>
+    let res: ReturnType<VoiceChatDb['tasks']['ensureProdRebuildTask']>
     try {
-      res = deps.db.ensureProdRebuildTask(userId, row.projectId, `- ${issueKey(project.name, task)}: ${task.title}`)
+      res = deps.db.tasks.ensureProdRebuildTask(userId, row.projectId, `- ${issueKey(project.name, task)}: ${task.title}`)
     } catch {
       return /* карточку могли удалить/перенести между запросом и записью */
     }
     if (!res) return
-    deps.db.addCiEvent({
+    deps.db.ci.addCiEvent({
       projectId: row.projectId,
       runId,
       type: 'run.prod_rebuild_pending',
@@ -2195,22 +2195,22 @@ fi`
     })
     const last = steps[steps.length - 1]
     if (last && res.appended) {
-      const line = deps.db.appendCiLog(runId, last.id, 'system', `Прод в этом ране не пересобирался — задача добавлена в «${PROD_REBUILD_TASK_TITLE}»\n`)
+      const line = deps.db.ci.appendCiLog(runId, last.id, 'system', `Прод в этом ране не пересобирался — задача добавлена в «${PROD_REBUILD_TASK_TITLE}»\n`)
       broadcast({ t: 'ci.log', runId, line }, userId)
     }
     deps.boardChanged(row.projectId)
   }
 
   function rollbackTask(runId: string, userId: string, prevColumnId: string | null): void {
-    const run = deps.db.getCiRunRaw(runId)
+    const run = deps.db.ci.getCiRunRaw(runId)
     if (!run || !prevColumnId || !run.runColumnId) return
-    const task = deps.db.getCiTask(userId, run.projectId, run.taskId)
+    const task = deps.db.tasks.getCiTask(userId, run.projectId, run.taskId)
     // Пользовательский перенос сильнее автоматического rollback этого рана.
     if (!task || task.columnId !== run.runColumnId) return
-    const newerActive = deps.db.latestCiRunSummary(run.taskId)
+    const newerActive = deps.db.ci.latestCiRunSummary(run.taskId)
     if (newerActive && newerActive.id !== runId && isActiveCiStatus(newerActive.status)) return
     try {
-      deps.db.moveTask(userId, run.projectId, run.taskId, { columnId: prevColumnId })
+      deps.db.tasks.moveTask(userId, run.projectId, run.taskId, { columnId: prevColumnId })
     } catch {
       /* колонка могла исчезнуть — не критично */
     }
@@ -2222,19 +2222,19 @@ fi`
    * Причина видна в ленте отдельным шагом, а не только в логе сервера.
    */
   function failIsolation(runId: string, userId: string, runRow: CiRun, workspacePath: string, branch: string, otherRunId: string): void {
-    const step = deps.db.addCiRunStep({
+    const step = deps.db.ci.addCiRunStep({
       runId, slot: 'before_model', position: 0, kind: 'command', initiatedBy: 'system',
       title: 'Проверка изоляции рабочей директории', status: 'running'
     })
     emitStep(step, userId)
-    const line = deps.db.appendCiLog(
+    const line = deps.db.ci.appendCiLog(
       runId, step.id, 'system',
       `Рабочая директория ${workspacePath} или ветка ${branch} уже заняты раном ${otherRunId}: параллельные раны обязаны работать в разных папках и разных ветках.\n`
     )
     broadcast({ t: 'ci.log', runId, line }, userId)
-    const upd = deps.db.updateCiRunStep(step.id, { status: 'failed', finishedAt: now() })
+    const upd = deps.db.ci.updateCiRunStep(step.id, { status: 'failed', finishedAt: now() })
     if (upd) emitStep(upd, userId)
-    deps.db.addCiEvent({
+    deps.db.ci.addCiEvent({
       projectId: runRow.projectId, runId, type: 'run.isolation_conflict', actorType: 'system',
       payload: { workspacePath, branch, otherRunId }
     })
@@ -2254,14 +2254,14 @@ fi`
    */
   function kbSummaryLine(runId: string, userId: string): string {
     try {
-      const report = deps.db.kbUsageRunReport(userId, runId)
+      const report = deps.db.kb.kbUsageRunReport(userId, runId)
       if (!report || !report.totals.queries) return ''
       // Попадание считаем здесь же: резюме уходит до finalize, а без доли строка
       // «выдано 5 разделов» не говорит, пригодился ли хоть один. Пересчёт в
       // finalize перепишет ту же строку метрик — она upsert по рану.
       let hit: { sectionsDelivered: number; sectionsHit: number; hitRatio: number } | null = null
       try {
-        hit = deps.db.calculateAndSaveCiKbHit(runId)
+        hit = deps.db.ci.calculateAndSaveCiKbHit(runId)
       } catch {
         /* попадание — украшение строки, а не сама строка */
       }
@@ -2278,7 +2278,7 @@ fi`
    */
   function postSummaryMessage(runId: string, userId: string, projectName: string, task: Task, summaryText: string, kbUpdateSummary: string | null): void {
     if (!deps.postSummaryToChat) return
-    const conversationId = deps.db.getCiRunRaw(runId)?.conversationId
+    const conversationId = deps.db.ci.getCiRunRaw(runId)?.conversationId
     if (!conversationId) return
     const head = `Резюме по задаче ${issueKey(projectName, task)} · ${task.title}`
     const kbUpdateLine = kbUpdateSummary ? `\n\nБаза знаний: ${kbUpdateSummary}` : ''
@@ -2288,16 +2288,16 @@ fi`
   }
 
   function analyzeFinishedRun(runId: string, userId: string): void {
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     if (!detail || !isTerminalCiStatus(detail.run.status)) return
-    const project = deps.db.getProject(userId, detail.run.projectId)
-    const task = deps.db.getCiTask(userId, detail.run.projectId, detail.run.taskId)
+    const project = deps.db.projects.getProject(userId, detail.run.projectId)
+    const task = deps.db.tasks.getCiTask(userId, detail.run.projectId, detail.run.taskId)
     if (!project || !task) return
     const anomalous = detail.steps.filter((step) =>
       ['failed','timeout','cancelled'].includes(step.status) || step.fixedByModel || step.attempt > 1
     )
     const candidates = anomalous.length ? anomalous : detail.run.status === 'success' ? [] : [null]
-    const logLines = candidates.some(Boolean) ? deps.db.getCiRunLog(userId, runId) : []
+    const logLines = candidates.some(Boolean) ? deps.db.ci.getCiRunLog(userId, runId) : []
     for (const step of candidates) {
       const problem = step
         ? step.fixedByModel
@@ -2338,7 +2338,7 @@ fi`
         'Повторный штатный авторан на чистом окружении подтверждает исправление.'
       ].join('\n')
       const stepLog = step ? logLines.filter((line) => line.stepId === step.id).map((line) => line.chunk).join('\n') : ''
-      deps.db.upsertTaskImprovement({
+      deps.db.tasks.upsertTaskImprovement({
         projectId: detail.run.projectId, taskId: detail.run.taskId, runId, stepId: step?.id ?? null,
         source: 'development', title: step?.fixedByModel ? `Устранить обходное исправление: ${step.title}` : `Стабилизировать: ${step?.title ?? 'автоматический ран'}`,
         description, fingerprint: `development:${key}:${step?.fixedByModel ? 'workaround' : step?.status ?? detail.run.status}`,
@@ -2348,25 +2348,25 @@ fi`
   }
 
   function finalize(runId: string, userId: string, status: CiStatus, reason?: string): void {
-    const run0 = deps.db.getCiRunRaw(runId)
+    const run0 = deps.db.ci.getCiRunRaw(runId)
     // Ран, закрытый отменой (в т.ч. сторожевым таймаутом), финальный: подвисший
     // execute, догребший до конца позже, не имеет права переписать его в failed.
     if (run0 && run0.status === 'cancelled' && status !== 'cancelled') return
     const finished = now()
     const durationMs = run0?.startedAt ? finished - run0.startedAt : null
-    try { deps.db.calculateAndSaveCiKbHit(runId) } catch { /* метрика не роняет финализацию */ }
-    const terminalColumnId = run0 ? deps.db.getCiTask(userId, run0.projectId, run0.taskId)?.columnId ?? null : null
+    try { deps.db.ci.calculateAndSaveCiKbHit(runId) } catch { /* метрика не роняет финализацию */ }
+    const terminalColumnId = run0 ? deps.db.tasks.getCiTask(userId, run0.projectId, run0.taskId)?.columnId ?? null : null
     const failedStep = status === 'failed'
-      ? [...(deps.db.getCiRun(userId, runId)?.steps ?? [])].reverse().find((step) => step.status === 'failed' || step.status === 'timeout')
+      ? [...(deps.db.ci.getCiRun(userId, runId)?.steps ?? [])].reverse().find((step) => step.status === 'failed' || step.status === 'timeout')
       : undefined
     const error = reason?.trim()
       || (status === 'failed'
         ? run0?.error || (failedStep ? `Шаг «${failedStep.title}» завершился с ошибкой.` : 'Ран завершился с ошибкой до появления подробной диагностики.')
         : status === 'cancelled' ? run0?.error || 'Ран отменён пользователем.' : null)
-    const run = deps.db.updateCiRun(runId, { status, error, terminalColumnId, finishedAt: finished, durationMs: durationMs ?? undefined })
+    const run = deps.db.ci.updateCiRun(runId, { status, error, terminalColumnId, finishedAt: finished, durationMs: durationMs ?? undefined })
     if (run) {
       notifyProdDrainFinished(runId)
-      deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
+      deps.db.ci.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
       broadcast({ t: 'ci.done', runId, run }, userId)
       // Анализ best-effort: его сбой не меняет и не маскирует результат рана.
       try { analyzeFinishedRun(runId, userId); deps.improvementsChanged?.(run.projectId) } catch { /* предложения не блокируют workflow */ }
@@ -2381,9 +2381,9 @@ fi`
   function publish(message: ServerMessage, ownerUserId: string): void { broadcast(message, ownerUserId) }
 
   function snapshot(userId: string, runId: string): void | ServerMessage {
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     if (!detail) return
-    const log = deps.db.getCiRunLog(userId, runId)
+    const log = deps.db.ci.getCiRunLog(userId, runId)
     return { t: 'ci.snapshot', runId, detail, log }
   }
 
@@ -2392,17 +2392,17 @@ fi`
   }
 
   async function consoleExec(userId: string, runId: string, command: string, editMode: boolean): Promise<CiConsoleExecResult> {
-    const detail = deps.db.getCiRun(userId, runId)
+    const detail = deps.db.ci.getCiRun(userId, runId)
     if (!detail) return { output: '', exitCode: null, rejected: true, message: 'Ран недоступен' }
     const run = detail.run
     if (editMode) {
-      const owner = deps.db.getProject(userId, run.projectId)?.role === 'owner'
+      const owner = deps.db.projects.getProject(userId, run.projectId)?.role === 'owner'
       if (!owner) return { output: '', exitCode: null, rejected: true, message: 'Режим редактирования — только для владельца проекта' }
-      deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'console.exec.edit', actorType: 'user', actorId: userId, payload: { command } })
+      deps.db.ci.addCiEvent({ projectId: run.projectId, runId, type: 'console.exec.edit', actorType: 'user', actorId: userId, payload: { command } })
     } else if (!isReadOnlyCommand(command)) {
       return { output: '', exitCode: null, rejected: true, message: 'В режиме только для чтения разрешён ограниченный набор команд (ls, cat, git status/log, …)' }
     }
-    const ws = run.workspaceId ? deps.db.getCiWorkspaceById(run.workspaceId) : null
+    const ws = run.workspaceId ? deps.db.ci.getCiWorkspaceById(run.workspaceId) : null
     const cwd = ws?.path ?? ''
     if (!run.agentId) return { output: '', exitCode: null, rejected: true, message: 'У рана нет машины выполнения' }
     const chunks: string[] = []

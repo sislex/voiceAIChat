@@ -20,7 +20,7 @@ let clock = Date.now()
 beforeEach(async () => {
   clock = Date.now()
   db = new VoiceChatDb(':memory:', { now: () => clock })
-  db.createUser('bob', '', 'developer')
+  db.identity.createUser('bob', '', 'developer')
   app = await buildServer({ config: loadConfig({ PORT: '0' }), db, sessionSecret: SECRET })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
@@ -226,7 +226,7 @@ describe('WS: приглашение приходит живьём', () => {
       })
       // Боб не участник — по членству его бы не нашли, кадр адресный.
       expect(await invalidated).toBe(true)
-      expect(db.getProject('bob', project.id)).toBeNull()
+      expect(db.projects.getProject('bob', project.id)).toBeNull()
     } finally {
       bobWs.close()
     }
@@ -260,7 +260,7 @@ describe('WS: приглашение приходит живьём', () => {
   })
 
   it('посторонний пользователь кадра не получает', async () => {
-    db.createUser('carol', '', 'developer')
+    db.identity.createUser('carol', '', 'developer')
     const carolWs = await connect(signToken({ name: 'carol', role: 'developer' }, SECRET))
     const project = (await app.inject({
       method: 'POST', url: '/api/projects', payload: { name: 'Чужое' },

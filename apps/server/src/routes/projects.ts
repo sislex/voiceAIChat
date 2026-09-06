@@ -118,14 +118,14 @@ export function registerProjectRoutes(
         .map((machine) => machine.agentId)
       const current = project.machines.find((machine) => machine.isMyDefault)
       if (!current || !eligible.includes(current.agentId)) {
-        db.setUserProjectDefaultMachine(userId, project.id, eligible[0] ?? null)
+        db.machines.setUserProjectDefaultMachine(userId, project.id, eligible[0] ?? null)
         project.machines = project.machines.map((machine) => ({ ...machine, isMyDefault: machine.agentId === eligible[0] }))
       }
     }
     return project
   }
   const member = (req: FastifyRequest, id: string): ProjectDetail | null =>
-    withMachineStatus(db.getProject(uid(req), id), uid(req))
+    withMachineStatus(db.projects.getProject(uid(req), id), uid(req))
 
   const materializeProjectMachine = async (userId: string, projectId: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments): Promise<void> => {
     if (!agents) return
@@ -142,14 +142,14 @@ export function registerProjectRoutes(
 
   // --- Проекты ---------------------------------------------------------
 
-  app.get(REST.projects, async (req): Promise<ProjectSummary[]> => db.listProjects(uid(req)))
+  app.get(REST.projects, async (req): Promise<ProjectSummary[]> => db.projects.listProjects(uid(req)))
 
   const projectQuota = (req: FastifyRequest): ProjectQuota => {
     const userId = uid(req)
-    const unlimited = db.getUser(userId)?.role === 'admin'
-    const configured = Number(db.getAppConfig('projects.ownedLimit'))
+    const unlimited = db.identity.getUser(userId)?.role === 'admin'
+    const configured = Number(db.settings.getAppConfig('projects.ownedLimit'))
     const limit = Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_OWNED_PROJECT_LIMIT
-    return { owned: db.countOwnedProjects(userId), limit, unlimited }
+    return { owned: db.projects.countOwnedProjects(userId), limit, unlimited }
   }
   app.get(REST.projectsQuota, async (req): Promise<ProjectQuota> => projectQuota(req))
 
@@ -165,10 +165,10 @@ export function registerProjectRoutes(
     if (!name) return badReq(reply, 'name required')
     // Тип берётся только из каталога, видимого этому пользователю: чужой личный
     // узел нельзя назначить, даже зная его id.
-    if (b.typeId !== undefined && !db.listProjectTypes(uid(req)).some((t) => t.id === b.typeId)) {
+    if (b.typeId !== undefined && !db.projects.listProjectTypes(uid(req)).some((t) => t.id === b.typeId)) {
       return badReq(reply, 'Тип проекта недоступен')
     }
-    return db.createProject(uid(req), {
+    return db.projects.createProject(uid(req), {
       name,
       typeId: b.typeId,
       description: b.description,
@@ -255,11 +255,11 @@ export function registerProjectRoutes(
     }
     if (body.releaseTimeouts !== undefined) { try { const { validateReleaseTimeouts } = await import('@voicechat/shared'); validateReleaseTimeouts(body.releaseTimeouts) } catch(error) { return badReq(reply,errMessage(error)) } }
     // Тип — только из видимого пользователю каталога (см. POST выше).
-    if (body.typeId !== undefined && !db.listProjectTypes(uid(req)).some((t) => t.id === body.typeId)) {
+    if (body.typeId !== undefined && !db.projects.listProjectTypes(uid(req)).some((t) => t.id === body.typeId)) {
       return badReq(reply, 'Тип проекта недоступен')
     }
     try {
-      return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
+      return db.projects.updateProject(uid(req), req.params.id, body) ?? nf(reply)
     } catch (error) {
       return badReq(reply, errMessage(error))
     }
@@ -268,7 +268,7 @@ export function registerProjectRoutes(
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
-    db.deleteProject(uid(req), req.params.id)
+    db.projects.deleteProject(uid(req), req.params.id)
     return { ok: true }
   })
 
@@ -282,7 +282,7 @@ export function registerProjectRoutes(
         const username = (req.body?.username ?? '').trim()
       if (!username) return badReq(reply, 'username required')
       try {
-        const detail = db.addMember(uid(req), req.params.id, username) ?? nf(reply)
+        const detail = db.projects.addMember(uid(req), req.params.id, username) ?? nf(reply)
         membershipChanged?.(req.params.id)
         return detail
       } catch (err) {
@@ -299,7 +299,7 @@ export function registerProjectRoutes(
       const role = req.body?.role
       if (role !== 'owner' && role !== 'member') return badReq(reply, 'role must be owner or member')
       try {
-        const detail = db.updateMemberRole(uid(req), req.params.id, req.params.username, role) ?? nf(reply)
+        const detail = db.projects.updateMemberRole(uid(req), req.params.id, req.params.username, role) ?? nf(reply)
         membershipChanged?.(req.params.id)
         return detail
       } catch (err) {
@@ -314,7 +314,7 @@ export function registerProjectRoutes(
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
       try {
-        const detail = db.removeMember(uid(req), req.params.id, req.params.username)
+        const detail = db.projects.removeMember(uid(req), req.params.id, req.params.username)
         boardHub.emit(req.params.id) // снятые назначения меняют доску
         if (detail) membershipChanged?.(req.params.id, req.params.username)
         return detail ?? nf(reply)
@@ -333,8 +333,8 @@ export function registerProjectRoutes(
       if (typeof req.body?.shared !== 'boolean') return badReq(reply, 'shared must be boolean')
       if (req.body.access !== undefined && req.body.access !== 'full' && req.body.access !== 'read') return badReq(reply, "access must be 'full' or 'read'")
       try {
-        db.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared, req.body.access ?? 'full')
-        return withMachineStatus(db.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
+        db.machines.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared, req.body.access ?? 'full')
+        return withMachineStatus(db.projects.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
       } catch (err) {
         return reply.code(403).send({ error: errMessage(err) })
       }
@@ -345,12 +345,12 @@ export function registerProjectRoutes(
   // участника, и запись адресуется его логином, а не проектом целиком.
   app.get<{ Params: { id: string } }>('/api/projects/:id/board/view', async (req, reply) => {
     if (!member(req, req.params.id)) return nf(reply)
-    return db.getBoardView(uid(req), req.params.id)
+    return db.projects.getBoardView(uid(req), req.params.id)
   })
 
   app.put<{ Params: { id: string }; Body: unknown }>('/api/projects/:id/board/view', async (req, reply) => {
     if (!member(req, req.params.id)) return nf(reply)
-    return db.saveBoardView(uid(req), req.params.id, sanitizeBoardView(req.body))
+    return db.projects.saveBoardView(uid(req), req.params.id, sanitizeBoardView(req.body))
   })
 
   app.put<{ Params: { id: string }; Body: { agentId?: string | null } }>(
@@ -360,8 +360,8 @@ export function registerProjectRoutes(
       const agentId = req.body?.agentId
       if (agentId !== null && typeof agentId !== 'string') return badReq(reply, 'agentId must be string or null')
       try {
-        db.setUserProjectDefaultMachine(uid(req), req.params.id, agentId)
-        return withMachineStatus(db.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
+        db.machines.setUserProjectDefaultMachine(uid(req), req.params.id, agentId)
+        return withMachineStatus(db.projects.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -369,8 +369,8 @@ export function registerProjectRoutes(
   )
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/machines/audit', async (req, reply) => {
-    if (!db.isProjectOwner(uid(req), req.params.id)) return forbidden(reply)
-    return db.listMachineShareAudit(req.params.id)
+    if (!db.projects.isProjectOwner(uid(req), req.params.id)) return forbidden(reply)
+    return db.machines.listMachineShareAudit(req.params.id)
   })
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/machines', async (req, reply) => {
@@ -382,7 +382,7 @@ export function registerProjectRoutes(
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     const linked = new Set(p.machines.filter((machine) => machine.sharedWithProject).map((machine) => machine.agentId))
-    return db.listAgents(uid(req))
+    return db.machines.listAgents(uid(req))
       .filter((agent) => !linked.has(agent.id))
       .map((agent) => ({ id: agent.id, name: agent.name }))
   })
@@ -394,13 +394,13 @@ export function registerProjectRoutes(
       if (!p) return nf(reply)
         const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
-      if (db.isMachineSharedWithProject(req.params.id, agentId)) {
+      if (db.machines.isMachineSharedWithProject(req.params.id, agentId)) {
         return reply.code(409).send({ error: 'machine already shared' })
       }
       try {
-        const storageId = req.body?.storageId ?? db.listMachineStorages(uid(req), agentId)[0]?.id
+        const storageId = req.body?.storageId ?? db.machines.listMachineStorages(uid(req), agentId)[0]?.id
         if (storageId) await materializeProjectMachine(uid(req), req.params.id, agentId, storageId)
-        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId, storageId), uid(req)) ?? nf(reply)
+        return withMachineStatus(db.machines.linkMachine(uid(req), req.params.id, agentId, storageId), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -412,7 +412,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-        return withMachineStatus(db.unlinkMachine(uid(req), req.params.id, req.params.agentId), uid(req)) ?? nf(reply)
+        return withMachineStatus(db.projects.unlinkMachine(uid(req), req.params.id, req.params.agentId), uid(req)) ?? nf(reply)
     }
   )
 
@@ -425,28 +425,28 @@ export function registerProjectRoutes(
       if (req.body?.resetDirectory !== undefined) {
         if (!PROJECT_MACHINE_DIRECTORY_KINDS.includes(req.body.resetDirectory)) return badReq(reply, 'unknown directory assignment')
         try {
-          const machine = db.getProject(uid(req), req.params.id)?.machines.find((item) => item.agentId === req.params.agentId)
+          const machine = db.projects.getProject(uid(req), req.params.id)?.machines.find((item) => item.agentId === req.params.agentId)
           if (!machine?.storageId || !machine.directories || !machine.recommendations) throw new Error('MachineStorage не настроено')
           const directories = structuredClone(machine.directories)
           directories[req.body.resetDirectory] = { path: machine.recommendations[req.body.resetDirectory], override: false }
           await materializeProjectMachine(uid(req), req.params.id, req.params.agentId, machine.storageId, directories)
-          return withMachineStatus(db.resetProjectMachineDirectory(uid(req), req.params.id, req.params.agentId, req.body.resetDirectory), uid(req)) ?? nf(reply)
+          return withMachineStatus(db.machines.resetProjectMachineDirectory(uid(req), req.params.id, req.params.agentId, req.body.resetDirectory), uid(req)) ?? nf(reply)
         } catch (err) { return badReq(reply, errMessage(err)) }
       }
       if (req.body?.storageId !== undefined) {
         try {
           await materializeProjectMachine(uid(req), req.params.id, req.params.agentId, req.body.storageId, req.body.directories)
           const platform = agents?.platformOf(req.params.agentId)
-          return withMachineStatus(db.configureProjectMachineStorage(uid(req), req.params.id, req.params.agentId, req.body.storageId, req.body.directories, platform), uid(req)) ?? nf(reply)
+          return withMachineStatus(db.machines.configureProjectMachineStorage(uid(req), req.params.id, req.params.agentId, req.body.storageId, req.body.directories, platform), uid(req)) ?? nf(reply)
         } catch (err) { return badReq(reply, errMessage(err)) }
       }
       if (req.body?.sshHost !== undefined || req.body?.sshUser !== undefined) {
-        return withMachineStatus(db.setProjectMachineSsh(uid(req), req.params.id, req.params.agentId, req.body?.sshHost ?? '', req.body?.sshUser ?? ''), uid(req)) ?? nf(reply)
+        return withMachineStatus(db.machines.setProjectMachineSsh(uid(req), req.params.id, req.params.agentId, req.body?.sshHost ?? '', req.body?.sshUser ?? ''), uid(req)) ?? nf(reply)
       }
       try {
         return req.body?.reposRoot !== undefined
-          ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot), uid(req)) ?? nf(reply)
-          : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? ''), uid(req)) ?? nf(reply)
+          ? withMachineStatus(db.machines.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot), uid(req)) ?? nf(reply)
+          : withMachineStatus(db.machines.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? ''), uid(req)) ?? nf(reply)
       } catch (err) { return badReq(reply, errMessage(err)) }
     }
   )
@@ -483,7 +483,7 @@ export function registerProjectRoutes(
         const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
       try {
-        return withMachineStatus(db.setProjectDefaultMachine(uid(req), req.params.id, agentId), uid(req)) ?? nf(reply)
+        return withMachineStatus(db.projects.setProjectDefaultMachine(uid(req), req.params.id, agentId), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -567,7 +567,7 @@ export function registerProjectRoutes(
   app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
     '/api/projects/:id/board',
     async (req, reply): Promise<Board | FastifyReply> => {
-      const board = db.getBoardSkeleton(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      const board = db.tasks.getBoardSkeleton(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
       return board ?? nf(reply)
     }
   )
@@ -577,7 +577,7 @@ export function registerProjectRoutes(
   app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
     '/api/projects/:id/board/statuses',
     async (req, reply): Promise<BoardStatuses | FastifyReply> => {
-      const statuses = db.getBoardStatuses(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      const statuses = db.tasks.getBoardStatuses(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
       return statuses ?? nf(reply)
     }
   )
@@ -587,7 +587,7 @@ export function registerProjectRoutes(
   if (kbUsage) {
     app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/api/projects/:id/kb-usage', async (req, reply) => {
       // Гейт как у доски: не участник → 404, а не пустой агрегат.
-      const report = db.kbUsageProjectReport(uid(req), req.params.id, Number(req.query.limit) || undefined)
+      const report = db.kb.kbUsageProjectReport(uid(req), req.params.id, Number(req.query.limit) || undefined)
       return report ? { ...report, ...kbUsageFlags(kbUsage.kb, kbUsage.toolEnabled) } : nf(reply)
     })
   }
@@ -599,7 +599,7 @@ export function registerProjectRoutes(
     async (req, reply): Promise<KanbanColumn | FastifyReply> => {
       const name = (req.body?.name ?? '').trim()
       if (!name) return badReq(reply, 'name required')
-      const col = db.createColumn(uid(req), req.params.id, name)
+      const col = db.projects.createColumn(uid(req), req.params.id, name)
       if (!col) return nf(reply)
       boardHub.emit(req.params.id)
       return col
@@ -612,7 +612,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const order = req.body?.order
       if (!Array.isArray(order)) return badReq(reply, 'order required')
-      if (!db.reorderColumns(uid(req), req.params.id, order)) return nf(reply)
+      if (!db.projects.reorderColumns(uid(req), req.params.id, order)) return nf(reply)
       boardHub.emit(req.params.id)
       return { ok: true }
     }
@@ -630,7 +630,7 @@ export function registerProjectRoutes(
       }
       if (b.wipLimit !== undefined) fields.wipLimit = b.wipLimit
       if (fields.name === undefined && fields.wipLimit === undefined) return badReq(reply, 'nothing to update')
-      if (!db.updateColumn(uid(req), req.params.id, req.params.columnId, fields)) return nf(reply)
+      if (!db.projects.updateColumn(uid(req), req.params.id, req.params.columnId, fields)) return nf(reply)
       boardHub.emit(req.params.id)
       return { ok: true }
     }
@@ -640,7 +640,7 @@ export function registerProjectRoutes(
     '/api/projects/:id/columns/:columnId/hidden',
     async (req, reply) => {
       const hidden = Boolean(req.body?.hidden)
-      if (!db.setColumnHidden(uid(req), req.params.id, req.params.columnId, hidden)) return nf(reply)
+      if (!db.projects.setColumnHidden(uid(req), req.params.id, req.params.columnId, hidden)) return nf(reply)
       boardHub.emit(req.params.id)
       return { ok: true }
     }
@@ -649,7 +649,7 @@ export function registerProjectRoutes(
   app.delete<{ Params: { id: string; columnId: string } }>(
     '/api/projects/:id/columns/:columnId',
     async (req, reply) => {
-      if (!db.deleteColumn(uid(req), req.params.id, req.params.columnId)) return nf(reply)
+      if (!db.projects.deleteColumn(uid(req), req.params.id, req.params.columnId)) return nf(reply)
       boardHub.emit(req.params.id)
       return { ok: true }
     }
@@ -669,7 +669,7 @@ export function registerProjectRoutes(
   const tryLinkMakeDesign = (userId: string, projectId: string, taskId: string, conversationId?: string): void => {
     if (!conversationId?.trim()) return
     try {
-      db.linkTaskDesign(userId, projectId, taskId, { conversationId })
+      db.tasks.linkTaskDesign(userId, projectId, taskId, { conversationId })
     } catch {
       // не Make-чат или чат другого проекта — это штатный случай, не ошибка
     }
@@ -684,7 +684,7 @@ export function registerProjectRoutes(
     if (Object.prototype.hasOwnProperty.call(b, 'createdBy')) return badReq(reply, 'createdBy is server-controlled')
     if (!b.columnId || !title) return badReq(reply, 'columnId and title required')
     try {
-      const task = db.createTask(uid(req), req.params.id, {
+      const task = db.tasks.createTask(uid(req), req.params.id, {
         columnId: b.columnId,
         title,
         description: b.description,
@@ -706,7 +706,7 @@ export function registerProjectRoutes(
       tryLinkMakeDesign(uid(req), req.params.id, task.id, b.sourceConversationId)
       boardHub.emit(req.params.id)
       // Задачу отдаём со свежими связями: клиент показывает карточку сразу.
-      return db.getCiTask(uid(req), req.params.id, task.id) ?? task
+      return db.tasks.getCiTask(uid(req), req.params.id, task.id) ?? task
     } catch (err) {
       return badReq(reply, errMessage(err))
     }
@@ -722,13 +722,13 @@ export function registerProjectRoutes(
   }
 
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/activity', async (req, reply) => {
-    const activity = db.taskActivity(uid(req), req.params.id, req.params.taskId)
+    const activity = db.tasks.taskActivity(uid(req), req.params.id, req.params.taskId)
     return activity ?? nf(reply)
   })
 
   app.post<{ Params: { id: string; taskId: string }; Body: { text?: string } }>('/api/projects/:id/tasks/:taskId/comments', async (req, reply) => {
     try {
-      const comment = db.addTaskComment(uid(req), req.params.id, req.params.taskId, String(req.body?.text ?? ''))
+      const comment = db.tasks.addTaskComment(uid(req), req.params.id, req.params.taskId, String(req.body?.text ?? ''))
       if (!comment) return nf(reply)
       boardHub.emit(req.params.id)
       return comment
@@ -737,7 +737,7 @@ export function registerProjectRoutes(
 
   app.patch<{ Params: { id: string; taskId: string; commentId: string }; Body: { text?: string } }>('/api/projects/:id/tasks/:taskId/comments/:commentId', async (req, reply) => {
     try {
-      const comment = db.updateTaskComment(uid(req), req.params.id, req.params.commentId, String(req.body?.text ?? ''))
+      const comment = db.tasks.updateTaskComment(uid(req), req.params.id, req.params.commentId, String(req.body?.text ?? ''))
       if (!comment) return nf(reply)
       boardHub.emit(req.params.id)
       return comment
@@ -746,7 +746,7 @@ export function registerProjectRoutes(
 
   app.delete<{ Params: { id: string; taskId: string; commentId: string } }>('/api/projects/:id/tasks/:taskId/comments/:commentId', async (req, reply) => {
     try {
-      if (!db.deleteTaskComment(uid(req), req.params.id, req.params.commentId)) return nf(reply)
+      if (!db.tasks.deleteTaskComment(uid(req), req.params.id, req.params.commentId)) return nf(reply)
       boardHub.emit(req.params.id)
       return { ok: true as const }
     } catch (error) { return activityError(reply, error) }
@@ -754,7 +754,7 @@ export function registerProjectRoutes(
 
   app.post<{ Params: { id: string; taskId: string }; Body: { minutes?: number; comment?: string; startedAt?: number } }>('/api/projects/:id/tasks/:taskId/worklog', async (req, reply) => {
     try {
-      const entry = db.addTaskWorklog(uid(req), req.params.id, req.params.taskId, {
+      const entry = db.tasks.addTaskWorklog(uid(req), req.params.id, req.params.taskId, {
         minutes: Number(req.body?.minutes ?? 0),
         ...(req.body?.comment !== undefined ? { comment: String(req.body.comment) } : {}),
         ...(req.body?.startedAt !== undefined ? { startedAt: Number(req.body.startedAt) } : {})
@@ -767,7 +767,7 @@ export function registerProjectRoutes(
 
   app.patch<{ Params: { id: string; taskId: string; entryId: string }; Body: { minutes?: number; comment?: string; startedAt?: number } }>('/api/projects/:id/tasks/:taskId/worklog/:entryId', async (req, reply) => {
     try {
-      const entry = db.updateTaskWorklog(uid(req), req.params.id, req.params.entryId, {
+      const entry = db.tasks.updateTaskWorklog(uid(req), req.params.id, req.params.entryId, {
         ...(req.body?.minutes !== undefined ? { minutes: Number(req.body.minutes) } : {}),
         ...(req.body?.comment !== undefined ? { comment: String(req.body.comment) } : {}),
         ...(req.body?.startedAt !== undefined ? { startedAt: Number(req.body.startedAt) } : {})
@@ -780,7 +780,7 @@ export function registerProjectRoutes(
 
   app.delete<{ Params: { id: string; taskId: string; entryId: string } }>('/api/projects/:id/tasks/:taskId/worklog/:entryId', async (req, reply) => {
     try {
-      if (!db.deleteTaskWorklog(uid(req), req.params.id, req.params.entryId)) return nf(reply)
+      if (!db.tasks.deleteTaskWorklog(uid(req), req.params.id, req.params.entryId)) return nf(reply)
       boardHub.emit(req.params.id)
       return { ok: true as const }
     } catch (error) { return activityError(reply, error) }
@@ -795,7 +795,7 @@ export function registerProjectRoutes(
     if (!proposalId || !title) return badReq(reply, 'proposalId and title required')
     if (!startTaskPreparation) return reply.code(503).send({ error: 'Подготовка недоступна' })
     try {
-      const result = db.createTaskFromProposalInPreparation(uid(req), req.params.id, proposalId, {
+      const result = db.tasks.createTaskFromProposalInPreparation(uid(req), req.params.id, proposalId, {
         title, description: b.description, acceptanceCriteria: b.acceptanceCriteria === undefined ? undefined : normalizeAcceptanceCriteria(b.acceptanceCriteria),
         type: b.type, parentId: b.parentId, priority: b.priority, assignee: b.assignee ?? null,
         labels: b.labels, skills: b.skills, storyPoints: b.storyPoints, dueDate: b.dueDate
@@ -804,17 +804,17 @@ export function registerProjectRoutes(
       // рана, и связь, созданная позже, в этот ран уже не попадёт.
       tryLinkMakeDesign(uid(req), req.params.id, result.taskId, b.sourceConversationId)
       if (result.type === 'preparation' && result.status === 'success') {
-        const actual = db.getTaskPreparationRun(uid(req), result.runId)
+        const actual = db.tasks.getTaskPreparationRun(uid(req), result.runId)
         if (actual && (actual.status === 'running' || actual.status === 'success')) return result
       }
       try {
         const run = startTaskPreparation(uid(req), req.params.id, result.taskId, b.selection)
-        db.saveTaskLaunchPreparationRun(req.params.id, proposalId, run.id, null)
+        db.tasks.saveTaskLaunchPreparationRun(req.params.id, proposalId, run.id, null)
         boardHub.emit(req.params.id)
         return { type: 'preparation', status: 'success', taskId: result.taskId, runId: run.id }
       } catch (error) {
         const message = errMessage(error)
-        db.saveTaskLaunchPreparationRun(req.params.id, proposalId, null, message)
+        db.tasks.saveTaskLaunchPreparationRun(req.params.id, proposalId, null, message)
         boardHub.emit(req.params.id)
         return reply.code(207).send({ type: 'preparation', status: 'partial', taskId: result.taskId, error: message, canRetry: true })
       }
@@ -824,9 +824,9 @@ export function registerProjectRoutes(
   })
 
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply): Promise<TaskReworkCycle[] | FastifyReply> => {
-    const task = db.getTaskDetail(uid(req), req.params.id, req.params.taskId)
+    const task = db.tasks.getTaskDetail(uid(req), req.params.id, req.params.taskId)
     if (!task) return nf(reply)
-    return db.listTaskReworkCycles(uid(req), req.params.id, req.params.taskId).map((cycle) => ({
+    return db.tasks.listTaskReworkCycles(uid(req), req.params.id, req.params.taskId).map((cycle) => ({
       ...cycle,
       attachments: cycle.attachments.map((file) => ({ ...file, status: uploads?.get(file.id) ? 'ready' as const : 'missing' as const }))
     }))
@@ -834,7 +834,7 @@ export function registerProjectRoutes(
 
   app.post<{ Params: { id: string; taskId: string }; Body: CreateTaskReworkCycleInput }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply): Promise<TaskReworkCycle | FastifyReply> => {
     const userId = uid(req)
-    if (!db.getTaskDetail(userId, req.params.id, req.params.taskId)) return nf(reply)
+    if (!db.tasks.getTaskDetail(userId, req.params.id, req.params.taskId)) return nf(reply)
     const body = req.body
     const validStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string')
     const validMakeSources = (value: unknown): boolean => value === undefined || (Array.isArray(value) && value.every((source) => {
@@ -856,7 +856,7 @@ export function registerProjectRoutes(
       if (upload?.ownerId === userId) files.push({ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' as const })
     }
     try {
-      const cycle = db.createTaskReworkCycle(userId, req.params.id, req.params.taskId, body, files)
+      const cycle = db.tasks.createTaskReworkCycle(userId, req.params.id, req.params.taskId, body, files)
       boardHub.emit(req.params.id)
       return cycle
     } catch (error) {
@@ -870,7 +870,7 @@ export function registerProjectRoutes(
   // Полная задача по id: доска отдаёт лёгкие карточки без тяжёлых текстов, а
   // TaskModal догружает описание/критерии/лог подготовки при открытии карточки.
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId', async (req, reply): Promise<Task | FastifyReply> =>
-    db.getTaskDetail(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+    db.tasks.getTaskDetail(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
   )
 
   app.patch<{
@@ -880,7 +880,7 @@ export function registerProjectRoutes(
 
     try {
       const body = req.body ?? {}
-      const task = db.updateTask(uid(req), req.params.id, req.params.taskId, {
+      const task = db.tasks.updateTask(uid(req), req.params.id, req.params.taskId, {
         ...body,
         acceptanceCriteria: body.acceptanceCriteria === undefined ? undefined : normalizeAcceptanceCriteria(body.acceptanceCriteria)
       })
@@ -903,7 +903,7 @@ export function registerProjectRoutes(
     // queued надо синхронно исключить из очереди, а уже начавшийся ран нельзя
     // оставить работать с карточкой в TODO. `dequeue` не содержит await, поэтому
     // между проверкой статуса и отменой его не обгоняет исполнитель.
-    const board = db.getBoard(uid(req), req.params.id)
+    const board = db.tasks.getBoard(uid(req), req.params.id)
     const taskBeforeMove = board?.tasks.find((task) => task.id === req.params.taskId)
     const from = taskBeforeMove && board?.columns.find((column) => column.id === taskBeforeMove.columnId)
     const requestedFrom = req.body?.fromColumnId
@@ -911,7 +911,7 @@ export function registerProjectRoutes(
       : from
     const to = board?.columns.find((column) => column.id === columnId)
     if (ci && from?.semanticType === 'development' && to?.semanticType === 'backlog') {
-      const latestRun = db.latestCiRunSummary(req.params.taskId)
+      const latestRun = db.ci.latestCiRunSummary(req.params.taskId)
       if (latestRun?.status === 'queued' || latestRun?.status === 'running' || latestRun?.status === 'awaiting_input') {
         const removal = ci.dequeue(uid(req), latestRun.id)
         if (removal.status !== 'removed') {
@@ -938,7 +938,7 @@ export function registerProjectRoutes(
       }
       // start() уже переносит карточку после INSERT; повторный move применяет
       // только запрошенную drag&drop-позицию и нужен также при reuse активного рана.
-      const moved = db.moveTask(uid(req), req.params.id, req.params.taskId, {
+      const moved = db.tasks.moveTask(uid(req), req.params.id, req.params.taskId, {
         columnId,
         afterId: req.body?.afterId ?? null,
         beforeId: req.body?.beforeId ?? null
@@ -955,12 +955,12 @@ export function registerProjectRoutes(
       try {
         startTaskPreparation(uid(req), req.params.id, req.params.taskId)
         boardHub.emit(req.params.id)
-        return db.getBoard(uid(req), req.params.id)?.tasks.find((item) => item.id === req.params.taskId) ?? nf(reply)
+        return db.tasks.getBoard(uid(req), req.params.id)?.tasks.find((item) => item.id === req.params.taskId) ?? nf(reply)
       } catch (error) {
         return reply.code(409).send({ error: errMessage(error) })
       }
     }
-    const task = db.moveTask(uid(req), req.params.id, req.params.taskId, {
+    const task = db.tasks.moveTask(uid(req), req.params.id, req.params.taskId, {
       columnId,
       afterId: req.body?.afterId ?? null,
       beforeId: req.body?.beforeId ?? null
@@ -976,7 +976,7 @@ export function registerProjectRoutes(
   app.delete<{ Params: { id: string; taskId: string } }>(
     '/api/projects/:id/tasks/:taskId',
     async (req, reply) => {
-      if (!db.deleteTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+      if (!db.tasks.deleteTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
       boardHub.emit(req.params.id)
       return { ok: true }
     }
@@ -987,7 +987,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const project = member(req, req.params.id)
       if (!project || !merge) return nf(reply)
-      const workspace = db.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
+      const workspace = db.ci.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
       const machines = await Promise.all(project.machines.map(async (machine) => ({
         agentId: machine.agentId,
         name: machine.name ?? machine.agentId,
@@ -1006,13 +1006,13 @@ export function registerProjectRoutes(
       const project = member(req, req.params.id)
       if (!project) return nf(reply)
       try {
-        const workspace = db.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
+        const workspace = db.ci.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
         const targetAgentId = req.body?.agentId ?? workspace?.agentId
         if (merge && targetAgentId) {
           const readiness = await merge.checkReadiness(uid(req), req.params.id, req.params.taskId, targetAgentId)
           if (!readiness.ready) throw new Error(readiness.message)
         }
-        const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null, {
+        const run = db.ci.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null, {
           ...(req.body?.provider ? { provider: req.body.provider } : {}),
           ...(typeof req.body?.model === 'string' ? { model: req.body.model } : {})
         })
@@ -1028,7 +1028,7 @@ export function registerProjectRoutes(
   )
 
   app.get<{ Params: { runId: string } }>('/api/merge/runs/:runId', async (req, reply) =>
-    db.getMergeRun(uid(req), req.params.runId) ?? nf(reply)
+    db.ci.getMergeRun(uid(req), req.params.runId) ?? nf(reply)
   )
 
   app.delete<{ Params: { runId: string } }>('/api/merge/runs/:runId', async (req, reply) => {
@@ -1044,14 +1044,14 @@ export function registerProjectRoutes(
 
   app.post<{ Params: { runId: string }; Body: { agentId?: string; unpin?: boolean } }>('/api/merge/runs/:runId/retry', mergeGuard, async (req, reply) => {
     try {
-      const previous = db.getMergeRun(uid(req), req.params.runId)
+      const previous = db.ci.getMergeRun(uid(req), req.params.runId)
       if (!previous) return nf(reply)
       const targetAgentId = req.body?.agentId ?? previous.agentId
       if (merge) {
         const readiness = await merge.checkReadiness(uid(req), previous.projectId, previous.taskId, targetAgentId)
         if (!readiness.ready) throw new Error(readiness.message)
       }
-      const run = db.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null, req.body?.unpin === true)
+      const run = db.ci.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null, req.body?.unpin === true)
       merge?.start(run)
       boardHub.emit(run.projectId)
       return run
@@ -1065,7 +1065,7 @@ export function registerProjectRoutes(
     '/api/projects/:id/tasks/:taskId/merge/runs',
     async (req, reply) => {
       if (!member(req, req.params.id)) return nf(reply)
-      return db.listMergeRuns(uid(req), req.params.id, req.params.taskId)
+      return db.ci.listMergeRuns(uid(req), req.params.id, req.params.taskId)
     }
   )
 
@@ -1074,7 +1074,7 @@ export function registerProjectRoutes(
     '/api/projects/:id/tasks/:taskId/repositories',
     async (req, reply) => {
       if (!member(req, req.params.id)) return nf(reply)
-      return db.listTaskRepositories(uid(req), req.params.id, req.params.taskId)
+      return db.tasks.listTaskRepositories(uid(req), req.params.id, req.params.taskId)
     }
   )
 
@@ -1082,7 +1082,7 @@ export function registerProjectRoutes(
   app.post<{ Params: { id: string; taskId: string } }>(
     '/api/projects/:id/tasks/:taskId/chat',
     async (req, reply) => {
-      const conv = db.openOrCreateTaskChat(uid(req), req.params.id, req.params.taskId)
+      const conv = db.chat.openOrCreateTaskChat(uid(req), req.params.id, req.params.taskId)
       return conv ?? nf(reply)
     }
   )
@@ -1093,7 +1093,7 @@ export function registerProjectRoutes(
   app.get<{ Params: { id: string; taskId: string } }>(
     '/api/projects/:id/tasks/:taskId/designs',
     async (req, reply) => {
-      const links = db.listTaskDesigns(uid(req), req.params.id, req.params.taskId)
+      const links = db.tasks.listTaskDesigns(uid(req), req.params.id, req.params.taskId)
       if (!links) return nf(reply)
       if (!makeWorkspaces) return links
       return Promise.all(links.map(async (link) => {
@@ -1115,7 +1115,7 @@ export function registerProjectRoutes(
       if (!conversationId) return badReq(reply, 'conversationId required')
       try {
         const userId = uid(req)
-        db.assertTaskDesignSource(userId, req.params.id, req.params.taskId, conversationId)
+        db.tasks.assertTaskDesignSource(userId, req.params.id, req.params.taskId, conversationId)
         if (req.body?.mode === 'files') {
           if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
           const requested = req.body.paths ?? []
@@ -1123,7 +1123,7 @@ export function registerProjectRoutes(
           const missing = requested.find((path) => !existing.has(path))
           if (missing) throw new Error(`Make-проект ${conversationId}: файл ${missing} не найден`)
         }
-        const links = db.linkTaskDesign(userId, req.params.id, req.params.taskId, {
+        const links = db.tasks.linkTaskDesign(userId, req.params.id, req.params.taskId, {
           conversationId,
           mode: req.body?.mode,
           paths: req.body?.paths,
@@ -1141,7 +1141,7 @@ export function registerProjectRoutes(
   app.delete<{ Params: { id: string; taskId: string; linkId: string } }>(
     '/api/projects/:id/tasks/:taskId/designs/:linkId',
     async (req, reply) => {
-      const links = db.unlinkTaskDesign(uid(req), req.params.id, req.params.taskId, req.params.linkId)
+      const links = db.tasks.unlinkTaskDesign(uid(req), req.params.id, req.params.taskId, req.params.linkId)
       if (!links) return nf(reply)
       boardHub.emit(req.params.id)
       return links
@@ -1150,18 +1150,18 @@ export function registerProjectRoutes(
 
   app.get<{ Params: { id: string } }>(
     '/api/projects/:id/design-sources',
-    async (req, reply) => db.projectDesignSources(uid(req), req.params.id) ?? nf(reply)
+    async (req, reply) => db.tasks.projectDesignSources(uid(req), req.params.id) ?? nf(reply)
   )
 
   // --- Планы канбан-ассистента ----------------------------------------
   // Панель прогресса читает их через REST, а живые изменения приходят кадром
   // assistant.orchestration — как у CI-ранов.
   app.get<{ Params: { id: string } }>('/api/projects/:id/orchestrations', async (req, reply) =>
-    db.getProject(uid(req), req.params.id) ? db.listOrchestrations(uid(req), req.params.id) : nf(reply)
+    db.projects.getProject(uid(req), req.params.id) ? db.tasks.listOrchestrations(uid(req), req.params.id) : nf(reply)
   )
 
   app.post<{ Params: { planId: string } }>('/api/orchestrations/:planId/cancel', async (req, reply) =>
-    (orchestration?.cancel(uid(req), req.params.planId) ?? db.cancelOrchestration(uid(req), req.params.planId)) ?? nf(reply)
+    (orchestration?.cancel(uid(req), req.params.planId) ?? db.tasks.cancelOrchestration(uid(req), req.params.planId)) ?? nf(reply)
   )
 
   // --- Универсальный инструментальный шлюз виджетов --------------------
@@ -1169,9 +1169,9 @@ export function registerProjectRoutes(
   const widgetIdempotency = new Map<string, unknown>()
   const widgetScope = (userId: string, body: WidgetToolQueryRequest): boolean => {
     if (body.version !== WIDGET_TOOL_CONTRACT_VERSION || body.widgetKind !== 'kanban' || body.widgetInstanceId !== body.projectId) return false
-    const conversation = db.getConversation(userId, body.conversationId)
-    const turnOwned = db.listMessages(userId, body.conversationId).some((message) => message.id === body.turnId)
-    return Boolean(conversation?.projectId === body.projectId && (conversation.assistantKind === null || conversation.assistantKind === 'kanban') && turnOwned && db.getBoard(userId, body.projectId))
+    const conversation = db.chat.getConversation(userId, body.conversationId)
+    const turnOwned = db.chat.listMessages(userId, body.conversationId).some((message) => message.id === body.turnId)
+    return Boolean(conversation?.projectId === body.projectId && (conversation.assistantKind === null || conversation.assistantKind === 'kanban') && turnOwned && db.tasks.getBoard(userId, body.projectId))
   }
   const revision = (tasks: Task[]): string => String(Math.max(0, ...tasks.map((task) => task.updatedAt)))
 
@@ -1195,13 +1195,13 @@ export function registerProjectRoutes(
     if (req.body.ui?.items.length) {
       return { source: 'ui', revision: req.body.ui.revision, items: queryWidgetItems(req.body.ui.items, req.body.text, req.body.kinds, req.body.limit) }
     }
-    const board = db.getBoard(userId, req.body.projectId)!
+    const board = db.tasks.getBoard(userId, req.body.projectId)!
     return { source: 'api', revision: revision(board.tasks), items: queryWidgetItems(board.tasks.map(taskWidgetItem), req.body.text, req.body.kinds, req.body.limit) }
   })
 
   app.post<{ Body: WidgetToolGetRequest }>('/api/widget-tools/get', async (req, reply) => {
     if (!widgetScope(uid(req), req.body)) return nf(reply)
-    const board = db.getBoard(uid(req), req.body.projectId)!
+    const board = db.tasks.getBoard(uid(req), req.body.projectId)!
     const task = board.tasks.find((item) => item.id === req.body.itemId)
     return task ? { revision: revision(board.tasks), item: taskWidgetItem(task) } : nf(reply)
   })
@@ -1218,23 +1218,23 @@ export function registerProjectRoutes(
     try {
       let item: Task
       if (action.name === 'kanban.task.create') {
-        const created = db.createTask(userId, body.projectId, action.input)
+        const created = db.tasks.createTask(userId, body.projectId, action.input)
         if (!created) return nf(reply)
         item = created
       } else if (action.name === 'kanban.task.update') {
-        const board = db.getBoard(userId, body.projectId)!
+        const board = db.tasks.getBoard(userId, body.projectId)!
         const current = board.tasks.find((task) => task.id === action.taskId)
         if (!current) return nf(reply)
         if (String(current.updatedAt) !== action.expectedVersion) return reply.code(409).send({ error: 'stale item version' })
         const patch = { ...action.patch }
         const columnId = patch.columnId
         delete patch.columnId
-        if (columnId && columnId !== current.columnId && !db.moveTask(userId, body.projectId, current.id, { columnId, afterId: null, beforeId: null })) return badReq(reply, 'invalid column')
-        if (Object.keys(patch).length && !db.updateTask(userId, body.projectId, current.id, patch)) return nf(reply)
-        item = db.getBoard(userId, body.projectId)!.tasks.find((task) => task.id === current.id)!
+        if (columnId && columnId !== current.columnId && !db.tasks.moveTask(userId, body.projectId, current.id, { columnId, afterId: null, beforeId: null })) return badReq(reply, 'invalid column')
+        if (Object.keys(patch).length && !db.tasks.updateTask(userId, body.projectId, current.id, patch)) return nf(reply)
+        item = db.tasks.getBoard(userId, body.projectId)!.tasks.find((task) => task.id === current.id)!
       } else return badReq(reply, 'unsupported action')
       boardHub.emit(body.projectId)
-      const nextBoard = db.getBoard(userId, body.projectId)!
+      const nextBoard = db.tasks.getBoard(userId, body.projectId)!
       const result = { applied: true, replayed: false, revision: revision(nextBoard.tasks), item: taskWidgetItem(item) }
       widgetIdempotency.set(idemKey, result)
       req.log.info({ event: 'widget.action', userId, projectId: body.projectId, conversationId: body.conversationId, widgetInstanceId: body.widgetInstanceId, proposalId: body.confirmation.proposalId, idempotencyKey: body.idempotencyKey, action: action.name, taskId: item.id }, 'widget action applied')

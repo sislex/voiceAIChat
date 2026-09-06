@@ -50,7 +50,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   /** Разговор пользователя вида «студия картинок», иначе 404. */
   const own = (userId: string, id: string, reply: FastifyReply): boolean => {
-    const conversation = db.getConversation(userId, id)
+    const conversation = db.chat.getConversation(userId, id)
     if (!conversation || !isImageStudioConversation(conversation)) {
       void reply.code(404).send({ error: 'conversation not found' })
       return false
@@ -120,9 +120,9 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       const file = await store.writeBuffer(req.params.id, name, data)
       await store.setMeta(req.params.id, name, { prompt, tookMs: Date.now() - startedAt })
       // Первый успешный промпт даёт чату говорящее имя вместо «Картинки N».
-      const conversation = db.getConversation(userId, req.params.id)
+      const conversation = db.chat.getConversation(userId, req.params.id)
       if (conversation && /^Картинки \d+$/.test(conversation.title)) {
-        db.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
+        db.chat.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
       }
       return { file: { ...file, prompt }, files: await store.list(req.params.id) }
     })
@@ -189,7 +189,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply
     try {
-      const title = db.getConversation(userId, req.params.id)?.title ?? null
+      const title = db.chat.getConversation(userId, req.params.id)?.title ?? null
       const raw = await store.publish(req.params.id, { title, ...(req.body?.password !== undefined ? { password: req.body.password } : {}) })
       return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, passwordProtected: Boolean(raw.passwordHash) }
     } catch (error) { return sendStudioError(reply, error) }

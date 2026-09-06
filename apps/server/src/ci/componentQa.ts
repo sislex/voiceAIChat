@@ -18,13 +18,15 @@ export interface ComponentQaFinishInput {
 
 export interface ComponentQaRunnerDeps {
   db: {
-    componentQaExecutionContext(runId: string): CiStageExecutionContext | null
-    findPassedGateResult(commitSha: string, signature: string): { runKind: string; runId: string; createdAt: number } | null
-    recordPassedGateResult(args: { projectId: string; taskId: string; commitSha: string; signature: string; commands: readonly string[]; runKind: string; runId: string }): void
-    getComponentQaRun(userId: string, runId: string): ComponentQaRun | null
-    markComponentQaRunning(runId: string): void
-    appendComponentQaLog(runId: string, stream: 'stdout' | 'stderr', chunk: string): void
-    finishComponentQaRun(userId: string, runId: string, input: ComponentQaFinishInput): ComponentQaRun
+    ci: {
+      componentQaExecutionContext(runId: string): CiStageExecutionContext | null
+      findPassedGateResult(commitSha: string, signature: string): { runKind: string; runId: string; createdAt: number } | null
+      recordPassedGateResult(args: { projectId: string; taskId: string; commitSha: string; signature: string; commands: readonly string[]; runKind: string; runId: string }): void
+      getComponentQaRun(userId: string, runId: string): ComponentQaRun | null
+      markComponentQaRunning(runId: string): void
+      appendComponentQaLog(runId: string, stream: 'stdout' | 'stderr', chunk: string): void
+      finishComponentQaRun(userId: string, runId: string, input: ComponentQaFinishInput): ComponentQaRun
+    }
   }
   executor: CommandExecutor
   /** Общий бюджет рана на все стадии; каждая стадия получает остаток. */
@@ -55,12 +57,12 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
   const budgetMs = deps.timeoutMs ?? 30 * 60_000
   const launch = (runId: string, userId: string): void => {
     if (controllers.has(runId)) return
-    const context = deps.db.componentQaExecutionContext(runId)
-    const run = deps.db.getComponentQaRun(userId, runId)
+    const context = deps.db.ci.componentQaExecutionContext(runId)
+    const run = deps.db.ci.getComponentQaRun(userId, runId)
     if (!context || !run) {
       if (run) {
-        deps.db.markComponentQaRunning(runId)
-        deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: run.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: 'development workspace is unavailable' })), commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
+        deps.db.ci.markComponentQaRunning(runId)
+        deps.db.ci.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: run.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: 'development workspace is unavailable' })), commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
         // Автопроход обязан узнать об исходе: молчание оставляет карточку в
         // component_qa, и следующий board event запускает такой же ран по кругу.
         deps.completed?.(runId, userId, false, 'Development workspace недоступен', 'infrastructure')
@@ -70,7 +72,7 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
     }
     const controller = new AbortController()
     controllers.set(runId, controller)
-    deps.db.markComponentQaRunning(runId)
+    deps.db.ci.markComponentQaRunning(runId)
     deps.boardChanged?.(run.projectId)
     deps.qaStageChanged?.(run.projectId, run.taskId)
     void (async () => {
@@ -84,12 +86,12 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       const install = workspaceInstallCommand(context.npmCacheDir)
       const runStage = async (script: string, timeoutMs: number): Promise<{ record: ComponentQaCommandResult; passed: boolean; infrastructure: boolean } | null> => {
         const stageStartedAt = now(), remainingMs = Math.min(timeoutMs, deadline - stageStartedAt)
-        deps.db.appendComponentQaLog(runId, 'stdout', `$ ${script}\n`)
+        deps.db.ci.appendComponentQaLog(runId, 'stdout', `$ ${script}\n`)
         let stdout = ''
         const result = remainingMs > 0
           ? await deps.executor.run({ agentId: context.agentId, script, workdir: context.workdir, env: { CI: '1' }, timeoutMs: remainingMs }, (chunk) => {
               stdout = (stdout + chunk).slice(-500000)
-              deps.db.appendComponentQaLog(runId, 'stdout', chunk)
+              deps.db.ci.appendComponentQaLog(runId, 'stdout', chunk)
             }, controller.signal)
           : { exitCode: null, timedOut: true }
         if (controller.signal.aborted) return null
@@ -97,7 +99,7 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         // Сбой машины и пустая рабочая копия в fix-loop не лечатся: такой ран
         // блокируется, а не отправляет задачу на доработку за чужую вину.
         const infra = passed ? null : classifyCiInfraFailure({ exitCode: result.exitCode, output: stdout })
-        if (infra) deps.db.appendComponentQaLog(runId, 'stdout', formatCiInfraFailure(infra))
+        if (infra) deps.db.ci.appendComponentQaLog(runId, 'stdout', formatCiInfraFailure(infra))
         const stageInfrastructure = result.timedOut || result.exitCode == null || infra != null
         const diagnostic = result.timedOut ? 'command_timeout' : result.exitCode == null ? 'executor_disconnected' : passed ? '' : infra ? infra.kind : 'non_zero_exit'
         return { record: { commandId: '', name: '', command: script, exitCode: result.exitCode, durationMs: now() - stageStartedAt, status: passed ? 'passed' : stageInfrastructure ? 'blocked' : 'failed', stdout, stderr: '', diagnostic, artifacts: [] }, passed, infrastructure: stageInfrastructure }
@@ -106,12 +108,12 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       // стадии или в прошлой попытке: повторный прогон ничего не выясняет, а
       // стоит установки зависимостей и полного гейта.
       const signature = gateSignature(context.commands)
-      const cached = deps.db.findPassedGateResult(run.commitSha, signature)
+      const cached = deps.db.ci.findPassedGateResult(run.commitSha, signature)
       if (cached) {
-        deps.db.appendComponentQaLog(runId, 'stdout', `Проверки этого коммита уже пройдены (${cached.runKind} ${cached.runId}) — результат переиспользован\n`)
-        const reused = deps.db.getComponentQaRun(userId, runId)
+        deps.db.ci.appendComponentQaLog(runId, 'stdout', `Проверки этого коммита уже пройдены (${cached.runKind} ${cached.runId}) — результат переиспользован\n`)
+        const reused = deps.db.ci.getComponentQaRun(userId, runId)
         if (reused && reused.status === 'running') {
-          deps.db.finishComponentQaRun(userId, runId, {
+          deps.db.ci.finishComponentQaRun(userId, runId, {
             status: 'passed',
             scenarios: reused.scenarios.map((item) => ({ ...item, status: 'passed', actualResult: 'Компонентные проверки прошли (результат прошлого прогона того же коммита)', diagnostic: '' })),
             commands: [{ commandId: 'cache', name: 'Результат прошлого прогона', command: context.commands.join(' && '), exitCode: 0, durationMs: 0, status: 'passed', stdout: `Источник: ${cached.runKind} ${cached.runId}`, stderr: '', diagnostic: '', artifacts: [] }],
@@ -137,11 +139,11 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         commands.push(record)
         if (!stage.passed) { failedStage = record; infrastructure = stage.infrastructure }
       }
-      const current = deps.db.getComponentQaRun(userId, runId)
+      const current = deps.db.ci.getComponentQaRun(userId, runId)
       if (!current || current.status !== 'running') return
       const passed = !failedStage
-      if (passed) deps.db.recordPassedGateResult({ projectId: run.projectId, taskId: run.taskId, commitSha: run.commitSha, signature, commands: context.commands, runKind: 'component_qa', runId })
-      deps.db.finishComponentQaRun(userId, runId, {
+      if (passed) deps.db.ci.recordPassedGateResult({ projectId: run.projectId, taskId: run.taskId, commitSha: run.commitSha, signature, commands: context.commands, runKind: 'component_qa', runId })
+      deps.db.ci.finishComponentQaRun(userId, runId, {
         status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed',
         scenarios: current.scenarios.map((item) => ({ ...item, status: passed ? 'passed' : infrastructure ? 'blocked' : 'failed', actualResult: passed ? 'Компонентные проверки прошли' : 'Команда компонентных проверок завершилась с ошибкой', diagnostic: failedStage?.diagnostic ?? '' })),
         commands,
@@ -151,9 +153,9 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
       })
       deps.completed?.(runId, userId, passed, passed ? 'Component QA пройден' : failedStage?.diagnostic || 'Component QA failed', passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect')
     })().catch((error) => {
-      const current = deps.db.getComponentQaRun(userId, runId)
+      const current = deps.db.ci.getComponentQaRun(userId, runId)
       if (current?.status === 'running') {
-        deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: current.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: String(error) })), commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
+        deps.db.ci.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: current.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: String(error) })), commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
         deps.completed?.(runId, userId, false, String(error), 'infrastructure')
       }
     }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) })
@@ -163,12 +165,14 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
 
 export interface AutomatedQaRunnerDeps {
   db: {
-    automatedQaExecutionContext(runId: string): AutomatedQaExecutionContext | null
-    getQaStageRun(userId: string, runId: string): { projectId: string; taskId: string; status: string } | null
-    markAutomatedQaRunning(runId: string): void
-    appendAutomatedQaLog(runId: string, stream: 'out' | 'err' | 'system', text: string): void
-    completeQaStageRun(userId: string, runId: string, result: Record<string, unknown>): unknown
-    updateQaStageRun(runId: string, patch: { status?: 'failed' | 'cancelled'; currentStep?: string; error?: string | null; result?: Record<string, unknown> | null; progress?: { current: number; total: number; label: string } }): void
+    qa: {
+      automatedQaExecutionContext(runId: string): AutomatedQaExecutionContext | null
+      getQaStageRun(userId: string, runId: string): { projectId: string; taskId: string; status: string } | null
+      markAutomatedQaRunning(runId: string): void
+      appendAutomatedQaLog(runId: string, stream: 'out' | 'err' | 'system', text: string): void
+      completeQaStageRun(userId: string, runId: string, result: Record<string, unknown>): unknown
+      updateQaStageRun(runId: string, patch: { status?: 'failed' | 'cancelled'; currentStep?: string; error?: string | null; result?: Record<string, unknown> | null; progress?: { current: number; total: number; label: string } }): void
+    }
   }
   executor: CommandExecutor
   /** Прогон сценария в изолированном Chromium; без него режим `playwright` блокируется. */
@@ -199,12 +203,12 @@ export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQ
   return {
     launch(runId, userId) {
       if (controllers.has(runId)) return
-      const run = deps.db.getQaStageRun(userId, runId)
-      const context = deps.db.automatedQaExecutionContext(runId)
+      const run = deps.db.qa.getQaStageRun(userId, runId)
+      const context = deps.db.qa.automatedQaExecutionContext(runId)
       if (!run || !context) {
         if (run) {
           const verdict = blockedVerdict('command', '', 'Development workspace недоступен', now)
-          deps.db.updateQaStageRun(runId, { status: 'failed', currentStep: 'workspace', error: verdict.summary, result: verdict as unknown as Record<string, unknown> })
+          deps.db.qa.updateQaStageRun(runId, { status: 'failed', currentStep: 'workspace', error: verdict.summary, result: verdict as unknown as Record<string, unknown> })
           deps.boardChanged?.(run.projectId)
           deps.qaStageChanged?.(run.projectId, run.taskId)
           deps.completed?.(runId, userId, false, verdict.summary, verdict)
@@ -213,14 +217,14 @@ export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQ
       }
       const controller = new AbortController()
       controllers.set(runId, controller)
-      deps.db.markAutomatedQaRunning(runId)
+      deps.db.qa.markAutomatedQaRunning(runId)
       deps.boardChanged?.(run.projectId)
       deps.qaStageChanged?.(run.projectId, run.taskId)
       const startedAt = now()
       const finish = (verdict: AutomatedQaVerdict): void => {
         if (controller.signal.aborted) return
-        if (verdict.passed) deps.db.completeQaStageRun(userId, runId, verdict as unknown as Record<string, unknown>)
-        else deps.db.updateQaStageRun(runId, { status: 'failed', currentStep: verdict.classification === 'infrastructure' ? 'blocked' : 'tests', error: verdict.summary, result: verdict as unknown as Record<string, unknown> })
+        if (verdict.passed) deps.db.qa.completeQaStageRun(userId, runId, verdict as unknown as Record<string, unknown>)
+        else deps.db.qa.updateQaStageRun(runId, { status: 'failed', currentStep: verdict.classification === 'infrastructure' ? 'blocked' : 'tests', error: verdict.summary, result: verdict as unknown as Record<string, unknown> })
         deps.completed?.(runId, userId, verdict.passed, verdict.summary, verdict)
       }
       const done = (): void => { controllers.delete(runId); deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) }
@@ -230,8 +234,8 @@ export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQ
         }).finally(done)
         return
       }
-      deps.db.appendAutomatedQaLog(runId, 'system', `$ ${context.command}\n`)
-      deps.db.updateQaStageRun(runId, { currentStep: 'tests', progress: { current: 0, total: 1, label: context.command } })
+      deps.db.qa.appendAutomatedQaLog(runId, 'system', `$ ${context.command}\n`)
+      deps.db.qa.updateQaStageRun(runId, { currentStep: 'tests', progress: { current: 0, total: 1, label: context.command } })
       let tail = ''
       let buffer = ''
       let lastFlush = now()
@@ -239,7 +243,7 @@ export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQ
       // болтливого `npm test` это тысячи парсингов растущего массива.
       const flush = (): void => {
         if (!buffer) return
-        deps.db.appendAutomatedQaLog(runId, 'out', buffer)
+        deps.db.qa.appendAutomatedQaLog(runId, 'out', buffer)
         buffer = ''
         lastFlush = now()
       }
@@ -257,7 +261,7 @@ export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQ
         const passed = result.exitCode === 0 && !result.timedOut
         const infrastructure = result.timedOut || result.exitCode == null
         const summary = result.timedOut ? 'Лимит времени Automated QA исчерпан' : result.exitCode == null ? 'Исполнитель Automated QA отключился' : passed ? 'Автотесты успешно пройдены' : `Команда автотестов завершилась с кодом ${result.exitCode}`
-        deps.db.updateQaStageRun(runId, { progress: { current: 1, total: 1, label: context.command } })
+        deps.db.qa.updateQaStageRun(runId, { progress: { current: 1, total: 1, label: context.command } })
         finish({
           mode: 'command', gatePassed: passed, passed, summary,
           classification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
@@ -295,8 +299,8 @@ async function runScenario(
   if (!scenarios.length) return blockedVerdict('playwright', '', 'Сценарии Automated QA не настроены: проверять нечего', now, startedAt)
 
   const totalSteps = scenarios.reduce((sum, item) => sum + item.steps.length, 0)
-  deps.db.appendAutomatedQaLog(runId, 'system', `Playwright: сценариев ${scenarios.length}, шагов ${totalSteps}\n`)
-  deps.db.updateQaStageRun(runId, { currentStep: 'scenario', progress: { current: 0, total: totalSteps, label: scenarioLabel(scenarios[0]) } })
+  deps.db.qa.appendAutomatedQaLog(runId, 'system', `Playwright: сценариев ${scenarios.length}, шагов ${totalSteps}\n`)
+  deps.db.qa.updateQaStageRun(runId, { currentStep: 'scenario', progress: { current: 0, total: totalSteps, label: scenarioLabel(scenarios[0]) } })
 
   const collected: AutomatedQaStepResult[] = []
   let done = 0
@@ -315,15 +319,15 @@ async function runScenario(
       runId, userId, scenario, signal: controller.signal,
       ...(budget ? { budgetMs: budget } : {}),
       onStep: (step, stepIndex) => {
-        deps.db.appendAutomatedQaLog(runId, step.status === 'failed' ? 'err' : 'out', `${label}: ${stepIndex + 1} ${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}\n`)
-        deps.db.updateQaStageRun(runId, { progress: { current: done + stepIndex + 1, total: totalSteps, label: `${label}: ${step.title}` } })
+        deps.db.qa.appendAutomatedQaLog(runId, step.status === 'failed' ? 'err' : 'out', `${label}: ${stepIndex + 1} ${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}\n`)
+        deps.db.qa.updateQaStageRun(runId, { progress: { current: done + stepIndex + 1, total: totalSteps, label: `${label}: ${step.title}` } })
       }
     })
-    if (outcome.screenshotError) deps.db.appendAutomatedQaLog(runId, 'err', `${label}: снимок экрана не сделан: ${outcome.screenshotError}\n`)
+    if (outcome.screenshotError) deps.db.qa.appendAutomatedQaLog(runId, 'err', `${label}: снимок экрана не сделан: ${outcome.screenshotError}\n`)
     // Ошибки страницы помечаются сценарием: в наборе иначе непонятно, чьи они.
     for (const error of outcome.pageErrors ?? []) {
       pageErrors.push(`${label}: ${error}`)
-      deps.db.appendAutomatedQaLog(runId, 'err', `${label}: ошибка страницы: ${error}\n`)
+      deps.db.qa.appendAutomatedQaLog(runId, 'err', `${label}: ошибка страницы: ${error}\n`)
     }
     // Имя сценария в названии шага: иначе в общем списке непонятно, чей он.
     // Ошибки шага метятся так же, как ошибки прогона: иначе один и тот же текст

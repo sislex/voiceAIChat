@@ -29,7 +29,7 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `config.ts` (env → артефакты репо → дефолты), `server.ts`, `index.ts`, `ws.ts`,
 `session.ts`, `turns.ts`, `uploads.ts`;
 `routes/` (`rest.ts`, `agents.ts`, `admin.ts`), `users/`,
-`db/` (схема + `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
+`db/` (ядро `database.ts`, схема, доменные репозитории `repos/<домен>.ts` с манифестом владения таблицами `ownership.ts`, `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
 `stt/` (whisper, модели, скачивание, wav), `tts/` (piper, say, каталог, голоса),
 `claude/`, `codex/`, `llm/` (`RemoteLlmClient`, `RunnerFsClient`, общий приёмник потока),
 `cc/` (наблюдатель сессий Claude Code),

@@ -11,7 +11,7 @@ import type { VoiceChatDb } from '../db/database.js'
 export function createDbSessionStore(db: VoiceChatDb, now: () => number = Date.now): SessionStore {
   return {
     create(input: NewSession): void {
-      db.createSession(input.sid, input.user, {
+      db.identity.createSession(input.sid, input.user, {
         ip: input.ip,
         userAgent: input.userAgent,
         ttlMs: input.ttlMs,
@@ -23,19 +23,19 @@ export function createDbSessionStore(db: VoiceChatDb, now: () => number = Date.n
       })
     },
     get(sid: string): DeviceSession | null {
-      const session = db.getSession(sid)
+      const session = db.identity.getSession(sid)
       // Контракт ядра требует, чтобы истёкшая сессия читалась как отсутствующая;
       // в БД срок проверяет вызывающий, поэтому фильтруем здесь.
       return session && session.expiresAt > now() ? session : null
     },
-    has: (sid) => db.hasSessionRow(sid),
-    list: (user) => db.listSessions(user, now()),
+    has: (sid) => db.identity.hasSessionRow(sid),
+    list: (user) => db.identity.listSessions(user, now()),
     touch(sid, input) {
-      db.touchSession(sid, input.ttlMs, input.path, now())
+      db.identity.touchSession(sid, input.ttlMs, input.path, now())
     },
-    update: (sid, patch: SessionPatch) => db.updateSession(sid, patch, now()),
-    revoke: (sid) => db.revokeSessionById(sid, now()),
-    revokeAll: (user, exceptSid) => db.revokeUserSessions(user, exceptSid ?? null, now()),
-    prune: (options) => db.pruneSessions(options?.keepRevokedMs, now())
+    update: (sid, patch: SessionPatch) => db.identity.updateSession(sid, patch, now()),
+    revoke: (sid) => db.identity.revokeSessionById(sid, now()),
+    revokeAll: (user, exceptSid) => db.identity.revokeUserSessions(user, exceptSid ?? null, now()),
+    prune: (options) => db.identity.pruneSessions(options?.keepRevokedMs, now())
   }
 }

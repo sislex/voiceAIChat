@@ -294,7 +294,7 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
   // инструмент machines и параметр machine (адресация операции другой машине),
   // имена уходят в системный хинт CLI. Одна машина — прежнее поведение.
   const others = deps.db
-    .listProjectMachines(ctx.project.id)
+    .machines.listProjectMachines(ctx.project.id)
     .filter((m) => m.agentId !== ctx.agentId)
     .map((m) => m.name)
   const project = others.length ? `&project=${encodeURIComponent(ctx.project.id)}` : ''
@@ -379,8 +379,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
 } {
   const now = deps.now ?? (() => Date.now())
   const clientFor = (ctx: CiModelContext): LlmClient => {
-    const role = deps.db.getUser(ctx.run.triggeredBy)?.role ?? 'developer'
-    const resolved = deps.db.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
+    const role = deps.db.identity.getUser(ctx.run.triggeredBy)?.role ?? 'developer'
+    const resolved = deps.db.llm.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
     return resolved.engine && deps.engineClient ? deps.engineClient(resolved.engine) : ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   }
   /**
@@ -392,7 +392,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
 
   /** Модель разработки — безопасный fallback, если модель вспомогательного этапа не стартовала. */
   const runModelOf = (ctx: CiModelContext): string =>
-    deps.db.resolveTaskStageLlmConfig(ctx.project.id, ctx.task.id, 'model_work').model
+    deps.db.ci.resolveTaskStageLlmConfig(ctx.project.id, ctx.task.id, 'model_work').model
 
   /**
    * Ходы одной стадии в одном вызове хука. Модель стадии берётся один раз, и
@@ -458,7 +458,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // по прайсу считала кэш по полной цене входа и завышала её в разы.
     const inputTokens = ctx.run.llmProvider === 'codex' ? Math.max(0, rawInput - cacheReadTokens) : rawInput
     try {
-      deps.db.addCiRunUsage({
+      deps.db.ci.addCiRunUsage({
         runId: ctx.run.id,
         stepId,
         kind,
@@ -495,11 +495,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const chars = ciToolCharsTotal(turn.toolChars)
     if (!ciToolCallsAny(turn.toolCalls) && chars === 0) return
     try {
-      deps.db.addCiRunToolCalls(ctx.run.id, turn.toolCalls, turn.toolChars)
+      deps.db.ci.addCiRunToolCalls(ctx.run.id, turn.toolCalls, turn.toolChars)
       // Тяжёлые ответы — отдельными строками: по ним видно, ЧТО раздуло контекст,
       // а не только сколько его было.
       for (const r of turn.toolResponses) {
-        deps.db.addCiRunToolResponse({
+        deps.db.ci.addCiRunToolResponse({
           runId: ctx.run.id,
           stepId: ctx.parentStepId,
           tool: r.tool,
@@ -527,7 +527,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const gaps = parseKbGaps(text)
     if (!gaps.length) return
     try {
-      deps.db.addCiRunKbGaps(ctx.run.id, stepId, gaps)
+      deps.db.ci.addCiRunKbGaps(ctx.run.id, stepId, gaps)
     } catch {
       /* запись пробелов не имеет права уронить ран */
     }
@@ -543,10 +543,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    */
   function collectKbGaps(ctx: CiModelContext): KbGapForPrompt[] {
     try {
-      const reported = deps.db.ciRunKbGaps(ctx.run.id)
+      const reported = deps.db.ci.ciRunKbGaps(ctx.run.id)
       const named = new Set(reported.map((gap) => gap.question.trim().toLowerCase()))
       const unanswered = deps.db
-        .kbUsageRunGaps(ctx.run.id, MAX_PROMPT_GAPS)
+        .kb.kbUsageRunGaps(ctx.run.id, MAX_PROMPT_GAPS)
         .filter((gap) => !named.has(gap.query.trim().toLowerCase()))
         .map((gap) => ({ question: gap.query, reason: gap.reason }))
       return [...reported, ...unanswered].slice(0, MAX_PROMPT_GAPS)
@@ -622,7 +622,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    */
   async function withBrowserTools<T>(ctx: CiModelContext, body: (fields: Partial<LlmRequest>) => Promise<T>): Promise<T> {
     const conversationId = ctx.run.conversationId
-    const check = deps.db.getTaskBrowserCheck(ctx.task.id)
+    const check = deps.db.ci.getTaskBrowserCheck(ctx.task.id)
     if (!deps.previewMcpBaseUrl || !deps.previewTool || !conversationId || check.mode === 'off') return body({})
     const token = randomUUID()
     deps.previewTool.register(token, { userId: ctx.run.triggeredBy, conversationId })
@@ -689,9 +689,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // В том числе команды проверки: их доступность определяется только
     // availableToModel в справочнике проекта. Каждый вызов виден вложенным шагом.
     const token = randomUUID()
-    const settings = deps.db.getCiSettings()
+    const settings = deps.db.ci.getCiSettings()
     const available = deps.db
-      .listCiCommands(ctx.run.triggeredBy, ctx.project.id)
+      .ci.listCiCommands(ctx.run.triggeredBy, ctx.project.id)
       .filter((c) => c.availableToModel && !c.isCleanup)
     let calls = 0
     ciToolBroker.register(token, {
@@ -725,8 +725,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // «Сначала база знаний, потом код»: требование идёт в задании, а блок
         // контекста по теме задачи сервер подмешивает сам (режим `auto`).
         const kbMode = kbModeOf(ctx)
-        let prompt = taskPrompt(ctx, phase, deps.db.confirmedDevelopmentReadiness(ctx.task.id))
-        const qa = deps.db.getQaTaskState(ctx.run.triggeredBy, ctx.task.projectId, ctx.task.id)
+        let prompt = taskPrompt(ctx, phase, deps.db.tasks.confirmedDevelopmentReadiness(ctx.task.id))
+        const qa = deps.db.qa.getQaTaskState(ctx.run.triggeredBy, ctx.task.projectId, ctx.task.id)
         const fixSession = qa?.sessions.find((session) => session.status === 'failed' && (session.linkedFixRunId === ctx.run.id || session.results.some((result) => result.issue?.linkedFixRunId === ctx.run.id)))
         if (fixSession) {
           const criteria = new Map(qa?.criteria.map((criterion) => [criterion.id, criterion]))
@@ -844,7 +844,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   const modelSummary: CiModelSummaryHook = async (ctx: CiModelContext) => {
-    const detail = deps.db.getCiRun(ctx.run.triggeredBy, ctx.run.id)
+    const detail = deps.db.ci.getCiRun(ctx.run.triggeredBy, ctx.run.id)
     const stepLines = (detail?.steps ?? []).map((s) => `- ${s.title}: ${s.status}${s.exitCode != null ? ` (код ${s.exitCode})` : ''}`).join('\n')
     // Инструменты БЗ есть и здесь: ход без машины и в режиме «план» — база
     // read-only, а сверить формулировки резюме с ней дешевле, чем угадывать.
@@ -866,7 +866,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   const attemptFix: CiFixHook = async (ctx: CiFixContext) => {
-    const settings = deps.db.getCiSettings()
+    const settings = deps.db.ci.getCiSettings()
     const startAll = now()
     const maxFixAttempts = Math.min(Math.max(0, settings.maxFixAttempts), 10)
     let sessionId = ctx.modelSessionId ?? ctx.run.modelSessionId ?? null
@@ -1033,7 +1033,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     if (changes.files.length) log(`Изменённых файлов: ${changes.files.length}.\n`)
     if (gaps.length) log(`Пробелов базы знаний за ран: ${gaps.length}.\n`)
 
-    const projectDocs = deps.db.kbDocuments({ scope: 'project', projectId: ctx.project.id })
+    const projectDocs = deps.db.kb.kbDocuments({ scope: 'project', projectId: ctx.project.id })
     const affected = affectedProjectDocs(projectDocs, changes.files)
     const req = (model: string): LlmRequest => ({
       userId: ctx.run.triggeredBy,
@@ -1185,7 +1185,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     const today = new Date(now()).toISOString().slice(0, 10)
     const saved = out.documents.map((item) => {
       const id = item.id && own.has(item.id) ? item.id : null
-      const doc = deps.db.saveKbDocument({
+      const doc = deps.db.kb.saveKbDocument({
         id,
         scope: 'project',
         projectId: ctx.project.id,
@@ -1204,9 +1204,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   const conflictFixForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; conflicts: string[]; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
-    const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
-    const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
-    const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const project = deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
     const llm = { llmEngineId:args.run.llmEngineId, provider:args.run.llmProvider, model:args.run.llmModel }
     if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для исправления конфликтов недоступен', llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
     const noop = (): never => { throw new Error('Операция development CI недоступна в merge conflict_fix') }
@@ -1248,9 +1248,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * коммит, повторный гейт и решение о публикации остаются за сервером.
    */
   const testFixForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; check: import('@voicechat/shared').MergeCheck; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
-    const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
-    const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
-    const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const project = deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
     const llm = { llmEngineId:args.run.llmEngineId, provider:args.run.llmProvider, model:args.run.llmModel }
     if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для исправления проверок недоступен', llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
     const noop = (): never => { throw new Error('Операция development CI недоступна в merge test_fix') }
@@ -1292,9 +1292,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   const kbUpdateForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
-    const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
-    const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
-    const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const project = deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
     if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для БЗ недоступен', llmEngineId:null, llmProvider:'claude', llmModel:'' }
     // Merge-ран получает разрешённую фактическую конфигурацию до создания записи.
     // Здесь используется именно этот неизменяемый снимок: повторное чтение настроек
