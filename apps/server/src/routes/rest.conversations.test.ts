@@ -116,6 +116,32 @@ describe('REST: conversations/messages/settings', () => {
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
   })
 
+  // @testCase TC-API-01
+  it('Make notes GET/PUT сохраняет прежний контракт stack/uiKit и частичные обновления', async () => {
+    const conv = db.createConversation(U, 'Настройки Make', 'make')
+    const pairs = [
+      ['react', 'none'],
+      ['angular', 'none'],
+      ['html-js', 'bootstrap'],
+      ['html-js', 'none'],
+      ['html', 'none']
+    ] as const
+    for (const [stack, uiKit] of pairs) {
+      const put = await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { stack, uiKit } })
+      expect(put.statusCode).toBe(200)
+      expect(put.json()).toMatchObject({ notes: '', mode: 'balanced', stack, uiKit })
+      const get = await inj({ method: 'GET', url: `/api/make/${conv.id}/notes` })
+      expect(get.statusCode).toBe(200)
+      expect(get.json()).toMatchObject({ notes: '', mode: 'balanced', stack, uiKit })
+    }
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { notes: 'Сохранить поля' } })
+    expect((await inj({ method: 'GET', url: `/api/make/${conv.id}/notes` })).json()).toMatchObject({
+      notes: 'Сохранить поля',
+      stack: 'html',
+      uiKit: 'none'
+    })
+  })
+
   it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
     const conv = db.createConversation(U, 'Проект', 'make')
     const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }

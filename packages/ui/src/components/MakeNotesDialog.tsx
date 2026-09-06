@@ -13,11 +13,12 @@ interface Props {
 }
 
 const STACKS: Array<{ id: MakeStack; title: string }> = [
-  { id: 'html', title: 'Чистый HTML + CSS' },
-  { id: 'html-js', title: 'Чистый HTML + CSS + JS' },
   { id: 'react', title: 'React' },
-  { id: 'angular', title: 'Angular' }
+  { id: 'angular', title: 'Angular' },
+  { id: 'html-js', title: 'Чистый HTML + CSS + JS' },
+  { id: 'html', title: 'Чистый HTML + CSS' }
 ]
+
 const UI_KITS: Array<{ id: MakeUiKit; title: string }> = [
   { id: 'none', title: 'Своя система' },
   { id: 'bootstrap', title: 'Bootstrap 5.3' }
@@ -61,14 +62,18 @@ export function MakeNotesDialog({ conversationId, api, onClose, onSaved }: Props
     <Dialog className="make-dialog" padded title="Настройки проекта" ariaLabel="Настройки проекта" size="md" onClose={onClose} testId="make-notes"
       footer={<Button size="sm" variant="primary" disabled={!dirty || saving} loading={saving} onClick={save}>Сохранить</Button>}>
       <p className="make-ideas-lead">Заметки читает ассистент в начале каждого хода: решения по дизайну, договорённости, что не трогать. Он и сам дописывает сюда через <code>make_remember</code>.</p>
-      <fieldset className="make-mode-picker">
-        <legend>Стек интерфейса</legend>
-        {STACKS.map((item) => <label key={item.id} className={stack === item.id ? 'make-mode on' : 'make-mode'}><input type="radio" name="make-stack" value={item.id} checked={stack === item.id} onChange={() => setStack(item.id)} /><span><strong>{item.title}</strong></span></label>)}
-      </fieldset>
-      <fieldset className="make-mode-picker">
-        <legend>Стилевая база</legend>
-        {UI_KITS.map((item) => <label key={item.id} className={uiKit === item.id ? 'make-mode on' : 'make-mode'}><input type="radio" name="make-ui-kit" value={item.id} checked={uiKit === item.id} onChange={() => setUiKit(item.id)} /><span><strong>{item.title}</strong></span></label>)}
-      </fieldset>
+      <label className="make-field">
+        <span>Стек интерфейса</span>
+        <select className="tin" aria-label="Стек интерфейса" value={stack} onChange={(event) => setStack(event.target.value as MakeStack)} disabled={data === null || saving}>
+          {STACKS.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+      </label>
+      <label className="make-field">
+        <span>Стилевая база</span>
+        <select className="tin" aria-label="Стилевая база" value={uiKit} onChange={(event) => setUiKit(event.target.value as MakeUiKit)} disabled={data === null || saving}>
+          {UI_KITS.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+      </label>
       <fieldset className="make-mode-picker">
         <legend>Режим ассистента</legend>
         {MODES.map((m) => (

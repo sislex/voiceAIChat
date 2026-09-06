@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-06
-checked: 6cd83e5d
+checked: ed89b9a1
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -3732,3 +3732,41 @@ callback отсутствует или завершился ошибкой, ди
 `TC-UI-1..3`, `TC-API-1..2`, `TC-NEG-1..2`, `TC-INT-1` и
 `TC-REG-1`. Источник проверяемых примеров и точных ожиданий — тот же DOM-тест;
 он рендерит view напрямую, а container — через общий `test/uiRender`.
+
+## Стеки интерфейса и UI Kit в Make
+
+`MakeNotesDialog` показывает один select «Стек интерфейса» вместо независимых
+переключателей стека и UI Kit. Пять пунктов идут в порядке React, Angular,
+Bootstrap, «Чистый HTML + CSS + JS», «Чистый HTML + CSS». Это представление
+поверх прежнего API-контракта `stack/uiKit`: React сохраняется как
+`react/none`, Angular — `angular/none`, Bootstrap — `html-js/bootstrap`,
+чистый HTML с JS — `html-js/none`, чистый HTML без JS — `html/none`.
+Источники отображения и преобразования — `STACK_CHOICES` и `stackChoice` в
+`packages/ui/src/components/MakeNotesDialog.tsx`.
+
+При загрузке только пара `html-js/bootstrap` превращается в отдельный пункт
+Bootstrap; legacy-пары `react|angular|html` с `uiKit=bootstrap` отображаются
+по базовому `stack`. Такая нормализация сама по себе не делает форму
+изменённой. Выбор другого пункта, напротив, включает сохранение. Подтверждение
+смены проекта открывается, только если изменился вычисленный `stack`: переход
+между Bootstrap и чистым HTML+CSS+JS меняет только `uiKit` и сохраняется без
+диалога смены стека.
+
+Сохранение передаёт вычисленную пару в прежний `make:setNotes`; после успеха
+обновляет сохранённый снимок, вызывает `onSaved` и показывает «Настройки
+проекта сохранены». В варианте подтверждения «Настройка + применить шаблон»
+шаблон выбирается по вычисленному `stack`: для `html-js` используется
+`blank`, для остальных — id стека. Ошибка загрузки оставляет меню
+заблокированным, а ошибки сохранения или применения шаблона показываются без
+закрытия сценария и позволяют повторить действие.
+
+Component QA закреплён изолированной story
+`Make/MakeNotesDialog` в
+`packages/ui/src/components/MakeNotesDialog.stories.tsx`: основной play-сценарий
+проверяет порядок пяти пунктов и появление существующего подтверждения при
+выборе React; отдельные stories показывают бесконечную загрузку и ошибку
+загрузки. Полное преобразование всех пяти пунктов, legacy-нормализация,
+успешные callback/тост, выбор шаблона и повтор после ошибок проверяются в
+`packages/ui/src/components/MakeNotesDialog.dom.test.tsx`. Совместимость
+GET/PUT и частичных обновлений старого `stack/uiKit` контракта закреплена в
+`apps/server/src/routes/rest.conversations.test.ts`.
