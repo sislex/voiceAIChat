@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 30 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 32 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 31 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1205 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1207 коммит(ов) в areas после сверки: aa4bac59 Merge remote-tracking branch 'origin/main' into fix/image-studio-views-race … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 1 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 27 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 8 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
@@ -34,8 +34,8 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 26 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 198 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-06 | ⚠ 1 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-06 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 64 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-06 | ⚠ 2 коммит(ов) в areas после сверки: aa4bac59 Merge remote-tracking branch 'origin/main' into fix/image-studio-views-race … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 66 коммит(ов) в areas после сверки: aa4bac59 Merge remote-tracking branch 'origin/main' into fix/image-studio-views-race … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 35 коммит(ов) в areas после сверки: 1795b514 perf(board): доска приезжает двумя фазами — скелет и состояние карточек … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 165 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 633. Последние:
+Всего записей: 634. Последние:
 
 - [2026-09-06-pc-radvilovich-make-stack-settings.md](log/2026-09-06-pc-radvilovich-make-stack-settings.md) — make-stack-settings
 - [2026-09-06-alexeys-macbook-air-2-rework-cycles.md](log/2026-09-06-alexeys-macbook-air-2-rework-cycles.md) — rework-cycles
@@ -70,9 +70,9 @@
 - [2026-09-06-alexeys-macbook-air-2-make-stack-menu.md](log/2026-09-06-alexeys-macbook-air-2-make-stack-menu.md) — make-stack-menu
 - [2026-09-06-alexeys-macbook-air-2-lazy-chats-and-pagination.md](log/2026-09-06-alexeys-macbook-air-2-lazy-chats-and-pagination.md) — lazy-chats-and-pagination
 - [2026-09-06-alexeys-macbook-air-2-integration-tests-merge-diff.md](log/2026-09-06-alexeys-macbook-air-2-integration-tests-merge-diff.md) — integration-tests-merge-diff
+- [2026-09-06-alexeys-macbook-air-2-image-studio-views-race.md](log/2026-09-06-alexeys-macbook-air-2-image-studio-views-race.md) — image-studio-views-race
 - [2026-09-06-alexeys-macbook-air-2-board-two-phase.md](log/2026-09-06-alexeys-macbook-air-2-board-two-phase.md) — board-two-phase
 - [2026-09-06-alexeys-macbook-air-2-board-request-rate.md](log/2026-09-06-alexeys-macbook-air-2-board-request-rate.md) — board-request-rate
-- [2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md](log/2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md) — workshop-wrapper-shared
 
 ## Исторические планы
 
