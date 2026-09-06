@@ -244,6 +244,9 @@ export interface KanbanBoardProps {
   loadPreparationRun?: (runId: string) => Promise<TaskPreparationRun | null>
   /** Полная задача (тяжёлые поля, которых нет в лёгкой доске) — грузится при открытии карточки. */
   loadFullTask?: (taskId: string) => Promise<Task | null>
+  loadReworkCycles?: (taskId: string) => Promise<import('@shared/projects').TaskReworkCycle[]>
+  createReworkCycle?: (taskId: string, draft: import('./TaskCardViewModel').TaskReworkDraft, idempotencyKey: string) => Promise<import('@shared/projects').TaskReworkCycle>
+  uploadReworkAttachment?: (file: File) => Promise<{ id: string; name: string; mimeType: string; size: number }>
   onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   onRetryPreparation?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   llmAccess?: UserLlmAccess[]
@@ -1802,6 +1805,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           initialTab={openTaskTab}
           loadPreparationRuns={props.loadPreparationRuns}
           loadPreparationRun={props.loadPreparationRun}
+          loadReworkCycles={props.loadReworkCycles}
+          onCreateReworkCycle={props.createReworkCycle}
+          uploadReworkAttachment={props.uploadReworkAttachment}
           onRetryPreparation={props.onRetryPreparation}
           llmAccess={props.llmAccess}
           llmEngines={props.llmEngines}
