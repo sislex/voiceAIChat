@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
 updated: 2026-09-06
-checked: 67634a16
+checked: 991a960a
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -529,16 +529,23 @@ development-ран на этом workspace и успешный `task_preparation
 `testType`), поэтому правка неавтоматизируемого кейса или самих
 `automationLinks` версию не меняет.
 
-**Исполнение.** `integrationTestExecutionContext` сам достаёт машину, путь и
-`projects.test_command` джойном ран → development-ран → workspace, причём
-только для рана в `queued` с `pushed=1` и `w.commit_sha = r.commit_sha`; иначе
-runner закрывает ран как `blocked/infrastructure/workspace_unavailable`.
-Команды разбирает общий `testStages` (дефолт стадии — `npm run
-affected-check`, не Vitest-специфичный). Перед прогоном runner выполняет
-`git diff-tree --no-commit-id --name-only -r HEAD` и прогоняет список через
-`validateIntegrationTestDiff` (`qa.ts`): разрешены пути с сегментом
-`__tests__|tests?|test|integration` и файлы `*.test.*`/`*.spec.*`. Любой другой
-файл — немедленный `blocked` + `implementation_defect` +
+**Исполнение.** `integrationTestExecutionContext` сам достаёт машину, путь,
+`projects.test_command` и базовую ветку `projects.ci_base_branch` (пустое
+значение нормализуется в `main`) джойном ран → development-ран → workspace,
+причём только для рана в `queued` с `pushed=1` и
+`w.commit_sha = r.commit_sha`; иначе runner закрывает ран как
+`blocked/infrastructure/workspace_unavailable`. Команды разбирает общий
+`testStages` (дефолт стадии — `npm run affected-check`, не
+Vitest-специфичный). Перед прогоном runner вычисляет
+`git merge-base origin/<base> HEAD` и читает всю разницу ветки командой
+`git diff --name-only <merge-base> HEAD`. Если merge-base недоступен,
+основной diff завершился ошибкой или вернул пустой список, runner использует
+`git diff-tree --no-commit-id --name-only -r -m --first-parent HEAD`. Пустой
+результат обоих способов считается ошибкой определения изменений и блокирует
+ран до grep, установки зависимостей и тестовых стадий. Полученный список
+проверяет `validateIntegrationTestDiff` (`qa.ts`): разрешены пути с сегментом
+`__tests__|tests?|test|integration` и файлы `*.test.*`/`*.spec.*`. Любой
+другой файл — немедленный `blocked` + `implementation_defect` +
 `non_test_files_changed` и блокеры `non_test_file:<path>`. Затем `git rev-parse
 HEAD` даёт SHA, и `recordIntegrationAutomationLinks` записывает ссылки. Стадии
 идут последовательно через тот же `ciExecutor` с `CI=1`, общий бюджет 30 минут
@@ -557,7 +564,12 @@ HEAD` даёт SHA, и `recordIntegrationAutomationLinks` записывает �
 **Как появляются `automationLinks`.** Основной путь — маркеры `@testCase` в самих
 тестах: пара «кейс → файл» берётся из них, кейс без маркера остаётся непокрытым.
 Fallback для веток без маркеров прежний: runner берёт первый прошедший валидацию
-путь из диффа и приписывает его **всем** обязательным automatable-кейсам снимка. `recordIntegrationAutomationLinks` пишет их в три
+путь из диффа и приписывает его **всем** обязательным automatable-кейсам снимка.
+Если маркеры присутствуют, но не совпали ни с одним обязательным automatable-кейсом,
+fallback не применяется: полностью пустое обязательное покрытие завершает ран как
+`blocked/implementation_defect/missing_automation` с блокерами
+`missing_automation:<testId>` ещё до проверки кэша и запуска стадий.
+`recordIntegrationAutomationLinks` пишет непустые ссылки в три
 места сразу — в канонический `task_preparation_runs.readiness_json` (заменяя
 ссылки с тем же SHA), в сам ран (`commit_sha`, `test_cases_json`,
 `automation_links_json`) и в `ci_workspaces.commit_sha` того workspace, откуда
@@ -687,6 +699,18 @@ Integration tests добавили три db-кейса там же (общая 
 `canCompleteAutomation`. UI — два DOM-теста `QaStageRunPanel.dom.test.tsx` (лог
 и отмена активного рана; причины недоступности запуска плюс фолбэк «Стадия
 недоступна»); прежние три теста generic-панели удалены вместе с ними.
+
+Ручной возврат на доработку после QA отдельно закреплён маркерными сценариями
+коммита `991a960a`. Серверный `apps/server/src/routes/projects.test.ts`
+покрывает упорядоченную и закрытую членством историю (`TC-API-1`),
+идемпотентный POST и конфликт payload (`TC-API-2`), запрет при активном ране
+(`TC-NEG-1`), чужой upload (`TC-NEG-2`) и атомарное сохранение с возвратом в
+`preparation` (`TC-INT-1`). DOM-тесты
+`NewTaskCardView.dom.test.tsx` проверяют отправку критерия и готового вложения
+(`TC-UI-1`), сохранение черновика при ошибке (`TC-UI-2`), серверную историю и
+`missing`-файл (`TC-UI-3`), блокировку активным раном и переключение версии
+(`TC-NEG-1`, `TC-REG-1`); `KanbanBoard.dom.test.tsx` сохраняет регрессионный
+кейс прокрутки legacy-карточки (`TC-REG-1`).
 
 Не покрыты: маршруты `…/qa/integration` (включая идемпотентность fix), проверка
 диффа и классификация отказов внутри runner'а, `completeIntegrationTestRun` на

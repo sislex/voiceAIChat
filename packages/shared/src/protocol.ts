@@ -421,6 +421,13 @@ export const REST = {
   /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
   projectBoard: (id: string, includeCompleted?: boolean) =>
     `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,
+  /**
+   * Вторая фаза доски: состояние карточек (чат, merge, подготовка, последний
+   * ран) и сводки CI. Отдельный запрос — чтобы доска рисовалась по скелету, не
+   * дожидаясь обхода восьми таблиц ранов.
+   */
+  projectBoardStatuses: (id: string, includeCompleted?: boolean) =>
+    `/api/projects/${encodeURIComponent(id)}/board/statuses${includeCompleted ? '?includeCompleted=1' : ''}`,
   /** Вид доски текущего человека в проекте: фильтры, свимлейны, показ скрытых. */
   projectBoardView: (id: string) => `/api/projects/${encodeURIComponent(id)}/board/view`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
@@ -432,6 +439,7 @@ export const REST = {
   projectTasks: (id: string) => `/api/projects/${encodeURIComponent(id)}/tasks`,
   projectTask: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`,
+  projectTaskReworkCycles: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`,
   projectTaskMove: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
   projectTaskChat: (id: string, taskId: string) =>

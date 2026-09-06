@@ -7,6 +7,7 @@ import type { AutomatedQaCheckResult } from '@voicechat/shared'
 import {
   REST,
   type Board,
+  type BoardStatuses,
   type KanbanColumn,
   type ProjectDetail,
   type ProjectSummary,
@@ -16,6 +17,8 @@ import {
   type ProjectMachineDirectoryKind,
   PROJECT_MACHINE_DIRECTORY_KINDS,
   type Task,
+  type TaskReworkCycle,
+  type CreateTaskReworkCycleInput,
   type TaskPriority,
   type TaskLaunchResult,
   type TaskPreparationLlmSelection,
@@ -43,6 +46,7 @@ import type { AgentRegistry } from '../agents/registry.js'
 import { materializeProjectMachine as materialize } from '../projects/materialize.js'
 import type { MergeRunManager } from '../merge/runManager.js'
 import type { MakeWorkspaces } from '../make/workspace.js'
+import type { UploadStore } from '../uploads.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -93,7 +97,8 @@ export function registerProjectRoutes(
   checkAutomatedQa?: (userId: string, projectId: string, scenarioIndex?: number) => Promise<AutomatedQaCheckResult[]>,
   /** Оркестратор планов ассистента: отмена должна ещё и снять его таймер. */
   orchestration?: { cancel(owner: string, planId: string): import('@voicechat/shared').Orchestration | null },
-  makeWorkspaces?: MakeWorkspaces
+  makeWorkspaces?: MakeWorkspaces,
+  uploads?: UploadStore
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
@@ -555,13 +560,25 @@ export function registerProjectRoutes(
 
   // --- Доска -----------------------------------------------------------
 
+  // Первая фаза: колонки и скелет карточек — доска рисуется сразу, состояние
+  // процессов клиент забирает следом (`/board/statuses`).
   // includeCompleted=1 — вместе с давно завершёнными задачами (по умолчанию их
   // на доске нет, см. настройку проекта «сколько держать завершённые»).
   app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
     '/api/projects/:id/board',
     async (req, reply): Promise<Board | FastifyReply> => {
-      const board = db.getBoard(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      const board = db.getBoardSkeleton(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
       return board ?? nf(reply)
+    }
+  )
+
+  // Вторая фаза: чат карточки, merge, подготовка, последний ран и сводки CI.
+  // Набор задач тот же, что у первой фазы, — включая фильтр по завершённым.
+  app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
+    '/api/projects/:id/board/statuses',
+    async (req, reply): Promise<BoardStatuses | FastifyReply> => {
+      const statuses = db.getBoardStatuses(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      return statuses ?? nf(reply)
     }
   )
 
@@ -803,6 +820,50 @@ export function registerProjectRoutes(
       }
     } catch (error) {
       return reply.code(409).send({ error: errMessage(error) })
+    }
+  })
+
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply): Promise<TaskReworkCycle[] | FastifyReply> => {
+    const task = db.getTaskDetail(uid(req), req.params.id, req.params.taskId)
+    if (!task) return nf(reply)
+    return db.listTaskReworkCycles(uid(req), req.params.id, req.params.taskId).map((cycle) => ({
+      ...cycle,
+      attachments: cycle.attachments.map((file) => ({ ...file, status: uploads?.get(file.id) ? 'ready' as const : 'missing' as const }))
+    }))
+  })
+
+  app.post<{ Params: { id: string; taskId: string }; Body: CreateTaskReworkCycleInput }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply): Promise<TaskReworkCycle | FastifyReply> => {
+    const userId = uid(req)
+    if (!db.getTaskDetail(userId, req.params.id, req.params.taskId)) return nf(reply)
+    const body = req.body
+    const validStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string')
+    const validMakeSources = (value: unknown): boolean => value === undefined || (Array.isArray(value) && value.every((source) => {
+      if (!source || typeof source !== 'object') return false
+      const item = source as Record<string, unknown>
+      return typeof item.conversationId === 'string' && typeof item.title === 'string'
+        && (item.mode === 'whole_project' || item.mode === 'files') && validStrings(item.paths)
+    }))
+    if (!body || typeof body.description !== 'string' || !body.description.trim()
+      || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey.trim()
+      || (body.makeMode !== 'whole_project' && body.makeMode !== 'files')
+      || !validStrings(body.criteria ?? []) || !validStrings(body.makePaths ?? [])
+      || !validStrings(body.uploadIds ?? []) || !validMakeSources(body.makeSources)) {
+      return reply.code(400).send({ error: 'validation_error', code: 'validation_error' })
+    }
+    const files = []
+    for (const uploadId of body.uploadIds ?? []) {
+      const upload = uploads?.get(uploadId)
+      if (upload?.ownerId === userId) files.push({ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' as const })
+    }
+    try {
+      const cycle = db.createTaskReworkCycle(userId, req.params.id, req.params.taskId, body, files)
+      boardHub.emit(req.params.id)
+      return cycle
+    } catch (error) {
+      const code = errMessage(error)
+      if (code === 'not_found') return nf(reply)
+      const status = code === 'validation_error' || code === 'invalid_upload' ? 400 : 409
+      return reply.code(status).send({ error: code, code })
     }
   })
 

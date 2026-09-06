@@ -6,7 +6,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
-import type { Board, ProjectDetail, ServerMessage } from '@voicechat/shared'
+import type { Board, BoardStatuses, ProjectDetail, ServerMessage } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
 let app: FastifyInstance
@@ -161,14 +161,15 @@ describe('WS: живое обновление доски', () => {
     expect(started.statusCode).toBe(202)
     const run = started.json() as { id: string }
     expect(await active).toEqual({ t: 'board.changed', projectId: p.id })
-    const activeBoard = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
-    expect(activeBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
+    // Результат этапа живёт во второй фазе доски: скелет отдаёт только карточки.
+    const statusesOf = async (): Promise<BoardStatuses> =>
+      (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board/statuses`, headers: auth })).json() as BoardStatuses
+    expect((await statusesOf()).tasks.find((item) => item.taskId === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
 
     const cancelled = waitBoardChanged(ws, p.id)
     expect((await app.inject({ method: 'DELETE', url: `/api/qa/runs/${run.id}`, headers: auth })).statusCode).toBe(200)
     expect(await cancelled).toEqual({ t: 'board.changed', projectId: p.id })
-    const cancelledBoard = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
-    expect(cancelledBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
+    expect((await statusesOf()).tasks.find((item) => item.taskId === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
     ws.close()
   })
 

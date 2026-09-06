@@ -6,7 +6,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
-import type { Board, ProjectDetail, ProjectSummary, Task } from '@voicechat/shared'
+import type { Board, BoardStatuses, ProjectDetail, ProjectSummary, Task } from '@voicechat/shared'
 import { BUILTIN_PROJECT_TYPE_IDS } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
@@ -38,11 +38,83 @@ afterEach(async () => {
   db.close()
 })
 
+async function reworkFixture() {
+  const project = await createProject('Rework')
+  const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
+  const done = board.columns.find((column) => column.semanticType === 'done')!
+  const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
+  const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: done.id, title: 'Rework task' } })).json() as Task
+  const run = db.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'done' } })
+  db.updateCiRun(run.id, { status: 'success', finishedAt: Date.now() })
+  return { project, task, done, preparation }
+}
+
 async function createProject(name = 'P1'): Promise<ProjectDetail> {
   const res = await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name } })
   expect(res.statusCode).toBe(200)
   return res.json() as ProjectDetail
 }
+
+describe('task rework cycles REST', () => {
+  // @testCase TC-API-1
+  it('читает полную серверную историю по sequence и скрывает её от неучастника', async () => {
+    const { project, task, done } = await reworkFixture()
+    const url = `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`
+    const payload = { description: 'Первый', criteria: ['A'], makeMode: 'files', makePaths: ['src/A.ts'], uploadIds: [], idempotencyKey: 'one' }
+    expect((await inj(adminTok, { method: 'POST', url, payload })).statusCode).toBe(200)
+    db.moveTask('admin', project.id, task.id, { columnId: done.id })
+    expect((await inj(adminTok, { method: 'POST', url, payload: { ...payload, description: 'Второй', idempotencyKey: 'two' } })).statusCode).toBe(200)
+    const history = (await inj(adminTok, { method: 'GET', url })).json()
+    expect(history.map((cycle: { sequence: number }) => cycle.sequence)).toEqual([1, 2])
+    expect(history[0]).toMatchObject({ description: 'Первый', criteria: ['A'] })
+    expect((await inj(bobTok, { method: 'GET', url })).statusCode).toBe(404)
+  })
+
+  // @testCase TC-API-2
+  it('повторяет одинаковый idempotency key без второго цикла или перехода', async () => {
+    const { project, task, preparation } = await reworkFixture()
+    const url = `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`
+    const payload = { description: 'Один раз', criteria: [], makeMode: 'whole_project', uploadIds: [], idempotencyKey: 'rework-fixed-key' }
+    const first = await inj(adminTok, { method: 'POST', url, payload })
+    const second = await inj(adminTok, { method: 'POST', url, payload })
+    expect(second.json().id).toBe(first.json().id)
+    expect((await inj(adminTok, { method: 'GET', url })).json()).toHaveLength(1)
+    expect(db.getTaskDetail('admin', project.id, task.id)?.columnId).toBe(preparation.id)
+    expect((await inj(adminTok, { method: 'POST', url, payload: { ...payload, description: 'Другой' } })).json().code).toBe('idempotency_conflict')
+  })
+
+  // @testCase TC-NEG-1
+  it('активный ран запрещает создание и остаётся активным', async () => {
+    const { project, task } = await reworkFixture()
+    const active = db.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'running' } })
+    const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`, payload: { description: 'Нет', makeMode: 'whole_project', uploadIds: [], idempotencyKey: 'active' } })
+    expect(response.statusCode).toBe(409)
+    expect(response.json().code).toBe('active_run')
+    expect(db.getCiRunRaw(active.id)?.status).toBe('queued')
+    expect(db.listTaskReworkCycles('admin', project.id, task.id)).toHaveLength(0)
+  })
+
+  // @testCase TC-NEG-2
+  it('отклоняет чужой upload до транзакции', async () => {
+    const { project, task, done } = await reworkFixture()
+    const upload = await inj(bobTok, { method: 'POST', url: '/api/uploads', payload: { name: 'foreign.txt', mimeType: 'text/plain', dataBase64: 'eA==' } })
+    const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`, payload: { description: 'Нет', makeMode: 'whole_project', uploadIds: [upload.json().id], idempotencyKey: 'foreign' } })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().code).toBe('invalid_upload')
+    expect(db.getTaskDetail('admin', project.id, task.id)?.columnId).toBe(done.id)
+    expect(db.listTaskReworkCycles('admin', project.id, task.id)).toHaveLength(0)
+  })
+
+  // @testCase TC-INT-1
+  it('атомарно сохраняет содержимое и возвращает задачу в preparation', async () => {
+    const { project, task, preparation } = await reworkFixture()
+    const upload = await inj(adminTok, { method: 'POST', url: '/api/uploads', payload: { name: 'proof.txt', mimeType: 'text/plain', dataBase64: 'cHJvb2Y=' } })
+    const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`, payload: { description: 'Доработать', criteria: ['A', 'B'], makeMode: 'files', makePaths: ['src/A.ts'], uploadIds: [upload.json().id], idempotencyKey: 'atomic' } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ sequence: 1, criteria: ['A', 'B'], attachments: [{ name: 'proof.txt' }] })
+    expect(db.getTaskDetail('admin', project.id, task.id)?.columnId).toBe(preparation.id)
+  })
+})
 
 describe('разовый прогон набора Automated QA', () => {
   it('без браузерного раннера отвечает 501 человеческим текстом, чужому проекту — 404', async () => {
@@ -225,6 +297,31 @@ describe('projects REST: доступ', () => {
     expect(((await inj(bobTok, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).length).toBe(0)
     expect((await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}` })).statusCode).toBe(404)
     expect((await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).statusCode).toBe(404)
+    expect((await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/board/statuses` })).statusCode).toBe(404)
+  })
+
+  it('доска приезжает двумя фазами: скелет карточек и состояние процессов', async () => {
+    const p = await createProject()
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const created = (await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'Фазы' }
+    })).json() as Task
+
+    const skeleton = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    const card = skeleton.tasks.find((t) => t.id === created.id)!
+    expect(card.title).toBe('Фазы')
+    expect(card.columnId).toBe(board.columns[0].id)
+    // Первая фаза не ходит в раны и чаты — состояния в ней нет вовсе.
+    expect(card.latestRunResult).toBeUndefined()
+    expect(card.chatId).toBeUndefined()
+    expect(skeleton.ciRuns).toBeUndefined()
+
+    const statuses = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board/statuses` })).json() as BoardStatuses
+    expect(statuses.tasks.map((t) => t.taskId)).toEqual(skeleton.tasks.map((t) => t.id))
+    const status = statuses.tasks.find((t) => t.taskId === created.id)!
+    expect(status.latestRunResult).toBeNull()
+    expect(status.mergePermitted).toBe(true)
+    expect(statuses.ciRuns).toEqual([])
   })
 
   it('владелец добавляет участника; участник видит, но не управляет', async () => {

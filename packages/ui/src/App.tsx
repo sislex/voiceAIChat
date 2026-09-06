@@ -2907,6 +2907,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
               loadPreparationRun={(runId) => api['tasks:getPreparationRun']({ runId })}
               loadFullTask={(taskId) => api['tasks:get']({ projectId: routeProjectId!, taskId })}
+              loadReworkCycles={(taskId) => api['tasks:listReworkCycles']({ projectId: routeProjectId!, taskId })}
+              createReworkCycle={(taskId, draft, idempotencyKey) => api['tasks:createReworkCycle']({
+                projectId: routeProjectId!, taskId,
+                input: {
+                  description: draft.description, criteria: draft.criteria, makeMode: draft.makeMode,
+                  makePaths: draft.makePaths, uploadIds: draft.attachments.filter((file) => file.status === 'ready').map((file) => file.id),
+                  idempotencyKey
+                }
+              })}
+              uploadReworkAttachment={async (file) => {
+                const dataBase64 = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader()
+                  reader.onerror = () => reject(new Error('Не удалось прочитать файл'))
+                  reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+                  reader.readAsDataURL(file)
+                })
+                return api['uploads:add']({ name: file.name, mimeType: file.type || 'application/octet-stream', dataBase64 })
+              }}
               onStartPreparation={(taskId, selection) => api['tasks:startPreparationRun']({ projectId: routeProjectId!, taskId, selection })}
               onRetryPreparation={(runId, selection) => api['tasks:retryPreparationRun']({ runId, selection })}
               onCancelPreparation={(runId) => api['tasks:cancelPreparationRun']({ runId })}

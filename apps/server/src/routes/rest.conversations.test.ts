@@ -116,6 +116,32 @@ describe('REST: conversations/messages/settings', () => {
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
   })
 
+  // @testCase TC-API-01
+  it('Make notes GET/PUT сохраняет прежний контракт stack/uiKit и частичные обновления', async () => {
+    const conv = db.createConversation(U, 'Настройки Make', 'make')
+    const pairs = [
+      ['react', 'none'],
+      ['angular', 'none'],
+      ['html-js', 'bootstrap'],
+      ['html-js', 'none'],
+      ['html', 'none']
+    ] as const
+    for (const [stack, uiKit] of pairs) {
+      const put = await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { stack, uiKit } })
+      expect(put.statusCode).toBe(200)
+      expect(put.json()).toMatchObject({ notes: '', mode: 'balanced', stack, uiKit })
+      const get = await inj({ method: 'GET', url: `/api/make/${conv.id}/notes` })
+      expect(get.statusCode).toBe(200)
+      expect(get.json()).toMatchObject({ notes: '', mode: 'balanced', stack, uiKit })
+    }
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { notes: 'Сохранить поля' } })
+    expect((await inj({ method: 'GET', url: `/api/make/${conv.id}/notes` })).json()).toMatchObject({
+      notes: 'Сохранить поля',
+      stack: 'html',
+      uiKit: 'none'
+    })
+  })
+
   it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
     const conv = db.createConversation(U, 'Проект', 'make')
     const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }
@@ -148,7 +174,7 @@ describe('REST: conversations/messages/settings', () => {
     const check = (await inj({ method: 'GET', url: `/api/make/${conv.id}/check` })).json() as { issues: unknown[] }
     expect(check.issues).toEqual([])
     const templated = (await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'landing' } })).json() as { snapshots: Array<{ label: string }> }
-    expect(templated.snapshots[0]?.label).toContain('Лендинг')
+    expect(templated.snapshots[0]?.label).toBe('До смены стека')
     // Загрузка бинарника: base64 → байты, отдаётся превью с image/png.
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3])
     const uploaded = (await inj({ method: 'POST', url: `/api/make/${conv.id}/upload`, payload: { path: 'img/logo.png', dataBase64: png.toString('base64') } })).json() as { files: Array<{ path: string }> }
@@ -157,6 +183,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(img.headers['content-type']).toMatch(/image\/png/)
     expect(img.rawPayload.equals(png)).toBe(true)
     // React: JSX транспилируется при отдаче, импорт без расширения дополняется; страница сториз собирается.
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { stack: 'react' } })
     await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'react' } })
     await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'src/Extra.jsx', content: "import { Button } from './components/Button'\nexport const X = () => <Button>x</Button>" } })
     const jsx = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/src/Extra.jsx` })
@@ -1510,11 +1537,9 @@ describe('REST: conversations/messages/settings', () => {
       }
     }
     const before = await snap()
-    // Пункт есть всегда, а блок — только когда мастерская что-то отдала. В
-    // тестовом сервере `makeContext` не подключён, поэтому проверяем пункт и
-    // честное описание, а не выдуманный текст.
+    // Пункт и обязательные stack/uiKit hints есть всегда, даже пока проект не содержит пользовательского контекста.
     expect(before.item).toBeDefined()
-    expect(before.blocks.some((block) => block.title === 'Контекст проекта Make')).toBe(false)
+    expect(before.blocks.some((block) => block.title === 'Контекст проекта Make')).toBe(true)
     // Динамика хода перечислена прямо: человек видит её следы в ответах.
     expect(before.omitted.some((line) => line.includes('Режим Make'))).toBe(true)
 

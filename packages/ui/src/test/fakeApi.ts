@@ -18,7 +18,7 @@ import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, TaskDesignLink, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, BoardStatuses, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, TaskDesignLink, WorkItemDefaultSkills } from '@shared/projects'
 import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS, DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@shared/projects'
 
 
@@ -256,20 +256,41 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     machines: p.machines.map((m) => ({ ...m })),
     defaultAgentId: p.defaultAgentId
   })
-  const boardOf = (pid: string, includeCompleted?: boolean): Board => {
+  const boardTasksOf = (pid: string, includeCompleted?: boolean): Task[] => {
     // Как на сервере: давно завершённые задачи в снапшот не попадают.
     const retention = includeCompleted ? null : projects.find((p) => p.id === pid)?.doneRetentionDays ?? null
-    return {
-      columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
-      tasks: tasks
-        .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, nowMs))
-        .sort((a, b) => {
-          if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
-          return compareTasksInColumn(a, b, columns.find((c) => c.id === a.columnId)?.semanticType ?? 'custom')
-        })
-        .map((t) => ({ ...t }))
-    }
+    return tasks
+      .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, nowMs))
+      .sort((a, b) => {
+        if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
+        return compareTasksInColumn(a, b, columns.find((c) => c.id === a.columnId)?.semanticType ?? 'custom')
+      })
   }
+  const boardOf = (pid: string, includeCompleted?: boolean): Board => ({
+    columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
+    tasks: boardTasksOf(pid, includeCompleted).map((t) => ({ ...t }))
+  })
+  /** Вторая фаза доски: как на сервере — состояние карточек отдельным запросом. */
+  const boardStatusesOf = (pid: string, includeCompleted?: boolean): BoardStatuses => ({
+    tasks: boardTasksOf(pid, includeCompleted).map((t) => ({
+      taskId: t.id,
+      chatId: t.chatId ?? null,
+      mergeSourceBranch: t.mergeSourceBranch ?? null,
+      mergeSourceSha: t.mergeSourceSha ?? null,
+      activeMergeRunId: t.activeMergeRunId ?? null,
+      latestMergeRunId: t.latestMergeRunId ?? null,
+      activeMergeStatus: t.activeMergeStatus ?? null,
+      mergePermitted: t.mergePermitted ?? false,
+      mergeMachineBound: t.mergeMachineBound ?? false,
+      mergedSha: t.mergedSha ?? null,
+      mergedSourceSha: t.mergedSourceSha ?? null,
+      taskPreparationRunId: t.taskPreparationRunId ?? null,
+      taskPreparationStatus: t.taskPreparationStatus ?? null,
+      taskPreparationError: t.taskPreparationError ?? null,
+      latestRunResult: t.latestRunResult ?? null
+    })),
+    ciRuns: []
+  })
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
@@ -402,8 +423,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:libraryExport': async ({ conversationId, name, paths }) => { const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); const item = { slug, name, files: paths, bytes: 0, sourceConversationId: conversationId, updatedAt: Date.now() }; library.set(slug, item); libraryFiles.set(slug, new Map(paths.map((p) => [p, makeFiles(conversationId).get(p) ?? '']))); return { item } },
     'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return { state: makeState(conversationId), mergedTokens: 0, autoImported: [] } },
     'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
-    'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' },
-    'make:setNotes': async ({ conversationId, notes, mode }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode }; makeNotes.set(conversationId, next); return next },
+    'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced', stack: 'html-js', uiKit: 'none' },
+    'make:setNotes': async ({ conversationId, notes, mode, stack, uiKit }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const, stack: 'html-js' as const, uiKit: 'none' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode, stack: stack ?? cur.stack, uiKit: uiKit ?? cur.uiKit }; makeNotes.set(conversationId, next); return next },
     'make:tests': async ({ conversationId }) => ({ files: [...makeFiles(conversationId).entries()].filter(([p]) => /\.test\.(jsx|tsx)$/i.test(p)).map(([p, c]) => ({ path: p, names: [...c.matchAll(/\btest\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!), component: null })) }),
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
     'make:share': async ({ conversationId }) => { if (!makeShare.has(conversationId)) makeShare.set(conversationId, { token: 'share123', createdAt: 1, url: '#/make-shared/share123' }); return makeState(conversationId) },
@@ -417,7 +438,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const conv = [...makeShare.entries()].find(([, s]) => s.token === token)?.[0] ?? (token === 'share123' ? 'make-1' : null)
       if (!conv) throw new Error('Ссылка недействительна или отозвана')
       const st = makeState(conv)
-      return { token, owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
+      return { token, stack: 'html-js', uiKit: 'none', owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
     },
     'make:sharedFile': async ({ path }) => { const content = makeFiles('make-1').get(path); if (content === undefined) throw new Error('Файл не найден'); return { path, content, size: new TextEncoder().encode(content).length, updatedAt: 1 } },
     'make:sharedStories': async () => ({ files: [] }),
@@ -1378,6 +1399,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return result
     },
     'board:get': async ({ id, includeCompleted }) => boardOf(id, includeCompleted),
+    'board:getStatuses': async ({ id, includeCompleted }) => boardStatusesOf(id, includeCompleted),
     'board:getView': async ({ id }) => ({ ...DEFAULT_BOARD_VIEW, ...(boardViews.get(id) ?? {}) }),
     'board:saveView': async ({ id, view }) => {
       // Как на сервере: патч поверх сохранённого, в ответе — весь вид.
@@ -1489,6 +1511,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:listPreparationRuns': async () => [],
     'tasks:getPreparationRun': async () => null,
     'tasks:get': async () => null,
+    'tasks:listReworkCycles': async () => [],
+    'tasks:createReworkCycle': async ({ taskId, input }) => ({ id: nextId(), taskId, sequence: 1, description: input.description, criteria: input.criteria ?? [], makeSources: input.makeSources ?? [], attachments: [], createdBy: 'admin', createdAt: Date.now(), preparationRunId: null }),
     'tasks:cancelPreparationRun': async ({ runId }) => ({ id: runId, projectId: '', taskId: '', status: 'cancelled', attempt: 1, maxAttempts: 1, log: '', error: 'Подготовка отменена пользователем', readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: nowMs, canRetry: true, canCancel: false }),
     'tasks:startPreparationRun': async ({ projectId, taskId, selection }) => ({ id: `preparation-${taskId}`, projectId, taskId, status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),
     'tasks:retryPreparationRun': async ({ runId, selection }) => ({ id: `${runId}-retry`, projectId: '', taskId: '', status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),

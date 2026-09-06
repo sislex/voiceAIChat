@@ -24,8 +24,10 @@ function renderPane(overrides: Partial<Parameters<typeof MakePane>[0]> = {}) {
 }
 
 describe('MakePane', () => {
+  // @testCase TC-11
   it('открывается на превью с iframe проекта; пресеты ширины и обновление меняют src', async () => {
     renderPane()
+    expect(await screen.findByRole('button', { name: 'Настройки проекта: HTML+CSS+JS · своя система' })).toBeInTheDocument()
     const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
     expect(frame.getAttribute('src')).toBe(`/api/preview/make/${CONV}/index.html?rev=0`)
     expect(frame.getAttribute('sandbox')).toContain('allow-scripts')
@@ -33,6 +35,16 @@ describe('MakePane', () => {
     expect((screen.getByTitle('Превью проекта') as HTMLIFrameElement).style.width).toBe('390px')
     await userEvent.click(screen.getByRole('button', { name: 'Обновить превью' }))
     expect(screen.getByTitle('Превью проекта').getAttribute('src')).toContain('rev=1')
+  })
+
+  // @testCase TC-REG-01
+  it('открывает настройки из бейджа и обновляет его после сохранения Bootstrap', async () => {
+    renderPane()
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки проекта: HTML+CSS+JS · своя система' }))
+    const dialog = await screen.findByTestId('make-notes')
+    await userEvent.selectOptions(within(dialog).getByRole('combobox', { name: 'Стилевая база' }), 'bootstrap')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
+    expect(await screen.findByRole('button', { name: /Настройки проекта: .*Bootstrap/ })).toBeInTheDocument()
   })
 
   it('режим «Код»: дерево файлов, редактор, сохранение через кнопку и Ctrl+S', async () => {

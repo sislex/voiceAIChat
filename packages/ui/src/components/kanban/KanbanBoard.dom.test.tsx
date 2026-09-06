@@ -109,7 +109,8 @@ describe('KanbanBoard (изолированный)', () => {
     expect(props.onReorderColumns).not.toHaveBeenCalled()
   })
 
-  it('открытие и закрытие карточки сохраняет общую вертикальную позицию доски', async () => {
+  // @testCase TC-REG-1
+  it('открытие и закрытие legacy-карточки сохраняет общую вертикальную позицию доски', async () => {
     renderBoard()
     const surface = screen.getByTestId('kanban-board')
     surface.scrollTop = 240
