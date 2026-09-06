@@ -90,6 +90,12 @@ export interface AppRuntimeDeps {
   diagnostics?: StoreDiagnostics
 }
 
+/** Чего стартовый маршрут НЕ требует: доска обходится без индекса чатов. */
+export interface BootstrapOptions {
+  /** Открывается доска (или другой экран без списка чатов) — индекс отложить. */
+  skipConversations?: boolean
+}
+
 export interface AppRuntime {
   shell: ShellStore
   session: SessionStore
@@ -100,7 +106,7 @@ export interface AppRuntime {
   admin: AdminStore
   projects: ProjectsStore
   /** Проверка сессии и, при успехе, защищённый bootstrap. Идемпотентен. */
-  start(preferredChatId?: string | null): Promise<void>
+  start(preferredChatId?: string | null, options?: BootstrapOptions): Promise<void>
   /** Вход по логину/паролю: успех → тот же защищённый bootstrap. */
   login(name: string, password: string, remember?: boolean): Promise<void>
   /** Второй шаг входа — код TOTP (auth-roadmap п.6). */
@@ -231,6 +237,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     chat: {
       scheduleConversationsRefresh: () => chat.actions.scheduleConversationsRefresh(),
       refreshConversations: (options) => chat.actions.refreshConversations(options),
+      ensureConversationIndex: () => chat.actions.ensureConversationIndex(),
       selectConversation: (id) => chat.actions.selectConversation(id),
       reloadActiveMessages: () => chat.actions.reloadActiveMessages()
     },
@@ -302,15 +309,18 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
    * запускает второй граф загрузки, а ошибка необязательного домена не
    * превращает приложение в экран логина и не стирает загруженный чат.
    */
-  async function bootstrap(preferredChatId?: string | null): Promise<void> {
+  async function bootstrap(preferredChatId?: string | null, options?: BootstrapOptions): Promise<void> {
     if (bootstrapping) return bootstrapping
     const run = (async () => {
       // 1) Права и каталог движков — раньше любой фильтрации моделей.
       const settingsLoad = settings.actions.load().catch((err: unknown) => {
         shell.actions.fail(err, () => void settings.actions.load())
       })
-      // 2) Индекс разговоров: его ошибку показывает сам сайдбар.
-      const conversationsLoad = chat.actions.loadConversationIndex().catch(() => [])
+      // 2) Индекс разговоров: его ошибку показывает сам сайдбар. На доске чаты
+      // не показываются, а их индекс — шесть запросов плюс метки: там его
+      // грузит уже сам список, когда человек откроет вкладку «Чаты».
+      const needsConversations = !options?.skipConversations || Boolean(preferredChatId)
+      const conversationsLoad = needsConversations ? chat.actions.ensureConversationIndex().catch(() => []) : Promise.resolve([])
       const [, conversations] = await Promise.all([settingsLoad, conversationsLoad])
       if (disposed) return
       // 3) Необязательные домены — параллельно и без права уронить bootstrap.
@@ -321,7 +331,9 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       ])
       if (disposed) return
       // 4) Адрес важнее «самого свежего»: чат по ссылке может быть и из другого
-      // проекта — selectConversation сам переключит фильтр сайдбара.
+      // проекта — selectConversation сам переключит фильтр сайдбара. Открытая
+      // доска чат не подставляет: незачем грузить сообщения того, кого не видно.
+      if (!needsConversations) return
       const visible = chat.getState().conversations
       const wanted = preferredChatId ?? null
       const target = (wanted && conversations.some((c) => c.id === wanted) ? wanted : null) ?? visible[0]?.id ?? null
@@ -377,10 +389,10 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     admin,
     projects,
     handlers,
-    async start(preferredChatId) {
+    async start(preferredChatId, options) {
       const user = await session.actions.check()
       if (!user) return // требуется вход — защищённый bootstrap не запускаем
-      await bootstrap(preferredChatId ?? null)
+      await bootstrap(preferredChatId ?? null, options)
     },
     async login(name, password, remember = true) {
       const user: SessionUser | null = await session.actions.login(name, password, remember)

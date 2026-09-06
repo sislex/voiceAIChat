@@ -876,11 +876,28 @@ export async function registerRest(
 
   // includeCompleted=1 — вместе с чатами задач, лежащих в колонке «Готово»
   // (по умолчанию их в списке нет, см. `listConversations`).
-  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversations, async (req, reply) => {
-    const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
-    if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
-    return db.listConversations(uid(req), { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted) })
-  })
+  // since — окно «свежие беседы» (сайдбар грузит текущую неделю), beforeAt+beforeId
+  // с limit — курсорная догрузка секции «Более старые» порциями.
+  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string; since?: string; beforeAt?: string; beforeId?: string; limit?: string } }>(
+    REST.conversations,
+    async (req, reply) => {
+      const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+      if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+      const num = (value: string | undefined): number | undefined => {
+        const parsed = Number(value)
+        return value !== undefined && Number.isFinite(parsed) ? parsed : undefined
+      }
+      const beforeAt = num(req.query.beforeAt)
+      return db.listConversations(uid(req), {
+        scope,
+        projectId: req.query.projectId,
+        includeCompleted: queryFlag(req.query.includeCompleted),
+        ...(num(req.query.since) !== undefined ? { since: num(req.query.since)! } : {}),
+        ...(beforeAt !== undefined && req.query.beforeId ? { before: { updatedAt: beforeAt, id: req.query.beforeId } } : {}),
+        ...(num(req.query.limit) !== undefined ? { limit: num(req.query.limit)! } : {})
+      })
+    }
+  )
    app.post<{ Body: DesktopMigrationBundle }>(REST.desktopMigration, async (req, reply) => {
     if (!req.body || !Array.isArray(req.body.conversations)) return reply.code(400).send({ error: 'invalid migration bundle' })
     return db.importDesktopData(uid(req), req.body)
@@ -1260,7 +1277,10 @@ export async function registerRest(
   // Метки чатов задач для списка бесед: ключ, тип и последний ран. Статический
   // путь объявлен до `/api/conversations/:id`, но Fastify и так предпочитает его
   // параметрическому — «task-chats» не будет прочитан как id беседы.
-  app.get(REST.conversationTaskChats, async (req) => db.taskChatBadges(uid(req)))
+  app.get<{ Querystring: { withRuns?: string } }>(
+    REST.conversationTaskChats(),
+    async (req) => db.taskChatBadges(uid(req), { withRuns: req.query.withRuns === '1' || req.query.withRuns === 'true' })
+  )
 
   // Контекст задачи для шапки связанного чата (проект/эпик/стори/этап/машина/ран).
   app.get<{ Params: { id: string } }>('/api/conversations/:id/task-context', async (req, reply) => {

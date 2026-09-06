@@ -141,7 +141,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   })
 
   let idCounter = 0
-  let clock = 1_700_000_000_000
+  // Часы фикстур идут от текущего момента: иначе беседы оказывались бы старше
+  // недели, а сайдбар грузит окно текущей недели и прячет остальное в «Более старые».
+  let clock = Date.now()
   /** «Сейчас» фейкового бэкенда — двигается только `_advanceDays`. */
   let nowMs = Date.now()
   const nextId = (): string => `id-${++idCounter}`
@@ -364,12 +366,17 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'widget:get': async ({ itemId }) => { throw new Error(`fake widget item not found: ${itemId}`) },
     'widget:action': async () => ({ applied: true, replayed: false, revision: String(Date.now()) }),
-    'conversations:list': async ({ scope = 'chat', projectId, includeCompleted } = {}) =>
-      [...conversations]
+    // Окно и курсор — как на сервере: `since` отсекает свежие, `before` + `limit`
+    // выдают следующую порцию старых (пара «время + id» на случай равных меток).
+    'conversations:list': async ({ scope = 'chat', projectId, includeCompleted, since, before, limit } = {}) => {
+      const page = [...conversations]
         .filter((c) => c.scope === scope && (scope !== 'kanban' || c.projectId === projectId))
         .filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .map(withCounts),
+        .filter((c) => since === undefined || c.updatedAt >= since)
+        .filter((c) => !before || c.updatedAt < before.updatedAt || (c.updatedAt === before.updatedAt && c.id < before.id))
+        .sort((a, b) => b.updatedAt - a.updatedAt || (a.id < b.id ? 1 : -1))
+      return (limit && limit > 0 ? page.slice(0, limit) : page).map(withCounts)
+    },
     // Make: файлы проекта в памяти — панель тестируется без сервера.
     'make:state': async ({ conversationId }) => makeState(conversationId),
     'make:read': async ({ conversationId, path }) => {
@@ -708,9 +715,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         run: null
       }
     },
-    // Метки чатов задач: ключ считаем той же shared-функцией, что сервер, а ран
-    // фейк не хранит — состояние подсветки тесты досылают кадрами `ci.*`.
-    'conversations:taskChats': async () =>
+    // Метки чатов задач: ключ считаем той же shared-функцией, что сервер. Ран,
+    // как и на сервере, приезжает только по `withRuns`; сам фейк его не хранит —
+    // состояние подсветки тесты досылают кадрами `ci.*`.
+    'conversations:taskChats': async (arg) =>
       conversations
         .filter((c) => c.taskId)
         .flatMap((c) => {
@@ -718,7 +726,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
           const project = projects.find((p) => p.id === task?.projectId)
           if (!task || !project) return []
           const column = columns.find((col) => col.id === task.columnId)
-          return [{ conversationId: c.id, projectId: project.id, taskId: task.id, key: issueKey(project.name, task), type: task.type, columnSemantic: column?.semanticType ?? null, run: null }]
+          return [{
+            conversationId: c.id, projectId: project.id, taskId: task.id,
+            key: issueKey(project.name, task), type: task.type,
+            columnSemantic: column?.semanticType ?? null,
+            ...(arg?.withRuns ? { run: null } : {})
+          }]
         }),
     'conversations:setProject': async ({ id, projectId }) => {
       const conv = conversations.find((c) => c.id === id)!

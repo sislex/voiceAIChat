@@ -7,6 +7,7 @@ import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { ClaudeLogEntry, Message } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import { localWeekStart, OLDER_CONVERSATIONS_PAGE } from '@shared/projects'
 
 // Быстрые задержки + фейковые таймеры делают мок-пайплайн детерминированным.
 const DELAYS = { frame: 20, transcribe: 20, think: 20, speak: 20 }
@@ -2248,6 +2249,53 @@ describe('voiceStore — помощник промптов', () => {
     expect(helper.loading).toBe(false)
     expect(helper.error).toBe('Движок недоступен')
     expect(helper.variants).toEqual([])
+  })
+})
+
+describe('voiceStore — секция «Более старые» грузится порциями', () => {
+  it('первая страница — окно недели, догрузка идёт по 20 и знает, когда история кончилась', async () => {
+    const api = createFakeApi([])
+    const week = localWeekStart(Date.now())
+    // 25 бесед старше недели и одна свежая: окно должно принести только свежую.
+    for (let i = 0; i < 25; i++) {
+      const conv = await api['conversations:create']({ title: `Старая ${i}` })
+      conv.updatedAt = week - (i + 1) * 1000
+    }
+    const fresh = await api['conversations:create']({ title: 'Свежая' })
+    fresh.updatedAt = week + 1000
+
+    const store = createTestStore({ api })
+    await store.actions.ensureConversationIndex()
+    expect(store.getState().conversations.map((c) => c.title)).toEqual(['Свежая'])
+    expect(store.getState().olderHasMore).toBe(true)
+
+    await store.actions.loadOlderConversations()
+    // Ровно страница: остальное ждёт следующего нажатия.
+    expect(store.getState().conversations).toHaveLength(1 + OLDER_CONVERSATIONS_PAGE)
+    expect(store.getState().olderHasMore).toBe(true)
+
+    await store.actions.loadOlderConversations()
+    expect(store.getState().conversations).toHaveLength(26)
+    // Порция короче страницы — кнопки «показать ещё» больше не будет.
+    expect(store.getState().olderHasMore).toBe(false)
+  })
+
+  it('обновление списка не теряет уже догруженные старые беседы', async () => {
+    const api = createFakeApi([])
+    const week = localWeekStart(Date.now())
+    const old = await api['conversations:create']({ title: 'Старая' })
+    old.updatedAt = week - 1000
+    const fresh = await api['conversations:create']({ title: 'Свежая' })
+    fresh.updatedAt = week + 1000
+
+    const store = createTestStore({ api })
+    await store.actions.ensureConversationIndex()
+    await store.actions.loadOlderConversations()
+    expect(store.getState().conversations.map((c) => c.title)).toEqual(['Свежая', 'Старая'])
+
+    await store.actions.refreshConversations()
+    // Раскрытая история не должна схлопываться от любого события доски.
+    expect(store.getState().conversations.map((c) => c.title)).toEqual(['Свежая', 'Старая'])
   })
 })
 

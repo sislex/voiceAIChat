@@ -95,10 +95,13 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
     'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
-    'conversations:list': ({ scope, projectId, includeCompleted }) => {
+    'conversations:list': ({ scope, projectId, includeCompleted, since, before, limit }) => {
       const q = new URLSearchParams({ scope: scope ?? 'chat' })
       if (projectId) q.set('projectId', projectId)
       if (includeCompleted) q.set('includeCompleted', '1')
+      if (since !== undefined) q.set('since', String(since))
+      if (before) { q.set('beforeAt', String(before.updatedAt)); q.set('beforeId', before.id) }
+      if (limit !== undefined) q.set('limit', String(limit))
       return req(`${REST.conversations}?${q.toString()}`)
     },
     'conversations:create': ({ title, scope, projectId, assistantKind }) =>
@@ -283,7 +286,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:setPreviewUrl': ({ id, previewUrl }) =>
       req(`/api/conversations/${encodeURIComponent(id)}/preview-url`, { method: 'POST', body: JSON.stringify({ previewUrl }) }),
     'conversations:taskContext': ({ id }) => req(REST.conversationTaskContext(id)),
-    'conversations:taskChats': () => req(REST.conversationTaskChats),
+    'conversations:taskChats': (arg) => req(REST.conversationTaskChats(arg?.withRuns)),
     'conversations:setStatus': ({ id, status }) =>
       req(REST.conversationStatus(id), { method: 'POST', body: JSON.stringify({ status }) }),
     'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode }) =>

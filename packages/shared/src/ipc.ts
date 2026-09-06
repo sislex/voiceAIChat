@@ -149,7 +149,21 @@ export interface IpcInvokeMap {
    * «Готово»: по умолчанию сервер их не отдаёт (переключатель «Показывать чаты
    * завершённых задач»).
    */
-  'conversations:list': { arg: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }; result: Conversation[] }
+  /**
+   * Список бесед. `since` — окно свежих (сайдбар грузит текущую неделю),
+   * `before` + `limit` — курсорная догрузка секции «Более старые».
+   */
+  'conversations:list': {
+    arg: {
+      scope?: ConversationScope
+      projectId?: string
+      includeCompleted?: boolean
+      since?: number
+      before?: { updatedAt: number; id: string }
+      limit?: number
+    }
+    result: Conversation[]
+  }
   /** Make: состояние проекта разговора (файлы, снимки, rev) и операции с файлами. */
   'make:state': { arg: { conversationId: string }; result: MakeProjectState }
   'make:read': { arg: { conversationId: string; path: string }; result: MakeFileContent }
@@ -269,7 +283,7 @@ export interface IpcInvokeMap {
   /** Контекст задачи для шапки связанного чата; null — чат не привязан к задаче. */
   'conversations:taskContext': { arg: { id: string }; result: TaskChatContext | null }
   /** Метки чатов задач для списка бесед: ключ, тип и последний ран. */
-  'conversations:taskChats': { arg: void; result: TaskChatBadge[] }
+  'conversations:taskChats': { arg: { withRuns?: boolean } | void; result: TaskChatBadge[] }
   /** Сменить статус жизненного цикла чата. */
   'conversations:setStatus': { arg: { id: string; status: ConversationStatus }; result: Conversation }
   'conversations:setExecTarget': {
