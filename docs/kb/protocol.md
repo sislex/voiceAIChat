@@ -557,7 +557,12 @@ generate/edit ограничен `IMAGE_STUDIO_LIMITS.maxPromptChars` (4000, 400
 `GET /g/<token>/` (готовый HTML, noindex, счётчик просмотров под локом — урок
 Make) и `GET /g/<token>/file?path=`. Токен и просмотры — sidecar
 `.studio-publish.json` + индекс `<root>/.published/<token>.json`; повторный
-publish не ротирует ссылку, unpublish гасит страницу и файлы. Auth-hook
+publish не ротирует ссылку, unpublish гасит страницу и файлы. Просмотр со
+страницы считается фоном (`void store.countView(...)` в маршруте `/g/:token/`),
+поэтому читать `publication` сразу после ответа страницы — гонка: тест ждёт
+очередь мутаций публикации через `store.publishSettled(id)` (метод добавлен
+2026-09-06 после плавающего падения `imageStudio.test.ts` с `views = 0`).
+Auth-hook
 закрывает только `/api/*`, поэтому `/g/` публичен без правок auth. Мосты
 `imgstudio:publish|publication|unpublish`. В dev vite-прокси проксирует
 `/p/`, `/g/`, `/s/` на бэкенд — иначе публичные ссылки на порту Vite были 404.

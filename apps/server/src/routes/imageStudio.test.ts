@@ -186,7 +186,9 @@ describe('студия картинок: публикация галереи', (
     expect(file.statusCode).toBe(200)
     expect(file.headers['content-type']).toMatch(/image\/png/)
 
-    // Статистика просмотров дошла до владельца.
+    // Статистика просмотров дошла до владельца. Счётчик страницы фоновый —
+    // ждём очередь публикации, иначе на медленной машине читаем ноль.
+    await store.publishSettled(convId)
     const info = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/publication` })).json() as { views: number }
     expect(info.views).toBeGreaterThanOrEqual(1)
 
