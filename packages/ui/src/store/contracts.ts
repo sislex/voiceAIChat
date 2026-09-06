@@ -31,6 +31,14 @@ export const userThemeKey = (login: string): string => `vc.theme.${encodeURIComp
 export const SIDEBAR_COLLAPSED_KEY = 'vc:sidebarCollapsed'
 /** Ключ предпочтений для ширины панели превью (в процентах). */
 export const PREVIEW_WIDTH_KEY = 'voicechat.previewWidth'
+/**
+ * Ширина колонки чата в мастерской (проценты). Ключ свой на каждую поверхность:
+ * раскладка у консоли и студии картинок одна, а привычные пропорции разные —
+ * терминалу нужна ширина под вывод, галерее под сетку миниатюр.
+ */
+export const workshopChatWidthKey = (surface: 'console' | 'images'): string => `vc.workshop.chatWidth.${surface}`
+/** Свёрнутая колонка чата в мастерской — тоже своя на каждую поверхность. */
+export const workshopChatCollapsedKey = (surface: 'console' | 'images'): string => `vc.workshop.chatCollapsed.${surface}`
 /** Ключ предпочтений «панель ассистента канбана раскрыта». */
 export const KANBAN_ASSISTANT_OPEN_KEY = 'voicechat.kanbanAssistantOpen'
 /** Ключ предпочтений с чатом ассистента конкретного проекта. */
@@ -68,6 +76,12 @@ export const IMAGE_STUDIO_VIEWER_BG_KEY = 'vc.imgstudio.viewerBg'
 export const IMAGE_STUDIO_NEGATIVE_KEY = 'vc.imgstudio.negative'
 /** Фон сетки галереи: шахматка, светлый или тёмный. */
 export const IMAGE_STUDIO_GRID_BG_KEY = 'vc.imgstudio.gridBg'
+/** Миниатюры целиком (`contain`) вместо обрезки по квадрату (`cover`). */
+export const IMAGE_STUDIO_FIT_KEY = 'vc.imgstudio.fit'
+/** Раскрытый ящик отбора: у кого фильтры в ходу, тот держит его открытым. */
+export const IMAGE_STUDIO_FILTERS_KEY = 'vc.imgstudio.filters'
+/** Раскрытый блок запретов («без чего рисовать») в панели рисования. */
+export const IMAGE_STUDIO_NEGATIVE_OPEN_KEY = 'vc.imgstudio.negativeOpen'
 export const imageStudioPinnedKey = (conversationId: string): string => `vc.imgstudio.pinned.${conversationId}`
 /** Избранные файлы галереи (звёздочка на карточке). */
 export const imageStudioStarsKey = (conversationId: string): string => `vc.imgstudio.stars.${conversationId}`
@@ -113,6 +127,13 @@ export const imageStudioViewsKey = (conversationId: string): string => `vc.imgst
 export const imageStudioPromptsKey = (conversationId: string): string => `vc.imgstudio.prompts.${conversationId}`
 
 /**
+ * Команда запуска Storybook в режиме «Репозиторий» — на проект: в монорепо витрина
+ * живёт не в корне, и сервер эту команду не угадывает.
+ */
+export const makeStorybookCommandKey = (projectId: string): string =>
+  `vc.make.storybookCommand.${encodeURIComponent(projectId)}`
+
+/**
  * Все ключи предпочтений интерфейса в одном месте — реестр для стража
  * `preferenceKeys.test.ts`. Он не даёт разъехаться двум вещам: одинаковому
  * ключу у разных фич (одна молча затирает другую) и ключу-литералу мимо этого
@@ -143,7 +164,10 @@ export const PREFERENCE_KEYS = [
   IMAGE_STUDIO_STYLE_KEY,
   IMAGE_STUDIO_VIEWER_BG_KEY,
   IMAGE_STUDIO_NEGATIVE_KEY,
-  IMAGE_STUDIO_GRID_BG_KEY
+  IMAGE_STUDIO_GRID_BG_KEY,
+  IMAGE_STUDIO_FIT_KEY,
+  IMAGE_STUDIO_FILTERS_KEY,
+  IMAGE_STUDIO_NEGATIVE_OPEN_KEY
 ] as const
 
 /**

@@ -575,6 +575,18 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectGitStage(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:gitResolveConflict': ({ id, ...body }) =>
       req(REST.projectGitResolve(id), { method: 'POST', body: JSON.stringify(body) }),
+    // --- Компоненты проекта в Make: список сториз, Storybook на машине, тикет ---
+    'projects:components': ({ id, workspace }) => req(REST.projectComponents(id, workspace)),
+    'projects:componentStories': ({ id, workspace, path }) => req(REST.projectComponentStories(id, workspace, path)),
+    'projects:storybookSession': ({ id, workspace }) => req(REST.projectStorybook(id, workspace)),
+    'projects:storybookAction': ({ id, ...body }) =>
+      req(REST.projectStorybookAction(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:storybookOpen': ({ id, ...body }) =>
+      req(REST.projectStorybookOpen(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:storybookCloseTunnel': ({ id, tunnelId, workspace }) =>
+      req(REST.projectStorybookTunnel(id, tunnelId, workspace), { method: 'DELETE' }),
+    'projects:componentTicket': ({ id, ...body }) =>
+      req(REST.projectComponentTicket(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>

@@ -3,9 +3,15 @@
 // занимала полторы сотни строк разметки посреди логики. Состояние и запись
 // предпочтений остаются у панели: компонент показывает и сообщает о нажатии.
 import type { Ref } from 'react'
-import { Button } from '@voicechat/ui-kit'
+import { Button, IconButton } from '@voicechat/ui-kit'
 
 interface Props {
+  /**
+   * Раскрыт ли ящик с селектами отбора. Свёрнутый — состояние по умолчанию:
+   * шесть селектов подряд читаются как стена, а включены обычно один-два.
+   */
+  expanded: boolean
+  onToggleExpanded: () => void
   /** Поле поиска появляется, когда глазами искать уже неудобно. */
   showSearch: boolean
   searchRef: Ref<HTMLInputElement>
@@ -61,18 +67,53 @@ interface Props {
   kinds: string[]
   kind: string
   onKind: (value: string) => void
-  orderLabel: string
-  /** `reverse` — нажали с Shift: развернуть нынешний порядок. */
-  onOrderNext: (reverse: boolean) => void
+  /** Нынешний порядок сетки — значением, а не подписью. */
+  order: string
+  onOrder: (value: string) => void
+  /** Порядок развёрнут (по возрастанию). */
+  reversed: boolean
+  onToggleReversed: () => void
 }
 
+/**
+ * Восемь порядков ходили по кругу одной кнопкой: чтобы добраться от «Сначала
+ * новые» до «По цвету», нужно было семь нажатий, а подпись для `tint` вовсе не
+ * была предусмотрена — выбрав цвет, человек видел «Сначала готовые».
+ */
+export const IMAGE_STUDIO_ORDERS: Array<{ value: string; label: string }> = [
+  { value: 'new', label: 'Сначала новые' },
+  { value: 'name', label: 'По имени' },
+  { value: 'size', label: 'По размеру' },
+  { value: 'pixels', label: 'По разрешению' },
+  { value: 'stars', label: 'Сначала избранные' },
+  { value: 'ready', label: 'Сначала готовые' },
+  { value: 'noted', label: 'Сначала с заметками' },
+  { value: 'tint', label: 'По цвету' }
+]
+
 export function ImageStudioFilters({
-  showSearch, searchRef, query, onQuery, found, shownBytes, conditions, heavy, onHeavy, activeCount, onReset,
+  expanded, onToggleExpanded, showSearch, searchRef, query, onQuery, found, shownBytes, conditions, heavy, onHeavy, activeCount, onReset,
   showOrigin, origin, onOrigin, mark, onMark, setNames, setFilter, onSetFilter, shape, onShape, shown, total,
   dayCount, dayOnly, onDayOnly, missed, sinceVisitOnly, onSinceVisitOnly,
   grouped, onGrouped, onFoldAll, allFolded, freshCount, freshOnly, onFreshOnly, kinds, kind, onKind,
-  orderLabel, onOrderNext
+  order, onOrder, reversed, onToggleReversed
 }: Props): JSX.Element {
+  const ORIGIN_LABELS: Record<string, string> = { ai: 'Нарисованные', own: 'Свои файлы', derived: 'Производные' }
+  const MARK_LABELS: Record<string, string> = { noted: 'С заметкой', draft: 'Черновики', ready: 'Готовые', none: 'Неразобранное' }
+  const SHAPE_LABELS: Record<string, string> = { square: 'Квадратные', portrait: 'Портрет', landscape: 'Пейзаж' }
+  const HEAVY_LABELS: Record<string, string> = { '1': 'Больше 1 МБ', '5': 'Больше 5 МБ' }
+  const chips = [
+    origin ? { label: ORIGIN_LABELS[origin]!, clear: () => onOrigin('') } : null,
+    setFilter ? { label: `Набор: ${setFilter}`, clear: () => onSetFilter('') } : null,
+    mark ? { label: MARK_LABELS[mark]!, clear: () => onMark('') } : null,
+    shape ? { label: SHAPE_LABELS[shape]!, clear: () => onShape('') } : null,
+    heavy ? { label: HEAVY_LABELS[heavy]!, clear: () => onHeavy('') } : null,
+    kind ? { label: kind.toUpperCase(), clear: () => onKind('') } : null
+  ].filter((chip): chip is { label: string; clear: () => void } => chip !== null)
+  // Поле поиска показывается не всегда, а запрос может приехать из сохранённого
+  // вида или ссылки на отбор — тогда «почему видно не всё» ниоткуда не понять.
+  if (!showSearch && query.trim()) chips.unshift({ label: `Поиск: ${query.trim()}`, clear: () => onQuery('') })
+  const selectedCount = chips.length
   return <>
     {showSearch && <span className="image-studio-search">
       <input
@@ -99,6 +140,29 @@ export function ImageStudioFilters({
     {activeCount > 0 && <Button size="sm" variant="ghost" title="Снять все условия поиска и фильтров" onClick={onReset}>
       Сбросить фильтры ({activeCount})
     </Button>}
+    <Button size="sm" variant="ghost" aria-expanded={expanded} aria-controls="image-studio-filter-box" title="Отбор по происхождению, пометкам, форме, весу и типу" onClick={onToggleExpanded}>
+      {expanded ? 'Скрыть отбор' : `Отбор${selectedCount ? ` (${selectedCount})` : '…'}`}
+    </Button>
+    {/* Свёрнутый ящик всё равно обязан показывать, что отбор включён: иначе
+        «куда делись файлы» — вопрос без ответа на экране. Чип снимает своё
+        условие, не трогая остальные. */}
+    {!expanded && chips.map((chip) => <button
+      key={chip.label}
+      type="button"
+      className="image-studio-chip image-studio-chip--pinned"
+      aria-label={`Снять условие: ${chip.label}`}
+      title="Снять это условие"
+      onClick={chip.clear}
+    >{chip.label} ×</button>)}
+    {expanded && <span
+      id="image-studio-filter-box"
+      role="group"
+      aria-label="Отбор файлов"
+      className="image-studio-filter-box"
+      // Esc сворачивает ящик, а не уходит в панель: пока он раскрыт, это
+      // самое близкое «отменить» — и клавиша не должна снимать выбор картинки.
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onToggleExpanded() } }}
+    >
     {showOrigin && <select aria-label="Происхождение файла" value={origin} onChange={(event) => onOrigin(event.target.value as '' | 'ai' | 'own' | 'derived')}>
       <option value="">Откуда: все</option>
       <option value="ai">Нарисованные</option>
@@ -116,21 +180,6 @@ export function ImageStudioFilters({
       <option value="ready">Готовые</option>
       <option value="none">Неразобранное</option>
     </select>
-    {dayCount > 0 && <Button size="sm" variant="ghost" aria-pressed={dayOnly} title="Только то, что появилось за последние сутки" onClick={onDayOnly}>
-      {dayOnly ? 'Все файлы' : `За сутки (${dayCount})`}
-    </Button>}
-    {missed > 0 && <Button size="sm" variant="ghost" aria-pressed={sinceVisitOnly} title="Появилось после вашего прошлого визита в этот чат" onClick={onSinceVisitOnly}>
-      {sinceVisitOnly ? 'Все файлы' : `С прошлого визита (${missed})`}
-    </Button>}
-    <Button size="sm" variant="ghost" aria-pressed={grouped} title="Разбить сетку на «Сегодня», «Вчера» и «Раньше»" onClick={onGrouped}>
-      {grouped ? 'Без групп' : 'По датам'}
-    </Button>
-    {onFoldAll && <Button size="sm" variant="ghost" title={allFolded ? 'Развернуть все группы' : 'Свернуть все группы'} onClick={onFoldAll}>
-      {allFolded ? 'Развернуть все' : 'Свернуть все'}
-    </Button>}
-    {freshCount > 0 && <Button size="sm" variant="ghost" aria-pressed={freshOnly} title="Только то, что появилось за эту сессию" onClick={onFreshOnly}>
-      {freshOnly ? 'Все файлы' : `Только новое (${freshCount})`}
-    </Button>}
     {/* Честно предупреждаем в тултипе: форма известна только у загруженных
         превью, и файлы с неизвестным размером фильтр не скрывает — иначе
         сетка пустела бы на каждой прокрутке. */}
@@ -154,6 +203,31 @@ export function ImageStudioFilters({
       <option value="">Тип: все</option>
       {kinds.map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}
     </select>}
-    <Button size="sm" variant="ghost" title="Сменить порядок · Shift+клик — развернуть нынешний" onClick={(event) => onOrderNext(event.shiftKey)}>{orderLabel}</Button>
+    </span>}
+    {dayCount > 0 && <Button size="sm" variant="ghost" aria-pressed={dayOnly} title="Только то, что появилось за последние сутки" onClick={onDayOnly}>
+      {dayOnly ? 'Все файлы' : `За сутки (${dayCount})`}
+    </Button>}
+    {missed > 0 && <Button size="sm" variant="ghost" aria-pressed={sinceVisitOnly} title="Появилось после вашего прошлого визита в этот чат" onClick={onSinceVisitOnly}>
+      {sinceVisitOnly ? 'Все файлы' : `С прошлого визита (${missed})`}
+    </Button>}
+    <Button size="sm" variant="ghost" aria-pressed={grouped} title="Разбить сетку на «Сегодня», «Вчера» и «Раньше»" onClick={onGrouped}>
+      {grouped ? 'Без групп' : 'По датам'}
+    </Button>
+    {onFoldAll && <Button size="sm" variant="ghost" title={allFolded ? 'Развернуть все группы' : 'Свернуть все группы'} onClick={onFoldAll}>
+      {allFolded ? 'Развернуть все' : 'Свернуть все'}
+    </Button>}
+    {freshCount > 0 && <Button size="sm" variant="ghost" aria-pressed={freshOnly} title="Только то, что появилось за эту сессию" onClick={onFreshOnly}>
+      {freshOnly ? 'Все файлы' : `Только новое (${freshCount})`}
+    </Button>}
+    <select aria-label="Порядок картинок" title="Как выстроить сетку" value={order} onChange={(event) => onOrder(event.target.value)}>
+      {IMAGE_STUDIO_ORDERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+    </select>
+    <IconButton
+      size="sm"
+      aria-label={reversed ? 'Обычный порядок' : 'Развернуть порядок'}
+      title={reversed ? 'Сейчас по возрастанию' : 'Развернуть порядок'}
+      aria-pressed={reversed}
+      onClick={onToggleReversed}
+    >{reversed ? '↑' : '↓'}</IconButton>
   </>
 }

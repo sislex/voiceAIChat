@@ -17,7 +17,9 @@ const bad = (reply: FastifyReply, error: unknown): FastifyReply => reply.code(40
 export function registerCiRoutes(
   app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager, agents?: { isOnline(id: string): boolean }, boardChanged?: (projectId: string) => void,
   /** Запуск подготовки задачи (server.ts `launchTaskPreparation`): нужен кнопке «Создать и подготовить» очереди улучшений. */
-  startPreparation?: (userId: string, projectId: string, taskId: string) => unknown
+  startPreparation?: (userId: string, projectId: string, taskId: string) => unknown,
+  /** Адресная инвалидация очереди «Улучшения»: панель перечитывает список только по ней. */
+  improvementsChanged?: (projectId: string) => void
 ): void {
   const isOwner = (req: FastifyRequest, projectId: string): boolean => db.getProject(uid(req), projectId)?.role === 'owner'
   const isAdmin = (req: FastifyRequest): boolean => req.user?.role === 'admin'
@@ -274,9 +276,11 @@ export function registerCiRoutes(
     }
   )
   app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => db.getCiRun(uid(req), req.params.runId) ?? nf(reply))
-  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
+  app.get<{ Params: { runId: string }; Querystring: { limit?: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
     if (!db.getCiRun(uid(req), req.params.runId)) return nf(reply)
-    return db.getCiRunLog(uid(req), req.params.runId)
+    // Полный лог длинного рана не помещается в память процесса, поэтому отдаём
+    // хвост; `limit` позволяет попросить больше в пределах серверного потолка.
+    return db.getCiRunLog(uid(req), req.params.runId, Number(req.query.limit) || undefined)
   })
   // Использование базы знаний моделью: по одному рану (лента) и по всем ранам
   // задачи (модалка). Гейт — членство в проекте: чужому 404, а не пустой отчёт.
@@ -315,13 +319,18 @@ export function registerCiRoutes(
   app.delete<{ Params: { id: string } }>('/api/improvements/:id', async (req, reply) => {
     const projectId = db.improvementProjectId(req.params.id)
     if (!db.deleteTaskImprovement(uid(req), req.params.id)) return nf(reply)
-    if (projectId) boardChanged?.(projectId)
+    if (projectId) { boardChanged?.(projectId); improvementsChanged?.(projectId) }
     return { ok: true }
   })
   app.patch<{ Params: { id: string }; Body: { status?: string } }>('/api/improvements/:id', async (req, reply) => {
     const status = req.body?.status
     if (status !== 'new' && status !== 'accepted' && status !== 'rejected' && status !== 'implemented') return reply.code(400).send({ error: 'Некорректный статус предложения' })
-    try { return db.updateTaskImprovementStatus(uid(req), req.params.id, status) ?? nf(reply) }
+    try {
+      const projectId = db.improvementProjectId(req.params.id)
+      const updated = db.updateTaskImprovementStatus(uid(req), req.params.id, status)
+      if (updated && projectId) improvementsChanged?.(projectId)
+      return updated ?? nf(reply)
+    }
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
   app.post<{ Params: { id: string }; Body: import('@voicechat/shared').CreateTaskFromImprovementInput | undefined }>('/api/improvements/:id/create-task', async (req, reply) => {
@@ -350,6 +359,8 @@ export function registerCiRoutes(
       }
     }
     boardChanged?.(created.task.projectId)
+    // Предложение стало задачей — карточка уходит из очереди улучшений.
+    improvementsChanged?.(created.task.projectId)
     const task = db.getCiTask(uid(req), created.task.projectId, created.task.id) ?? created.task
     return { ...created, task, preparationStarted, preparationError }
   })
