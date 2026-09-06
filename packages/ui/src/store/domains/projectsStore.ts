@@ -6,7 +6,7 @@
 // правило то же, что у прочих доменов: другие хранилища он не импортирует, а с
 // Chat разговаривает только через порт, который выдаёт AppRuntime.
 
-import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
+import type { Board, BoardStatuses, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type { LoadStatus } from '../../lib/loadState'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { ProjectInvitation, ProjectInvitationForUser } from '@shared/projects'
@@ -29,7 +29,7 @@ import type {
 } from '@shared/ci'
 import { isTerminalCiStatus } from '@shared/ci'
 import { BOARD_COMPLETED_KEY } from '../contracts'
-import { DEFAULT_BOARD_VIEW, type BoardView } from '@shared/projects'
+import { applyTaskStatuses, DEFAULT_BOARD_VIEW, type BoardView } from '@shared/projects'
 import type { ProjectsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 
@@ -344,11 +344,10 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       try {
         const board = await client['board:get']({ id, includeCompleted })
         if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
-        const ciSummaries = { ...getState().ciSummaries }
-        for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
         const prev = getState().board
-        setState({ board, ciSummaries, boardError: null })
+        setState({ board, boardError: null })
         if (prev && !sameTaskChatVisibility(prev, board)) deps.chat.scheduleConversationsRefresh()
+        await syncBoardStatuses(id, includeCompleted, generation)
       } catch (err) {
         if (generation !== boardGeneration || getState().activeProjectId !== id) {
           // фоновое обновление отменённой доски — молча
@@ -368,6 +367,29 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     })()
     boardFlight = { generation, promise }
     return promise
+  }
+
+  /**
+   * Вторая фаза доски: состояние карточек и сводки CI. Отдельный запрос — чтобы
+   * доска рисовалась по скелету, не дожидаясь обхода таблиц ранов на сервере.
+   * Накладывается на текущий стор, а не на снимок первой фазы: между фазами
+   * карточку могли перетащить, и оптимистичное перемещение терять нельзя.
+   */
+  async function syncBoardStatuses(id: string, includeCompleted: boolean, generation: number): Promise<void> {
+    let statuses: BoardStatuses
+    try {
+      statuses = await client['board:getStatuses']({ id, includeCompleted })
+    } catch (err) {
+      // Скелет уже на экране: без состояния доска работает, ронять её незачем.
+      console.warn('[projects] состояние карточек доски недоступно', err)
+      return
+    }
+    if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+    const board = getState().board
+    if (!board) return
+    const ciSummaries = { ...getState().ciSummaries }
+    for (const r of statuses.ciRuns) ciSummaries[r.taskId] = r
+    setState({ board: { ...board, tasks: applyTaskStatuses(board.tasks, statuses.tasks), ciRuns: statuses.ciRuns }, ciSummaries })
   }
 
   function scheduleBoardSync(): void {
@@ -482,6 +504,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       const board = await client['board:get']({ id, includeCompleted })
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
       setState({ board, boardLoading: false, boardError: null })
+      await syncBoardStatuses(id, includeCompleted, generation)
       if (boardPending) { boardPending = false; void syncBoard() }
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
@@ -494,10 +517,15 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     if (getState().activeProjectId) boardBridge?.unsubscribe()
     clearBoardSync()
     const generation = boardGeneration
-    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false })
+    // Первый запрос всегда в окне проекта, даже когда «показывать завершённые»
+    // включено: старые карточки «Готово» — это сотни лишних строк, а доска
+    // обязана появиться сразу. Включённый фильтр догружает их следом, поэтому и
+    // сам флаг на время старта честно стоит в «нет».
+    const wantsCompleted = getState().boardIncludeCompleted
+    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false, boardIncludeCompleted: false })
     boardBridge?.subscribe(id)
     try {
-      const includeCompleted = getState().boardIncludeCompleted
+      const includeCompleted = false
       const [board, detail, view] = await Promise.all([
         client['board:get']({ id, includeCompleted }),
         client['projects:get']({ id }),
@@ -508,11 +536,12 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         })
       ])
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
-      const ciSummaries = { ...getState().ciSummaries }
-      for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null, boardView: view })
-      // «Показывать завершённые» живёт в том же виде: приводим доску к нему.
-      if (view && view.showCompleted !== includeCompleted) void actions.setBoardIncludeCompleted(view.showCompleted)
+      setState({ board, projectDetail: detail, boardLoading: false, boardError: null, boardView: view })
+      // «Показывать завершённые» живёт в виде доски на сервере; локальный флаг
+      // приводим к нему, и он же решает, догружать ли старые завершённые.
+      const showCompleted = view?.showCompleted ?? wantsCompleted
+      if (showCompleted) void actions.setBoardIncludeCompleted(true)
+      else await syncBoardStatuses(id, includeCompleted, generation)
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id) return
       if (accessLost(err)) {

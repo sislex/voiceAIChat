@@ -48,6 +48,64 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required'])
   })
 
+  it('доска рисуется по скелету, состояние карточек догружается второй фазой', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    const column = store.getState().board!.columns[0]!
+    await store.actions.createTask(column.id, { title: 'Двухфазная' })
+
+    const gate = deferred<void>()
+    const real = api['board:getStatuses']
+    api['board:getStatuses'] = vi.fn(async (arg: { id: string; includeCompleted?: boolean }) => {
+      await gate.promise
+      return real(arg)
+    })
+    const opened = store.actions.openBoard(id)
+    // Пока вторая фаза в пути, доска уже показывает карточки: ради этого и
+    // разделили запросы — старт не ждёт обхода таблиц ранов на сервере.
+    await vi.waitFor(() => expect(store.getState().board?.tasks.map((t) => t.title)).toContain('Двухфазная'))
+    expect(store.getState().board!.tasks[0]!.mergePermitted).toBeUndefined()
+
+    gate.resolve()
+    await opened
+    expect(store.getState().board!.tasks[0]!.mergePermitted).toBe(false)
+    expect(store.getState().board!.tasks.map((t) => t.title)).toContain('Двухфазная')
+  })
+
+  it('включённый «показывать завершённые» не утяжеляет старт: сначала окно, потом догрузка', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    // Фильтр включён и сохранён в виде доски на сервере — как у постоянного пользователя.
+    await store.actions.setBoardIncludeCompleted(true)
+    store.actions.closeBoard()
+
+    const calls: Array<boolean | undefined> = []
+    const real = api['board:get']
+    api['board:get'] = vi.fn(async (arg: { id: string; includeCompleted?: boolean }) => {
+      calls.push(arg.includeCompleted)
+      return real(arg)
+    })
+    await store.actions.openBoard(id)
+    await vi.waitFor(() => expect(store.getState().boardIncludeCompleted).toBe(true))
+    // Первый запрос — без завершённых, и только следом полный.
+    expect(calls[0]).toBe(false)
+    expect(calls).toContain(true)
+  })
+
+  it('отказ второй фазы не роняет уже показанную доску', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    api['board:getStatuses'] = vi.fn(async () => { throw new Error('нет связи') })
+    await store.actions.openBoard(id)
+    expect(store.getState().board?.columns.length).toBeGreaterThan(0)
+    expect(store.getState().boardError).toBeNull()
+  })
+
   it('роль понизили: refreshMembership перечитывает проект, и владельческие действия исчезают', async () => {
     const { store, api } = makeStore()
     await store.actions.createProject({ name: 'P1' })
