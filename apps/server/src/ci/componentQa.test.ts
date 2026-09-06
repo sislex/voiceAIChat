@@ -42,11 +42,16 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
       return { exitCode: outcome.exitCode, timedOut: outcome.timedOut }
     })
   }
-  const runner = createComponentQaRunner({ db, executor, now: () => t, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) })
+  const completions: Array<{ passed: boolean; classification?: string | null }> = []
+  const runner = createComponentQaRunner({
+    db, executor, now: () => t,
+    completed: (_runId, _userId, passed, _reason, classification) => { completions.push({ passed, classification }) },
+    ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {})
+  })
   /** Вызовы и записи стадий проекта — без предваряющей установки зависимостей. */
   const stageCalls = (): CommandExecRequest[] => calls.slice(1)
   const stageRecords = (input: ComponentQaFinishInput) => input.commands.slice(1)
-  return { runner, run, finished, calls, log, stageCalls, stageRecords, gateResults }
+  return { runner, run, finished, calls, log, stageCalls, stageRecords, gateResults, completions }
 }
 
 describe('createComponentQaRunner', () => {
@@ -107,6 +112,9 @@ describe('createComponentQaRunner', () => {
     expect(input.failureClassification).toBe('infrastructure')
     expect(input.blockerReasons).toEqual(['executor_disconnected'])
     expect(s.stageRecords(input)[0]).toMatchObject({ status: 'blocked', exitCode: null, diagnostic: 'executor_disconnected' })
+    // Автопроход обязан получить классификацию: без неё отвалившаяся машина шла
+    // в fix-loop как дефект кода и жгла цикл доработки за чужой сбой.
+    expect(s.completions).toEqual([{ passed: false, classification: 'infrastructure' }])
   })
 
   it('исчерпание общего бюджета рана блокирует следующую стадию без запуска', async () => {
