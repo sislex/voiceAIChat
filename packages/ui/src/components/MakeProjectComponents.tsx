@@ -14,8 +14,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dialog, EmptyState, ErrorState, IconButton, Skeleton, StatusPill, useToast, type StatusTone } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
-import type { ProjectComponentEntry, ProjectComponentsListing, ProjectStorybookSession } from '@shared/projectComponents'
-import { projectStorybookFrameUrl } from '@shared/projectComponents'
+import type { ProjectComponentEntry, ProjectComponentsListing, ProjectStorybookAccess, ProjectStorybookSession } from '@shared/projectComponents'
+import { machineOrigin, projectStorybookFrameUrl, storybookFrameUrlAt } from '@shared/projectComponents'
 import { makeStorybookCommandKey } from '../store/contracts'
 import { loadView, type LoadStatus } from '../lib/loadState'
 import { usePolling } from '../lib/usePolling'
@@ -26,6 +26,7 @@ export type MakeProjectComponentsApi = Pick<
   'projects:gitWorkspaces' | 'projects:components' | 'projects:componentStories'
   | 'projects:storybookSession' | 'projects:storybookAction'
   | 'projects:gitFile' | 'projects:gitSaveFile' | 'projects:componentTicket'
+  | 'projects:storybookOpen' | 'projects:storybookCloseTunnel'
 >
 
 export interface MakeProjectComponentsProps {
@@ -54,6 +55,13 @@ const STATE_LABEL: Record<ProjectStorybookSession['state'], string> = {
   failed: 'Storybook не запустился'
 }
 
+/** Как открыт кадр — короткой подписью рядом со статусом. */
+const ACCESS_LABEL: Record<ProjectStorybookAccess['kind'], string> = {
+  direct: 'кадр напрямую',
+  tunnel: 'кадр через локальный агент',
+  proxy: 'кадр через мост машины'
+}
+
 const STATE_TONE: Record<ProjectStorybookSession['state'], StatusTone> = {
   stopped: 'neutral',
   starting: 'running',
@@ -77,6 +85,13 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
   const [fileError, setFileError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [frameRev, setFrameRev] = useState(0)
+  /**
+   * Как открыт кадр. Прокси работает всегда, но каждый модуль Vite идёт до машины
+   * отдельным запросом: на медленном канале кадр не собирается. Поэтому сначала
+   * пробуем прямой адрес (браузер на той же машине), затем туннель локального
+   * агента и только потом прокси.
+   */
+  const [access, setAccess] = useState<ProjectStorybookAccess | null>(null)
   const [previewReady, setPreviewReady] = useState(!ensurePreview)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [ticketTitle, setTicketTitle] = useState('')
@@ -156,6 +171,51 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
   // Как только Storybook поднялся, список перечитывается: у живого индекса настоящие id стори.
   const readyAt = session?.readyAt ?? null
   useEffect(() => { if (readyAt) void loadComponents() }, [readyAt, loadComponents])
+
+  /**
+   * Проба прямого адреса: если Storybook слушает на той же машине, где открыт
+   * браузер, кадр берётся напрямую и мост не нужен вовсе. Storybook (Vite) отдаёт
+   * CORS, поэтому ответ читается; чужая машина ответит ошибкой или не ответит.
+   */
+  const probeDirect = useCallback(async (port: number): Promise<boolean> => {
+    if (typeof window === 'undefined' || typeof AbortController === 'undefined') return false
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 1500)
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/index.json`, { signal: controller.signal, mode: 'cors' })
+      return res.ok
+    } catch {
+      return false
+    } finally {
+      window.clearTimeout(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!session || session.state !== 'running' || !workspaceId) { setAccess(null); return }
+    let alive = true
+    let opened: ProjectStorybookAccess | null = null
+    void (async () => {
+      if (await probeDirect(session.port)) {
+        if (alive) setAccess({ kind: 'direct', url: `http://127.0.0.1:${session.port}`, tunnelId: null, note: 'Storybook на этой же машине — кадр берётся напрямую.' })
+        return
+      }
+      try {
+        const localAgentId = window.featurePreview?.localAgentId ?? null
+        const result = await api['projects:storybookOpen']({ id: projectId, workspace: workspaceId, localAgentId })
+        opened = result
+        if (alive) setAccess(result)
+      } catch {
+        // Сервер не ответил — прокси всё равно доступен по прямому адресу машины.
+        if (alive) setAccess({ kind: 'proxy', url: `/api/preview?url=${encodeURIComponent(machineOrigin(session.agentId, session.port))}`, tunnelId: null, note: 'Кадр идёт через мост машины.' })
+      }
+    })()
+    return () => {
+      alive = false
+      // Туннель живёт, пока открыта вкладка: чужой порт на машине не бросаем.
+      if (opened?.tunnelId) void api['projects:storybookCloseTunnel']({ id: projectId, tunnelId: opened.tunnelId, workspace: workspaceId }).catch(() => undefined)
+    }
+  }, [api, projectId, workspaceId, session?.state, session?.port, session?.agentId, probeDirect])
 
   const act = useCallback(async (action: 'start' | 'stop' | 'restart'): Promise<void> => {
     if (!workspaceId) return
@@ -246,8 +306,10 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
   }, [listing, query])
 
   const activeComponent = components.find((c) => c.path === selected.path) ?? listing?.components.find((c) => c.path === selected.path) ?? null
-  const frameUrl = session && session.state === 'running' && selected.storyId && previewReady
-    ? `${projectStorybookFrameUrl(session.agentId, session.port, selected.storyId)}&rev=${frameRev}`
+  const frameUrl = session && session.state === 'running' && selected.storyId && previewReady && access
+    ? access.kind === 'proxy'
+      ? `${projectStorybookFrameUrl(session.agentId, session.port, selected.storyId)}&rev=${frameRev}`
+      : `${storybookFrameUrlAt(access.url, selected.storyId)}&rev=${frameRev}`
     : null
   const dirty = !!file && file.content !== file.saved
   const readOnly = !!workspace && (!workspace.writable || !!workspace.busy || workspace.released)
@@ -299,6 +361,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
             Запустить Storybook
           </Button>
         )}
+        {access && <span className="mpc-access" title={access.note}>{ACCESS_LABEL[access.kind]}</span>}
         <Button size="sm" variant="ghost" onClick={() => setCommandOpen(true)}>Команда</Button>
         <Button size="sm" variant="ghost" onClick={() => setLogOpen(true)} disabled={!session?.log}>Лог</Button>
         {changed.length > 0 && (

@@ -19,6 +19,13 @@ function api(session: ProjectStorybookSession, listing = makeProjectComponents()
       file: { path, ref: null, content, size: content.length, truncated: false, binary: false },
       status: makeGitStatus()
     }),
+    'projects:storybookOpen': async () => ({
+      kind: 'proxy' as const,
+      url: '/api/preview?url=http%3A%2F%2Fm1.machine.internal%3A6006',
+      tunnelId: null,
+      note: 'Кадр идёт через мост машины.'
+    }),
+    'projects:storybookCloseTunnel': async () => ({ closed: true }),
     'projects:componentTicket': async () => ({ taskId: 't-77', taskNumber: 77, branch: 'CHAT-77', commitSha: 'a'.repeat(40), columnId: 'col', readyToMerge: true }),
     ...over
   }

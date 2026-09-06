@@ -578,6 +578,11 @@ export interface IpcInvokeMap {
   'projects:componentStories': { arg: { id: string; workspace: string; path: string }; result: ProjectComponentEntry }
   'projects:storybookSession': { arg: { id: string; workspace: string }; result: ProjectStorybookSession }
   'projects:storybookAction': { arg: { id: string; workspace: string; action: ProjectStorybookAction; port?: number; command?: string }; result: ProjectStorybookSession }
+  'projects:storybookOpen': {
+    arg: { id: string; workspace: string; localAgentId?: string | null }
+    result: import('./projectComponents').ProjectStorybookAccess
+  }
+  'projects:storybookCloseTunnel': { arg: { id: string; tunnelId: string; workspace: string }; result: { closed: boolean } }
   'projects:componentTicket': {
     arg: { id: string; workspace: string; title: string; description?: string; paths: string[]; labels?: string[] }
     result: ProjectComponentTicketResult
@@ -1459,6 +1464,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:componentStories',
   'projects:storybookSession',
   'projects:storybookAction',
+  'projects:storybookOpen',
+  'projects:storybookCloseTunnel',
   'projects:componentTicket',
   'projects:setReposRoot',
   'projects:setMachineSsh',
