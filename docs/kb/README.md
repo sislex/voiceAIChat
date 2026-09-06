@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 29 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 31 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 30 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1200 коммит(ов) в areas после сверки: 5a09d545 docs(kb): update after merge 24d3f92b-a8b4-4149-b76a-456a9245b6ff … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1201 коммит(ов) в areas после сверки: b7a40e02 docs(kb): update after merge 097c48f8-c173-4c07-a344-fc481e787410 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 26 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 7 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
@@ -33,7 +33,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-06 | ⚠ 1 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 25 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 198 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-06 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-06 | ⚠ 2 коммит(ов) в areas после сверки: 6cd83e5d Merge main into CHAT-415 (task a5e9d0a0-be81-4b98-9717-9fd6563eb35d) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-06 | ⚠ 1 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 59 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 34 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 117 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-06 | ⚠ 3 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-06 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-06, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,10 +61,11 @@
 
 ## Журнал сессий
 
-Всего записей: 628. Последние:
+Всего записей: 629. Последние:
 
 - [2026-09-06-pc-radvilovich-make-stack-settings.md](log/2026-09-06-pc-radvilovich-make-stack-settings.md) — make-stack-settings
 - [2026-09-06-alexeys-macbook-air-2-rework-cycles.md](log/2026-09-06-alexeys-macbook-air-2-rework-cycles.md) — rework-cycles
+- [2026-09-06-alexeys-macbook-air-2-new-task-card-rework-tests.md](log/2026-09-06-alexeys-macbook-air-2-new-task-card-rework-tests.md) — new-task-card-rework-tests
 - [2026-09-06-alexeys-macbook-air-2-integration-tests-merge-diff.md](log/2026-09-06-alexeys-macbook-air-2-integration-tests-merge-diff.md) — integration-tests-merge-diff
 - [2026-09-06-alexeys-macbook-air-2-board-request-rate.md](log/2026-09-06-alexeys-macbook-air-2-board-request-rate.md) — board-request-rate
 - [2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md](log/2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md) — workshop-wrapper-shared
@@ -72,7 +73,6 @@
 - [2026-09-05-alexeys-macbook-air-2-public-gallery-search.md](log/2026-09-05-alexeys-macbook-air-2-public-gallery-search.md) — public-gallery-search
 - [2026-09-05-alexeys-macbook-air-2-make-project-components.md](log/2026-09-05-alexeys-macbook-air-2-make-project-components.md) — make-project-components
 - [2026-09-05-alexeys-macbook-air-2-image-studio-viewer-menu.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-viewer-menu.md) — image-studio-viewer-menu
-- [2026-09-05-alexeys-macbook-air-2-image-studio-viewer-layout-defects.md](log/2026-09-05-alexeys-macbook-air-2-image-studio-viewer-layout-defects.md) — image-studio-viewer-layout-defects
 
 ## Исторические планы
 
