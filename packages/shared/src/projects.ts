@@ -1127,6 +1127,22 @@ export function completedVisibilityCutoff(retentionDays: number | null | undefin
   return now - retentionDays * DAY_MS + 1
 }
 
+/**
+ * Локальный понедельник 00:00 — граница «свежих» бесед. Сайдбар делит список на
+ * текущую неделю и «Более старые», и та же метка служит окном первой страницы:
+ * старое не грузится, пока секцию не раскроют.
+ */
+export function localWeekStart(now: number): number {
+  const date = new Date(now)
+  const daysFromMonday = (date.getDay() + 6) % 7
+  date.setHours(0, 0, 0, 0)
+  date.setDate(date.getDate() - daysFromMonday)
+  return date.getTime()
+}
+
+/** Сколько старых бесед приносит одна догрузка секции «Более старые». */
+export const OLDER_CONVERSATIONS_PAGE = 20
+
 /** Полночь текущего дня для `ts` (тот же часовой пояс, что и `endOfDay`). */
 function startOfDay(ts: number): number {
   const d = new Date(ts)
@@ -1212,10 +1228,12 @@ export interface TaskChatContext {
 
 /**
  * Метка чата, привязанного к задаче, для списка бесед: ключ задачи, её тип и
- * последний CI-ран. Ран отдаётся той же сводкой, что подсвечивает карточку на
- * доске — список чатов и канбан показывают одно состояние одними цветами.
- * Дальше сводку обновляют живые кадры `ci.*` (они приходят на все соединения
- * пользователя, а не только подписчикам доски).
+ * колонка. Список чатов и канбан показывают одно состояние одними цветами.
+ *
+ * Сводка рана по умолчанию **не приезжает**: она весила 91% ответа (полная
+ * раскладка шагов с прогнозами, которую список чатов не рисует) и стоила по
+ * пять запросов на метку. Её отдаёт только явный `withRuns`; дальше состояние
+ * обновляют живые кадры `ci.*` и вторая фаза доски.
  */
 export interface TaskChatBadge {
   conversationId: string
@@ -1226,7 +1244,8 @@ export interface TaskChatBadge {
   type: WorkItemType
   /** Текущая колонка задачи: нужна, чтобы ручное завершение сильнее старой ошибки рана. */
   columnSemantic: KanbanColumnSemanticType | null
-  run: CiRunSummary | null
+  /** Есть только у запроса с `withRuns`; иначе поля нет вовсе. */
+  run?: CiRunSummary | null
 }
 
 /** Снапшот доски проекта. */
