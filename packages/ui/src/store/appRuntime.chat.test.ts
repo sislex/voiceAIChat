@@ -2252,6 +2252,31 @@ describe('voiceStore — помощник промптов', () => {
   })
 })
 
+describe('voiceStore — списки разделов грузятся при входе в раздел', () => {
+  it('индекс тянет только чаты, а Reader/Make/картинки — по требованию и один раз', async () => {
+    const api = createFakeApi(['Обычный чат'])
+    const scopes: Array<string | undefined> = []
+    const real = api['conversations:list']
+    api['conversations:list'] = vi.fn(async (arg: Parameters<typeof real>[0]) => {
+      scopes.push(arg?.scope)
+      return real(arg)
+    })
+    const store = createTestStore({ api })
+    await store.actions.ensureConversationIndex()
+    // Раньше на старте ехали все шесть списков.
+    expect(scopes).toEqual(['chat'])
+    expect(store.getState().scopeStatus.make).toBe('idle')
+
+    await store.actions.ensureSectionConversations('make')
+    expect(scopes).toEqual(['chat', 'make'])
+    expect(store.getState().scopeStatus.make).toBe('ready')
+
+    // Повторный вход в раздел на сервер уже не ходит.
+    await store.actions.ensureSectionConversations('make')
+    expect(scopes).toEqual(['chat', 'make'])
+  })
+})
+
 describe('voiceStore — секция «Более старые» грузится порциями', () => {
   it('первая страница — окно недели, догрузка идёт по 20 и знает, когда история кончилась', async () => {
     const api = createFakeApi([])

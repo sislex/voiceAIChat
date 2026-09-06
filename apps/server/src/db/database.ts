@@ -397,6 +397,11 @@ interface ConversationRow {
   scope: string
   assistant_autonomy: string | null
   status: string | null
+  /** Кэш стоимости: посчитан на прошлом показе списка, `cost_dirty` — признак протухания. */
+  cost_usd?: number | null
+  cost_status?: string | null
+  cost_prices_stamp?: number | null
+  cost_dirty?: number
   last_exec_target?: string | null
 }
 
@@ -1068,11 +1073,29 @@ export class VoiceChatDb {
     if (!agentCols.some((c) => c.name === 'user_id')) {
       this.db.exec(`ALTER TABLE agents ADD COLUMN user_id TEXT`)
     }
+    // Триггеры кэша стоимости снимаем до миграций: пересборка таблицы
+    // (DROP + RENAME) падает, пока существует триггер с телом, которое
+    // ссылается на `conversations`. В конце схемы они создаются заново.
+    this.db.exec(`
+      DROP TRIGGER IF EXISTS trg_messages_cost_dirty_ins;
+      DROP TRIGGER IF EXISTS trg_messages_cost_dirty_upd;
+      DROP TRIGGER IF EXISTS trg_messages_cost_dirty_del;
+    `)
     const convCols = this.db
       .prepare(`PRAGMA table_info(conversations)`)
       .all() as Array<{ name: string }>
     if (!convCols.some((c) => c.name === 'user_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN user_id TEXT`)
+    }
+    // Кэш стоимости беседы: в старых БД колонок нет, а `cost_dirty = 1`
+    // заставит пересчитать итог при первом же показе списка.
+    for (const [column, ddl] of [
+      ['cost_usd', 'REAL'],
+      ['cost_status', 'TEXT'],
+      ['cost_prices_stamp', 'INTEGER'],
+      ['cost_dirty', 'INTEGER NOT NULL DEFAULT 1']
+    ] as const) {
+      if (!convCols.some((c) => c.name === column)) this.db.exec(`ALTER TABLE conversations ADD COLUMN ${column} ${ddl}`)
     }
     if (!convCols.some((c) => c.name === 'exec_target')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN exec_target TEXT`)
@@ -1161,6 +1184,19 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'status')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN status TEXT NOT NULL DEFAULT 'developing'`)
     }
+    // Триггеры ставим после всех миграций `conversations`: пересборка таблицы
+    // (CHECK по scope) роняла бы их телом, ссылающимся на исчезнувшую таблицу.
+    // Протухание ловим здесь, а не вызовами по коду: сообщения пишет десяток
+    // мест (ход, правка, откат, импорт legacy), и любое забытое место давало бы
+    // устаревшую цену в списке — ошибку, которую никто не заметит.
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_messages_cost_dirty_ins AFTER INSERT ON messages
+      BEGIN UPDATE conversations SET cost_dirty = 1 WHERE id = NEW.conversation_id; END;
+      CREATE TRIGGER IF NOT EXISTS trg_messages_cost_dirty_upd AFTER UPDATE ON messages
+      BEGIN UPDATE conversations SET cost_dirty = 1 WHERE id = NEW.conversation_id; END;
+      CREATE TRIGGER IF NOT EXISTS trg_messages_cost_dirty_del AFTER DELETE ON messages
+      BEGIN UPDATE conversations SET cost_dirty = 1 WHERE id = OLD.conversation_id; END;
+    `)
     // Make-чат к машине не ходит (`turns.ts`: makeChat), поэтому оставшиеся с
     // прежних времён привязки — мусор, который вводит в заблуждение: панель
     // показывала машину и каталог, которых ход не использует. Явное «без машины»
@@ -3986,12 +4022,33 @@ export class VoiceChatDb {
     return this.db.prepare('DELETE FROM conversation_workspaces WHERE conversation_id = ?').run(conversationId).changes > 0
   }
 
+  /**
+   * Отметка версии прайса: смена цен обесценивает все посчитанные итоги.
+   * Дешевле одного числа на запрос, чем пересчёта стоимости на каждый список.
+   */
+  private modelPricesStamp(): number {
+    const row = this.db.prepare(`SELECT COALESCE(MAX(updated_at), 0) AS stamp, COUNT(*) AS n FROM model_prices`).get() as { stamp: number; n: number }
+    // Число строк в паре с меткой ловит и удаление цены, которое MAX не заметит.
+    return row.stamp * 1000 + row.n
+  }
+
   private conversationCosts(rows: ConversationRow[]): Map<string, Pick<Conversation, 'costUsd' | 'costStatus'>> {
     const unknown = (): Pick<Conversation, 'costUsd' | 'costStatus'> => ({ costUsd: null, costStatus: 'unknown' })
     const costs = new Map(rows.map((row) => [row.id, unknown()]))
     if (rows.length === 0) return costs
     try {
-      const ids = rows.map((row) => row.id)
+      // Считаем только протухшие беседы: у остальных берём кэш, посчитанный на
+      // прошлом показе. Полный агрегат сканирует все AI-сообщения беседы и
+      // разбирает JSON каждого — на списке это 95% его времени.
+      const stamp = this.modelPricesStamp()
+      const stale: string[] = []
+      for (const row of rows) {
+        if (row.cost_dirty === 0 && row.cost_prices_stamp === stamp && row.cost_status) {
+          costs.set(row.id, { costUsd: row.cost_status === 'known' ? row.cost_usd ?? 0 : null, costStatus: row.cost_status as Conversation['costStatus'] })
+        } else stale.push(row.id)
+      }
+      if (stale.length === 0) return costs
+      const ids = stale
       const placeholders = ids.map(() => '?').join(',')
       const results = this.db.prepare(`SELECT
         m.conversation_id AS conversation_id,
@@ -4022,12 +4079,22 @@ export class VoiceChatDb {
         GROUP BY m.conversation_id`).all(...ids) as Array<{
           conversation_id: string; ai_count: number; known_count: number | null; cost_usd: number | null
         }>
-      for (const result of results) {
-        const knownCount = result.known_count ?? 0
-        const costStatus = result.ai_count === 0 || knownCount === 0
+      const remember = this.db.prepare(
+        `UPDATE conversations SET cost_usd = ?, cost_status = ?, cost_prices_stamp = ?, cost_dirty = 0 WHERE id = ?`
+      )
+      const computed = new Map(results.map((result) => [result.conversation_id, result]))
+      for (const id of ids) {
+        const result = computed.get(id)
+        const aiCount = result?.ai_count ?? 0
+        const knownCount = result?.known_count ?? 0
+        const costStatus = aiCount === 0 || knownCount === 0
           ? 'unknown'
-          : knownCount === result.ai_count ? 'known' : 'partial'
-        costs.set(result.conversation_id, { costUsd: costStatus === 'known' ? (result.cost_usd ?? 0) : null, costStatus })
+          : knownCount === aiCount ? 'known' : 'partial'
+        const costUsd = costStatus === 'known' ? (result?.cost_usd ?? 0) : null
+        costs.set(id, { costUsd, costStatus })
+        // Беседы без единого AI-хода тоже кэшируем: иначе пустые чаты гоняли бы
+        // агрегат на каждом показе списка.
+        remember.run(costUsd, costStatus, stamp, id)
       }
     } catch {
       // Историческое повреждение meta или ошибка расчёта не ломают список бесед.
