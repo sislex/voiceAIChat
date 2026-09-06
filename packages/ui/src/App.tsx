@@ -831,16 +831,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [chat.draft, chatActions, toast])
 
   const authed = !session.authRequired || Boolean(session.currentUser)
+  // Ошибки читаем через ref: с ними в зависимостях колбэк пересоздавался, а
+  // эффект ниже на каждое такое пересоздание переподписывался на realtime и
+  // заново дёргал список уведомлений. Он должен грузиться раз и дальше — по
+  // событиям вебсокета.
+  const clarificationErrorsRef = useRef(clarificationErrors)
+  useEffect(() => { clarificationErrorsRef.current = clarificationErrors }, [clarificationErrors])
   const refreshClarificationNotifications = useCallback(async (): Promise<PreparationClarificationNotification[]> => {
     if (!authed) { setClarificationNotifications([]); return [] }
     const snapshot = await api['tasks:listPreparationNotifications']()
     const visible = snapshot.filter((item) => item.dismissedAt == null)
+    const errors = clarificationErrorsRef.current
     setClarificationNotifications((previous) => [
       ...visible,
-      ...previous.filter((item) => clarificationErrors[item.questionId] && !visible.some((next) => next.questionId === item.questionId))
+      ...previous.filter((item) => errors[item.questionId] && !visible.some((next) => next.questionId === item.questionId))
     ])
     return snapshot
-  }, [api, authed, clarificationErrors])
+  }, [api, authed])
   useEffect(() => {
     if (!authed) { setClarificationNotifications([]); return }
     let active = true
@@ -1510,6 +1517,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     void chatActions.syncSidebarProjects(projects.projects.map((project) => project.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, projects.projectsLoaded, projects.projects])
+  // Загрузчик истории доработок отдаём карточке стабильной ссылкой: инлайн-
+  // стрелка меняется на каждом рендере App, и эффект внутри карточки перечитывал
+  // rework-cycles примерно раз в секунду, пока она открыта.
+  const loadReworkCycles = useCallback(
+    (taskId: string) => api['tasks:listReworkCycles']({ projectId: routeProjectId!, taskId }),
+    [api, routeProjectId]
+  )
   // Релизы, настройки и панель кода доску не показывают, поэтому и не грузят:
   // снимок доски, её вид и состояния карточек — это лишние запросы, а подписка
   // на board.changed при работающем ране перечитывает доску каждые пару секунд.
@@ -2935,7 +2949,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
               loadPreparationRun={(runId) => api['tasks:getPreparationRun']({ runId })}
               loadFullTask={(taskId) => api['tasks:get']({ projectId: routeProjectId!, taskId })}
-              loadReworkCycles={(taskId) => api['tasks:listReworkCycles']({ projectId: routeProjectId!, taskId })}
+              loadReworkCycles={loadReworkCycles}
               createReworkCycle={(taskId, draft, idempotencyKey) => api['tasks:createReworkCycle']({
                 projectId: routeProjectId!, taskId,
                 input: {
