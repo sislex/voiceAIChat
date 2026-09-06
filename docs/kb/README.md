@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 29 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 31 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 30 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1203 коммит(ов) в areas после сверки: 5c9f5e21 docs(kb): update after merge 3cbbf7ae-5236-4983-b759-5f6895129067 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1204 коммит(ов) в areas после сверки: 856c673d docs(kb): update after merge 27d1dd6f-e450-4a46-b876-5629452709f0 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 26 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 7 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
