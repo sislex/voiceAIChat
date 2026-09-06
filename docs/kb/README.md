@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 29 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 31 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 30 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1202 коммит(ов) в areas после сверки: 3d98b7d7 docs(kb): update after merge a5e9d0a0-be81-4b98-9717-9fd6563eb35d … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1203 коммит(ов) в areas после сверки: 5c9f5e21 docs(kb): update after merge 3cbbf7ae-5236-4983-b759-5f6895129067 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 26 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 7 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
@@ -35,7 +35,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 198 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-06 | ⚠ 2 коммит(ов) в areas после сверки: 6cd83e5d Merge main into CHAT-415 (task a5e9d0a0-be81-4b98-9717-9fd6563eb35d) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-06 | ⚠ 3 коммит(ов) в areas после сверки: edb6cb2c Merge main into CHAT-416 (task 3cbbf7ae-5236-4983-b759-5f6895129067) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 61 коммит(ов) в areas после сверки: edb6cb2c Merge main into CHAT-416 (task 3cbbf7ae-5236-4983-b759-5f6895129067) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-03 | ⚠ 63 коммит(ов) в areas после сверки: 7330fb1e Merge main into CHAT-418 (task 27d1dd6f-e450-4a46-b876-5629452709f0) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 34 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 165 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
@@ -61,18 +61,18 @@
 
 ## Журнал сессий
 
-Всего записей: 630. Последние:
+Всего записей: 631. Последние:
 
 - [2026-09-06-pc-radvilovich-make-stack-settings.md](log/2026-09-06-pc-radvilovich-make-stack-settings.md) — make-stack-settings
 - [2026-09-06-alexeys-macbook-air-2-rework-cycles.md](log/2026-09-06-alexeys-macbook-air-2-rework-cycles.md) — rework-cycles
 - [2026-09-06-alexeys-macbook-air-2-new-task-card-rework-tests.md](log/2026-09-06-alexeys-macbook-air-2-new-task-card-rework-tests.md) — new-task-card-rework-tests
+- [2026-09-06-alexeys-macbook-air-2-make-stack-ui-kit.md](log/2026-09-06-alexeys-macbook-air-2-make-stack-ui-kit.md) — make-stack-ui-kit
 - [2026-09-06-alexeys-macbook-air-2-make-stack-menu.md](log/2026-09-06-alexeys-macbook-air-2-make-stack-menu.md) — make-stack-menu
 - [2026-09-06-alexeys-macbook-air-2-integration-tests-merge-diff.md](log/2026-09-06-alexeys-macbook-air-2-integration-tests-merge-diff.md) — integration-tests-merge-diff
 - [2026-09-06-alexeys-macbook-air-2-board-request-rate.md](log/2026-09-06-alexeys-macbook-air-2-board-request-rate.md) — board-request-rate
 - [2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md](log/2026-09-05-alexeys-macbook-air-2-workshop-wrapper-shared.md) — workshop-wrapper-shared
 - [2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md](log/2026-09-05-alexeys-macbook-air-2-qa-stage-cost.md) — qa-stage-cost
 - [2026-09-05-alexeys-macbook-air-2-public-gallery-search.md](log/2026-09-05-alexeys-macbook-air-2-public-gallery-search.md) — public-gallery-search
-- [2026-09-05-alexeys-macbook-air-2-make-project-components.md](log/2026-09-05-alexeys-macbook-air-2-make-project-components.md) — make-project-components
 
 ## Исторические планы
 
