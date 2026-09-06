@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-09-06
-checked: 67634a16
+checked: 991a960a
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1057,8 +1057,12 @@ development-run временно недоступен». Оптимистичн�
 `settleTaskColumn` завершает ран одним переносом. Успешная разработка без
 legacy merge-шага всегда переходит в колонку с semantic type `component_qa`;
 интеграционные и ручные проверки больше не подменяются development-run.
-Development-run нельзя запустить из `backlog` или `preparation`. Наличие
-успешного legacy merge-шага по-прежнему переводит старый workflow в `done`.
+Development-run нельзя запустить из `backlog` или `preparation`. Это правило
+подтверждает текущая реализация `settleTaskColumn` в
+`apps/server/src/ci/runManager.ts`: целевой semantic type выбирается как
+`component_qa`, а `done` — только при найденном успешном legacy merge-шаге.
+Наличие успешного legacy merge-шага по-прежнему переводит старый workflow в
+`done`.
 Если целевой semantic type отсутствует в проекте, `settleTaskColumn` не двигает
 карточку; успешный перенос фиксируется событием `run.component_qa` или
 `run.task_done` (`apps/server/src/ci/runManager.ts`).

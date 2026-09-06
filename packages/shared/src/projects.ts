@@ -880,6 +880,45 @@ export function designPromptLines(designs: TaskDesignLink[], _previewUrl?: (conv
   })
 }
 
+export interface TaskAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  status: 'ready' | 'missing'
+}
+
+export interface TaskReworkMakeSource {
+  conversationId: string
+  title: string
+  mode: 'whole_project' | 'files'
+  paths: string[]
+}
+
+export interface TaskReworkCycle {
+  id: string
+  taskId: string
+  sequence: number
+  description: string
+  criteria: string[]
+  makeSources: TaskReworkMakeSource[]
+  attachments: TaskAttachment[]
+  implementedResult?: string
+  createdBy: string
+  createdAt: number
+  preparationRunId: string | null
+}
+
+export interface CreateTaskReworkCycleInput {
+  description: string
+  criteria?: string[]
+  makeMode: 'whole_project' | 'files'
+  makePaths?: string[]
+  makeSources?: TaskReworkMakeSource[]
+  uploadIds?: string[]
+  idempotencyKey: string
+}
+
 /** Задача канбан-доски. Статус задачи = её колонка (columnId). */
 export interface Task {
   id: string
@@ -963,6 +1002,8 @@ export interface Task {
   designs?: TaskDesignLink[]
   /** Последний актуальный результат всех серверных этапов; отсутствие данных не является ошибкой. */
   latestRunResult?: TaskRunResult | null
+  /** Подтверждённые исходные вложения задачи. */
+  attachments?: TaskAttachment[]
 }
 
 /**
@@ -1072,6 +1113,27 @@ export function isCompletedHidden(
   return now - doneAt >= retentionDays * DAY_MS
 }
 
+/**
+ * Граница `doneAt`, начиная с которой завершённая задача ещё видна на доске:
+ * то же правило, что и `isCompletedHidden`, но пригодное для условия в SQL —
+ * доска не должна вычитывать всю колонку «Готово», чтобы отбросить её в памяти.
+ * `null` — отсечения нет (порог не задан).
+ */
+export function completedVisibilityCutoff(retentionDays: number | null | undefined, now: number): number | null {
+  if (retentionDays == null || !Number.isFinite(retentionDays) || retentionDays < 0) return null
+  // Порог 0 — «убрать в конце дня завершения»: сегодняшние остаются до полуночи.
+  if (retentionDays === 0) return startOfDay(now)
+  // isCompletedHidden прячет при now - doneAt >= r*DAY, значит видима строго правее.
+  return now - retentionDays * DAY_MS + 1
+}
+
+/** Полночь текущего дня для `ts` (тот же часовой пояс, что и `endOfDay`). */
+function startOfDay(ts: number): number {
+  const d = new Date(ts)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
 /** Полночь следующего дня после `ts` (по времени машины, где считается доска). */
 function endOfDay(ts: number): number {
   const d = new Date(ts)
@@ -1173,6 +1235,54 @@ export interface Board {
   tasks: Task[]
   /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */
   ciRuns?: CiRunSummary[]
+}
+
+/**
+ * Состояние процессов одной карточки: вторая фаза загрузки доски. Первая фаза
+ * отдаёт скелет (что за карточка и в какой колонке), эта — что с ней сейчас
+ * происходит. Разделение сделано ради старта: скелет — один запрос к `tasks`,
+ * а состояние собирается по восьми таблицам ранов и приезжает следом.
+ */
+export interface TaskStatus {
+  taskId: string
+  /** Id связанного чата текущего пользователя (или null). */
+  chatId: string | null
+  mergeSourceBranch: string | null
+  mergeSourceSha: string | null
+  activeMergeRunId: string | null
+  latestMergeRunId: string | null
+  activeMergeStatus: string | null
+  mergePermitted: boolean
+  mergeMachineBound: boolean
+  mergedSha: string | null
+  mergedSourceSha: string | null
+  taskPreparationRunId: string | null
+  taskPreparationStatus: import('./qa').TaskPreparationStatus | null
+  taskPreparationError: string | null
+  latestRunResult: TaskRunResult | null
+}
+
+/** Ответ второй фазы: состояние карточек и сводки CI-ранов доски. */
+export interface BoardStatuses {
+  tasks: TaskStatus[]
+  ciRuns: CiRunSummary[]
+}
+
+/**
+ * Накладывает состояние процессов на скелет карточек. Задачи без записи в
+ * `statuses` остаются как есть: вторая фаза могла не успеть (доска уже
+ * перерисовалась) или карточку создали между фазами — рисовать её без состояния
+ * правильнее, чем гасить уже показанное.
+ */
+export function applyTaskStatuses(tasks: Task[], statuses: TaskStatus[]): Task[] {
+  if (statuses.length === 0) return tasks
+  const byTask = new Map(statuses.map((status) => [status.taskId, status]))
+  return tasks.map((task) => {
+    const status = byTask.get(task.id)
+    if (!status) return task
+    const { taskId: _taskId, ...fields } = status
+    return { ...task, ...fields }
+  })
 }
 
 /**

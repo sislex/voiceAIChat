@@ -599,6 +599,8 @@ export interface IpcInvokeMap {
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
   'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
+  /** Состояние карточек доски: вторая фаза, приезжает следом за скелетом. */
+  'board:getStatuses': { arg: { id: string; includeCompleted?: boolean }; result: import('./projects').BoardStatuses }
   /** Вид доски человека в проекте (фильтры и раскладка) — хранится на сервере. */
   'board:getView': { arg: { id: string }; result: import('./projects').BoardView }
   /** Патч вида доски: присланные поля поверх сохранённых, в ответе — весь вид. */
@@ -610,6 +612,8 @@ export interface IpcInvokeMap {
   'columns:delete': { arg: { projectId: string; columnId: string }; result: void }
   /** Полная задача по id (тяжёлые поля, которых нет в лёгкой доске): грузит TaskModal. */
   'tasks:get': { arg: { projectId: string; taskId: string }; result: Task | null }
+  'tasks:listReworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
+  'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; input: import('./projects').CreateTaskReworkCycleInput }; result: import('./projects').TaskReworkCycle }
   'tasks:create': {
     arg: {
       projectId: string
@@ -1472,6 +1476,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:setDefaultMachine',
   'projects:setUserDefaultMachine',
   'board:get',
+  'board:getStatuses',
   'board:getView',
   'board:saveView',
   'columns:create',
@@ -1480,6 +1485,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'columns:reorder',
   'columns:delete',
   'tasks:get',
+  'tasks:listReworkCycles',
+  'tasks:createReworkCycle',
   'tasks:create',
   'tasks:createFromProposalInPreparation',
   'tasks:activity',

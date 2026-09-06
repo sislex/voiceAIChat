@@ -597,6 +597,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:setUserDefaultMachine': ({ id, agentId }) =>
       req(REST.projectUserDefaultMachine(id), { method: 'PUT', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id, includeCompleted }) => req(REST.projectBoard(id, includeCompleted)),
+    'board:getStatuses': ({ id, includeCompleted }) => req(REST.projectBoardStatuses(id, includeCompleted)),
     'board:getView': ({ id }) => req(REST.projectBoardView(id)),
     'board:saveView': ({ id, view }) => req(REST.projectBoardView(id), { method: 'PUT', body: JSON.stringify(view) }),
     'columns:create': ({ projectId, name }) =>
@@ -619,6 +620,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/projects/${encodeURIComponent(projectId)}/task-launch/preparation`, { method: 'POST', body: JSON.stringify(b) }),
     'tasks:get': ({ projectId, taskId }) =>
       req(REST.projectTask(projectId, taskId)),
+    'tasks:listReworkCycles': ({ projectId, taskId }) =>
+      req(REST.projectTaskReworkCycles(projectId, taskId)),
+    'tasks:createReworkCycle': ({ projectId, taskId, input }) =>
+      req(REST.projectTaskReworkCycles(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
     'tasks:activity': ({ projectId, taskId }) => req(REST.taskActivity(projectId, taskId)),
     'tasks:commentAdd': ({ projectId, taskId, ...b }) =>
       req(REST.taskComments(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),

@@ -79,15 +79,45 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         const result=remaining>0?await deps.executor.run({agentId:context.agentId,script,workdir:context.workdir,env:{CI:'1'},timeoutMs:remaining},(chunk)=>{output+=chunk;deps.db.appendIntegrationTestLog(runId,chunk)},controller.signal):{exitCode:null,timedOut:true}
         return {...result,output}
       }
-      const diff=await inspect('git diff-tree --no-commit-id --name-only -r HEAD')
+      const pathsFrom=(output:string)=>output.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean)
+      const mergeBase=await inspect(`git merge-base ${shellQuote(`origin/${context.ciBaseBranch}`)} HEAD`)
       if(controller.signal.aborted)return
-      if(diff.exitCode!==0||diff.timedOut){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось проверить git diff',failureClassification:'infrastructure',failureReason:diff.timedOut?'command_timeout':'executor_disconnected',blockerReasons:[diff.timedOut?'command_timeout':'executor_disconnected']});deps.completed?.(runId,userId,false,'Не удалось проверить git diff','infrastructure');deps.boardChanged?.(run.projectId);return}
-      // Двойное экранирование в регулярке (`/\\r?\\n/`) искало литерал «\r», а не
-      // перевод строки: многофайловый дифф приходил в валидацию одной склейкой,
-      // и коммит разработки проезжал проверку, если где-то внутри встречался
-      // тестовый путь. Проверено на CHAT-411.
-      const changed=diff.output.split(/\r?\n/).map((item)=>item.trim()).filter(Boolean),invalid=validateIntegrationTestDiff(changed)
-      if(invalid.length){const summary='Изменены нетестовые файлы: '+invalid.join(', ');deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'implementation_defect',failureReason:'non_test_files_changed',blockerReasons:invalid.map((path)=>'non_test_file:'+path)});deps.completed?.(runId,userId,false,summary,'implementation_defect');deps.boardChanged?.(run.projectId);return}
+      const mergeBaseSha=mergeBase.exitCode===0&&!mergeBase.timedOut?mergeBase.output.trim().split(/\s/)[0]??'':''
+      let changed:string[]=[]
+      if(mergeBaseSha){
+        const branchDiff=await inspect(`git diff --name-only ${shellQuote(mergeBaseSha)} HEAD`)
+        if(controller.signal.aborted)return
+        if(branchDiff.exitCode===0&&!branchDiff.timedOut) changed=pathsFrom(branchDiff.output)
+      }
+      // Если origin/<base> недоступен, основной diff сломан или пуст, first-parent
+      // сохраняет merge-aware разбор HEAD и не смешивает изменения второго parent.
+      if(!changed.length){
+        const fallback=await inspect('git diff-tree --no-commit-id --name-only -r -m --first-parent HEAD')
+        if(controller.signal.aborted)return
+        if(fallback.exitCode!==0||fallback.timedOut){
+          const reason=fallback.timedOut?'command_timeout':'executor_disconnected'
+          const summary='Не удалось определить изменённые файлы задачи через merge-base и first-parent diff'
+          deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'infrastructure',failureReason:reason,blockerReasons:[reason]})
+          deps.completed?.(runId,userId,false,summary,'infrastructure')
+          return
+        }
+        changed=pathsFrom(fallback.output)
+      }
+      if(!changed.length){
+        const summary='Не удалось определить изменённые файлы задачи: merge-base diff и first-parent diff пусты'
+        deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'infrastructure',failureReason:'diff_parse_failed',blockerReasons:['diff_parse_failed']})
+        deps.completed?.(runId,userId,false,summary,'infrastructure')
+        return
+      }
+      // Многофайловый вывод разбирается по настоящим переводам строк; иначе
+      // нетестовый файл мог скрыться внутри строки с допустимым тестовым путём.
+      const invalid=validateIntegrationTestDiff(changed)
+      if(invalid.length){
+        const summary='Изменены нетестовые файлы: '+invalid.join(', ')
+        deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'implementation_defect',failureReason:'non_test_files_changed',blockerReasons:invalid.map((path)=>'non_test_file:'+path)})
+        deps.completed?.(runId,userId,false,summary,'implementation_defect')
+        return
+      }
       const shaResult=await inspect('git rev-parse HEAD'),sha=shaResult.output.trim().split(/\s/)[0]??''
       if(!sha){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось определить SHA тестового коммита',failureClassification:'infrastructure',failureReason:'executor_disconnected',blockerReasons:['executor_disconnected']});deps.completed?.(runId,userId,false,'Не удалось определить SHA тестового коммита','infrastructure');deps.boardChanged?.(run.projectId);return}
       // Покрытие берём из маркеров `@testCase <id>` в самих тестах: разработка
@@ -105,6 +135,13 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         : required.filter(()=>Boolean(testPath)).map((item)=>({testId:item.id,path:testPath!}))
       if(byTestId.size) deps.db.appendIntegrationTestLog(runId,`Покрытие по маркерам ${AUTOMATION_MARKER}: ${covered.length} из ${required.length} обязательных кейсов\n`)
       else if(required.length) deps.db.appendIntegrationTestLog(runId,`Маркеров ${AUTOMATION_MARKER} в тестах нет — покрытие синтезировано из диффа и требует ручной сверки\n`)
+      if(required.length&&covered.length===0){
+        const blockerReasons=required.map((item)=>`missing_automation:${item.id}`)
+        const summary=`Не найдены тесты для обязательных automatable-кейсов: ${required.map((item)=>item.id).join(', ')}`
+        deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary,failureClassification:'implementation_defect',failureReason:'missing_automation',blockerReasons})
+        deps.completed?.(runId,userId,false,summary,'implementation_defect')
+        return
+      }
       deps.db.recordIntegrationAutomationLinks(userId,runId,covered,sha)
       let failedStage: IntegrationTestCommandResult | null = null
       let infrastructure = false

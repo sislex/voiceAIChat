@@ -204,7 +204,8 @@ describe('projects: лёгкая доска и полная задача', () =>
     // Лёгкая карточка: тяжёлые тексты пустые, но поля для превью на месте.
     expect(boardTask.description).toBe('')
     expect(boardTask.acceptanceCriteria).toBe('')
-    expect(boardTask.taskPreparationLog).toBeNull()
+    // Лог подготовки доска не отдаёт вовсе — он живёт только в полной карточке.
+    expect(boardTask.taskPreparationLog).toBeUndefined()
     expect(boardTask.title).toBe('T')
     // Полная задача — по id.
     const full = db.getTaskDetail('alice', p.id, task.id)!
@@ -212,6 +213,111 @@ describe('projects: лёгкая доска и полная задача', () =>
     expect(full.acceptanceCriteria).toBe('Критерии приёмки')
     // Изоляция: не участник проекта не получает задачу.
     expect(db.getTaskDetail('bob', p.id, task.id)).toBeNull()
+  })
+})
+
+describe('projects: две фазы доски', () => {
+  /** Проект с задачей и её чатом — на нём видно, что где отдаётся. */
+  function withTask(): { pid: string; taskId: string; chatId: string } {
+    const p = db.createProject('alice', { name: 'Phases' })
+    const column = db.getBoardSkeleton('alice', p.id)!.columns[0]!
+    const task = db.createTask('alice', p.id, { columnId: column.id, title: 'Двухфазная' })!
+    const chat = db.openOrCreateTaskChat('alice', p.id, task.id)!
+    return { pid: p.id, taskId: task.id, chatId: chat.id }
+  }
+
+  it('скелет отдаёт карточку без состояния процессов, статусы — только состояние', () => {
+    const { pid, taskId, chatId } = withTask()
+    const skeleton = db.getBoardSkeleton('alice', pid)!
+    const card = skeleton.tasks.find((t) => t.id === taskId)!
+    expect(card.title).toBe('Двухфазная')
+    // Ради этого разделения всё и затевалось: первая фаза не ходит в раны и чаты.
+    expect(card.chatId).toBeUndefined()
+    expect(card.latestRunResult).toBeUndefined()
+    expect(card.mergePermitted).toBeUndefined()
+    expect(skeleton.ciRuns).toBeUndefined()
+
+    const statuses = db.getBoardStatuses('alice', pid)!
+    const status = statuses.tasks.find((t) => t.taskId === taskId)!
+    expect(status.chatId).toBe(chatId)
+    expect(status.latestRunResult).toBeNull()
+    // Право на merge — свойство участника: у владельца проекта оно есть.
+    expect(status.mergePermitted).toBe(true)
+    expect(statuses.ciRuns).toEqual([])
+  })
+
+  it('getBoard склеивает обе фазы — прежний снапшот для MCP и автопрохода', () => {
+    const { pid, taskId, chatId } = withTask()
+    const board = db.getBoard('alice', pid)!
+    const card = board.tasks.find((t) => t.id === taskId)!
+    expect(card.title).toBe('Двухфазная')
+    expect(card.chatId).toBe(chatId)
+    expect(card.mergePermitted).toBe(true)
+    expect(board.ciRuns).toEqual([])
+  })
+
+  it('обе фазы видят один и тот же набор задач, включая отсечку завершённых', () => {
+    let clock = 1_700_000_000_000
+    const d = new VoiceChatDb(':memory:', { now: () => clock })
+    d.createUser('alice', '', 'developer')
+    const p = d.createProject('alice', { name: 'Retention' })
+    const cols = d.getBoardSkeleton('alice', p.id)!.columns
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const task = d.createTask('alice', p.id, { columnId: cols[0]!.id, title: 'T' })!
+    d.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    d.moveTask('alice', p.id, task.id, { columnId: done.id })
+    const skeletonIds = (opts?: { includeCompleted?: boolean }): string[] => d.getBoardSkeleton('alice', p.id, opts)!.tasks.map((t) => t.id)
+    const statusIds = (opts?: { includeCompleted?: boolean }): string[] => d.getBoardStatuses('alice', p.id, opts)!.tasks.map((t) => t.taskId)
+
+    // Порог 0 — «до конца дня завершения»: сегодня карточка ещё на доске.
+    expect(skeletonIds()).toContain(task.id)
+    expect(statusIds()).toContain(task.id)
+
+    clock = new Date(clock).setHours(24, 0, 0, 0)
+    // На следующий день карточка уходит — одинаково в обеих фазах, иначе статусы
+    // приезжали бы для задач, которых на доске уже нет (или наоборот).
+    expect(skeletonIds()).not.toContain(task.id)
+    expect(statusIds()).not.toContain(task.id)
+    expect(skeletonIds({ includeCompleted: true })).toContain(task.id)
+    expect(statusIds({ includeCompleted: true })).toContain(task.id)
+    d.close()
+  })
+
+  it('сводки CI приходят только по карточкам доски, а не по всей истории проекта', () => {
+    let clock = 1_700_000_000_000
+    const d = new VoiceChatDb(':memory:', { now: () => clock })
+    d.createUser('alice', '', 'developer')
+    const p = d.createProject('alice', { name: 'CI scope' })
+    d.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    const cols = d.getBoardSkeleton('alice', p.id)!.columns
+    const dev = cols[0]!
+    const done = cols.find((c) => c.semanticType === 'done')!
+    const onBoard = d.createTask('alice', p.id, { columnId: dev.id, title: 'На доске' })!
+    const archived = d.createTask('alice', p.id, { columnId: dev.id, title: 'Давно закрыта' })!
+    const run = (taskId: string): void => {
+      const created = d.createCiRun({ projectId: p.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: dev.id, runColumnId: dev.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
+      d.updateCiRun(created.id, { status: 'success', durationMs: 100 })
+    }
+    run(onBoard.id)
+    run(archived.id)
+    d.moveTask('alice', p.id, archived.id, { columnId: done.id })
+    clock = new Date(clock).setHours(24, 0, 0, 0)
+
+    // Закрытая вчера карточка ушла с доски — её сводка не должна ехать с доской:
+    // на боевом проекте так набегал мегабайт истории на 19 видимых задач.
+    const statuses = d.getBoardStatuses('alice', p.id)!
+    expect(statuses.tasks.map((t) => t.taskId)).toEqual([onBoard.id])
+    expect(statuses.ciRuns.map((r) => r.taskId)).toEqual([onBoard.id])
+    // С включённым «показывать завершённые» история доступна целиком.
+    expect(d.getBoardStatuses('alice', p.id, { includeCompleted: true })!.ciRuns.map((r) => r.taskId).sort())
+      .toEqual([onBoard.id, archived.id].sort())
+    d.close()
+  })
+
+  it('не участник проекта не получает ни скелета, ни статусов', () => {
+    const { pid } = withTask()
+    expect(db.getBoardSkeleton('bob', pid)).toBeNull()
+    expect(db.getBoardStatuses('bob', pid)).toBeNull()
   })
 })
 
