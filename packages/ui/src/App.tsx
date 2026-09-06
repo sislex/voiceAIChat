@@ -318,11 +318,15 @@ function initialChatIdFromPath(path: string, segments: string[]): string | null 
 function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   const { path, segments } = useHashRoute()
   const initialChatId = useRef(initialChatIdFromPath(path, segments))
+  // Стартуем на доске проекта — индекс чатов не нужен: сайдбар показывает
+  // проекты, а список чатов сам попросит индекс, когда его откроют.
+  const skipConversations = useRef(Boolean(parseProjectsRoute(path)) && initialChatId.current === null)
   const runtime = useCreateAppRuntime({
     api,
     ...(now ? { now } : {}),
     ...(delays ? { delays } : {}),
-    initialChatId: initialChatId.current
+    initialChatId: initialChatId.current,
+    skipConversations: skipConversations.current
   })
   return (
     <AppRuntimeProvider runtime={runtime}>
@@ -1134,6 +1138,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next))
   }
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
+  // Индекс чатов грузится тем, кто его показывает. На доске сайдбар открыт на
+  // проектах, и шесть запросов списков там ни к чему; переключение на «Чаты»
+  // (или любой экран с беседами) просит индекс сам, один раз за сессию.
+  useEffect(() => {
+    if (!authed) return
+    if (sidebarMode !== 'chats' && inProjects) return
+    void chatActions.ensureConversationIndex().catch(() => {})
+  }, [authed, sidebarMode, inProjects, chatActions])
   useVoiceCues(voice.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
   // Канал уведомлений стора → тосты. Показанные сразу снимаем из очереди, а
@@ -2231,6 +2243,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         conversationsStatus={chat.conversationsStatus}
         conversationsError={chat.conversationsError}
         onRetryConversations={() => void chatActions.retryConversations()}
+        olderStatus={chat.olderStatus}
+        olderHasMore={chat.olderHasMore}
+        onLoadOlder={() => void chatActions.loadOlderConversations()}
         activeId={chat.activeId}
         taskBadges={chat.taskChatBadges}
         ciSummaries={projects.ciSummaries}
