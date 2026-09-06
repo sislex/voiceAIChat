@@ -10,6 +10,7 @@ import {
 } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectInvitationForUser, ProjectSummary, TaskChatBadge } from '@shared/projects'
+import { localWeekStart, OLDER_CONVERSATIONS_PAGE } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { ciCardPulse, ciSummaryForTask } from '@shared/ci'
 import { TypeIcon } from './kanban/kanbanMeta'
@@ -62,14 +63,8 @@ function pluralMessages(n: number): string {
   return 'сообщений'
 }
 
-/** Локальный понедельник 00:00; календарная арифметика сохраняет DST. */
-export function localWeekStart(now: number): number {
-  const date = new Date(now)
-  const daysFromMonday = (date.getDay() + 6) % 7
-  date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() - daysFromMonday)
-  return date.getTime()
-}
+/** Граница недели — общая со стором чатов: он по ней грузит первую страницу. */
+export { localWeekStart }
 
 /** Что показывает панель результатов поиска по сообщениям (данные из стора). */
 export interface MessageSearchView {
@@ -201,6 +196,11 @@ export interface SidebarProps {
   conversations: Conversation[]
   /** Состояние загрузки списка: скелетон на первой загрузке, ошибка — с «Повторить». */
   conversationsStatus?: LoadStatus
+  /** Состояние догрузки секции «Более старые» и наличие следующей порции. */
+  olderStatus?: LoadStatus
+  olderHasMore?: boolean
+  /** Догрузить следующую порцию старых бесед (по 20). */
+  onLoadOlder?: () => void
   /** Техническая деталь ошибки загрузки списка (под «Подробнее»). */
   conversationsError?: string | null
   /** Повторить загрузку списка бесед. */
@@ -329,6 +329,9 @@ export interface SidebarProps {
 export function Sidebar({
   conversations,
   conversationsStatus = 'ready',
+  olderStatus = 'idle',
+  olderHasMore = false,
+  onLoadOlder,
   conversationsError = null,
   onRetryConversations,
   activeId,
@@ -778,7 +781,7 @@ export function Sidebar({
               </div>
             </section>
           )}
-          {olderConversations.length > 0 && (
+          {(olderConversations.length > 0 || olderHasMore) && (
             <section className="convo-section convo-section--older" aria-labelledby="sidebar-older-title">
               <button
                 id="sidebar-older-title"
@@ -786,7 +789,13 @@ export function Sidebar({
                 className="convo-section-toggle"
                 aria-expanded={olderOpen}
                 aria-controls="sidebar-older-conversations"
-                onClick={() => setOlderOpen((open) => !open)}
+                onClick={() => {
+                  const opening = !olderOpen
+                  setOlderOpen(opening)
+                  // Старые беседы грузятся только когда секцию раскрыли: список
+                  // приходит окном текущей недели, а история — порциями.
+                  if (opening && olderConversations.length === 0 && olderHasMore) onLoadOlder?.()
+                }}
               >
                 <span>Более старые</span>
                 <span className="convo-section-count">{olderConversations.length}</span>
@@ -799,6 +808,15 @@ export function Sidebar({
                 hidden={!olderOpen}
               >
                 {olderConversations.map(renderConversation)}
+                {olderStatus === 'loading' && <Skeleton variant="list" count={3} height={52} lines={2} />}
+                {olderStatus === 'error' && (
+                  <ErrorState compact message="Не удалось загрузить старые беседы" onRetry={() => onLoadOlder?.()} />
+                )}
+                {olderStatus !== 'loading' && olderHasMore && olderConversations.length > 0 && (
+                  <button type="button" className="convo-section-more" data-testid="load-older-conversations" onClick={() => onLoadOlder?.()}>
+                    Показать ещё {OLDER_CONVERSATIONS_PAGE}
+                  </button>
+                )}
               </div>
             </section>
           )}

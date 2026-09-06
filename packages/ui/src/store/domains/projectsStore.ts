@@ -225,6 +225,8 @@ export type ProjectsStore = Store<ProjectsState, ProjectsActions>
 export interface ProjectsChatPort {
   scheduleConversationsRefresh(): void
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
+  /** Индекс бесед по требованию: доска его не грузит, а переход в чат — требует. */
+  ensureConversationIndex(): Promise<unknown>
   selectConversation(id: string): Promise<boolean>
   reloadActiveMessages(): Promise<void>
 }
@@ -1245,7 +1247,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         if (!id) return null
         try {
           const conv = await client['tasks:openChat']({ projectId: id, taskId })
-          await Promise.all([deps.chat.refreshConversations(), refreshBoard()])
+          // Отсюда человек уходит в чат: индекс бесед нужен — на доске его могло
+          // и не быть, а `refreshConversations` молчит, пока список не открыт.
+          await Promise.all([deps.chat.ensureConversationIndex(), refreshBoard()])
           await deps.chat.selectConversation(conv.id)
           return conv.id
         } catch (err) {
