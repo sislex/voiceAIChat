@@ -2231,6 +2231,31 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
    */
   const projectHasOnlineMachine = (userId: string, projectId: string): boolean =>
     db.listUsableAgents(userId, projectId).some((agent) => agentRegistry.isOnline(agent.id))
+  /**
+   * Merge — такой же этап конвейера, как QA: карточка в нём с упавшим раном
+   * никем не подхватывалась, а «Машина отключилась во время выполнения команды»
+   * оставляла её стоять навсегда (прод, CHAT-412). Запуск идемпотентен
+   * (`startMergeRun` возвращает активный ран), поэтому повторные тики безопасны;
+   * предохранитель — число подряд упавших ранов и пауза между попытками.
+   */
+  const autoPilotMerge = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
+    const limit = db.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
+    const failures = db.countTrailingFailedMergeRuns(task.id)
+    if (failures >= limit) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'merge', reason: 'Подряд упавшие merge-раны', failures, limit })
+      try { db.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.merge_limit_exhausted') }
+      catch { /* переход недоступен из текущей колонки */ }
+      emitBoard(projectId)
+      return
+    }
+    if (failures > 0 && !retryAllowedNow({ finishedAt: db.lastMergeRunFinishedAt(task.id), now: Date.now() })) return
+    try {
+      const run = db.startMergeRun(userId, projectId, task.id)
+      mergeRunManager.start(run)
+    } catch (error) {
+      db.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'merge', reason: error instanceof Error ? error.message : String(error), failures, limit })
+    }
+  }
   const ticking = new Set<string>()
   /** Доска изменилась, пока шёл тик: пробуждение нельзя терять, иначе конвейер встаёт. */
   const pendingTicks = new Set<string>()
@@ -2256,7 +2281,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           else if (stage === 'integration_tests') { const run=db.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
           else if (stage === 'automated_qa') { const run=db.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')automatedQaRunner.launch(run.id,userId) }
           else if (stage === 'manual_qa' && !item.requiresManualQa) db.transitionAutoPilotTask(projectId,task.id,'awaiting_merge','autopilot.skip_manual_qa')
-          else if (stage === 'awaiting_merge') { const run=db.startMergeRun(userId,projectId,task.id); mergeRunManager.start(run) }
+          else if (stage === 'awaiting_merge' || stage === 'merge') autoPilotMerge(userId, projectId, task)
         }
       } catch (error) { app.log.warn({ projectId, error }, 'autopilot tick failed') }
       finally {
