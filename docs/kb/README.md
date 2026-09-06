@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 28 коммит(ов) в areas после сверки: bab4ae50 Merge main into CHAT-412 (task 24d3f92b-a8b4-4149-b76a-456a9245b6ff) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 30 коммит(ов) в areas после сверки: bab4ae50 Merge main into CHAT-412 (task 24d3f92b-a8b4-4149-b76a-456a9245b6ff) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 29 коммит(ов) в areas после сверки: bab4ae50 Merge main into CHAT-412 (task 24d3f92b-a8b4-4149-b76a-456a9245b6ff) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1199 коммит(ов) в areas после сверки: bab4ae50 Merge main into CHAT-412 (task 24d3f92b-a8b4-4149-b76a-456a9245b6ff) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1200 коммит(ов) в areas после сверки: 5a09d545 docs(kb): update after merge 24d3f92b-a8b4-4149-b76a-456a9245b6ff … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 25 коммит(ов) в areas после сверки: bab4ae50 Merge main into CHAT-412 (task 24d3f92b-a8b4-4149-b76a-456a9245b6ff) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 6 коммит(ов) в areas после сверки: bab4ae50 Merge main into CHAT-412 (task 24d3f92b-a8b4-4149-b76a-456a9245b6ff) … |
