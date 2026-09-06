@@ -151,7 +151,11 @@ export interface ProjectsActions {
   setProjectMachineSsh(id: string, agentId: string, sshHost: string, sshUser: string): Promise<void>
   setProjectDefaultMachine(id: string, agentId: string): Promise<void>
   fetchProjectDetail(id: string): Promise<ProjectDetail | null>
+  /** Открыть проект; `board: false` — без доски (релизы, настройки, код). */
+  openProject(id: string, options?: { board?: boolean }): Promise<void>
   openBoard(id: string): Promise<void>
+  /** Догрузить доску проекта, открытого без неё. */
+  ensureBoard(id: string): Promise<void>
   refreshMembership(projectId: string): Promise<void>
   closeBoard(): void
   openProjectSettings(): void
@@ -515,7 +519,15 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     }
   }
 
-  async function openBoard(id: string): Promise<void> {
+  /**
+   * Открывает проект. `board: false` — для вкладок, где доски нет (релизы,
+   * настройки, код): им хватает деталей проекта, а доска стоит четырёх запросов
+   * (снимок, вид, состояния карточек, при включённом фильтре — второй снимок) и
+   * подписки на `board.changed`, которая при работающем ране перечитывает доску
+   * каждые пару секунд. На вкладку доски её догружает `ensureBoard`.
+   */
+  async function openProject(id: string, options: { board?: boolean } = {}): Promise<void> {
+    const withBoard = options.board !== false
     if (getState().activeProjectId) boardBridge?.unsubscribe()
     clearBoardSync()
     const generation = boardGeneration
@@ -524,13 +536,55 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     // обязана появиться сразу. Включённый фильтр догружает их следом, поэтому и
     // сам флаг на время старта честно стоит в «нет».
     const wantsCompleted = getState().boardIncludeCompleted
-    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false, boardIncludeCompleted: false })
+    setState({ activeProjectId: id, boardLoading: withBoard, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false, boardIncludeCompleted: false })
+    if (!withBoard) return loadProjectDetail(id, generation)
+    await loadBoard(id, generation, wantsCompleted)
+  }
+
+  async function openBoard(id: string): Promise<void> {
+    return openProject(id, { board: true })
+  }
+
+  /** Детали проекта без доски: этим живут вкладки релизов, настроек и кода. */
+  async function loadProjectDetail(id: string, generation: number): Promise<void> {
+    try {
+      const detail = await client['projects:get']({ id })
+      if (generation !== boardGeneration || getState().activeProjectId !== id) return
+      setState({ projectDetail: detail })
+    } catch (err) {
+      if (generation !== boardGeneration || getState().activeProjectId !== id) return
+      if (accessLost(err)) {
+        dropInaccessibleProject(id)
+        fail(new Error('Доступ к проекту закрыт: он удалён или вас исключили из участников.'))
+        return
+      }
+      fail(err, () => void loadProjectDetail(id, boardGeneration))
+    }
+  }
+
+  /**
+   * Догружает доску проекта, открытого без неё: переход «Релизы» → «Канбан» не
+   * должен перечитывать то, что уже в сторе.
+   */
+  async function ensureBoard(id: string): Promise<void> {
+    if (getState().activeProjectId !== id) return openProject(id, { board: true })
+    if (getState().board || getState().boardLoading) return
+    clearBoardSync()
+    const generation = boardGeneration
+    const wantsCompleted = getState().boardIncludeCompleted
+    setState({ boardLoading: true, boardError: null, boardIncludeCompleted: false })
+    await loadBoard(id, generation, wantsCompleted)
+  }
+
+  async function loadBoard(id: string, generation: number, wantsCompleted: boolean): Promise<void> {
     boardBridge?.subscribe(id)
     try {
       const includeCompleted = false
+      const known = getState().projectDetail
       const [board, detail, view] = await Promise.all([
         client['board:get']({ id, includeCompleted }),
-        client['projects:get']({ id }),
+        // Детали могли приехать раньше — с вкладки, открытой без доски.
+        known?.id === id ? Promise.resolve(known) : client['projects:get']({ id }),
         // Вид доски — личная настройка на сервере; её отказ не должен ронять доску.
         client['board:getView']({ id }).catch((err: unknown) => {
           console.warn('[projects] вид доски недоступен', err)
@@ -1044,7 +1098,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           return null
         }
       },
+      openProject,
       openBoard,
+      ensureBoard,
       closeBoard,
       openProjectSettings() {
         setState({ projectSettingsOpen: true })
