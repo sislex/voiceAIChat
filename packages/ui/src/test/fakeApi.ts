@@ -1350,6 +1350,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       }
       return componentsState.session
     },
+    // Кадр в фейке всегда через прокси: туннель требует живого агента.
+    'projects:storybookOpen': async () => ({
+      kind: 'proxy' as const,
+      url: '/api/preview?url=http%3A%2F%2Fm1.machine.internal%3A6006',
+      tunnelId: null,
+      note: 'Кадр идёт через мост машины: на медленном канале он собирается долго.'
+    }),
+    'projects:storybookCloseTunnel': async () => ({ closed: true }),
     'projects:componentTicket': async ({ title, paths }) => {
       componentsState.tickets.push({ title, paths })
       return { taskId: 'task-new', taskNumber: 77, branch: 'CHAT-77', commitSha: 'e'.repeat(40), columnId: 'col-awaiting', readyToMerge: true }

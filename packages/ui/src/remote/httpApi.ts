@@ -581,6 +581,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:storybookSession': ({ id, workspace }) => req(REST.projectStorybook(id, workspace)),
     'projects:storybookAction': ({ id, ...body }) =>
       req(REST.projectStorybookAction(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:storybookOpen': ({ id, ...body }) =>
+      req(REST.projectStorybookOpen(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:storybookCloseTunnel': ({ id, tunnelId, workspace }) =>
+      req(REST.projectStorybookTunnel(id, tunnelId, workspace), { method: 'DELETE' }),
     'projects:componentTicket': ({ id, ...body }) =>
       req(REST.projectComponentTicket(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>

@@ -524,6 +524,10 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/components/storybook?workspace=${encodeURIComponent(workspace)}`,
   projectStorybookAction: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/storybook`,
   projectComponentTicket: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/ticket`,
+  /** Как открыть кадр: прямой адрес, туннель локального агента или прокси машины. */
+  projectStorybookOpen: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/storybook/open`,
+  projectStorybookTunnel: (id: string, tunnelId: string, workspace: string) =>
+    `/api/projects/${encodeURIComponent(id)}/components/storybook/tunnels/${encodeURIComponent(tunnelId)}?workspace=${encodeURIComponent(workspace)}`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',
