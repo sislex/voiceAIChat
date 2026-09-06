@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 32 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 34 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 33 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1207 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1211 коммит(ов) в areas после сверки: 7a1f4997 Merge remote-tracking branch 'origin/main' into perf/board-two-phase … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 3 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 29 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 10 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
@@ -33,9 +33,9 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-06 | ⚠ 3 коммит(ов) в areas после сверки: f222dc9c perf(chats): канбан не грузит чаты, список приезжает окном недели, метки — без ранов … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-04 | ⚠ 28 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 200 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-06 | ⚠ 3 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-06 | ⚠ 1 коммит(ов) в areas после сверки: f222dc9c perf(chats): канбан не грузит чаты, список приезжает окном недели, метки — без ранов |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-06 | ⚠ 1 коммит(ов) в areas после сверки: 5ab5f210 perf(chats): кэш стоимости беседы и списки разделов по требованию |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-06 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-06 | ⚠ 4 коммит(ов) в areas после сверки: ac2b5c82 Merge remote-tracking branch 'origin/main' into fix/image-studio-views-race … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-06 | ⚠ 6 коммит(ов) в areas после сверки: 7a1f4997 Merge remote-tracking branch 'origin/main' into perf/board-two-phase … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 36 коммит(ов) в areas после сверки: f222dc9c perf(chats): канбан не грузит чаты, список приезжает окном недели, метки — без ранов … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 165 коммит(ов) в areas после сверки: 991a960a feat(projects): persist task rework cycles … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
