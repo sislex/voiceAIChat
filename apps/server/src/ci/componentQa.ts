@@ -33,7 +33,12 @@ export interface ComponentQaRunnerDeps {
   boardChanged?: (projectId: string) => void
   /** Адресная инвалидация панели этапа: она перечитывает снимок вместо опроса по таймеру. */
   qaStageChanged?: (projectId: string, taskId: string) => void
-  completed?: (runId: string, userId: string, passed: boolean, reason: string) => void
+  /**
+   * Итог рана для автопрохода. `classification` обязателен для честного разбора:
+   * без него отключившаяся посреди шага машина шла в fix-loop как дефект кода и
+   * жгла цикл доработки за чужой сбой (прод, CHAT-413).
+   */
+  completed?: (runId: string, userId: string, passed: boolean, reason: string, classification?: 'implementation_defect' | 'infrastructure' | null) => void
 }
 
 export interface ComponentQaRunner {
@@ -58,7 +63,7 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: run.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: 'development workspace is unavailable' })), commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
         // Автопроход обязан узнать об исходе: молчание оставляет карточку в
         // component_qa, и следующий board event запускает такой же ран по кругу.
-        deps.completed?.(runId, userId, false, 'Development workspace недоступен')
+        deps.completed?.(runId, userId, false, 'Development workspace недоступен', 'infrastructure')
       }
       if (run) { deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) }
       return
@@ -144,12 +149,12 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         failureClassification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
         blockerReasons: infrastructure && failedStage ? [failedStage.diagnostic] : []
       })
-      deps.completed?.(runId, userId, passed, passed ? 'Component QA пройден' : failedStage?.diagnostic || 'Component QA failed')
+      deps.completed?.(runId, userId, passed, passed ? 'Component QA пройден' : failedStage?.diagnostic || 'Component QA failed', passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect')
     })().catch((error) => {
       const current = deps.db.getComponentQaRun(userId, runId)
       if (current?.status === 'running') {
         deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: current.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: String(error) })), commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
-        deps.completed?.(runId, userId, false, String(error))
+        deps.completed?.(runId, userId, false, String(error), 'infrastructure')
       }
     }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId); deps.qaStageChanged?.(run.projectId, run.taskId) })
   }
