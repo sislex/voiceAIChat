@@ -21,14 +21,14 @@ export function registerCiRoutes(
   /** Адресная инвалидация очереди «Улучшения»: панель перечитывает список только по ней. */
   improvementsChanged?: (projectId: string) => void
 ): void {
-  const isOwner = (req: FastifyRequest, projectId: string): boolean => db.getProject(uid(req), projectId)?.role === 'owner'
+  const isOwner = (req: FastifyRequest, projectId: string): boolean => db.projects.getProject(uid(req), projectId)?.role === 'owner'
   const isAdmin = (req: FastifyRequest): boolean => req.user?.role === 'admin'
   const workflowGuard = { preHandler: requireProjectPermission('workflow:start') }
 
   // --- Справочник команд ---
-  app.get<{ Querystring: { projectId?: string } }>('/api/ci/commands', async (req) => db.listCiCommands(uid(req), req.query.projectId))
+  app.get<{ Querystring: { projectId?: string } }>('/api/ci/commands', async (req) => db.ci.listCiCommands(uid(req), req.query.projectId))
 
-  app.get<{ Params: { id: string } }>('/api/ci/commands/:id', async (req, reply) => db.getCiCommand(uid(req), req.params.id) ?? nf(reply))
+  app.get<{ Params: { id: string } }>('/api/ci/commands/:id', async (req, reply) => db.ci.getCiCommand(uid(req), req.params.id) ?? nf(reply))
 
   app.post<{ Body: CiCommandInput }>('/api/ci/commands', async (req, reply) => {
     const body = req.body ?? {}
@@ -38,160 +38,160 @@ export function registerCiRoutes(
       if (!body.projectId || !isOwner(req, body.projectId)) return forbid(reply)
     }
     try {
-      return db.createCiCommand(uid(req), body)
+      return db.ci.createCiCommand(uid(req), body)
     } catch (e) {
       return bad(reply, e)
     }
   })
 
   app.patch<{ Params: { id: string }; Body: CiCommandInput }>('/api/ci/commands/:id', async (req, reply) => {
-    const cur = db.getCiCommand(uid(req), req.params.id)
+    const cur = db.ci.getCiCommand(uid(req), req.params.id)
     if (!cur) return nf(reply)
     if (cur.scope === 'global' ? !isAdmin(req) : !isOwner(req, cur.projectId!)) return forbid(reply)
     try {
-      return db.updateCiCommand(uid(req), req.params.id, req.body ?? {}) ?? nf(reply)
+      return db.ci.updateCiCommand(uid(req), req.params.id, req.body ?? {}) ?? nf(reply)
     } catch (e) {
       return bad(reply, e)
     }
   })
 
   app.delete<{ Params: { id: string } }>('/api/ci/commands/:id', async (req, reply) => {
-    const cur = db.getCiCommand(uid(req), req.params.id)
+    const cur = db.ci.getCiCommand(uid(req), req.params.id)
     if (!cur) return nf(reply)
     if (cur.scope === 'global' ? !isAdmin(req) : !isOwner(req, cur.projectId!)) return forbid(reply)
-    return { ok: db.softDeleteCiCommand(uid(req), req.params.id) }
+    return { ok: db.ci.softDeleteCiCommand(uid(req), req.params.id) }
   })
 
   app.get<{ Params: { id: string } }>('/api/ci/commands/:id/usage', async (req, reply) => {
-    if (!db.getCiCommand(uid(req), req.params.id)) return nf(reply)
-    return db.ciCommandUsage(req.params.id)
+    if (!db.ci.getCiCommand(uid(req), req.params.id)) return nf(reply)
+    return db.ci.ciCommandUsage(req.params.id)
   })
 
   // --- Глобальные настройки CI (чтение — любой; правка — глобальный admin) ---
-  app.get('/api/ci/settings', async () => db.getCiSettings())
+  app.get('/api/ci/settings', async () => db.ci.getCiSettings())
   app.put('/api/ci/settings', async (req, reply) => {
     if (!isAdmin(req)) return forbid(reply)
     // Настройка стадий приходит объектом и чистится в `updateCiSettings`
     // (`normCiStageModels`): чужие ключи и не-строки в БД не попадают.
-    return db.updateCiSettings((req.body ?? {}) as Partial<CiGlobalSettings>)
+    return db.ci.updateCiSettings((req.body ?? {}) as Partial<CiGlobalSettings>)
   })
 
   // --- Слот-конфиг проекта (дефолты) ---
   app.get<{ Params: { id: string } }>('/api/projects/:id/ci', async (req, reply) => {
-    if (!db.getProject(uid(req), req.params.id)) return nf(reply)
-    return db.getCiSlotConfig('project', req.params.id)
+    if (!db.projects.getProject(uid(req), req.params.id)) return nf(reply)
+    return db.ci.getCiSlotConfig('project', req.params.id)
   })
   app.put<{ Params: { id: string }; Body: { beforeModel?: string[]; afterModel?: string[] } }>('/api/projects/:id/ci', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
     const b = req.body ?? {}
-    if (b.beforeModel) db.setCiSlotCommands('project', req.params.id, 'before_model', b.beforeModel)
-    if (b.afterModel) db.setCiSlotCommands('project', req.params.id, 'after_model', b.afterModel)
-    return db.getCiSlotConfig('project', req.params.id)
+    if (b.beforeModel) db.ci.setCiSlotCommands('project', req.params.id, 'before_model', b.beforeModel)
+    if (b.afterModel) db.ci.setCiSlotCommands('project', req.params.id, 'after_model', b.afterModel)
+    return db.ci.getCiSlotConfig('project', req.params.id)
   })
 
   // --- Движок/модель проекта и задачи (с наследованием) ---
   const projectLlmView = (userId: string, projectId: string) => {
-    const inherited = db.ciLlmDefaultsForUser(userId)
-    const own = db.getCiLlmConfig('project', projectId)
+    const inherited = db.ci.ciLlmDefaultsForUser(userId)
+    const own = db.ci.getCiLlmConfig('project', projectId)
     return { config: own ?? inherited, inherited, overridden: own !== null }
   }
   app.get<{ Params: { id: string } }>('/api/projects/:id/ci/llm', async (req, reply) => {
-    if (!db.getProject(uid(req), req.params.id)) return nf(reply)
+    if (!db.projects.getProject(uid(req), req.params.id)) return nf(reply)
     return projectLlmView(uid(req), req.params.id)
   })
   app.put<{ Params: { id: string }; Body: CiLlmConfig }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
-    db.setCiLlmConfig('project', req.params.id, req.body)
+    db.ci.setCiLlmConfig('project', req.params.id, req.body)
     return projectLlmView(uid(req), req.params.id)
   })
   app.delete<{ Params: { id: string } }>('/api/projects/:id/ci/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
-    db.clearCiLlmConfig('project', req.params.id)
+    db.ci.clearCiLlmConfig('project', req.params.id)
     return projectLlmView(uid(req), req.params.id)
   })
   const taskLlmView = (userId: string, projectId: string, taskId: string): { config: CiLlmConfig; overridden: boolean; projectDefault: CiLlmConfig } => ({
-    config: db.resolveTaskLlmConfig(projectId, taskId, userId),
-    overridden: db.getCiLlmConfig('task', taskId) !== null,
-    projectDefault: db.getCiLlmConfig('project', projectId) ?? db.ciLlmDefaultsForUser(userId)
+    config: db.ci.resolveTaskLlmConfig(projectId, taskId, userId),
+    overridden: db.ci.getCiLlmConfig('task', taskId) !== null,
+    projectDefault: db.ci.getCiLlmConfig('project', projectId) ?? db.ci.ciLlmDefaultsForUser(userId)
   })
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
-    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    if (!db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     return taskLlmView(uid(req), req.params.id, req.params.taskId)
   })
   app.put<{ Params: { id: string; taskId: string }; Body: CiLlmConfig }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
-    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
-    return db.setCiLlmConfig('task', req.params.taskId, req.body)
+    if (!db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    return db.ci.setCiLlmConfig('task', req.params.taskId, req.body)
   })
   // Снять переопределение: задача снова наследует движок/модель проекта.
   app.delete<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/llm', async (req, reply) => {
-    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
-    db.clearCiLlmConfig('task', req.params.taskId)
+    if (!db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    db.ci.clearCiLlmConfig('task', req.params.taskId)
     return taskLlmView(uid(req), req.params.id, req.params.taskId)
   })
 
   // --- Выбор LLM по самостоятельным этапам workflow ---
   const validStage = (value: string): value is CiUsageKind => CI_USAGE_KINDS.includes(value as CiUsageKind)
   const userStageFallback = (userId: string) => {
-    const llm = db.ciLlmDefaultsForUser(userId)
+    const llm = db.ci.ciLlmDefaultsForUser(userId)
     return { llmEngineId: llm.llmEngineId ?? null, provider: llm.provider, model: llm.model }
   }
 
   app.get<{ Params: { id: string; stage: string } }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
-    if (!db.getProject(uid(req), req.params.id)) return nf(reply)
+    if (!db.projects.getProject(uid(req), req.params.id)) return nf(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
     return {
-      override: db.getCiStageLlmConfig('project', req.params.id, req.params.stage),
-      effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage, userStageFallback(uid(req)))
+      override: db.ci.getCiStageLlmConfig('project', req.params.id, req.params.stage),
+      effective: db.ci.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage, userStageFallback(uid(req)))
     }
   })
   app.put<{ Params: { id: string; stage: string }; Body: CiStageLlmSelection }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
-    return db.setCiStageLlmConfig('project', req.params.id, req.params.stage, req.body ?? {})
+    return db.ci.setCiStageLlmConfig('project', req.params.id, req.params.stage, req.body ?? {})
   })
   app.delete<{ Params: { id: string; stage: string } }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
-    db.clearCiStageLlmConfig('project', req.params.id, req.params.stage)
-    return { effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage, userStageFallback(uid(req))) }
+    db.ci.clearCiStageLlmConfig('project', req.params.id, req.params.stage)
+    return { effective: db.ci.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage, userStageFallback(uid(req))) }
   })
 
   app.get<{ Params: { id: string; taskId: string; stage: string } }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
-    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    if (!db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
     return {
-      override: db.getCiStageLlmConfig('task', req.params.taskId, req.params.stage),
-      projectDefault: db.getCiStageLlmConfig('project', req.params.id, req.params.stage),
-      effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req)))
+      override: db.ci.getCiStageLlmConfig('task', req.params.taskId, req.params.stage),
+      projectDefault: db.ci.getCiStageLlmConfig('project', req.params.id, req.params.stage),
+      effective: db.ci.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req)))
     }
   })
   app.put<{ Params: { id: string; taskId: string; stage: string }; Body: CiStageLlmSelection }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
-    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    if (!db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
-    db.setCiStageLlmConfig('task', req.params.taskId, req.params.stage, req.body ?? {})
-    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req))) }
+    db.ci.setCiStageLlmConfig('task', req.params.taskId, req.params.stage, req.body ?? {})
+    return { effective: db.ci.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req))) }
   })
   app.delete<{ Params: { id: string; taskId: string; stage: string } }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
-    db.clearCiStageLlmConfig('task', req.params.taskId, req.params.stage)
-    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req))) }
+    db.ci.clearCiStageLlmConfig('task', req.params.taskId, req.params.stage)
+    return { effective: db.ci.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req))) }
   })
 
   // --- Машины выполнения задачи: личные + проектные, без дублей ---
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci/machines', async (req, reply): Promise<CiTaskMachines | FastifyReply> => {
     const userId = uid(req)
-    const project = db.getProject(userId, req.params.id)
-    const task = db.getCiTask(userId, req.params.id, req.params.taskId)
+    const project = db.projects.getProject(userId, req.params.id)
+    const task = db.tasks.getCiTask(userId, req.params.id, req.params.taskId)
     if (!project || !task) return nf(reply)
-    const personalIds = new Set(db.listAgents(userId).map((agent) => agent.id))
-    const usable = db.listUsableAgents(userId, project.id)
-    const myDefault = db.getUserProjectDefaultMachine(userId, project.id)
-    const load = db.countActiveCiRunsByAgent()
+    const personalIds = new Set(db.machines.listAgents(userId).map((agent) => agent.id))
+    const usable = db.machines.listUsableAgents(userId, project.id)
+    const myDefault = db.machines.getUserProjectDefaultMachine(userId, project.id)
+    const load = db.ci.countActiveCiRunsByAgent()
     const machines = usable.map((agent) => {
       const personal = personalIds.has(agent.id)
-      const shared = db.isMachineSharedWithProject(project.id, agent.id)
+      const shared = db.machines.isMachineSharedWithProject(project.id, agent.id)
       const online = agents?.isOnline(agent.id) ?? false
       return {
         agentId: agent.id,
@@ -215,32 +215,32 @@ export function registerCiRoutes(
     return {
       machines,
       selectedAgentId: task.agentId ?? null,
-      unavailableSelection: selectedAvailable || !task.agentId ? null : { agentId: task.agentId, name: db.agentName(task.agentId) ?? null },
+      unavailableSelection: selectedAvailable || !task.agentId ? null : { agentId: task.agentId, name: db.machines.agentName(task.agentId) ?? null },
       inheritanceSource: task.agentId ? 'explicit' : 'project_default',
       effectiveAgentId,
-      effectiveMachineName: effectiveMachine?.name ?? (effectiveAgentId ? db.agentName(effectiveAgentId) ?? null : null)
+      effectiveMachineName: effectiveMachine?.name ?? (effectiveAgentId ? db.machines.agentName(effectiveAgentId) ?? null : null)
     }
   })
 
   // --- Слот-конфиг задачи (переопределение + метка наследования) ---
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
-    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    if (!db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     return {
-      config: db.resolveTaskSlots(req.params.id, req.params.taskId),
-      overridden: db.hasCiSlotConfig('task', req.params.taskId),
-      projectDefault: db.getCiSlotConfig('project', req.params.id),
-      enabledStages: db.getTaskProcessStages(req.params.taskId),
-      browserCheck: db.getTaskBrowserCheck(req.params.taskId)
+      config: db.ci.resolveTaskSlots(req.params.id, req.params.taskId),
+      overridden: db.ci.hasCiSlotConfig('task', req.params.taskId),
+      projectDefault: db.ci.getCiSlotConfig('project', req.params.id),
+      enabledStages: db.ci.getTaskProcessStages(req.params.taskId),
+      browserCheck: db.ci.getTaskBrowserCheck(req.params.taskId)
     }
   })
   app.put<{ Params: { id: string; taskId: string }; Body: { beforeModel?: string[]; afterModel?: string[]; enabledStages?: unknown; browserCheck?: unknown } }>('/api/projects/:id/tasks/:taskId/ci', async (req, reply) => {
-    if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
+    if (!db.tasks.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     const b = req.body ?? {}
     const slots: Array<[CiSlot, string[] | undefined]> = [['before_model', b.beforeModel], ['after_model', b.afterModel]]
-    for (const [slot, ids] of slots) if (ids) db.setCiSlotCommands('task', req.params.taskId, slot, ids)
-    const enabledStages = b.enabledStages === undefined ? db.getTaskProcessStages(req.params.taskId) : db.setTaskProcessStages(req.params.taskId, b.enabledStages)
-    const browserCheck = b.browserCheck === undefined ? db.getTaskBrowserCheck(req.params.taskId) : db.setTaskBrowserCheck(req.params.taskId, b.browserCheck)
-    return { ...db.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages, browserCheck }
+    for (const [slot, ids] of slots) if (ids) db.ci.setCiSlotCommands('task', req.params.taskId, slot, ids)
+    const enabledStages = b.enabledStages === undefined ? db.ci.getTaskProcessStages(req.params.taskId) : db.ci.setTaskProcessStages(req.params.taskId, b.enabledStages)
+    const browserCheck = b.browserCheck === undefined ? db.ci.getTaskBrowserCheck(req.params.taskId) : db.ci.setTaskBrowserCheck(req.params.taskId, b.browserCheck)
+    return { ...db.ci.resolveTaskSlots(req.params.id, req.params.taskId), enabledStages, browserCheck }
   })
 
   // --- Запуск / отмена / повтор рана ---
@@ -275,23 +275,23 @@ export function registerCiRoutes(
       return res.interaction
     }
   )
-  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => db.getCiRun(uid(req), req.params.runId) ?? nf(reply))
+  app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId', async (req, reply) => db.ci.getCiRun(uid(req), req.params.runId) ?? nf(reply))
   app.get<{ Params: { runId: string }; Querystring: { limit?: string } }>('/api/ci/runs/:runId/log', async (req, reply) => {
-    if (!db.getCiRun(uid(req), req.params.runId)) return nf(reply)
+    if (!db.ci.getCiRun(uid(req), req.params.runId)) return nf(reply)
     // Полный лог длинного рана не помещается в память процесса, поэтому отдаём
     // хвост; `limit` позволяет попросить больше в пределах серверного потолка.
-    return db.getCiRunLog(uid(req), req.params.runId, Number(req.query.limit) || undefined)
+    return db.ci.getCiRunLog(uid(req), req.params.runId, Number(req.query.limit) || undefined)
   })
   // Использование базы знаний моделью: по одному рану (лента) и по всем ранам
   // задачи (модалка). Гейт — членство в проекте: чужому 404, а не пустой отчёт.
   app.get<{ Params: { runId: string }; Querystring: { limit?: string } }>('/api/ci/runs/:runId/kb-usage', async (req, reply) => {
-    const report = db.kbUsageRunReport(uid(req), req.params.runId, Number(req.query.limit) || undefined)
+    const report = db.kb.kbUsageRunReport(uid(req), req.params.runId, Number(req.query.limit) || undefined)
     return report ?? nf(reply)
   })
   app.get<{ Params: { id: string; taskId: string }; Querystring: { limit?: string } }>(
     '/api/projects/:id/tasks/:taskId/kb-usage',
     async (req, reply) => {
-      const report = db.kbUsageTaskReport(uid(req), req.params.id, req.params.taskId, Number(req.query.limit) || undefined)
+      const report = db.kb.kbUsageTaskReport(uid(req), req.params.id, req.params.taskId, Number(req.query.limit) || undefined)
       return report ?? nf(reply)
     }
   )
@@ -299,26 +299,26 @@ export function registerCiRoutes(
   // Отчёт по расходу модели: один ран (лента) и все раны задачи (карточка).
   // Гейт тот же, что у kb-usage: чужому 404, а не пустой отчёт.
   app.get<{ Params: { runId: string } }>('/api/ci/runs/:runId/report', async (req, reply) =>
-    db.ciRunReport(uid(req), req.params.runId) ?? nf(reply)
+    db.ci.ciRunReport(uid(req), req.params.runId) ?? nf(reply)
   )
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/report', async (req, reply) =>
-    db.ciTaskReport(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+    db.ci.ciTaskReport(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
   )
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/timeline', async (req, reply) =>
-    db.taskTimeline(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+    db.tasks.taskTimeline(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
   )
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/improvements', async (req) =>
-    db.listTaskImprovements(uid(req), req.params.id, req.params.taskId)
+    db.tasks.listTaskImprovements(uid(req), req.params.id, req.params.taskId)
   )
   app.get<{ Params: { id: string } }>('/api/projects/:id/improvements/tasks', async (req) =>
-    db.listProjectImprovementTaskIds(uid(req), req.params.id)
+    db.tasks.listProjectImprovementTaskIds(uid(req), req.params.id)
   )
   app.get<{ Params: { id: string } }>('/api/projects/:id/improvements', async (req) =>
-    db.listProjectImprovements(uid(req), req.params.id)
+    db.tasks.listProjectImprovements(uid(req), req.params.id)
   )
   app.delete<{ Params: { id: string } }>('/api/improvements/:id', async (req, reply) => {
-    const projectId = db.improvementProjectId(req.params.id)
-    if (!db.deleteTaskImprovement(uid(req), req.params.id)) return nf(reply)
+    const projectId = db.tasks.improvementProjectId(req.params.id)
+    if (!db.tasks.deleteTaskImprovement(uid(req), req.params.id)) return nf(reply)
     if (projectId) { boardChanged?.(projectId); improvementsChanged?.(projectId) }
     return { ok: true }
   })
@@ -326,8 +326,8 @@ export function registerCiRoutes(
     const status = req.body?.status
     if (status !== 'new' && status !== 'accepted' && status !== 'rejected' && status !== 'implemented') return reply.code(400).send({ error: 'Некорректный статус предложения' })
     try {
-      const projectId = db.improvementProjectId(req.params.id)
-      const updated = db.updateTaskImprovementStatus(uid(req), req.params.id, status)
+      const projectId = db.tasks.improvementProjectId(req.params.id)
+      const updated = db.tasks.updateTaskImprovementStatus(uid(req), req.params.id, status)
       if (updated && projectId) improvementsChanged?.(projectId)
       return updated ?? nf(reply)
     }
@@ -340,9 +340,9 @@ export function registerCiRoutes(
       if (body[key] !== undefined && typeof body[key] !== 'string') return reply.code(400).send({ error: `${key} must be a string` })
     }
     if (body.title !== undefined && !body.title.trim()) return reply.code(400).send({ error: 'title must not be empty' })
-    let created: NonNullable<ReturnType<VoiceChatDb['createTaskFromImprovement']>>
+    let created: NonNullable<ReturnType<VoiceChatDb['tasks']['createTaskFromImprovement']>>
     try {
-      const result = db.createTaskFromImprovement(uid(req), req.params.id, body)
+      const result = db.tasks.createTaskFromImprovement(uid(req), req.params.id, body)
       if (!result) return nf(reply)
       created = result
     }
@@ -361,7 +361,7 @@ export function registerCiRoutes(
     boardChanged?.(created.task.projectId)
     // Предложение стало задачей — карточка уходит из очереди улучшений.
     improvementsChanged?.(created.task.projectId)
-    const task = db.getCiTask(uid(req), created.task.projectId, created.task.id) ?? created.task
+    const task = db.tasks.getCiTask(uid(req), created.task.projectId, created.task.id) ?? created.task
     return { ...created, task, preparationStarted, preparationError }
   })
 
@@ -372,7 +372,7 @@ export function registerCiRoutes(
     return result
   })
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/retry', workflowGuard, async (req, reply) => {
-    const detail = db.getCiRun(uid(req), req.params.runId)
+    const detail = db.ci.getCiRun(uid(req), req.params.runId)
     if (!detail) return nf(reply)
     const res = ci.start(uid(req), detail.run.projectId, detail.run.taskId)
     if ('error' in res) return reply.code(409).send({ error: res.error })
@@ -393,15 +393,15 @@ export function registerCiRoutes(
 
   // --- Метрики ---
   app.get<{ Params: { id: string } }>('/api/projects/:id/ci/metrics', async (req, reply) => {
-    if (!db.getProject(uid(req), req.params.id)) return nf(reply)
-    return { commands: db.ciCommandMetrics(uid(req), req.params.id), modelWork: db.ciModelWorkMetric(uid(req), req.params.id) }
+    if (!db.projects.getProject(uid(req), req.params.id)) return nf(reply)
+    return { commands: db.ci.ciCommandMetrics(uid(req), req.params.id), modelWork: db.ci.ciModelWorkMetric(uid(req), req.params.id) }
   })
 
   // --- Предложения модели по правке команд ---
-  app.get<{ Querystring: { projectId?: string } }>('/api/ci/suggestions', async (req) => db.listCiSuggestions(uid(req), req.query.projectId))
+  app.get<{ Querystring: { projectId?: string } }>('/api/ci/suggestions', async (req) => db.ci.listCiSuggestions(uid(req), req.query.projectId))
   app.post<{ Params: { id: string }; Body: { accept?: boolean } }>('/api/ci/suggestions/:id', async (req, reply) => {
     // Принять/отклонить может владелец проекта команды (или глобальный admin для global).
-    const res = db.resolveCiSuggestion(uid(req), req.params.id, req.body?.accept === true)
+    const res = db.ci.resolveCiSuggestion(uid(req), req.params.id, req.body?.accept === true)
     return res ?? nf(reply)
   })
 
@@ -413,5 +413,5 @@ export function registerCiRoutes(
   })
 
   // --- Отчёт по занятому месту ---
-  app.get<{ Querystring: { projectId?: string } }>('/api/ci/workspaces', async (req) => db.listCiWorkspaceReport(uid(req), req.query.projectId))
+  app.get<{ Querystring: { projectId?: string } }>('/api/ci/workspaces', async (req) => db.ci.listCiWorkspaceReport(uid(req), req.query.projectId))
 }

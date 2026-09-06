@@ -18,12 +18,12 @@ describe('тестовые пользователи проекта', () => {
   let db: VoiceChatDb
   beforeEach(() => {
     db = makeDb()
-    db.ensureAdmin()
+    db.identity.ensureAdmin()
   })
 
   it('сохраняются владельцем и читаются в ProjectDetail', () => {
-    const project = db.createProject(U, { name: 'Магазин' })
-    const updated = db.updateProject(U, project.id, {
+    const project = db.projects.createProject(U, { name: 'Магазин' })
+    const updated = db.projects.updateProject(U, project.id, {
       testUsers: [
         { name: 'tester', password: 'test-pass', role: 'admin', note: 'полный доступ' },
         { name: 'viewer', password: '' }
@@ -33,12 +33,12 @@ describe('тестовые пользователи проекта', () => {
       { name: 'tester', password: 'test-pass', role: 'admin', note: 'полный доступ' },
       { name: 'viewer', password: '' }
     ])
-    expect(db.getProject(U, project.id)?.testUsers).toHaveLength(2)
+    expect(db.projects.getProject(U, project.id)?.testUsers).toHaveLength(2)
   })
 
   it('проект без тестовых пользователей отдаёт пустой список', () => {
-    const project = db.createProject(U, { name: 'Пустой' })
-    expect(db.getProject(U, project.id)?.testUsers).toEqual([])
+    const project = db.projects.createProject(U, { name: 'Пустой' })
+    expect(db.projects.getProject(U, project.id)?.testUsers).toEqual([])
   })
 })
 
@@ -46,25 +46,25 @@ describe('canUseAgentForPreview', () => {
   let db: VoiceChatDb
   beforeEach(() => {
     db = makeDb()
-    db.ensureAdmin()
-    db.createUser('member', '', 'developer')
-    db.createUser('stranger', '', 'developer')
+    db.identity.ensureAdmin()
+    db.identity.createUser('member', '', 'developer')
+    db.identity.createUser('stranger', '', 'developer')
   })
 
   it('владелец машины имеет доступ, посторонний — нет', () => {
-    const agent = db.createAgent(U, 'Мак')
-    expect(db.canUseAgentForPreview(U, agent.id)).toBe(true)
-    expect(db.canUseAgentForPreview('stranger', agent.id)).toBe(false)
+    const agent = db.machines.createAgent(U, 'Мак')
+    expect(db.machines.canUseAgentForPreview(U, agent.id)).toBe(true)
+    expect(db.machines.canUseAgentForPreview('stranger', agent.id)).toBe(false)
   })
 
   it('участник проекта получает доступ через share машины, не-участник — нет', () => {
-    const agent = db.createAgent(U, 'Мак')
-    const project = db.createProject(U, { name: 'Магазин' })
-    db.addMember(U, project.id, 'member')
-    db.setMachineSharedWithProject(U, project.id, agent.id, true)
-    expect(db.canUseAgentForPreview('member', agent.id)).toBe(true)
-    expect(db.canUseAgentForPreview('stranger', agent.id)).toBe(false)
-    db.setMachineSharedWithProject(U, project.id, agent.id, false)
-    expect(db.canUseAgentForPreview('member', agent.id)).toBe(false)
+    const agent = db.machines.createAgent(U, 'Мак')
+    const project = db.projects.createProject(U, { name: 'Магазин' })
+    db.projects.addMember(U, project.id, 'member')
+    db.machines.setMachineSharedWithProject(U, project.id, agent.id, true)
+    expect(db.machines.canUseAgentForPreview('member', agent.id)).toBe(true)
+    expect(db.machines.canUseAgentForPreview('stranger', agent.id)).toBe(false)
+    db.machines.setMachineSharedWithProject(U, project.id, agent.id, false)
+    expect(db.machines.canUseAgentForPreview('member', agent.id)).toBe(false)
   })
 })

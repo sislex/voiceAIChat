@@ -277,7 +277,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
             send: ctx.send,
             language: deps.language,
             diarization: deps.diarization,
-            isDiarizationEnabled: () => deps.db.getSettings(deps.user.name).diarization
+            isDiarizationEnabled: () => deps.db.settings.getSettings(deps.user.name).diarization
           })
           stt.start(msg.sampleRate)
           break
@@ -352,13 +352,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'pty.start': {
-          const allowed = deps.db.canUseAgent(deps.user.name, msg.agentId, msg.projectId)
+          const allowed = deps.db.machines.canUseAgent(deps.user.name, msg.agentId, msg.projectId)
           if (!allowed) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина не найдена' })
             break
           }
           // Живой shell — это полный доступ: машине, предоставленной «только для чтения», терминал не открываем (п.18).
-          if (!deps.db.canWriteAgent(deps.user.name, msg.agentId, msg.projectId)) {
+          if (!deps.db.machines.canWriteAgent(deps.user.name, msg.agentId, msg.projectId)) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина предоставлена проекту только для чтения: терминал недоступен' })
             break
           }

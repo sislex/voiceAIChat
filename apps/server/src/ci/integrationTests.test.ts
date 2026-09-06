@@ -18,17 +18,19 @@ function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: st
   const logs: string[] = []
   const gateResults: Array<{ commitSha: string; signature: string }> = []
   const db = {
-    integrationTestExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: opts.baseBranch ?? 'main' }),
-    findPassedGateResult: (commitSha: string, signature: string) => {
+    ci: {
+      integrationTestExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: opts.baseBranch ?? 'main' }),
+      findPassedGateResult: (commitSha: string, signature: string) => {
       if (opts.cached) return { runKind: 'component_qa', runId: 'previous-run', createdAt: 0 }
       return gateResults.some((item) => item.commitSha === commitSha && item.signature === signature) ? { runKind: 'integration_tests', runId: 'run1', createdAt: 0 } : null
     },
-    recordPassedGateResult: (args: { commitSha: string; signature: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature }) },
-    getIntegrationTestRun: () => run,
-    markIntegrationTestRunning: () => { run.status = 'running' },
-    appendIntegrationTestLog: (_runId: string, chunk: string) => { logs.push(chunk) },
-    recordIntegrationAutomationLinks: (_userId: string, _runId: string, covered: Array<{ testId: string; path: string }>) => { links.push(...covered); return run },
-    finishIntegrationTestRun: (_userId: string, _runId: string, input: IntegrationTestFinishInput) => { finished.push(input); run.status = input.status; return run }
+      recordPassedGateResult: (args: { commitSha: string; signature: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature }) },
+      getIntegrationTestRun: () => run,
+      markIntegrationTestRunning: () => { run.status = 'running' },
+      appendIntegrationTestLog: (_runId: string, chunk: string) => { logs.push(chunk) },
+      recordIntegrationAutomationLinks: (_userId: string, _runId: string, covered: Array<{ testId: string; path: string }>) => { links.push(...covered); return run },
+      finishIntegrationTestRun: (_userId: string, _runId: string, input: IntegrationTestFinishInput) => { finished.push(input); run.status = input.status; return run }
+    }
   }
   let stage = 0
   const executor = {

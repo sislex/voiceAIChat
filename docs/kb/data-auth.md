@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-04
-checked: fbfb9464
+updated: 2026-09-07
+checked: 33a7972d
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -19,6 +19,23 @@ areas:
 выполняется при каждом старте. Изменение старых схем по-прежнему делает
 `VoiceChatDb.migrate()`; таблица `schema_migrations` хранит маркеры одноразовых
 операций над данными. `PRAGMA journal_mode = WAL`, `foreign_keys = ON`.
+
+**Запросы живут в доменных репозиториях, а не в одном классе.** `VoiceChatDb`
+(`apps/server/src/db/database.ts`) — только ядро: открывает соединение, применяет
+схему и `migrate()`, и раздаёт репозитории `db.identity`, `db.settings`, `db.llm`,
+`db.chat`, `db.machines`, `db.projects`, `db.tasks`, `db.ci`, `db.qa`, `db.releases`,
+`db.kb` (`apps/server/src/db/repos/<домен>.ts`). Вызов на сервере всегда адресный:
+`db.tasks.getBoard(...)`, `db.chat.addMessage(...)` — по префиксу видно, в чей домен
+идёт обращение. У каждой таблицы ровно один репозиторий-владелец, и только он в неё
+пишет; манифест — `apps/server/src/db/ownership.ts`, проверяет `ownership.test.ts`:
+все таблицы схемы имеют владельца, репозитории не импортируют друг друга (соседи —
+только через `this.repos.<домен>`), записи в чужие таблицы перечислены поимённо в
+`KNOWN_CROSS_WRITES` (трещотка — список может только уменьшаться), чужие чтения через
+`JOIN` не превышают `CROSS_READ_BUDGET`. **Новая таблица без строки в `ownership.ts`
+гейт не пройдёт.** Общие типы строк и чистые помощники нескольких доменов — в
+`repos/support.ts`; экспортируемые снаружи имена (`hashAgentToken`, `UserRow`,
+`LOGIN_LOCK_*`, `DbDeps`…) по-прежнему импортируются из `db/database.js` через
+реэкспорт. Зачем так и что дальше — `docs/plans/db-repositories.md`.
 
 Вся схема — один шаблонный литерал (`export const SCHEMA_SQL = \`…\``), поэтому в
 SQL-комментариях внутри него **нельзя обратных кавычек**: они закрывают литерал, и
@@ -105,7 +122,7 @@ default-записи одного `kind`. Сам токен хранится в 
 
 Видимость статей `kb_documents` считает не БД, а слой БЗ (`apps/server/src/kb/scoped.ts`
 поверх «вида» из `kb/access.ts`): персональная статья — только владельцу, проектная —
-участникам проекта (`db.getProject(uid, projectId)`), «Использование» — всем. В таблице
+участникам проекта (`db.projects.getProject(uid, projectId)`), «Использование» — всем. В таблице
 хранится только принадлежность; см. `features/project-knowledge-base.md`.
 
 Итоги обращений к БЗ считаются ОТДЕЛЬНЫМ запросом по `kb_usage_queries`, без
@@ -202,7 +219,7 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 
 Каждый login получает отдельный токен: `signToken()` в `users/accounts.ts` добавляет
 случайный `sid` в подписанный payload. `POST /api/session/logout` принимает только
-действующий текущий Bearer, сохраняет его SHA-256 через `VoiceChatDb.revokeSession()`
+действующий текущий Bearer, сохраняет его SHA-256 через `IdentityRepo.revokeSession()`
 и удаляет preview-cookie. Глобальная проверка сессии и выпуск preview-cookie сверяются
 с `session_revocations`, поэтому отозванный токен не действует и после рестарта;
 другие сессии аккаунта и новый login остаются рабочими.

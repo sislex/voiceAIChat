@@ -84,15 +84,15 @@ afterEach(async () => { await app.close(); db.close() })
 const inj = (token: string, url: string) => app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } })
 
 function setup() {
-  const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.createAgent('admin', 'M')
-  db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.getBoard('admin', project.id)!
+  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = db.machines.createAgent('admin', 'M')
+  db.machines.linkMachine('admin', project.id, agent.id)
+  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const board = db.tasks.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
-  const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
+  const task = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
   return { project, task }
 }
 
@@ -113,7 +113,7 @@ describe('расход модели пишется по каждому ходу'
     const { project, task } = setup()
     const runId = await runTask(project.id, task.id)
 
-    const rows = db.listCiRunUsage(runId)
+    const rows = db.ci.listCiRunUsage(runId)
     expect(rows.map((r) => r.kind)).toEqual(['model_work', 'summary'])
     expect(rows[0]).toMatchObject({
       runId, provider: 'claude', model: 'claude-sonnet-5',
@@ -130,15 +130,15 @@ describe('расход модели пишется по каждому ходу'
     turnMeta = null
     const { project, task } = setup()
     const runId = await runTask(project.id, task.id)
-    expect(db.listCiRunUsage(runId)).toEqual([])
+    expect(db.ci.listCiRunUsage(runId)).toEqual([])
   })
 })
 
 describe('GET /api/ci/runs/:runId/report', () => {
   it('отдаёт суммы токенов, стоимость, число запросов, время модели и все шаги', async () => {
     const { project, task } = setup()
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Тесты', script: 'npm test' })
-    db.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Тесты', script: 'npm test' })
+    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await runTask(project.id, task.id)
 
     const res = await inj(admin, `/api/ci/runs/${runId}/report`)
@@ -169,14 +169,14 @@ describe('GET /api/ci/runs/:runId/report', () => {
 
   it('показывает сохранённое попадание разделов БЗ в открытые файлы', async () => {
     const { project, task } = setup()
-    const conv = db.createConversation('admin', 'CI')
-    db.setConversationProject('admin', conv.id, project.id)
-    const run = db.createCiRun({
+    const conv = db.chat.createConversation('admin', 'CI')
+    db.chat.setConversationProject('admin', conv.id, project.id)
+    const run = db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin',
       prevColumnId: null, conversationId: conv.id, slotProgress: { done: 0, total: 0, phase: '' }
     })
-    const step = db.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели' })
-    db.addKbUsage({
+    const step = db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели' })
+    db.kb.addKbUsage({
       userId: 'admin', conversationId: conv.id, projectId: project.id, ciRunId: run.id, ciStepId: step.id,
       source: 'auto', query: 'ci', chars: 100,
       sections: [{
@@ -184,8 +184,8 @@ describe('GET /api/ci/runs/:runId/report', () => {
         relatedFiles: ['apps/server/src/routes/ci.ts'], chars: 100
       }]
     })
-    db.appendCiLog(run.id, step.id, 'system', '[tool_use] Read: /repo/apps/server/src/routes/ci.ts')
-    expect(db.calculateAndSaveCiKbHit(run.id)).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
+    db.ci.appendCiLog(run.id, step.id, 'system', '[tool_use] Read: /repo/apps/server/src/routes/ci.ts')
+    expect(db.ci.calculateAndSaveCiKbHit(run.id)).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
 
     const report = (await inj(admin, `/api/ci/runs/${run.id}/report`)).json() as CiRunReport
     expect(report.kbHit).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
@@ -305,12 +305,12 @@ describe('GET /api/ci/runs/:runId/report', () => {
     // Так отвечает codex: usage без стоимости, длительности и num_turns.
     turnDelayMs = 5
     const { project, task } = setup()
-    db.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.4' })
+    db.settings.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.4' })
     const codexUsage = { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 800_000, cacheCreationTokens: 0 }
     turnMeta = { ...codexUsage } // мок отдаёт только счётчики, без costUsd/durationMs
     const runId = await runTask(project.id, task.id)
 
-    const rows = db.listCiRunUsage(runId)
+    const rows = db.ci.listCiRunUsage(runId)
     // Вход приведён к «без кэша» на записи: 1M пришедших минус 800k из кэша.
     expect(rows[0]).toMatchObject({ provider: 'codex', model: 'gpt-5.4', inputTokens: 200_000, inputSemantics: 'no_cache' })
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -326,9 +326,9 @@ describe('GET /api/ci/runs/:runId/report', () => {
 
   it('ран без строк расхода (старые раны) открывается: шаги и время есть, расход пуст', async () => {
     const { project, task } = setup()
-    const run = db.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
-    db.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'success' })
-    db.updateCiRun(run.id, { status: 'success', durationMs: 1234 })
+    const run = db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
+    db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'success' })
+    db.ci.updateCiRun(run.id, { status: 'success', durationMs: 1234 })
 
     const report = (await inj(admin, `/api/ci/runs/${run.id}/report`)).json() as CiRunReport
     expect(report.durationMs).toBe(1234)
@@ -350,7 +350,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
   it('чужому пользователю — 404, а не пустой отчёт', async () => {
     const { project, task } = setup()
     const runId = await runTask(project.id, task.id)
-    db.createUser('bob', '', 'developer')
+    db.identity.createUser('bob', '', 'developer')
     const bob = signToken({ name: 'bob', role: 'developer' }, SECRET)
 
     expect((await inj(bob, `/api/ci/runs/${runId}/report`)).statusCode).toBe(404)
