@@ -421,11 +421,30 @@ describe('KanbanBoard — очередь «Улучшения»', () => {
     return ci
   }
 
+  /** Доска очередь не грузит: список приезжает по нажатию «Показать». */
+  async function openImprovements(): Promise<void> {
+    await userEvent.click(await screen.findByTestId('kanban-improvements-open'))
+  }
+
+  it('не ходит за очередью, пока её не попросили, и грузит по нажатию', async () => {
+    const ci = withCi()
+    renderBoard()
+    await screen.findByTestId('kanban-improvements-column')
+    // Открытие доски — это про задачи; очередь предложений смотрят отдельно.
+    expect(ci.listProjectImprovements).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('improvement-card')).not.toBeInTheDocument()
+
+    await openImprovements()
+    await waitFor(() => expect(ci.listProjectImprovements).toHaveBeenCalledWith('p1'))
+    expect(await screen.findByTestId('improvement-card')).toBeInTheDocument()
+  })
+
   it('рисует карточку на каждое предложение и открывает его подробности', async () => {
     withCi()
     renderBoard()
     const column = await screen.findByTestId('kanban-improvements-column')
-    const card = within(column).getByTestId('improvement-card')
+    await openImprovements()
+    const card = await within(column).findByTestId('improvement-card')
     expect(card).toHaveTextContent('Стабилизировать: npm test')
     expect(card).toHaveTextContent('из P1-1 · A')
     await userEvent.click(card)
@@ -440,6 +459,7 @@ describe('KanbanBoard — очередь «Улучшения»', () => {
     const ci = withCi()
     const onOpenTaskChange = vi.fn()
     renderBoard({ openTaskId: null, onOpenTaskChange })
+    await openImprovements()
     await userEvent.click(await screen.findByTestId('improvement-card'))
     await userEvent.click(await screen.findByTestId('improvement-create'))
     await waitFor(() => expect(ci.createTaskFromImprovement).toHaveBeenCalledWith('imp-1', { startPreparation: false }))
@@ -456,6 +476,7 @@ describe('KanbanBoard — очередь «Улучшения»', () => {
   it('ошибка подготовки не скрывает созданную задачу: окно остаётся с текстом ошибки', async () => {
     withCi({ createTaskFromImprovement: vi.fn(async () => ({ ...created, preparationError: 'Не настроена колонка preparation' })) })
     renderBoard()
+    await openImprovements()
     await userEvent.click(await screen.findByTestId('improvement-card'))
     await userEvent.click(await screen.findByTestId('improvement-create-prepare'))
     expect(await screen.findByTestId('improvement-modal-error')).toHaveTextContent('Не настроена колонка preparation')
@@ -464,6 +485,7 @@ describe('KanbanBoard — очередь «Улучшения»', () => {
   it('«Отменить» удаляет предложение только со второго нажатия и убирает карточку', async () => {
     const ci = withCi()
     renderBoard()
+    await openImprovements()
     await userEvent.click(await screen.findByTestId('improvement-card'))
     const remove = await screen.findByTestId('improvement-delete')
     expect(remove).toHaveTextContent('Отменить')
@@ -473,7 +495,8 @@ describe('KanbanBoard — очередь «Улучшения»', () => {
     await userEvent.click(remove)
     await waitFor(() => expect(ci.deleteImprovement).toHaveBeenCalledWith('imp-1'))
     await waitFor(() => expect(screen.queryByTestId('improvement-modal')).not.toBeInTheDocument())
-    expect(screen.queryByTestId('kanban-improvements-column')).not.toBeInTheDocument()
+    // Колонка остаётся на месте (её список грузится по кнопке), но пустеет.
+    expect(screen.queryByTestId('improvement-card')).not.toBeInTheDocument()
   })
 })
 

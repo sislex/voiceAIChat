@@ -298,21 +298,30 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const compact = useMediaQuery(MOBILE_QUERY)
   const { loading, members } = props
   const confirm = useConfirm()
-  // Очередь «Улучшения»: по одной карточке на предложение. Читается один раз на
-  // проект и дальше только по адресному кадру `project.improvements.updated`.
-  // Раньше эффект висел на ссылках `props.board`/`props.ciSummaries`, а доска
-  // обновляется на каждое движение любой задачи: активный ран давал столько же
-  // запросов `/improvements`, сколько запросов доски (замерено на стенде).
+  // Очередь «Улучшения»: по одной карточке на предложение. Открытие доски за ней
+  // **не ходит** — колонка стоит свёрнутой и грузит список по нажатию. Доска
+  // должна показывать задачи, а очередь предложений смотрят отдельно и редко.
+  // Дальше список обновляется только по адресному кадру
+  // `project.improvements.updated` (и то, пока колонка открыта): раньше эффект
+  // висел на ссылках `props.board`/`props.ciSummaries`, а доска обновляется на
+  // каждое движение любой задачи, и активный ран давал столько же запросов
+  // `/improvements`, сколько запросов доски (замерено на стенде).
   const [improvements, setImprovements] = useState<ProjectImprovement[]>([])
+  const [improvementsOpen, setImprovementsOpen] = useState(false)
+  const [improvementsStatus, setImprovementsStatus] = useState<LoadStatus>('idle')
   const [openImprovementId, setOpenImprovementId] = useState<string | null>(null)
   const improvementsProjectId = props.board?.columns[0]?.projectId ?? props.board?.tasks[0]?.projectId
   const reloadImprovements = useCallback((): void => {
     if (!improvementsProjectId || !window.ci?.listProjectImprovements) { setImprovements([]); return }
-    void window.ci.listProjectImprovements(improvementsProjectId).then(setImprovements).catch(() => {})
+    setImprovementsStatus('loading')
+    void window.ci.listProjectImprovements(improvementsProjectId)
+      .then((items) => { setImprovements(items); setImprovementsStatus('ready') })
+      .catch(() => setImprovementsStatus('error'))
   }, [improvementsProjectId])
-  useEffect(reloadImprovements, [reloadImprovements])
+  // Смена проекта закрывает очередь: иначе на новой доске висел бы чужой список.
+  useEffect(() => { setImprovementsOpen(false); setImprovementsStatus('idle'); setImprovements([]) }, [improvementsProjectId])
   useEffect(() => {
-    if (!improvementsProjectId) return
+    if (!improvementsProjectId || !improvementsOpen) return
     const bridge = window.board
     const off = bridge?.onImprovementsUpdated?.((event) => {
       if (event.projectId === improvementsProjectId) reloadImprovements()
@@ -320,7 +329,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     // Пропущенные за обрыв события догоняем полной сверкой.
     const offReconnect = bridge?.onReconnect?.(() => reloadImprovements())
     return () => { off?.(); offReconnect?.() }
-  }, [improvementsProjectId, reloadImprovements])
+  }, [improvementsProjectId, improvementsOpen, reloadImprovements])
+  const openImprovements = (): void => {
+    setImprovementsOpen(true)
+    if (improvementsStatus === 'idle' || improvementsStatus === 'error') reloadImprovements()
+  }
   const openImprovement = openImprovementId ? improvements.find((item) => item.id === openImprovementId) ?? null : null
   const [showHidden, setShowHidden] = useState(false)
   const [internalShowCompleted, setInternalShowCompleted] = useState(false)
@@ -1670,16 +1683,43 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   {composer(col)}
                 </section>
               ))}
-              {improvements.length > 0 && <section className="jcol jcol--improvements" data-testid="kanban-improvements-column" aria-label={`Колонка «Улучшения», ${improvements.length} предложений`}>
-                <header className="jcol-head"><h2>Улучшения</h2><span className="jcol-count">{improvements.length}</span></header>
-                <div className="jcol-body">{improvements.map((item) => (
-                  <button key={item.id} type="button" className="jcard jcard--improvement" data-testid="improvement-card" onClick={() => setOpenImprovementId(item.id)}>
-                    <strong>{item.title}</strong>
-                    <span>из {issueKey(props.projectName, { seq: item.taskSeq })} · {item.taskTitle}</span>
-                    <span className="improvement-modal__dim">{item.occurrences > 1 ? `замечено ${item.occurrences} раз · ` : ''}{columnName(item.taskColumnId)}</span>
-                  </button>
-                ))}</div>
-              </section>}
+              <section
+                className={`jcol jcol--improvements${improvementsOpen ? '' : ' jcol--collapsed'}`}
+                data-testid="kanban-improvements-column"
+                aria-label={improvementsOpen ? `Колонка «Улучшения», ${improvements.length} предложений` : 'Колонка «Улучшения», свёрнута'}
+              >
+                <header className="jcol-head">
+                  <h2>Улучшения</h2>
+                  {improvementsOpen
+                    ? <span className="jcol-count">{improvements.length}</span>
+                    : (
+                      <button
+                        type="button"
+                        className="jcol-improvements-open"
+                        data-testid="kanban-improvements-open"
+                        onClick={openImprovements}
+                      >
+                        Показать
+                      </button>
+                    )}
+                </header>
+                {improvementsOpen && (
+                  <div className="jcol-body">
+                    {improvementsStatus === 'loading' && <Skeleton variant="list" count={3} height={70} lines={2} itemClassName="jcard-skel" />}
+                    {improvementsStatus === 'error' && <ErrorState compact message="Не удалось загрузить улучшения" onRetry={reloadImprovements} />}
+                    {improvementsStatus === 'ready' && improvements.length === 0 && (
+                      <EmptyState compact icon="💡" title="Улучшений пока нет" description="Предложения появляются после авто-ранов." />
+                    )}
+                    {improvements.map((item) => (
+                      <button key={item.id} type="button" className="jcard jcard--improvement" data-testid="improvement-card" onClick={() => setOpenImprovementId(item.id)}>
+                        <strong>{item.title}</strong>
+                        <span>из {issueKey(props.projectName, { seq: item.taskSeq })} · {item.taskTitle}</span>
+                        <span className="improvement-modal__dim">{item.occurrences > 1 ? `замечено ${item.occurrences} раз · ` : ''}{columnName(item.taskColumnId)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
               {addColumnBox}
             </div>
           ) : (
