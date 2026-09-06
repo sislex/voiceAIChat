@@ -12,16 +12,20 @@ interface Props {
   onSaved?: (next: MakeProjectNotes) => void
 }
 
-const STACKS: Array<{ id: MakeStack; title: string }> = [
-  { id: 'html', title: 'Чистый HTML + CSS' },
-  { id: 'html-js', title: 'Чистый HTML + CSS + JS' },
-  { id: 'react', title: 'React' },
-  { id: 'angular', title: 'Angular' }
+type StackChoice = 'react' | 'angular' | 'bootstrap' | 'html-js' | 'html'
+
+const STACK_CHOICES: Array<{ id: StackChoice; title: string; stack: MakeStack; uiKit: MakeUiKit }> = [
+  { id: 'react', title: 'React', stack: 'react', uiKit: 'none' },
+  { id: 'angular', title: 'Angular', stack: 'angular', uiKit: 'none' },
+  { id: 'bootstrap', title: 'Bootstrap', stack: 'html-js', uiKit: 'bootstrap' },
+  { id: 'html-js', title: 'Чистый HTML + CSS + JS', stack: 'html-js', uiKit: 'none' },
+  { id: 'html', title: 'Чистый HTML + CSS', stack: 'html', uiKit: 'none' }
 ]
-const UI_KITS: Array<{ id: MakeUiKit; title: string }> = [
-  { id: 'none', title: 'Своя система' },
-  { id: 'bootstrap', title: 'Bootstrap 5.3' }
-]
+
+function stackChoice(stack: MakeStack, uiKit: MakeUiKit): StackChoice {
+  if (stack === 'html-js' && uiKit === 'bootstrap') return 'bootstrap'
+  return stack
+}
 
 const MODES: Array<{ id: MakeAssistantMode; title: string; hint: string }> = [
   { id: 'balanced', title: 'Сбалансированно', hint: 'Без уклона: и визуал, и код.' },
@@ -34,26 +38,26 @@ export function MakeNotesDialog({ conversationId, api, onClose, onSaved }: Props
   const [data, setData] = useState<MakeProjectNotes | null>(null)
   const [notes, setNotes] = useState('')
   const [mode, setMode] = useState<MakeAssistantMode>('balanced')
-  const [stack, setStack] = useState<MakeStack>('html-js')
-  const [uiKit, setUiKit] = useState<MakeUiKit>('none')
+  const [choice, setChoice] = useState<StackChoice>('html-js')
   const [saving, setSaving] = useState(false)
   const [confirmStack, setConfirmStack] = useState(false)
   useEffect(() => {
     let alive = true
-    api['make:notes']({ conversationId }).then((n) => { if (alive) { setData(n); setNotes(n.notes); setMode(n.mode); setStack(n.stack); setUiKit(n.uiKit) } }).catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
+    api['make:notes']({ conversationId }).then((n) => { if (alive) { setData(n); setNotes(n.notes); setMode(n.mode); setChoice(stackChoice(n.stack, n.uiKit)) } }).catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
     return () => { alive = false }
   }, [api, conversationId, toast])
-  const dirty = data !== null && (notes !== data.notes || mode !== data.mode || stack !== data.stack || uiKit !== data.uiKit)
+  const selected = STACK_CHOICES.find((item) => item.id === choice)!
+  const dirty = data !== null && (notes !== data.notes || mode !== data.mode || choice !== stackChoice(data.stack, data.uiKit))
   const persist = async (applyTemplate: boolean): Promise<void> => {
     setSaving(true)
     try {
-      const next = await api['make:setNotes']({ conversationId, notes, mode, stack, uiKit })
-      if (applyTemplate) await api['make:template']({ conversationId, templateId: stack === 'html-js' ? 'blank' : stack })
+      const next = await api['make:setNotes']({ conversationId, notes, mode, stack: selected.stack, uiKit: selected.uiKit })
+      if (applyTemplate) await api['make:template']({ conversationId, templateId: selected.stack === 'html-js' ? 'blank' : selected.stack })
       setData(next); onSaved?.(next); setConfirmStack(false); toast.success('Настройки проекта сохранены')
     } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) } finally { setSaving(false) }
   }
   const save = (): void => {
-    if (data && stack !== data.stack) setConfirmStack(true)
+    if (data && selected.stack !== data.stack) setConfirmStack(true)
     else void persist(false)
   }
   return (
@@ -61,14 +65,12 @@ export function MakeNotesDialog({ conversationId, api, onClose, onSaved }: Props
     <Dialog className="make-dialog" padded title="Настройки проекта" ariaLabel="Настройки проекта" size="md" onClose={onClose} testId="make-notes"
       footer={<Button size="sm" variant="primary" disabled={!dirty || saving} loading={saving} onClick={save}>Сохранить</Button>}>
       <p className="make-ideas-lead">Заметки читает ассистент в начале каждого хода: решения по дизайну, договорённости, что не трогать. Он и сам дописывает сюда через <code>make_remember</code>.</p>
-      <fieldset className="make-mode-picker">
-        <legend>Стек интерфейса</legend>
-        {STACKS.map((item) => <label key={item.id} className={stack === item.id ? 'make-mode on' : 'make-mode'}><input type="radio" name="make-stack" value={item.id} checked={stack === item.id} onChange={() => setStack(item.id)} /><span><strong>{item.title}</strong></span></label>)}
-      </fieldset>
-      <fieldset className="make-mode-picker">
-        <legend>Стилевая база</legend>
-        {UI_KITS.map((item) => <label key={item.id} className={uiKit === item.id ? 'make-mode on' : 'make-mode'}><input type="radio" name="make-ui-kit" value={item.id} checked={uiKit === item.id} onChange={() => setUiKit(item.id)} /><span><strong>{item.title}</strong></span></label>)}
-      </fieldset>
+      <label className="make-field">
+        <span>Стек интерфейса</span>
+        <select className="tin" aria-label="Стек интерфейса" value={choice} onChange={(event) => setChoice(event.target.value as StackChoice)} disabled={data === null || saving}>
+          {STACK_CHOICES.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+      </label>
       <fieldset className="make-mode-picker">
         <legend>Режим ассистента</legend>
         {MODES.map((m) => (
