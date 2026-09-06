@@ -112,6 +112,9 @@ import {
   type ProjectMember,
   type ProjectSummary,
   type Task,
+  type TaskReworkCycle,
+  type TaskAttachment,
+  type CreateTaskReworkCycleInput,
   type TaskRunResult,
   normalizeTaskRunOutcome,
   type TaskPriority,
@@ -7803,6 +7806,78 @@ export class VoiceChatDb {
   lastCiRunFinishedAt(taskId: string): number | null {
     const row = this.db.prepare(`SELECT finished_at FROM ci_runs WHERE task_id = ? AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1`).get(taskId) as { finished_at: number } | undefined
     return row?.finished_at ?? null
+  }
+
+  listTaskReworkCycles(userId: string, projectId: string, taskId: string): TaskReworkCycle[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    const task = this.db.prepare('SELECT id FROM tasks WHERE id = ? AND project_id = ?').get(taskId, projectId)
+    if (!task) return []
+    const rows = this.db.prepare('SELECT * FROM task_rework_cycles WHERE task_id = ? ORDER BY sequence ASC').all(taskId) as Array<Record<string, unknown>>
+    const attachments = this.db.prepare('SELECT * FROM task_rework_attachments WHERE cycle_id = ? ORDER BY position ASC')
+    return rows.map((row) => ({
+      id: String(row.id), taskId: String(row.task_id), sequence: Number(row.sequence),
+      description: String(row.description), criteria: JSON.parse(String(row.criteria_json)),
+      makeSources: JSON.parse(String(row.make_sources_json)),
+      attachments: (attachments.all(row.id) as Array<Record<string, unknown>>).map((file) => ({
+        id: String(file.upload_id), name: String(file.name), mimeType: String(file.mime_type),
+        size: Number(file.size), status: 'ready' as const
+      })),
+      ...(row.implemented_result ? { implementedResult: String(row.implemented_result) } : {}),
+      createdBy: String(row.created_by), createdAt: Number(row.created_at),
+      preparationRunId: row.preparation_run_id == null ? null : String(row.preparation_run_id)
+    }))
+  }
+
+  createTaskReworkCycle(
+    userId: string,
+    projectId: string,
+    taskId: string,
+    input: CreateTaskReworkCycleInput,
+    files: Array<TaskAttachment & { uploadId: string }>
+  ): TaskReworkCycle {
+    const description = input.description.trim()
+    if (!description) throw new Error('validation_error')
+    const criteria = (input.criteria ?? []).map((item) => item.trim()).filter(Boolean)
+    const makePaths = [...new Set(input.makePaths ?? [])].map((item) => item.trim()).filter(Boolean)
+    if (input.makeMode !== 'whole_project' && input.makeMode !== 'files') throw new Error('validation_error')
+    if (!input.idempotencyKey?.trim() || input.idempotencyKey.length > 200) throw new Error('validation_error')
+    const makeSources = input.makeSources ?? [{ conversationId: '', title: '', mode: input.makeMode, paths: input.makeMode === 'files' ? makePaths : [] }]
+    const payloadHash = createHash('sha256').update(JSON.stringify({ description, criteria, makeSources, uploadIds: input.uploadIds ?? [] })).digest('hex')
+    return this.db.transaction(() => {
+      if (!this.isProjectMember(userId, projectId)) throw new Error('not_found')
+      const existing = this.db.prepare('SELECT payload_hash FROM task_rework_cycles WHERE task_id = ? AND idempotency_key = ?').get(taskId, input.idempotencyKey) as { payload_hash: string } | undefined
+      if (existing) {
+        if (existing.payload_hash !== payloadHash) throw new Error('idempotency_conflict')
+        return this.listTaskReworkCycles(userId, projectId, taskId).find((cycle) =>
+          (this.db.prepare('SELECT id FROM task_rework_cycles WHERE id = ? AND idempotency_key = ?').get(cycle.id, input.idempotencyKey))
+        )!
+      }
+      if (files.length !== (input.uploadIds ?? []).length) throw new Error('invalid_upload')
+      const task = this.db.prepare(`SELECT t.column_id, c.semantic_type
+        FROM tasks t JOIN kanban_columns c ON c.id = t.column_id
+        WHERE t.id = ? AND t.project_id = ?`).get(taskId, projectId) as { column_id: string; semantic_type: KanbanColumnSemanticType } | undefined
+      if (!task) throw new Error('not_found')
+      const allowed = new Set(['component_qa','integration_tests','automated_qa','testing','qa_preparation','manual_qa','awaiting_merge','merge','decision_required','done'])
+      if (!allowed.has(task.semantic_type) || task.semantic_type === 'cancelled') throw new Error('invalid_state')
+      const successful = this.db.prepare("SELECT id FROM ci_runs WHERE task_id = ? AND status = 'success' ORDER BY created_at DESC LIMIT 1").get(taskId) as { id: string } | undefined
+      if (!successful) throw new Error('invalid_state')
+      const activeDevelopment = this.db.prepare("SELECT id FROM ci_runs WHERE task_id = ? AND status IN ('queued','running','awaiting_input') LIMIT 1").get(taskId)
+      const latestWorkflowRun = this.latestTaskRunResult(taskId)
+      if (activeDevelopment || latestWorkflowRun?.outcome === 'active') throw new Error('active_run')
+      const target = this.db.prepare("SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = 'preparation' LIMIT 1").get(projectId) as { id: string } | undefined
+      if (!target || !canTransitionWorkflow(task.semantic_type, 'preparation', 'user')) throw new Error('invalid_state')
+      const sequence = Number((this.db.prepare('SELECT COALESCE(MAX(sequence), 0) + 1 AS n FROM task_rework_cycles WHERE task_id = ?').get(taskId) as { n: number }).n)
+      const id = this.newId()
+      const createdAt = this.now()
+      const prep = this.db.prepare("SELECT id FROM task_preparation_runs WHERE task_id = ? AND status = 'success' ORDER BY created_at DESC LIMIT 1").get(taskId) as { id: string } | undefined
+      this.db.prepare(`INSERT INTO task_rework_cycles
+        (id, project_id, task_id, sequence, description, criteria_json, make_sources_json, created_by, created_at, preparation_run_id, idempotency_key, payload_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, projectId, taskId, sequence, description, JSON.stringify(criteria), JSON.stringify(makeSources), userId, createdAt, prep?.id ?? null, input.idempotencyKey, payloadHash)
+      const insertFile = this.db.prepare('INSERT INTO task_rework_attachments (id, cycle_id, upload_id, position, name, mime_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      files.forEach((file, position) => insertFile.run(this.newId(), id, file.uploadId, position, file.name, file.mimeType, file.size))
+      if (!this.moveTask(userId, projectId, taskId, { columnId: target.id })) throw new Error('invalid_state')
+      return this.listTaskReworkCycles(userId, projectId, taskId).find((cycle) => cycle.id === id)!
+    })()
   }
 
   latestCiRunSummary(taskId: string): CiRunSummary | null {

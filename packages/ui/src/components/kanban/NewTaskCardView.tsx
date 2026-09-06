@@ -22,11 +22,13 @@ export interface NewTaskCardViewProps {
   callbacks: TaskCardCallbacks
 }
 
-function FileRows({ files }: { files: TaskCardViewModel['source']['attachments'] }): JSX.Element {
+function FileRows({ files, onRemove, onRetry }: { files: TaskCardViewModel['source']['attachments']; onRemove?: (id: string) => void; onRetry?: (id: string) => void }): JSX.Element {
   if (!files.length) return <EmptyState title="Файлов пока нет" description="Добавленные материалы появятся здесь." />
   return <div className="new-task-files" role="list">{files.map((file) =>
     <div className={'new-task-file new-task-file--' + file.status} role="listitem" key={file.id}>
-      <span>{file.name}</span><small>{file.error ?? file.mimeType ?? 'Файл'}</small>
+      <span>{file.name}</span><small>{file.status === 'missing' ? 'Файл отсутствует' : file.status === 'uploading' ? 'Загрузка…' : file.error ?? file.mimeType ?? 'Файл'}</small>
+      {file.status === 'error' && onRetry && <Button size="sm" onClick={() => onRetry(file.id)}>Повторить</Button>}
+      {onRemove && <Button size="sm" variant="ghost" onClick={() => onRemove(file.id)}>Удалить</Button>}
     </div>
   )}</div>
 }
@@ -66,7 +68,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
       </nav>
       <main className="new-task-body">
         {model.loadState === 'loading' && <div role="status" aria-label="Карточка загружается"><Skeleton height={120} /><Skeleton height={200} /></div>}
-        {model.loadState === 'error' && <ErrorState message="Не удалось загрузить карточку" detail={model.error ?? 'Повторите попытку позже.'} />}
+        {model.loadState === 'error' && <div><ErrorState message="Не удалось загрузить карточку" detail={model.error ?? 'Повторите попытку позже.'} /><Button onClick={callbacks.onRetryHistory}>Повторить</Button></div>}
         {model.loadState === 'empty' && <EmptyState title="Данные задачи отсутствуют" description="Закройте карточку и обновите доску." />}
         {model.loadState === 'ready' && activeTab === 'overview' && <div className="new-task-grid">
           <div className="new-task-column">
@@ -81,7 +83,7 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         {model.loadState === 'ready' && activeTab === 'workflow' && <section className="new-task-section">{model.workflow.map((step) => <div className={'new-task-workflow-step new-task-workflow-step--' + step.state} key={step.id}><i aria-hidden="true" /><strong>{step.label}</strong></div>)}</section>}
         {model.loadState === 'ready' && activeTab === 'runs' && <section className="new-task-section"><h3>Раны</h3>{model.runs.length ? model.runs.map((run) => <button className="new-task-run-link" key={run.id} onClick={() => callbacks.onOpenRun(run.id)}><strong>{run.title}</strong><span className={'new-task-run-status new-task-run-status--' + run.status}>{RUN_LABELS[run.status]}</span></button>) : <EmptyState title="Ранов пока нет" description="История появится после запуска этапа." />}</section>}
         {model.loadState === 'ready' && activeTab === 'files' && <div className="new-task-grid"><section className="new-task-section"><h3>Вложения исходной задачи</h3><FileRows files={model.source.attachments} /></section><section className="new-task-section"><h3>Make-связи</h3>{model.makeSources.length ? model.makeSources.map((source) => <article key={source.id}><Button size="sm" variant="ghost" onClick={() => callbacks.onOpenMake(source.conversationId)}>{source.title}</Button><small>{source.mode === 'whole_project' ? 'Проект целиком' : source.paths.map((path) => path.path).join(', ')}</small>{source.paths.filter((path) => !path.available).map((path) => <p className="new-task-source-error" key={path.path}>{path.path}: {path.error ?? 'Файл недоступен'}</p>)}</article>) : <EmptyState title="Make не связан" description="Связь можно добавить в старой карточке." />}</section></div>}
-        {model.loadState === 'ready' && activeTab === 'history' && <section className="new-task-section"><h3>История доработок</h3>{model.cycles.length ? model.cycles.map((cycle) => <article className="new-task-cycle" key={cycle.id}><strong>Цикл {cycle.sequence}</strong><p>{cycle.description}</p><small>{new Date(cycle.createdAt).toLocaleString('ru-RU')} · {cycle.createdBy}</small></article>) : <EmptyState title="Доработок пока не было" description="После успешной разработки здесь сохраняются неизменяемые циклы." />}</section>}
+        {model.loadState === 'ready' && activeTab === 'history' && <section className="new-task-section"><h3>История доработок</h3>{model.cycles.length ? model.cycles.map((cycle) => <article className="new-task-cycle" key={cycle.id}><strong>Цикл {cycle.sequence}</strong><p>{cycle.description}</p>{cycle.criteria.length > 0 && <ul>{cycle.criteria.map((item) => <li key={item}>{item}</li>)}</ul>}{cycle.makeSources.map((source) => <p key={source.id}>Make: {source.title} · {source.mode === 'whole_project' ? 'весь проект' : source.paths.map((item) => item.path).join(', ')}</p>)}<FileRows files={cycle.attachments} /><small>{new Date(cycle.createdAt).toLocaleString('ru-RU')} · {cycle.createdBy}</small></article>) : <EmptyState title="Доработок пока не было" description="После успешной разработки здесь сохраняются неизменяемые циклы." />}</section>}
       </main>
     </div>
     {props.reworkOpen && <div className="new-task-rework" role="dialog" aria-modal="true" aria-label="Новый цикл доработки">
@@ -92,10 +94,12 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
         <label>Дополнительный критерий<div className="new-task-inline"><input value={criterion} onChange={(e) => setCriterion(e.target.value)} /><Button size="sm" onClick={() => { if (criterion.trim()) { setDraft({ criteria: [...props.reworkDraft.criteria, criterion.trim()] }); setCriterion('') } }}>Добавить</Button></div></label>
         <ul>{props.reworkDraft.criteria.map((item, index) => <li key={index}>{item}</li>)}</ul>
         <fieldset><legend>Make-источники</legend><label><input type="radio" checked={props.reworkDraft.makeMode === 'whole_project'} onChange={() => setDraft({ makeMode: 'whole_project', makePaths: [] })} /> Весь проект</label><label><input type="radio" checked={props.reworkDraft.makeMode === 'files'} onChange={() => setDraft({ makeMode: 'files' })} /> Отдельные файлы</label></fieldset>
-        <FileRows files={props.reworkDraft.attachments} />
+        {props.reworkDraft.makeMode === 'files' && <label>Пути Make-файлов<textarea aria-label="Пути Make-файлов" placeholder="src/Card.tsx — по одному пути на строку" value={props.reworkDraft.makePaths.join('\n')} onChange={(event) => setDraft({ makePaths: event.target.value.split(/\r?\n/).map((path) => path.trim()).filter(Boolean) })} /></label>}
+        <label>Вложения<input type="file" multiple aria-label="Добавить вложения" onChange={(event) => callbacks.onAddReworkFiles(event.target.files)} /></label>
+        <FileRows files={props.reworkDraft.attachments} onRemove={callbacks.onRemoveReworkFile} onRetry={callbacks.onRetryReworkFile} />
         {props.reworkError && <p className="new-task-source-error" role="alert">{props.reworkError}</p>}
       </div>
-      <footer><Button onClick={callbacks.onCancelRework}>Отмена</Button><Button variant="primary" loading={props.reworkPending} disabled={!props.reworkDraft.description.trim() || model.actions.hasActiveRun} onClick={submit}>Создать цикл</Button></footer>
+      <footer><Button onClick={callbacks.onCancelRework}>Отмена</Button><Button variant="primary" loading={props.reworkPending} disabled={!props.reworkDraft.description.trim() || model.actions.hasActiveRun || props.reworkDraft.attachments.some((file) => file.status !== 'ready')} onClick={submit}>Создать цикл</Button></footer>
     </div>}
   </Dialog>
 }
