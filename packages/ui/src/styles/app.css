@@ -9194,6 +9194,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .new-task-rework { width: 100%; }
   .new-task-rework > footer { flex-wrap: wrap; }
   .new-task-rework > footer .vc-btn--primary { width: 100%; order: -1; }
+}
+
 /* Режим «Проект» в Make: компоненты рабочей копии, Storybook на машине, правка файла.
    Раскладка повторяет «Компоненты»: список слева, кадр или редактор справа. */
 .mpc { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
