@@ -1371,7 +1371,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { readerCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inReader || chat.conversationsStatus !== 'ready') return
+    if (!authed || !inReader) return
+    // Список раздела грузится при входе в него: на старте приложения его нет.
+    if (chat.scopeStatus['web-reader'] !== 'ready') { void chatActions.ensureSectionConversations('web-reader'); return }
     if (legacyReaderRoute) {
       navigate(`/web-reader${routeReaderChatId ? `/${routeReaderChatId}` : ''}`, { replace: true })
       return
@@ -1389,7 +1391,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (target) { navigate(`/web-reader/${target.id}`, { replace: true }); return }
     createReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, chat.activeId, chat.readerConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, chat.activeId, chat.readerConversations, chat.scopeStatus, chatActions, navigate])
 
   const playwrightReaderCreating = useRef(false)
   const createPlaywrightReaderChat = (replace = false): void => {
@@ -1401,7 +1403,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { playwrightReaderCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inPlaywrightReader || chat.conversationsStatus !== 'ready' || playwrightReaderCreating.current) return
+    if (!authed || !inPlaywrightReader || playwrightReaderCreating.current) return
+    if (chat.scopeStatus['playwright-reader'] !== 'ready') { void chatActions.ensureSectionConversations('playwright-reader'); return }
     const chats = chat.playwrightReaderConversations
     const routed = chats.find((item) => item.id === routePlaywrightReaderChatId)
     if (routed) {
@@ -1412,7 +1415,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/playwright-reader/${fallback.id}`, { replace: true }); return }
     createPlaywrightReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inPlaywrightReader, routePlaywrightReaderChatId, chat.activeId, chat.playwrightReaderConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inPlaywrightReader, routePlaywrightReaderChatId, chat.activeId, chat.playwrightReaderConversations, chat.scopeStatus, chatActions, navigate])
 
   const consoleReaderCreating = useRef(false)
   const createConsoleReaderChat = (replace = false): void => {
@@ -1424,7 +1427,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { consoleReaderCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inConsoleReader || chat.conversationsStatus !== 'ready' || consoleReaderCreating.current) return
+    if (!authed || !inConsoleReader || consoleReaderCreating.current) return
+    if (chat.scopeStatus.console !== 'ready') { void chatActions.ensureSectionConversations('console'); return }
     const chats = chat.consoleReaderConversations
     const routed = chats.find((item) => item.id === routeConsoleReaderChatId)
     if (routed) {
@@ -1435,7 +1439,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/console-reader/${fallback.id}`, { replace: true }); return }
     createConsoleReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inConsoleReader, routeConsoleReaderChatId, chat.activeId, chat.consoleReaderConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inConsoleReader, routeConsoleReaderChatId, chat.activeId, chat.consoleReaderConversations, chat.scopeStatus, chatActions, navigate])
   // Make: те же правила маршрутизации, что у Консоли (адрес → активный проект, иначе первый/новый).
   const makeCreating = useRef(false)
   const createMakeChat = (replace = false): void => {
@@ -1456,7 +1460,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { imageStudioCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inImageStudio || chat.conversationsStatus !== 'ready' || imageStudioCreating.current) return
+    if (!authed || !inImageStudio || imageStudioCreating.current) return
+    if (chat.scopeStatus.images !== 'ready') { void chatActions.ensureSectionConversations('images'); return }
     const chats = chat.imageStudioConversations
     const routed = chats.find((item) => item.id === routeImageStudioChatId)
     if (routed) {
@@ -1471,10 +1476,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/images/${fallback.id}`, { replace: true }); return }
     createImageStudioChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inImageStudio, routeImageStudioChatId, chat.activeId, chat.imageStudioConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inImageStudio, routeImageStudioChatId, chat.activeId, chat.imageStudioConversations, chat.scopeStatus, chatActions, navigate])
 
   useEffect(() => {
-    if (!authed || !inMake || chat.conversationsStatus !== 'ready' || makeCreating.current) return
+    if (!authed || !inMake || makeCreating.current) return
+    if (chat.scopeStatus.make !== 'ready') { void chatActions.ensureSectionConversations('make'); return }
     const chats = chat.makeConversations
     const routed = chats.find((item) => item.id === routeMakeChatId)
     if (routed) {
@@ -1485,7 +1491,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/make/${fallback.id}`, { replace: true }); return }
     createMakeChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inMake, routeMakeChatId, chat.activeId, chat.makeConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inMake, routeMakeChatId, chat.activeId, chat.makeConversations, chat.scopeStatus, chatActions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.

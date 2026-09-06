@@ -176,6 +176,12 @@ export interface ChatState {
   olderStatus: LoadStatus
   /** Есть ли ещё старые беседы за уже загруженной порцией. */
   olderHasMore: boolean
+  /**
+   * Готовность списка по разделам. Списки Reader, Make и студии картинок
+   * грузятся при входе в свой раздел, а не на старте: обычному чату они не
+   * нужны, а раньше их тянули все шесть сразу.
+   */
+  scopeStatus: Record<SectionScope, LoadStatus>
   searchQuery: string
   searchScope: SearchScope
   messageSearch: MessageSearchState
@@ -229,6 +235,9 @@ export interface ChatState {
   kbStatus: KbStatus | null
 }
 
+/** Разделы со своим списком бесед: грузятся при входе, а не на старте. */
+export type SectionScope = 'web-reader' | 'playwright-reader' | 'console' | 'make' | 'images'
+
 export interface ChatActions {
   /** Загрузка индекса разговоров (защищённый bootstrap). */
   loadConversationIndex(): Promise<Conversation[]>
@@ -240,6 +249,8 @@ export interface ChatActions {
   ensureConversationIndex(): Promise<Conversation[]>
   /** Догрузить следующую порцию бесед секции «Более старые». */
   loadOlderConversations(): Promise<void>
+  /** Загрузить список раздела (Reader, Make, студия картинок) — один раз за сессию. */
+  ensureSectionConversations(scope: SectionScope): Promise<void>
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
   scheduleConversationsRefresh(): void
   retryConversations(): Promise<void>
@@ -374,6 +385,7 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
     conversationsError: null,
     olderStatus: 'idle',
     olderHasMore: true,
+    scopeStatus: { 'web-reader': 'idle', 'playwright-reader': 'idle', console: 'idle', make: 'idle', images: 'idle' },
     searchQuery: '',
     searchScope: 'chats',
     messageSearch: { ...EMPTY_MESSAGE_SEARCH },
@@ -625,25 +637,14 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
     try {
       const includeCompleted = getState().showDoneTaskChats
-      const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations, imageStudioConversations] = await Promise.all([
-        // Окно первой страницы — текущая неделя: ровно то, что сайдбар покажет
-        // сразу. Секция «Более старые» догрузит остальное, когда её раскроют.
-        client['conversations:list']({ scope: 'chat', includeCompleted, since: localWeekStart(now()) }),
-        client['conversations:list']({ scope: 'web-reader', includeCompleted }),
-        client['conversations:list']({ scope: 'playwright-reader', includeCompleted }),
-        client['conversations:list']({ scope: 'console', includeCompleted }),
-        client['conversations:list']({ scope: 'make', includeCompleted }),
-        client['conversations:list']({ scope: 'images', includeCompleted })
-      ])
+      // Окно первой страницы — текущая неделя: ровно то, что сайдбар покажет
+      // сразу. Секция «Более старые» догрузит остальное, когда её раскроют.
+      // Списки Reader/Make/картинок сюда не входят — их берёт свой экран.
+      const conversations = await client['conversations:list']({ scope: 'chat', includeCompleted, since: localWeekStart(now()) })
       setState({
         conversations: sortConversations(filterBySidebarProjects(conversations)),
         olderStatus: 'idle',
         olderHasMore: true,
-        readerConversations,
-        playwrightReaderConversations,
-        consoleReaderConversations,
-        makeConversations,
-        imageStudioConversations,
         conversationsStatus: 'ready',
         conversationsError: null
       })
@@ -705,6 +706,42 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     const freshIds = new Set(fresh.map((c) => c.id))
     const older = getState().conversations.filter((c) => c.updatedAt < weekStart && !freshIds.has(c.id))
     return sortConversations([...fresh, ...older])
+  }
+
+  /** Куда стор кладёт список раздела: поле состояния на каждый scope. */
+  const SECTION_FIELDS = {
+    'web-reader': 'readerConversations',
+    'playwright-reader': 'playwrightReaderConversations',
+    console: 'consoleReaderConversations',
+    make: 'makeConversations',
+    images: 'imageStudioConversations'
+  } as const
+
+  const sectionFlight = new Map<SectionScope, Promise<void>>()
+
+  /**
+   * Список раздела по требованию: Reader, Make и студия картинок нужны только
+   * внутри своих экранов. Раньше все пять ехали вместе с индексом чатов на
+   * каждом старте — пять лишних запросов ради данных, которые чаще всего не
+   * открывают.
+   */
+  async function ensureSectionConversations(scope: SectionScope): Promise<void> {
+    if (getState().scopeStatus[scope] === 'ready') return
+    const inFlight = sectionFlight.get(scope)
+    if (inFlight) return inFlight
+    const flight = (async () => {
+      setState({ scopeStatus: { ...getState().scopeStatus, [scope]: 'loading' } })
+      try {
+        const items = await client['conversations:list']({ scope, includeCompleted: getState().showDoneTaskChats })
+        if (core.disposed()) return
+        setState({ [SECTION_FIELDS[scope]]: items, scopeStatus: { ...getState().scopeStatus, [scope]: 'ready' } } as unknown as Partial<ChatState>)
+      } catch {
+        // Экран раздела сам покажет пустое состояние и даст создать чат.
+        if (!core.disposed()) setState({ scopeStatus: { ...getState().scopeStatus, [scope]: 'error' } })
+      }
+    })()
+    sectionFlight.set(scope, flight)
+    try { await flight } finally { if (sectionFlight.get(scope) === flight) sectionFlight.delete(scope) }
   }
 
   async function ensureConversationIndex(): Promise<Conversation[]> {
@@ -1713,6 +1750,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       loadConversationIndex: runLoadConversationIndex,
       ensureConversationIndex,
       loadOlderConversations,
+      ensureSectionConversations,
       refreshConversations,
       scheduleConversationsRefresh,
       async retryConversations() {

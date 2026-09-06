@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-06
-checked: 1795b514
+checked: f222dc9c
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -1475,6 +1475,13 @@ refresh ограничен фактическим изменением набо�
 `appRuntime.chat.test.ts`.
 
 ## Индекс бесед грузится по требованию
+
+Списки разделов (Reader, Playwright Reader, консоль, Make, студия картинок) в
+индекс не входят: `ensureSectionConversations(scope)` грузит свой список при
+входе в раздел и держит статус в `scopeStatus`. Эффекты разделов в `App.tsx`
+ждут `scopeStatus[scope] === 'ready'` — иначе они бы решили, что чатов нет, и
+создали лишний. Раньше все шесть списков ехали на каждом старте.
+
 
 `bootstrap` в `packages/ui/src/runtime/appRuntime.ts` больше не тянет чаты всегда.
 Стартовый маршрут доски (`parseProjectsRoute` без чата в адресе) поднимает
