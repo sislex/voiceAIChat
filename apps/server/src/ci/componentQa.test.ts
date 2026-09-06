@@ -21,7 +21,7 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
   const stages = [opts.install ?? { exitCode: 0, timedOut: false }, ...outcomes]
   const gateResults: Array<{ commitSha: string; signature: string; runId: string }> = []
   const db = {
-    componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands } : null),
+    componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: 'main' } : null),
     findPassedGateResult: (commitSha: string, signature: string) => {
       if (opts.cached) return { runKind: 'component_qa', runId: 'previous-run', createdAt: 0 }
       const hit = gateResults.find((item) => item.commitSha === commitSha && item.signature === signature)
@@ -217,7 +217,7 @@ describe('createComponentQaRunner', () => {
       new Promise<CommandExecResult>((resolve) => signal?.addEventListener('abort', () => resolve({ exitCode: null, timedOut: false }))))
     const runner = createComponentQaRunner({
       db: {
-        componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'] }),
+        componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'], ciBaseBranch: 'main' }),
         findPassedGateResult: () => null,
         recordPassedGateResult: () => {},
         getComponentQaRun: () => run,
