@@ -879,6 +879,9 @@ CREATE TABLE IF NOT EXISTS ci_workspaces (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_ci_workspaces_project ON ci_workspaces(project_id, state);
+-- Доска берёт последнюю отправленную рабочую копию задачи (ветка и SHA для merge).
+-- Без индекса по task_id каждая карточка вызывала полный скан таблицы.
+CREATE INDEX IF NOT EXISTS idx_ci_workspaces_task ON ci_workspaces(task_id, pushed, created_at DESC);
 
 -- Результаты гейта по коммиту: пост-development стадии выполняются на неизменном
 -- коде development-рана, поэтому один и тот же набор команд не гоняется дважды.
@@ -1804,6 +1807,9 @@ CREATE TABLE IF NOT EXISTS qa_sessions (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_sessions_one_active ON qa_sessions(task_id) WHERE status = 'active';
+-- Частичный индекс выше отвечает только за активную сессию. Сводка состояния
+-- задачи ищет последнюю сессию любого статуса — ей нужен полный индекс.
+CREATE INDEX IF NOT EXISTS idx_qa_sessions_task ON qa_sessions(task_id, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS qa_criterion_results (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL, criterion_id TEXT NOT NULL, criterion_version INTEGER NOT NULL,

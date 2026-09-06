@@ -184,7 +184,10 @@ import {
   MAKE_KIND,
   normalizeMakePath,
   issueKey,
-  isCompletedHidden,
+  completedVisibilityCutoff,
+  applyTaskStatuses,
+  type TaskStatus,
+  type BoardStatuses,
   compareTasksInColumn,
   DEFAULT_DONE_RETENTION_DAYS,
   type CiGlobalSettings,
@@ -666,8 +669,9 @@ interface TaskRow {
   project_id: string
   column_id: string
   title: string
-  description: string
-  acceptance_criteria: string
+  /** Скелет доски эти два поля не выбирает — они есть только в полной задаче. */
+  description?: string
+  acceptance_criteria?: string
   type: string
   parent_id: string | null
   source_task_id: string | null
@@ -775,7 +779,19 @@ function mapColumn(r: ColumnRow): KanbanColumn {
   }
 }
 
-function mapTask(r: TaskRow): Task {
+/** Колонки, из которых собирается карточка доски: без тяжёлых текстов задачи. */
+const BOARD_TASK_COLUMNS = [
+  'id', 'project_id', 'column_id', 'title', 'type', 'parent_id', 'source_task_id', 'priority', 'assignee',
+  'created_by', 'created_by_name', 'agent_id', 'labels', 'skills', 'story_points', 'due_date', 'flagged',
+  'auto_pilot', 'auto_pilot_fix_cycles', 'done_at', 'preview_ready', 'seq', 'position', 'created_at', 'updated_at'
+].join(', ')
+
+/**
+ * Скелет карточки: только собственные колонки `tasks`. Состояние процессов
+ * (чат, merge, подготовка, последний ран) сюда не входит — его накладывает
+ * `mapTaskStatus` из второй фазы доски.
+ */
+function mapTaskCore(r: TaskRow): Task {
   return {
     id: r.id,
     projectId: r.project_id,
@@ -784,8 +800,8 @@ function mapTask(r: TaskRow): Task {
     parentId: r.parent_id,
     sourceTaskId: r.source_task_id ?? null,
     title: r.title,
-    description: r.description,
-    acceptanceCriteria: r.acceptance_criteria,
+    description: r.description ?? '',
+    acceptanceCriteria: r.acceptance_criteria ?? '',
     priority: normPriority(r.priority),
     assignee: r.assignee,
     createdBy: r.created_by,
@@ -804,7 +820,14 @@ function mapTask(r: TaskRow): Task {
     seq: r.seq ?? 0,
     position: r.position,
     createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    updatedAt: r.updated_at
+  }
+}
+
+/** Скелет плюс состояние процессов — полная карточка одного SELECT-а. */
+function mapTask(r: TaskRow): Task {
+  return {
+    ...mapTaskCore(r),
     chatId: r.chat_id ?? null,
     mergeSourceBranch: r.merge_source_branch ?? null,
     mergeSourceSha: r.merge_source_sha ?? null,
@@ -1111,6 +1134,9 @@ export class VoiceChatDb {
         ELSE 'chat' END`)
     }
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_user_scope_project_updated ON conversations(user_id, scope, project_id, updated_at DESC)`)
+    // Чат карточки ищется по task_id: индекс по (user_id, scope, …) для этого
+    // не годится, и поиск чата вырождался в перебор всех бесед пользователя.
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_task ON conversations(task_id, user_id, created_at)`)
     // В БД, созданных из schema.ts до появления студии картинок, список scope
     // зажат CHECK-констрейнтом в DDL таблицы. SQLite не умеет расширять CHECK
     // через ALTER, поэтому пересобираем таблицу: тот же DDL с новым списком,
@@ -5439,56 +5465,168 @@ export class VoiceChatDb {
 
 
   /**
-   * Снапшот доски. По умолчанию задачи, завершённые дольше порога проекта
-   * (`doneRetentionDays`), с доски убраны — как в Jira. Из БД они не удаляются:
-   * приходят с `includeCompleted` и открываются по прямой ссылке.
+   * Снапшот доски целиком: скелет карточек плюс состояние их процессов. Клиент
+   * грузит эти две фазы отдельными запросами (доска рисуется, не дожидаясь
+   * статусов); здесь они склеены для MCP, автопрохода и тестов.
    */
   getBoard(userId: string, projectId: string, opts?: { includeCompleted?: boolean }): Board | null {
+    const board = this.getBoardSkeleton(userId, projectId, opts)
+    if (!board) return null
+    const statuses = this.getBoardStatuses(userId, projectId, opts)
+    return { columns: board.columns, tasks: applyTaskStatuses(board.tasks, statuses?.tasks ?? []), ciRuns: statuses?.ciRuns ?? [] }
+  }
+
+  /**
+   * Первая фаза доски: колонки и лёгкие карточки — что за задача и где лежит.
+   * Один запрос к `tasks` без единого join: доска обязана появляться сразу,
+   * а состояние процессов приезжает следом (`getBoardStatuses`).
+   *
+   * По умолчанию задачи, завершённые дольше порога проекта
+   * (`doneRetentionDays`), с доски убраны — как в Jira. Из БД они не удаляются:
+   * приходят с `includeCompleted` и открываются по прямой ссылке. Отсечка
+   * считается границей `doneAt` и уходит в SQL — иначе колонка «Готово»
+   * вычитывалась бы целиком только ради того, чтобы её отбросить.
+   */
+  getBoardSkeleton(userId: string, projectId: string, opts?: { includeCompleted?: boolean }): Board | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const columns = (
       this.db
         .prepare(`SELECT * FROM kanban_columns WHERE project_id = ? ORDER BY position ASC, created_at ASC`)
         .all(projectId) as ColumnRow[]
     ).map(mapColumn)
+    const cutoff = this.boardDoneCutoff(projectId, opts)
+    // Читаем ровно те колонки, из которых складывается карточка. `SELECT *` тянул
+    // бы вместе с ними описание и критерии приёмки — многие килобайты на задачу,
+    // которые доска всё равно гасит: сотни карточек превращали ответ в мегабайты.
     const tasks = (
       this.db
         .prepare(
-          `SELECT t.*, (SELECT c.id FROM conversations c WHERE c.task_id = t.id AND c.user_id = ?
-                        ORDER BY c.created_at ASC LIMIT 1) AS chat_id,
-             (SELECT w.branch FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_branch,
-             (SELECT w.commit_sha FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_sha,
-             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_run_id,
-             (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id ORDER BY r.created_at DESC LIMIT 1) AS latest_merge_run_id,
-             (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
-             EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=t.project_id AND pm.username=? AND pm.role='owner') AS merge_permitted,
-             EXISTS(
-               SELECT 1 FROM ci_workspaces w JOIN agents a ON a.id=w.agent_id
-               WHERE w.id=(SELECT latest.id FROM ci_workspaces latest WHERE latest.task_id=t.id AND latest.pushed=1 ORDER BY latest.created_at DESC LIMIT 1)
-                 AND (a.user_id=? OR EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=a.id))
-             ) AS merge_machine_bound,
-             (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha,
-             (SELECT r.source_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_source_sha,
-             (SELECT p.id FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_run_id,
-             (SELECT p.status FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_status,
-             (SELECT p.error FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_error
-           FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
+          `SELECT ${BOARD_TASK_COLUMNS} FROM tasks
+             WHERE project_id = @projectId AND (@cutoff IS NULL OR done_at IS NULL OR done_at >= @cutoff)
+             ORDER BY column_id ASC, position ASC`
         )
-        .all(userId, userId, userId, projectId) as TaskRow[]
-      // Лёгкая карточка: тяжёлые тексты (лог подготовки, описание, критерии) в
-      // доску не кладём — их отдаёт `getTask` при открытии карточки (TaskModal).
-    ).map((row) => ({ ...mapTask(row), description: '', acceptanceCriteria: '', taskPreparationLog: null, latestRunResult: this.latestTaskRunResult(row.id) }))
-    // Фильтруем на сервере: иначе payload доски рос бы бесконечно вместе с
-    // колонкой «Готово». includeCompleted → порог null, скрывать нечего.
-    const retention = opts?.includeCompleted ? null : this.doneRetentionDays(projectId)
-    const now = this.now()
-    const visible = tasks.filter((t) => !isCompletedHidden(t.doneAt, retention, now))
+        .all({ projectId, cutoff }) as TaskRow[]
+      // Тексты карточка получает при открытии (`getTaskDetail` → TaskModal).
+    ).map((row) => ({ ...mapTaskCore(row), description: '', acceptanceCriteria: '' }))
     const semanticByColumnId = new Map(columns.map((column) => [column.id, column.semanticType]))
-    visible.sort((a, b) => {
+    tasks.sort((a, b) => {
       if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
       return compareTasksInColumn(a, b, semanticByColumnId.get(a.columnId) ?? 'custom')
     })
+    return { columns, tasks }
+  }
 
-    return { columns, tasks: visible, ciRuns: this.latestCiRunSummaries(projectId) }
+  /**
+   * Вторая фаза доски: что происходит с карточками — связанный чат, merge,
+   * подготовка, последний результат любого этапа и сводки CI-ранов.
+   *
+   * Всё собирается запросами «по проекту целиком» с оконной функцией вместо
+   * коррелированных подзапросов на карточку: прежний снапшот на 400 задач
+   * выполнял тысячи запросов и держал event loop сервера секундами — а он один
+   * на все соединения, так что вместе с доской ждали и login, и health.
+   */
+  getBoardStatuses(userId: string, projectId: string, opts?: { includeCompleted?: boolean }): BoardStatuses | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const cutoff = this.boardDoneCutoff(projectId, opts)
+    // Подзапрос «задачи доски» повторяется в каждом запросе фазы: он идёт по
+    // индексу (project_id) и дешевле, чем список из сотен плейсхолдеров.
+    const scope = `SELECT id FROM tasks WHERE project_id = @projectId AND (@cutoff IS NULL OR done_at IS NULL OR done_at >= @cutoff)`
+    const args = { projectId, cutoff }
+
+    const chatByTask = new Map(
+      (this.db.prepare(
+        `SELECT task_id, id FROM (
+           SELECT c.task_id AS task_id, c.id AS id,
+                  ROW_NUMBER() OVER (PARTITION BY c.task_id ORDER BY c.created_at ASC) AS rn
+             FROM conversations c
+            WHERE c.user_id = @userId AND c.task_id IN (${scope})
+         ) WHERE rn = 1`
+      ).all({ ...args, userId }) as Array<{ task_id: string; id: string }>).map((r) => [r.task_id, r.id])
+    )
+
+    // Последняя отправленная рабочая копия задачи: из неё и ветка с SHA, и
+    // ответ на вопрос, доступна ли машина этого воркспейса текущему проекту.
+    const workspaceByTask = new Map(
+      (this.db.prepare(
+        `SELECT task_id, branch, commit_sha, agent_id FROM (
+           SELECT w.task_id AS task_id, w.branch AS branch, w.commit_sha AS commit_sha, w.agent_id AS agent_id,
+                  ROW_NUMBER() OVER (PARTITION BY w.task_id ORDER BY w.created_at DESC) AS rn
+             FROM ci_workspaces w
+            WHERE w.pushed = 1 AND w.task_id IN (${scope})
+         ) WHERE rn = 1`
+      ).all(args) as Array<{ task_id: string; branch: string | null; commit_sha: string | null; agent_id: string | null }>)
+        .map((r) => [r.task_id, r])
+    )
+    const boundAgentIds = new Set(
+      (this.db.prepare(
+        `SELECT a.id FROM agents a
+          WHERE a.user_id = @userId
+             OR EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id = @projectId AND pm.agent_id = a.id)`
+      ).all({ projectId, userId }) as Array<{ id: string }>).map((r) => r.id)
+    )
+
+    const mergeRuns = this.latestByTask<{ task_id: string; id: string; status: string; merge_sha: string | null; source_sha: string | null }>(
+      `SELECT task_id, id, status, merge_sha, source_sha, created_at FROM merge_runs WHERE task_id IN (${scope})`,
+      args
+    )
+    const preparationRuns = this.latestByTask<{ task_id: string; id: string; status: string; error: string | null }>(
+      `SELECT task_id, id, status, error, created_at FROM task_preparation_runs WHERE task_id IN (${scope})`,
+      args
+    )
+    const runResultByTask = this.latestTaskRunResults(scope, args)
+    // Право на merge — свойство участника в проекте, а не карточки: считаем один
+    // раз, а не по разу на каждую из сотен задач, как было в подзапросе доски.
+    const mergePermitted = Boolean(
+      this.db.prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`).get(projectId, userId)
+    )
+
+    const taskIds = (this.db.prepare(scope).all(args) as Array<{ id: string }>).map((r) => r.id)
+    const tasks: TaskStatus[] = taskIds.map((taskId) => {
+      const workspace = workspaceByTask.get(taskId)
+      const merges = mergeRuns.get(taskId) ?? []
+      const activeMerge = merges.find((run) => ACTIVE_MERGE_STATUSES.includes(run.status as MergeRun['status']))
+      const successMerge = merges.find((run) => run.status === 'success')
+      const preparation = preparationRuns.get(taskId)?.[0] ?? null
+      return {
+        taskId,
+        chatId: chatByTask.get(taskId) ?? null,
+        mergeSourceBranch: workspace?.branch ?? null,
+        mergeSourceSha: workspace?.commit_sha ?? null,
+        activeMergeRunId: activeMerge?.id ?? null,
+        latestMergeRunId: merges[0]?.id ?? null,
+        activeMergeStatus: activeMerge?.status ?? null,
+        mergePermitted,
+        mergeMachineBound: Boolean(workspace?.agent_id && boundAgentIds.has(workspace.agent_id)),
+        mergedSha: successMerge?.merge_sha ?? null,
+        mergedSourceSha: successMerge?.source_sha ?? null,
+        taskPreparationRunId: preparation?.id ?? null,
+        taskPreparationStatus: (preparation?.status as Task['taskPreparationStatus']) ?? null,
+        taskPreparationError: preparation?.error ?? null,
+        latestRunResult: runResultByTask.get(taskId) ?? null
+      }
+    })
+    return { tasks, ciRuns: this.latestCiRunSummaries(projectId, { sql: scope, args }) }
+  }
+
+  /** Граница `done_at` для доски: `null` — показывать всё, включая старое «Готово». */
+  private boardDoneCutoff(projectId: string, opts?: { includeCompleted?: boolean }): number | null {
+    return opts?.includeCompleted ? null : completedVisibilityCutoff(this.doneRetentionDays(projectId), this.now())
+  }
+
+  /**
+   * Строки источника, сгруппированные по задаче и отсортированные «свежие
+   * сверху». Источник обязан отдавать `task_id` и `created_at`; фильтр по
+   * задачам доски уже внутри запроса.
+   */
+  private latestByTask<T extends { task_id: string }>(sql: string, args: Record<string, unknown>): Map<string, T[]> {
+    const rows = this.db.prepare(`${sql} ORDER BY created_at DESC, rowid DESC`).all(args) as T[]
+    const grouped = new Map<string, T[]>()
+    for (const row of rows) {
+      const list = grouped.get(row.task_id)
+      if (list) list.push(row)
+      else grouped.set(row.task_id, [row])
+    }
+    return grouped
   }
 
   /**
@@ -7735,26 +7873,63 @@ export class VoiceChatDb {
    * Последний актуальный процесс среди всех workflow-ранов задачи. Новый старт
    * сразу вытесняет прежнюю ошибку. cancelled нейтрален, stale считается skipped.
    */
+  /** Ветки UNION-а «все этапы задачи»: имя этапа, таблица и приоритет при равном времени. */
+  private static readonly TASK_RUN_SOURCES: ReadonlyArray<{ kind: string; table: string; createdAt: string }> = [
+    { kind: `'preparation'`, table: 'task_preparation_runs', createdAt: 'created_at' },
+    { kind: `'development'`, table: 'ci_runs', createdAt: 'created_at' },
+    { kind: 'stage', table: 'qa_stage_runs', createdAt: 'created_at' },
+    { kind: `'component_qa'`, table: 'component_qa_runs', createdAt: 'created_at' },
+    { kind: `'integration_tests'`, table: 'integration_test_runs', createdAt: 'created_at' },
+    { kind: `'qa_preparation'`, table: 'qa_preparation_runs', createdAt: 'created_at' },
+    { kind: `'manual_qa'`, table: 'qa_sessions', createdAt: 'started_at' },
+    { kind: `'merge'`, table: 'merge_runs', createdAt: 'created_at' }
+  ]
+
+  /** Статусы, при которых этап считается идущим прямо сейчас (он и главный в сводке). */
+  private static readonly TASK_RUN_ACTIVE_STATUSES =
+    `'queued','running','awaiting_input','waiting_for_answer','validating','active','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing','deploying','production_checks','rolling_back'`
+
+  /** Порядок «самый актуальный этап сверху» — общий для одиночной и групповой выборки. */
+  private static taskRunOrder(): string {
+    return `created_at DESC, CASE WHEN status IN (${VoiceChatDb.TASK_RUN_ACTIVE_STATUSES}) THEN 1 ELSE 0 END DESC, seq DESC, rank DESC`
+  }
+
+  /** UNION ALL по всем таблицам этапов; `where` подставляется в каждую ветку. */
+  private static taskRunUnion(where: string): string {
+    return VoiceChatDb.TASK_RUN_SOURCES
+      .map(({ kind, table, createdAt }, index) =>
+        `SELECT task_id, id, ${kind} kind, status, ${createdAt} created_at, finished_at, rowid seq, ${index + 1} rank FROM ${table} WHERE ${where}`)
+      .join(' UNION ALL ')
+  }
+
+  private static toTaskRunResult(row: { id: string; kind: TaskRunResult['kind']; status: string; created_at: number; finished_at: number | null }): TaskRunResult {
+    return { id: row.id, kind: row.kind, status: row.status, outcome: normalizeTaskRunOutcome(row.status), createdAt: row.created_at, finishedAt: row.finished_at }
+  }
+
+  /**
+   * Последний актуальный этап сразу по всем задачам доски: одна оконная выборка
+   * вместо восьми запросов на карточку. `scope` — подзапрос с id задач доски.
+   */
+  private latestTaskRunResults(scope: string, args: Record<string, unknown>): Map<string, TaskRunResult> {
+    const rows = this.db.prepare(`
+      SELECT task_id, id, kind, status, created_at, finished_at FROM (
+        SELECT task_id, id, kind, status, created_at, finished_at,
+               ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY ${VoiceChatDb.taskRunOrder()}) rn
+          FROM (${VoiceChatDb.taskRunUnion(`task_id IN (${scope})`)})
+      ) WHERE rn = 1
+    `).all(args) as Array<{ task_id: string; id: string; kind: TaskRunResult['kind']; status: string; created_at: number; finished_at: number | null }>
+    return new Map(rows.map((row) => [row.task_id, VoiceChatDb.toTaskRunResult(row)]))
+  }
+
   latestTaskRunResult(taskId: string): TaskRunResult | null {
     const row = this.db.prepare(`
-      SELECT id, kind, status, created_at, finished_at FROM (
-        SELECT id, 'preparation' kind, status, created_at, finished_at, rowid seq, 1 rank FROM task_preparation_runs WHERE task_id = ?
-        UNION ALL SELECT id, 'development', status, created_at, finished_at, rowid, 2 FROM ci_runs WHERE task_id = ?
-        UNION ALL SELECT id, stage, status, created_at, finished_at, rowid, 3 FROM qa_stage_runs WHERE task_id = ?
-        UNION ALL SELECT id, 'component_qa', status, created_at, finished_at, rowid, 4 FROM component_qa_runs WHERE task_id = ?
-        UNION ALL SELECT id, 'integration_tests', status, created_at, finished_at, rowid, 5 FROM integration_test_runs WHERE task_id = ?
-        UNION ALL SELECT id, 'qa_preparation', status, created_at, finished_at, rowid, 6 FROM qa_preparation_runs WHERE task_id = ?
-        UNION ALL SELECT id, 'manual_qa', status, started_at, finished_at, rowid, 7 FROM qa_sessions WHERE task_id = ?
-        UNION ALL SELECT id, 'merge', status, created_at, finished_at, rowid, 8 FROM merge_runs WHERE task_id = ?
-      ) ORDER BY created_at DESC,
-        CASE WHEN status IN ('queued','running','awaiting_input','waiting_for_answer','validating','active','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing','deploying','production_checks','rolling_back') THEN 1 ELSE 0 END DESC,
-        seq DESC, rank DESC LIMIT 1
-    `).get(taskId, taskId, taskId, taskId, taskId, taskId, taskId, taskId) as
+      SELECT id, kind, status, created_at, finished_at
+        FROM (${VoiceChatDb.taskRunUnion('task_id = @taskId')})
+       ORDER BY ${VoiceChatDb.taskRunOrder()} LIMIT 1
+    `).get({ taskId }) as
       | { id: string; kind: TaskRunResult['kind']; status: string; created_at: number; finished_at: number | null }
       | undefined
-    if (!row) return null
-
-    return { id: row.id, kind: row.kind, status: row.status, outcome: normalizeTaskRunOutcome(row.status), createdAt: row.created_at, finishedAt: row.finished_at }
+    return row ? VoiceChatDb.toTaskRunResult(row) : null
   }
 
   /**
@@ -7763,17 +7938,45 @@ export class VoiceChatDb {
    * Терминальные ошибки и отмены актуальны лишь в колонке, зафиксированной при
    * завершении; ручной перенос немедленно убирает их с поверхностей задачи.
    */
-  latestCiRunSummaries(projectId: string): CiRunSummary[] {
-    const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE project_id = ? ORDER BY created_at DESC, rowid DESC`).all(projectId) as CiRunRow[]
+  /**
+   * Сводки CI по задачам доски. `scope` (подзапрос с id карточек) обязателен для
+   * доски: без него сюда попадали сводки всех задач проекта за всю его историю —
+   * на боевом проекте 383 сводки вместо 11 нужных, мегабайт ответа и четыре
+   * запроса в БД на каждую лишнюю.
+   */
+  latestCiRunSummaries(projectId: string, scope?: { sql: string; args: Record<string, unknown> }): CiRunSummary[] {
+    const where = scope ? `project_id = @projectId AND task_id IN (${scope.sql})` : `project_id = @projectId`
+    const params = { projectId, ...(scope?.args ?? {}) }
+    const rows = this.db.prepare(`SELECT * FROM ci_runs WHERE ${where} ORDER BY created_at DESC, rowid DESC`).all(params) as CiRunRow[]
     const columns = new Map((this.db.prepare(`SELECT id, column_id FROM tasks WHERE project_id = ?`).all(projectId) as Array<{ id: string; column_id: string }>).map((r) => [r.id, r.column_id]))
     const grouped = new Map<string, CiRunRow[]>()
     for (const row of rows) grouped.set(row.task_id, [...(grouped.get(row.task_id) ?? []), row])
+    // История длительностей шагов — свойство проекта, а не рана: считаем её один
+    // раз на всю доску. Раньше каждая карточка со своим раном тянула тот же JOIN
+    // на 200 строк, и доска проекта с сотней ранов делала сотню таких запросов.
+    const history = this.ciStepDurationHistory(projectId)
     const out: CiRunSummary[] = []
     for (const [taskId, taskRows] of grouped) {
-      const summary = this.taskCiDisplaySummary(taskRows, columns.get(taskId) ?? null)
+      const summary = this.taskCiDisplaySummary(taskRows, columns.get(taskId) ?? null, history)
       if (summary) out.push(summary)
     }
     return out
+  }
+
+  /** Длительности успешных шагов проекта по названию — база для прогноза прогресса. */
+  private ciStepDurationHistory(projectId: string): Record<string, number[]> {
+    const rows = this.db.prepare(`
+      SELECT s.title, s.duration_ms
+      FROM ci_run_steps s
+      JOIN ci_runs r ON r.id = s.run_id
+      WHERE r.project_id = ? AND r.status = 'success' AND s.status = 'success'
+        AND s.duration_ms IS NOT NULL AND s.duration_ms > 0
+      ORDER BY r.finished_at DESC
+      LIMIT 200
+    `).all(projectId) as Array<{ title: string; duration_ms: number }>
+    const history: Record<string, number[]> = {}
+    for (const item of rows) (history[item.title] ??= []).push(item.duration_ms)
+    return history
   }
 
   /** Единая отображаемая сводка одной задачи; null — значимого результата нет. */
@@ -7886,38 +8089,29 @@ export class VoiceChatDb {
     return this.taskCiDisplaySummary(rows, task?.column_id ?? null)
   }
 
-  private taskCiDisplaySummary(rows: CiRunRow[], currentColumnId: string | null): CiRunSummary | null {
+  private taskCiDisplaySummary(rows: CiRunRow[], currentColumnId: string | null, history?: Record<string, number[]>): CiRunSummary | null {
     const active = rows.find((row) => ['queued', 'running', 'awaiting_input'].includes(row.status))
-    if (active) return this.ciRunSummary(active)
+    if (active) return this.ciRunSummary(active, history)
     const latest = rows[0]
     const relevant = (row: CiRunRow): boolean =>
       row.status === 'success' || (row.terminal_column_id != null && row.terminal_column_id === currentColumnId)
     let primary = rows.find((row) => relevant(row) && row.status !== 'cancelled' && row.status !== 'skipped')
     if (!primary && latest && relevant(latest)) primary = latest
     if (!primary) return null
-    const summary = this.ciRunSummary(primary)
+    const summary = this.ciRunSummary(primary, history)
     if (latest && relevant(latest) && latest.id !== primary.id && (latest.status === 'cancelled' || latest.status === 'skipped')) {
-      summary.latestAttempt = this.ciRunSummary(latest)
+      summary.latestAttempt = this.ciRunSummary(latest, history)
     }
     return summary
   }
 
-  private ciRunSummary(row: CiRunRow): CiRunSummary {
+  /** `history` передаётся, когда сводок много: считать её на каждый ран незачем. */
+  private ciRunSummary(row: CiRunRow, history?: Record<string, number[]>): CiRunSummary {
     const run = mapCiRun(row)
     const stepRows = this.db.prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`).all(row.id) as CiRunStepRow[]
     const steps = stepRows.map(mapCiRunStep)
     const modelActive = run.status === 'running' && steps.some((step) => step.kind === 'model_work' && step.status === 'running')
-    const historyRows = this.db.prepare(`
-      SELECT s.title, s.duration_ms
-      FROM ci_run_steps s
-      JOIN ci_runs r ON r.id = s.run_id
-      WHERE r.project_id = ? AND r.status = 'success' AND s.status = 'success'
-        AND s.duration_ms IS NOT NULL AND s.duration_ms > 0
-      ORDER BY r.finished_at DESC
-      LIMIT 200
-    `).all(row.project_id) as Array<{ title: string; duration_ms: number }>
-    const history: Record<string, number[]> = {}
-    for (const item of historyRows) (history[item.title] ??= []).push(item.duration_ms)
+    const stepHistory = history ?? this.ciStepDurationHistory(row.project_id)
     return {
       id: run.id,
       taskId: run.taskId,
@@ -7927,7 +8121,7 @@ export class VoiceChatDb {
       durationMs: run.durationMs,
       modelActive,
       awaitingInput: run.status === 'awaiting_input',
-      progress: buildCiAutomationProgress(run, steps, history),
+      progress: buildCiAutomationProgress(run, steps, stepHistory),
       executionLlm: this.ciExecutionLlm(run, this.listCiStageRuns(run.id)),
       terminalColumnId: run.terminalColumnId
     }
