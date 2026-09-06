@@ -1510,12 +1510,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     void chatActions.syncSidebarProjects(projects.projects.map((project) => project.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, projects.projectsLoaded, projects.projects])
+  // Релизы, настройки и панель кода доску не показывают, поэтому и не грузят:
+  // снимок доски, её вид и состояния карточек — это лишние запросы, а подписка
+  // на board.changed при работающем ране перечитывает доску каждые пару секунд.
+  const routeNeedsBoard = !(routeReleases || routeSettings || routeCode)
   useEffect(() => {
     if (!authed || !inProjects) return
-    if (routeProjectId) { if (projects.activeProjectId !== routeProjectId) void projectsActions.openBoard(routeProjectId) }
+    if (routeProjectId) {
+      if (projects.activeProjectId !== routeProjectId) void projectsActions.openProject(routeProjectId, { board: routeNeedsBoard })
+      else if (routeNeedsBoard) void projectsActions.ensureBoard(routeProjectId)
+    }
     else if (projects.activeProjectId) projectsActions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inProjects, routeProjectId])
+  }, [authed, inProjects, routeProjectId, routeNeedsBoard])
   // Прямая ссылка на завершённую задачу: сервер прячет с доски давно готовые
   // карточки, и открывать было бы нечего. Если задачи из URL в снапшоте нет —
   // один раз включаем «Показать завершённые» и доска приходит целиком.
