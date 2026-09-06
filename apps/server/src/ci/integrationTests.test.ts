@@ -49,8 +49,14 @@ function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: st
       return { exitCode: outcome.exitCode, timedOut: outcome.timedOut }
     })
   }
-  const runner = createIntegrationTestRunner({ db, executor, now: () => 0 })
-  return { runner, finished, calls, links, logs, gateResults }
+  const stageEvents: Array<{ projectId: string; taskId: string }> = []
+  const completions: Array<{ passed: boolean; reason: string; classification?: string | null }> = []
+  const runner = createIntegrationTestRunner({
+    db, executor, now: () => 0,
+    qaStageChanged: (projectId, taskId) => { stageEvents.push({ projectId, taskId }) },
+    completed: (_runId, _userId, passed, reason, classification) => { completions.push({ passed, reason, classification }) }
+  })
+  return { runner, finished, calls, links, logs, gateResults, stageEvents, completions }
 }
 
 describe('createIntegrationTestRunner', () => {
@@ -154,6 +160,9 @@ describe('createIntegrationTestRunner', () => {
     expect(input.failureClassification).toBe('infrastructure')
     expect(input.blockerReasons).toEqual(['missing_dependencies'])
     expect(input.summary).toContain('заблокирован инфраструктурой')
+    // Сбой окружения не должен возвращать карточку в доработку — автопроход
+    // получает это отдельной классификацией.
+    expect(s.completions[0]?.classification).toBe('infrastructure')
   })
 
   // Регрессия CHAT-411: `split(/\\r?\\n/)` искал литерал «\r», дифф приходил в
@@ -169,6 +178,9 @@ describe('createIntegrationTestRunner', () => {
     expect(input.blockerReasons).toEqual(['non_test_file:apps/server/src/db/database.ts', 'non_test_file:apps/server/src/db/schema.ts'])
     // Стадии не запускались: дальше разбора коммита ран не пошёл.
     expect(s.calls.some((call) => call.script.includes('npm'))).toBe(false)
+    // Автопроход обязан узнать об исходе: без уведомления карточка застревала в
+    // integration_tests, а board-событие запускало следующий такой же ран по кругу.
+    expect(s.completions).toEqual([{ passed: false, reason: input.summary, classification: 'implementation_defect' }])
   })
 
   // @testCase TC-COVER-2
@@ -224,4 +236,14 @@ describe('createIntegrationTestRunner', () => {
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.finished[0]).toMatchObject({ status: 'failed', failureClassification: 'implementation_defect' })
   })
+})
+
+it('шлёт адресное событие этапа на старте и на завершении — панель живёт без опроса', async () => {
+  const s = setup(['npm run affected-check'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
+  s.runner.launch('run1', 'bob')
+  await vi.waitFor(() => expect(s.finished).toHaveLength(1))
+  // Первое событие — переход в running, последнее — завершение рана.
+  expect(s.stageEvents.length).toBeGreaterThanOrEqual(2)
+  expect(s.stageEvents[0]).toEqual({ projectId: 'p1', taskId: 't1' })
+  expect(s.stageEvents.at(-1)).toEqual({ projectId: 'p1', taskId: 't1' })
 })

@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-09-05
-checked: 2ab335d8
+updated: 2026-09-06
+checked: 67634a16
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -21,6 +21,24 @@ areas:
 ---
 
 # Раны QA-этапов: отдельные сущности и вкладки карточки
+
+## Панели этапов живут на событиях, а не на опросе (2026-09-06)
+
+Панели Component QA, интеграционных тестов и Automated QA держали `usePolling` на
+1,5–2 секунды всё время, пока ран активен: один открытый таск на проде давал десятки
+запросов `…/qa/integration` в минуту. Теперь сервер шлёт адресный кадр
+`qa.stage.updated {projectId, taskId, stage}` (`BoardHub.emitQaStage`, отправка в
+`session.ts` под тем же гейтом видимости доски, что у `task.repositories.updated`), а
+панель по нему перечитывает свой снимок — тем же приёмом, что вкладка подготовки с
+`preparation.run.updated`.
+
+Эмиты стоят там же, где уже стоял `boardChanged`: старт, отмена, завершение и ответ в
+`routes/qa.ts` плюс переходы внутри раннеров (`ci/integrationTests.ts`,
+`ci/componentQa.ts` — оба раннера файла). Клиентскую часть держит хук
+`packages/ui/src/components/qa/useQaStageUpdates.ts`: фильтр по задаче и этапу,
+дебаунс 400 мс на серию событий, полная сверка по `onReconnect` и запасной опрос
+**только** когда моста доски нет вовсе (desktop-сборка без WS).
+
 
 ## Что это и чем отличается от соседних ранов
 

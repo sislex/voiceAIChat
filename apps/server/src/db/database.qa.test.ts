@@ -174,6 +174,31 @@ describe('manual QA persistence and workflow', () => {
     expect(db.getBoard('owner', project.id)!.columns.find((item) => item.id === moved.columnId)?.semanticType).toBe('merge')
   })
 
+  it('считает подряд упавшие merge-раны и помнит время последнего', () => {
+    const project = db.createProject('owner', { name: 'Merge counters' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.createAgent('owner', 'Mac')
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('ws-counters', project.id, task.id, agent.id, '/repos/task', 'CHAT-900', '1'.repeat(40), 1, 'released', 1)
+
+    expect(db.countTrailingFailedMergeRuns(task.id)).toBe(0)
+    expect(db.lastMergeRunFinishedAt(task.id)).toBeNull()
+
+    const first = db.startMergeRun('owner', project.id, task.id)
+    raw.prepare(`UPDATE merge_runs SET status='failed',finished_at=? WHERE id=?`).run(500, first.id)
+    const second = db.startMergeRun('owner', project.id, task.id)
+    raw.prepare(`UPDATE merge_runs SET status='failed',finished_at=? WHERE id=?`).run(900, second.id)
+
+    expect(db.countTrailingFailedMergeRuns(task.id)).toBe(2)
+    expect(db.lastMergeRunFinishedAt(task.id)).toBe(900)
+
+    // Успех обнуляет хвост: считаем только последние подряд идущие провалы.
+    const third = db.startMergeRun('owner', project.id, task.id)
+    raw.prepare(`UPDATE merge_runs SET status='success',finished_at=? WHERE id=?`).run(1200, third.id)
+    expect(db.countTrailingFailedMergeRuns(task.id)).toBe(0)
+  })
+
   it('records the actual Codex model from global settings for a merge run', () => {
     const project = db.createProject('owner', { name: 'Merge Codex' })
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!

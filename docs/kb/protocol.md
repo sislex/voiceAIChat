@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-04
-checked: 1ffda784
+updated: 2026-09-06
+checked: af37f03e
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -453,7 +453,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 
 **Rate-limit импорта (п.39).** `POST /api/make/:id/import` и `/import-url` ограничены на пользователя скользящим окном (`apps/server/src/make/rateLimit.ts`, `SlidingWindowLimiter`): 10 ZIP-импортов и 20 импортов по URL за 10 минут; сверх — 429 `{ error }` с заголовком `Retry-After` (секунды). Лимитеры подменяются через `MakeRoutesDeps.importLimiter/importUrlLimiter`; счётчик в памяти процесса — перезапуск сервера его сбрасывает.
 
-**Read-only ссылка внутри ChatAI (п.33).** `POST/DELETE /api/make/:id/share` (владелец) → `MakeProjectState.shared: { token, createdAt, url: '#/make-shared/<token>' }`; хранится в `.share.json` + индекс `.published/share-<token>.json`, переживает `reset`. Чтение любым вошедшим пользователем: `GET /api/make/shared/:token` → `MakeSharedState { token, owner, title, files, snapshots, rev }`, `GET …/file?path=`, `GET …/stories`; превью — `GET /api/preview/make-shared/:token/*` (cookie превью; `previewSession` в `users/auth.ts` теперь принимает префикс `/api/preview/make` — и `/make/`, и `/make-shared/`), включая `__stories__`/`__gallery__` и моки. Записи по токену нет ни одной — кроме именных грантов (roadmap-3 п.6): `POST /api/make/:id/share/grants { user, role: 'editor'|'viewer'|null }` (владелец; пользователь проверяется по `db.getUser`) пишет `grants` в `.share.json`; `MakeSharedState.role`/`conversationId` говорят получателю, кто он. Маршруты файлов/снимков/комментариев/presence проверяются `access(userId, id, reply, level)`: владелец — всё, редактор — уровень `editor` (запись файлов, снимки, комментарии), зритель — только `viewer` (чтение); публикация, шаринг, очистка, удаление — по-прежнему `own`. Мосты `make:share/unshare/shareGrant/shared/sharedFile/sharedStories`.
+**Read-only ссылка внутри ChatAI (п.33).** `POST/DELETE /api/make/:id/share` (владелец) → `MakeProjectState.shared: { token, createdAt, url: '#/make-shared/<token>' }`; хранится в `.share.json` + индекс `.published/share-<token>.json`, переживает `reset`. Чтение любым вошедшим пользователем: `GET /api/make/shared/:token` → `MakeSharedState` из `packages/shared/src/make.ts`; кроме прежних `token`, `owner`, `title`, `role`, `conversationId`, `files`, `snapshots` и `rev`, состояние содержит нормализованные `stack` и `uiKit` для отображения конфигурации в share-view. Файлы и stories читаются через `GET …/file?path=` и `GET …/stories`; превью — `GET /api/preview/make-shared/:token/*` (cookie превью; `previewSession` в `users/auth.ts` теперь принимает префикс `/api/preview/make` — и `/make/`, и `/make-shared/`), включая `__stories__`/`__gallery__` и моки. Записи по токену нет ни одной — кроме именных грантов (roadmap-3 п.6): `POST /api/make/:id/share/grants { user, role: 'editor'|'viewer'|null }` (владелец; пользователь проверяется по `db.getUser`) пишет `grants` в `.share.json`; `MakeSharedState.role`/`conversationId` говорят получателю, кто он. Маршруты файлов/снимков/комментариев/presence проверяются `access(userId, id, reply, level)`: владелец — всё, редактор — уровень `editor` (запись файлов, снимки, комментарии), зритель — только `viewer` (чтение); публикация, шаринг, очистка, удаление — по-прежнему `own`. Мосты `make:share/unshare/shareGrant/shared/sharedFile/sharedStories`.
 
 **PWA в экспорте (п.35).** `GET /api/preview/make/:id/export.zip?vite=1&pwa=1` (оба флага независимы): `exportZip({ vite, pwa })` добавляет `manifest.webmanifest`, `sw.js` (index — network-first, остальное — cache-first) и `icon.svg` (первая буква названия на `theme-color`) — для Vite в `public/` с абсолютными ссылками, для статики рядом с `index.html` с относительными. Ссылки (`<link rel=manifest>`, `theme-color`, `apple-mobile-web-app-capable`, регистрация SW не на `file:`) инъектируются только в копию `index.html` в архиве — файлы проекта не меняются. Название и цвет — `detectPwaMeta` (`<title>`, `meta theme-color`, иначе `--accent` из CSS). Чистые функции — `@shared/makePwa`.
 
@@ -554,12 +554,15 @@ publish не ротирует ссылку, unpublish гасит страниц�
 Итерация 14: публикация принимает `password` (undefined — не трогать, null —
 снять, строка ≥4 симв. — задать; хранится только хэш с солью) и снимок
 `title` чата (заголовок публичной страницы); страница и файлы под паролем
-отвечают 401 с формой (`POST /g/<token>/__auth__`, cookie-гейт
+отвечают 401 с формой (`POST /g/<token>/__auth__`; с 2026-09-05 попытки
+ограничены — десять за десять минут на «IP + токен», дальше 429 с `retry-after`, cookie-гейт
 `vc_gal_<token>` = sha256(gate:token:hash), Max-Age 30 дней — смена пароля
-разлогинивает всех); publication/publish отдают `passwordProtected`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
+разлогинивает всех); publication/publish отдают `passwordProtected`. Файлы галереи (`GET /g/<token>/file?path=`) с 2026-09-05 отдаются с ETag и `private, no-cache` (повтор — 304) и помечены `x-robots-tag: noindex, noimageindex`. Мосты `imgstudio:*` в `ipc.ts`; `imgstudio:read` в
 web-клиенте — авторизованный fetch → base64 (см. ui.md). Корзина: `GET
-/api/image-studio/:id/trash`, `POST .../restore` и (итерация 38, 2026-09-04)
-`POST .../trash/purge` — тело `{}` чистит корзину целиком, `{name}` — один файл;
+/api/image-studio/:id/trash` (элемент — `{name, deletedAt, size}`; размер
+добавлен 2026-09-05: корзина ест ту же квоту разговора, и «сколько освободит
+очистка» без него с экрана не ответить), `POST .../restore` и (итерация 38,
+2026-09-04) `POST .../trash/purge` — тело `{}` чистит корзину целиком, `{name}` — один файл;
 ответ `{removed, items}`. Очистка сделана отдельным методом, а не флагом
 удаления: иначе промах по кнопке «удалить» уносил бы файл совсем. Пустая
 корзина — не ошибка (кнопка не обязана знать про гонки), а неизвестное имя даёт

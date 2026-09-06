@@ -356,12 +356,35 @@ describe('voiceStore — проекты и доска', () => {
       await api['tasks:update']({ projectId: id, taskId: task.id, title: 'После action' })
 
       store.actions.applyBoardChanged('other')
-      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(450)
       expect(store.getState().board!.tasks[0]?.title).toBe('До action')
 
       store.actions.applyBoardChanged(id)
-      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(450)
       expect(store.getState().board!.tasks[0]?.title).toBe('После action')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('поток board.changed не превращается в поток запросов доски, но и не замирает', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, api } = makeStore()
+      await store.actions.createProject({ name: 'P1' })
+      const id = store.getState().projectDetail!.id
+      await store.actions.openBoard(id)
+      const get = vi.spyOn(api, 'board:get')
+
+      // Активный ран шлёт событие каждые 400 мс: раньше это давало запрос почти на
+      // каждое, теперь их склеивает дебаунс, а потолок ожидания не даёт доске замереть.
+      for (let i = 0; i < 15; i++) {
+        store.actions.applyBoardChanged(id)
+        await vi.advanceTimersByTimeAsync(400)
+      }
+      await vi.advanceTimersByTimeAsync(500)
+      expect(get.mock.calls.length).toBeGreaterThan(1)
+      expect(get.mock.calls.length).toBeLessThanOrEqual(5)
     } finally {
       vi.useRealTimers()
     }

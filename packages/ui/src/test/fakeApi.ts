@@ -6,7 +6,9 @@ import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnap
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
 import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
+import type { ProjectStorybookSession } from '@shared/projectComponents'
 import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from './fixtures/git'
+import { makeProjectComponents, makeStorybookSession } from './fixtures/projectComponents'
 import type { RendererApi } from '@shared/ipc'
 import type { ContextSnapshotItem, Conversation, ConversationContextSnapshot, Message, Settings } from '@shared/types'
 import { contextLockReason, isContextToggleable } from '@shared/contextGating'
@@ -54,6 +56,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     commits: Array<{ message: string; staged: number }>
     pushed: string[]
   } = { status: makeGitStatus(), saved: [], commits: [], pushed: [] }
+  /** Компоненты проекта: сессия Storybook и заведённые тикеты живут между вызовами. */
+  const componentsState: {
+    session: ProjectStorybookSession
+    tickets: Array<{ title: string; paths: string[] }>
+  } = { session: makeStorybookSession({ state: 'stopped', readyAt: null }), tickets: [] }
   /** Выключенные пункты контекста — «сервер» помнит их между снимками. */
   const disabledContext = new Set<string>()
   const contextSnapshotFake = (id: string): ConversationContextSnapshot => {
@@ -395,8 +402,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:libraryExport': async ({ conversationId, name, paths }) => { const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); const item = { slug, name, files: paths, bytes: 0, sourceConversationId: conversationId, updatedAt: Date.now() }; library.set(slug, item); libraryFiles.set(slug, new Map(paths.map((p) => [p, makeFiles(conversationId).get(p) ?? '']))); return { item } },
     'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return { state: makeState(conversationId), mergedTokens: 0, autoImported: [] } },
     'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
-    'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' },
-    'make:setNotes': async ({ conversationId, notes, mode }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode }; makeNotes.set(conversationId, next); return next },
+    'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced', stack: 'html-js', uiKit: 'none' },
+    'make:setNotes': async ({ conversationId, notes, mode, stack, uiKit }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const, stack: 'html-js' as const, uiKit: 'none' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode, stack: stack ?? cur.stack, uiKit: uiKit ?? cur.uiKit }; makeNotes.set(conversationId, next); return next },
     'make:tests': async ({ conversationId }) => ({ files: [...makeFiles(conversationId).entries()].filter(([p]) => /\.test\.(jsx|tsx)$/i.test(p)).map(([p, c]) => ({ path: p, names: [...c.matchAll(/\btest\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!), component: null })) }),
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
     'make:share': async ({ conversationId }) => { if (!makeShare.has(conversationId)) makeShare.set(conversationId, { token: 'share123', createdAt: 1, url: '#/make-shared/share123' }); return makeState(conversationId) },
@@ -410,7 +417,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const conv = [...makeShare.entries()].find(([, s]) => s.token === token)?.[0] ?? (token === 'share123' ? 'make-1' : null)
       if (!conv) throw new Error('Ссылка недействительна или отозвана')
       const st = makeState(conv)
-      return { token, owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
+      return { token, stack: 'html-js', uiKit: 'none', owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
     },
     'make:sharedFile': async ({ path }) => { const content = makeFiles('make-1').get(path); if (content === undefined) throw new Error('Файл не найден'); return { path, content, size: new TextEncoder().encode(content).length, updatedAt: 1 } },
     'make:sharedStories': async () => ({ files: [] }),
@@ -1320,6 +1327,40 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       gitState.pushed.push(target)
       gitState.status = { ...gitState.status, ahead: 0 }
       return { status: gitState.status, branch: target, sha: 'd'.repeat(40) }
+    },
+    // Компоненты проекта: фейк держит состояние Storybook, чтобы «запустить → готово»
+    // и «остановить» проверялись кликами, а не моками отдельных вызовов.
+    'projects:components': async ({ workspace }) => ({
+      ...makeProjectComponents({ workspaceId: workspace }),
+      source: componentsState.session.state === 'running' ? 'storybook' : 'files'
+    }),
+    'projects:componentStories': async ({ path }) => ({
+      path,
+      title: 'UI/Button',
+      stories: [{ id: 'ui-button--primary', name: 'Primary' }]
+    }),
+    'projects:storybookSession': async ({ workspace }) => ({ ...componentsState.session, workspaceId: workspace }),
+    'projects:storybookAction': async ({ workspace, action }) => {
+      componentsState.session = {
+        ...componentsState.session,
+        workspaceId: workspace,
+        state: action === 'stop' ? 'stopped' : 'running',
+        adopted: false,
+        readyAt: action === 'stop' ? null : makeStorybookSession().readyAt
+      }
+      return componentsState.session
+    },
+    // Кадр в фейке всегда через прокси: туннель требует живого агента.
+    'projects:storybookOpen': async () => ({
+      kind: 'proxy' as const,
+      url: '/api/preview?url=http%3A%2F%2Fm1.machine.internal%3A6006',
+      tunnelId: null,
+      note: 'Кадр идёт через мост машины: на медленном канале он собирается долго.'
+    }),
+    'projects:storybookCloseTunnel': async () => ({ closed: true }),
+    'projects:componentTicket': async ({ title, paths }) => {
+      componentsState.tickets.push({ title, paths })
+      return { taskId: 'task-new', taskNumber: 77, branch: 'CHAT-77', commitSha: 'e'.repeat(40), columnId: 'col-awaiting', readyToMerge: true }
     },
     'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setMachineSsh': async ({ id, agentId, sshHost, sshUser }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) Object.assign(m, { sshHost, sshUser }); return detail(p) },

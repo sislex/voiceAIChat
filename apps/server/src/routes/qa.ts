@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage)=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -30,15 +30,16 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       const run=db.startComponentQaRun(userId,req.params.projectId,req.params.taskId)
       if (run.status==='queued') launchComponentQa?.(run.id,userId)
       boardChanged?.(req.params.projectId)
+      qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa')
       return reply.code(run.status==='queued'||run.status==='running'?202:200).send(run)
     } catch(error) { return qaError(reply,error) }
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/cancel`,async(req,reply)=>{
-    try { cancelComponentQa?.(req.params.runId); const run=db.cancelComponentQaRun(uid(req),req.params.runId); boardChanged?.(req.params.projectId); return run }
+    try { cancelComponentQa?.(req.params.runId); const run=db.cancelComponentQaRun(uid(req),req.params.runId); boardChanged?.(req.params.projectId); qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa'); return run }
     catch(error) { return qaError(reply,error) }
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/complete`,async(req,reply)=>{
-    try { const run=db.completeComponentQaRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId); boardChanged?.(req.params.projectId); return run }
+    try { const run=db.completeComponentQaRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId); boardChanged?.(req.params.projectId); qaStageChanged?.(req.params.projectId,req.params.taskId,'component_qa'); return run }
     catch(error) { return qaError(reply,error) }
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/component/runs/:runId/fix`,async(req,reply)=>{
@@ -63,14 +64,14 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
   app.get<{Params:TaskParams}>(`${base}/integration`,async(req,reply)=>
     db.getIntegrationTestTaskState(uid(req),req.params.projectId,req.params.taskId)??reply.code(404).send({error:'task not found'}))
   app.post<{Params:TaskParams}>(`${base}/integration/runs`,async(req,reply)=>{
-    try{const userId=uid(req),run=db.startIntegrationTestRun(userId,req.params.projectId,req.params.taskId);if(run.status==='queued')launchIntegrationTests?.(run.id,userId);boardChanged?.(req.params.projectId);return reply.code(run.status==='queued'||run.status==='running'?202:200).send(run)}
+    try{const userId=uid(req),run=db.startIntegrationTestRun(userId,req.params.projectId,req.params.taskId);if(run.status==='queued')launchIntegrationTests?.(run.id,userId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return reply.code(run.status==='queued'||run.status==='running'?202:200).send(run)}
     catch(error){return qaError(reply,error)}
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/cancel`,async(req,reply)=>{
-    try{cancelIntegrationTests?.(req.params.runId);const run=db.cancelIntegrationTestRun(uid(req),req.params.runId);boardChanged?.(req.params.projectId);return run}catch(error){return qaError(reply,error)}
+    try{cancelIntegrationTests?.(req.params.runId);const run=db.cancelIntegrationTestRun(uid(req),req.params.runId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return run}catch(error){return qaError(reply,error)}
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/complete`,async(req,reply)=>{
-    try{const run=db.completeIntegrationTestRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId);boardChanged?.(req.params.projectId);return run}catch(error){return qaError(reply,error)}
+    try{const run=db.completeIntegrationTestRun(uid(req),req.params.projectId,req.params.taskId,req.params.runId);boardChanged?.(req.params.projectId);qaStageChanged?.(req.params.projectId,req.params.taskId,'integration_tests');return run}catch(error){return qaError(reply,error)}
   })
   app.post<{Params:TaskParams&{runId:string}}>(`${base}/integration/runs/:runId/fix`,async(req,reply)=>{
     try{
@@ -220,11 +221,17 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       const run=db.startQaStageRun(userId, req.params.projectId, req.params.taskId, stage)
       if (stage === 'automated_qa' && (run.status === 'queued' || run.status === 'running')) launchAutomatedQa?.(run.id, userId)
       boardChanged?.(req.params.projectId)
+      qaStageChanged?.(req.params.projectId, req.params.taskId, stage)
       return reply.code(202).send(run)
     } catch (error) { return qaError(reply, error) }
   })
   app.delete<{ Params: { runId: string } }>('/api/qa/runs/:runId', async (req, reply) => {
-    try { cancelAutomatedQa?.(req.params.runId); const run=db.cancelQaStageRun(uid(req), req.params.runId); if(run)boardChanged?.(run.projectId); return run ?? reply.code(404).send({ error: 'run not found' }) }
+    try {
+      cancelAutomatedQa?.(req.params.runId)
+      const run=db.cancelQaStageRun(uid(req), req.params.runId)
+      if (run) { boardChanged?.(run.projectId); qaStageChanged?.(run.projectId, run.taskId, run.stage) }
+      return run ?? reply.code(404).send({ error: 'run not found' })
+    }
     catch (error) { return qaError(reply, error) }
   })
   app.post<{ Params: { runId: string } }>('/api/qa/runs/:runId/retry', async (req, reply) => {
@@ -232,7 +239,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       const userId = uid(req)
       const run = db.retryQaStageRun(userId, req.params.runId)
       if (run?.stage === 'automated_qa' && (run.status === 'queued' || run.status === 'running')) launchAutomatedQa?.(run.id, userId)
-      if (run) boardChanged?.(run.projectId)
+      if (run) { boardChanged?.(run.projectId); qaStageChanged?.(run.projectId, run.taskId, run.stage) }
       return run ? reply.code(202).send(run) : reply.code(404).send({ error: 'run not found' })
     } catch (error) { return qaError(reply, error) }
   })
@@ -248,7 +255,11 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     return reply.type('image/png').send(readFileSync(file))
   })
   app.post<{ Params: { runId: string }; Body: { answer?: string } }>('/api/qa/runs/:runId/answer', async (req, reply) => {
-    try { const run=db.answerQaStageRun(uid(req), req.params.runId, req.body?.answer ?? ''); if(run)boardChanged?.(run.projectId); return run ?? reply.code(404).send({ error: 'run not found' }) }
+    try {
+      const run=db.answerQaStageRun(uid(req), req.params.runId, req.body?.answer ?? '')
+      if (run) { boardChanged?.(run.projectId); qaStageChanged?.(run.projectId, run.taskId, run.stage) }
+      return run ?? reply.code(404).send({ error: 'run not found' })
+    }
     catch (error) { return qaError(reply, error) }
   })
 }
