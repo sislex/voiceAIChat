@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
 updated: 2026-09-06
-checked: f332e8bc
+checked: 18513181
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/server.ts
@@ -120,6 +120,13 @@ manual_qa → awaiting_merge → merge`. Если ручной QA не обяз�
 переводит карточку из `manual_qa` в `awaiting_merge`; если обязателен — оставляет
 её ждать человека. `awaiting_merge` не обходится: оттуда запускается существующий
 merge-ран.
+
+Колонка `merge` обрабатывается тем же шагом координатора, что и `awaiting_merge`:
+карточка с упавшим merge-раном раньше не подхватывалась никем, и «Машина
+отключилась во время выполнения команды» оставляла её стоять навсегда (прод,
+CHAT-412). `db.startMergeRun` идемпотентен (возвращает активный ран), поэтому
+повторные тики безопасны; предохранители — `countTrailingFailedMergeRuns` против
+`autoPilotFixLimit` и пауза `retryAllowedNow` по `lastMergeRunFinishedAt`.
 
 Каждый координаторный перенос записывается в `qa_audit` с actor `automation` и
 payload `from/to`; отдельно журналируются ошибка, возврат, пропуск ручного QA и
