@@ -3,7 +3,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CROSS_READ_BUDGET, KNOWN_CROSS_WRITES, TABLE_OWNER, type RepoDomain } from './ownership.js'
+import { CROSS_READ_BUDGET, TABLE_OWNER, type RepoDomain } from './ownership.js'
 
 const dbDir = __dirname
 const reposDir = join(dbDir, 'repos')
@@ -44,14 +44,14 @@ describe('владение таблицами (db/ownership.ts)', () => {
     }
   })
 
-  it('пишет в чужие таблицы только то, что записано в KNOWN_CROSS_WRITES — и ровно то', () => {
+  it('в чужие таблицы не пишет никто — только через метод владельца', () => {
     for (const d of domains) {
       const actual = new Set<string>()
       for (const m of repoSource(d).matchAll(writeRe)) {
         const t = m[1].toLowerCase()
         if (ownerOf.get(t) !== d) actual.add(t)
       }
-      expect([...actual].sort(), `repos/${d}.ts: чужие записи`).toEqual([...(KNOWN_CROSS_WRITES[d] ?? [])].sort())
+      expect([...actual].sort(), `repos/${d}.ts пишет в чужие таблицы — добавь метод у владельца`).toEqual([])
     }
   })
 

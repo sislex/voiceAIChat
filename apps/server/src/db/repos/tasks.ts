@@ -768,9 +768,7 @@ export class TasksRepo extends BaseRepo {
       const max = this.db.prepare(
         `SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`
       ).get(projectId, args.columnId) as { m: number | null }
-      const seq = (this.db.prepare(
-        `UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`
-      ).get(projectId) as { task_seq: number }).task_seq
+      const seq = this.repos.projects.nextTaskSeq(projectId)
       this.db.prepare(
         `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at, auto_pilot)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`
@@ -2053,5 +2051,35 @@ export class TasksRepo extends BaseRepo {
     this.transitionAutoPilotTask(projectId, taskId, 'development', 'autopilot.return_to_development')
     this.repos.qa.recordAutoPilotEvent(projectId, taskId, 'autopilot.failure', { stage, runId, reason, bugTaskId: bug.id, cycle: cycles + 1, limit })
     return { decisionRequired: false, bugTaskId: bug.id }
+  }
+
+  /** Каскад удаления аккаунта: снять исполнителя со всех задач (зовётся из identity). */
+  unassignUser(userId: string): void {
+    this.db.prepare(`UPDATE tasks SET assignee = NULL WHERE assignee = ?`).run(userId)
+  }
+
+  /** Участник вышел из проекта — его задачи остаются без исполнителя (зовётся из projects.removeMember). */
+  unassignUserInProject(projectId: string, username: string, ts: number): void {
+    this.db.prepare(`UPDATE tasks SET assignee = NULL, updated_at = ? WHERE project_id = ? AND assignee = ?`).run(ts, projectId, username)
+  }
+
+  /** Снимок готовности успешного preparation-рана; null — рана нет или он не успешен. */
+  preparationReadiness(runId: string | null): DevelopmentReadiness | null {
+    if (!runId) return null
+    const prep = this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE id=? AND status='success'`).get(runId) as { readiness_json: string } | undefined
+    return prep ? parseJsonValue<DevelopmentReadiness | null>(prep.readiness_json, null) : null
+  }
+
+  /** CI дописывает в снимок готовности ссылки на автотесты; сам снимок — данные подготовки задачи. */
+  savePreparationReadiness(runId: string, readiness: DevelopmentReadiness): void {
+    this.db.prepare(`UPDATE task_preparation_runs SET readiness_json=? WHERE id=?`).run(JSON.stringify(readiness), runId)
+  }
+
+  /**
+   * Перенос задачи в колонку по семантике без истории и проверок членства — для
+   * системных переходов (старт merge-рана), где решение уже принято вызывающим.
+   */
+  placeTaskInSemanticColumn(projectId: string, taskId: string, semantic: KanbanColumnSemanticType, ts: number): void {
+    this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type=?), updated_at=? WHERE id=?`).run(projectId, semantic, ts, taskId)
   }
 }

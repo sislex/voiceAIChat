@@ -448,21 +448,19 @@ export class MachinesRepo extends BaseRepo {
       const owned = this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(id, userId)
       if (!owned) return false
 
-      // Обе таблицы имеют RESTRICT одновременно на agents и machine_storages,
-      // поэтому их необходимо очистить до каскадного удаления storage.
+      // chat_storage_bindings и conversation_workspaces имеют RESTRICT одновременно
+      // на agents и machine_storages, поэтому их необходимо очистить до каскадного
+      // удаления storage; привязки чатов чистит их владелец — chat.
       this.db.prepare(`DELETE FROM chat_storage_bindings WHERE machine_id = ?`).run(id)
-      this.db.prepare(`DELETE FROM conversation_workspaces WHERE machine_id = ?`).run(id)
+      this.repos.chat.clearConversationWorkspacesOfMachine(id)
 
       // Активные и nullable-привязки теряют машину, но история ран/checkout
       // сохраняется. Обязательные snapshot-id в merge_runs/task_repositories не
       // являются FK и намеренно остаются частью исторической записи.
       this.db.prepare(`DELETE FROM git_workspace_locks WHERE agent_id = ?`).run(id)
-      this.db.prepare(`UPDATE ci_workspaces SET agent_id = NULL WHERE agent_id = ?`).run(id)
-      this.db.prepare(`UPDATE ci_runs SET agent_id = NULL WHERE agent_id = ?`).run(id)
-      this.db.prepare(`UPDATE ci_test_runs SET agent_id = NULL WHERE agent_id = ?`).run(id)
-      this.db.prepare(`UPDATE conversations SET exec_target = NULL WHERE user_id = ? AND exec_target = ?`).run(userId, id)
-      this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`).run(id)
-      this.db.prepare(`UPDATE projects SET production_agent_id = NULL WHERE production_agent_id = ?`).run(id)
+      this.repos.ci.detachAgent(id)
+      this.repos.chat.clearConversationExecTargetForAgent(userId, id)
+      this.repos.projects.detachAgent(id)
 
       const settings = this.repos.settings.readSettings(userId)
       if (settings.execTarget === id || settings.defaultAgentId === id) {
@@ -710,5 +708,10 @@ export class MachinesRepo extends BaseRepo {
     const row = this.db.prepare(`SELECT holder, operation, expires_at FROM git_workspace_locks WHERE agent_id=? AND path=? AND expires_at > ?`)
       .get(agentId, path, this.now()) as { holder: string; operation: string; expires_at: number } | undefined
     return row ? { holder: row.holder, operation: row.operation, expiresAt: row.expires_at } : null
+  }
+
+  /** Каскад удаления аккаунта: все машины пользователя (project_machines уйдут по CASCADE). */
+  deleteAgentsOfUser(userId: string): void {
+    this.db.prepare(`DELETE FROM agents WHERE user_id = ?`).run(userId)
   }
 }

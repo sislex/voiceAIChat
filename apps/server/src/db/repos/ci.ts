@@ -1621,12 +1621,11 @@ export class CiRepo extends BaseRepo {
   recordIntegrationAutomationLinks(userId:string,runId:string,links:Array<{testId:string;path:string}>,commitSha:string):IntegrationTestRun {
     const run=this.getIntegrationTestRun(userId,runId)
     if(!run||run.status!=='running') throw new Error('integration test run is not running')
-    const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE id=? AND status='success'`).get(run.readinessRunId) as {readiness_json:string}|undefined
-    const readiness=prep?parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null):null
+    const readiness=this.repos.tasks.preparationReadiness(run.readinessRunId)
     if(!readiness) throw new Error('readiness snapshot missing')
     const now=this.now(), created=links.map((item)=>({testId:item.testId,path:item.path,updatedAt:now,commitSha}))
     readiness.testCases=readiness.testCases.map((testCase)=>({...testCase,automationLinks:[...testCase.automationLinks.filter((link)=>link.commitSha!==commitSha),...created.filter((link)=>link.testId===testCase.id)]}))
-    this.db.prepare(`UPDATE task_preparation_runs SET readiness_json=? WHERE id=?`).run(JSON.stringify(readiness),run.readinessRunId)
+    this.repos.tasks.savePreparationReadiness(run.readinessRunId,readiness)
     this.db.prepare(`UPDATE integration_test_runs SET commit_sha=?,test_cases_json=?,automation_links_json=? WHERE id=?`).run(commitSha,JSON.stringify(readiness.testCases),JSON.stringify(created),runId)
     this.db.prepare(`UPDATE ci_workspaces SET commit_sha=? WHERE id=(SELECT workspace_id FROM ci_runs WHERE id=?)`).run(commitSha,run.developmentRunId)
     return this.getIntegrationTestRun(userId,runId)!
@@ -1716,7 +1715,7 @@ export class CiRepo extends BaseRepo {
       const id = this.newId(), now = this.now()
       this.db.prepare(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_engine_id,llm_provider,llm_model,requested_llm_provider,requested_llm_model,llm_fallback_reason,stage,started_at,created_at,log)
         VALUES (?,?,?,'queued',?,?,'main',?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, projectId, taskId, userId, workspace.branch, workspace.commit_sha, agentId, engine.engine?.id ?? null, provider, model, requestedProvider, requestedModel || null, fallbackReason, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`)
-      this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'), updated_at=? WHERE id=?`).run(projectId, now, taskId)
+      this.repos.tasks.placeTaskInSemanticColumn(projectId, taskId, 'merge', now)
       return this.mapMergeRun(this.db.prepare(`SELECT * FROM merge_runs WHERE id=?`).get(id) as Record<string, unknown>)
     })()
   }
@@ -1817,5 +1816,12 @@ export class CiRepo extends BaseRepo {
   /** Существующие раны CI — для уборки файлов, которые каскад БД не трогает. */
   ciRunIds(): Set<string> {
     return new Set((this.db.prepare(`SELECT id FROM ci_runs`).all() as Array<{ id: string }>).map((row) => row.id))
+  }
+
+  /** Машина удаляется: активные и nullable-привязки теряют её, история ран сохраняется (зовётся из machines.deleteAgent). */
+  detachAgent(agentId: string): void {
+    this.db.prepare(`UPDATE ci_workspaces SET agent_id = NULL WHERE agent_id = ?`).run(agentId)
+    this.db.prepare(`UPDATE ci_runs SET agent_id = NULL WHERE agent_id = ?`).run(agentId)
+    this.db.prepare(`UPDATE ci_test_runs SET agent_id = NULL WHERE agent_id = ?`).run(agentId)
   }
 }
