@@ -119,3 +119,57 @@ describe('workspaceLabel', () => {
       .toBe('Копия проекта · MacBook')
   })
 })
+
+describe('способ открытия кадра', () => {
+  it('прямой адрес, когда Storybook отвечает на localhost браузера', async () => {
+    const api = createFakeApi()
+    const open = vi.fn()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+    render(<MakeProjectComponents projectId="p1" api={{ ...api, 'projects:storybookOpen': open }} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Запустить Storybook' }))
+    await userEvent.click(await screen.findByRole('button', { name: /UI\/Button/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Primary' }))
+
+    const frame = await screen.findByTitle('Стори компонента')
+    expect(frame.getAttribute('src')).toContain('http://127.0.0.1:6006/iframe.html')
+    // Прямой путь найден сам — сервер об открытии не спрашиваем.
+    expect(open).not.toHaveBeenCalled()
+    expect(await screen.findByText('кадр напрямую')).toBeTruthy()
+    fetchSpy.mockRestore()
+  })
+
+  it('без прямого доступа спрашивает сервер и уходит на мост машины', async () => {
+    const api = createFakeApi()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('нет доступа'))
+    render(<MakeProjectComponents projectId="p1" api={api} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Запустить Storybook' }))
+    await userEvent.click(await screen.findByRole('button', { name: /UI\/Button/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Primary' }))
+
+    const frame = await screen.findByTitle('Стори компонента')
+    expect(frame.getAttribute('src')).toContain('/api/preview?url=')
+    expect(await screen.findByText('кадр через мост машины')).toBeTruthy()
+    fetchSpy.mockRestore()
+  })
+
+  it('туннель закрывается, когда панель уходит с экрана', async () => {
+    const api = createFakeApi()
+    const closed: string[] = []
+    const withTunnel = {
+      ...api,
+      'projects:storybookOpen': async () => ({ kind: 'tunnel' as const, url: 'http://127.0.0.1:41234', tunnelId: 'tun-1', note: 'через локальный агент' }),
+      'projects:storybookCloseTunnel': async ({ tunnelId }: { id: string; tunnelId: string }) => { closed.push(tunnelId); return { closed: true } }
+    }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('нет доступа'))
+    const view = render(<MakeProjectComponents projectId="p1" api={withTunnel} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Запустить Storybook' }))
+    expect(await screen.findByText('кадр через локальный агент')).toBeTruthy()
+
+    view.unmount()
+    await waitFor(() => expect(closed).toEqual(['tun-1']))
+    fetchSpy.mockRestore()
+  })
+})
