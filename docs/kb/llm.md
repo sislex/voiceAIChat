@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-04
-checked: 1ffda784
+updated: 2026-09-06
+checked: af37f03e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -274,7 +274,11 @@ Usage нормализуется в `TurnUsage` и рассылается как
 
 **Режим вопроса (roadmap-4 п.4).** Если Make-разговор идёт в `plan` не из-за авто-плана (`isBigMakeRequest`), а по выбору пользователя, `turns.ts` добавляет хинт «## Режим вопроса» (ответь по существу, файлы не меняй, план не расписывай) вместо «Режима плана»; make MCP уходит с `ro=1`. В UI кнопка ❓ «Только спросить» в шапке Make (`askOnly`/`onAskOnlyChange`): `App` перед отправкой переключает разговор в «План» (`changeConversationMode`), а когда голосовое состояние возвращается в `idle`, восстанавливает прежний режим и сбрасывает переключатель.
 
-**Настройки проекта Make (roadmap-4 пп.6–7).** `.make/notes.md` (заметки, ≤ 20 000 символов) и `.make/settings.json` (`mode: balanced|designer|developer`, `stack: html|html-js|react|angular`, `uiKit: none|bootstrap`) хранятся в каталоге проекта, скрыты из `list` и переживают `reset`. Старые, отсутствующие и повреждённые значения stack/uiKit читаются как `html-js`/`none` без миграционной записи. `promptContext` в каждый ход добавляет строгие `MAKE_STACK_HINTS` и `MAKE_UI_KIT_HINTS`, затем mode hint и первые 4000 символов заметок. `make_check` предупреждает о JavaScript и `script` в stack `html`, а для `src/components/**/*.{jsx,tsx}` в React — об отсутствующей соседней story. Шаблоны помечены стеком, фильтруются UI и повторно проверяются сервером; применение создаёт снимок «До смены стека», а Bootstrap 5.3.3 накладывается на выбранный шаблон закреплёнными CDN URL (JS bundle не добавляется в `html`). Angular starter — standalone JIT с закреплёнными esm.sh imports и `@angular/compiler`; декораторы TypeScript транспилируются сервером. Инструмент `make_remember { note }` дописывает строку `- <дата>: <текст>`; REST `GET/PUT /api/make/:id/notes` и мосты `make:notes`/`make:setNotes` сохраняют единый расширенный payload.
+**Настройки проекта Make (roadmap-4 пп.6–7).** `.make/notes.md` (заметки, ≤ 20 000 символов) и `.make/settings.json` (`mode: balanced|designer|developer`, `stack: html|html-js|react|angular`, `uiKit: none|bootstrap`) хранятся в каталоге проекта, скрыты из `list` и переживают `reset`. Чтение в `apps/server/src/make/workspace.ts` нормализует отсутствующие, старые и повреждённые stack/uiKit в `html-js`/`none`, не переписывая исходный файл. Частичный `PUT /api/make/:id/notes` и мосты `make:notes`/`make:setNotes` используют единый расширенный payload и сохраняют не переданные поля; `make_remember { note }` по-прежнему дописывает строку `- <дата>: <текст>`.
+
+В `promptContext` каждого Make-хода всегда входят строгие `MAKE_STACK_HINTS` и `MAKE_UI_KIT_HINTS` из `packages/shared/src/make.ts`, после них — mode hint и первые 4000 символов заметок. `make_check` в `MakeWorkspaces.check` выдаёт предупреждения `html-no-script` для `.js`/`.mjs` и тегов `<script>` при stack `html`, а в React — `react-component-story`, если у `src/components/**/*.{jsx,tsx}` нет соседней story с тем же расширением.
+
+Шаблоны имеют совместимый stack (без поля считается `html-js`): UI фильтрует список, а `MakeWorkspaces.applyTemplate` повторно отклоняет несовместимый шаблон до изменения файлов. Применение всегда создаёт снимок «До смены стека», затем `applyMakeUiKit` накладывает Bootstrap 5.3.3 закреплёнными CDN URL; JS bundle не добавляется в stack `html`. Scaffold выбирается матрицей `makeScaffold(stack, uiKit)`. Angular starter — standalone JIT с закреплёнными esm.sh imports и `@angular/compiler`; серверный esbuild включает legacy-декораторы и транспилирует TypeScript для превью.
 
 **Откат правок хода (roadmap-2 п.2).** Снимок «До правок», который `makeMcp` делает перед первой мутацией хода, регистрируется в `MakeHub.rememberTurnSnapshot(turn, snapshotId)`; `turns.ts` передаёт в MCP-URL тот же `turnId`, что и внутри хода, и при сборке `merged`-meta спрашивает `deps.makeHub.turnSnapshot(turnId)` → `TurnMeta.makeSnapshotId`. `ChatColumn` у ответа с этим полем показывает «Откатить правки» (проп `onMakeRestore`, `App` даёт его только в маршруте `/make`): подтверждение через `useConfirm`, затем `make:restore` — текущее состояние перед откатом сохраняется снимком «Перед восстановлением снимка». Ход без записей файлов кнопки не получает.
 
