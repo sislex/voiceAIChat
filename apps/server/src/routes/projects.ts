@@ -7,6 +7,7 @@ import type { AutomatedQaCheckResult } from '@voicechat/shared'
 import {
   REST,
   type Board,
+  type BoardStatuses,
   type KanbanColumn,
   type ProjectDetail,
   type ProjectSummary,
@@ -559,13 +560,25 @@ export function registerProjectRoutes(
 
   // --- Доска -----------------------------------------------------------
 
+  // Первая фаза: колонки и скелет карточек — доска рисуется сразу, состояние
+  // процессов клиент забирает следом (`/board/statuses`).
   // includeCompleted=1 — вместе с давно завершёнными задачами (по умолчанию их
   // на доске нет, см. настройку проекта «сколько держать завершённые»).
   app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
     '/api/projects/:id/board',
     async (req, reply): Promise<Board | FastifyReply> => {
-      const board = db.getBoard(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      const board = db.getBoardSkeleton(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
       return board ?? nf(reply)
+    }
+  )
+
+  // Вторая фаза: чат карточки, merge, подготовка, последний ран и сводки CI.
+  // Набор задач тот же, что у первой фазы, — включая фильтр по завершённым.
+  app.get<{ Params: { id: string }; Querystring: { includeCompleted?: string } }>(
+    '/api/projects/:id/board/statuses',
+    async (req, reply): Promise<BoardStatuses | FastifyReply> => {
+      const statuses = db.getBoardStatuses(uid(req), req.params.id, { includeCompleted: queryFlag(req.query.includeCompleted) })
+      return statuses ?? nf(reply)
     }
   )
 

@@ -599,6 +599,8 @@ export interface IpcInvokeMap {
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
   'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
+  /** Состояние карточек доски: вторая фаза, приезжает следом за скелетом. */
+  'board:getStatuses': { arg: { id: string; includeCompleted?: boolean }; result: import('./projects').BoardStatuses }
   /** Вид доски человека в проекте (фильтры и раскладка) — хранится на сервере. */
   'board:getView': { arg: { id: string }; result: import('./projects').BoardView }
   /** Патч вида доски: присланные поля поверх сохранённых, в ответе — весь вид. */
@@ -1474,6 +1476,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:setDefaultMachine',
   'projects:setUserDefaultMachine',
   'board:get',
+  'board:getStatuses',
   'board:getView',
   'board:saveView',
   'columns:create',

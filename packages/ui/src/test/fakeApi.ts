@@ -18,7 +18,7 @@ import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, TaskDesignLink, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, BoardStatuses, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, TaskDesignLink, WorkItemDefaultSkills } from '@shared/projects'
 import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS, DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@shared/projects'
 
 
@@ -256,20 +256,41 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     machines: p.machines.map((m) => ({ ...m })),
     defaultAgentId: p.defaultAgentId
   })
-  const boardOf = (pid: string, includeCompleted?: boolean): Board => {
+  const boardTasksOf = (pid: string, includeCompleted?: boolean): Task[] => {
     // Как на сервере: давно завершённые задачи в снапшот не попадают.
     const retention = includeCompleted ? null : projects.find((p) => p.id === pid)?.doneRetentionDays ?? null
-    return {
-      columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
-      tasks: tasks
-        .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, nowMs))
-        .sort((a, b) => {
-          if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
-          return compareTasksInColumn(a, b, columns.find((c) => c.id === a.columnId)?.semanticType ?? 'custom')
-        })
-        .map((t) => ({ ...t }))
-    }
+    return tasks
+      .filter((t) => t.projectId === pid && !isCompletedHidden(t.doneAt, retention, nowMs))
+      .sort((a, b) => {
+        if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
+        return compareTasksInColumn(a, b, columns.find((c) => c.id === a.columnId)?.semanticType ?? 'custom')
+      })
   }
+  const boardOf = (pid: string, includeCompleted?: boolean): Board => ({
+    columns: columns.filter((c) => c.projectId === pid).sort((a, b) => a.position - b.position).map((c) => ({ ...c })),
+    tasks: boardTasksOf(pid, includeCompleted).map((t) => ({ ...t }))
+  })
+  /** Вторая фаза доски: как на сервере — состояние карточек отдельным запросом. */
+  const boardStatusesOf = (pid: string, includeCompleted?: boolean): BoardStatuses => ({
+    tasks: boardTasksOf(pid, includeCompleted).map((t) => ({
+      taskId: t.id,
+      chatId: t.chatId ?? null,
+      mergeSourceBranch: t.mergeSourceBranch ?? null,
+      mergeSourceSha: t.mergeSourceSha ?? null,
+      activeMergeRunId: t.activeMergeRunId ?? null,
+      latestMergeRunId: t.latestMergeRunId ?? null,
+      activeMergeStatus: t.activeMergeStatus ?? null,
+      mergePermitted: t.mergePermitted ?? false,
+      mergeMachineBound: t.mergeMachineBound ?? false,
+      mergedSha: t.mergedSha ?? null,
+      mergedSourceSha: t.mergedSourceSha ?? null,
+      taskPreparationRunId: t.taskPreparationRunId ?? null,
+      taskPreparationStatus: t.taskPreparationStatus ?? null,
+      taskPreparationError: t.taskPreparationError ?? null,
+      latestRunResult: t.latestRunResult ?? null
+    })),
+    ciRuns: []
+  })
 
   function makeConversation(title: string): Conversation {
     const ts = tick()
@@ -1378,6 +1399,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return result
     },
     'board:get': async ({ id, includeCompleted }) => boardOf(id, includeCompleted),
+    'board:getStatuses': async ({ id, includeCompleted }) => boardStatusesOf(id, includeCompleted),
     'board:getView': async ({ id }) => ({ ...DEFAULT_BOARD_VIEW, ...(boardViews.get(id) ?? {}) }),
     'board:saveView': async ({ id, view }) => {
       // Как на сервере: патч поверх сохранённого, в ответе — весь вид.
