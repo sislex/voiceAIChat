@@ -31,7 +31,7 @@ import {
   filterSecurityGroup
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { MachinesService } from '../machines/service.js'
 import { requireAdmin, uid } from '../users/auth.js'
 import { updateAgentOnMachine } from './agents.js'
 import type { SessionHub } from '../users/sessionHub.js'
@@ -210,7 +210,7 @@ async function probeEngineHealth(engine: { id: string; kind: LlmEngineKind; base
 export function registerAdminRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
-  registry: AgentRegistry,
+  registry: MachinesService,
   deployTrigger?: DeployTrigger,
   /** Расход диска Make по пользователям и он же в формате Prometheus (make/service.ts). */
   make?: { adminStats(): Promise<AdminMakeStats>; metrics(): Promise<string> },

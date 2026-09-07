@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: a994f3ac
+checked: e8674fa1
 areas:
   - apps/server/src
 ---
@@ -342,6 +342,21 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 общий с Make — `@voicechat/shared` (`internalRpc.ts`). Интеграционный тест границы —
 `kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
 идут через `UserFrameHub`.
+
+## Машины: модуль `machines/module.ts` и порт `MachinesService` (2026-09-07)
+
+Реестр онлайн-подключений (`agents/registry.ts`), WebSocket компаньон-агентов `/agent`, REST машин и
+установщиков (`routes/agents.ts`), политика команд, каталог ChatAI по умолчанию, журнал команд, watchdog и
+перенос хранилищ собираются одной функцией `createMachinesModule(deps)` (`apps/server/src/machines/module.ts`);
+наружу модуль отдаёт `{ machines, commandGate }`. Потребители — сессия, ходы, `mcp/remoteBashMcp`,
+`mcp/consoleMcp`, git-панель, storybook-сессии, превью, админка, канбан (через `KanbanMachines`), Make (через
+`MakeCore.machineFs`) — типизированы портом **`MachinesService`** (`machines/service.ts`): публичная
+поверхность реестра без `register`/`unregister`; `AgentRegistry` удовлетворяет ему структурно. Синхронные
+чтения (`isOnline`, `nameOf`, `versionOf`, `telemetryOf`, `ptyLive`, …) остаются синхронными — в режиме
+отдельного процесса машин их будет отдавать зеркало. Полный лог долгой команды из чата модуль пишет в
+artifacts привязанного хранилища через обратный вызов ядра `chatArtifacts` (хранилища разговора — знание
+ядра). Гейт `machines/boundary.test.ts`: `server.ts` не собирает машины сам, `AgentRegistry` импортируют
+только модуль машин и его части. План выделения в отдельный процесс — `docs/plans/machines-service.md`.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
