@@ -1499,6 +1499,98 @@ export class TasksRepo extends BaseRepo {
     return row ? TasksRepo.toTaskRunResult(row) : null
   }
 
+  private mapTaskAttachment(row: Record<string, unknown>): TaskAttachment {
+    return {
+      id: String(row.id), taskId: String(row.task_id), scope: String(row.scope) as TaskAttachment['scope'],
+      name: String(row.name), size: Number(row.size), mimeType: String(row.mime_type),
+      checksum: String(row.checksum), status: row.status === 'missing' ? 'missing' : 'ready',
+      createdBy: String(row.created_by), createdAt: Number(row.created_at)
+    }
+  }
+
+  taskAttachments(userId: string, projectId: string, taskId: string, scope: 'source' | 'rework_draft' = 'source'): TaskAttachment[] | null {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    return (this.db.prepare('SELECT * FROM task_attachments WHERE task_id=? AND scope=? ORDER BY created_at,id').all(taskId, scope) as Array<Record<string, unknown>>)
+      .map((row) => this.mapTaskAttachment(row))
+  }
+
+  createTaskAttachment(userId: string, projectId: string, taskId: string, input: { name: string; mimeType?: string; dataBase64: string; scope?: 'source' | 'rework_draft' }): TaskAttachment {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) throw new Error('Задача не найдена')
+    const data = Buffer.from(input.dataBase64, 'base64')
+    if (!data.length || data.length > 20 * 1024 * 1024) throw new Error('Размер вложения должен быть от 1 байта до 20 МБ')
+    const name = input.name.replace(/\\/g, '/').split('/').pop()?.trim().slice(0, 255) || 'file'
+    const id = this.newId()
+    const createdAt = this.now()
+    this.db.prepare('INSERT INTO task_attachments (id,task_id,scope,name,size,mime_type,storage_key,checksum,data_base64,status,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, taskId, input.scope ?? 'source', name, data.length, input.mimeType || 'application/octet-stream', this.newId(), createHash('sha256').update(data).digest('hex'), input.dataBase64, 'ready', userId, createdAt)
+    return this.taskAttachments(userId, projectId, taskId, input.scope ?? 'source')!.find((item) => item.id === id)!
+  }
+
+  deleteTaskAttachment(userId: string, projectId: string, taskId: string, attachmentId: string): boolean {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return false
+    return this.db.prepare("DELETE FROM task_attachments WHERE id=? AND task_id=? AND scope IN ('source','rework_draft')").run(attachmentId, taskId).changes > 0
+  }
+
+  taskReworkCycles(userId: string, projectId: string, taskId: string): TaskReworkCycle[] | null {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    const cycles = this.listTaskReworkCycles(userId, projectId, taskId)
+    return cycles.map((cycle) => {
+      const persistent = (this.db.prepare('SELECT * FROM task_attachments WHERE rework_cycle_id=? ORDER BY created_at,id').all(cycle.id) as Array<Record<string, unknown>>).map((row) => this.mapTaskAttachment(row))
+      return { ...cycle, attachments: persistent.length ? persistent : cycle.attachments }
+    })
+  }
+
+  taskReworkCycleByIdempotencyKey(userId: string, projectId: string, taskId: string, key: string): TaskReworkCycle | null {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    const row = this.db.prepare('SELECT id FROM task_rework_cycles WHERE task_id=? AND idempotency_key=?').get(taskId, key) as { id: string } | undefined
+    return row ? this.taskReworkCycles(userId, projectId, taskId)!.find((item) => item.id === row.id) ?? null : null
+  }
+
+  createPersistentTaskReworkCycle(userId: string, projectId: string, taskId: string, key: string, input: { description: string; criteria: string[]; makeSources: Array<{ conversationId: string; mode: 'whole_project' | 'files'; paths: string[] }>; attachmentIds: string[] }): { cycle: TaskReworkCycle; task: Task; replayed: boolean } {
+    if (!key.trim()) throw new Error('Idempotency-Key required')
+    if (!input.description.trim()) throw new Error('Описание доработки обязательно')
+    return this.db.transaction(() => {
+      const task = this.getTask(projectId, taskId)
+      if (!this.repos.projects.isProjectMember(userId, projectId) || !task) throw new Error('Задача не найдена')
+      const replay = this.taskReworkCycleByIdempotencyKey(userId, projectId, taskId, key)
+      if (replay) return { cycle: replay, task, replayed: true }
+      if (this.latestTaskRunResult(taskId)?.outcome === 'active') throw new Error('TASK_ACTIVE_RUN')
+      const preparation = this.repos.projects.getColumnIdBySemantic(projectId, 'preparation')
+      if (!preparation) throw new Error('PREPARATION_COLUMN_MISSING')
+      const makeSources = input.makeSources.map((source) => {
+        this.assertTaskDesignSource(userId, projectId, taskId, source.conversationId)
+        const paths = [...new Set(source.paths.map((path) => {
+          const normalized = normalizeMakePath(path)
+          if (!normalized || normalized !== path) throw new Error('Неканонический путь Make-файла')
+          return normalized
+        }))].sort()
+        if (source.mode === 'whole_project' && paths.length) throw new Error('У всего Make-проекта paths должен быть пуст')
+        if (source.mode === 'files' && !paths.length) throw new Error('Выберите файлы Make-проекта')
+        const meta = this.projectDesignSources(userId, projectId)!.find((item) => item.conversationId === source.conversationId)!
+        return { conversationId: source.conversationId, title: meta.title, owner: meta.owner, mode: source.mode, paths }
+      }).sort((a, b) => a.conversationId.localeCompare(b.conversationId))
+      const attachmentIds = [...new Set(input.attachmentIds)]
+      if (attachmentIds.length) {
+        const placeholders = attachmentIds.map(() => '?').join(',')
+        const count = Number((this.db.prepare(`SELECT COUNT(*) n FROM task_attachments WHERE task_id=? AND scope='rework_draft' AND id IN (${placeholders})`).get(taskId, ...attachmentIds) as { n: number }).n)
+        if (count !== attachmentIds.length) throw new Error('Вложение черновика не найдено')
+      }
+      const sequence = Number((this.db.prepare('SELECT COALESCE(MAX(sequence),0)+1 n FROM task_rework_cycles WHERE task_id=?').get(taskId) as { n: number }).n)
+      const id = this.newId()
+      const createdAt = this.now()
+      const criteria = input.criteria.map((item) => item.trim()).filter(Boolean)
+      const payloadHash = createHash('sha256').update(JSON.stringify({ description: input.description.trim(), criteria, makeSources, attachmentIds })).digest('hex')
+      this.db.prepare('INSERT INTO task_rework_cycles (id,project_id,task_id,sequence,description,criteria_json,make_sources_json,created_by,created_at,idempotency_key,payload_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, projectId, taskId, sequence, input.description.trim(), JSON.stringify(criteria), JSON.stringify(makeSources), userId, createdAt, key, payloadHash)
+      if (attachmentIds.length) {
+        const placeholders = attachmentIds.map(() => '?').join(',')
+        this.db.prepare(`UPDATE task_attachments SET scope='rework_cycle',rework_cycle_id=? WHERE id IN (${placeholders})`).run(id, ...attachmentIds)
+      }
+      this.db.prepare('UPDATE tasks SET column_id=?,updated_at=? WHERE id=? AND project_id=?').run(preparation, this.now(), taskId, projectId)
+      return { cycle: this.taskReworkCycles(userId, projectId, taskId)!.find((item) => item.id === id)!, task: this.getTask(projectId, taskId)!, replayed: false }
+    })()
+  }
+
   listTaskReworkCycles(userId: string, projectId: string, taskId: string): TaskReworkCycle[] {
     if (!this.repos.projects.isProjectMember(userId, projectId)) return []
     const task = this.db.prepare('SELECT id FROM tasks WHERE id = ? AND project_id = ?').get(taskId, projectId)
@@ -1510,8 +1602,9 @@ export class TasksRepo extends BaseRepo {
       description: String(row.description), criteria: JSON.parse(String(row.criteria_json)),
       makeSources: JSON.parse(String(row.make_sources_json)),
       attachments: (attachments.all(row.id) as Array<Record<string, unknown>>).map((file) => ({
-        id: String(file.upload_id), name: String(file.name), mimeType: String(file.mime_type),
-        size: Number(file.size), status: 'ready' as const
+        id: String(file.upload_id), taskId: String(row.task_id), scope: 'rework_cycle' as const,
+        name: String(file.name), mimeType: String(file.mime_type), size: Number(file.size),
+        checksum: '', status: 'ready' as const, createdBy: String(row.created_by), createdAt: Number(row.created_at)
       })),
       ...(row.implemented_result ? { implementedResult: String(row.implemented_result) } : {}),
       createdBy: String(row.created_by), createdAt: Number(row.created_at),
@@ -1524,7 +1617,7 @@ export class TasksRepo extends BaseRepo {
     projectId: string,
     taskId: string,
     input: CreateTaskReworkCycleInput,
-    files: Array<TaskAttachment & { uploadId: string }>
+    files: Array<{ id: string; uploadId: string; name: string; mimeType: string; size: number; status: 'ready' }>
   ): TaskReworkCycle {
     const description = input.description.trim()
     if (!description) throw new Error('validation_error')
