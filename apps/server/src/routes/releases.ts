@@ -4,7 +4,7 @@ import { uid } from '../users/auth.js'
 import { randomUUID } from 'node:crypto'
 import { ManagedEnvironmentResolver } from '../releases/managedEnvironmentResolver.js'
 import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from '../releases/releaseManager.js'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { KanbanMachines } from '../kanban/core.js'
 import { materializeProjectMachine } from '../projects/materialize.js'
 import { releaseCiTarget, releaseProductionTarget } from '../releases/targets.js'
 
@@ -15,7 +15,7 @@ const nf=(reply:FastifyReply):FastifyReply=>reply.code(404).send({error:'not fou
 const forbidden=(reply:FastifyReply):FastifyReply=>reply.code(403).send({error:'forbidden'})
 const bad=(reply:FastifyReply,error:unknown):FastifyReply=>reply.code(400).send({error:error instanceof Error?error.message:String(error)})
 
-export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,releases:ReleaseManager,resolver?:ManagedEnvironmentResolver,agents?:AgentRegistry):void {
+export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,releases:ReleaseManager,resolver?:ManagedEnvironmentResolver,agents?:KanbanMachines):void {
   const managed=resolver??new ManagedEnvironmentResolver(db,releases)
   const confirmations=new Map<string,{projectId:string;expiresAt:number}>()
   const project=async (req:FastifyRequest,projectId:string)=>await db.projects.getProject(uid(req),projectId)

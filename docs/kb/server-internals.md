@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: c1ace3e4
+checked: 40bd5a58
 areas:
   - apps/server/src
 ---
@@ -293,21 +293,36 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 **Auth-мок (roadmap-4 п.32).** Файл мока с полем `$auth` обрабатывает `applyAuthMock` (`@shared/makeMock`): `{ users: [{ username|login|email, password, … }], cookie? }` — POST сравнивает учётные данные, отвечает 200 с `user` (без пароля, слитым в объектное `$body`) и заголовком `Set-Cookie: vc_mock_session=<login>; Path=/; SameSite=Lax`, иначе 401 (не POST — 405); `{ require: true }` — без cookie 401, с ней в объектное `$body` подставляется `user: { username }`; `{ logout: true }` — 204 с `Max-Age=0`. `resolveMock` получил параметр `cookieHeader`, все три маршрута моков (GET превью, не-GET превью, публикация) передают `req.headers.cookie`; `sendMock` пробрасывает `set-cookie` как любой заголовок ответа. Это учебная имитация входа для прототипов, не защита данных.
 
 
-## Канбан-кластер собирается в `kanban/module.ts` (2026-09-07)
+## Канбан-кластер: `kanban/module.ts`, порты `KanbanCore` и `KanbanService` (2026-09-07)
 
 Проекты, доска, подготовка задач, раны CI (`ci/runManager.ts`, `ci/modelHooks.ts`), QA-стадии, релизы,
-мерж-раны, автопилот, запуск ранов из MCP канбана и оркестрация планов собираются одной функцией
-`createKanbanModule(deps)` (`apps/server/src/kanban/module.ts`); `buildServer` зовёт её один раз и
-получает `KanbanModule` (`ciRunManager`, `orchestrationManager`, `releaseManager`, `mergeRunManager`,
-`featurePreviews`, `automatedQaRunner`, `launchTaskPreparation`, `launchQaPreparation`, `runLaunchers`).
-Всё, что кластер берёт у ядра, перечислено в `KanbanDeps` (26 полей: `db`, `agentRegistry`, LLM-клиенты,
-`kb`/`kbUsage`, `uploads`, `make.service`, шины `boardHub`/`notificationHub`, исполнитель команд, адреса
-MCP, `browserRunner`, `mailer`, …) — снимок ключей держит гейт `kanban/boundary.test.ts`: новая зависимость
-— осознанное решение, потому что каждая станет методом порта `KanbanCore` или RPC к ядру
-(`docs/plans/kanban-service.md`). Чистые функции подготовки (`parseQaPreparationResponse`,
-`taskPreparationModel`, `taskPreparationFailure`) — `kanban/preparation.ts`, из `server.ts` реэкспорт.
-В `server.ts` из этого блока остались git-панель (`GitWorkspaceService`), Storybook/компоненты проекта и
-watchdog машин — они не канбан.
+мерж-раны, автопилот, MCP канбана и CI-команд, оркестрация планов собираются одной функцией
+`createKanbanModule(deps)` (`apps/server/src/kanban/module.ts`); `buildServer` зовёт её один раз. Граница
+описана двумя портами (`docs/plans/kanban-service.md`):
+
+- **`KanbanCore`** (`kanban/core.ts`) — что кластер берёт у *процесса* ядра: `machines` (узкий фасад
+  `KanbanMachines` — `isOnline`, `exec`/`execStream`, `fs*`, `gitAccess`, тоннели; `AgentRegistry`
+  удовлетворяет ему структурно), `kb` (файловый индекс базы знаний), `uploads.get`, `widgets` (снимок экрана
+  виджета и мост UI для mcp__kanban__*), `ensureProjectMainCurrent`. Локальная реализация —
+  `kanbanBridge/localCore.ts`. Доменные данные чужих доменов (`db.chat`, `db.identity`, `db.machines`, …)
+  кластер читает сам: отдельный сервис канбана будет работать на той же базе.
+- **`KanbanService`** (`kanban/service.ts`) — что ядро берёт у кластера: `runs` (лента кадров ранов и
+  снимок для `ci.subscribe`), `board` (`changed` для соседей вроде Make и подписки доски, подготовки,
+  QA-стадий, репозиториев задач, очереди улучшений), `notifications`. `BoardHub`/`NotificationHub`
+  живут внутри модуля; `server.ts` обращается только к `kanban.service.*`.
+
+Кадры самого ядра (журнал команд машины `machine.command`, тревоги watchdog, снимки браузерной проверки
+`ci.log`) идут через шину `UserFrameHub` (`frameHub.ts`), а не через ленту канбана; WS-сессия подписана
+на обе (`SessionDeps.frames`, `SessionDeps.ci`). Остальные зависимости кластера (`KanbanDeps`, 20 полей:
+`db`, LLM-клиенты, `kbUsage`, `make.service`, адреса MCP, `mcpSecret`, `browserRunner`, `mailer`, тестовый
+`ciExecutor`, …) — клиенты и настройки, которые отдельный процесс поднимет из своего env.
+
+Гейт `kanban/boundary.test.ts` держит: маркеры сборки только в модуле, снимок ключей `KanbanDeps`,
+аллоулист импортов-значений кластера из ядра (`db/database`, `kb/*`, `users/auth`, `llm/remoteClient`,
+`manifests`, `mcp/previewMcp`), запрет типов состояния ядра вне `kanban/core.ts` и структурную проверку
+фасада машин. Чистые функции подготовки (`parseQaPreparationResponse`, `taskPreparationModel`,
+`taskPreparationFailure`) — `kanban/preparation.ts`, из `server.ts` реэкспорт. В `server.ts` из этого
+блока остались git-панель (`GitWorkspaceService`), Storybook/компоненты проекта и watchdog машин.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 

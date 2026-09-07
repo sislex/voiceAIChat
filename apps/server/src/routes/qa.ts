@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { QA_RUN_STAGES, type AcceptanceCriterionSnapshot, type QaRunStage } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import type { UploadStore } from '../uploads.js'
+import type { KanbanUploads } from '../kanban/core.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { uid } from '../users/auth.js'
 
@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => Promise<boolean>, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage)=>void): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: KanbanUploads, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => Promise<boolean>, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage)=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = await db.qa.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)

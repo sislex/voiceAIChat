@@ -17,7 +17,7 @@ import type { TtsClient } from './tts/client/types.js'
 import { createTtsSession, type TtsSession } from './tts/ttsSession.js'
 import { watchTranscript } from './cc/ccSessions.js'
 import { watchCxTranscript } from './codex/codexSessions.js'
-import type { CiRunManager } from './ci/runManager.js'
+import type { KanbanRunFeed } from './kanban/service.js'
 import type { KbUsageTracker } from './kb/usage.js'
 import type { AuthStatusState } from './auth/statusState.js'
 
@@ -73,7 +73,10 @@ export interface SessionDeps {
   /** Релей живого PTY-терминала по машине (отдельно от однострочного exec). */
   pty?: PtyRelay
   /** Процесс-глобальный менеджер CI-ранов (события переживают reconnect). */
-  ci?: CiRunManager
+  /** Лента кадров ранов канбана (порт `KanbanService.runs`). */
+  ci?: KanbanRunFeed
+  /** Шина кадров самого ядра: журнал команд машины, watchdog, снимки проверки. */
+  frames?: { subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void }
   /** Телеметрия обращений к базе знаний (кадры kb.usage своему пользователю). */
   kbUsage?: KbUsageTracker
   /** Единый per-user auth-снимок и изменения CLI. */
@@ -126,6 +129,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
   let unsubTurns: (() => void) | null = null
   let unsubCi: (() => void) | null = null
+  let unsubFrames: (() => void) | null = null
   let unsubKbUsage: (() => void) | null = null
   let unsubPreview: (() => void) | null = null
   let unsubMake: (() => void) | null = null
@@ -161,6 +165,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
       await deps.turns.resumeQueues(deps.user.name)
       if (deps.ci) {
         unsubCi = deps.ci.subscribe((m, ownerUserId) => {
+          if (ownerUserId === deps.user.name) ctx.send(m)
+        })
+      }
+      if (deps.frames) {
+        unsubFrames = deps.frames.subscribe((m, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(m)
         })
       }
@@ -448,6 +457,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubTurns = null
       unsubCi?.()
       unsubCi = null
+      unsubFrames?.()
+      unsubFrames = null
       unsubKbUsage?.()
       unsubKbUsage = null
       unsubPreview?.()
