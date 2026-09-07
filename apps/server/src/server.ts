@@ -28,8 +28,7 @@ import { registerAdminRoutes } from './routes/admin.js'
 
 
 import { FeaturePreviewManager } from './preview/manager.js'
-import { type CiRunManager } from './ci/runManager.js'
-import { AgentCommandExecutor, shellQuote } from './ci/executor.js'
+import { shellQuote } from './ci/executor.js'
 
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
@@ -42,9 +41,8 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 
 
-import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
+import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
-import { BoardHub, NotificationHub } from './projects/boardHub.js'
 import { registerAuth, resolveActiveUser, uid } from './users/auth.js'
 import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
 import { createAgentWatchdog } from './agents/watchdog.js'
@@ -84,11 +82,13 @@ import { ImageStudioStore } from './images/studio.js'
 import { registerImageStudioRoutes } from './routes/imageStudio.js'
 import { llmImageStudioGenerator } from './llm/imageStudioGenerator.js'
 
-import { registerKanbanMcp, KANBAN_MCP_PATH } from './mcp/kanbanMcp.js'
+import { KANBAN_MCP_PATH } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
 import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
 
 import { createKanbanModule } from './kanban/module.js'
+import { createLocalKanbanCore } from './kanbanBridge/localCore.js'
+import { UserFrameHub } from './frameHub.js'
 export { parseQaPreparationResponse, taskPreparationModel, taskPreparationFailure } from './kanban/preparation.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@voicechat/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
@@ -557,7 +557,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (token) => remoteFileBroker.get(token),
     commandGate
   )
-  registerCiCommandsMcp(app, mcpSecret)
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
   registerConsoleMcp(app, agentRegistry, mcpSecret)
@@ -567,8 +566,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // точка, где Make получает доступ к данным чата, канбана и машин.
   const makeCore = new LocalMakeCore({
     db,
-    // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
-    boardChanged: (projectId) => boardHub.emit(projectId),
+    // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
+    boardChanged: (projectId) => kanban.service.board.changed(projectId),
     // Чтение репозитория проекта: файловый мост машины только на чтение —
     // Make копирует файлы к себе, но в общую копию проекта не пишет.
     machineFs: {
@@ -595,21 +594,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (opts.config.internalToken) {
     registerInternalRoutes(app, { token: opts.config.internalToken, makeCore, authenticate, ...(makeRemote ? { makeHub: make.hub } : {}) })
   }
-  // Канбан (mcp__kanban__*): доска, карточки, настройки, машины и раны проекта
-  // того разговора, в котором идёт ход. Снимок «что открыто» кладёт сюда turns.ts.
+  // Снимок «что открыто» у виджета и мост в браузер: состояние ядра, которое mcp__kanban__* читает через
+  // порт `KanbanCore.widgets`; сам MCP канбана регистрирует кластер.
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
-  registerKanbanMcp(app, {
-    db,
-    agents: agentRegistry,
-    contexts: widgetContexts,
-    ui: widgetUiRelay,
-    boardChanged: (projectId) => boardHub.emit(projectId),
-    orchestration: () => orchestrationManager,
-    // Менеджеры ранов создаются ниже по файлу, поэтому читаются лениво — в
-    // момент вызова инструмента они уже есть.
-    runs: async () => kanbanRunLaunchers
-  }, mcpSecret)
   // Студия картинок: галерея на разговор + генерация/правка через LLM — тем же
   // способом, что ретушь (модель сохраняет PNG и показывает fenced-блоком).
   const imageStudioStore = new ImageStudioStore(join(opts.config.dataDir, 'image-studio'))
@@ -649,8 +637,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
   // FeaturePreviewManager создаётся ниже по файлу — previewMcp получает его лениво.
   const featurePreviewsRef: { current: FeaturePreviewManager | null } = { current: null }
-  // CiRunManager создаётся ниже по файлу; лента кадров получает его лениво.
-  const ciRunManagerRef: { current: CiRunManager | null } = { current: null }
+  // Шина кадров ядра для WS-сессий (журнал команд машины, watchdog, снимки проверки).
+  const frames = new UserFrameHub()
 
   /**
    * Кадр браузерной проверки уходит в ленту активного рана задачи ссылкой на
@@ -667,7 +655,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const saved = saveBrowserShot(browserShotsRoot, run.id, png)
     if (!saved) return
     const line = await db.ci.appendCiLog(run.id, step.id, 'system', `Снимок страницы проверки: ${saved.url}\n`)
-    ciRunManagerRef.current?.publish({ t: 'ci.log', runId: run.id, line }, run.triggeredBy)
+    frames.publish({ t: 'ci.log', runId: run.id, line }, run.triggeredBy)
   }
 
   /**
@@ -856,8 +844,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
-  const boardHub = new BoardHub()
-  const notificationHub = new NotificationHub()
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = async (): Promise<WhisperModel> => (await db.settings.getSettings('admin')).whisperModel
@@ -917,8 +903,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
   const defaultStorageDeps = { db, registry: agentRegistry, log: (m: string, extra?: Record<string, unknown>) => app.log.info(extra ?? {}, m) }
   // Журнал команд машины: пишем всё, что прошло через registry.exec (консоль, чат, системные вызовы).
-  // Публикация в WS владельцу (ciRunManager создаётся ниже — привязываем лениво).
-  let publishToUser: ((message: ServerMessage, userId: string) => void) | null = null
+  // Публикация в WS владельцу — шиной кадров ядра.
+  const publishToUser = (message: ServerMessage, userId: string): void => frames.publish(message, userId)
   agentRegistry.onCommand(async (rec) => {
     const { output, ...record } = rec
     const userId = record.userId || (await db.machines.agentOwnerId(record.machineId) ?? '')
@@ -950,7 +936,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         source: record.source, command: record.command, exitCode: record.exitCode, timedOut: record.timedOut, error: record.error,
         durationMs: record.durationMs, conversationId: record.conversationId, ...(logPath ? { logPath } : {})
       }
-      publishToUser?.({ t: 'machine.command', event }, userId)
+      publishToUser({ t: 'machine.command', event }, userId)
     })()
   })
   agentRegistry.onAgentReady(async (agentId) => {
@@ -1324,12 +1310,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
   // ранов. Исполнитель команд — поверх потокового exec машины. Хуки модели/фикса
   // подключаются здесь же (Срез 4).
-  const ciExecutor = opts.ciExecutor ?? new AgentCommandExecutor(agentRegistry)
   // Канбан-кластер собирается отдельным модулем; ядро отдаёт ему зависимости явно (docs/plans/kanban-service.md).
-  const kanban = await createKanbanModule({ app, db, config: opts.config, agentRegistry, claude, codex, kb, kbUsage, uploads, make, boardHub, notificationHub, ciExecutor, browserRunner, mailer, ensureProjectMainCurrent, automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, ciRunManagerRef, featurePreviewsRef, ciKbUpdate: opts.ciKbUpdate, ciExecutorOverride: opts.ciExecutor })
-  const ciRunManager = kanban.ciRunManager
-  const orchestrationManager = kanban.orchestrationManager
-  const kanbanRunLaunchers = kanban.runLaunchers
+  const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
+  const kanban = await createKanbanModule({ app, db, config: opts.config, core: kanbanCore, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, ...(opts.ciExecutor ? { ciExecutor: opts.ciExecutor } : {}), automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, featurePreviewsRef, ciKbUpdate: opts.ciKbUpdate })
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   const gitWorkspaces = new GitWorkspaceService({
@@ -1373,9 +1356,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       close: (id) => agentRegistry.closeTunnel(id)
     }
   })
-  publishToUser = (message, userId) => ciRunManager.publish(message, userId)
   // Watchdog агентов (п.1): раз в минуту ищем машины, пропавшие дольше порога.
-  const agentWatchdog = createAgentWatchdog({ db, registry: agentRegistry, publish: (m, uid) => ciRunManager.publish(m, uid), thresholdMs: opts.config.agentOfflineAlertMs })
+  const agentWatchdog = createAgentWatchdog({ db, registry: agentRegistry, publish: (m, uid) => frames.publish(m, uid), thresholdMs: opts.config.agentOfflineAlertMs })
   const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(async () => { try { await agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
   watchdogTimer?.unref?.()
   app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
@@ -1435,17 +1417,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       // Живая канбан-доска: чтение снапшота (с проверкой членства) + подписка на изменения.
       board: {
         getBoard: async (projectId, includeCompleted) => await db.tasks.getBoard(user.name, projectId, { includeCompleted }),
-        subscribe: (cb) => boardHub.onChange(cb),
-        subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
-        subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb),
-        subscribeQaStages: (cb) => boardHub.onQaStageChange(cb),
-        subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb)
+        subscribe: kanban.service.board.subscribe,
+        subscribePreparationRuns: kanban.service.board.subscribePreparationRuns,
+        subscribeTaskRepositories: kanban.service.board.subscribeTaskRepositories,
+        subscribeQaStages: kanban.service.board.subscribeQaStages,
+        subscribeImprovements: kanban.service.board.subscribeImprovements
       },
       preparationNotifications: {
         canAccess: async (projectId) => await db.projects.getProject(user.name, projectId) !== null,
-        subscribe: (cb) => notificationHub.onChange(cb)
+        subscribe: kanban.service.notifications.subscribe
       },
-      ci: ciRunManager,
+      ci: kanban.service.runs,
+      frames,
       kbUsage,
       authStatus,
       preview: {

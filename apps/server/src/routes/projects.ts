@@ -40,11 +40,11 @@ import type { BoardHub } from '../projects/boardHub.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbUsageFlags } from '../kb/routes.js'
 import type { CiRunManager } from '../ci/runManager.js'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { KanbanMachines } from '../kanban/core.js'
 import { materializeProjectMachine as materialize } from '../projects/materialize.js'
 import type { MergeRunManager } from '../merge/runManager.js'
 import type { MakeService } from '@voicechat/make'
-import type { UploadStore } from '../uploads.js'
+import type { KanbanUploads } from '../kanban/core.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -82,7 +82,7 @@ export function registerProjectRoutes(
   kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean },
   /** Нужен переносу в TODO: ожидающий CI-ран надо снять до успешного ответа. */
   ci?: CiRunManager,
-  agents?: AgentRegistry,
+  agents?: KanbanMachines,
   merge?: MergeRunManager,
   startTaskPreparation?: (userId: string, projectId: string, taskId: string, selection?: TaskPreparationLlmSelection) => Promise<TaskPreparationRun>,
   membershipChanged?: (projectId: string, affectedUserId?: string) => void,
@@ -97,7 +97,7 @@ export function registerProjectRoutes(
   orchestration?: { cancel(owner: string, planId: string): Promise<import('@voicechat/shared').Orchestration | null> },
   /** Список файлов Make-проекта — проверка путей `makeSources` цикла доработки (make/service.ts). */
   make?: Pick<MakeService, 'listFiles'>,
-  uploads?: UploadStore
+  uploads?: KanbanUploads
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = async (project: ProjectDetail | null, userId: string): Promise<ProjectDetail | null> => {

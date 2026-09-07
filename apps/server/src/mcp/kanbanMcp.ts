@@ -33,10 +33,8 @@ import {
   type WidgetAssistantAutonomy
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import type { AgentRegistry } from '../agents/registry.js'
-import type { WidgetContextStore } from './widgetContext.js'
+import type { KanbanMachines, KanbanWidgets } from '../kanban/core.js'
 import type { Orchestration, OrchestrationItemInput } from '@voicechat/shared'
-import type { WidgetUiRelay } from './widgetUiRelay.js'
 
 export const KANBAN_MCP_PATH = '/mcp/kanban'
 
@@ -62,10 +60,10 @@ export interface KanbanRunLaunchers {
 export interface KanbanMcpDeps {
   db: VoiceChatDb
   /** Онлайн-статус и телеметрия машин; в тестах не обязателен. */
-  agents?: Pick<AgentRegistry, 'isOnline' | 'telemetryOf' | 'nameOf'>
-  contexts: WidgetContextStore
+  agents?: Pick<KanbanMachines, 'isOnline' | 'telemetryOf' | 'nameOf'>
+  contexts: KanbanWidgets['contexts']
   /** Мост в браузер пользователя: навигация, кнопки и запрос подтверждения. */
-  ui?: WidgetUiRelay
+  ui?: KanbanWidgets['ui']
   /** Доска изменилась — разослать снимок открытым клиентам. */
   boardChanged?: (projectId: string) => void
   /** Менеджеры ранов; читается при вызове инструмента, а не при регистрации. */
@@ -275,7 +273,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           return result
         }
 
-        const uiAction = async (action: Parameters<WidgetUiRelay['request']>[3]): Promise<ToolResult> => {
+        const uiAction = async (action: Parameters<KanbanWidgets['ui']['request']>[3]): Promise<ToolResult> => {
           if (!ui) return toolText('Мост интерфейса недоступен: приложение пользователя не подключено.', true)
           const outcome = await ui.request(userId, conv, projectId, action)
           if (!outcome.ok) return toolText(outcome.error ?? 'Действие в интерфейсе не выполнено.', true)

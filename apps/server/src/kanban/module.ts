@@ -33,15 +33,16 @@ import type { CommandExecutor, CiKbUpdateHook } from '../ci/types.js'
 import { BoardHub, NotificationHub } from '../projects/boardHub.js'
 import { uid } from '../users/auth.js'
 import { type Mailer } from '../users/mailer.js'
-import { AgentRegistry } from '../agents/registry.js'
 import { preparationDesignNote } from '../ci/preparationNotes.js'
-import { type KanbanRunLaunchers } from '../mcp/kanbanMcp.js'
+import { registerKanbanMcp, type KanbanRunLaunchers } from '../mcp/kanbanMcp.js'
+import { registerCiCommandsMcp } from '../ci/ciCommandsMcp.js'
+import { AgentCommandExecutor } from '../ci/executor.js'
+import type { KanbanCore } from './core.js'
+import type { KanbanService } from './service.js'
 import { createOrchestrationManager } from '../orchestration/runManager.js'
 import type { MakeService } from '@voicechat/make'
 import { RemoteLlmClient } from '../llm/remoteClient.js'
 import type { LlmClient } from '../claude/types.js'
-import { UploadStore } from '../uploads.js'
-import type { KnowledgeBaseService } from '../kb/types.js'
 import { type KbUsageTracker } from '../kb/usage.js'
 import { kbToolBroker } from '../kb/kbMcp.js'
 import { previewToolBroker } from '../mcp/previewMcp.js'
@@ -55,39 +56,39 @@ const AUTOPILOT_SWEEP_MS = 60_000
 /** Сколько раз автопроход возобновляет один ран после сбоя машины. */
 const AUTOPILOT_INFRA_RESUMES = 3
 
-export type EnsureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl: string }) => Promise<{ baseSha: string; autoHealed?: unknown }>
+export type { EnsureProjectMainCurrent } from './core.js'
 import { createAutomatedQaScenarioRunner } from '../ci/automatedQaScenario.js'
 
 export type AutomatedQaScenarioRunner = ReturnType<typeof createAutomatedQaScenarioRunner>
 
-/** Всё, что канбан берёт у ядра. Список — граница будущего порта `KanbanCore`: он не должен расти незаметно. */
+/**
+ * Всё, что канбан берёт у ядра. Состояние процесса ядра — портом `core` (`KanbanCore`); остальное —
+ * клиенты и настройки, которые отдельный процесс канбана поднимет сам из своего env. Список не должен
+ * расти незаметно: снимок ключей — в `boundary.test.ts`.
+ */
 export interface KanbanDeps {
   app: FastifyInstance
   db: VoiceChatDb
   config: ServerConfig
-  agentRegistry: AgentRegistry
+  core: KanbanCore
   claude: LlmClient
   codex: LlmClient
-  kb: KnowledgeBaseService
   kbUsage: KbUsageTracker
-  uploads: UploadStore
   make: { service: MakeService }
-  boardHub: BoardHub
-  notificationHub: NotificationHub
-  ciExecutor: CommandExecutor
+  /** Секрет MCP-эндпоинтов кластера (`/mcp/kanban`, `/mcp/ci-commands`). */
+  mcpSecret: string
+  /** Тестовый исполнитель команд вместо потокового exec машины. */
+  ciExecutor?: CommandExecutor
   browserRunner: BrowserRunnerClient | undefined
   mailer: Mailer
-  ensureProjectMainCurrent: EnsureProjectMainCurrent
   automatedQaScenarioRunner: AutomatedQaScenarioRunner | undefined
   automatedQaScreenshotDir: string
   remoteBashMcpBaseUrl: string
   kbMcpBaseUrl: string
   previewMcpBaseUrl: string
   ciCommandsMcpBaseUrl: string
-  ciRunManagerRef: { current: CiRunManager | null }
   featurePreviewsRef: { current: FeaturePreviewManager | null }
   ciKbUpdate: CiKbUpdateHook | undefined
-  ciExecutorOverride: CommandExecutor | undefined
 }
 
 export type KanbanModule = Awaited<ReturnType<typeof createKanbanModuleImpl>>
@@ -97,7 +98,12 @@ export async function createKanbanModule(deps: KanbanDeps): Promise<KanbanModule
 }
 
 async function createKanbanModuleImpl(deps: KanbanDeps) {
-  const { app, db, config, agentRegistry, claude, codex, kb, kbUsage, uploads, make, boardHub, notificationHub, ciExecutor, browserRunner, mailer, ensureProjectMainCurrent, automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, ciRunManagerRef, featurePreviewsRef, ciKbUpdate, ciExecutorOverride } = deps
+  const { app, db, config, core, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, featurePreviewsRef, ciKbUpdate } = deps
+  const { machines, kb, uploads, widgets, ensureProjectMainCurrent } = core
+  // Хабы доски и уведомлений принадлежат кластеру: ядро и соседи узнают о событиях через `KanbanService`.
+  const boardHub = new BoardHub()
+  const notificationHub = new NotificationHub()
+  const ciExecutor = deps.ciExecutor ?? new AgentCommandExecutor(machines)
   const preparationRunUpdated = (userId: string, projectId: string, taskId: string, runId: string, boardChanged = true): void => {
     preparationDeltaThrottle.delete(runId) // переход рана — сбрасываем окно троттла дельт, чтобы событие ушло сразу
     boardHub.emitPreparationRun({ userId, projectId, taskId, runId })
@@ -121,7 +127,7 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
     engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
     mcpBaseUrl: remoteBashMcpBaseUrl,
     ciMcpBaseUrl: ciCommandsMcpBaseUrl,
-    agentNameOf: (agentId) => agentRegistry.nameOf(agentId),
+    agentNameOf: (agentId) => machines.nameOf(agentId),
     // Шагу «Актуализировать базу знаний» нужен диф рабочей копии: его собирает
     // сервер тем же исполнителем, что и команды слотов.
     executor: ciExecutor,
@@ -352,7 +358,7 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
       const agent = usable.find((candidate) => candidate.id === machineId)
       const configured = project.machines.find((candidate) => candidate.agentId === machineId && candidate.canUse !== false && candidate.path.trim())
       if (explicitSelection && (!agent || !configured)) throw new Error('unknown_machine: выбранная машина недоступна проекту')
-      if (explicitSelection && !agentRegistry.isOnline(machineId)) throw new Error('machine_offline: выбранная машина offline')
+      if (explicitSelection && !machines.isOnline(machineId)) throw new Error('machine_offline: выбранная машина offline')
       run = await db.tasks.startTaskPreparationRun(userId, projectId, taskId, {
         machineId: configured?.agentId ?? null,
         machineName: configured?.name ?? agent?.name ?? null,
@@ -408,7 +414,7 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
       ? { kbMcpUrl: `${kbMcpBaseUrl}&turn=${encodeURIComponent(kbToken)}`, kbMode: 'manual' as const }
       : {}
     const machineDiagnostic = selectedMachine
-      ? `Машина проекта: «${selectedMachine.name ?? selectedMachine.agentId}»; рабочая директория: ${selectedMachine.path}; статус: ${agentRegistry.isOnline(selectedMachine.agentId) ? 'online' : 'offline (инструменты вернут точную диагностику недоступности)'}.`
+      ? `Машина проекта: «${selectedMachine.name ?? selectedMachine.agentId}»; рабочая директория: ${selectedMachine.path}; статус: ${machines.isOnline(selectedMachine.agentId) ? 'online' : 'offline (инструменты вернут точную диагностику недоступности)'}.`
       : 'Критичный источник недоступен: в конфигурации проекта нет доступной машины с рабочей директорией.'
     // Чем шла подготовка — первой строкой ленты: без этого причину падения CLI
     // приходится искать в коде подготовки.
@@ -552,7 +558,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     void (async () => {
       if (project?.gitUrl) {
         if (!selectedMachine) throw new Error('Для Git-проекта не настроена доступная машина с рабочей директорией')
-        if (!agentRegistry.isOnline(selectedMachine.agentId)) throw new Error(`Машина «${selectedMachine.name ?? selectedMachine.agentId}» offline`)
+        if (!machines.isOnline(selectedMachine.agentId)) throw new Error(`Машина «${selectedMachine.name ?? selectedMachine.agentId}» offline`)
         const snapshot = await ensureProjectMainCurrent({
           userId, projectId, conversationId: null, agentId: selectedMachine.agentId,
           path: selectedMachine.path, branch: project.ciBaseBranch || 'main', gitUrl: project.gitUrl
@@ -667,7 +673,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     improvementsChanged: (projectId) => boardHub.emitImprovements(projectId),
     // Боевой исполнитель не ждёт reconnect агента; тестовый executor сам задаёт
     // доступность и не зависит от реестра WebSocket.
-    isAgentOnline: ciExecutorOverride ? undefined : (agentId) => agentRegistry.isOnline(agentId),
+    isAgentOnline: deps.ciExecutor ? undefined : (agentId) => machines.isOnline(agentId),
     postToChat: async ({ userId, conversationId, text, runId, interactionId }) => {
       try {
         return (await db.chat.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciInteraction: { runId, interactionId } })).id
@@ -702,48 +708,47 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     kbUpdate: ciKbUpdate ?? ciModelHooks.kbUpdate,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
-  ciRunManagerRef.current = ciRunManager
-  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId), (projectId) => boardHub.emitImprovements(projectId))
+  registerCiRoutes(app, db, ciRunManager, machines, (projectId) => boardHub.emit(projectId), (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId), (projectId) => boardHub.emitImprovements(projectId))
 
 
   const featurePreviews = new FeaturePreviewManager({
     db,
     executor: ciExecutor,
     storePath: join(config.dataDir, 'feature-previews.json'),
-    isOnline: (agentId) => agentRegistry.isOnline(agentId),
-    platformOf: (agentId) => agentRegistry.platformOf(agentId),
-    allowedDirsOf: (agentId) => agentRegistry.policyOf(agentId)?.allowedDirs ?? [],
-    fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
-    fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
-    fsMkdir: (agentId, path) => agentRegistry.fsMkdir(agentId, path),
-    fsRename: (agentId, from, to) => agentRegistry.fsRename(agentId, from, to),
-    fsDelete: (agentId, path) => agentRegistry.fsDelete(agentId, path),
-    closeTunnelsForAgent: (agentId) => agentRegistry.closeTunnelsForTarget(agentId)
+    isOnline: (agentId) => machines.isOnline(agentId),
+    platformOf: (agentId) => machines.platformOf(agentId),
+    allowedDirsOf: (agentId) => machines.policyOf(agentId)?.allowedDirs ?? [],
+    fsRead: (agentId, path) => machines.fsRead(agentId, path),
+    fsWrite: (agentId, path, dataBase64) => machines.fsWrite(agentId, path, dataBase64),
+    fsMkdir: (agentId, path) => machines.fsMkdir(agentId, path),
+    fsRename: (agentId, from, to) => machines.fsRename(agentId, from, to),
+    fsDelete: (agentId, path) => machines.fsDelete(agentId, path),
+    closeTunnelsForAgent: (agentId) => machines.closeTunnelsForTarget(agentId)
   })
   featurePreviewsRef.current = featurePreviews
-  registerFeaturePreviewRoutes(app, featurePreviews, db, agentRegistry)
+  registerFeaturePreviewRoutes(app, featurePreviews, db, machines)
   void featurePreviews.reconcile()
   const releaseManager = new ReleaseManager(db, {
     exec: async (target, command, timeoutMs, onChunk) => {
       let output = ''
-      const result = await agentRegistry.execStream(target.agentId, command, timeoutMs, (chunk) => {
+      const result = await machines.execStream(target.agentId, command, timeoutMs, (chunk) => {
         output += chunk
         onChunk?.(chunk)
       })
       return { ...result, output }
     },
-    isOnline: (agentId) => agentRegistry.isOnline(agentId),
+    isOnline: (agentId) => machines.isOnline(agentId),
     prepareKnowledgeBase: async (releaseBranch, target) => {
       // Лимит берётся из настроек шага, а не из константы: жёсткие 120 с убивали
       // шаг с объявленным лимитом 10 минут ровно на 121-й секунде, и в логе
       // оставался обрыв на середине push — искать причину было не по чему.
       const limitMs = knowledgeBaseTimeoutMs(target)
-      const result = await agentRegistry.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), limitMs)
+      const result = await machines.exec(target.agentId, releaseKnowledgeBaseCommand(target, releaseBranch), limitMs)
       if (result.timedOut) throw new Error(`Release-preflight базы знаний не уложился в ${Math.round(limitMs / 1000)} с`)
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
   })
-  const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => agentRegistry.policyOf(agentId)?.allowedDirs ?? [])
+  const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => machines.policyOf(agentId)?.allowedDirs ?? [])
   await releaseManager.reconcile(async (release) => {
     const project = await db.projects.getProject(release.triggeredBy, release.projectId)
     const agentId = project?.productionAgentId
@@ -756,11 +761,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if(!project.productionCheckoutPath)return null
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
-  registerReleaseRoutes(app, db, releaseManager, managedEnvironments, agentRegistry)
-  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
+  registerReleaseRoutes(app, db, releaseManager, managedEnvironments, machines)
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => machines.isOnline(id), platformOf: (id) => machines.platformOf(id), policyOf: (id) => machines.policyOf(id), fsRead: (id, path) => machines.fsRead(id, path), fsWrite: (id, path, data) => machines.fsWrite(id, path, data), fsDelete: (id, path) => machines.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)
   registerInvitationRoutes(app, db, { mailer, publicUrl: config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard,
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: config.kbToolEnabled }, ciRunManager, machines, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard,
     // Разовый прогон набора: тот же исполнитель, что у этапа, но без рана и
     // воркспейса — человек проверяет сценарий сразу после записи.
     automatedQaScenarioRunner
@@ -914,7 +919,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
    * у проекта нет, автопроход просто ждёт: фоновый тик вернётся к нему сам.
    */
   const projectHasOnlineMachine = async (userId: string, projectId: string): Promise<boolean> =>
-    (await db.machines.listUsableAgents(userId, projectId)).some((agent) => agentRegistry.isOnline(agent.id))
+    (await db.machines.listUsableAgents(userId, projectId)).some((agent) => machines.isOnline(agent.id))
   /**
    * Merge — такой же этап конвейера, как QA: карточка в нём с упавшим раном
    * никем не подхватывалась, а «Машина отключилась во время выполнения команды»
@@ -1085,5 +1090,32 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   if (interruptedComponentQa.length) app.log.warn({runs:interruptedComponentQa},'component QA: прерванные раны закрыты как blocked infrastructure')
   const interruptedIntegrationTests=await db.ci.failInterruptedIntegrationTestRuns()
   if(interruptedIntegrationTests.length)app.log.warn({runs:interruptedIntegrationTests},'integration tests: прерванные раны закрыты как blocked infrastructure')
-  return { ciModelHooks, ciRunManager, orchestrationManager, releaseManager, managedEnvironments, mergeRunManager, featurePreviews, automatedQaRunner, launchTaskPreparation, launchQaPreparation, runLaunchers: kanbanRunLaunchers }
+  // MCP канбана (mcp__kanban__*) и CI-команд слушают процесс кластера: в режиме отдельного сервиса
+  // ядро переправит эти пути сюда, как пути Make. Снимок «что открыто» у виджета — состояние ядра,
+  // приходит портом `core.widgets`.
+  registerCiCommandsMcp(app, mcpSecret)
+  registerKanbanMcp(app, {
+    db,
+    agents: machines,
+    contexts: widgets.contexts,
+    ui: widgets.ui,
+    boardChanged: (projectId) => boardHub.emit(projectId),
+    orchestration: () => orchestrationManager,
+    runs: async () => kanbanRunLaunchers
+  }, mcpSecret)
+  // Что ядро берёт у кластера — только ленты событий; менеджеры наружу не выходят.
+  const service: KanbanService = {
+    runs: ciRunManager,
+    board: {
+      changed: (projectId) => boardHub.emit(projectId),
+      subscribe: (cb) => boardHub.onChange(cb),
+      subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
+      subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb),
+      subscribeQaStages: (cb) => boardHub.onQaStageChange(cb),
+      subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb)
+    },
+    notifications: { subscribe: (cb) => notificationHub.onChange(cb) }
+  }
+
+  return { service, ciModelHooks, ciRunManager, orchestrationManager, releaseManager, managedEnvironments, mergeRunManager, featurePreviews, automatedQaRunner, launchTaskPreparation, launchQaPreparation, runLaunchers: kanbanRunLaunchers }
 }

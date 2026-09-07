@@ -69,12 +69,31 @@
 3. ☑ Гейт `kanban/boundary.test.ts`: `server.ts` зовёт канбан только через `createKanbanModule`;
    `KanbanDeps` перечислен явно и не растёт незаметно (снимок ключей).
 
-### Круг 2 — порты ☐
-1. ☐ `KanbanCore` (что от ядра: чат задачи, реестр машин как узкий фасад, KB, вложения, пользователи,
-   отправка кадров) — реализация `LocalKanbanCore` в `server.ts`; кластер перестаёт импортировать
-   `db.chat.*`, `agents/registry`, `kb/*` напрямую (гейт по импортам).
-2. ☐ `KanbanService` (что ядру: ленты ранов, доска, уведомления, контекст задачи для хода) —
-   `session.ts`, `turns.ts`, `prompt/contextBlocks.ts` через порт.
+### Круг 2 — порты ☑ (2026-09-07)
+1. ☑ `KanbanCore` (`kanban/core.ts`) — только **состояние процесса ядра**: `machines` (узкий фасад
+   `KanbanMachines` из 16 методов реестра, замеренных по коду; `AgentRegistry` удовлетворяет ему
+   структурно), `kb` (файловый индекс), `uploads` (`get` по id), `widgets` (снимок экрана виджета и
+   мост UI для mcp__kanban__*), `ensureProjectMainCurrent` (git-копии). Локальная реализация —
+   `kanbanBridge/localCore.ts` (`createLocalKanbanCore`), единственная точка доступа кластера к ядру.
+   Решение: доменные данные чужих доменов (`db.chat/identity/machines/kb/llm/settings`) кластер читает
+   сам через `VoiceChatDb` — отдельный сервис работает на той же базе (Postgres), RPC-дубликаты
+   репозиториев не нужны. `kb/*`-функции (`kbToolBroker`, `buildKbAutoContext`, …), `users/auth`,
+   `llm/remoteClient`, `manifests`, `mcp/previewMcp` остаются импортами-значениями (аллоулист гейта) —
+   их судьба решается в круге 3 при выделении пакета.
+2. ☑ `KanbanService` (`kanban/service.ts`) — что ядру: `runs` (лента кадров ранов + снимок для
+   `ci.subscribe`), `board` (`changed` для соседей — Make; подписки доски/подготовки/QA-стадий/репозиториев/
+   улучшений), `notifications`. `BoardHub`/`NotificationHub` теперь создаёт кластер; `registerKanbanMcp` и
+   `registerCiCommandsMcp` — тоже в модуле (секрет MCP — зависимость). Ядро не трогает менеджеры:
+   `server.ts` обращается только к `kanban.service.*` (проверяет гейт).
+   Решение: `turns.ts`/`prompt/contextBlocks.ts` читают контекст задачи из общей БД (`db.tasks/projects/ci`)
+   — порт для них не нужен; `featurePreviewsRef` (список превью для preview-MCP чата) остаётся ссылкой до
+   круга 3, где станет `KanbanService.previews`.
+3. ☑ Ядро перестало публиковать свои кадры через `CiRunManager.publish`: шина `UserFrameHub`
+   (`frameHub.ts`) — журнал команд машины, watchdog, снимки браузерной проверки; сессия подписана и на неё,
+   и на `KanbanService.runs`.
+4. ☑ Гейт `kanban/boundary.test.ts`: снимок ключей `KanbanDeps` (20), аллоулист импортов-значений кластера
+   из ядра, запрет типов состояния ядра (`agents/registry`, `mcp/widget*`, `frameHub`, `server`, `session`,
+   `turns`) вне `kanban/core.ts`, структурная проверка `AgentRegistry` ⊇ `KanbanMachines`.
 
 ### Круг 3 — пакет `apps/kanban` и отдельный процесс ☐
 1. ☐ Физический переезд в `@voicechat/kanban`; standalone: своя `VoiceChatDb` на `VC_DB_URL`

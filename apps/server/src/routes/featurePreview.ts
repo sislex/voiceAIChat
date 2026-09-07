@@ -29,10 +29,10 @@ export function manualPreviewCommand(localPort: number, remotePort: number, sshU
 import type { PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@voicechat/shared'
 import type { FeaturePreviewManager } from '../preview/manager.js'
 import type { VoiceChatDb } from '../db/database.js'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { KanbanMachines } from '../kanban/core.js'
 import { uid } from '../users/auth.js'
 
-export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: FeaturePreviewManager, db: VoiceChatDb, agents: AgentRegistry): void {
+export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: FeaturePreviewManager, db: VoiceChatDb, agents: KanbanMachines): void {
   const base = '/api/projects/:projectId/tasks/:taskId/preview'
   app.get<{ Params: { projectId: string; taskId: string } }>(base, async (req, reply) => {
     const env = await previews.get(uid(req), req.params.projectId, req.params.taskId)
