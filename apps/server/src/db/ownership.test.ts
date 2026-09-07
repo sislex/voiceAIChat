@@ -66,6 +66,20 @@ describe('владение таблицами (db/ownership.ts)', () => {
     }
   })
 
+  it('реализация домена на другом движке (db/pg/<домен>Pg.ts) пишет только в таблицы своего домена', () => {
+    const pgDir = join(dbDir, 'pg')
+    for (const f of readdirSync(pgDir).filter((name) => /^[a-z]+Pg\.ts$/.test(name))) {
+      const d = f.replace(/Pg\.ts$/, '') as RepoDomain
+      expect(domains, `${f}: домен ${d} не описан в TABLE_OWNER`).toContain(d)
+      const src = readFileSync(join(pgDir, f), 'utf8')
+      const foreign = new Set<string>()
+      for (const m of src.matchAll(writeRe)) { const t = m[1].toLowerCase(); if (ownerOf.get(t) !== d) foreign.add(t) }
+      for (const m of src.matchAll(readRe)) { const t = m[1].toLowerCase(); if (ownerOf.get(t) !== d) foreign.add(t) }
+      // На другом движке чужих таблиц нет вовсе — ни записи, ни JOIN: соседей спрашиваем через порты.
+      expect([...foreign], `${f}: обращается к чужим таблицам`).toEqual([])
+    }
+  })
+
   it('better-sqlite3 подключается только внутри src/db', () => {
     const srcDir = join(dbDir, '..')
     const offenders: string[] = []

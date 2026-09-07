@@ -81,6 +81,16 @@ export function asyncPort<T extends object>(impl: T): AsyncPort<T> {
   }) as unknown as AsyncPort<T>
 }
 
+/** Асинхронные порты всех доменов — то, что видит сервер (db.chat, db.tasks, …). */
+export type Ports = { [K in keyof Repos]: AsyncPort<Repos[K]> }
+
+/**
+ * Замена порта домена другой реализацией (другой движок, удалённый сервис). Фабрика
+ * получает уже собранные порты соседей: реализация на другом движке спрашивает членство
+ * в проекте через `ports.projects`, а не через общее соединение SQLite, которого у неё нет.
+ */
+export type PortOverrides = { [K in keyof Ports]?: (ports: Ports) => Ports[K] }
+
 export abstract class BaseRepo {
   protected readonly db: Database.Database
   protected readonly newId: () => string
