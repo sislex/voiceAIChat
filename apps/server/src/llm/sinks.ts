@@ -44,15 +44,15 @@ function sinkCore(handlers: LlmStreamHandlers): {
     stderrChunk: (chunk) => {
       stderr += chunk
     },
-    fail: (message) => {
+    fail: async (message) => {
       if (finished) return
       finished = true
-      handlers.onError(message)
+      await handlers.onError(message)
     },
-    done: (text, meta) => {
+    done: async (text, meta) => {
       if (finished) return
       finished = true
-      handlers.onDone(text, meta)
+      await handlers.onDone(text, meta)
     },
     detach: () => {
       finished = true
@@ -85,7 +85,7 @@ export function createClaudeSink(handlers: LlmStreamHandlers): LlmStreamSink {
   const usageAcc = createUsageAccumulator()
   let lastUsageJson = ''
   return {
-    line: (line) => {
+    line: async (line) => {
       // Параллельно: активность для режима консоли (только если запрошена).
       if (handlers.onActivity) {
         const entry = parseStreamJsonActivity(line)
@@ -95,11 +95,11 @@ export function createClaudeSink(handlers: LlmStreamHandlers): LlmStreamSink {
       if (!ev) return
       switch (ev.kind) {
         case 'session':
-          handlers.onSession(ev.sessionId)
+          await handlers.onSession(ev.sessionId)
           if (ev.init) handlers.onInit?.(ev.init)
           break
         case 'delta':
-          if (!core.finished()) handlers.onDelta(ev.text)
+          if (!core.finished()) await handlers.onDelta(ev.text)
           break
         case 'usage': {
           if (core.finished() || !handlers.onUsage) break
@@ -112,7 +112,7 @@ export function createClaudeSink(handlers: LlmStreamHandlers): LlmStreamSink {
           break
         }
         case 'result':
-          if (ev.sessionId) handlers.onSession(ev.sessionId)
+          if (ev.sessionId) await handlers.onSession(ev.sessionId)
           if (ev.isError) core.fail(ev.text || 'Claude вернул ошибку')
           else core.done(ev.text, ev.meta)
           break
@@ -138,7 +138,7 @@ export function createCodexSink(handlers: LlmStreamHandlers): LlmStreamSink {
   let acc = '' // накопленный текст ответа (agent_message)
   let lastMeta: TurnMeta | undefined
   return {
-    line: (line) => {
+    line: async (line) => {
       if (handlers.onActivity) {
         const entry = parseCodexActivity(line)
         if (entry) handlers.onActivity(entry)
@@ -147,13 +147,13 @@ export function createCodexSink(handlers: LlmStreamHandlers): LlmStreamSink {
       if (!ev) return
       switch (ev.kind) {
         case 'session':
-          handlers.onSession(ev.sessionId)
+          await handlers.onSession(ev.sessionId)
           break
         case 'delta':
         // Полное сообщение агента: показываем как дельту и копим для финала.
         case 'message':
           acc += ev.text
-          if (!core.finished()) handlers.onDelta(ev.text)
+          if (!core.finished()) await handlers.onDelta(ev.text)
           break
         case 'result':
           lastMeta = ev.meta

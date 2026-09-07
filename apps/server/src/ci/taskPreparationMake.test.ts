@@ -25,7 +25,7 @@ const capturingClaude: LlmClient = {
     sent.push(req)
     // Валидный вопрос: подготовка сохранит его и остановится в ожидании ответа —
     // ран не падает, а запрос уже перехвачен.
-    handlers.onDone('{"question":"Проверочный вопрос?","material":true}')
+    void handlers.onDone('{"question":"Проверочный вопрос?","material":true}')
     return { cancel: () => {} }
   }
 }
@@ -53,7 +53,7 @@ function inj(opts: { method: 'GET' | 'POST' | 'PATCH'; url: string; payload?: ob
 describe('подготовка задачи из Make-чата', () => {
   it('получает make-источники и заметку о дизайне вместо публичного URL', async () => {
     const project = (await inj({ method: 'POST', url: '/api/projects', payload: { name: 'Проект 14' } })).json()
-    const makeChat = db.chat.createConversation('admin', 'Проект 14 — макет', 'make', project.id)!
+    const makeChat = (await db.chat.createConversation('admin', 'Проект 14 — макет', 'make', project.id))!
     const board = (await inj({ method: 'GET', url: `/api/projects/${project.id}/board` })).json()
     const backlog = board.columns.find((column: { semanticType: string }) => column.semanticType === 'backlog')!
     const preparation = board.columns.find((column: { semanticType: string }) => column.semanticType === 'preparation')!

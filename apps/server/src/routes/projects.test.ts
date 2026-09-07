@@ -23,8 +23,8 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.identity.createUser('bob', '', 'developer')
-  db.identity.createUser('carol', '', 'developer')
+  await db.identity.createUser('bob', '', 'developer')
+  await db.identity.createUser('carol', '', 'developer')
   app = await buildServer({
     config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-proj-${Date.now()}-${id}`) }),
     db,
@@ -44,8 +44,8 @@ async function reworkFixture() {
   const done = board.columns.find((column) => column.semanticType === 'done')!
   const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
   const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: done.id, title: 'Rework task' } })).json() as Task
-  const run = db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'done' } })
-  db.ci.updateCiRun(run.id, { status: 'success', finishedAt: Date.now() })
+  const run = await db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'done' } })
+  await db.ci.updateCiRun(run.id, { status: 'success', finishedAt: Date.now() })
   return { project, task, done, preparation }
 }
 
@@ -62,7 +62,7 @@ describe('task rework cycles REST', () => {
     const url = `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`
     const payload = { description: 'Первый', criteria: ['A'], makeMode: 'files', makePaths: ['src/A.ts'], uploadIds: [], idempotencyKey: 'one' }
     expect((await inj(adminTok, { method: 'POST', url, payload })).statusCode).toBe(200)
-    db.tasks.moveTask('admin', project.id, task.id, { columnId: done.id })
+    await db.tasks.moveTask('admin', project.id, task.id, { columnId: done.id })
     expect((await inj(adminTok, { method: 'POST', url, payload: { ...payload, description: 'Второй', idempotencyKey: 'two' } })).statusCode).toBe(200)
     const history = (await inj(adminTok, { method: 'GET', url })).json()
     expect(history.map((cycle: { sequence: number }) => cycle.sequence)).toEqual([1, 2])
@@ -79,19 +79,19 @@ describe('task rework cycles REST', () => {
     const second = await inj(adminTok, { method: 'POST', url, payload })
     expect(second.json().id).toBe(first.json().id)
     expect((await inj(adminTok, { method: 'GET', url })).json()).toHaveLength(1)
-    expect(db.tasks.getTaskDetail('admin', project.id, task.id)?.columnId).toBe(preparation.id)
+    expect((await db.tasks.getTaskDetail('admin', project.id, task.id))?.columnId).toBe(preparation.id)
     expect((await inj(adminTok, { method: 'POST', url, payload: { ...payload, description: 'Другой' } })).json().code).toBe('idempotency_conflict')
   })
 
   // @testCase TC-NEG-1
   it('активный ран запрещает создание и остаётся активным', async () => {
     const { project, task } = await reworkFixture()
-    const active = db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'running' } })
+    const active = await db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'running' } })
     const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`, payload: { description: 'Нет', makeMode: 'whole_project', uploadIds: [], idempotencyKey: 'active' } })
     expect(response.statusCode).toBe(409)
     expect(response.json().code).toBe('active_run')
-    expect(db.ci.getCiRunRaw(active.id)?.status).toBe('queued')
-    expect(db.tasks.listTaskReworkCycles('admin', project.id, task.id)).toHaveLength(0)
+    expect((await db.ci.getCiRunRaw(active.id))?.status).toBe('queued')
+    expect(await db.tasks.listTaskReworkCycles('admin', project.id, task.id)).toHaveLength(0)
   })
 
   // @testCase TC-NEG-2
@@ -101,8 +101,8 @@ describe('task rework cycles REST', () => {
     const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`, payload: { description: 'Нет', makeMode: 'whole_project', uploadIds: [upload.json().id], idempotencyKey: 'foreign' } })
     expect(response.statusCode).toBe(400)
     expect(response.json().code).toBe('invalid_upload')
-    expect(db.tasks.getTaskDetail('admin', project.id, task.id)?.columnId).toBe(done.id)
-    expect(db.tasks.listTaskReworkCycles('admin', project.id, task.id)).toHaveLength(0)
+    expect((await db.tasks.getTaskDetail('admin', project.id, task.id))?.columnId).toBe(done.id)
+    expect(await db.tasks.listTaskReworkCycles('admin', project.id, task.id)).toHaveLength(0)
   })
 
   // @testCase TC-INT-1
@@ -112,7 +112,7 @@ describe('task rework cycles REST', () => {
     const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles`, payload: { description: 'Доработать', criteria: ['A', 'B'], makeMode: 'files', makePaths: ['src/A.ts'], uploadIds: [upload.json().id], idempotencyKey: 'atomic' } })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({ sequence: 1, criteria: ['A', 'B'], attachments: [{ name: 'proof.txt' }] })
-    expect(db.tasks.getTaskDetail('admin', project.id, task.id)?.columnId).toBe(preparation.id)
+    expect((await db.tasks.getTaskDetail('admin', project.id, task.id))?.columnId).toBe(preparation.id)
   })
 })
 
@@ -131,12 +131,12 @@ describe('разовый прогон набора Automated QA', () => {
 
 describe('conversation preview URL REST', () => {
   it('хранит override, очищает его и принимает только http/https', async () => {
-    const conv = db.chat.createConversation('admin', 'Preview')
+    const conv = await db.chat.createConversation('admin', 'Preview')
     const url = `/api/conversations/${conv.id}/preview-url`
     const saved = await inj(adminTok, { method: 'POST', url, payload: { previewUrl: 'http://localhost:3000/path' } })
     expect(saved.statusCode).toBe(200)
     expect(saved.json().previewUrl).toBe('http://localhost:3000/path')
-    expect(db.chat.getConversation('admin', conv.id)?.previewUrl).toBe('http://localhost:3000/path')
+    expect((await db.chat.getConversation('admin', conv.id))?.previewUrl).toBe('http://localhost:3000/path')
     expect((await inj(adminTok, { method: 'POST', url, payload: { previewUrl: 'file:///tmp/x' } })).statusCode).toBe(400)
     expect((await inj(adminTok, { method: 'POST', url, payload: { previewUrl: null } })).json().previewUrl).toBeNull()
     expect((await inj(bobTok, { method: 'POST', url, payload: { previewUrl: 'https://example.com' } })).statusCode).toBe(404)
@@ -145,7 +145,7 @@ describe('conversation preview URL REST', () => {
 
 describe('conversation status REST', () => {
   it('хранит статус, валидирует значение и изолирует владельца', async () => {
-    const conv = db.chat.createConversation('admin', 'Статус')
+    const conv = await db.chat.createConversation('admin', 'Статус')
     expect(conv.status).toBe('developing')
 
     const changed = await inj(adminTok, {
@@ -155,7 +155,7 @@ describe('conversation status REST', () => {
     })
     expect(changed.statusCode).toBe(200)
     expect(changed.json().status).toBe('planning_done')
-    expect(db.chat.getConversation('admin', conv.id)?.status).toBe('planning_done')
+    expect((await db.chat.getConversation('admin', conv.id))?.status).toBe('planning_done')
 
     expect((await inj(adminTok, {
       method: 'POST', url: `/api/conversations/${conv.id}/status`, payload: { status: 'unknown' }
@@ -172,8 +172,8 @@ describe('projects REST: доступ', () => {
   })
 
   it('свой проект создаёт любая роль и садится в нём владельцем', async () => {
-    db.identity.createUser('tess', '', 'tester')
-    db.identity.createUser('olga', '', 'observer')
+    await db.identity.createUser('tess', '', 'tester')
+    await db.identity.createUser('olga', '', 'observer')
     for (const [name, role] of [['bob', 'developer'], ['tess', 'tester'], ['olga', 'observer']] as const) {
       const token = signToken({ name, role }, SECRET)
       const created = await inj(token, { method: 'POST', url: '/api/projects', payload: { name: `Проект ${name}` } })
@@ -181,7 +181,7 @@ describe('projects REST: доступ', () => {
       const detail = created.json() as ProjectDetail
       // Создатель — владелец: иначе он не сможет ни настроить проект, ни позвать участников.
       expect(detail.role).toBe('owner')
-      expect(db.projects.isProjectOwner(name, detail.id)).toBe(true)
+      expect(await db.projects.isProjectOwner(name, detail.id)).toBe(true)
       // И проект виден ему в списке, а чужому — нет.
       expect(((await inj(token, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id)).toContain(detail.id)
       expect(((await inj(bobTok, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id).includes(detail.id)).toBe(name === 'bob')
@@ -269,8 +269,8 @@ describe('projects REST: доступ', () => {
 
   it('список релизов возвращает только лёгкие строки, а шаги и логи — в detail', async () => {
     const p = await createProject('Release summaries')
-    const release = db.releases.createProjectRelease('admin', p.id, { branch: 'release/1.2.3', version: '1.2.3', sha: 'abc', status: 'preparing' })
-    db.releases.setProjectReleaseStep(release.id, 'regression', 'running', 'x'.repeat(100_000), 'admin')
+    const release = await db.releases.createProjectRelease('admin', p.id, { branch: 'release/1.2.3', version: '1.2.3', sha: 'abc', status: 'preparing' })
+    await db.releases.setProjectReleaseStep(release.id, 'regression', 'running', 'x'.repeat(100_000), 'admin')
 
     const listResponse = await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases` })
     expect(listResponse.statusCode).toBe(200)
@@ -350,7 +350,7 @@ describe('projects REST: доступ', () => {
     expect((await inj(bobTok, {
       method: 'PATCH', url: `/api/projects/${p.id}`, payload: { description: 'второй владелец' }
     })).statusCode).toBe(200)
-    const bobMachine = db.machines.createAgent('bob', 'Bob Mac')
+    const bobMachine = await db.machines.createAgent('bob', 'Bob Mac')
     expect((await inj(bobTok, {
       method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: bobMachine.id }
     })).statusCode).toBe(200)
@@ -365,7 +365,7 @@ describe('projects REST: доступ', () => {
     expect(lastOwner.statusCode).toBe(400)
     expect(lastOwner.json().error).toContain('Сначала назначьте другого владельца')
 
-    const foreign = db.projects.createProject('carol', { name: 'Чужой проект' })
+    const foreign = await db.projects.createProject('carol', { name: 'Чужой проект' })
     expect((await inj(adminTok, {
       method: 'PATCH', url: `/api/projects/${foreign.id}`, payload: { name: 'admin не владелец' }
     })).statusCode).toBe(403)
@@ -390,9 +390,9 @@ describe('projects REST: доступ', () => {
     const saved = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: 'https://example.com/app' } })
     expect(saved.statusCode).toBe(200)
     expect((saved.json() as ProjectDetail).previewUrl).toBe('https://example.com/app')
-    const conversation = db.chat.createConversation('admin', 'Inherited preview')
-    db.chat.setConversationProject('admin', conversation.id, p.id)
-    expect(db.chat.getConversation('admin', conversation.id)?.projectPreviewUrl).toBe('https://example.com/app')
+    const conversation = await db.chat.createConversation('admin', 'Inherited preview')
+    await db.chat.setConversationProject('admin', conversation.id, p.id)
+    expect((await db.chat.getConversation('admin', conversation.id))?.projectPreviewUrl).toBe('https://example.com/app')
     expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: 'javascript:alert(1)' } })).statusCode).toBe(400)
     expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: null } })).json().previewUrl).toBeNull()
   })
@@ -511,9 +511,9 @@ describe('projects REST: доска', () => {
     const automatic = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'D', assignee: null } })
     expect(automatic.statusCode).toBe(200)
     expect((automatic.json() as Task).assignee).toBe('admin')
-    db.identity.setUserBlocked('bob', true)
+    await db.identity.setUserBlocked('bob', true)
     expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'E', assignee: 'bob' } })).statusCode).toBe(400)
-    db.identity.setUserBlocked('bob', false)
+    await db.identity.setUserBlocked('bob', false)
 
     // move A в колонку doing
     const moved = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${a.id}/move`, payload: { columnId: doing.id } })
@@ -592,8 +592,8 @@ describe('автосвязь задачи с Make-проектом источн�
     const project = await createProject('Автосвязь')
     const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
     const column = board.columns[0]!
-    const makeChat = db.chat.createConversation('admin', 'Проект 14', 'make', project.id)!
-    const plainChat = db.chat.createConversation('admin', 'Обычный', null, project.id)!
+    const makeChat = (await db.chat.createConversation('admin', 'Проект 14', 'make', project.id))!
+    const plainChat = (await db.chat.createConversation('admin', 'Обычный', null, project.id))!
 
     const linked = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: {
       columnId: column.id, title: 'Карточка из Make', sourceConversationId: makeChat.id
@@ -608,7 +608,7 @@ describe('автосвязь задачи с Make-проектом источн�
 
     // Make-чат чужого проекта тоже не даёт связи: линк проверяет принадлежность.
     const other = await createProject('Чужой')
-    const foreignMake = db.chat.createConversation('admin', 'Чужой Make', 'make', other.id)!
+    const foreignMake = (await db.chat.createConversation('admin', 'Чужой Make', 'make', other.id))!
     const foreign = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: {
       columnId: column.id, title: 'Карточка с чужим Make', sourceConversationId: foreignMake.id
     } })).json() as Task
@@ -674,7 +674,7 @@ describe('projects REST: поля Jira-доски', () => {
 describe('projects REST: машины проекта (папка, дефолт) и привязка чата', () => {
   it('путь машины и дефолт — только владелец', async () => {
     const p = await createProject()
-    const agent = db.machines.createAgent('admin', 'M1')
+    const agent = await db.machines.createAgent('admin', 'M1')
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })
     // папка машины
     const setPath = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { path: '/srv/x' } })
@@ -692,7 +692,7 @@ describe('projects REST: машины проекта (папка, дефолт) 
 
   it('владелец настраивает собственную машину без предоставления проекту', async () => {
     const p = await createProject()
-    const agent = db.machines.createAgent('admin', 'Private Mac')
+    const agent = await db.machines.createAgent('admin', 'Private Mac')
 
     expect((await inj(adminTok, {
       method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { path: '/private/project' }
@@ -708,12 +708,12 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect((configured.json() as ProjectDetail).machines.find((machine) => machine.agentId === agent.id)).toMatchObject({
       path: '/private/project', reposRoot: '/private/repos', sshHost: 'private-mac.local', sshUser: 'runner', sharedWithProject: false
     })
-    expect(db.machines.isMachineSharedWithProject(p.id, agent.id)).toBe(false)
+    expect(await db.machines.isMachineSharedWithProject(p.id, agent.id)).toBe(false)
   })
 
   it('список доступен участнику, повторная привязка конфликтует, а управление запрещено', async () => {
     const p = await createProject()
-    const agent = db.machines.createAgent('admin', 'Shared Mac')
+    const agent = await db.machines.createAgent('admin', 'Shared Mac')
     expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/machines/available` })).json()).toEqual([
       { id: agent.id, name: 'Shared Mac' }
     ])
@@ -732,12 +732,12 @@ describe('projects REST: машины проекта (папка, дефолт) 
     const created = await inj(adminTok, { method: 'POST', url: '/api/conversations', payload: { title: 'Проектный', projectId: p.id } })
     expect(created.statusCode).toBe(200)
     expect(created.json()).toMatchObject({ title: 'Проектный', projectId: p.id })
-    expect(db.chat.getConversation('admin', created.json().id)?.projectId).toBe(p.id)
+    expect((await db.chat.getConversation('admin', created.json().id))?.projectId).toBe(p.id)
 
-    const before = db.chat.listConversations('bob').length
+    const before = (await db.chat.listConversations('bob')).length
     const denied = await inj(bobTok, { method: 'POST', url: '/api/conversations', payload: { title: 'Чужой', projectId: p.id } })
     expect(denied.statusCode).toBe(404)
-    expect(db.chat.listConversations('bob')).toHaveLength(before)
+    expect(await db.chat.listConversations('bob')).toHaveLength(before)
 
     const plain = await inj(bobTok, { method: 'POST', url: '/api/conversations', payload: { title: 'Без проекта' } })
     expect(plain.statusCode).toBe(200)
@@ -747,11 +747,11 @@ describe('projects REST: машины проекта (папка, дефолт) 
   it('привязка чата к проекту сохраняет наследование машины и навыки; не-участник → 404', async () => {
     const create = await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'P', skills: ['ts'] } })
     const p = create.json() as ProjectDetail
-    const agent = db.machines.createAgent('admin', 'M1')
+    const agent = await db.machines.createAgent('admin', 'M1')
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })
     await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { path: '/srv/p' } })
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })
-    const conv = db.chat.createConversation('admin', 'Chat')
+    const conv = await db.chat.createConversation('admin', 'Chat')
     const linked = await inj(adminTok, { method: 'POST', url: `/api/conversations/${conv.id}/project`, payload: { projectId: p.id } })
     expect(linked.statusCode).toBe(200)
     const c = linked.json() as { execTarget: string | null; workdir: string | null; skillNames: string[]; projectId?: string | null }
@@ -760,7 +760,7 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect(c.workdir).toBeNull()
     expect(c.skillNames).toEqual(['ts'])
     // не-участник bob не может привязать свой чат к чужому проекту
-    const convBob = db.chat.createConversation('bob', 'Chat bob')
+    const convBob = await db.chat.createConversation('bob', 'Chat bob')
     expect((await inj(bobTok, { method: 'POST', url: `/api/conversations/${convBob.id}/project`, payload: { projectId: p.id } })).statusCode).toBe(404)
   })
 })
@@ -857,7 +857,7 @@ describe('projects REST: скрытие завершённых задач', () =
 describe('projects REST: merge run', () => {
   it('проверяет статус, права и машину; старт атомарен и идемпотентен', async () => {
     const p = await createProject('Merge')
-    const agent = db.machines.createAgent('admin', 'Merge machine')
+    const agent = await db.machines.createAgent('admin', 'Merge machine')
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/machines`, payload: { agentId: agent.id } })
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
@@ -868,8 +868,8 @@ describe('projects REST: merge run', () => {
     const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: backlog.id, title: 'Ready' } })).json() as Task
     const url = `/api/projects/${p.id}/tasks/${task.id}/merge`
     expect((await inj(adminTok, { method: 'POST', url, payload: {} })).statusCode).toBe(409)
-    const workspace = db.ci.createCiWorkspace({ projectId: p.id, taskId: task.id, agentId: agent.id, path: '/work/task' })
-    db.ci.recordCiWorkspaceRevision(workspace.id, 'feature/task', 'abc123')
+    const workspace = await db.ci.createCiWorkspace({ projectId: p.id, taskId: task.id, agentId: agent.id, path: '/work/task' })
+    await db.ci.recordCiWorkspaceRevision(workspace.id, 'feature/task', 'abc123')
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/move`, payload: { columnId: awaiting.id } })
     const blocked = await inj(bobTok, { method: 'POST', url, payload: {} })
     expect(blocked.statusCode).toBe(400)
@@ -885,9 +885,9 @@ describe('widget tool gateway', () => {
     const p = await createProject('Widgets')
     const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
     const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'API card' } })).json() as Task
-    const conversation = db.chat.ensureKanbanAssistantConversation('admin', p.id)!
-    const userTurn = db.chat.addMessage('admin', conversation.id, 'u0', 'Найди UI', '12:00')
-    const proposalTurn = db.chat.addMessage('admin', conversation.id, 'ai', 'proposal', '12:01')
+    const conversation = (await db.chat.ensureKanbanAssistantConversation('admin', p.id))!
+    const userTurn = await db.chat.addMessage('admin', conversation.id, 'u0', 'Найди UI', '12:00')
+    const proposalTurn = await db.chat.addMessage('admin', conversation.id, 'ai', 'proposal', '12:01')
     const scope = { version: 1, widgetKind: 'kanban', widgetInstanceId: p.id, projectId: p.id, conversationId: conversation.id, turnId: userTurn.id }
 
     const fromUi = await inj(adminTok, { method: 'POST', url: '/api/widget-tools/query', payload: { ...scope, text: 'UI', ui: { revision: 'ui-7', items: [{ id: 'ui-epic', kind: 'epic', title: 'UI', version: '7', data: { title: 'UI' } }] } } })
@@ -923,7 +923,7 @@ describe('вид доски (личная настройка участника)
   it('вид у каждого свой и чужому проекту не отдаётся', async () => {
     const project = (await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'Чужой вид' } })).json()
     await inj(adminTok, { method: 'PUT', url: `/api/projects/${project.id}/board/view`, payload: { onlyMine: true } })
-    db.identity.createUser('outsider', 'password-outsider', 'developer')
+    await db.identity.createUser('outsider', 'password-outsider', 'developer')
     const outsiderTok = signToken({ name: 'outsider', role: 'developer' }, SECRET)
 
     const foreign = await inj(outsiderTok, { method: 'GET', url: `/api/projects/${project.id}/board/view` })
@@ -941,8 +941,8 @@ describe('дизайны карточки: REST', () => {
     const task = (await inj(adminTok, {
       method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'Экран оплаты' }
     })).json() as Task
-    const make = db.chat.createConversation('admin', 'Проект 1', 'make')
-    db.chat.setConversationProject('admin', make.id, project.id)
+    const make = await db.chat.createConversation('admin', 'Проект 1', 'make')
+    await db.chat.setConversationProject('admin', make.id, project.id)
     return { project, taskId: task.id, makeId: make.id }
   }
 
@@ -970,11 +970,11 @@ describe('дизайны карточки: REST', () => {
 
   it('изолирует источники по владельцу сессии и запрещает прямую связь с чужим Make-проектом', async () => {
     const { project, taskId, makeId } = await designScene()
-    db.projects.addMember('admin', project.id, 'bob')
-    const bobFirst = db.chat.createConversation('bob', 'Bob 1', 'make')
-    db.chat.setConversationProject('bob', bobFirst.id, project.id)
-    const bobSecond = db.chat.createConversation('bob', 'Bob 2', 'make')
-    db.chat.setConversationProject('bob', bobSecond.id, project.id)
+    await db.projects.addMember('admin', project.id, 'bob')
+    const bobFirst = await db.chat.createConversation('bob', 'Bob 1', 'make')
+    await db.chat.setConversationProject('bob', bobFirst.id, project.id)
+    const bobSecond = await db.chat.createConversation('bob', 'Bob 2', 'make')
+    await db.chat.setConversationProject('bob', bobSecond.id, project.id)
 
     const adminSources = await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/design-sources?userId=bob&owner=bob` })
     expect(adminSources.json()).toMatchObject([{ conversationId: makeId, own: true }])
@@ -991,12 +991,12 @@ describe('дизайны карточки: REST', () => {
     })
     expect(rejected.statusCode).toBe(400)
     expect(String((rejected.json() as { error: string }).error)).toContain('только свой')
-    expect(db.tasks.listTaskDesigns('bob', project.id, taskId)).toEqual([])
+    expect(await db.tasks.listTaskDesigns('bob', project.id, taskId)).toEqual([])
   })
 
   it('чужой Make-проект и не-Make чат отклоняются с объяснением, посторонний получает 404', async () => {
     const { project, taskId } = await designScene()
-    const foreign = db.chat.createConversation('admin', 'Чужой макет', 'make')
+    const foreign = await db.chat.createConversation('admin', 'Чужой макет', 'make')
     const rejected = await inj(adminTok, {
       method: 'POST', url: `/api/projects/${project.id}/tasks/${taskId}/designs`, payload: { conversationId: foreign.id }
     })

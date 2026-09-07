@@ -26,11 +26,11 @@ const deps=(online=true,exitCode=0,machineValue=machine)=>{
 }
 
 describe('ManagedEnvironmentResolver',()=>{
-  it('resolves physically isolated canonical production and staging repositories',()=>{
+  it('resolves physically isolated canonical production and staging repositories',async ()=>{
     const {db,releases}=deps()
     const resolver=new ManagedEnvironmentResolver(db,releases)
-    const production=resolver.resolve('owner','p1','production')
-    const staging=resolver.resolve('owner','p1','staging')
+    const production=await resolver.resolve('owner','p1','production')
+    const staging=await resolver.resolve('owner','p1','staging')
     expect(production.target.path).toBe('/data/ChatAI/projects/p1/environments/production/temporary/repository')
     expect(staging.target.path).toBe('/data/ChatAI/projects/p1/environments/staging/temporary/repository')
     expect(production.paths.root).not.toContain(staging.paths.root)
@@ -44,12 +44,12 @@ describe('ManagedEnvironmentResolver',()=>{
     expect(releases.runPreflight).not.toHaveBeenCalled()
   })
 
-  it('requireOnline:false резолвит target при offline-машине (reconcile после рестарта)',()=>{
+  it('requireOnline:false резолвит target при offline-машине (reconcile после рестарта)',async ()=>{
     const {db,releases}=deps(false)
     const resolver=new ManagedEnvironmentResolver(db,releases)
     // По умолчанию бросает offline, а с requireOnline:false — отдаёт target из БД.
-    expect(()=>resolver.resolve('owner','p1','production')).toThrow(/offline/)
-    const {target}=resolver.resolve('owner','p1','production',{requireOnline:false})
+    await expect(async ()=>resolver.resolve('owner','p1','production')).rejects.toThrow(/offline/)
+    const {target}=await resolver.resolve('owner','p1','production',{requireOnline:false})
     expect(target.mode).toBe('managed')
     expect(target.deployCommand).toBeTruthy()
   })

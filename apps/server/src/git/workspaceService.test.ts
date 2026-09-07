@@ -139,9 +139,9 @@ const expectGitError = async (promise: Promise<unknown>, code: string, status?: 
 }
 
 describe('резолвер рабочих копий', () => {
-  it('список собирается из БД без единого обращения к машине', () => {
+  it('список собирается из БД без единого обращения к машине', async () => {
     const { service, exec } = setup()
-    const refs = service.listWorkspaces('bob', 'p1')
+    const refs = await service.listWorkspaces('bob', 'p1')
     expect(exec).not.toHaveBeenCalled()
     expect(refs.map((ref) => ref.id)).toEqual(['ws:ws-1', 'repo:repo-1', 'project:a1'])
     expect(refs[0]).toMatchObject({ kind: 'task-workspace', taskTitle: 'Панель кода', taskSeq: 42, path: '/repo/task', expectedBranch: 'feature/x' })
@@ -448,7 +448,7 @@ describe('право роли и причина «только чтение»', 
 
   it('merge-клон объясняет, что им управляет merge-ран', async () => {
     const { service } = setup()
-    const refs = service.listWorkspaces('bob', 'p1')
+    const refs = await service.listWorkspaces('bob', 'p1')
     expect(refs.find((ref) => ref.kind === 'merge-clone')?.readOnlyReason).toContain('merge-ран')
   })
 })

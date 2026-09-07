@@ -18,28 +18,28 @@ let registry: AgentRegistry
 let dataDir: string
 let token: string
 
-function connectAgent(machineId: string) {
+async function connectAgent(machineId: string) {
   const files = new Map<string, string>()
   const directories = new Set<string>()
   const socket = {
     close: vi.fn(),
-    send(data: string) {
+    async send(data: string) {
       const m = JSON.parse(data) as { t: string; opId?: string; path?: string; dataBase64?: string; execId?: string; command?: string }
       const ok = (result: object) => registry.handleMessage(machineId, { t: 'fs.result', opId: m.opId!, result: { root: '/', cwd: m.path ?? '/', ...result } })
       if (m.t === 'exec.start') {
-        registry.handleMessage(machineId, { t: 'exec.chunk', execId: m.execId!, stream: 'stdout', data: `out of ${m.command}` })
-        registry.handleMessage(machineId, { t: 'exec.done', execId: m.execId!, exitCode: 0 })
+        await registry.handleMessage(machineId, { t: 'exec.chunk', execId: m.execId!, stream: 'stdout', data: `out of ${m.command}` })
+        await registry.handleMessage(machineId, { t: 'exec.done', execId: m.execId!, exitCode: 0 })
       } else if (m.t === 'fs.mkdir') { directories.add(m.path!); ok({}) }
       else if (m.t === 'fs.write') { files.set(m.path!, m.dataBase64 ?? ''); ok({}) }
       else if (m.t === 'fs.read') {
         const d = files.get(m.path!)
-        if (d === undefined) registry.handleMessage(machineId, { t: 'fs.error', opId: m.opId!, message: 'ENOENT' })
+        if (d === undefined) await registry.handleMessage(machineId, { t: 'fs.error', opId: m.opId!, message: 'ENOENT' })
         else ok({ dataBase64: d })
       } else if (m.t === 'fs.list') ok({ entries: [] })
       else if (m.t === 'fs.delete') { files.delete(m.path!); ok({}) }
     }
   }
-  registry.register(machineId, 'Мак', socket, db.machines.listAgents(U).find((a) => a.id === machineId)!.policy, '0.15.0')
+  registry.register(machineId, 'Мак', socket, (await db.machines.listAgents(U)).find((a) => a.id === machineId)!.policy, '0.15.0')
   return { files, directories }
 }
 
@@ -59,11 +59,11 @@ afterEach(async () => { await app.close(); rmSync(dataDir, { recursive: true, fo
 
 describe('уведомления о долгих командах', () => {
   it('команда из чата пишет полный лог в artifacts/commands хранилища чата; консольная — нет', async () => {
-    const machine = db.machines.createAgent(U, 'Мак')
-    const fs = connectAgent(machine.id)
+    const machine = await db.machines.createAgent(U, 'Мак')
+    const fs = await connectAgent(machine.id)
     const inj = (opts: { method: 'GET' | 'POST' | 'PUT'; url: string; payload?: object }) => app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
     const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
-    const conv = db.chat.createConversation(U, 'C')
+    const conv = await db.chat.createConversation(U, 'C')
     expect((await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })).statusCode).toBe(200)
 
     await registry.exec(machine.id, 'npm test', 1000, undefined, { source: 'chat', userId: U, conversationId: conv.id })
@@ -79,6 +79,6 @@ describe('уведомления о долгих командах', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect([...fs.files.keys()].filter((p) => p.includes('/artifacts/commands/'))).toHaveLength(1)
     // журнал получил обе команды
-    expect(db.machines.listMachineCommands(machine.id).map((r) => r.command)).toEqual(['uptime', 'npm test'])
+    expect((await db.machines.listMachineCommands(machine.id)).map((r) => r.command)).toEqual(['uptime', 'npm test'])
   })
 })

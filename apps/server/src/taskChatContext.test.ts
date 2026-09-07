@@ -18,7 +18,7 @@ let requests: LlmRequest[] = []
 const fakeClaude: LlmClient = {
   send: (req, handlers) => {
     requests.push(req)
-    queueMicrotask(() => { handlers.onDelta('ок'); handlers.onDone('ок') })
+    queueMicrotask(async () => { void handlers.onDelta('ок'); void handlers.onDone('ок') })
     return { cancel: () => {} }
   }
 }
@@ -39,27 +39,27 @@ const inj = (opts: { method: 'GET' | 'POST'; url: string; payload?: object }) =>
   app.inject({ ...opts, headers: { authorization: `Bearer ${admin}` } })
 
 /** Проект с иерархией Эпик → Стори → Задача и связанным чатом задачи. */
-function setup() {
-  const project = db.projects.createProject('admin', { name: 'Voice Chat', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.machines.createAgent('admin', 'Прод-машина')
-  db.machines.linkMachine('admin', project.id, agent.id)
-  db.machines.setProjectMachinePath('admin', project.id, agent.id, '/srv/app')
-  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.tasks.getBoard('admin', project.id)!
+async function setup() {
+  const project = await db.projects.createProject('admin', { name: 'Voice Chat', gitUrl: 'git@github.com:x/y.git' })
+  const agent = await db.machines.createAgent('admin', 'Прод-машина')
+  await db.machines.linkMachine('admin', project.id, agent.id)
+  await db.machines.setProjectMachinePath('admin', project.id, agent.id, '/srv/app')
+  await db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  const board = (await db.tasks.getBoard('admin', project.id))!
   const backlog = board.columns.find((c) => c.semanticType === 'backlog')!
-  const epic = db.tasks.createTask('admin', project.id, { columnId: backlog.id, title: 'Канбан', type: 'epic' })!
-  const story = db.tasks.createTask('admin', project.id, { columnId: backlog.id, title: 'Карточка', type: 'story', parentId: epic.id })!
-  const task = db.tasks.createTask('admin', project.id, {
+  const epic = (await db.tasks.createTask('admin', project.id, { columnId: backlog.id, title: 'Канбан', type: 'epic' }))!
+  const story = (await db.tasks.createTask('admin', project.id, { columnId: backlog.id, title: 'Карточка', type: 'story', parentId: epic.id }))!
+  const task = (await db.tasks.createTask('admin', project.id, {
     columnId: backlog.id, title: 'Скролл в модалке', type: 'task', parentId: story.id,
     description: 'Боковая панель должна скроллиться', acceptanceCriteria: 'Появляется вертикальный скролл'
-  })!
-  const chat = db.chat.openOrCreateTaskChat('admin', project.id, task.id)!
+  }))!
+  const chat = (await db.chat.openOrCreateTaskChat('admin', project.id, task.id))!
   return { project, epic, story, task, chat, columnName: backlog.name }
 }
 
 describe('GET /api/conversations/:id/task-context', () => {
   it('отдаёт иерархию, этап, машину и папку разработки', async () => {
-    const { project, epic, story, task, chat, columnName } = setup()
+    const { project, epic, story, task, chat, columnName } = await setup()
     const res = await inj({ method: 'GET', url: `/api/conversations/${chat.id}/task-context` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({
@@ -81,73 +81,73 @@ describe('GET /api/conversations/:id/task-context', () => {
   })
 
   it('для чата без задачи возвращает null', async () => {
-    const conv = db.chat.createConversation('admin')
+    const conv = await db.chat.createConversation('admin')
     const res = await inj({ method: 'GET', url: `/api/conversations/${conv.id}/task-context` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toBeNull()
   })
 
-  it('использует персональный default чата и online-fallback, но не заменяет явный override', () => {
-    const { project, chat } = setup()
-    const fallback = db.machines.createAgent('admin', 'Резервная')
-    db.machines.linkMachine('admin', project.id, fallback.id)
-    db.machines.setProjectMachinePath('admin', project.id, fallback.id, '/srv/fallback')
-    const projectDefault = db.projects.getProject('admin', project.id)!.defaultAgentId!
-    db.machines.setUserProjectDefaultMachine('admin', project.id, projectDefault)
+  it('использует персональный default чата и online-fallback, но не заменяет явный override', async () => {
+    const { project, chat } = await setup()
+    const fallback = await db.machines.createAgent('admin', 'Резервная')
+    await db.machines.linkMachine('admin', project.id, fallback.id)
+    await db.machines.setProjectMachinePath('admin', project.id, fallback.id, '/srv/fallback')
+    const projectDefault = (await db.projects.getProject('admin', project.id))!.defaultAgentId!
+    await db.machines.setUserProjectDefaultMachine('admin', project.id, projectDefault)
 
-    expect(db.chat.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
+    expect(await db.chat.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
       agentId: fallback.id, source: 'fallback', error: null
     })
-    db.machines.setUserProjectDefaultMachine('admin', project.id, fallback.id)
-    expect(db.chat.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
+    await db.machines.setUserProjectDefaultMachine('admin', project.id, fallback.id)
+    expect(await db.chat.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
       agentId: fallback.id, source: 'personal_default', error: null
     })
-    db.chat.setConversationExecTarget('admin', chat.id, projectDefault)
-    expect(db.chat.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
+    await db.chat.setConversationExecTarget('admin', chat.id, projectDefault)
+    expect(await db.chat.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
       agentId: projectDefault, source: 'explicit', error: 'offline'
     })
 
-    db.chat.restoreTaskChatWorkdir('admin', chat.id, project.id)
-    expect(db.chat.getConversation('admin', chat.id)).toMatchObject({ execTarget: null, workdir: null })
+    await db.chat.restoreTaskChatWorkdir('admin', chat.id, project.id)
+    expect(await db.chat.getConversation('admin', chat.id)).toMatchObject({ execTarget: null, workdir: null })
   })
 
   // Машину могли удалить мимо чата: висячий id оставлял чат навсегда в
   // «машина недоступна», и человеку приходилось переключать её руками.
-  it('забывает машину чата, которой больше нет в реестре', () => {
-    const { project, chat } = setup()
-    const gone = db.machines.createAgent('admin', 'Удалённая')
-    db.machines.linkMachine('admin', project.id, gone.id)
-    db.machines.setProjectMachinePath('admin', project.id, gone.id, '/srv/gone')
-    db.chat.setConversationExecTarget('admin', chat.id, gone.id)
-    db.machines.deleteAgent('admin', gone.id)
+  it('забывает машину чата, которой больше нет в реестре', async () => {
+    const { project, chat } = await setup()
+    const gone = await db.machines.createAgent('admin', 'Удалённая')
+    await db.machines.linkMachine('admin', project.id, gone.id)
+    await db.machines.setProjectMachinePath('admin', project.id, gone.id, '/srv/gone')
+    await db.chat.setConversationExecTarget('admin', chat.id, gone.id)
+    await db.machines.deleteAgent('admin', gone.id)
 
-    const resolved = db.chat.resolveConversationMachine('admin', chat.id, { isOnline: () => true })
+    const resolved = await db.chat.resolveConversationMachine('admin', chat.id, { isOnline: () => true })
 
     expect(resolved?.source).not.toBe('explicit')
     expect(resolved?.error).toBeNull()
-    expect(db.chat.getConversation('admin', chat.id)?.execTarget).toBeNull()
+    expect((await db.chat.getConversation('admin', chat.id))?.execTarget).toBeNull()
   })
 
   // А машину, которая просто офлайн или временно недоступна в проекте,
   // забывать нельзя — это осознанный выбор человека.
-  it('не забывает существующую машину, которая сейчас недоступна', () => {
-    const { chat } = setup()
-    db.identity.createUser('stranger', 'password-stranger', 'developer')
-    const foreign = db.machines.createAgent('stranger', 'Чужая машина')
-    db.chat.setConversationExecTarget('admin', chat.id, foreign.id)
+  it('не забывает существующую машину, которая сейчас недоступна', async () => {
+    const { chat } = await setup()
+    await db.identity.createUser('stranger', 'password-stranger', 'developer')
+    const foreign = await db.machines.createAgent('stranger', 'Чужая машина')
+    await db.chat.setConversationExecTarget('admin', chat.id, foreign.id)
 
-    const resolved = db.chat.resolveConversationMachine('admin', chat.id, { isOnline: () => true })
+    const resolved = await db.chat.resolveConversationMachine('admin', chat.id, { isOnline: () => true })
 
     // Машина есть в реестре, просто недоступна этому чату — забывать нечего.
     expect(resolved).toMatchObject({ agentId: foreign.id, source: 'explicit', error: 'unavailable' })
-    expect(db.chat.getConversation('admin', chat.id)?.execTarget).toBe(foreign.id)
+    expect((await db.chat.getConversation('admin', chat.id))?.execTarget).toBe(foreign.id)
   })
 })
 
 describe('контекст задачи в промпте хода', () => {
   it('чат задачи получает иерархию, этап, папку и критерии приёмки', async () => {
-    const { chat } = setup()
-    db.chat.addMessage('admin', chat.id, 'u1', 'привет', '10:00')
+    const { chat } = await setup()
+    await db.chat.addMessage('admin', chat.id, 'u1', 'привет', '10:00')
 
     // Ход поднимаем напрямую через менеджер, как в turns.test.ts.
     const turns = createTurnManager({

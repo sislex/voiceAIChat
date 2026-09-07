@@ -14,7 +14,7 @@ export interface ImageStudioRoutesDeps {
   db: VoiceChatDb
   store: ImageStudioStore
   /** Генератор изображений; функцией — в тестах подменяется фейком. */
-  generator?: (userId: string) => ImageStudioGenerator
+  generator?: (userId: string) => Promise<ImageStudioGenerator>
   /** Счётчик попыток пароля публичной галереи; в тестах — со своими часами. */
   passwordLimiter?: SlidingWindowLimiter
 }
@@ -49,8 +49,8 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   }
 
   /** Разговор пользователя вида «студия картинок», иначе 404. */
-  const own = (userId: string, id: string, reply: FastifyReply): boolean => {
-    const conversation = db.chat.getConversation(userId, id)
+  const own = async (userId: string, id: string, reply: FastifyReply): Promise<boolean> => {
+    const conversation = await db.chat.getConversation(userId, id)
     if (!conversation || !isImageStudioConversation(conversation)) {
       void reply.code(404).send({ error: 'conversation not found' })
       return false
@@ -59,12 +59,12 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   }
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/files', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     return store.list(req.params.id)
   })
 
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/image-studio/:id/file', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try {
       const data = await store.readBuffer(req.params.id, req.query.path ?? '')
       if (!data) return reply.code(404).send({ error: 'файл не найден' })
@@ -73,35 +73,35 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   })
 
   app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string; source?: string } }>('/api/image-studio/:id/file', { bodyLimit: 20 * 1024 * 1024 }, async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try {
       await store.writeBuffer(req.params.id, req.body?.path ?? '', Buffer.from(req.body?.dataBase64 ?? '', 'base64'))
       // Клиентские обработки (кроп, разметка, поворот…) сообщают исходник —
       // без этого цепочка версий рвётся на первом же локальном действии.
       if (req.body?.source) await store.setMeta(req.params.id, req.body.path ?? '', { source: req.body.source })
-      return store.list(req.params.id)
+      return await store.list(req.params.id)
     } catch (error) { return sendStudioError(reply, error) }
   })
 
   app.delete<{ Params: { id: string }; Querystring: { path?: string } }>('/api/image-studio/:id/file', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try {
       await store.delete(req.params.id, req.query.path ?? '')
-      return store.list(req.params.id)
+      return await store.list(req.params.id)
     } catch (error) { return sendStudioError(reply, error) }
   })
 
   app.post<{ Params: { id: string }; Body: { from?: string; to?: string } }>('/api/image-studio/:id/rename', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try {
       await store.rename(req.params.id, req.body?.from ?? '', req.body?.to ?? '')
-      return store.list(req.params.id)
+      return await store.list(req.params.id)
     } catch (error) { return sendStudioError(reply, error) }
   })
 
   app.post<{ Params: { id: string }; Body: { prompt?: string; name?: string; references?: string[] } }>('/api/image-studio/:id/generate', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что нарисовать' })
     if (prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: `Промпт длиннее ${IMAGE_STUDIO_LIMITS.maxPromptChars} символов — сократите` })
@@ -115,14 +115,14 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
         references.push({ name, data })
       }
       const startedAt = Date.now()
-      const data = await deps.generator!(userId)({ prompt, ...(references.length ? { references } : {}), onCancel: run.onCancel })
+      const data = await (await deps.generator!(userId))({ prompt, ...(references.length ? { references } : {}), onCancel: run.onCancel })
       const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
       const file = await store.writeBuffer(req.params.id, name, data)
       await store.setMeta(req.params.id, name, { prompt, tookMs: Date.now() - startedAt })
       // Первый успешный промпт даёт чату говорящее имя вместо «Картинки N».
-      const conversation = db.chat.getConversation(userId, req.params.id)
+      const conversation = await db.chat.getConversation(userId, req.params.id)
       if (conversation && /^Картинки \d+$/.test(conversation.title)) {
-        db.chat.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
+        await db.chat.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
       }
       return { file: { ...file, prompt }, files: await store.list(req.params.id) }
     })
@@ -130,7 +130,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   app.post<{ Params: { id: string }; Body: { path?: string; prompt?: string } }>('/api/image-studio/:id/edit', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return reply.code(400).send({ error: 'Опишите, что изменить' })
     if (prompt.length > IMAGE_STUDIO_LIMITS.maxPromptChars) return reply.code(400).send({ error: `Промпт длиннее ${IMAGE_STUDIO_LIMITS.maxPromptChars} символов — сократите` })
@@ -140,7 +140,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       const source = await store.readBuffer(req.params.id, sourcePath)
       if (!source) return reply.code(404).send({ error: 'файл не найден' })
       const startedAt = Date.now()
-      const data = await deps.generator!(userId)({ prompt, source, sourceName: sourcePath || 'source.png', onCancel: run.onCancel })
+      const data = await (await deps.generator!(userId))({ prompt, source, sourceName: sourcePath || 'source.png', onCancel: run.onCancel })
       // Правка не затирает оригинал: результат — новый файл рядом. Откат — это
       // просто удаление новой версии, истории снимков студии не нужно.
       const name = await store.freeName(req.params.id, sourcePath || 'правка.png')
@@ -151,14 +151,14 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   })
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/trash', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     return { items: await store.listTrash(req.params.id) }
   })
 
   // Очистка корзины необратима, поэтому это отдельный метод, а не флаг
   // удаления: случайно нажать «удалить» и потерять файл совсем нельзя.
   app.post<{ Params: { id: string }; Body: { name?: string } | undefined }>('/api/image-studio/:id/trash/purge', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try {
       const removed = await store.purgeTrash(req.params.id, req.body?.name)
       return { removed, items: await store.listTrash(req.params.id) }
@@ -166,7 +166,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   })
 
   app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/image-studio/:id/restore', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try {
       const name = await store.restore(req.params.id, req.body?.name ?? '')
       return { name, files: await store.list(req.params.id) }
@@ -175,10 +175,10 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   app.post<{ Params: { id: string }; Body: { path?: string; to?: string; copy?: boolean } }>('/api/image-studio/:id/transfer', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     const to = req.body?.to ?? ''
     // Целевой чат — тоже студия этого же пользователя, иначе 404 без деталей.
-    if (to === req.params.id || !own(userId, to, reply)) return reply
+    if (to === req.params.id || !await own(userId, to, reply)) return reply
     try {
       const name = await store.transfer(req.params.id, req.body?.path ?? '', to, req.body?.copy ? 'copy' : 'move')
       return { name, files: await store.list(req.params.id) }
@@ -187,16 +187,16 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   app.post<{ Params: { id: string }; Body: { password?: string | null } | undefined }>('/api/image-studio/:id/publish', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     try {
-      const title = db.chat.getConversation(userId, req.params.id)?.title ?? null
+      const title = (await db.chat.getConversation(userId, req.params.id))?.title ?? null
       const raw = await store.publish(req.params.id, { title, ...(req.body?.password !== undefined ? { password: req.body.password } : {}) })
       return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, passwordProtected: Boolean(raw.passwordHash) }
     } catch (error) { return sendStudioError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/publication', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     const raw = await store.publication(req.params.id)
     if (!raw) return { url: null }
     // Сводка недели — по дням из sidecar; сами дни наружу не нужны.
@@ -206,7 +206,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   })
 
   app.delete<{ Params: { id: string } }>('/api/image-studio/:id/publish', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     await store.unpublish(req.params.id)
     return { url: null }
   })
@@ -329,12 +329,12 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
   })
 
   app.get<{ Params: { id: string } }>('/api/image-studio/:id/run', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     return { active: activeRuns.has(req.params.id) }
   })
 
   app.post<{ Params: { id: string } }>('/api/image-studio/:id/cancel', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     const run = activeRuns.get(req.params.id)
     if (!run) return { cancelled: false }
     run.cancel()

@@ -12,7 +12,7 @@ type Outcome = CommandExecResult & { output?: string; advanceMs?: number }
 
 /** Стадии идут после установки зависимостей, поэтому `outcomes` описывают
  *  только их: исход самой установки задаётся отдельно (`opts.install`). */
-function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs?: number; install?: Outcome; npmCacheDir?: string | null; cached?: boolean } = {}) {
+async function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs?: number; install?: Outcome; npmCacheDir?: string | null; cached?: boolean } = {}) {
   let t = 0
   const run = { id: 'run1', status: 'queued', projectId: 'p1', taskId: 't1', commitSha: 'a'.repeat(40), scenarios: [scenario()] } as unknown as ComponentQaRun
   const finished: ComponentQaFinishInput[] = []
@@ -22,17 +22,17 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
   const gateResults: Array<{ commitSha: string; signature: string; runId: string }> = []
   const db = {
     ci: {
-      componentQaExecutionContext: () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: 'main' } : null),
-      findPassedGateResult: (commitSha: string, signature: string) => {
+      componentQaExecutionContext: async () => (commands ? { agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: 'main' } : null),
+      findPassedGateResult: async (commitSha: string, signature: string) => {
       if (opts.cached) return { runKind: 'component_qa', runId: 'previous-run', createdAt: 0 }
       const hit = gateResults.find((item) => item.commitSha === commitSha && item.signature === signature)
       return hit ? { runKind: 'component_qa', runId: hit.runId, createdAt: 0 } : null
     },
-      recordPassedGateResult: (args: { commitSha: string; signature: string; runId: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature, runId: args.runId }) },
-      getComponentQaRun: () => run,
-      markComponentQaRunning: () => { run.status = 'running' },
-      appendComponentQaLog: (_id: string, _stream: 'stdout' | 'stderr', chunk: string) => { log.push(chunk) },
-      finishComponentQaRun: (_userId: string, _runId: string, input: ComponentQaFinishInput) => { finished.push(input); run.status = input.status; return run }
+      recordPassedGateResult: async (args: { commitSha: string; signature: string; runId: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature, runId: args.runId }) },
+      getComponentQaRun: async () => run,
+      markComponentQaRunning: async () => { run.status = 'running' },
+      appendComponentQaLog: async (_id: string, _stream: 'stdout' | 'stderr', chunk: string) => { log.push(chunk) },
+      finishComponentQaRun: async (_userId: string, _runId: string, input: ComponentQaFinishInput) => { finished.push(input); run.status = input.status; return run }
     }
   }
   const executor = {
@@ -47,7 +47,7 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
   const completions: Array<{ passed: boolean; classification?: string | null }> = []
   const runner = createComponentQaRunner({
     db, executor, now: () => t,
-    completed: (_runId, _userId, passed, _reason, classification) => { completions.push({ passed, classification }) },
+    completed: async (_runId, _userId, passed, _reason, classification) => { completions.push({ passed, classification }) },
     ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {})
   })
   /** Вызовы и записи стадий проекта — без предваряющей установки зависимостей. */
@@ -58,8 +58,8 @@ function setup(commands: string[] | null, outcomes: Outcome[], opts: { timeoutMs
 
 describe('createComponentQaRunner', () => {
   it('выполняет стадии последовательно и создаёт отдельную запись команды на каждую', async () => {
-    const s = setup(['npm run one', 'npm run two'], [{ exitCode: 0, timedOut: false, output: 'one ok\n' }, { exitCode: 0, timedOut: false, output: 'two ok\n' }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one', 'npm run two'], [{ exitCode: 0, timedOut: false, output: 'one ok\n' }, { exitCode: 0, timedOut: false, output: 'two ok\n' }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.stageCalls().map((call) => call.script)).toEqual(['npm run one', 'npm run two'])
     expect(s.calls.every((call) => call.env.CI === '1')).toBe(true)
@@ -80,8 +80,8 @@ describe('createComponentQaRunner', () => {
   })
 
   it('первый ненулевой код возврата прерывает оставшиеся стадии', async () => {
-    const s = setup(['npm run one', 'npm run two', 'npm run three'], [{ exitCode: 0, timedOut: false }, { exitCode: 1, timedOut: false }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one', 'npm run two', 'npm run three'], [{ exitCode: 0, timedOut: false }, { exitCode: 1, timedOut: false }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.stageCalls()).toHaveLength(2)
     const input = s.finished[0]
@@ -94,8 +94,8 @@ describe('createComponentQaRunner', () => {
   })
 
   it('таймаут стадии даёт blocked/infrastructure с command_timeout', async () => {
-    const s = setup(['npm run one'], [{ exitCode: null, timedOut: true }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one'], [{ exitCode: null, timedOut: true }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     const input = s.finished[0]
     expect(input.status).toBe('blocked')
@@ -105,8 +105,8 @@ describe('createComponentQaRunner', () => {
   })
 
   it('потеря исполнителя даёт blocked/infrastructure с executor_disconnected', async () => {
-    const s = setup(['npm run one', 'npm run two'], [{ exitCode: null, timedOut: false }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one', 'npm run two'], [{ exitCode: null, timedOut: false }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.stageCalls()).toHaveLength(1)
     const input = s.finished[0]
@@ -120,8 +120,8 @@ describe('createComponentQaRunner', () => {
   })
 
   it('исчерпание общего бюджета рана блокирует следующую стадию без запуска', async () => {
-    const s = setup(['npm run one', 'npm run two'], [{ exitCode: 0, timedOut: false, advanceMs: 6000 }], { timeoutMs: 5000, install: { exitCode: 0, timedOut: false, advanceMs: 0 } })
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one', 'npm run two'], [{ exitCode: 0, timedOut: false, advanceMs: 6000 }], { timeoutMs: 5000, install: { exitCode: 0, timedOut: false, advanceMs: 0 } })
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.stageCalls()).toHaveLength(1)
     expect(s.stageCalls()[0].timeoutMs).toBe(5000)
@@ -131,23 +131,23 @@ describe('createComponentQaRunner', () => {
   })
 
   it('ставит зависимости перед стадиями тем же кэшем задачи', async () => {
-    const s = setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.calls[0]).toMatchObject({ script: "npm_config_cache='/cache/task' npm ci --no-audit --no-fund", workdir: '/ws', agentId: 'agent' })
     expect(s.finished[0].status).toBe('passed')
   })
 
   it('без сохранённого кэша ставит зависимости кэшем npm по умолчанию', async () => {
-    const s = setup(['npm run one'], [{ exitCode: 0, timedOut: false }], { npmCacheDir: null })
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one'], [{ exitCode: 0, timedOut: false }], { npmCacheDir: null })
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.calls[0].script).toBe('npm ci --no-audit --no-fund')
   })
 
   it('провал установки прерывает ран и не запускает стадии', async () => {
-    const s = setup(['npm run one'], [], { install: { exitCode: 1, timedOut: false, output: 'npm error lock file out of sync\n' } })
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one'], [], { install: { exitCode: 1, timedOut: false, output: 'npm error lock file out of sync\n' } })
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.calls).toHaveLength(1)
     const input = s.finished[0]
@@ -160,8 +160,8 @@ describe('createComponentQaRunner', () => {
   // реализации, и модель три круга искала причину в исправном коде.
   it('нет бинаря из node_modules (127) → blocked/infrastructure, а не дефект', async () => {
     const output = '> tsc --noEmit -p tsconfig.json\nsh: tsc: command not found\nnpm error code 127\n'
-    const s = setup(['npm run typecheck'], [{ exitCode: 127, timedOut: false, output }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run typecheck'], [{ exitCode: 127, timedOut: false, output }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     const input = s.finished[0]
     expect(input.status).toBe('blocked')
@@ -173,8 +173,8 @@ describe('createComponentQaRunner', () => {
   })
 
   it('зелёный прогон запоминается для этого коммита и набора команд', async () => {
-    const s = setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one'], [{ exitCode: 0, timedOut: false }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.finished[0].status).toBe('passed')
     expect(s.gateResults).toHaveLength(1)
@@ -184,8 +184,8 @@ describe('createComponentQaRunner', () => {
   // Пост-development стадии идут по неизменному коду development-рана: повторный
   // прогон того же набора команд ничего не выясняет, а стоит установки и гейта.
   it('готовый результат того же коммита переиспользуется без прогона', async () => {
-    const s = setup(['npm run one', 'npm run two'], [], { cached: true })
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one', 'npm run two'], [], { cached: true })
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.calls).toHaveLength(0)
     const input = s.finished[0]
@@ -198,16 +198,16 @@ describe('createComponentQaRunner', () => {
   })
 
   it('провалившийся прогон в кэш не попадает', async () => {
-    const s = setup(['npm run one'], [{ exitCode: 1, timedOut: false }])
-    s.runner.launch('run1', 'user')
+    const s = await setup(['npm run one'], [{ exitCode: 1, timedOut: false }])
+    await s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.finished[0].status).toBe('failed')
     expect(s.gateResults).toHaveLength(0)
   })
 
-  it('недоступный workspace даёт blocked с workspace_unavailable', () => {
-    const s = setup(null, [])
-    s.runner.launch('run1', 'user')
+  it('недоступный workspace даёт blocked с workspace_unavailable', async () => {
+    const s = await setup(null, [])
+    await s.runner.launch('run1', 'user')
     expect(s.finished).toHaveLength(1)
     expect(s.finished[0]).toMatchObject({ status: 'blocked', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'], commands: [] })
   })
@@ -220,19 +220,19 @@ describe('createComponentQaRunner', () => {
     const runner = createComponentQaRunner({
       db: {
         ci: {
-          componentQaExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'], ciBaseBranch: 'main' }),
-          findPassedGateResult: () => null,
-          recordPassedGateResult: () => {},
-          getComponentQaRun: () => run,
-          markComponentQaRunning: () => { run.status = 'running' },
-          appendComponentQaLog: () => {},
-          finishComponentQaRun: (_userId, _runId, input) => { finished.push(input); return run }
+          componentQaExecutionContext: async () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: null, commands: ['npm run one', 'npm run two'], ciBaseBranch: 'main' }),
+          findPassedGateResult: async () => null,
+          recordPassedGateResult: async () => {},
+          getComponentQaRun: async () => run,
+          markComponentQaRunning: async () => { run.status = 'running' },
+          appendComponentQaLog: async () => {},
+          finishComponentQaRun: async (_userId, _runId, input) => { finished.push(input); return run }
         }
       },
       executor: { run: executorRun },
       now: () => 0
     })
-    runner.launch('run1', 'user')
+    await runner.launch('run1', 'user')
     runner.cancel('run1')
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(executorRun).toHaveBeenCalledTimes(1)
@@ -251,10 +251,10 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => context({ command: 'npm run affected-check' }),
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => context({ command: 'npm run affected-check' }),
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
-          appendAutomatedQaLog: (_id, stream, text) => log.push([stream, text]),
+          appendAutomatedQaLog: async (_id, stream, text) => { log.push([stream, text]) },
           completeQaStageRun: complete,
           updateQaStageRun: vi.fn()
         }
@@ -262,7 +262,7 @@ describe('createAutomatedQaRunner', () => {
       executor: { run: vi.fn(async (_request, onChunk) => { onChunk('tests passed\n'); return { exitCode: 0, timedOut: false } }) },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(complete).toHaveBeenCalled())
     expect(log[0]).toEqual(['system', expect.stringContaining('$ npm run affected-check')])
     expect(log[1]).toEqual(['out', 'tests passed\n'])
@@ -276,8 +276,8 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => context(),
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => context(),
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -287,7 +287,7 @@ describe('createAutomatedQaRunner', () => {
       executor: { run: vi.fn(async (_request, onChunk) => { onChunk('FAIL src/a.test.ts\n'); return { exitCode: 1, timedOut: false } }) },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(completed).toHaveBeenCalled())
     const verdict = completed.mock.calls[0][4] as AutomatedQaVerdict
     expect(verdict.classification).toBe('implementation_defect')
@@ -300,8 +300,8 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => context(),
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => context(),
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -311,7 +311,7 @@ describe('createAutomatedQaRunner', () => {
       executor: { run: vi.fn(async () => ({ exitCode: null, timedOut: true })) },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(completed).toHaveBeenCalled())
     expect(completed).toHaveBeenCalledWith('run', 'owner', false, 'Лимит времени Automated QA исчерпан', expect.objectContaining({ classification: 'infrastructure' }))
   })
@@ -322,8 +322,8 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => null,
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => null,
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -333,7 +333,7 @@ describe('createAutomatedQaRunner', () => {
       executor: { run: vi.fn() },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     expect(update).toHaveBeenCalledWith('run', expect.objectContaining({ status: 'failed', result: expect.objectContaining({ classification: 'infrastructure' }) }))
     expect(completed).toHaveBeenCalledWith('run', 'owner', false, 'Development workspace недоступен', expect.objectContaining({ mode: 'command' }))
   })
@@ -345,12 +345,12 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [scenario] }),
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => context({ mode: 'playwright', scenarios: [scenario] }),
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: complete,
-          updateQaStageRun: (_id, patch) => { if (patch.progress) progress.push(patch.progress) }
+          updateQaStageRun: async (_id, patch) => { if (patch.progress) progress.push(patch.progress) }
         }
       },
       executor: { run: vi.fn() },
@@ -363,7 +363,7 @@ describe('createAutomatedQaRunner', () => {
       },
       completed: vi.fn()
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(complete).toHaveBeenCalled())
     expect(complete).toHaveBeenCalledWith('owner', 'run', expect.objectContaining({ mode: 'playwright', passed: true, screenshotUrl: '/api/qa/runs/run/screenshot' }))
     // Имя сценария в подписи прогресса: в наборе иначе непонятно, чей это шаг.
@@ -375,8 +375,8 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Кнопка «Создать»', action: { kind: 'click', selector: '#create' } }] }] }),
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Кнопка «Создать»', action: { kind: 'click', selector: '#create' } }] }] }),
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -387,7 +387,7 @@ describe('createAutomatedQaRunner', () => {
       scenarioRunner: { run: async () => ({ steps: [{ id: 's1', title: 'Кнопка «Создать»', status: 'failed', detail: 'локатор не найден', durationMs: 12 }], screenshotUrl: null, pageErrors: [], blocked: null }) },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(completed).toHaveBeenCalled())
     const verdict = completed.mock.calls[0][4] as AutomatedQaVerdict
     expect(verdict.classification).toBe('implementation_defect')
@@ -402,8 +402,8 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ name: 'Доска', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Создать', action: { kind: 'click', selector: '#create' } }] }] }),
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => context({ mode: 'playwright', scenarios: [{ name: 'Доска', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Создать', action: { kind: 'click', selector: '#create' } }] }] }),
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -417,7 +417,7 @@ describe('createAutomatedQaRunner', () => {
       }) },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(completed).toHaveBeenCalled())
     const verdict = completed.mock.calls[0][4] as AutomatedQaVerdict
     expect(verdict.steps[0].pageErrors).toEqual(['Доска: TypeError: x is not a function'])
@@ -429,8 +429,8 @@ describe('createAutomatedQaRunner', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [] }] }),
-          getQaStageRun: () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => context({ mode: 'playwright', scenarios: [{ startUrl: 'http://localhost:5173', steps: [] }] }),
+          getQaStageRun: async () => ({ projectId: 'project', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -440,7 +440,7 @@ describe('createAutomatedQaRunner', () => {
       executor: { run: vi.fn() },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(completed).toHaveBeenCalled())
     expect(completed.mock.calls[0][4]).toMatchObject({ classification: 'infrastructure', mode: 'playwright' })
   })
@@ -456,11 +456,11 @@ describe('набор сценариев (круг 20)', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => ctx([
+          automatedQaExecutionContext: async () => ctx([
           { name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's1', title: 'Логин', action: { kind: 'click', selector: '#a' } }] },
           { name: 'Доска', startUrl: 'http://b/', steps: [{ id: 's2', title: 'Карточка', action: { kind: 'click', selector: '#b' } }] }
         ]),
-          getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
+          getQaStageRun: async () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: complete,
@@ -476,7 +476,7 @@ describe('набор сценариев (круг 20)', () => {
       },
       completed: vi.fn()
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(complete).toHaveBeenCalled())
     expect(seen).toEqual(['Вход', 'Доска'])
     expect(complete).toHaveBeenCalledWith('owner', 'run', expect.objectContaining({ passed: true, summary: 'Пройдено сценариев: 2, шагов 2' }))
@@ -488,11 +488,11 @@ describe('набор сценариев (круг 20)', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => ctx([
+          automatedQaExecutionContext: async () => ctx([
           { name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's1', title: 'Логин', action: { kind: 'click', selector: '#a' } }] },
           { name: 'Доска', startUrl: 'http://b/', steps: [{ id: 's2', title: 'Карточка', action: { kind: 'click', selector: '#b' } }] }
         ]),
-          getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
+          getQaStageRun: async () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -508,7 +508,7 @@ describe('набор сценариев (круг 20)', () => {
       },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(completed).toHaveBeenCalled())
     // Второй сценарий не запускался: набор остановлен на первом провале.
     expect(seen).toEqual(['Вход'])
@@ -522,8 +522,8 @@ describe('набор сценариев (круг 20)', () => {
     const runner = createAutomatedQaRunner({
       db: {
         qa: {
-          automatedQaExecutionContext: () => ctx([]),
-          getQaStageRun: () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
+          automatedQaExecutionContext: async () => ctx([]),
+          getQaStageRun: async () => ({ projectId: 'p', taskId: 't1', status: 'queued' }),
           markAutomatedQaRunning: vi.fn(),
           appendAutomatedQaLog: vi.fn(),
           completeQaStageRun: vi.fn(),
@@ -534,7 +534,7 @@ describe('набор сценариев (круг 20)', () => {
       scenarioRunner: { run: async () => ({ steps: [], screenshotUrl: null, pageErrors: [], blocked: null }) },
       completed
     })
-    runner.launch('run', 'owner')
+    await runner.launch('run', 'owner')
     await vi.waitFor(() => expect(completed).toHaveBeenCalled())
     expect(completed.mock.calls[0][4]).toMatchObject({ classification: 'infrastructure' })
   })

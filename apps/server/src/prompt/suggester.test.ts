@@ -17,8 +17,8 @@ function fakeClient(reply: string | { error: string }): { client: LlmClient; las
     client: {
       send(req, h) {
         last = req
-        if (typeof reply === 'object') h.onError(reply.error)
-        else h.onDone(reply)
+        if (typeof reply === 'object') void h.onError(reply.error)
+        else void h.onDone(reply)
         return { cancel: () => {} }
       }
     },

@@ -22,7 +22,7 @@ export interface AutomatedQaScenarioInput {
   /** Общий бюджет прогона; шаги за его пределами не начинаются. */
   budgetMs?: number
   /** Прогресс: вызывается сразу после каждого шага, чтобы лента не молчала. */
-  onStep?: (step: AutomatedQaStepResult, index: number, total: number) => void
+  onStep?: (step: AutomatedQaStepResult, index: number, total: number) => Promise<void>
   /**
    * Снимок содержимым вместо файла. У разового прогона нет рана в БД, а роут
    * снимка без рана отвечает 404: файл на диске был недостижим и удалялся

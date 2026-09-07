@@ -78,7 +78,7 @@ async function startRunner(
 }
 
 /** Локальный CLI на фейковом процессе: печатает те же строки и выходит с 0. */
-function localClaude(lines: string[]): LlmClient {
+async function localClaude(lines: string[]): Promise<LlmClient> {
   const spawn: SpawnFn = vi.fn(() => {
     const stdout = new PassThrough()
     const child = Object.assign(new EventEmitter(), {
@@ -100,11 +100,11 @@ function localClaude(lines: string[]): LlmClient {
 /** Ход в свежей БД: возвращает поток событий хода до claude.done/claude.error. */
 async function turnEvents(client: LlmClient): Promise<ServerMessage[]> {
   const db = new VoiceChatDb(':memory:')
-  db.identity.createUser(U, '', 'admin')
-  const conv = db.chat.createConversation(U, 'Чат')
+  await db.identity.createUser(U, '', 'admin')
+  const conv = await db.chat.createConversation(U, 'Чат')
   // В реальном потоке клиент сохраняет реплику пользователя до claude.send,
   // и TurnManager для нового разговора собирает prompt именно из истории БД.
-  db.chat.addMessage(U, conv.id, 'u1', 'привет', '10:00')
+  await db.chat.addMessage(U, conv.id, 'u1', 'привет', '10:00')
   const turns = createTurnManager({ db, claude: client })
   const events: ServerMessage[] = []
   await new Promise<void>((resolve) => {
@@ -130,10 +130,13 @@ function normalize(events: ServerMessage[]): unknown[] {
   return events.map((m) => {
     const copy: Record<string, unknown> = { ...m, conversationId: '<conv>' }
     delete copy.message
-    const meta = copy.meta as { activity?: Array<Record<string, unknown>> } | undefined
+    const meta = copy.meta as { activity?: Array<Record<string, unknown>>; durationMs?: number } | undefined
     if (meta?.activity) {
       copy.meta = { ...meta, activity: meta.activity.map((entry) => ({ ...entry, ts: 0 })) }
     }
+    // Длительность хода — стенные часы: после круга 3 у двух путей разное число
+    // асинхронных шагов, и совпадать она не обязана.
+    if (meta && typeof meta.durationMs === 'number') copy.meta = { ...(copy.meta as object), durationMs: 0 }
     return copy
   })
 }
@@ -149,7 +152,7 @@ describe('ход модели через исполнителя по HTTP', () =
       const remote = await turnEvents(
         new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url })
       )
-      const local = await turnEvents(localClaude(LINES))
+      const local = await turnEvents(await localClaude(LINES))
       expect(normalize(remote)).toEqual(normalize(local))
       expect(remote.map((m) => m.t)).toEqual([
         'claude.start',
@@ -176,8 +179,8 @@ describe('ход модели через исполнителя по HTTP', () =
     })
     try {
       const db = new VoiceChatDb(':memory:')
-      db.identity.createUser(U, '', 'admin')
-      const conv = db.chat.createConversation(U, 'Чат')
+      await db.identity.createUser(U, '', 'admin')
+      const conv = await db.chat.createConversation(U, 'Чат')
       const turns = createTurnManager({
         db,
         claude: new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url })
@@ -190,7 +193,7 @@ describe('ход модели через исполнителя по HTTP', () =
       // Ждём, пока исполнитель получит ран (иначе отменять ещё нечего).
       while (!runner.posts.length) await new Promise((r) => setImmediate(r))
 
-      turns.cancel(conv.id)
+      await turns.cancel(conv.id)
       while (!runner.deletes.length) await new Promise((r) => setTimeout(r, 5))
       expect(runner.deletes[0]).toBe(`/v1/run/${runner.posts[0].runId}`)
       expect(turns.active(U)).toHaveLength(0)

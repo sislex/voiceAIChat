@@ -92,7 +92,7 @@ export interface PreviewProxyDeps {
   machines?: {
     bridge: PreviewMachineBridge
     /** Доступ пользователя к машине (владелец или share проекта). */
-    canUse(userId: string, agentId: string): boolean
+    canUse(userId: string, agentId: string): Promise<boolean>
   }
 }
 
@@ -1010,7 +1010,7 @@ async function loadViaMachine(
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
     const agentId = machineAgentIdOf(current.hostname)
     if (!agentId) throw new PreviewProxyError(502, 'Тестовое окружение перенаправило наружу — открой внешний адрес напрямую')
-    if (!deps.canUse(userId, agentId)) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
+    if (!(await deps.canUse(userId, agentId))) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
     if (!deps.bridge.isOnline(agentId)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
     const secure = current.protocol === 'https:'
     const port = current.port ? Number(current.port) : secure ? 443 : 80

@@ -10,7 +10,7 @@ const AGENT_ENTRY = fileURLToPath(new URL('../../../agent/src/index.ts', import.
 let cached: Promise<string> | null = null
 
 /** Собирает (и кеширует) бандл агента. Формат — CJS, чтобы ws грузился без ESM-возни. */
-export function buildAgentScript(): Promise<string> {
+export async function buildAgentScript(): Promise<string> {
   if (cached) return cached
   cached = build({
     entryPoints: [AGENT_ENTRY],

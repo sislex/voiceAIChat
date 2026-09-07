@@ -121,14 +121,14 @@ export class FeaturePreviewManager {
     writeFileSync(temp, JSON.stringify(this.data, null, 2))
     renameSync(temp, this.deps.storePath)
   }
-  get(userId: string, projectId: string, taskId: string): PreviewEnvironment | null {
-    if (!this.deps.db.projects.getProject(userId, projectId)) return null
+  async get(userId: string, projectId: string, taskId: string): Promise<PreviewEnvironment | null> {
+    if (!await this.deps.db.projects.getProject(userId, projectId)) return null
     const env = this.data.environments.find((item) => item.projectId === projectId && item.taskId === taskId) ?? null
-    if (env) this.refreshStale(env)
+    if (env) await this.refreshStale(env)
     return env ? structuredClone(env) : null
   }
-  private refreshStale(env: PreviewEnvironment): void {
-    const workspace = this.deps.db.ci.findActiveCiWorkspace(env.projectId, env.taskId)
+  private async refreshStale(env: PreviewEnvironment): Promise<void> {
+    const workspace = await this.deps.db.ci.findActiveCiWorkspace(env.projectId, env.taskId)
     if (!workspace || workspace.path !== env.workspacePath || isPreviewBusy(env.state) || !env.builtCommitSha) return
     // Exact SHA is refreshed by explicit health/reconcile; a changed workspace record is immediately stale.
     if (workspace.agentId !== env.agentId && env.state === 'running') {
@@ -141,7 +141,7 @@ export class FeaturePreviewManager {
   }
   private async managedPaths(_userId: string, projectId: string, taskId: string, previewId: string, agentId: string) {
     if (!this.deps.isOnline(agentId)) throw new Error('Машина не в сети')
-    const machine = this.deps.db.machines.getProjectMachine(projectId, agentId)
+    const machine = await this.deps.db.machines.getProjectMachine(projectId, agentId)
     if (!machine?.storageId) throw new Error('Для нового preview не настроено MachineStorage выбранной машины')
     if (!machine.storageRoot) throw new Error('MachineStorage выбранной машины недоступно')
     if (!this.deps.fsRead || !this.deps.fsWrite || !this.deps.fsMkdir || !this.deps.fsRename || !this.deps.fsDelete) throw new Error('Файловая проверка MachineStorage недоступна')
@@ -158,7 +158,7 @@ export class FeaturePreviewManager {
       agentId, workdir: machine.storageRoot, timeoutMs: 30_000,
       script: 'p="$VC_PREVIEW_ROOT"; root="$VC_STORAGE_ROOT"; while [ "$p" != "$root" ]; do [ ! -L "$p" ] || exit 73; next=$(dirname "$p"); [ "$next" != "$p" ] || exit 74; p="$next"; done; [ ! -L "$root" ] || exit 73',
       env: { VC_PREVIEW_ROOT: paths.previewRoot, VC_STORAGE_ROOT: machine.storageRoot }
-    }, () => undefined)
+    }, async () => undefined)
     if (inspected.exitCode === 73) throw new Error('Компонент managed preview path является неподтверждённым симлинком')
     if (inspected.exitCode !== 0 || inspected.timedOut) throw new Error('Не удалось безопасно проверить managed preview path')
     const probe = `${machine.storageRoot}${separator}.voicechat${separator}temporary${separator}preview-probe-${randomUUID()}`
@@ -192,9 +192,9 @@ export class FeaturePreviewManager {
     await this.deps.fsDelete!(env.agentId, paths.previewRoot)
   }
   async operate(userId: string, projectId: string, taskId: string, operation: PreviewOperation, args: { idempotencyKey?: string; scenario?: string; agentId?: string } = {}): Promise<PreviewEnvironment> {
-    const project = this.deps.db.projects.getProject(userId, projectId)
+    const project = await this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new Error('Проект не найден или нет доступа')
-    const board = this.deps.db.tasks.getBoard(userId, projectId)
+    const board = await this.deps.db.tasks.getBoard(userId, projectId)
     const task = board?.tasks.find((item) => item.id === taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
     const idem = args.idempotencyKey ? `${userId}:${projectId}:${taskId}:${operation}:${args.idempotencyKey}` : null
@@ -208,8 +208,8 @@ export class FeaturePreviewManager {
       if (activeRun?.operation === operation && (!args.agentId || args.agentId === env.agentId)) return structuredClone(env)
       throw new Error('Для preview уже выполняется изменяющая операция')
     }
-    const activeWorkspace = this.deps.db.ci.findActiveCiWorkspace(projectId, taskId)
-    const sourceWorkspace = activeWorkspace ?? this.deps.db.ci.findLatestCiWorkspace(projectId, taskId)
+    const activeWorkspace = await this.deps.db.ci.findActiveCiWorkspace(projectId, taskId)
+    const sourceWorkspace = activeWorkspace ?? await this.deps.db.ci.findLatestCiWorkspace(projectId, taskId)
     const targetAgentId = args.agentId ?? env?.agentId ?? activeWorkspace?.agentId ?? task.agentId ?? project.defaultAgentId
     if (!targetAgentId) throw new Error('Выберите машину для тестового окружения')
     if (!this.deps.isOnline(targetAgentId)) throw new Error('Машина не в сети')
@@ -234,7 +234,7 @@ export class FeaturePreviewManager {
         agentId: targetAgentId, workdir: workspacePath,
         script: '[ -z "$(git status --porcelain --untracked-files=all)" ] || { echo "Workspace содержит незакоммиченные изменения"; exit 76; }; [ "$(git branch --show-current)" = "$VC_PREVIEW_BRANCH" ] || { echo "Workspace находится не на ожидаемой ветке"; exit 77; }; [ "$(git rev-parse HEAD)" = "$VC_PREVIEW_SHA" ] || { echo "Локальный SHA не совпадает с ожидаемым"; exit 75; }; remote=$(git ls-remote --heads origin "refs/heads/$VC_PREVIEW_BRANCH" | awk "{print \\$1}"); [ -n "$remote" ] || { echo "Ветка отсутствует в origin"; exit 74; }; [ "$remote" = "$VC_PREVIEW_SHA" ] || { echo "Ожидаемый SHA не отправлен в origin"; exit 78; }',
         timeoutMs: 30_000, env: { VC_PREVIEW_BRANCH: expectedBranch, VC_PREVIEW_SHA: expectedSha }
-      }, (chunk) => { verificationOutput += chunk })
+      }, async (chunk) => { verificationOutput += chunk })
       if (verified.exitCode !== 0 || verified.timedOut) throw new Error(verificationOutput.trim().split(/\r?\n/).filter(Boolean).at(-1) || `Не удалось проверить workspace ${workspacePath} на машине ${targetAgentId}`)
     }
     if (!legacy) {
@@ -248,7 +248,7 @@ export class FeaturePreviewManager {
         script: 'mkdir -p "$(dirname "$VC_PREVIEW_WORKSPACE")"; remote=$(git ls-remote --heads "$VC_PREVIEW_REPO_URL" "refs/heads/$VC_PREVIEW_BRANCH" | awk "{print \\$1}"); [ -n "$remote" ] || { echo "Ветка $VC_PREVIEW_BRANCH отсутствует в origin"; exit 74; }; [ "$remote" = "$VC_PREVIEW_SHA" ] || { echo "SHA origin/$VC_PREVIEW_BRANCH ($remote) не совпадает с ожидаемым $VC_PREVIEW_SHA"; exit 75; }; if [ ! -d "$VC_PREVIEW_WORKSPACE/.git" ]; then git clone --single-branch --branch "$VC_PREVIEW_BRANCH" "$VC_PREVIEW_REPO_URL" "$VC_PREVIEW_WORKSPACE"; else [ -z "$(git -C "$VC_PREVIEW_WORKSPACE" status --porcelain --untracked-files=all)" ] || { echo "Preview workspace содержит незакоммиченные изменения"; exit 76; }; git -C "$VC_PREVIEW_WORKSPACE" fetch origin "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" checkout "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" reset --hard "$VC_PREVIEW_SHA"; fi; [ "$(git -C "$VC_PREVIEW_WORKSPACE" rev-parse HEAD)" = "$VC_PREVIEW_SHA" ] || exit 75',
         timeoutMs: DEFAULT_PREVIEW_CONFIG.buildTimeoutMs,
         env: { VC_PREVIEW_ROOT: managed!.paths.previewRoot, VC_PREVIEW_WORKSPACE: workspacePath, VC_PREVIEW_BRANCH: branch, VC_PREVIEW_SHA: expectedSha, VC_PREVIEW_REPO_URL: project.gitUrl }
-      }, (chunk) => { output += chunk })
+      }, async (chunk) => { output += chunk })
       if (prepared.timedOut) throw new Error('Подготовка рабочей копии на выбранной машине превысила таймаут')
       if (prepared.exitCode !== 0) throw new Error(output.trim().split(/\r?\n/).filter(Boolean).at(-1) || 'Не удалось подготовить рабочую копию на выбранной машине')
     }
@@ -290,9 +290,9 @@ export class FeaturePreviewManager {
     void this.execute(env, run, operation, args.scenario, ctl.signal)
     return structuredClone(env)
   }
-  cancel(userId: string, projectId: string, taskId: string): boolean {
+  async cancel(userId: string, projectId: string, taskId: string): Promise<boolean> {
     const env = this.data.environments.find((item) => item.projectId === projectId && item.taskId === taskId)
-    if (!env || !this.deps.db.projects.getProject(userId, projectId)) return false
+    if (!env || !await this.deps.db.projects.getProject(userId, projectId)) return false
     const ctl = this.active.get(env.id)
     if (!ctl) return true
     const run = [...env.runs].reverse().find((item) => item.status === 'running' || item.status === 'queued' || item.status === 'cancelling')
@@ -309,7 +309,7 @@ export class FeaturePreviewManager {
         VC_PREVIEW_STORYBOOK_PORT: String(env.services.find((service) => service.name === 'storybook')?.hostPort ?? DEFAULT_PREVIEW_CONFIG.portRange.from + 1),
         ...extraEnv
       }
-    }, (chunk) => { const safe = redact(chunk); output += safe; run.log = trimLog(run.log + safe); this.event(run, 'stdout', safe); env.updatedAt = this.now(); this.save() }, signal)
+    }, async (chunk) => { const safe = redact(chunk); output += safe; run.log = trimLog(run.log + safe); this.event(run, 'stdout', safe); env.updatedAt = this.now(); this.save() }, signal)
     if (result.timedOut) { run.exitCode = result.exitCode; throw new Error('Операция превысила таймаут') }
     if (result.exitCode !== 0) {
       run.exitCode = result.exitCode
@@ -372,7 +372,7 @@ export class FeaturePreviewManager {
         }
         await this.command(env, run, 'case "$(uname -s)" in Darwin) open -a Docker ;; Linux) sudo -n systemctl start docker || sudo -n service docker start ;; *) echo "Автоматический запуск Docker на этой платформе не поддерживается"; exit 72 ;; esac; i=0; until docker info >/dev/null 2>&1; do i=$((i+1)); [ "$i" -ge 60 ] && { echo "Docker запущен, но Engine не стал доступен за 120 секунд"; exit 70; }; sleep 2; done', 150_000, signal)
         env.state = 'stopped'; env.healthStatus = 'unknown'; env.lastError = null
-        this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, false)
+        await this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, false)
         this.step(run, operation, 'succeeded', 'Docker готов к работе')
         run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save(); return
       }
@@ -446,7 +446,7 @@ export class FeaturePreviewManager {
         env.state = env.builtCommitSha === sha ? 'running' : 'stale'; env.staleReason = env.state === 'stale' ? 'commit_changed' : null; env.healthStatus = 'healthy'
       }
       if (operation !== 'start' && operation !== 'rebuild') this.step(run, operation, 'succeeded', 'Операция завершена')
-      this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
+      await this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
       run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save(); await this.publishReportManifest(env, run, 'success')
     } catch (error) {
       const message = redact(error instanceof Error ? error.message : String(error))
@@ -459,7 +459,7 @@ export class FeaturePreviewManager {
       if (cancelled && (operation === 'start' || operation === 'rebuild')) {
         let cleanupMessage: string | null = null; let cleanupSucceeded = false
         try {
-          const cleanup = await this.deps.executor.run({ agentId: env.agentId, workdir: env.workspacePath, script: 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml down --remove-orphans', timeoutMs: DEFAULT_PREVIEW_CONFIG.startTimeoutMs, env: { VC_PREVIEW_PROJECT: env.composeProject } }, () => undefined)
+          const cleanup = await this.deps.executor.run({ agentId: env.agentId, workdir: env.workspacePath, script: 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml down --remove-orphans', timeoutMs: DEFAULT_PREVIEW_CONFIG.startTimeoutMs, env: { VC_PREVIEW_PROJECT: env.composeProject } }, async () => undefined)
           cleanupSucceeded = cleanup.exitCode === 0 && !cleanup.timedOut
           cleanupMessage = cleanupSucceeded ? 'Создаваемые Compose-ресурсы удалены' : `Очистка завершилась с кодом ${cleanup.exitCode}`
         } catch (cleanupError) { cleanupMessage = redact(cleanupError instanceof Error ? cleanupError.message : String(cleanupError)) }
@@ -467,7 +467,7 @@ export class FeaturePreviewManager {
       }
       this.event(run, 'status', cancelled ? 'Операция отменена' : `Операция завершилась ошибкой: ${message}`)
       env.state = 'failed'; env.healthStatus = 'unhealthy'; env.lastError = { type: run.errorType, message }; env.updatedAt = this.now()
-      this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, false); this.save(); await this.publishReportManifest(env, run, cancelled ? 'cancelled' : 'failed')
+      await this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, false); this.save(); await this.publishReportManifest(env, run, cancelled ? 'cancelled' : 'failed')
     } finally { this.active.delete(env.id) }
   }
   async reconcile(): Promise<void> {
@@ -480,7 +480,7 @@ export class FeaturePreviewManager {
         if (run) { const current = run.currentStepId; if (current) this.step(run, current, 'failed', 'Сервер перезапущен во время операции', env.lastError.message); this.skipPending(run, 'Не выполнено после перезапуска сервера'); run.status = 'failed'; run.errorType = 'connection_lost'; run.errorMessage = env.lastError.message; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', env.lastError.message); interrupted.push({ env, run }) }
       }
       if (!this.deps.isOnline(env.agentId)) { env.state = 'failed'; env.lastError = { type: 'machine_unavailable', message: 'Машина недоступна при reconciliation' } }
-      this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
+      await this.deps.db.tasks.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
     }
     this.save()
     for (const item of interrupted) await this.publishReportManifest(item.env, item.run, 'interrupted')

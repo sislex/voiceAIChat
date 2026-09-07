@@ -16,7 +16,7 @@ import { CiRepo } from './repos/ci.js'
 import { QaRepo } from './repos/qa.js'
 import { ReleasesRepo } from './repos/releases.js'
 import { KbRepo } from './repos/kb.js'
-import type { RepoContext, Repos } from './repos/base.js'
+import { asyncPort, type AsyncPort, type RepoContext, type Repos } from './repos/base.js'
 import { TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT, RANK_STEP, type DbDeps } from './repos/support.js'
 export { TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT } from './repos/support.js'
 export type { DbDeps } from './repos/support.js'
@@ -30,24 +30,30 @@ export type { KbChatUsage, KbProjectUsage, KbStoredDocument } from './repos/kb.j
 export { projectKbSkeleton } from './repos/kb.js'
 export type { CiStageExecutionContext } from './repos/ci.js'
 export type { AutomatedQaExecutionContext } from './repos/qa.js'
-export type { Repos, RepoContext } from './repos/base.js'
+export type { Repos, RepoContext, AsyncPort } from './repos/base.js'
 
 export class VoiceChatDb {
   private readonly db: Database.Database
   private readonly newId: () => string
   private readonly now: () => number
   private readonly ctx: RepoContext
-  readonly identity: IdentityRepo
-  readonly settings: SettingsRepo
-  readonly llm: LlmRepo
-  readonly chat: ChatRepo
-  readonly machines: MachinesRepo
-  readonly projects: ProjectsRepo
-  readonly tasks: TasksRepo
-  readonly ci: CiRepo
-  readonly qa: QaRepo
-  readonly releases: ReleasesRepo
-  readonly kb: KbRepo
+  /**
+   * Синхронные реализации доменов. Не для сервера — он ходит через порты выше; нужен
+   * тестам, которые подменяют метод (`db.sync.tasks.isTaskClosed = () => true`):
+   * подмена через порт сделала бы метод асинхронным и для соседей внутри слоя.
+   */
+  readonly sync: Repos
+  readonly identity: AsyncPort<IdentityRepo>
+  readonly settings: AsyncPort<SettingsRepo>
+  readonly llm: AsyncPort<LlmRepo>
+  readonly chat: AsyncPort<ChatRepo>
+  readonly machines: AsyncPort<MachinesRepo>
+  readonly projects: AsyncPort<ProjectsRepo>
+  readonly tasks: AsyncPort<TasksRepo>
+  readonly ci: AsyncPort<CiRepo>
+  readonly qa: AsyncPort<QaRepo>
+  readonly releases: AsyncPort<ReleasesRepo>
+  readonly kb: AsyncPort<KbRepo>
   /** Close-события WebSocket могут прийти после teardown; закрытую БД больше не трогаем. */
   private get closed(): boolean { return this.ctx.closed }
   private set closed(value: boolean) { this.ctx.closed = value }
@@ -80,21 +86,22 @@ export class VoiceChatDb {
       releases: new ReleasesRepo(this.ctx),
       kb: new KbRepo(this.ctx)
     }
-    this.identity = this.ctx.repos.identity
-    this.settings = this.ctx.repos.settings
-    this.llm = this.ctx.repos.llm
-    this.chat = this.ctx.repos.chat
-    this.machines = this.ctx.repos.machines
-    this.projects = this.ctx.repos.projects
-    this.tasks = this.ctx.repos.tasks
-    this.ci = this.ctx.repos.ci
-    this.qa = this.ctx.repos.qa
-    this.releases = this.ctx.repos.releases
-    this.kb = this.ctx.repos.kb
+    this.sync = this.ctx.repos
+    this.identity = asyncPort(this.ctx.repos.identity)
+    this.settings = asyncPort(this.ctx.repos.settings)
+    this.llm = asyncPort(this.ctx.repos.llm)
+    this.chat = asyncPort(this.ctx.repos.chat)
+    this.machines = asyncPort(this.ctx.repos.machines)
+    this.projects = asyncPort(this.ctx.repos.projects)
+    this.tasks = asyncPort(this.ctx.repos.tasks)
+    this.ci = asyncPort(this.ctx.repos.ci)
+    this.qa = asyncPort(this.ctx.repos.qa)
+    this.releases = asyncPort(this.ctx.repos.releases)
+    this.kb = asyncPort(this.ctx.repos.kb)
     this.migrate()
-    this.ci.ensureKbUpdateCommand()
-    this.ci.pruneDevelopmentAfterModelCommands()
-    this.chat.setupMessagesFts()
+    this.ctx.repos.ci.ensureKbUpdateCommand()
+    this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
+    this.ctx.repos.chat.setupMessagesFts()
   }
 
   /** Лёгкие миграции существующих БД (idempotent). */
@@ -104,9 +111,9 @@ export class VoiceChatDb {
    * раз, иначе он превращается в правило, отменяющее настройку на каждом старте.
    */
   private runOnce(key: string, step: () => void): void {
-    if (this.settings.getAppConfig(key)) return
+    if (this.ctx.repos.settings.getAppConfig(key)) return
     step()
-    this.settings.setAppConfig(key, '1')
+    this.ctx.repos.settings.setAppConfig(key, '1')
   }
 
   private migrate(): void {
@@ -485,7 +492,7 @@ export class VoiceChatDb {
     // потом проставление типа старым проектам — иначе FK укажет в пустоту.
     // ALTER с REFERENCES в SQLite разрешён только при DEFAULT NULL (foreign_keys
     // включены), поэтому колонка nullable, а не NOT NULL DEFAULT.
-    this.projects.seedBuiltinProjectTypes()
+    this.ctx.repos.projects.seedBuiltinProjectTypes()
     const projectTypeCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (projectTypeCols.length && !projectTypeCols.some((c) => c.name === 'project_type_id')) {
       this.db.exec(`ALTER TABLE projects ADD COLUMN project_type_id TEXT REFERENCES project_types(id)`)
@@ -539,7 +546,7 @@ export class VoiceChatDb {
         // дописывался всем подряд, и у «Общего проекта» короткая доска не пережила
         // бы ни одного перезапуска сервера.
         const typeId = (typeOf.get(projectId) as { project_type_id: string | null } | undefined)?.project_type_id || DEFAULT_PROJECT_TYPE_ID
-        const typeColumns = this.projects.projectTypeDefaults(typeId).columns
+        const typeColumns = this.ctx.repos.projects.projectTypeDefaults(typeId).columns
         const requiredColumns: Array<[KanbanColumnSemanticType, string]> = typeColumns?.length
           ? typeColumns.map((column) => [column.semanticType, column.name])
           : workflowColumns
@@ -879,8 +886,8 @@ export class VoiceChatDb {
   close(): void {
     if (this.closed) return
     this.closed = true
-    if (this.chat.ftsTimer) clearTimeout(this.chat.ftsTimer)
-    this.chat.ftsTimer = null
+    if (this.ctx.repos.chat.ftsTimer) clearTimeout(this.ctx.repos.chat.ftsTimer)
+    this.ctx.repos.chat.ftsTimer = null
     this.db.close()
   }
 }

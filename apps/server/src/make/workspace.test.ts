@@ -502,7 +502,7 @@ describe('MakeWorkspaces', () => {
     await ws.snapshot(CONV, 's1')
     await ws.publish(CONV)
     await ws.countView(CONV)
-    const stats = await ws.adminStats((id) => (id === CONV ? 'alice' : 'bob'))
+    const stats = await ws.adminStats(async (id) => (id === CONV ? 'alice' : 'bob'))
     // Диск (roadmap-4 п.40): statfs корня данных даёт положительные числа и флаг тревоги по порогу 10 ГБ.
     expect(stats.disk!.totalBytes).toBeGreaterThan(0)
     expect(stats.disk!.alert).toBe(stats.disk!.freeBytes < 10 * 1024 ** 3)
@@ -592,13 +592,13 @@ describe('MakeWorkspaces', () => {
   it('квота на пользователя: сумма по проектам владельца, превышение — MakeError quota', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'vc-make-'))
     const ws = new MakeWorkspaces(dir, { maxUserBytes: 3000 })
-    ws.setProjectsOfOwner(() => [CONV, 'conv-2'])
+    ws.setProjectsOfOwner(async () => [CONV, 'conv-2'])
     await ws.ensure(CONV); await ws.ensure('conv-2')
     const used = (await ws.usage(CONV)).totalBytes + (await ws.usage('conv-2')).totalBytes
     expect(used).toBeLessThan(3000)
     await expect(ws.write(CONV, 'big.txt', 'x'.repeat(3000 - used + 1))).rejects.toMatchObject({ code: 'quota' })
     await ws.write(CONV, 'ok.txt', 'y')
-    expect((await ws.adminStats(() => 'u')).userLimitBytes).toBe(3000)
+    expect((await ws.adminStats(async () => 'u')).userLimitBytes).toBe(3000)
   })
 
   it('sweep: удаляет снимки старше 30 дней, кроме закреплённого и самого свежего; чистит старые PNG стори', async () => {

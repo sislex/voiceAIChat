@@ -31,9 +31,9 @@ describe('AgentRegistry', () => {
     const p = reg.exec('a1', 'df -h', 1000)
     expect(sock.sent[0]).toEqual({ t: 'exec.start', execId: 'exec-1', command: 'df -h', timeoutMs: 1000 })
 
-    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'диск ' })
-    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stderr', data: 'warn' })
-    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    await reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'диск ' })
+    await reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stderr', data: 'warn' })
+    await reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
 
     await expect(p).resolves.toEqual({ exitCode: 0, output: 'диск warn', timedOut: false })
   })
@@ -43,10 +43,10 @@ describe('AgentRegistry', () => {
     const sock = fakeSocket()
     reg.register('a1', 'Мак', sock)
     const records: Array<Parameters<Parameters<AgentRegistry['onCommand']>[0]>[0]> = []
-    reg.onCommand((rec) => records.push(rec))
+    reg.onCommand(async (rec) => { records.push(rec) })
     const p = reg.exec('a1', 'ls', 1000, undefined, { source: 'console', userId: 'bob' })
-    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'a.txt' })
-    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    await reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'a.txt' })
+    await reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
     await p
     expect(records[0]).toMatchObject({ machineId: 'a1', userId: 'bob', source: 'console', command: 'ls', exitCode: 0, timedOut: false, error: null, outputExcerpt: 'a.txt', output: 'a.txt', conversationId: null })
     reg.updatePolicy('a1', { allowedDirs: [], allowNetwork: true, allowWrite: false, denyPatterns: [], allowPatterns: [], skills: [] })
@@ -66,8 +66,8 @@ describe('AgentRegistry', () => {
     reg.register('a1', 'Мак', sock, undefined, '0.15.0')
     await new Promise((r) => setTimeout(r, 0))
     expect(sock.sent.map((m) => m.t)).toEqual(['exec.start', 'fs.list'])
-    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
-    reg.handleMessage('a1', { t: 'fs.result', opId: 'exec-2', result: { root: '/', cwd: '/', entries: [] } })
+    await reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    await reg.handleMessage('a1', { t: 'fs.result', opId: 'exec-2', result: { root: '/', cwd: '/', entries: [] } })
     await expect(p).resolves.toMatchObject({ exitCode: 0 })
     await expect(fsP).resolves.toMatchObject({ root: '/' })
     // никто не подключился — отказ с указанием, сколько ждали
@@ -116,7 +116,7 @@ describe('AgentRegistry', () => {
     const reg = makeRegistry()
     reg.register('a1', 'Мак', fakeSocket())
     const p = reg.exec('a1', 'x', 1000)
-    reg.handleMessage('a1', { t: 'exec.error', execId: 'exec-1', message: 'spawn failed' })
+    await reg.handleMessage('a1', { t: 'exec.error', execId: 'exec-1', message: 'spawn failed' })
     await expect(p).rejects.toThrow('spawn failed')
   })
 
@@ -134,10 +134,10 @@ describe('AgentRegistry', () => {
     reg.register('a1', 'Мак', fakeSocket())
     const p = reg.exec('a1', 'cat big', 1000)
     const big = 'x'.repeat(120 * 1024)
-    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: big })
-    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: big })
-    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'хвост' })
-    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    await reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: big })
+    await reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: big })
+    await reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'хвост' })
+    await reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
     const res = await p
     expect(res.output).toContain('…[вывод обрезан]')
     expect(res.output).not.toContain('хвост')
@@ -257,7 +257,7 @@ describe('AgentRegistry', () => {
     const cancels = sock.sent.filter((m) => m.t === 'exec.cancel')
     expect(cancels).toEqual([{ t: 'exec.cancel', execId: 'exec-1' }])
     // exec-2 всё ещё живой — завершаем его штатно.
-    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-2', exitCode: 0 })
+    await reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-2', exitCode: 0 })
     await expect(p2).resolves.toMatchObject({ exitCode: 0 })
   })
 
@@ -287,7 +287,7 @@ describe('AgentRegistry', () => {
     const p = reg.fsList('a1', '')
     expect(sock.sent[0]).toEqual({ t: 'fs.list', opId: 'exec-1', path: '' })
     const result = { root: '/home/u', cwd: '/home/u', entries: [] }
-    reg.handleMessage('a1', { t: 'fs.result', opId: 'exec-1', result })
+    await reg.handleMessage('a1', { t: 'fs.result', opId: 'exec-1', result })
     await expect(p).resolves.toEqual(result)
   })
 
@@ -297,7 +297,7 @@ describe('AgentRegistry', () => {
     reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.2.0')
 
     const p = reg.fsDelete('a1', '/x')
-    reg.handleMessage('a1', { t: 'fs.error', opId: 'exec-1', message: 'ENOENT: no such file', code: 'ENOENT' })
+    await reg.handleMessage('a1', { t: 'fs.error', opId: 'exec-1', message: 'ENOENT: no such file', code: 'ENOENT' })
     await expect(p).rejects.toMatchObject({ message: 'ENOENT: no such file', code: 'ENOENT' })
 
     await expect(reg.fsList('offline', '')).rejects.toThrow('не в сети')
@@ -323,7 +323,7 @@ describe('AgentRegistry', () => {
     reg.exec('a1', 'ls', 1000)
     expect(sock.sent.some((m) => m.t === 'exec.start')).toBe(true)
   })
-  it('pty: релеит start/input агенту и вывод/exit клиенту', () => {
+  it('pty: релеит start/input агенту и вывод/exit клиенту', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
     reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
@@ -337,8 +337,8 @@ describe('AgentRegistry', () => {
     reg.ptyResize('p1', 100, 30)
     expect(sock.sent).toContainEqual({ t: 'pty.resize', ptyId: 'p1', cols: 100, rows: 30 })
 
-    reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: 'файлы' })
-    reg.handleMessage('a1', { t: 'pty.exit', ptyId: 'p1', exitCode: 0 })
+    await reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: 'файлы' })
+    await reg.handleMessage('a1', { t: 'pty.exit', ptyId: 'p1', exitCode: 0 })
     expect(events).toEqual([
       { t: 'pty.output', ptyId: 'p1', data: 'файлы' },
       { t: 'pty.exit', ptyId: 'p1', exitCode: 0 }
@@ -349,13 +349,13 @@ describe('AgentRegistry', () => {
     expect(sock.sent.length).toBe(before)
   })
 
-  it('pty: переподписка не запускает второй shell и возвращает ограниченный буфер', () => {
+  it('pty: переподписка не запускает второй shell и возвращает ограниченный буфер', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
     reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
     const first: Array<{ t: string; data?: string }> = []
     reg.ptyStart('a1', 'p1', 80, 24, undefined, (e) => first.push(e))
-    reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: 'готово\\r\\n' })
+    await reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: 'готово\\r\\n' })
     reg.ptyDetach('p1')
     const second: Array<{ t: string; data?: string }> = []
     reg.ptyStart('a1', 'p1', 100, 30, undefined, (e) => second.push(e))
@@ -364,13 +364,13 @@ describe('AgentRegistry', () => {
     expect(sock.sent).toContainEqual({ t: 'pty.resize', ptyId: 'p1', cols: 100, rows: 30 })
   })
 
-  it('pty: буфер сеанса ограничен — при переподписке отдаётся хвост вывода', () => {
+  it('pty: буфер сеанса ограничен — при переподписке отдаётся хвост вывода', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()
     reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.9.0')
     reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
     for (let i = 0; i < 30; i++) {
-      reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: `${'x'.repeat(10 * 1024)}#${i}` })
+      await reg.handleMessage('a1', { t: 'pty.output', ptyId: 'p1', data: `${'x'.repeat(10 * 1024)}#${i}` })
     }
     reg.ptyDetach('p1')
     const replayed: string[] = []
@@ -410,13 +410,13 @@ describe('AgentRegistry', () => {
     reg.register('preview', 'Docker', preview, DEFAULT_AGENT_POLICY, '0.10.0')
     const opening = reg.createTunnel('tun', 'local', 'preview', 18000)
     expect(local.sent.at(-1)).toEqual({ t: 'tunnel.listen', tunnelId: 'tun' })
-    reg.handleMessage('local', { t: 'tunnel.listening', tunnelId: 'tun', port: 32100 })
+    await reg.handleMessage('local', { t: 'tunnel.listening', tunnelId: 'tun', port: 32100 })
     await expect(opening).resolves.toBe(32100)
     await expect(reg.createTunnel('tun', 'local', 'preview', 18000)).resolves.toBe(32100)
     expect(local.sent.filter((msg) => msg.t === 'tunnel.listen')).toHaveLength(1)
-    reg.handleMessage('local', { t: 'tunnel.open', tunnelId: 'tun', connectionId: 'c1' })
+    await reg.handleMessage('local', { t: 'tunnel.open', tunnelId: 'tun', connectionId: 'c1' })
     expect(preview.sent.at(-1)).toEqual({ t: 'tunnel.connect', tunnelId: 'tun', connectionId: 'c1', port: 18000 })
-    reg.handleMessage('preview', { t: 'tunnel.data', tunnelId: 'tun', connectionId: 'c1', data: 'YQ==' })
+    await reg.handleMessage('preview', { t: 'tunnel.data', tunnelId: 'tun', connectionId: 'c1', data: 'YQ==' })
     expect(local.sent.at(-1)).toEqual({ t: 'tunnel.data', tunnelId: 'tun', connectionId: 'c1', data: 'YQ==' })
     expect(reg.closeTunnel('tun')).toBe(true)
   })
@@ -432,37 +432,37 @@ describe('AgentRegistry — телеметрия', () => {
     disk: { root: { totalBytes: 100, freeBytes: 40 } }
   }
 
-  it('agent.telemetry сохраняется, отдаётся telemetryOf и уведомляет onChange', () => {
+  it('agent.telemetry сохраняется, отдаётся telemetryOf и уведомляет onChange', async () => {
     const reg = makeRegistry()
     reg.register('a1', 'Мак', fakeSocket())
     const changes = vi.fn()
     reg.onChange(changes)
 
-    reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: sample })
+    await reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: sample })
 
     expect(reg.telemetryOf('a1')).toEqual(sample)
     expect(changes).toHaveBeenCalledTimes(1)
   })
 
-  it('телеметрия офлайн-агента игнорируется', () => {
+  it('телеметрия офлайн-агента игнорируется', async () => {
     const reg = makeRegistry()
-    reg.handleMessage('нет', { t: 'agent.telemetry', telemetry: sample })
+    await reg.handleMessage('нет', { t: 'agent.telemetry', telemetry: sample })
     expect(reg.telemetryOf('нет')).toBeUndefined()
   })
 
-  it('unregister очищает телеметрию', () => {
+  it('unregister очищает телеметрию', async () => {
     const reg = makeRegistry()
     reg.register('a1', 'Мак', fakeSocket())
-    reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: sample })
+    await reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: sample })
     reg.unregister('a1')
     expect(reg.telemetryOf('a1')).toBeUndefined()
   })
 
-  it('platformOf берёт platform из последней телеметрии; без неё — undefined', () => {
+  it('platformOf берёт platform из последней телеметрии; без неё — undefined', async () => {
     const reg = makeRegistry()
     reg.register('a1', 'Мак', fakeSocket())
     expect(reg.platformOf('a1')).toBeUndefined()
-    reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: { ...sample, os: { ...sample.os, platform: 'win32' } } })
+    await reg.handleMessage('a1', { t: 'agent.telemetry', telemetry: { ...sample, os: { ...sample.os, platform: 'win32' } } })
     expect(reg.platformOf('a1')).toBe('win32')
   })
 })
@@ -475,7 +475,7 @@ describe('loopback HTTP-мост (http.request)', () => {
     const promise = reg.http('a1', { method: 'GET', port: 5173, path: '/', headers: {} })
     const sent = sock.sent.at(-1) as Extract<ServerToAgent, { t: 'http.request' }>
     expect(sent).toMatchObject({ t: 'http.request', request: { method: 'GET', port: 5173, path: '/' } })
-    reg.handleMessage('a1', { t: 'http.result', requestId: sent.requestId, response: { status: 200, headers: { 'content-type': 'text/html' }, bodyBase64: Buffer.from('<h1>ok</h1>').toString('base64') } })
+    await reg.handleMessage('a1', { t: 'http.result', requestId: sent.requestId, response: { status: 200, headers: { 'content-type': 'text/html' }, bodyBase64: Buffer.from('<h1>ok</h1>').toString('base64') } })
     await expect(promise).resolves.toMatchObject({ status: 200 })
   })
 
@@ -503,8 +503,8 @@ describe('loopback HTTP-мост (http.request)', () => {
     reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.13.0')
     const pending = reg.http('a1', { method: 'GET', port: 80, path: '/', headers: {} })
     const sent = sock.sent.at(-1) as Extract<ServerToAgent, { t: 'http.request' }>
-    reg.handleMessage('other', { t: 'http.error', requestId: sent.requestId, message: 'подделка' })
-    reg.handleMessage('a1', { t: 'http.error', requestId: sent.requestId, message: 'ECONNREFUSED' })
+    await reg.handleMessage('other', { t: 'http.error', requestId: sent.requestId, message: 'подделка' })
+    await reg.handleMessage('a1', { t: 'http.error', requestId: sent.requestId, message: 'ECONNREFUSED' })
     await expect(pending).rejects.toThrow('ECONNREFUSED')
   })
 })

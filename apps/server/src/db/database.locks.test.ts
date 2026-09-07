@@ -10,34 +10,34 @@ function db(now: () => number): VoiceChatDb {
 }
 
 describe('git_workspace_locks', () => {
-  it('второй захват того же каталога не проходит, освобождение возвращает доступ', () => {
+  it('второй захват того же каталога не проходит, освобождение возвращает доступ', async () => {
     const store = db(() => 1_000)
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/repo', 'bob:1', 'status', 60_000)).toMatchObject({ expiresAt: 61_000 })
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/repo', 'alice:2', 'commit', 60_000)).toBeNull()
-    expect(store.machines.gitWorkspaceLockHolder('a1', '/repo')).toMatchObject({ holder: 'bob:1', operation: 'status' })
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/repo', 'bob:1', 'status', 60_000)).toMatchObject({ expiresAt: 61_000 })
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/repo', 'alice:2', 'commit', 60_000)).toBeNull()
+    expect(await store.machines.gitWorkspaceLockHolder('a1', '/repo')).toMatchObject({ holder: 'bob:1', operation: 'status' })
     // Чужой владелец снять замок не может — иначе один процесс освобождал бы каталог другого.
     store.machines.releaseGitWorkspaceLock('a1', '/repo', 'alice:2')
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/repo', 'alice:2', 'commit', 60_000)).toBeNull()
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/repo', 'alice:2', 'commit', 60_000)).toBeNull()
     store.machines.releaseGitWorkspaceLock('a1', '/repo', 'bob:1')
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/repo', 'alice:2', 'commit', 60_000)).not.toBeNull()
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/repo', 'alice:2', 'commit', 60_000)).not.toBeNull()
     store.close()
   })
 
-  it('разные каталоги и разные машины не мешают друг другу', () => {
+  it('разные каталоги и разные машины не мешают друг другу', async () => {
     const store = db(() => 1_000)
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/one', 'bob:1', 'status', 60_000)).not.toBeNull()
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/two', 'bob:1', 'status', 60_000)).not.toBeNull()
-    expect(store.machines.acquireGitWorkspaceLock('a2', '/one', 'bob:1', 'status', 60_000)).not.toBeNull()
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/one', 'bob:1', 'status', 60_000)).not.toBeNull()
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/two', 'bob:1', 'status', 60_000)).not.toBeNull()
+    expect(await store.machines.acquireGitWorkspaceLock('a2', '/one', 'bob:1', 'status', 60_000)).not.toBeNull()
     store.close()
   })
 
-  it('просроченный замок не запирает каталог: упавший процесс не оставляет его навсегда', () => {
+  it('просроченный замок не запирает каталог: упавший процесс не оставляет его навсегда', async () => {
     let clock = 1_000
     const store = db(() => clock)
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/repo', 'ушедший:1', 'push', 1_000)).not.toBeNull()
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/repo', 'ушедший:1', 'push', 1_000)).not.toBeNull()
     clock = 2_500
-    expect(store.machines.gitWorkspaceLockHolder('a1', '/repo')).toBeNull()
-    expect(store.machines.acquireGitWorkspaceLock('a1', '/repo', 'bob:2', 'push', 1_000)).not.toBeNull()
+    expect(await store.machines.gitWorkspaceLockHolder('a1', '/repo')).toBeNull()
+    expect(await store.machines.acquireGitWorkspaceLock('a1', '/repo', 'bob:2', 'push', 1_000)).not.toBeNull()
     store.close()
   })
 })

@@ -86,14 +86,14 @@ function collect(): Collected {
     events,
     finished,
     handlers: {
-      onSession: (sessionId) => events.push({ t: 'session', sessionId }),
-      onDelta: (text) => events.push({ t: 'delta', text }),
+      onSession: async (sessionId) => events.push({ t: 'session', sessionId }),
+      onDelta: async (text) => events.push({ t: 'delta', text }),
       onUsage: (usage) => events.push({ t: 'usage', usage }),
-      onDone: (text, meta) => {
+      onDone: async (text, meta) => {
         events.push({ t: 'done', text, meta })
         resolve()
       },
-      onError: (message) => {
+      onError: async (message) => {
         events.push({ t: 'error', message })
         resolve()
       }
@@ -123,7 +123,7 @@ async function localEvents(
   const { child, stdout } = fakeChild()
   const spawn: SpawnFn = vi.fn(() => child as never)
   const c = collect()
-  make(spawn).send({ prompt: 'привет', sessionId: null, model: 'sonnet' }, c.handlers)
+  await make(spawn).send({ prompt: 'привет', sessionId: null, model: 'sonnet' }, c.handlers)
   for (const line of lines) stdout.write(`${line}\n`)
   stdout.end()
   await tick()
@@ -171,7 +171,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     const runner = await startRunner((res) => ndjson(res, CLAUDE_LINES))
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -200,7 +200,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     const runner = await startRunner((res) => ndjson(res, CODEX_LINES))
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -215,7 +215,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     const runner = await startRunner((res) => ndjson(res, CLAUDE_LINES))
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url, token: 'secret-token' }).send(
+      await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url, token: 'secret-token' }).send(
         {
           userId: 'admin',
           prompt: 'задача',
@@ -263,7 +263,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -283,7 +283,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      const handle = new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
+      const handle = await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -314,7 +314,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -335,7 +335,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -354,7 +354,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -374,7 +374,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     await runner.close()
 
     const c = collect()
-    new RemoteLlmClient({ kind: 'claude', baseUrl: url }).send(
+    await new RemoteLlmClient({ kind: 'claude', baseUrl: url }).send(
       { prompt: 'привет', sessionId: null, model: 'sonnet' },
       c.handlers
     )
@@ -391,7 +391,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url, token: 'bad' }).send(
+      await new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url, token: 'bad' }).send(
         { prompt: 'привет', sessionId: null, model: '' },
         c.handlers
       )
@@ -409,7 +409,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
         { prompt: 'продолжай', sessionId: 'thread-1', model: '' },
         c.handlers
       )
@@ -433,7 +433,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     })
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
         { prompt: 'продолжай', sessionId: 'thread-1', model: '' },
         c.handlers
       )
@@ -456,7 +456,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     try {
       const client = new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url, token: 'tok-1' })
       const c = collect()
-      const handle = client.send({ prompt: 'привет', sessionId: null, model: 'sonnet' }, c.handlers)
+      const handle = await client.send({ prompt: 'привет', sessionId: null, model: 'sonnet' }, c.handlers)
       while (!c.events.length) await tick()
       handle.cancel()
       while (!runner.deletes.length) await tick()

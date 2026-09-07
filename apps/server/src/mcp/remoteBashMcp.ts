@@ -207,8 +207,8 @@ export function registerRemoteBashMcp(
   app: FastifyInstance,
   registry: AgentRegistry,
   secret: string,
-  limits?: () => ToolOutputLimits,
-  projectMachines?: (projectId: string) => RemoteMcpMachine[],
+  limits?: () => Promise<ToolOutputLimits>,
+  projectMachines?: (projectId: string) => Promise<RemoteMcpMachine[]>,
   fileContexts?: (token: string) => RemoteImageAttachment[] | undefined,
   commandGate?: CommandGate
 ): void {
@@ -240,7 +240,7 @@ export function registerRemoteBashMcp(
         let machines: RemoteMcpMachine[] = []
         if (req.query.project && projectMachines) {
           try {
-            machines = projectMachines(req.query.project)
+            machines = await projectMachines(req.query.project)
           } catch {
             machines = []
           }
@@ -303,7 +303,7 @@ export function registerRemoteBashMcp(
         // Сломанный источник настроек — не повод ронять ход: тогда дефолты.
         let toolLimits = DEFAULT_TOOL_OUTPUT_LIMITS
         try {
-          toolLimits = limits?.() ?? DEFAULT_TOOL_OUTPUT_LIMITS
+          toolLimits = (await limits?.()) ?? DEFAULT_TOOL_OUTPUT_LIMITS
         } catch {
           /* настройки недоступны — работаем на дефолтах */
         }
@@ -333,7 +333,7 @@ export function registerRemoteBashMcp(
             const confirm = (args as { confirm?: boolean }).confirm === true
             // Политика проекта/роли и подтверждение опасных команд (п.10) — до любого exec.
             if (commandGate) {
-              const verdict = commandGate({ command, projectId: req.query.project ?? null, source: 'chat', confirm })
+              const verdict = await commandGate({ command, projectId: req.query.project ?? null, source: 'chat', confirm })
               if (!verdict.allowed) return { content: [{ type: 'text' as const, text: commandGateMessage(verdict) }], isError: true }
             }
             // `machine` есть в схеме только у хода с проектом (условный спред не
