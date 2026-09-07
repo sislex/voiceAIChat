@@ -13,6 +13,8 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 afterEach(() => {
   window.location.hash = ''
   delete window.desktopHost
+  Reflect.deleteProperty(window, 'api')
+  Reflect.deleteProperty(window, 'claude')
   vi.unstubAllGlobals()
 })
 
@@ -512,5 +514,68 @@ describe('App — отдельная страница Web Reader', () => {
     await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(second.id))
     window.location.hash = `#/web-reader/${first.id}`
     await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(first.id))
+  })
+})
+
+describe('App — режимы Make без машины', () => {
+  const FAST = { frame: 5, transcribe: 5, think: 5, speak: 5 }
+
+  function installClaude(): { finish: () => void } {
+    let conversationId = ''
+    let finishRequested = false
+    let done: ((message: { conversationId: string; text: string; message?: never }) => void) | undefined
+    const complete = (): void => done?.({ conversationId, text: 'Готово.', message: { id: 'ai-done', conversationId, role: 'ai', text: 'Готово.', time: '12:00', createdAt: Date.now() } as never })
+    window.claude = {
+      send: (payload) => { conversationId = payload.conversationId },
+      cancel: () => undefined,
+      onToken: () => () => undefined,
+      onDone: (callback) => { done = callback; if (finishRequested) queueMicrotask(complete); return () => { done = undefined } },
+      onError: () => () => undefined,
+      onLog: () => () => undefined
+    }
+    return { finish: () => { finishRequested = true; complete() } }
+  }
+
+  // @testCase TC-UI-01
+  it('сохраняет development до отправки, во время хода и после его завершения', async () => {
+    const api = createFakeApi([])
+    window.api = api
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true, permissionMode: 'acceptEdits' })
+    const make = await api['conversations:create']({ title: 'Make development', assistantKind: 'make' })
+    api._state.conversations.find((item) => item.id === make.id)!.permissionMode = 'acceptEdits'
+    const claude = installClaude()
+    window.location.hash = `#/make/${make.id}`
+    render(<App api={api} delays={FAST} />)
+
+    const mode = await screen.findByRole('button', { name: 'Режим работы' })
+    expect(mode).toHaveTextContent('Разработка')
+    const composer = screen.getByRole('textbox', { name: 'Поле ввода сообщения' })
+    await userEvent.type(composer, 'поправь кнопку{enter}')
+    expect(mode).toHaveTextContent('Разработка')
+    claude.finish()
+    await waitFor(() => expect(mode).not.toBeDisabled(), { timeout: 2_000 })
+    expect(mode).toHaveTextContent('Разработка')
+    expect(api._state.conversations.find((item) => item.id === make.id)?.permissionMode).toBe('acceptEdits')
+  })
+
+  // @testCase TC-UI-02
+  it('«Только спросить» временно включает plan и восстанавливает development после хода', async () => {
+    const api = createFakeApi([])
+    window.api = api
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true, permissionMode: 'acceptEdits' })
+    const make = await api['conversations:create']({ title: 'Make question', assistantKind: 'make' })
+    api._state.conversations.find((item) => item.id === make.id)!.permissionMode = 'acceptEdits'
+    const setMode = vi.spyOn(api, 'conversations:setExecTarget')
+    const claude = installClaude()
+    window.location.hash = `#/make/${make.id}`
+    render(<App api={api} delays={FAST} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Только спросить' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'почему кнопка красная?{enter}')
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith(expect.objectContaining({ id: make.id, permissionMode: 'plan' })))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Режим работы' })).toBeDisabled())
+    expect(api._state.conversations.find((item) => item.id === make.id)?.permissionMode).toBe('plan')
+    expect(screen.getByRole('button', { name: 'Только спросить' })).toHaveAttribute('aria-pressed', 'true')
+    claude.finish()
   })
 })

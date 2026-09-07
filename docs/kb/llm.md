@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-06
-checked: af37f03e
+updated: 2026-09-07
+checked: 399e57aa
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -284,7 +284,9 @@ Usage нормализуется в `TurnUsage` и рассылается как
 
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
 
-**Make без машины (roadmap-3 п.2).** Раньше `turns.ts` форсил `plan` для любого пользователя без машины, а нативный plan-режим CLI глушит MCP — Make не мог писать файлы. Теперь для Make-разговора с провайдером Claude ход идёт в `default` с `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …) — остаются только MCP-инструменты, make MCP без `ro=1`. Для Codex ход остаётся в плане (`--sandbox read-only`): раньше считалось, что read-only sandbox блокирует HTTP-MCP, но настоящая причина — Codex ≥0.15 требует одобрения любого MCP-вызова, а неинтерактивный `codex exec` отвечает «MCP tool call requires approval, but approval policy is never». С 2026-09-02 раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`), и MCP работает и в read-only sandbox; проверено на 0.152 против пробного сервера (без ключа падают даже read-only инструменты, с `--dangerously-bypass-approvals-and-sandbox` проходят, с ключом — проходят при read-only). Политику изменений при этом держат сами MCP-серверы (`ro=1`, автопилот/подтверждения).
+**Make без машины (roadmap-3 п.2).** Общее UI-правило «у non-admin нет машины — План» не применяется к разговору `assistantKind: 'make'`: Make работает без remote-моста и сохраняет выбранный пользователем режим. Сервер одинаково для Claude и Codex передаёт сохранённый `permissionMode` и всегда задаёт `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …), поэтому остаются только `mcp__make__*`. Итоговый режим конкретного хода определяет read-only Make MCP: явный `plan`, одноходовый «Только спросить» и автоплан большого запроса добавляют `ro=1`; `acceptEdits` и `bypassPermissions` его не добавляют. «Только спросить» после завершения хода восстанавливает прежний режим, а автоплан не записывает `plan` в разговор.
+
+Codex ≥0.15 требует одобрения любого MCP-вызова, поэтому раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`). Это разрешает вызовы Make MCP в неплановых режимах без включения встроенных инструментов; политику записи файлов продолжает держать сам Make MCP через `ro=1`.
 
 **Make-чат к машине не ходит вообще (2026-09-04).** Раньше исключение работало
 только «без машины»: назначенная чату машина давала remote-bash-мост, а у роли

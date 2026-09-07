@@ -403,18 +403,20 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
-  it('Make у не-admin без машины (Claude): ход идёт не в plan, встроенные инструменты запрещены, make MCP без ro (roadmap-3 п.2)', async () => {
+  // @testCase TC-SRV-01
+  it('Make у не-admin без машины (Claude): сохраняет development, запрещает встроенные инструменты и не добавляет ro', async () => {
     const db = await freshDb()
     await db.identity.createUser('dev', '', 'developer')
     const conv = await db.chat.createConversation('dev', 'Проект', 'make')
-    await db.chat.addMessage('dev', conv.id, 'u0', 'сделай лендинг', '10:00')
+    await db.chat.setConversationExecTarget('dev', conv.id, null, undefined, undefined, undefined, undefined, 'acceptEdits')
+    await db.chat.addMessage('dev', conv.id, 'u0', 'поправь кнопку', '10:00')
     const rec = recorder()
     const turns = createTurnManager({ db: await db, claude: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
     await new Promise<void>(async (resolve) => {
       const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
-      await turns.start({ userId: 'dev', conversationId: conv.id, segments: [{ speakerId: 1, text: 'сделай лендинг' }] })
+      await turns.start({ userId: 'dev', conversationId: conv.id, segments: [{ speakerId: 1, text: 'поправь кнопку' }] })
     })
-    expect(rec.last()?.permissionMode).not.toBe('plan')
+    expect(rec.last()?.permissionMode).toBe('acceptEdits')
     expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit', 'Read']))
     expect(rec.last()?.makeMcpUrl).not.toContain('ro=1')
     await turns.idle()
@@ -448,10 +450,12 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
-  it('Make на Codex остаётся в плане даже у admin: MCP в read-only sandbox недоступен', async () => {
+  // @testCase TC-SRV-02
+  it('Make на Codex сохраняет development и остаётся MCP-only', async () => {
     const db = await freshDb()
     const conv = (await db.chat.createConversation(U, 'Витрина', 'make'))!
     await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: 'codex' })
+    await db.chat.setConversationExecTarget(U, conv.id, null, undefined, undefined, undefined, undefined, 'acceptEdits')
     await db.chat.addMessage(U, conv.id, 'u0', 'поправь кнопку', '10:00')
     const rec = recorder()
     const turns = createTurnManager({ db: await db, claude: rec.client, codex: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
@@ -459,26 +463,78 @@ describe('turns: инструкции чата', () => {
       const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
       await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'поправь кнопку' }] })
     })
-    expect(rec.last()?.permissionMode).toBe('plan')
-    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit']))
+    expect(rec.last()?.permissionMode).toBe('acceptEdits')
+    expect(rec.last()?.makeMcpUrl).not.toContain('ro=1')
+    expect(rec.last()?.remote).toBeUndefined()
+    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit', 'Read', 'WebFetch', 'Task']))
     await turns.idle()
     db.close()
   })
 
-  it('Make в режиме «План» по выбору пользователя получает хинт «Режим вопроса», а не плана (roadmap-4 п.4)', async () => {
+  // @testCase TC-SRV-03
+  it.each(['claude', 'codex'] as const)('Make в явном «Плане» через %s получает ro=1 и остаётся MCP-only', async (provider) => {
     const db = await freshDb()
     const conv = await db.chat.createConversation(U, 'Проект', 'make')
+    await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: provider })
     await db.chat.setConversationExecTarget(U, conv.id, null, undefined, undefined, undefined, undefined, 'plan')
     await db.chat.addMessage(U, conv.id, 'u0', 'почему кнопка красная?', '10:00')
     const rec = recorder()
-    const turns = createTurnManager({ db: await db, claude: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    const turns = createTurnManager({ db, claude: rec.client, codex: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
     await new Promise<void>(async (resolve) => {
       const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
       await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'почему кнопка красная?' }] })
     })
+    expect(rec.last()?.permissionMode).toBe('plan')
     expect(rec.last()?.prompt).toContain('## Режим вопроса')
     expect(rec.last()?.prompt).not.toContain('## Режим плана')
     expect(rec.last()?.makeMcpUrl).toContain('ro=1')
+    expect(rec.last()?.remote).toBeUndefined()
+    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Write', 'Edit', 'Read', 'WebFetch', 'Task']))
+    await turns.idle()
+    db.close()
+  })
+
+  // @testCase TC-SRV-04
+  it.each(['claude', 'codex'] as const)('автоплан большого Make-запроса через %s действует один ход', async (provider) => {
+    const db = await freshDb()
+    const conv = await db.chat.createConversation(U, 'Проект', 'make')
+    await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: provider })
+    await db.chat.setConversationExecTarget(U, conv.id, null, undefined, undefined, undefined, undefined, 'acceptEdits')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, codex: rec.client, makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    const run = async (text: string): Promise<void> => new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text }] })
+    })
+
+    await run('сделай полный редизайн проекта')
+    expect(rec.last()?.permissionMode).toBe('plan')
+    expect(rec.last()?.prompt).toContain('## Режим плана')
+    expect(rec.last()?.makeMcpUrl).toContain('ro=1')
+
+    await run('поправь кнопку')
+    expect(rec.last()?.permissionMode).toBe('acceptEdits')
+    expect(rec.last()?.prompt).not.toContain('## Режим плана')
+    expect(rec.last()?.makeMcpUrl).not.toContain('ro=1')
+    expect((await db.chat.getConversation(U, conv.id))?.permissionMode).toBe('acceptEdits')
+    await turns.idle()
+    db.close()
+  })
+
+  // @testCase TC-GATE-01
+  // @testCase TC-SRV-05
+  it('обычный чат non-admin без машины по-прежнему принудительно работает в plan', async () => {
+    const db = await freshDb()
+    await db.identity.createUser('dev-no-machine', '', 'developer')
+    const conv = await db.chat.createConversation('dev-no-machine', 'Чат')
+    await db.chat.setConversationExecTarget('dev-no-machine', conv.id, null, undefined, undefined, undefined, undefined, 'acceptEdits')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: 'dev-no-machine', conversationId: conv.id, segments: [{ speakerId: 1, text: 'поправь файл' }], execTarget: 'none' })
+    })
+    expect(rec.last()?.permissionMode).toBe('plan')
     await turns.idle()
     db.close()
   })
