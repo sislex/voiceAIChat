@@ -42,6 +42,7 @@ export function setupRestHarness() {
     dataDir: '',
     agentRegistry: undefined as unknown as AgentRegistry,
     sentMails,
+    mailError: null as Error | null,
     triggerDeploy,
     SECRET: REST_SECRET,
     U: REST_ADMIN,
@@ -68,10 +69,11 @@ export function setupRestHarness() {
     harness.agentRegistry = new AgentRegistry()
     triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
     sentMails.length = 0
+    harness.mailError = null
     // Явно изолируем каталоги моделей/голосов во временную папку — тесты удаления
     // не должны касаться реальных файлов репозитория.
     harness.app = await buildServer({
-      mailer: { configured: true, send: async (m) => { sentMails.push(m) } },
+      mailer: { configured: true, send: async (m) => { if (harness.mailError) throw harness.mailError; sentMails.push(m) } },
       // Место входа: тесты не ходят в сеть, но проверяют, что ответ доезжает до сессии.
       geo: { resolve: async () => ({ country: 'RU', city: 'Москва', label: 'Москва, RU' }) },
       config: loadConfig({
