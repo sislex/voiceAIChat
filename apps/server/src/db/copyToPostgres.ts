@@ -33,6 +33,12 @@ function pgTables(): Map<string, { columns: string[]; rowidGenerated: boolean }>
   return out
 }
 
+/** Postgres не хранит NUL в TEXT (SQLite — хранит; встречается в журналах ранов). Байт убираем — текст остаётся читаемым. */
+function clean(value: unknown): unknown {
+  if (value === undefined) return null
+  return typeof value === 'string' && value.includes('\0') ? value.replace(/\0/g, '') : value
+}
+
 export async function copySqliteToPostgres(opts: CopyOptions): Promise<CopyReport> {
   const log = opts.log ?? (() => {})
   const source = new Database(opts.sqlitePath, { readonly: true })
@@ -59,7 +65,7 @@ export async function copySqliteToPostgres(opts: CopyOptions): Promise<CopyRepor
         const flush = async (): Promise<void> => {
           if (!rows.length) return
           const values: unknown[] = []
-          const tuples = rows.map((row) => `(${withRowid.map((c) => { values.push(row[c] ?? null); return `$${values.length}` }).join(', ')})`)
+          const tuples = rows.map((row) => `(${withRowid.map((c) => { values.push(clean(row[c])); return `$${values.length}` }).join(', ')})`)
           try {
             const res = await sql.pool.query(`INSERT INTO ${table} (${withRowid.join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT DO NOTHING`, values)
             inserted += res.rowCount ?? 0
@@ -68,7 +74,7 @@ export async function copySqliteToPostgres(opts: CopyOptions): Promise<CopyRepor
             // Пакет не лёг — ищем виноватую строку по одной, остальные сохраняем.
             for (const row of rows) {
               try {
-                const one = await sql.pool.query(`INSERT INTO ${table} (${withRowid.join(', ')}) VALUES (${withRowid.map((_, i) => `$${i + 1}`).join(', ')}) ON CONFLICT DO NOTHING`, withRowid.map((c) => row[c] ?? null))
+                const one = await sql.pool.query(`INSERT INTO ${table} (${withRowid.join(', ')}) VALUES (${withRowid.map((_, i) => `$${i + 1}`).join(', ')}) ON CONFLICT DO NOTHING`, withRowid.map((c) => clean(row[c])))
                 inserted += one.rowCount ?? 0
                 skipped += 1 - (one.rowCount ?? 0)
               } catch (rowError) {
