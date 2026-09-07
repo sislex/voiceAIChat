@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { personalizationPromptBlock, projectContextBlock, taskContextBlock } from './prompt/contextBlocks.js'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
-import { buildTaskMakeSources, type MakeTaskScopeBroker } from './mcp/makeMcp.js'
+import type { MakeService } from '@voicechat/make'
 import {
   type ChatStorageBinding,
   appendChatInstructionHints,
@@ -98,15 +98,12 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
-  makeTaskScopes?: MakeTaskScopeBroker
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
   kanbanMcpBaseUrl?: string
   /** Снимок «что открыто» для инструментов канбана: пишется на старте хода. */
   widgetContexts?: { remember(conversationId: string, turnId: string, context: WidgetAssistantContext): void }
-  /** Реестр снимков «До правок» по id хода — для meta.makeSnapshotId. */
-  makeHub?: { turnSnapshot(turn: string): string | undefined }
-  /** Контекст проекта Make для промпта: дизайн-токены и открытые комментарии (roadmap-2 п.9). */
-  makeContext?: (conversationId: string) => Promise<string>
+  /** Make глазами хода: контекст проекта в промпт, снимок «До правок» для meta, scope-источники рана (make/service.ts). */
+  make?: Pick<MakeService, 'promptContext' | 'turnSnapshot' | 'taskSources'>
   /** Контекст студии картинок: список галереи + правило показа результата. */
   studioContext?: (conversationId: string) => Promise<string>
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
@@ -648,8 +645,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
     // показывает, значит ход обязан его слушать.
-    const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext && !disabledContext.has('make-context')
-      ? await deps.makeContext(conversationId).catch(() => '')
+    const makeContextBlock = conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
+      ? await deps.make.promptContext(conversationId).catch(() => '')
       : ''
     // Чат студии картинок: модель должна знать, что уже лежит в галерее, и
     // что нарисованное надо показать fenced-блоком — иначе оно туда не попадёт.
@@ -892,13 +889,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    // Make (roadmap-3 п.2): инструменты make_* не требуют машины и безопасны, а нативный
-    // plan-режим CLI их глушит. Для Claude запускаем default, но запрещаем все встроенные инструменты
-    // (shell/файлы сервера) — остаются только MCP. Codex в read-only sandbox блокирует HTTP-MCP, поэтому
-    // там остаётся план (ограничение задокументировано в KB). Роль здесь не важна:
+    // Make (roadmap-3 п.2): инструменты make_* не требуют машины. Неплановый ход
+    // любого провайдера сохраняет выбранный режим, но получает запрет всех встроенных
+    // инструментов (shell/файлы сервера) — остаются только MCP. Роль здесь не важна:
     // админ в Make-чате раньше получал встроенные Bash/Write и мог править
     // репозиторий сервера — для мастерской это лишние права, а не удобство.
-    const makeOnlyExecution = makeChat && provider === 'claude' && permissionMode !== 'plan'
+    const makeOnlyExecution = makeChat && permissionMode !== 'plan'
     // Канбан-ассистент: «План» для его инструментов — только явный выбор
     // пользователя в этом разговоре. Ход панели идёт без машины, и принудительный
     // plan ниже раньше делал канбан read-only (ro=1): ассистент не мог ни создать
@@ -906,9 +902,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // (автопилот / подтверждения). Инцидент 2026-09-02.
     const kanbanExplicitPlan = conv?.permissionMode === 'plan'
     if (executionDisabled || (role !== 'admin' && !remote && !makeOnlyExecution)) permissionMode = 'plan'
-    // Codex-ход Make остаётся в плане при любой роли: его MCP в read-only sandbox
-    // всё равно недоступен, а default дал бы модели встроенные инструменты.
-    if (makeChat && provider === 'codex') permissionMode = 'plan'
     // Встроенные инструменты Make запрещены всегда, а не только в MCP-режиме:
     // мастерская правится через make_*, и ни shell, ни файлы сервера ей не нужны.
     if (makeChat || makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
@@ -975,7 +968,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       : remote
     const linkedTask = conv?.taskId && conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
     const makeSources = linkedTask && conv?.projectId
-      ? buildTaskMakeSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id, baseUrl: deps.makeMcpBaseUrl, broker: deps.makeTaskScopes })
+      ? deps.make?.taskSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id }) ?? []
       : []
     turn.handle = client.send(
       {
@@ -1031,7 +1024,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             // live-снапшот: так счётчики не теряются при различиях форматов CLI.
             ...turn.usage,
             ...meta,
-            ...(deps.makeHub?.turnSnapshot(turnId) ? { makeSnapshotId: deps.makeHub.turnSnapshot(turnId) } : {}),
+            ...(deps.make?.turnSnapshot(turnId) ? { makeSnapshotId: deps.make.turnSnapshot(turnId) } : {}),
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
             model: resolvedModel,

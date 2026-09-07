@@ -8,7 +8,6 @@ import { checkPasswordPolicy } from '@voicechat/shared'
 import { hibpEnabled, pwnedCount } from '../users/pwned.js'
 import type { AdminMakeStats, AdminMachineStats, AdminMachineStat, RoleCommandPolicies } from '@voicechat/shared'
 import { parseRoleCommandPolicies } from '@voicechat/shared'
-import { formatMakeMetrics } from '../make/metrics.js'
 import { formatMachineMetrics } from '../agents/metrics.js'
 import type { AgentRecord } from '../db/database.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
@@ -213,7 +212,8 @@ export function registerAdminRoutes(
   db: VoiceChatDb,
   registry: AgentRegistry,
   deployTrigger?: DeployTrigger,
-  makeStats?: () => Promise<AdminMakeStats>,
+  /** Расход диска Make по пользователям и он же в формате Prometheus (make/service.ts). */
+  make?: { adminStats(): Promise<AdminMakeStats>; metrics(): Promise<string> },
   mailer?: Mailer,
   publicUrl?: string | null,
   /** Хаб сессий: отзыв админом должен доехать до владельца так же живо, как свой. */
@@ -333,13 +333,13 @@ export function registerAdminRoutes(
     )
   }))
   app.get(REST.adminMakeStats, guard, async (_req, reply) => {
-    if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
-    return makeStats()
+    if (!make) return reply.code(404).send({ error: 'Make недоступен' })
+    return make.adminStats()
   })
   // Те же цифры в формате Prometheus (roadmap-2 п.17) — для скрейпа с Bearer-токеном администратора.
   app.get(REST.adminMakeMetrics, guard, async (_req, reply) => {
-    if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
-    return reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMakeMetrics(await makeStats()))
+    if (!make) return reply.code(404).send({ error: 'Make недоступен' })
+    return reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(await make.metrics())
   })
 
   /**
