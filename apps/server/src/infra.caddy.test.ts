@@ -36,4 +36,16 @@ describe('Caddyfile', () => {
   it('переменная обязательна в compose — пустой хост поднимет Caddy ни на что', () => {
     expect(compose).toMatch(/VC_PUBLIC_HOST:\s*\$\{VC_PUBLIC_HOST:\?/)
   })
+
+  it('пути Make уходят в сервис make на обоих виртуальных хостах, внутренний API наружу закрыт', () => {
+    const blocks = caddyfile.match(/(?:https:\/\/\{\$VC_PUBLIC_HOST\}|https:\/\/caddy)\s*\{[\s\S]*?\n\}/g) ?? []
+    expect(blocks).toHaveLength(2)
+    for (const block of blocks) {
+      expect(block).toMatch(/@make path [^\n]*\/api\/make\/\*[^\n]*\/p\/\*/)
+      expect(block).toMatch(/handle @make \{\s*reverse_proxy make:8788/)
+      expect(block).toMatch(/handle \/internal\/\* \{\s*respond 404/)
+    }
+    expect(compose).toMatch(/^  make:\n/m)
+    expect(compose).toContain('VC_MAKE_MODE: remote')
+  })
 })
