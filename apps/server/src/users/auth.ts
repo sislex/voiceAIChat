@@ -3,7 +3,7 @@
 // БД (таблица users). Плюс роуты сессии (login/me/logout) и guard requireAdmin.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { SlidingWindowLimiter } from '../util/rateLimit.js'
+import { SlidingWindowLimiter } from '@voicechat/shared'
 
 /** По имени — 10 за 10 минут; по IP — 30: за одним NAT сидит офис, и чужой брутфорс не должен запирать всех. */
 const LOGIN_LIMIT = 10
@@ -72,7 +72,7 @@ function cookieNameFor(req: FastifyRequest, base: string): string {
  * Читаем оба, чтобы схема не зависела от того, какой origin выставил cookie
  * последним, и чтобы правка не разлогинила всех, кто уже вошёл по старому имени.
  */
-function readCookie(req: FastifyRequest, base: string): string | undefined {
+function readCookie(req: Pick<FastifyRequest, 'headers'>, base: string): string | undefined {
   return cookieOf(req, SECURE_COOKIE_PREFIX + base) ?? cookieOf(req, base)
 }
 /** `maxAgeSec: null` — сессионная cookie без Max-Age (живёт до закрытия браузера). */
@@ -110,7 +110,7 @@ export function clearSessionCookies(req: FastifyRequest): string[] {
     ...clearLegacySessionCookies(req)
   ]
 }
-function cookieOf(req: FastifyRequest, name: string): string | undefined {
+function cookieOf(req: Pick<FastifyRequest, 'headers'>, name: string): string | undefined {
   const header = req.headers.cookie
   if (typeof header !== 'string') return undefined
   for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === name) return rest.join('=') }
@@ -235,7 +235,7 @@ export function projectFeatureForRequest(_method: string, url: string): ProjectF
 }
 
 /** Токен из заголовка Authorization: Bearer <token>. */
-function bearer(req: FastifyRequest): string | undefined {
+function bearer(req: Pick<FastifyRequest, 'headers'>): string | undefined {
   const h = req.headers['authorization']
   if (typeof h !== 'string') return undefined
   const m = /^Bearer\s+(.+)$/i.exec(h)
@@ -243,7 +243,7 @@ function bearer(req: FastifyRequest): string | undefined {
 }
 
 /** Отдельная HttpOnly-cookie для same-origin iframe; на прочих API не действует. */
-function previewSession(req: FastifyRequest, url: string): string | undefined {
+function previewSession(req: Pick<FastifyRequest, 'headers'>, url: string): string | undefined {
   // Точный путь прокси плюс сброс cookie-контейнера превью (кнопка «Сессия» Reader).
   // Превью и экспорт Make лежат под тем же префиксом: iframe и ссылка «Скачать» шлют только cookie.
   if (url !== PREVIEW_COOKIE_PATH && url !== PREVIEW_COOKIE_PATH + '/reset-cookies' && !url.startsWith(PREVIEW_COOKIE_PATH + '/make')) return undefined
@@ -257,7 +257,7 @@ function previewSession(req: FastifyRequest, url: string): string | undefined {
  */
 export async function previewRunUser(
   db: VoiceChatDb,
-  req: FastifyRequest,
+  req: Pick<FastifyRequest, 'headers'>,
   url: string,
   keys: NonNullable<AuthOptions['previewRunKeys']>
 ): Promise<SessionUser | null> {
@@ -311,6 +311,11 @@ export async function resolveActiveUser(db: VoiceChatDb, token: string | undefin
   }
   return resolveUser(db, token, secret)
 }
+
+/** Всё, что нужно аутентификации от запроса: метод, путь и заголовки — без остального FastifyRequest. */
+export type AuthRequestLike = Pick<FastifyRequest, 'method' | 'url' | 'headers'>
+export type AuthVerdict = { ok: true; user: SessionUser } | { ok: false; status: 401 | 403; error: string }
+export type AuthenticateFn = (req: AuthRequestLike) => Promise<AuthVerdict>
 
 export interface AuthOptions {
   /** Отправка писем (регистрация с подтверждением email); без SMTP — «консольный» мейлер из createMailer. */
@@ -398,7 +403,7 @@ function clientVersionOf(req: FastifyRequest): string | null {
   return value ? String(value).slice(0, 32) : null
 }
 
-export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): Promise<void> {
+export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): Promise<{ authenticate: AuthenticateFn }> {
   const mailer = options.mailer ?? createMailer({}, (m, extra) => app.log.warn(extra ?? {}, m))
   const geo = options.geo ?? createGeoResolver({
     url: process.env.VC_GEOIP_URL ?? null,
@@ -426,10 +431,13 @@ export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret
   const sidOf = (req: FastifyRequest): string | null => verifyToken(tokenOf(req), secret)?.sid ?? null
   await db.identity.pruneSessions()
 
-  app.addHook('preHandler', async (req, reply) => {
-    const url = req.url.split('?')[0]
-    if (!url.startsWith('/api/')) return // статика/SPA/ws — не трогаем
-    if (isPublic(url)) return
+  /**
+   * Аутентификация по методу, пути и заголовкам — без остального FastifyRequest: ту же проверку
+   * заказывает отдельный сервис Make через `/internal/whoami`, пересылая cookie/Bearer запроса.
+   * Одна авторизация на все сервисы — значит, один код, а не его копия в каждом процессе.
+   */
+  const authenticate: AuthenticateFn = async (req) => {
+    const url = req.url.split('?')[0]!
     // Порядок: Bearer (desktop/агенты/старые клиенты) → cookie-сессия (web, п.5) → preview-cookie (iframe).
     // Cookie авторизует мутации только с CSRF-заголовком, равным читаемой cookie: чужой сайт cookie отправит, заголовок — нет.
     let token = bearer(req)
@@ -440,22 +448,26 @@ export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret
     // Путь запоминаем в сессии: в списке устройств он отвечает на вопрос «а что
     // это устройство вообще делает», когда вход выглядит подозрительно.
     const user = await (runUser ?? activeUser(token, url))
-    if (!user) {
-      await reply.code(401).send({ error: 'unauthorized' })
-      return reply
-    }
+    if (!user) return { ok: false, status: 401, error: 'unauthorized' }
     // Временный пароль (п.11): до смены пароля запрещаем всё, кроме чтения — сессионные роуты публичны и сюда не попадают.
-    if (user.mustChangePassword && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      await reply.code(403).send({ error: 'password_change_required' })
-      return reply
-    }
+    if (user.mustChangePassword && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return { ok: false, status: 403, error: 'password_change_required' }
     if (viaCookie && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const csrf = readCookie(req, CSRF_COOKIE)
-      if (!csrf || req.headers[CSRF_HEADER] !== csrf) {
-        await reply.code(403).send({ error: 'csrf' })
-        return reply
-      }
+      if (!csrf || req.headers[CSRF_HEADER] !== csrf) return { ok: false, status: 403, error: 'csrf' }
     }
+    return { ok: true, user }
+  }
+
+  app.addHook('preHandler', async (req, reply) => {
+    const url = req.url.split('?')[0]
+    if (!url.startsWith('/api/')) return // статика/SPA/ws — не трогаем
+    if (isPublic(url)) return
+    const verdict = await authenticate(req)
+    if (!verdict.ok) {
+      await reply.code(verdict.status).send({ error: verdict.error })
+      return reply
+    }
+    const { user } = verdict
     req.user = user
     const permission = projectPermissionForRequest(req.method, url)
     if (permission) {
@@ -1029,4 +1041,5 @@ export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret
     options.sessions?.emit(user.name)
     return { ok: true }
   })
+  return { authenticate }
 }

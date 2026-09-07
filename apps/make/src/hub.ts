@@ -11,12 +11,37 @@ export const PRESENCE_TTL_MS = 45_000
 
 type Sink = (m: ServerMessage) => void
 
+/**
+ * Событие шины в переносимом виде: отдельный процесс Make отправляет их ядру, и ядро
+ * воспроизводит их на своей шине (`apply`) — сокеты пользователей живут у ядра.
+ */
+export type MakeHubEvent =
+  | { kind: 'changed'; userId: string; conversationId: string; rev: number; paths: string[] }
+  | { kind: 'presence'; userId: string; conversationId: string; clients: MakePresenceClient[] }
+  | { kind: 'turnSnapshot'; turn: string; snapshotId: string }
+
 export class MakeHub {
   private readonly sinks = new Map<string, Set<Sink>>()
   /** Снимок «До правок» по id хода (roadmap-2 п.2): ход кладёт его в meta ответа, чат показывает «Откатить правки». */
   private readonly turnSnapshots = new Map<string, string>()
+  private listener: ((event: MakeHubEvent) => void) | null = null
+
+  /** Ретранслятор событий (в standalone-процессе — HTTP к ядру); `apply` его не зовёт, чтобы не зациклиться. */
+  setListener(listener: ((event: MakeHubEvent) => void) | null): void { this.listener = listener }
+
+  /** Воспроизвести событие, пришедшее из другого процесса. */
+  apply(event: MakeHubEvent): void {
+    if (event.kind === 'changed') this.emitChanged(event.userId, event.conversationId, event.rev, event.paths)
+    else if (event.kind === 'presence') this.emitPresence(event.userId, event.conversationId, event.clients)
+    else this.storeTurnSnapshot(event.turn, event.snapshotId)
+  }
 
   rememberTurnSnapshot(turn: string, snapshotId: string): void {
+    this.storeTurnSnapshot(turn, snapshotId)
+    this.listener?.({ kind: 'turnSnapshot', turn, snapshotId })
+  }
+
+  private storeTurnSnapshot(turn: string, snapshotId: string): void {
     if (this.turnSnapshots.size > 5_000) this.turnSnapshots.clear()
     this.turnSnapshots.set(turn, snapshotId)
   }
@@ -38,6 +63,11 @@ export class MakeHub {
   }
 
   broadcastPresence(userId: string, conversationId: string, clients: MakePresenceClient[]): void {
+    this.emitPresence(userId, conversationId, clients)
+    this.listener?.({ kind: 'presence', userId, conversationId, clients })
+  }
+
+  private emitPresence(userId: string, conversationId: string, clients: MakePresenceClient[]): void {
     const set = this.sinks.get(userId)
     if (!set) return
     const message: ServerMessage = { t: 'make.presence', conversationId, clients }
@@ -55,6 +85,11 @@ export class MakeHub {
   }
 
   changed(userId: string, conversationId: string, rev: number, paths: string[]): void {
+    this.emitChanged(userId, conversationId, rev, paths)
+    this.listener?.({ kind: 'changed', userId, conversationId, rev, paths })
+  }
+
+  private emitChanged(userId: string, conversationId: string, rev: number, paths: string[]): void {
     const set = this.sinks.get(userId)
     if (!set) return
     const message: ServerMessage = { t: 'make.changed', conversationId, rev, paths }

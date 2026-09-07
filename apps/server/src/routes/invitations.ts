@@ -12,7 +12,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { VoiceChatDb } from '../db/database.js'
 import type { Mailer } from '../users/mailer.js'
 import { uid } from '../users/auth.js'
-import { SlidingWindowLimiter } from '../util/rateLimit.js'
+import { SlidingWindowLimiter } from '@voicechat/shared'
 import type { ProjectRole } from '@voicechat/shared'
 
 const errMessage = (error: unknown): string => (error instanceof Error ? error.message : 'Ошибка')

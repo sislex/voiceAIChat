@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { personalizationPromptBlock, projectContextBlock, taskContextBlock } from './prompt/contextBlocks.js'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
-import type { MakeService } from './make/service.js'
+import type { MakeService } from '@voicechat/make'
 import {
   type ChatStorageBinding,
   appendChatInstructionHints,

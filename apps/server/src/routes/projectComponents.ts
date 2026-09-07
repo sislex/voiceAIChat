@@ -16,7 +16,7 @@ import {
 } from '@voicechat/shared'
 import { uid } from '../users/auth.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
-import { parseStoryFile } from '../util/storyParse.js'
+import { parseStoryFile } from '@voicechat/shared'
 import type { StorybookSessions } from '../components/storybookSessions.js'
 import type { ComponentTicketService } from '../components/componentTicket.js'
 

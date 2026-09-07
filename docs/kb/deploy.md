@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-07
-checked: d4710360
+checked: 9ff8fe71
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -147,6 +147,18 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 запуска health check; для `stt-runner` установлен лимит `cpus: 2`.
 
 ## Переменные окружения
+
+**Make отдельным сервисом (`docs/plans/make-standalone.md`, 2026-09-07).** Пока в compose Make
+встроен в `voicechat` (`VC_MAKE_MODE` не задан → `embedded`). Для режима двух процессов у ядра:
+`VC_MAKE_MODE=remote`, `VC_MAKE_URL=http://make:8788`, `VC_INTERNAL_TOKEN` (общий Bearer
+`/internal/*`), `VC_MCP_SECRET` (общий секрет `/mcp/*`), `VC_MAKE_MCP_PUBLIC_BASE` (адрес Make
+глазами контейнера исполнителя, по умолчанию `VC_MAKE_URL`); у процесса Make
+(`apps/make/src/standalone`): `PORT=8788`, `VC_CORE_URL=http://voicechat:8787`, те же
+`VC_INTERNAL_TOKEN`/`VC_MCP_SECRET`, `VC_DATA_DIR` — **тот же том**, что у ядра (мастерские лежат в
+`<dataDir>/make`, миграции данных нет). Caddy должен направлять `/api/make/*`,
+`/api/preview/make/*`, `/api/preview/make-shared/*`, `/p/*`, `/s/*`, `/mcp/make` на `make:8788`,
+остальное — на ядро; `/internal/*` наружу не проксируется. Сервис compose, стадия Dockerfile и
+правила Caddy — круг 3 плана.
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,

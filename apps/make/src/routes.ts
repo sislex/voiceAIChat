@@ -8,16 +8,16 @@
 import { createHash } from 'node:crypto'
 import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectNotes, MakeProjectPullResult } from '@voicechat/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { SlidingWindowLimiter } from '../util/rateLimit.js'
+import { SlidingWindowLimiter } from '@voicechat/shared'
 import { MAKE_PROJECT_SYNC_MAX_FILES, MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_COMMENTS_PAGE, MAKE_SNAPSHOT_PREVIEW, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
-import { transpileForPreview } from '../make/transpile.js'
-import { renderGalleryPage, renderStoriesPage, renderTestsPage, storyUsageSnippets } from '../make/stories.js'
-import { readZip, ZipReadError } from '../make/zipRead.js'
-import { importFromUrl, ImportUrlError } from '../make/importUrl.js'
-import type { MakeCore } from '../make/core.js'
-import { MakeError, MakeWorkspaces } from '../make/workspace.js'
-import type { MakeLibrary } from '../make/library.js'
-import type { MakeHub } from '../make/hub.js'
+import { transpileForPreview } from './transpile.js'
+import { renderGalleryPage, renderStoriesPage, renderTestsPage, storyUsageSnippets } from './stories.js'
+import { readZip, ZipReadError } from './zipRead.js'
+import { importFromUrl, ImportUrlError } from './importUrl.js'
+import type { MakeCore } from './core.js'
+import { MakeError, MakeWorkspaces } from './workspace.js'
+import type { MakeLibrary } from './library.js'
+import type { MakeHub } from './hub.js'
 
 export interface MakeRoutesDeps {
   /** Всё, что Make знает о чате, канбане и машинах, — через этот порт (см. make/core.ts). */
@@ -162,7 +162,9 @@ export function sendError(reply: FastifyReply, error: unknown): FastifyReply {
 
 export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): void {
   const { core, workspaces, hub, library } = deps
-  const uid = (req: { user?: { name: string } | null }): string => req.user?.name ?? ''
+  // `req.user` ставит preHandler авторизации хоста (ядро или standalone-процесс Make); тип берём
+  // структурно, чтобы не аугментировать FastifyRequest вторым, отличным от ядра, объявлением.
+  const uid = (req: unknown): string => (req as { user?: { name: string } | null }).user?.name ?? ''
 
   /** Разговор пользователя вида Make, иначе 404 (чужой и несуществующий неотличимы). */
   const own = async (userId: string, id: string, reply: FastifyReply): Promise<boolean> => {
@@ -384,7 +386,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const machine = machines.find((candidate) => candidate.agentId === project.defaultAgentId) ?? machines[0]
     if (!machine) return { error: 'У проекта нет машины с рабочей директорией.' }
     if (!core.machineFs) return { error: 'Файловый мост машин недоступен в этой конфигурации.' }
-    if (!core.machineFs.isOnline(machine.agentId)) return { error: `Машина «${machine.name ?? machine.agentId}» offline.` }
+    if (!await core.machineFs.isOnline(machine.agentId)) return { error: `Машина «${machine.name ?? machine.agentId}» offline.` }
     return { agentId: machine.agentId, root: machine.path.replace(/\/+$/, '') }
   }
 

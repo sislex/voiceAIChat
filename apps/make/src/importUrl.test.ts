@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { importFromUrl } from './importUrl'
 import { buildStoredZip } from './zip'
 
-vi.mock('../util/publicHost.js', () => ({ assertPublicHost: async () => undefined }))
+vi.mock('./publicHost.js', () => ({ assertPublicHost: async () => undefined }))
 
 const fakeFetch = (routes: Record<string, { body: string; type: string; status?: number }>): typeof fetch =>
   (async (input: string | URL | Request) => {
@@ -38,7 +38,7 @@ describe('importFromUrl', () => {
   it('ссылка на GitHub: main → 404 → master, общий корень снят, подкаталог вырезан', async () => {
     const zip = buildStoredZip([{ path: 'repo-master/index.html', data: Buffer.from('<h1>hi</h1>') }, { path: 'repo-master/site/a.css', data: Buffer.from('a{}') }])
     const calls: string[] = []
-    const fetchImpl = (async (input: RequestInfo | URL) => {
+    const fetchImpl = (async (input: string | URL | Request) => {
       const href = String(input); calls.push(href)
       if (href.endsWith('/main')) return new Response('nope', { status: 404 })
       return new Response(new Uint8Array(zip), { status: 200, headers: { "content-type": "application/zip" } })

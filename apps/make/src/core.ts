@@ -11,7 +11,8 @@ import type { Conversation, FsResult, MakeLinkableTask, MakeTaskLink, ProjectDet
 export interface MakeMachineFs {
   list(agentId: string, path: string): Promise<FsResult>
   read(agentId: string, path: string): Promise<FsResult>
-  isOnline(agentId: string): boolean
+  /** Асинхронно намеренно: в отдельном процессе Make статус машины знает только ядро. */
+  isOnline(agentId: string): Promise<boolean>
 }
 
 export interface MakeTaskDesignArgs {

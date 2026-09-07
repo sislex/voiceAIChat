@@ -88,7 +88,6 @@ import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
-import { MAKE_MCP_PATH } from './mcp/makeMcp.js'
 import { ImageStudioStore } from './images/studio.js'
 import { registerImageStudioRoutes } from './routes/imageStudio.js'
 import { llmImageStudioGenerator } from './llm/imageStudioGenerator.js'
@@ -97,8 +96,10 @@ import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './m
 import { WidgetContextStore } from './mcp/widgetContext.js'
 import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
 import { createOrchestrationManager } from './orchestration/runManager.js'
-import { createMakeModule } from './make/module.js'
+import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@voicechat/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
+import { createRemoteMake } from './makeBridge/remote.js'
+import { registerInternalRoutes } from './routes/internal.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
@@ -405,7 +406,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
   const previewRunCookie = (userId: string): { name: string; value: string; url: string } =>
     ({ name: PREVIEW_RUN_COOKIE, value: previewRunKeys.issue(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` })
-  await registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
+  const { authenticate } = await registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
@@ -588,7 +589,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     deleteFile: (machineId, path) => agentRegistry.fsDeleteFileSafe(machineId, path)
   })
   registerStorageMigrationRoutes(app, db, agentRegistry, storageMigrations)
-  const mcpSecret = randomBytes(16).toString('hex')
+  // Секрет MCP: в режиме remote общий с процессом Make (он проверяет им scope-токены), иначе — свой на процесс.
+  const mcpSecret = opts.config.mcpSecret || randomBytes(16).toString('hex')
   const remoteFileBroker = new RemoteFileBroker()
   const deployTrigger = opts.deployTrigger ?? (opts.config.deployApiSocket
     ? new UnixDeployClient(opts.config.deployApiSocket)
@@ -614,25 +616,34 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уходят владельцу кадром make.changed. Ядро и Make видят друг друга только через
   // порты MakeCore / MakeService (docs/plans/make-standalone.md): здесь — единственная
   // точка, где Make получает доступ к данным чата, канбана и машин.
-  const makeMcpBaseUrl = buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
-  const make = createMakeModule({
-    dataDir: opts.config.dataDir,
-    mcpSecret,
-    mcpBaseUrl: makeMcpBaseUrl,
-    core: new LocalMakeCore({
-      db,
-      // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
-      boardChanged: (projectId) => boardHub.emit(projectId),
-      // Чтение репозитория проекта: файловый мост машины только на чтение —
-      // Make копирует файлы к себе, но в общую копию проекта не пишет.
-      machineFs: {
-        list: (agentId, path) => agentRegistry.fsList(agentId, path),
-        read: (agentId, path) => agentRegistry.fsRead(agentId, path),
-        isOnline: (agentId) => agentRegistry.isOnline(agentId)
-      }
-    })
+  const makeCore = new LocalMakeCore({
+    db,
+    // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
+    boardChanged: (projectId) => boardHub.emit(projectId),
+    // Чтение репозитория проекта: файловый мост машины только на чтение —
+    // Make копирует файлы к себе, но в общую копию проекта не пишет.
+    machineFs: {
+      list: (agentId, path) => agentRegistry.fsList(agentId, path),
+      read: (agentId, path) => agentRegistry.fsRead(agentId, path),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId)
+    }
   })
-  make.register(app)
+  const makeRemote = opts.config.makeMode === 'remote'
+  if (makeRemote && !(opts.config.makeUrl && opts.config.internalToken && opts.config.mcpSecret)) {
+    throw new Error('VC_MAKE_MODE=remote требует VC_MAKE_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
+  }
+  // В remote MCP Make слушает процесс Make: исполнителю нужен его адрес, а не адрес ядра.
+  const makeMcpBaseUrl = makeRemote
+    ? `${(opts.config.makeMcpPublicBase ?? opts.config.makeUrl!).replace(/\/+$/, '')}${MAKE_MCP_PATH}?k=${mcpSecret}`
+    : buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
+  const make: { service: MakeService; hub: MakeHub; register?: (app: FastifyInstance) => void } = makeRemote
+    ? createRemoteMake({ makeUrl: opts.config.makeUrl!, token: opts.config.internalToken!, mcpSecret, mcpBaseUrl: makeMcpBaseUrl })
+    : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
+  make.register?.(app)
+  // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
+  if (opts.config.internalToken) {
+    registerInternalRoutes(app, { token: opts.config.internalToken, makeCore, authenticate, ...(makeRemote ? { makeHub: make.hub } : {}) })
+  }
   // Канбан (mcp__kanban__*): доска, карточки, настройки, машины и раны проекта
   // того разговора, в котором идёт ход. Снимок «что открыто» кладёт сюда turns.ts.
   const widgetContexts = new WidgetContextStore()
@@ -1048,7 +1059,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Production-процесс делает первый проход после старта и затем каждые шесть часов.
   if (!process.env.VITEST) {
     // Фоновая очистка Make (roadmap-2 п.16): снимки и PNG стори старше 30 дней, раз в 6 часов и при старте.
+    // В режиме remote чистит сам процесс Make — здесь только встроенный.
     const makeSweep = async (): Promise<void> => {
+      if (makeRemote) return
       try { const r = await make.service.sweep(); if (r.snapshots || r.shots) app.log.info({ event: 'make_sweep', ...r }) } catch (error) { app.log.warn({ event: 'make_sweep_failed', error: String(error) }) }
     }
     const makeSweepTimer = setInterval(() => { void makeSweep() }, 6 * 60 * 60 * 1000)

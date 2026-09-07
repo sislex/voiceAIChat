@@ -134,23 +134,26 @@ voicechat ──▶ make:8788/internal/*  (тот же токен): promptContex
 6. ☑ `makeMcp.test.ts` — на фейковом `core` (без БД); `make.projectSync.test.ts` — через `LocalMakeCore`
    (ему нужны настоящие проекты и машины).
 
-### Круг 2 — пакет `apps/make` и внутренний API ☐
+### Круг 2 — пакет `apps/make` и внутренний API ☑ (2026-09-07)
 
-1. ☐ `apps/make` (`@voicechat/make`, шаблон — `apps/tts-runner`): `src/server.ts`
-   (`buildMakeServer({ core, dataDir, mcpSecret })` регистрирует роуты + MCP + `/internal/*`
-   + `/v1/health`), `src/index.ts` (listen). Код `make/*`, `routes/make.ts`, `mcp/makeMcp.ts`
-   переезжает сюда физически; ядро импортирует `@voicechat/make` (как `@voicechat/llm-runner`).
-2. ☐ В ядре `/internal/*` под `Bearer VC_INTERNAL_TOKEN` (только из сети compose, Caddy
+1. ☑ `apps/make` (`@voicechat/make`): код `make/*`, `routes/make.ts`, `mcp/makeMcp.ts` переехал физически
+   (`src/*.ts`, плоско); `src/standalone/server.ts` — `buildMakeServer({ config })`: пересылка авторизации,
+   `createMakeModule` с `HttpMakeCore`, `/internal/service`, `/v1/health`; `standalone/index.ts` — listen + sweep.
+   Ядро импортирует `@voicechat/make`; `SlidingWindowLimiter` и `parseStoryFile` — в `@voicechat/shared`.
+2. ☑ В ядре `/internal/*` под `Bearer VC_INTERNAL_TOKEN` (`routes/internal.ts`; вместо REST на каждый метод —
+   RPC `{ method, args }` над портом: `/internal/make/core`, `/internal/make/events`, `/internal/whoami`). Было задумано: (только из сети compose, Caddy
    наружу не проксирует): `GET /internal/whoami` (пересланные cookie/Bearer → `{ userId, role, sid }`),
    `GET /internal/make/conversations/:id`, `…/project`, `…/viewer/:userId`, `GET /internal/make/users/:id/make-conversations`,
    `GET|POST|DELETE /internal/make/task-links…`, `GET /internal/make/projects/:id`,
    `GET /internal/make/ci-task/:projectId/:taskId`, `POST /internal/board-changed`,
    `POST /internal/ws/push`, `GET /internal/machine-fs/:agentId/{list,read,online}`.
-3. ☐ `HttpMakeCore` в `apps/make`, `HttpMakeService` в ядре; выбор по `VC_MAKE_MODE`.
-4. ☐ Авторизация в `apps/make`: preHandler на `/api/*` — кэш `whoami` 30 с; `/p/*`, `/s/*`,
-   `/mcp/make` — как сейчас (по ссылке / по секрету).
-5. ☐ Контрактный тест `make/core.contract.test.ts`: один набор для `LocalMakeCore` и
-   `HttpMakeCore` (второй — поверх `app.inject()` ядра), как `releases.contract.test.ts`.
+3. ☑ `HttpMakeCore` (`apps/make/src/standalone/httpCore.ts`), `createRemoteMake` в ядре (`makeBridge/remote.ts`);
+   выбор по `VC_MAKE_MODE`; `authenticate` вынесен из preHandler `users/auth.ts` и возвращается из `registerAuth`.
+4. ☑ Авторизация в `apps/make`: preHandler на `/api/*` — кэш `whoami` 30 с (только чтения, ключ — токен +
+   класс пути); `/p/*`, `/s/*`, `/mcp/make` — как раньше (по ссылке / по секрету).
+5. ☑ Контрактный тест `makeBridge/core.contract.test.ts` (local vs http поверх `app.inject()`) плюс
+   интеграция `makeBridge/remote.integration.test.ts`: ядро в `remote` и процесс Make на двух портах —
+   Bearer и cookie+CSRF через `whoami`, 404 роутов Make у ядра, MCP у Make, внутренние пути без токена — 401.
 
 ### Круг 3 — образ, compose, Caddy ☐
 

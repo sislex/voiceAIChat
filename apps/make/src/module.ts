@@ -11,8 +11,8 @@ import { formatMakeMetrics } from './metrics.js'
 import type { MakeService } from './service.js'
 import { buildTaskMakeSources } from './taskScope.js'
 import { MakeWorkspaces } from './workspace.js'
-import { registerMakeRoutes, type MakeRoutesDeps } from '../routes/make.js'
-import { registerMakeMcp } from '../mcp/makeMcp.js'
+import { registerMakeRoutes, type MakeRoutesDeps } from './routes.js'
+import { registerMakeMcp } from './mcp.js'
 
 export interface MakeModuleOptions {
   /** Корень данных: мастерские лежат в `<dataDir>/make/<conversationId>`, библиотека — рядом. */

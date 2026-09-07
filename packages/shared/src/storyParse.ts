@@ -2,7 +2,7 @@
 // экспорты по регулярке, `play` — грубо по телу экспорта. Нужен и Make (витрина мастерской),
 // и панели компонентов репозитория проекта, поэтому лежит в общих утилитах, а не в Make.
 
-import type { MakeStoryFile } from '@voicechat/shared'
+import type { MakeStoryFile } from './make'
 
 export function parseStoryFile(path: string, source: string): MakeStoryFile {
   const names: string[] = []

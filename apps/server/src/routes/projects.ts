@@ -43,7 +43,7 @@ import type { CiRunManager } from '../ci/runManager.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { materializeProjectMachine as materialize } from '../projects/materialize.js'
 import type { MergeRunManager } from '../merge/runManager.js'
-import type { MakeService } from '../make/service.js'
+import type { MakeService } from '@voicechat/make'
 import type { UploadStore } from '../uploads.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })

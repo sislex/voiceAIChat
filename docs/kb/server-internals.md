@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: 4dcc3998
+checked: 9ff8fe71
 areas:
   - apps/server/src
 ---
@@ -320,11 +320,36 @@ Make готовится стать отдельным сервисом (`docs/pl
   памяти процесса: токен выдаёт ядро (`MakeService.taskSources`), проверяет MCP Make
   (`verifyTaskScope`), и завтра это разные процессы. Содержимое — заявка: MCP сверяет его с
   актуальными `taskDesigns`, проектом разговора и членством (`authorizeTaskSource`).
-- Общие утилиты, исторически лежавшие в `make/`, переехали: `util/rateLimit.ts`
-  (`SlidingWindowLimiter` — вход, приглашения, студия картинок, импорт Make),
-  `util/publicHost.ts` (SSRF-гард `assertPublicHost`/`isPublicAddress`; `routes/previewProxy.ts`
-  оборачивает его в `PreviewProxyError(403)`), `util/storyParse.ts` (`parseStoryFile` для
-  компонентов репозитория и витрины Make).
+- **Make — отдельный пакет `apps/make` (`@voicechat/make`), круг 2 (2026-09-07).** Код мастерских,
+  роутов и MCP физически живёт там; ядро импортирует только типы портов и `createMakeModule`
+  (гейт `makeBridge/boundary.test.ts`), пакет Make не импортирует ядро, `better-sqlite3` и
+  исполнителей (гейт `apps/make/src/boundary.test.ts`). Два режима у ядра (`config.makeMode`):
+  `embedded` (по умолчанию — dev, desktop, тесты: `createMakeModule` в процессе ядра) и `remote`
+  (`VC_MAKE_MODE=remote`, `VC_MAKE_URL`, `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET`): Make — отдельный
+  процесс `apps/make/src/standalone` (`buildMakeServer`), ядро получает `MakeService` из
+  `makeBridge/remote.ts` — RPC к `/internal/service` Make за `promptContext`/`listFiles`/`adminStats`/
+  `metrics`/`sweep`, `taskSources` считает само (нужны секрет и `makeMcpBaseUrl`), `turnSnapshot` и
+  `subscribe` — локальная `MakeHub`, которую наполняют события от Make. Внутренний API ядра
+  (`routes/internal.ts`, регистрируется только при `VC_INTERNAL_TOKEN`, не под `/api/`):
+  `POST /internal/make/core` — RPC порта `MakeCore` над `LocalMakeCore` (белый список методов —
+  `CORE_RPC_METHODS` в `apps/make/src/internal.ts`), `POST /internal/make/events` — события шины
+  Make (`changed`/`presence`/`turnSnapshot` → `hub.apply`), `POST /internal/whoami` —
+  аутентификация пересланного запроса тем же кодом, что preHandler `/api/*` (`authenticate` из
+  `registerAuth`: Bearer → cookie → preview-cookie, CSRF для мутаций по cookie,
+  `password_change_required`). Процесс Make авторизации не имеет: `standalone/auth.ts` пересылает
+  `cookie`/`authorization`/`x-vc-csrf` вместе с методом и путём в `whoami`, чтения кэширует 30 с по
+  токену и классу пути (`/api/preview/` отдельно), мутации — каждый раз; ядро недоступно → 503
+  `core_unavailable`. MCP `/mcp/make` в `remote` слушает Make, поэтому исполнителю отдаётся
+  `VC_MAKE_MCP_PUBLIC_BASE` (без него — `VC_MAKE_URL`), а секрет `?k=` общий. Контракт `MakeCore`
+  (local vs http) и интеграция «ядро + Make на двух портах» — `makeBridge/core.contract.test.ts`,
+  `makeBridge/remote.integration.test.ts`.
+- **Попутно найдено:** квота Make на пользователя считалась по пустому списку — `listConversations`
+  без `scope` отдаёт только `chat`, а Make-разговоры живут в scope `make`; `LocalMakeCore.
+  makeConversationIdsOf` теперь запрашивает `scope: 'make'`.
+- Общие утилиты, исторически лежавшие в `make/`, переехали: `SlidingWindowLimiter` и `parseStoryFile`
+  — в `@voicechat/shared` (чистые; вход, приглашения, студия картинок, компоненты репозитория),
+  SSRF-гард `assertPublicHost`/`isPublicAddress` — `util/publicHost.ts` ядра (`routes/previewProxy.ts`
+  оборачивает его в `PreviewProxyError(403)`) и намеренная копия `apps/make/src/publicHost.ts`.
 
 ## Публикация Make: сериализация мутаций файла (2026-09-03)
 

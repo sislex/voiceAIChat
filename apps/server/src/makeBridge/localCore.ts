@@ -3,11 +3,12 @@
 // отдельный сервис Make заменит этот файл HTTP-клиентом к `/internal/*` ядра.
 
 import type { VoiceChatDb } from '../db/database.js'
-import type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from '../make/core.js'
+import type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from '@voicechat/make'
 
 export interface LocalMakeCoreDeps {
   db: VoiceChatDb
-  machineFs?: MakeMachineFs
+  /** Файловый мост реестра машин; `isOnline` здесь синхронный — порт оборачивает его в Promise. */
+  machineFs?: Omit<MakeMachineFs, 'isOnline'> & { isOnline(agentId: string): boolean }
   boardChanged?: (projectId: string) => void
 }
 
@@ -15,7 +16,9 @@ export class LocalMakeCore implements MakeCore {
   readonly machineFs: MakeMachineFs | null
 
   constructor(private readonly deps: LocalMakeCoreDeps) {
-    this.machineFs = deps.machineFs ?? null
+    const fs = deps.machineFs
+    // Реестр отвечает синхронно, порт — обещанием: так же его читает отдельный процесс Make через RPC.
+    this.machineFs = fs ? { list: fs.list, read: fs.read, isOnline: async (agentId) => fs.isOnline(agentId) } : null
   }
 
   conversation(userId: string, id: string) { return this.deps.db.chat.getConversation(userId, id) }
@@ -23,7 +26,9 @@ export class LocalMakeCore implements MakeCore {
   conversationProject(id: string) { return this.deps.db.chat.makeConversationProject(id) }
   isProjectViewer(userId: string, conversationId: string) { return this.deps.db.chat.isMakeProjectViewer(userId, conversationId) }
   async makeConversationIdsOf(owner: string): Promise<string[]> {
-    return (await this.deps.db.chat.listConversations(owner, { includeCompleted: true })).filter((c) => c.assistantKind === 'make').map((c) => c.id)
+    // Make-разговоры живут в scope `make`: без явного scope список по умолчанию отдаёт только `chat`,
+    // и квота на пользователя считалась по пустому списку (так было в server.ts до выделения порта).
+    return (await this.deps.db.chat.listConversations(owner, { scope: 'make', includeCompleted: true })).filter((c) => c.assistantKind === 'make').map((c) => c.id)
   }
   taskLinks(conversationId: string, path?: string) { return this.deps.db.tasks.makeTaskLinks(conversationId, path) }
   linkableTasks(userId: string, conversationId: string) { return this.deps.db.tasks.makeLinkableTasks(userId, conversationId) }
