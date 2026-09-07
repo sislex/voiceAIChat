@@ -189,6 +189,8 @@ export interface ChatState {
   /** Сообщение, к которому надо прокрутить ленту и подсветить его. */
   highlightMessageId: string | null
   activeId: string | null
+  /** Полный снимок выбранного разговора, независимый от фильтруемого sidebar-индекса. */
+  activeConversation: Conversation | null
   messages: Message[]
   loadingMessages: boolean
   draft: string
@@ -392,6 +394,7 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
     messageSearch: { ...EMPTY_MESSAGE_SEARCH },
     highlightMessageId: null,
     activeId: null,
+    activeConversation: null,
     messages: [],
     loadingMessages: false,
     draft: '',
@@ -491,8 +494,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
    * `chatScopedReset` — данные открытого разговора: лента и контекст задачи.
    * Их обнуляет любая смена `activeId`, иначе они залипают в следующем чате.
    */
-  function chatScopedReset(): Pick<ChatState, 'messages' | 'taskChatContext'> {
-    return { messages: [], taskChatContext: null }
+  function chatScopedReset(): Pick<ChatState, 'activeConversation' | 'messages' | 'taskChatContext'> {
+    return { activeConversation: null, messages: [], taskChatContext: null }
   }
 
   /**
@@ -878,6 +881,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({
       activeId: result.conversation.id,
       ...chatScopedReset(),
+      activeConversation: result.conversation,
       messages: result.messages,
       conversations: withConversation(getState().conversations, result.conversation)
     })
@@ -887,6 +891,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   function activeConversation(): Conversation | undefined {
     const state = getState()
+    if (state.activeConversation?.id === state.activeId) return state.activeConversation
     return [...state.conversations, ...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.imageStudioConversations]
       .find((c) => c.id === state.activeId)
   }
@@ -1020,7 +1025,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   async function setConversationStatus(id: string, status: ConversationStatus): Promise<void> {
     const conversation = await client['conversations:setStatus']({ id, status })
-    setState({ conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)) })
+    setState({
+      conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)),
+      ...(getState().activeId === id ? { activeConversation: conversation } : {})
+    })
   }
 
   async function setConversationExecTarget(
@@ -1045,7 +1053,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       permissionMode,
       kbContextMode
     })
-    setState({ conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)) })
+    setState({
+      conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)),
+      ...(getState().activeId === id ? { activeConversation: conversation } : {})
+    })
   }
 
   // --- Выбор и создание разговора ------------------------------------------
@@ -1106,7 +1117,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         assistantKind === 'images'
           ? withConversation(getState().imageStudioConversations, conversation)
           : getState().imageStudioConversations,
-      ...common
+      ...common,
+      activeConversation: conversation
     })
     await refreshConversations()
     return conversation.id
@@ -1121,6 +1133,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     })
     setState({
       activeId: conversation.id,
+      activeConversation: conversation,
       conversations: withConversation(getState().conversations, conversation),
       loadingMessages: false,
       messages: []
@@ -1143,7 +1156,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       if (token !== selectToken || core.disposed()) return false
       if (res) {
         opened = res.conversation
-        setState({ activeId: res.conversation.id, messages: res.messages })
+        setState({ activeId: res.conversation.id, activeConversation: res.conversation, messages: res.messages })
         restoreStreamIfActive()
       }
     } finally {
@@ -1794,6 +1807,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         const name = title.trim()
         if (!name) return
         await client['conversations:rename']({ id, title: name })
+        if (getState().activeId === id && getState().activeConversation) {
+          setState({ activeConversation: { ...getState().activeConversation!, title: name } })
+        }
         await refreshConversations()
       },
       setConversationExecTarget,
@@ -1806,7 +1822,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           readerConversations: getState().readerConversations.map((c) => (c.id === id ? conversation : c)),
           playwrightReaderConversations: getState().playwrightReaderConversations.map((c) => (c.id === id ? conversation : c)),
           consoleReaderConversations: getState().consoleReaderConversations.map((c) => (c.id === id ? conversation : c)),
-          makeConversations: getState().makeConversations.map((c) => (c.id === id ? conversation : c))
+          makeConversations: getState().makeConversations.map((c) => (c.id === id ? conversation : c)),
+          ...(getState().activeId === id ? { activeConversation: conversation } : {})
         })
       },
       async setConversationPreviewUrl(id, previewUrl) {
@@ -2133,14 +2150,14 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         const activeId = getState().activeId
         if (!activeId) return
         const state = getState()
-        const active = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.conversations].find((item) => item.id === activeId)
+        const active = state.activeConversation?.id === activeId ? state.activeConversation : [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.conversations].find((item) => item.id === activeId)
         const res = await client['conversations:get']({ id: activeId, scope: active?.scope ?? 'chat', ...(active?.scope === 'kanban' && active.projectId ? { projectId: active.projectId } : {}) }).catch(() => null)
         if (res && res.conversation.id === getState().activeId) setState({ messages: res.messages })
       },
       loadTaskChatContext,
       async adoptConversation(conversation, messages) {
         selectToken++ // ответ прежнего выбора не перетрёт открытый resume
-        setState({ activeId: conversation.id, ...chatScopedReset(), messages })
+        setState({ activeId: conversation.id, ...chatScopedReset(), activeConversation: conversation, messages })
         await refreshConversations()
       },
       loadKbUsage,
