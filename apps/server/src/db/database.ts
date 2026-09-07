@@ -16,7 +16,7 @@ import { CiRepo } from './repos/ci.js'
 import { QaRepo } from './repos/qa.js'
 import { ReleasesRepo } from './repos/releases.js'
 import { KbRepo } from './repos/kb.js'
-import { asyncPort, type AsyncPort, type RepoContext, type Repos } from './repos/base.js'
+import { asyncPort, type AsyncPort, type Ports, type RepoContext, type Repos } from './repos/base.js'
 import { TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT, RANK_STEP, type DbDeps } from './repos/support.js'
 export { TASK_COMMIT_COMMAND_NAME, TASK_COMMIT_COMMAND_SCRIPT } from './repos/support.js'
 export type { DbDeps } from './repos/support.js'
@@ -30,7 +30,7 @@ export type { KbChatUsage, KbProjectUsage, KbStoredDocument } from './repos/kb.j
 export { projectKbSkeleton } from './repos/kb.js'
 export type { CiStageExecutionContext } from './repos/ci.js'
 export type { AutomatedQaExecutionContext } from './repos/qa.js'
-export type { Repos, RepoContext, AsyncPort } from './repos/base.js'
+export type { Repos, RepoContext, AsyncPort, Ports, PortOverrides } from './repos/base.js'
 
 export class VoiceChatDb {
   private readonly db: Database.Database
@@ -87,17 +87,36 @@ export class VoiceChatDb {
       kb: new KbRepo(this.ctx)
     }
     this.sync = this.ctx.repos
-    this.identity = asyncPort(this.ctx.repos.identity)
-    this.settings = asyncPort(this.ctx.repos.settings)
-    this.llm = asyncPort(this.ctx.repos.llm)
-    this.chat = asyncPort(this.ctx.repos.chat)
-    this.machines = asyncPort(this.ctx.repos.machines)
-    this.projects = asyncPort(this.ctx.repos.projects)
-    this.tasks = asyncPort(this.ctx.repos.tasks)
-    this.ci = asyncPort(this.ctx.repos.ci)
-    this.qa = asyncPort(this.ctx.repos.qa)
-    this.releases = asyncPort(this.ctx.repos.releases)
-    this.kb = asyncPort(this.ctx.repos.kb)
+    // Порты по умолчанию — обёртки над SQLite-репозиториями; домен на другом движке
+    // подставляется фабрикой из deps.ports поверх уже собранных соседей.
+    const ports: Ports = {
+      identity: asyncPort(this.ctx.repos.identity),
+      settings: asyncPort(this.ctx.repos.settings),
+      llm: asyncPort(this.ctx.repos.llm),
+      chat: asyncPort(this.ctx.repos.chat),
+      machines: asyncPort(this.ctx.repos.machines),
+      projects: asyncPort(this.ctx.repos.projects),
+      tasks: asyncPort(this.ctx.repos.tasks),
+      ci: asyncPort(this.ctx.repos.ci),
+      qa: asyncPort(this.ctx.repos.qa),
+      releases: asyncPort(this.ctx.repos.releases),
+      kb: asyncPort(this.ctx.repos.kb)
+    }
+    for (const key of Object.keys(deps.ports ?? {}) as Array<keyof Ports>) {
+      const factory = deps.ports?.[key]
+      if (factory) (ports as Record<keyof Ports, unknown>)[key] = factory(ports)
+    }
+    this.identity = ports.identity
+    this.settings = ports.settings
+    this.llm = ports.llm
+    this.chat = ports.chat
+    this.machines = ports.machines
+    this.projects = ports.projects
+    this.tasks = ports.tasks
+    this.ci = ports.ci
+    this.qa = ports.qa
+    this.releases = ports.releases
+    this.kb = ports.kb
     this.migrate()
     this.ctx.repos.ci.ensureKbUpdateCommand()
     this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
