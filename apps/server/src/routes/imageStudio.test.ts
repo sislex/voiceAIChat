@@ -28,16 +28,16 @@ let generated: Array<{ prompt: string; hasSource: boolean }>
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'img-routes-'))
   db = new VoiceChatDb(':memory:')
-  db.identity.createUser(U, '', 'admin')
+  await db.identity.createUser(U, '', 'admin')
   store = new ImageStudioStore(dir)
-  convId = db.chat.createConversation(U, 'Студия', 'images')!.id
+  convId = (await db.chat.createConversation(U, 'Студия', 'images'))!.id
   generated = []
   app = Fastify()
   app.decorateRequest('user', null)
   app.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
   registerImageStudioRoutes(app, {
     db, store,
-    generator: () => async ({ prompt, source }) => {
+    generator: async () => async ({ prompt, source }) => {
       generated.push({ prompt, hasSource: Boolean(source) })
       return Buffer.concat([PNG_BYTES, Buffer.from(prompt)])
     }
@@ -86,7 +86,7 @@ describe('студия картинок: роуты', () => {
 
   it('пустой промпт — 400 словами; обычный чат — 404', async () => {
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: '  ' } })).statusCode).toBe(400)
-    const plain = db.chat.createConversation(U, 'Обычный')!.id
+    const plain = (await db.chat.createConversation(U, 'Обычный'))!.id
     expect((await app.inject({ method: 'GET', url: `/api/image-studio/${plain}/files` })).statusCode).toBe(404)
   })
 })
@@ -100,7 +100,7 @@ describe('студия картинок: параллельность, отме�
     slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(slowApp, {
       db, store,
-      generator: () => () => new Promise((resolve) => { finish = resolve })
+      generator: async () => () => new Promise((resolve) => { finish = resolve })
     })
     await slowApp.ready()
 
@@ -128,7 +128,7 @@ describe('студия картинок: параллельность, отме�
     slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(slowApp, {
       db, store,
-      generator: () => ({ onCancel }) => new Promise((_, reject) => {
+      generator: async () => ({ onCancel }) => new Promise((_, reject) => {
         onCancel?.(() => { cancelCalls += 1; reject(new Error('cancelled')) })
       })
     })
@@ -198,7 +198,7 @@ describe('студия картинок: публикация галереи', (
   })
 
   it('чужой или не-студийный чат публиковать нельзя', async () => {
-    const plain = db.chat.createConversation(U, 'Обычный')
+    const plain = await db.chat.createConversation(U, 'Обычный')
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${plain.id}/publish` })).statusCode).toBe(404)
   })
 
@@ -224,7 +224,7 @@ describe('студия картинок: статус рана', () => {
     slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(slowApp, {
       db, store,
-      generator: () => () => new Promise((resolve) => { finish = resolve })
+      generator: async () => () => new Promise((resolve) => { finish = resolve })
     })
     await slowApp.ready()
 
@@ -284,7 +284,7 @@ describe('студия картинок: референсы генерации',
     refApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(refApp, {
       db, store,
-      generator: () => async ({ references }) => {
+      generator: async () => async ({ references }) => {
         seenRefs = (references ?? []).map((ref) => ref.name)
         return PNG_BYTES
       }
@@ -302,16 +302,16 @@ describe('студия картинок: референсы генерации',
 
 describe('студия картинок: автоназвание чата', () => {
   it('первый промпт переименовывает дефолтные «Картинки N», своё имя не трогается', async () => {
-    const auto = db.chat.createConversation(U, 'Картинки 3', 'images')
+    const auto = await db.chat.createConversation(U, 'Картинки 3', 'images')
     await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'синий кит в облаках' } })
-    expect(db.chat.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
+    expect((await db.chat.getConversation(U, auto.id))?.title).toBe('Картинки: синий кит в облаках')
     // Повторная генерация не перезатирает уже говорящее имя.
     await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'другое' } })
-    expect(db.chat.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
+    expect((await db.chat.getConversation(U, auto.id))?.title).toBe('Картинки: синий кит в облаках')
 
-    const named = db.chat.createConversation(U, 'Мой альбом', 'images')
+    const named = await db.chat.createConversation(U, 'Мой альбом', 'images')
     await app.inject({ method: 'POST', url: `/api/image-studio/${named.id}/generate`, payload: { prompt: 'кот' } })
-    expect(db.chat.getConversation(U, named.id)?.title).toBe('Мой альбом')
+    expect((await db.chat.getConversation(U, named.id))?.title).toBe('Мой альбом')
   })
 })
 
@@ -327,7 +327,7 @@ describe('студия картинок: происхождение клиент
 
 describe('студия картинок: перенос между чатами', () => {
   it('move уносит файл с метой, copy оставляет оригинал; чужой чат — 404', async () => {
-    const target = db.chat.createConversation(U, 'Картинки 9', 'images')
+    const target = await db.chat.createConversation(U, 'Картинки 9', 'images')
     await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
     await store.setMeta(convId, 'кот.png', { prompt: 'рыжий кот' })
 
@@ -344,7 +344,7 @@ describe('студия картинок: перенос между чатами'
     expect(await store.list(target.id)).toHaveLength(1)
     expect((await store.list(convId)).map((f) => f.path)).toContain('кот.png')
 
-    const plain = db.chat.createConversation(U, 'Обычный')
+    const plain = await db.chat.createConversation(U, 'Обычный')
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/transfer`, payload: { path: 'кот.png', to: plain.id } })).statusCode).toBe(404)
   })
 })

@@ -104,13 +104,13 @@ function collect(): { handlers: LlmStreamHandlers; events: unknown[]; finished: 
     events,
     finished,
     handlers: {
-      onSession: () => {},
-      onDelta: (text) => events.push({ t: 'delta', text }),
-      onDone: (text) => {
+      onSession: async () => {},
+      onDelta: async (text) => events.push({ t: 'delta', text }),
+      onDone: async (text) => {
         events.push({ t: 'done', text })
         resolve()
       },
-      onError: (message) => {
+      onError: async (message) => {
         events.push({ t: 'error', message })
         resolve()
       }
@@ -123,7 +123,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
     const runner = await startRunner()
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url, token: TOKEN }).send(
+      await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url, token: TOKEN }).send(
         { userId: 'admin', prompt: 'привет', sessionId: 'sess-1', model: 'sonnet' },
         c.handlers
       )
@@ -147,7 +147,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
     const runner = await startRunner()
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url, token: TOKEN }).send(
+      await new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url, token: TOKEN }).send(
         { prompt: 'привет', sessionId: null, model: '' },
         c.handlers
       )
@@ -168,7 +168,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
     const runner = await startRunner()
     try {
       const c = collect()
-      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
+      await new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )
@@ -185,7 +185,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
     const runner = await startRunner()
     try {
       const c = collect()
-      const handle = new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url, token: TOKEN }).send(
+      const handle = await new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url, token: TOKEN }).send(
         { prompt: 'привет', sessionId: null, model: 'sonnet' },
         c.handlers
       )

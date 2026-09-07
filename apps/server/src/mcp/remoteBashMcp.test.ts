@@ -555,7 +555,7 @@ describe('remoteBashMcp', () => {
       let bashChars = 2_000
       const app2 = Fastify({ logger: false })
       registerRemoteBashMcp(app2, stubRegistry({ exitCode: 0, output: 'y'.repeat(5_000), timedOut: false }), SECRET,
-        () => ciToolOutputLimits({ bashOutputLimitChars: bashChars, readWindowMaxLines: 50, grepMatchLimit: 7 }))
+        async () => ciToolOutputLimits({ bashOutputLimitChars: bashChars, readWindowMaxLines: 50, grepMatchLimit: 7 }))
       await app2.ready()
       app = app2
       await rpc(app, INIT_BODY)
@@ -601,7 +601,7 @@ describe('remoteBashMcp', () => {
         cancelAll: () => {}
       } as unknown as AgentRegistry
       const app2 = Fastify({ logger: false })
-      registerRemoteBashMcp(app2, registry, SECRET, () => ciToolOutputLimits({ readWindowMaxLines: 60, readOutputLimitChars: 1_000 }))
+      registerRemoteBashMcp(app2, registry, SECRET, async () => ciToolOutputLimits({ readWindowMaxLines: 60, readOutputLimitChars: 1_000 }))
       await app2.ready()
       app = app2
       const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
@@ -633,7 +633,7 @@ describe('remoteBashMcp', () => {
         cancelAll: () => {}
       } as unknown as AgentRegistry
       const app2 = Fastify({ logger: false })
-      registerRemoteBashMcp(app2, registry, SECRET, () => ciToolOutputLimits({ grepOutputLimitChars: 2_000 }))
+      registerRemoteBashMcp(app2, registry, SECRET, async () => ciToolOutputLimits({ grepOutputLimitChars: 2_000 }))
       await app2.ready()
       app = app2
       const query = `?k=${SECRET}&agent=a1&cwd=/repos/task`
@@ -764,7 +764,7 @@ describe('remoteBashMcp: машины проекта (query project)', () => {
 
   async function makeProjectApp(registry: AgentRegistry): Promise<FastifyInstance> {
     const server = Fastify({ logger: false })
-    registerRemoteBashMcp(server, registry, SECRET, undefined, (projectId) =>
+    registerRemoteBashMcp(server, registry, SECRET, undefined, async (projectId) =>
       projectId === 'p1' ? MACHINES : []
     )
     await server.ready()
@@ -950,7 +950,7 @@ describe('remoteBashMcp: машины проекта (query project)', () => {
       cancelAll: () => {}
     } as unknown as AgentRegistry
     const server = Fastify({ logger: false })
-    registerRemoteBashMcp(server, registry, SECRET, undefined, () => [
+    registerRemoteBashMcp(server, registry, SECRET, undefined, async () => [
       { agentId: 'a1', name: 'Мак', path: '/project' }
     ], (token) => token === 'turn-files' ? [{ path: '/uploads/1.jpg', name: '1.jpg', dataBase64: attachmentBytes }] : undefined)
     await server.ready(); app = server

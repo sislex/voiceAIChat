@@ -20,8 +20,8 @@ beforeAll(async () => {
     config: loadConfig({ PORT: '0' }),
     // тестовый обработчик: эхо типа сообщения обратно клиенту
     createWsHandlers: () => ({
-      onMessage: (msg, ctx) => ctx.send({ t: 'stt.error', message: msg.t }),
-      onBinary: (data, ctx) => ctx.send({ t: 'stt.error', message: `binary:${data.length}` })
+      onMessage: async (msg, ctx) => ctx.send({ t: 'stt.error', message: msg.t }),
+      onBinary: async (data, ctx) => ctx.send({ t: 'stt.error', message: `binary:${data.length}` })
     })
   })
   await app.listen({ port: 0, host: '127.0.0.1' })
@@ -146,7 +146,7 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
     writeFileSync(join(webRecorderDir, 'assets', 'recorder.css'), '.webpreview{display:grid}')
     webApp = await buildServer({
       config: { ...loadConfig({ PORT: '0' }), webDir, webRecorderDir },
-      createWsHandlers: () => ({ onMessage: () => {}, onBinary: () => {} })
+      createWsHandlers: () => ({ onMessage: async () => {}, onBinary: async () => {} })
     })
   })
 

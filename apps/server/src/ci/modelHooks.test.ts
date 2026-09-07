@@ -30,8 +30,8 @@ function recorder(text = 'готово'): { client: LlmClient; last: () => LlmRe
     client: {
       send: (req, handlers) => {
         seen.push(req)
-        handlers.onDelta?.(text)
-        handlers.onDone?.(text)
+        void handlers.onDelta?.(text)
+        void handlers.onDone?.(text)
         return { cancel: () => {} }
       }
     },
@@ -56,9 +56,9 @@ const bundle = {
 
 function stubKb(over: Partial<KnowledgeBaseService> = {}): KnowledgeBaseService {
   return {
-    status: () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'x', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
-    topics: () => [],
-    document: () => null,
+    status: async () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'x', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
+    topics: async () => [],
+    document: async () => null,
     search: async () => [],
     context: async () => bundle,
     ...over
@@ -72,21 +72,21 @@ function broker(): { register: (t: string, e: unknown) => void; unregister: (t: 
 }
 
 let db: VoiceChatDb
-beforeEach(() => {
+beforeEach(async () => {
   let id = 0
   let clock = 1_000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.identity.createUser(U, '', 'developer')
+  await db.identity.createUser(U, '', 'developer')
 })
 afterEach(() => db.close())
 
 /** Проект + задача + ран заданного режима БЗ; ctx — как его собирает runManager. */
-function setup(kbContextMode: 'auto' | 'manual' | 'off' = 'auto', signal = new AbortController().signal, taskOver: { description?: string; acceptanceCriteria?: string } = {}) {
-  const project = db.projects.createProject(U, { name: 'P' })
-  const board = db.tasks.getBoard(U, project.id)!
-  const task = db.tasks.createTask(U, project.id, { title: 'Кнопка «Выполнить»', columnId: board.columns[0].id, description: 'Ран должен ходить в БЗ', acceptanceCriteria: 'Обращения видны', ...taskOver })!
-  const conv = db.chat.createConversation(U, 'Чат задачи')
-  const run = db.ci.createCiRun({
+async function setup(kbContextMode: 'auto' | 'manual' | 'off' = 'auto', signal = new AbortController().signal, taskOver: { description?: string; acceptanceCriteria?: string } = {}) {
+  const project = await db.projects.createProject(U, { name: 'P' })
+  const board = (await db.tasks.getBoard(U, project.id))!
+  const task = (await db.tasks.createTask(U, project.id, { title: 'Кнопка «Выполнить»', columnId: board.columns[0].id, description: 'Ран должен ходить в БЗ', acceptanceCriteria: 'Обращения видны', ...taskOver }))!
+  const conv = await db.chat.createConversation(U, 'Чат задачи')
+  const run = await db.ci.createCiRun({
     projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
     conversationId: conv.id, kbContextMode, slotProgress: { done: 0, total: 2, phase: 'В очереди' }
   })
@@ -100,7 +100,7 @@ function setup(kbContextMode: 'auto' | 'manual' | 'off' = 'auto', signal = new A
     log: () => {},
     run,
     task,
-    project: db.projects.getProject(U, project.id)!,
+    project: (await db.projects.getProject(U, project.id))!,
     askUser: async () => null,
     askPlanApproval: async () => null,
     runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -127,11 +127,11 @@ function hooksWith(claude: LlmClient, over: Record<string, unknown> = {}) {
 
 describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
   it('remote mcpUrl, kbMcpUrl и ciMcpUrl строятся от публичной базы, секрет сохраняется', async () => {
-    const project = db.projects.createProject(U, { name: 'P' })
-    const board = db.tasks.getBoard(U, project.id)!
-    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const conv = db.chat.createConversation(U, 'Чат задачи')
-    const run = db.ci.createCiRun({
+    const project = await db.projects.createProject(U, { name: 'P' })
+    const board = (await db.tasks.getBoard(U, project.id))!
+    const task = (await db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id }))!
+    const conv = await db.chat.createConversation(U, 'Чат задачи')
+    const run = await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: U, prevColumnId: null,
       conversationId: conv.id, kbContextMode: 'manual', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
@@ -145,7 +145,7 @@ describe('работа модели: VC_MCP_PUBLIC_BASE', () => {
       log: () => {},
       run,
       task,
-      project: db.projects.getProject(U, project.id)!,
+      project: (await db.projects.getProject(U, project.id))!,
       askUser: async () => null,
       askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -179,7 +179,7 @@ describe('работа модели: браузерная проверка за�
   const PREVIEW_MCP = 'http://voicechat:8787/mcp/preview?k=secret'
 
   it('без режима проверки инструментов браузера у хода нет', async () => {
-    const { ctx } = setup()
+    const { ctx } = await setup()
     const rec = recorder()
     await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
     expect(rec.last()?.previewMcpUrl).toBeUndefined()
@@ -187,8 +187,8 @@ describe('работа модели: браузерная проверка за�
   })
 
   it('режим chromium даёт ходу инструменты и поверхность изолированного браузера', async () => {
-    const { task, ctx } = setup()
-    db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    const { task, ctx } = await setup()
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
     const tokens = broker()
     await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: tokens }).modelWork(ctx)
@@ -199,25 +199,25 @@ describe('работа модели: браузерная проверка за�
   })
 
   it('режим user_panel оставляет поверхностью панель пользователя', async () => {
-    const { task, ctx } = setup()
-    db.ci.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
+    const { task, ctx } = await setup()
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
     await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
     expect(rec.last()?.previewSurface).toBe('panel')
   })
 
   it('без чата рана адресовать действия некому — инструментов нет', async () => {
-    const project = db.projects.createProject(U, { name: 'P2' })
-    const board = db.tasks.getBoard(U, project.id)!
-    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
-    const run = db.ci.createCiRun({
+    const project = await db.projects.createProject(U, { name: 'P2' })
+    const board = (await db.tasks.getBoard(U, project.id))!
+    const task = (await db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id }))!
+    await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
+    const run = await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
       slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
     const ctx = {
       runId: run.id, agentId: null, workspacePath: '/repos/p/1', env: {}, signal: new AbortController().signal,
-      parentStepId: 'step-1', log: () => {}, run, task, project: db.projects.getProject(U, project.id)!,
+      parentStepId: 'step-1', log: () => {}, run, task, project: (await db.projects.getProject(U, project.id))!,
       askUser: async () => null, askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
     } as unknown as CiModelContext
@@ -229,16 +229,16 @@ describe('работа модели: браузерная проверка за�
 
 describe('работа модели: машины проекта', () => {
   it('remote несёт project в mcpUrl и имена других машин проекта', async () => {
-    const mac = db.machines.createAgent(U, 'Мак')
-    const srv = db.machines.createAgent(U, 'Сервер')
-    const project = db.projects.createProject(U, { name: 'P' })
-    db.machines.linkMachine(U, project.id, mac.id)
-    db.machines.linkMachine(U, project.id, srv.id)
-    db.machines.setProjectMachinePath(U, project.id, srv.id, '/srv/proj')
-    const board = db.tasks.getBoard(U, project.id)!
-    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const conv = db.chat.createConversation(U, 'Чат задачи')
-    const run = db.ci.createCiRun({
+    const mac = await db.machines.createAgent(U, 'Мак')
+    const srv = await db.machines.createAgent(U, 'Сервер')
+    const project = await db.projects.createProject(U, { name: 'P' })
+    await db.machines.linkMachine(U, project.id, mac.id)
+    await db.machines.linkMachine(U, project.id, srv.id)
+    await db.machines.setProjectMachinePath(U, project.id, srv.id, '/srv/proj')
+    const board = (await db.tasks.getBoard(U, project.id))!
+    const task = (await db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id }))!
+    const conv = await db.chat.createConversation(U, 'Чат задачи')
+    const run = await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: mac.id, triggeredBy: U, prevColumnId: null,
       conversationId: conv.id, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
@@ -252,7 +252,7 @@ describe('работа модели: машины проекта', () => {
       log: () => {},
       run,
       task,
-      project: db.projects.getProject(U, project.id)!,
+      project: (await db.projects.getProject(U, project.id))!,
       askUser: async () => null,
       askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -267,13 +267,13 @@ describe('работа модели: машины проекта', () => {
   })
 
   it('единственная машина проекта — прежний remote без project и списка', async () => {
-    const mac = db.machines.createAgent(U, 'Мак')
-    const project = db.projects.createProject(U, { name: 'P' })
-    db.machines.linkMachine(U, project.id, mac.id)
-    const board = db.tasks.getBoard(U, project.id)!
-    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const conv = db.chat.createConversation(U, 'Чат задачи')
-    const run = db.ci.createCiRun({
+    const mac = await db.machines.createAgent(U, 'Мак')
+    const project = await db.projects.createProject(U, { name: 'P' })
+    await db.machines.linkMachine(U, project.id, mac.id)
+    const board = (await db.tasks.getBoard(U, project.id))!
+    const task = (await db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id }))!
+    const conv = await db.chat.createConversation(U, 'Чат задачи')
+    const run = await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: mac.id, triggeredBy: U, prevColumnId: null,
       conversationId: conv.id, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: 'В очереди' }
     })
@@ -287,7 +287,7 @@ describe('работа модели: машины проекта', () => {
       log: () => {},
       run,
       task,
-      project: db.projects.getProject(U, project.id)!,
+      project: (await db.projects.getProject(U, project.id))!,
       askUser: async () => null,
       askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
@@ -325,7 +325,7 @@ describe('автотесты пишет разработка', () => {
 describe('работа модели: база знаний по режимам рана', () => {
   it('auto: инструменты подключены, контекст подмешан, хинт требует идти в БЗ раньше кода', async () => {
     const rec = recorder()
-    const { ctx } = setup('auto')
+    const { ctx } = await setup('auto')
     const r = await hooksWith(rec.client).modelWork(ctx)
     expect(r.ok).toBe(true)
     const req = rec.last()!
@@ -342,7 +342,7 @@ describe('работа модели: база знаний по режимам �
   it('auto: запрос к БЗ собирается из заголовка, описания и критериев приёмки', async () => {
     const asked: string[] = []
     const kb = stubKb({ context: async (query: string) => { asked.push(query); return bundle } })
-    const { ctx } = setup('auto')
+    const { ctx } = await setup('auto')
     await hooksWith(recorder().client, { kb }).modelWork(ctx)
     expect(asked).toHaveLength(1)
     expect(asked[0]).toContain('Кнопка «Выполнить»')
@@ -353,7 +353,7 @@ describe('работа модели: база знаний по режимам �
   it('auto: описание с кодом сохраняет прозу и уводит пути с символами в свою дорожку', async () => {
     const asked: string[] = []
     const kb = stubKb({ context: async (query: string) => { asked.push(query); return bundle } })
-    const { ctx } = setup('auto', undefined, {
+    const { ctx } = await setup('auto', undefined, {
       description: 'Правь `packages/ui/src/components/kanban/TaskModal.tsx`: модалка размывает поиск.\n```\nconst noise = 1\n```',
       acceptanceCriteria: 'Хук `useAiAssist` сохраняет черновик.'
     })
@@ -375,38 +375,38 @@ describe('работа модели: база знаний по режимам �
     let calls = 0
     const kb = stubKb({ context: async () => { calls++; return bundle } })
     const rec = recorder()
-    const { ctx, conv } = setup('manual')
+    const { ctx, conv } = await setup('manual')
     await hooksWith(rec.client, { kb }).modelWork(ctx)
     expect(calls).toBe(0)
     expect(rec.last()!.kbMode).toBe('manual')
     expect(rec.last()!.kbMcpUrl).toBeDefined()
     expect(rec.last()!.prompt).not.toContain('### CI-раннер')
     expect(rec.last()!.prompt).toContain('единственный путь')
-    expect(db.kb.kbUsageReport(U, conv.id)!.totals.queries).toBe(0)
+    expect((await db.kb.kbUsageReport(U, conv.id))!.totals.queries).toBe(0)
   })
 
   it('off: ни инструментов, ни контекста, телеметрия пустая', async () => {
     const rec = recorder()
-    const { ctx, conv } = setup('off')
+    const { ctx, conv } = await setup('off')
     await hooksWith(rec.client).modelWork(ctx)
     expect(rec.last()!.kbMcpUrl).toBeUndefined()
     expect(rec.last()!.kbMode).toBeUndefined()
     expect(rec.last()!.prompt).not.toContain('### CI-раннер')
     expect(rec.last()!.prompt).not.toContain('Начни работу с базы знаний')
-    expect(db.kb.kbUsageReport(U, conv.id)!.totals.queries).toBe(0)
+    expect((await db.kb.kbUsageReport(U, conv.id))!.totals.queries).toBe(0)
   })
 
   it('VC_KB_TOOL=off глушит инструменты и в ране', async () => {
     const rec = recorder()
-    const { ctx } = setup('auto')
+    const { ctx } = await setup('auto')
     await hooksWith(rec.client, { kbToolEnabled: false }).modelWork(ctx)
     expect(rec.last()!.kbMcpUrl).toBeUndefined()
   })
 
   it('недоступный индекс БЗ не даёт подключить инструменты, но ран идёт', async () => {
     const rec = recorder()
-    const kb = stubKb({ status: () => ({ available: false, mode: 'disabled', searchMode: 'lexical', version: '', createdAt: '', documents: 0, chunks: 0, staleDocuments: 0 }) })
-    const { ctx } = setup('auto')
+    const kb = stubKb({ status: async () => ({ available: false, mode: 'disabled', searchMode: 'lexical', version: '', createdAt: '', documents: 0, chunks: 0, staleDocuments: 0 }) })
+    const { ctx } = await setup('auto')
     const r = await hooksWith(rec.client, { kb }).modelWork(ctx)
     expect(r.ok).toBe(true)
     expect(rec.last()!.kbMcpUrl).toBeUndefined()
@@ -415,16 +415,16 @@ describe('работа модели: база знаний по режимам �
   it('падение поиска БЗ не роняет работу модели: обращение помечено error', async () => {
     const kb = stubKb({ context: async () => { throw new Error('индекс недоступен') } })
     const rec = recorder()
-    const { ctx, conv } = setup('auto')
+    const { ctx, conv } = await setup('auto')
     const r = await hooksWith(rec.client, { kb }).modelWork(ctx)
     expect(r.ok).toBe(true)
     expect(rec.last()!.prompt).not.toContain('### CI-раннер')
-    expect(db.kb.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ status: 'error', error: 'индекс недоступен' })
+    expect((await db.kb.kbUsageReport(U, conv.id))!.recent[0]).toMatchObject({ status: 'error', error: 'индекс недоступен' })
   })
 
   it('ран без связанного чата: инструменты выданы, телеметрия молча пропущена', async () => {
     const rec = recorder()
-    const { ctx, run } = setup('auto')
+    const { ctx, run } = await setup('auto')
     const noChat = { ...ctx, run: { ...run, conversationId: null } } as unknown as CiModelContext
     const r = await hooksWith(rec.client).modelWork(noChat)
     expect(r.ok).toBe(true)
@@ -433,9 +433,9 @@ describe('работа модели: база знаний по режимам �
   })
 
   it('обращение записано с ci_run_id и ci_step_id — оно попадёт в отчёты рана и задачи', async () => {
-    const { ctx, run } = setup('auto')
+    const { ctx, run } = await setup('auto')
     await hooksWith(recorder().client).modelWork(ctx)
-    const report = db.kb.kbUsageRunReport(U, run.id)!
+    const report = (await db.kb.kbUsageRunReport(U, run.id))!
     expect(report.totals.queries).toBe(1)
     expect(report.recent[0]).toMatchObject({ source: 'auto', ciRunId: run.id, ciStepId: 'step-1' })
   })
@@ -444,7 +444,7 @@ describe('работа модели: база знаний по режимам �
 describe('токен базы знаний живёт ровно один ход', () => {
   it('после успешного хода токен снят', async () => {
     const tool = broker()
-    const { ctx } = setup('auto')
+    const { ctx } = await setup('auto')
     await hooksWith(recorder().client, { kbTool: tool }).modelWork(ctx)
     expect(tool.live()).toEqual([])
   })
@@ -452,7 +452,7 @@ describe('токен базы знаний живёт ровно один ход
   it('отмена рана снимает токен работы модели', async () => {
     const tool = broker()
     const ctl = new AbortController()
-    const { ctx } = setup('auto', ctl.signal)
+    const { ctx } = await setup('auto', ctl.signal)
     const done = hooksWith(silent, { kbTool: tool }).modelWork(ctx)
     // Ход открыт — токен выдан и им можно читать базу.
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -465,7 +465,7 @@ describe('токен базы знаний живёт ровно один ход
   it('отмена рана снимает токен и в fix-loop', async () => {
     const tool = broker()
     const ctl = new AbortController()
-    const { ctx } = setup('auto', ctl.signal)
+    const { ctx } = await setup('auto', ctl.signal)
     const fixCtx = {
       ...ctx,
       failedStep: { id: 'step-2', title: 'npm ci', exitCode: 1, commandSnapshot: 'npm ci' },
@@ -484,7 +484,7 @@ describe('токен базы знаний живёт ровно один ход
 describe('инструменты БЗ в остальных ходах рана', () => {
   it('fix-loop получает инструменты и работает без машины', async () => {
     const rec = recorder('диагноз')
-    const { ctx } = setup('auto')
+    const { ctx } = await setup('auto')
     const fixCtx = {
       ...ctx,
       failedStep: { id: 'step-2', title: 'npm ci', exitCode: 1, commandSnapshot: 'npm ci' },
@@ -499,7 +499,7 @@ describe('инструменты БЗ в остальных ходах рана'
 
   it('резюме тоже идёт с инструментами: база read-only и в режиме «план»', async () => {
     const rec = recorder('резюме')
-    const { ctx } = setup('auto')
+    const { ctx } = await setup('auto')
     expect(await hooksWith(rec.client).modelSummary(ctx)).toBe('резюме')
     expect(rec.last()!.kbMcpUrl).toBeDefined()
     expect(rec.last()!.permissionMode).toBe('plan')
@@ -507,7 +507,7 @@ describe('инструменты БЗ в остальных ходах рана'
 
   it('в режиме «план» работы модели инструменты БЗ остаются', async () => {
     const rec = recorder()
-    const { ctx, run } = setup('auto')
+    const { ctx, run } = await setup('auto')
     const planCtx = { ...ctx, run: { ...run, mode: 'plan' }, askPlanApproval: async () => null } as unknown as CiModelContext
     await hooksWith(rec.client).modelWork(planCtx)
     expect(rec.last()!.kbMcpUrl).toBeDefined()
@@ -516,7 +516,7 @@ describe('инструменты БЗ в остальных ходах рана'
 
   it('после одобрения плана также требует только быстрый гейт задачи', async () => {
     const rec = recorder('план готов')
-    const { ctx, run } = setup('off')
+    const { ctx, run } = await setup('off')
     const planCtx = {
       ...ctx,
       run: { ...run, mode: 'plan' },
@@ -531,7 +531,7 @@ describe('инструменты БЗ в остальных ходах рана'
 
   it('не дублирует правила remote-инструментов в задаче: они уже в системном хинте CLI', async () => {
     const rec = recorder()
-    const { ctx } = setup('off')
+    const { ctx } = await setup('off')
     await hooksWith(rec.client).modelWork(ctx)
     expect(rec.last()!.prompt).not.toContain('Файлы читай инструментом read')
     // На development-этапе модель запускает только узкий гейт текущего worktree:
@@ -568,8 +568,8 @@ describe.skip('legacy: глобальная модель по стадии ра�
         send: (req, handlers) => {
           models.push(req.model ?? '')
           handlers.onUsage?.({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheCreationTokens: 0 })
-          handlers.onDelta(text)
-          handlers.onDone(text)
+          void handlers.onDelta(text)
+          void handlers.onDone(text)
           return { cancel: () => {} }
         }
       },
@@ -583,22 +583,22 @@ describe.skip('legacy: глобальная модель по стадии ра�
 
   it('дефолт: разработка на модели рана, резюме и база знаний — дешевле', async () => {
     const rec = usageRecorder(KB_REPLY)
-    const { ctx, run } = setup('off')
+    const { ctx, run } = await setup('off')
     const hooks = hooksWith(rec.client, { kb: undefined, executor: diffExecutor })
     await hooks.modelWork(ctx)
     await hooks.modelSummary(ctx)
     await hooks.kbUpdate(withAgent(ctx))
     expect(rec.models()).toEqual(['opus', 'haiku', 'sonnet'])
     // В отчёте видно, чем считалась каждая стадия: модель пишется в строку расхода.
-    expect(db.ci.listCiRunUsage(run.id).map((u) => [u.kind, u.model])).toEqual([
+    expect((await db.ci.listCiRunUsage(run.id)).map((u) => [u.kind, u.model])).toEqual([
       ['model_work', 'opus'], ['summary', 'haiku'], ['kb_update', 'sonnet']
     ])
   })
 
   it('настройка переопределяет стадию, в том числе разработку', async () => {
     const rec = recorder()
-    const { ctx } = setup('off')
-    db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    const { ctx } = await setup('off')
+    await db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
     const hooks = hooksWith(rec.client, { kb: undefined })
     await hooks.modelWork(ctx)
     expect(rec.last()!.model).toBe('haiku')
@@ -609,8 +609,8 @@ describe.skip('legacy: глобальная модель по стадии ра�
 
   it('модели, которой у движка рана нет, стадия не получает — идёт на модели рана', async () => {
     const rec = recorder()
-    const { ctx } = setup('off')
-    db.ci.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'gpt-5.4', summary: 'сонет' } })
+    const { ctx } = await setup('off')
+    await db.ci.updateCiSettings({ stageModels: { model_work: '', fix: '', kb_update: 'gpt-5.4', summary: 'сонет' } })
     const hooks = hooksWith(rec.client, { kb: undefined, executor: diffExecutor })
     await hooks.modelSummary(ctx)
     expect(rec.last()!.model).toBe('opus')
@@ -625,24 +625,24 @@ describe.skip('legacy: глобальная модель по стадии ра�
     const flaky: LlmClient = {
       send: (req, handlers) => {
         seen.push(req.model ?? '')
-        if (req.model === 'haiku') handlers.onError?.('model not available')
+        if (req.model === 'haiku') void handlers.onError?.('model not available')
         else {
           handlers.onUsage?.({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheCreationTokens: 0 })
-          handlers.onDelta('готово')
-          handlers.onDone('готово')
+          void handlers.onDelta('готово')
+          void handlers.onDone('готово')
         }
         return { cancel: () => {} }
       }
     }
     const lines: string[] = []
-    const { ctx, run } = setup('off')
-    db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    const { ctx, run } = await setup('off')
+    await db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
     const logCtx = { ...ctx, log: (_step: string, _stream: string, chunk: string) => lines.push(chunk) } as unknown as CiModelContext
     expect(await hooksWith(flaky, { kb: undefined }).modelWork(logCtx)).toEqual({ ok: true })
     expect(seen).toEqual(['haiku', 'opus'])
     expect(lines.join('')).toContain('повторяю на модели рана')
     // Пустой ход строкой расхода не становится — в отчёте только состоявшийся.
-    expect(db.ci.listCiRunUsage(run.id).map((u) => u.model)).toEqual(['opus'])
+    expect((await db.ci.listCiRunUsage(run.id)).map((u) => u.model)).toEqual(['opus'])
   })
 
   it('откат помнится до конца хука: второй ход диалога к сломанной модели не идёт', async () => {
@@ -650,20 +650,20 @@ describe.skip('legacy: глобальная модель по стадии ра�
     const flaky: LlmClient = {
       send: (req, handlers) => {
         seen.push(req.model ?? '')
-        if (req.model === 'haiku') handlers.onError?.('model not available')
+        if (req.model === 'haiku') void handlers.onError?.('model not available')
         else {
           // Первый ответ — вопрос пользователю: он продолжает тот же диалог.
           const text = seen.filter((m) => m === 'opus').length === 1
             ? 'Уточню:\n```questions\n[{"q":"Ветка?","options":["a","b"]}]\n```'
             : 'готово'
-          handlers.onDelta(text)
-          handlers.onDone(text)
+          void handlers.onDelta(text)
+          void handlers.onDone(text)
         }
         return { cancel: () => {} }
       }
     }
-    const { ctx } = setup('off')
-    db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
+    const { ctx } = await setup('off')
+    await db.ci.updateCiSettings({ stageModels: { model_work: 'haiku', fix: '', kb_update: '', summary: '' } })
     const askCtx = { ...ctx, askUser: async () => 'ветка a' } as unknown as CiModelContext
     expect(await hooksWith(flaky, { kb: undefined }).modelWork(askCtx)).toEqual({ ok: true })
     expect(seen).toEqual(['haiku', 'opus', 'opus'])
@@ -681,39 +681,39 @@ describe('расход хода: модель, время, семантика в
       send: (_req, handlers) => {
         for (const tool of tools) handlers.onActivity?.({ kind: 'tool_use', summary: `${tool}: …`, raw: '{}', tool })
         handlers.onUsage?.(usage)
-        handlers.onDelta?.('готово')
-        handlers.onDone?.('готово') // мету codex не присылает
+        void handlers.onDelta?.('готово')
+        void handlers.onDone?.('готово') // мету codex не присылает
         return { cancel: () => {} }
       }
     }
   }
 
   /** Ран через исполнителя: провайдер codex, модель задаётся явно (бывает пустой). */
-  function codexRun(llmModel: string) {
-    const project = db.projects.createProject(U, { name: 'P' })
-    const board = db.tasks.getBoard(U, project.id)!
-    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const run = db.ci.createCiRun({
+  async function codexRun(llmModel: string) {
+    const project = await db.projects.createProject(U, { name: 'P' })
+    const board = (await db.tasks.getBoard(U, project.id))!
+    const task = (await db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id }))!
+    const run = await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
       llmProvider: 'codex', llmModel, kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: '' }
     })
     const ctx = {
       runId: run.id, agentId: null, workspacePath: '/repos/p/1', env: { BRANCH: 'b' },
       signal: new AbortController().signal, parentStepId: 'step-1', log: () => {}, run, task,
-      project: db.projects.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
+      project: (await db.projects.getProject(U, project.id))!, askUser: async () => null, askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
     } as unknown as CiModelContext
     return { run, ctx }
   }
 
   it('вход пишется без кэша, а время и число запросов — по замеру сервера', async () => {
-    const { run, ctx } = codexRun('gpt-5.4')
+    const { run, ctx } = await codexRun('gpt-5.4')
     // Часы хода инъектируются: замер сервера — единственный источник длительности
     // для codex, и проверять её надо числом, а не «сколько успел настоящий Date».
     let clock = 5_000
     await hooksWith(codexLike([]), { kb: undefined, now: () => (clock += 250) }).modelWork(ctx)
 
-    const rows = db.ci.listCiRunUsage(run.id)
+    const rows = await db.ci.listCiRunUsage(run.id)
     expect(rows).toHaveLength(1)
     // 1000 пришедших минус 800 из кэша: у claude вход и так без кэша.
     expect(rows[0]).toMatchObject({ model: 'gpt-5.4', inputTokens: 200, cacheReadTokens: 800, inputSemantics: 'no_cache', numTurns: 1 })
@@ -722,29 +722,29 @@ describe('расход хода: модель, время, семантика в
   })
 
   it('модель, которую не назвал ни CLI, ни настройка рана, становится unknown', async () => {
-    const { run, ctx } = codexRun('')
+    const { run, ctx } = await codexRun('')
     await hooksWith(codexLike([]), { kb: undefined }).modelWork(ctx)
-    expect(db.ci.listCiRunUsage(run.id)[0].model).toBe('unknown')
+    expect((await db.ci.listCiRunUsage(run.id))[0].model).toBe('unknown')
   })
 
   it('вызовы инструментов копятся по видам за ран, а не теряются', async () => {
-    const { run, ctx } = codexRun('gpt-5.4')
+    const { run, ctx } = await codexRun('gpt-5.4')
     const tools = ['remote:read', 'remote:read', 'remote:bash', 'remote:edit', 'kb:document', 'mcp__ci__run_command']
     const hooks = hooksWith(codexLike(tools), { kb: undefined })
     await hooks.modelWork(ctx)
     await hooks.modelSummary(ctx) // второй ход добавляет свои вызовы к тем же счётчикам
 
-    expect(db.ci.ciRunToolCalls(run.id)).toEqual({ bash: 2, read: 4, grep: 0, edit: 2, kb: 2, other: 2, denied: 0 })
+    expect(await db.ci.ciRunToolCalls(run.id)).toEqual({ bash: 2, read: 4, grep: 0, edit: 2, kb: 2, other: 2, denied: 0 })
   })
 
   it('ход без вызовов не создаёт счётчик: «нет строки» ≠ «ноль вызовов»', async () => {
-    const { run, ctx } = codexRun('gpt-5.4')
+    const { run, ctx } = await codexRun('gpt-5.4')
     await hooksWith(codexLike([]), { kb: undefined }).modelWork(ctx)
-    expect(db.ci.ciRunToolCalls(run.id)).toBeNull()
+    expect(await db.ci.ciRunToolCalls(run.id)).toBeNull()
   })
 
   it('ход из одних отказов всё равно пишет счётчик — иначе отказов никто не видит', async () => {
-    const { run, ctx } = codexRun('gpt-5.4')
+    const { run, ctx } = await codexRun('gpt-5.4')
     const denials: LlmClient = {
       send: (_req, handlers) => {
         // Результат вызова приходит без имени инструмента — только текстом.
@@ -755,28 +755,28 @@ describe('расход хода: модель, время, семантика в
           raw: '{}'
         })
         handlers.onActivity?.({ kind: 'tool_result', summary: '✗ ошибка: [exit code: 1]', raw: '{}' })
-        handlers.onDelta?.('готово')
-        handlers.onDone?.('готово')
+        void handlers.onDelta?.('готово')
+        void handlers.onDone?.('готово')
         return { cancel: () => {} }
       }
     }
     await hooksWith(denials, { kb: undefined }).modelWork(ctx)
-    expect(db.ci.ciRunToolCalls(run.id)).toEqual({ ...EMPTY_CI_TOOL_CALLS, denied: 1 })
+    expect(await db.ci.ciRunToolCalls(run.id)).toEqual({ ...EMPTY_CI_TOOL_CALLS, denied: 1 })
   })
 
   it('сломанная запись метрики не роняет ход модели', async () => {
-    const { ctx } = codexRun('gpt-5.4')
+    const { ctx } = await codexRun('gpt-5.4')
     const hooks = hooksWith(codexLike(['remote:read']), { kb: undefined })
     // Обе метрики хода падают — ход обязан завершиться успехом (правило расхода).
-    db.ci.addCiRunUsage = () => { throw new Error('БД недоступна') }
-    db.ci.addCiRunToolCalls = () => { throw new Error('БД недоступна') }
+    db.sync.ci.addCiRunUsage = () => { throw new Error('БД недоступна') }
+    db.sync.ci.addCiRunToolCalls = () => { throw new Error('БД недоступна') }
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
   })
 
   it('сломанная запись тяжёлого ответа тоже не роняет ход', async () => {
-    const { ctx } = codexRun('gpt-5.4')
+    const { ctx } = await codexRun('gpt-5.4')
     const hooks = hooksWith(withResponses([{ tool: 'remote:bash', detail: 'x'.repeat(5000) }]), { kb: undefined })
-    db.ci.addCiRunToolResponse = () => { throw new Error('БД недоступна') }
+    db.sync.ci.addCiRunToolResponse = () => { throw new Error('БД недоступна') }
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
   })
 })
@@ -804,8 +804,8 @@ function withResponses(list: Array<{ tool: string; detail: string; id?: string }
         })
       }
       handlers.onUsage?.({ inputTokens: 10, outputTokens: 10, cacheReadTokens: 100, cacheCreationTokens: 0 })
-      handlers.onDelta?.('готово')
-      handlers.onDone?.('готово')
+      void handlers.onDelta?.('готово')
+      void handlers.onDone?.('готово')
       return { cancel: () => {} }
     }
   }
@@ -813,7 +813,7 @@ function withResponses(list: Array<{ tool: string; detail: string; id?: string }
 
 describe('объём ответов инструментов и тяжёлые ответы', () => {
   it('объём привязывается к виду инструмента по id вызова, даже если ответы пришли не по порядку', async () => {
-    const { run, ctx } = setup('off')
+    const { run, ctx } = await setup('off')
     const client = withResponses([
       { tool: 'remote:bash', detail: 'B'.repeat(30_000), id: 'toolu_1' },
       { tool: 'remote:read', detail: 'R'.repeat(4000), id: 'toolu_2' }
@@ -821,45 +821,45 @@ describe('объём ответов инструментов и тяжёлые �
     await hooksWith(client, { kb: undefined }).modelWork(ctx)
 
     // Ответы пришли в обратном порядке — сшивка по id всё равно верна.
-    expect(db.ci.ciRunToolChars(run.id)).toMatchObject({ bash: 30_000, read: 4000, other: 0 })
-    const heaviest = db.ci.ciRunToolResponses(run.id)
+    expect(await db.ci.ciRunToolChars(run.id)).toMatchObject({ bash: 30_000, read: 4000, other: 0 })
+    const heaviest = await db.ci.ciRunToolResponses(run.id)
     expect(heaviest.map((r) => [r.kind, r.chars])).toEqual([['bash', 30_000], ['read', 4000]])
     expect(heaviest[0].label).toContain('remote:bash')
     expect(heaviest[0].stepId).toBe('step-1')
   })
 
   it('без id вызова (codex) сшивка идёт по порядку', async () => {
-    const { run, ctx } = setup('off')
+    const { run, ctx } = await setup('off')
     await hooksWith(withResponses([{ tool: 'remote:bash', detail: 'B'.repeat(9000) }]), { kb: undefined }).modelWork(ctx)
-    expect(db.ci.ciRunToolChars(run.id)).toMatchObject({ bash: 9000 })
+    expect(await db.ci.ciRunToolChars(run.id)).toMatchObject({ bash: 9000 })
   })
 
   it('у рана без метрики объёма — null, а не нули', async () => {
-    const { run, ctx } = setup('off')
+    const { run, ctx } = await setup('off')
     await hooksWith(recorder().client, { kb: undefined }).modelWork(ctx)
-    expect(db.ci.ciRunToolChars(run.id)).toBeNull()
-    expect(db.ci.ciRunToolResponses(run.id)).toEqual([])
+    expect(await db.ci.ciRunToolChars(run.id)).toBeNull()
+    expect(await db.ci.ciRunToolResponses(run.id)).toEqual([])
   })
 
   it('в БД остаётся верхушка по объёму, а не вся лента вызовов', async () => {
-    const { run, ctx } = setup('off')
+    const { run, ctx } = await setup('off')
     const many = Array.from({ length: 9 }, (_, i) => ({ tool: 'remote:bash', detail: 'x'.repeat(3000 + i * 1000), id: `t${i}` }))
     await hooksWith(withResponses(many), { kb: undefined }).modelWork(ctx)
-    const rows = db.ci.ciRunToolResponses(run.id, 50)
+    const rows = await db.ci.ciRunToolResponses(run.id, 50)
     expect(rows).toHaveLength(5) // CI_TOOL_RESPONSES_KEEP
     expect(rows[0].chars).toBe(11_000)
     expect(rows.at(-1)!.chars).toBe(7000)
   })
 
   it('вывод команды справочника обрезается по настройке, полный лог остаётся в ленте', async () => {
-    db.ci.updateCiSettings({ bashOutputLimitChars: 2000 })
-    const project = db.projects.createProject(U, { name: 'P' })
-    const board = db.tasks.getBoard(U, project.id)!
-    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    const cmd = db.ci.createCiCommand(U, {
+    await db.ci.updateCiSettings({ bashOutputLimitChars: 2000 })
+    const project = await db.projects.createProject(U, { name: 'P' })
+    const board = (await db.tasks.getBoard(U, project.id))!
+    const task = (await db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id }))!
+    const cmd = await db.ci.createCiCommand(U, {
       scope: 'project', projectId: project.id, name: 'Установить зависимости', script: 'npm ci', availableToModel: true
     })
-    const run = db.ci.createCiRun({
+    const run = await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: U, prevColumnId: null,
       kbContextMode: 'off', slotProgress: { done: 0, total: 1, phase: '' }
     })
@@ -868,17 +868,17 @@ describe('объём ответов инструментов и тяжёлые �
     const ctx = {
       runId: run.id, agentId: 'agent-1', workspacePath: '/repos/p/1', env: { BRANCH: 'b' },
       signal: new AbortController().signal, parentStepId: 'step-1', log: () => {}, run, task,
-      project: db.projects.getProject(U, project.id)!, askUser: async () => null, askPlanApproval: async () => null,
+      project: (await db.projects.getProject(U, project.id))!, askUser: async () => null, askPlanApproval: async () => null,
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: fullOutput })
     } as unknown as CiModelContext
     // Инструмент команд публикуется на время хода: токен рана лежит в ciMcpUrl.
     const client: LlmClient = {
       send: (req, handlers) => {
         const token = new URL(req.remote!.ciMcpUrl!).searchParams.get('run')!
-        void ciToolBroker.get(token)!.invoke(cmd.name).then((r) => {
+        void ciToolBroker.get(token)!.invoke(cmd.name).then(async (r) => {
           seen = r.output
-          handlers.onDelta?.('готово')
-          handlers.onDone?.('готово')
+          void handlers.onDelta?.('готово')
+          void handlers.onDone?.('готово')
         })
         return { cancel: () => {} }
       }
@@ -928,8 +928,8 @@ describe('пробелы базы знаний доходят до шага ак
       send: (req, handlers) => {
         seen.push(req.prompt)
         const text = isKb(req.prompt) ? kbReply : work
-        handlers.onDelta?.(text)
-        handlers.onDone?.(text)
+        void handlers.onDelta?.(text)
+        void handlers.onDone?.(text)
         return { cancel: () => {} }
       }
     }
@@ -949,11 +949,11 @@ describe('пробелы базы знаний доходят до шага ак
     // он виден даже если модель забыла назвать его блоком.
     const kb = stubKb({ context: async () => ({ ...bundle, sections: [] }) })
     const stage = twoStage('готово')
-    const { ctx, run } = setup('auto')
+    const { ctx, run } = await setup('auto')
     const hooks = hooksWith(stage.client, { kb, executor: diffExecutor })
 
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
-    expect(db.kb.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'empty' })
+    expect((await db.kb.kbUsageRunReport(U, run.id))!.recent[0]).toMatchObject({ status: 'empty' })
     expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true })
 
     const prompt = stage.kbPrompt()
@@ -967,12 +967,12 @@ describe('пробелы базы знаний доходят до шага ак
     // База ответила (delivered), но ответа не хватило: модель дочитала код и
     // назвала пробел блоком — записать его обязан шаг актуализации.
     const stage = twoStage(gapsBlock('лимиты fix-loop', 'maxFixAttempts и fixTimeLimitMs из настроек CI', 'ci-runner'))
-    const { ctx, run, project } = setup('auto')
+    const { ctx, run, project } = await setup('auto')
     const hooks = hooksWith(stage.client, { executor: diffExecutor })
 
     expect(await hooks.modelWork(ctx)).toEqual({ ok: true })
-    expect(db.kb.kbUsageRunReport(U, run.id)!.recent[0]).toMatchObject({ status: 'delivered' })
-    expect(db.ci.ciRunKbGaps(run.id)).toEqual([
+    expect((await db.kb.kbUsageRunReport(U, run.id))!.recent[0]).toMatchObject({ status: 'delivered' })
+    expect(await db.ci.ciRunKbGaps(run.id)).toEqual([
       { question: 'лимиты fix-loop', answer: 'maxFixAttempts и fixTimeLimitMs из настроек CI', topic: 'ci-runner' }
     ])
 
@@ -982,7 +982,7 @@ describe('пробелы базы знаний доходят до шага ак
     expect(prompt).toContain('выяснено: maxFixAttempts и fixTimeLimitMs из настроек CI')
     expect(prompt).toContain('куда писать по мнению модели: ci-runner')
     // Пополнение состоялось: статья раздела проекта записана сервером.
-    expect(db.kb.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
+    expect((await db.kb.kbDocuments({ scope: 'project', projectId: project.id })).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
   })
 
   it('валидирует все проектные документы до записи и пишет точную причину только в технический лог', async () => {
@@ -994,9 +994,9 @@ describe('пробелы базы знаний доходят до шага ак
       topics: [],
       documents: [valid, invalid]
     }))
-    const { ctx } = setup('off')
+    const { ctx } = await setup('off')
     const log: string[] = []
-    const save = vi.spyOn(db.kb, 'saveKbDocument')
+    const save = vi.spyOn(db.sync.kb, 'saveKbDocument')
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate({
       ...withAgent(ctx),
       log: (_stepId: string, _stream: string, chunk: string) => log.push(chunk)
@@ -1013,10 +1013,10 @@ describe('пробелы базы знаний доходят до шага ак
       send: (req, handlers) => {
         requests.push(req)
         const text = requests.length === 1 ? mainReply : repairReply
-        if (requests.length === 1 && sessionId) handlers.onSession?.(sessionId)
+        if (requests.length === 1 && sessionId) void handlers.onSession?.(sessionId)
         handlers.onUsage?.({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheCreationTokens: 0 })
-        handlers.onDelta?.(text)
-        handlers.onDone?.(text)
+        void handlers.onDelta?.(text)
+        void handlers.onDone?.(text)
         return { cancel: () => {} }
       }
     }
@@ -1029,7 +1029,7 @@ describe('пробелы базы знаний доходят до шага ак
     ['invalid_contract', JSON.stringify({ note: 'x', nothingToUpdate: false, topics: [], documents: [] })]
   ])('repair ровно один раз восстанавливает %s в той же сессии без инструментов', async (_code, mainReply) => {
     const stage = repairClient(mainReply, KB_REPLY)
-    const { ctx, project, run } = setup('off')
+    const { ctx, project, run } = await setup('off')
     const logs: string[] = []
     const repairCtx = { ...withAgent(ctx), log: (_stepId: string, _stream: string, chunk: string) => logs.push(chunk) } as unknown as CiModelContext
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(repairCtx)
@@ -1045,8 +1045,8 @@ describe('пробелы базы знаний доходят до шага ак
     expect(stage.requests[1]?.kbMcpUrl).toBeUndefined()
     expect(stage.requests[1]?.prompt).toContain('"note":"string"')
     expect(stage.requests[1]?.prompt).toContain('Неизвестные поля запрещены')
-    expect(db.kb.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
-    expect(db.ci.listCiRunUsage(run.id)).toHaveLength(2)
+    expect((await db.kb.kbDocuments({ scope: 'project', projectId: project.id })).some((d) => d.title === 'Пробелы БЗ')).toBe(true)
+    expect(await db.ci.listCiRunUsage(run.id)).toHaveLength(2)
     expect(logs.join('')).toContain(`[${_code}]`)
     expect(logs.join('')).toContain('sessionId доступен')
     expect(logs.join('')).toMatch(/Repair финального JSON завершил ход за \d+ мс/)
@@ -1056,19 +1056,19 @@ describe('пробелы базы знаний доходят до шага ак
   it('ambiguous_json остаётся fail-closed и repair не запускает', async () => {
     const main = 'отчёт\n\`\`\`json\n{}\n\`\`\`\n\`\`\`json\n{}\n\`\`\`'
     const stage = repairClient(main, KB_REPLY)
-    const { ctx, project } = setup('off')
-    const save = vi.spyOn(db.kb, 'saveKbDocument')
+    const { ctx, project } = await setup('off')
+    const save = vi.spyOn(db.sync.kb, 'saveKbDocument')
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
 
     expect(result).toEqual({ ok: false, message: 'В ответе модели несколько JSON-кандидатов — статьи раздела проекта не сохранены' })
     expect(stage.requests).toHaveLength(1)
     expect(save).not.toHaveBeenCalled()
-    expect(db.kb.kbDocuments({ scope: 'project', projectId: project.id }).some((d) => d.title === 'Пробелы БЗ')).toBe(false)
+    expect((await db.kb.kbDocuments({ scope: 'project', projectId: project.id })).some((d) => d.title === 'Пробелы БЗ')).toBe(false)
   })
 
   it('без sessionId сохраняет исходный fail-closed и не начинает независимый ход', async () => {
     const stage = repairClient('Готово', KB_REPLY, null)
-    const { ctx } = setup('off')
+    const { ctx } = await setup('off')
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
     expect(result).toEqual({ ok: false, message: 'Repair финального ответа не выполнен: сессия модели недоступна' })
     expect(stage.requests).toHaveLength(1)
@@ -1081,8 +1081,8 @@ describe('пробелы базы знаний доходят до шага ак
         { id: '', title: '', kind: 'feature', tags: [], areas: [], body: '# bad' }
       ]
     }))
-    const { ctx } = setup('off')
-    const save = vi.spyOn(db.kb, 'saveKbDocument')
+    const { ctx } = await setup('off')
+    const save = vi.spyOn(db.sync.kb, 'saveKbDocument')
     const result = await hooksWith(stage.client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
     expect(result).toEqual({ ok: false, message: 'Модель повторно не вернула корректный JSON — статьи раздела проекта не сохранены' })
     expect(stage.requests).toHaveLength(2)
@@ -1095,14 +1095,14 @@ describe('пробелы базы знаний доходят до шага ак
       send: (req, handlers) => {
         requests.push(req)
         if (requests.length === 1) {
-          handlers.onSession?.('kb-session')
-          handlers.onDelta?.('Готово')
-          handlers.onDone?.('Готово')
+          void handlers.onSession?.('kb-session')
+          void handlers.onDelta?.('Готово')
+          void handlers.onDone?.('Готово')
         }
         return { cancel: () => {} }
       }
     }
-    const { ctx } = setup('off')
+    const { ctx } = await setup('off')
     const result = await hooksWith(client, { kb: undefined, executor: diffExecutor, kbTimeoutMs: 5 }).kbUpdate(withAgent(ctx))
     expect(result).toEqual({ ok: false, message: 'Repair финального ответа не завершён до таймаута' })
     expect(requests).toHaveLength(2)
@@ -1115,16 +1115,16 @@ describe('пробелы базы знаний доходят до шага ак
       send: (req, handlers) => {
         requests.push(req)
         if (requests.length === 1) {
-          handlers.onSession?.('kb-session')
-          handlers.onDelta?.('Готово')
-          handlers.onDone?.('Готово')
+          void handlers.onSession?.('kb-session')
+          void handlers.onDelta?.('Готово')
+          void handlers.onDone?.('Готово')
         } else {
           queueMicrotask(() => ctl.abort())
         }
         return { cancel: () => {} }
       }
     }
-    const { ctx } = setup('off', ctl.signal)
+    const { ctx } = await setup('off', ctl.signal)
     const result = await hooksWith(client, { kb: undefined, executor: diffExecutor }).kbUpdate(withAgent(ctx))
     expect(result).toEqual({ ok: true, message: 'Ран отменён — база знаний не обновлялась' })
     expect(requests).toHaveLength(2)
@@ -1132,7 +1132,7 @@ describe('пробелы базы знаний доходят до шага ак
 
   it('fix-loop: правка — то же исследование, пробел из неё тоже уезжает в базу', async () => {
     const stage = twoStage(gapsBlock('почему падает npm ci', 'lockfile в образе старее package.json'))
-    const { ctx, run } = setup('auto')
+    const { ctx, run } = await setup('auto')
     const fixCtx = {
       ...ctx,
       failedStep: { id: 'step-2', title: 'npm ci', exitCode: 1, commandSnapshot: 'npm ci' },
@@ -1144,12 +1144,12 @@ describe('пробелы базы знаний доходят до шага ак
     expect(await hooksWith(stage.client, { executor: diffExecutor }).attemptFix(fixCtx)).toEqual({ fixed: true })
     // Формат блока в промпте правки: без него модели нечем назвать пробел.
     expect(stage.workPrompt()).toContain('```kb-gaps')
-    expect(db.ci.ciRunKbGaps(run.id).map((g) => g.question)).toEqual(['почему падает npm ci'])
+    expect((await db.ci.ciRunKbGaps(run.id)).map((g) => g.question)).toEqual(['почему падает npm ci'])
   })
 
   it('правок кода нет, но пробел есть — шаг всё равно идёт и пишет только пробел', async () => {
     const stage = twoStage(gapsBlock('кто снимает токен БЗ', 'withKbTools во всех выходах хода'))
-    const { ctx } = setup('auto')
+    const { ctx } = await setup('auto')
     const hooks = hooksWith(stage.client, { executor: emptyDiffExecutor })
     await hooks.modelWork(ctx)
     expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true })
@@ -1159,7 +1159,7 @@ describe('пробелы базы знаний доходят до шага ак
 
   it('без пробелов и без правок кода шаг закрывается «нечего обновлять» — хода нет', async () => {
     const stage = twoStage('готово')
-    const { ctx } = setup('off')
+    const { ctx } = await setup('off')
     const hooks = hooksWith(stage.client, { kb: undefined, executor: emptyDiffExecutor })
     await hooks.modelWork(ctx)
     expect(await hooks.kbUpdate(withAgent(ctx))).toMatchObject({ ok: true, message: expect.stringContaining('Нечего обновлять') })
@@ -1168,8 +1168,8 @@ describe('пробелы базы знаний доходят до шага ак
 
   it('сломанная запись пробелов не роняет ход модели', async () => {
     const stage = twoStage(gapsBlock('вопрос', 'ответ'))
-    const { ctx } = setup('auto')
-    db.ci.addCiRunKbGaps = () => { throw new Error('БД недоступна') }
+    const { ctx } = await setup('auto')
+    db.sync.ci.addCiRunKbGaps = () => { throw new Error('БД недоступна') }
     expect(await hooksWith(stage.client).modelWork(ctx)).toEqual({ ok: true })
   })
 })
@@ -1191,13 +1191,13 @@ describe('merge kb_update: движок наследуется от development-
   }
 
   /** development-ран задачи на заданном движке + merge-ран, запущенный ДРУГИМ пользователем. */
-  function mergeSetup(llm: { llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string }) {
-    const project = db.projects.createProject(U, { name: 'P' })
-    const board = db.tasks.getBoard(U, project.id)!
-    const task = db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id })!
-    db.identity.createUser(MERGE_USER, '', 'developer')
-    db.projects.addMember(U, project.id, MERGE_USER)
-    db.ci.createCiRun({
+  async function mergeSetup(llm: { llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string }) {
+    const project = await db.projects.createProject(U, { name: 'P' })
+    const board = (await db.tasks.getBoard(U, project.id))!
+    const task = (await db.tasks.createTask(U, project.id, { title: 'T', columnId: board.columns[0].id }))!
+    await db.identity.createUser(MERGE_USER, '', 'developer')
+    await db.projects.addMember(U, project.id, MERGE_USER)
+    await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: U, prevColumnId: null,
       slotProgress: { done: 0, total: 1, phase: 'В очереди' }, ...llm
     })
@@ -1209,7 +1209,7 @@ describe('merge kb_update: движок наследуется от development-
     hooks.kbUpdateForMerge({ run, repo: '/repos/p/merge', targetRef: 'target-sha', signal: new AbortController().signal, log: () => {} })
 
   it('без оверрайдов стадия идёт на движке development-рана, а не на системном дефолте', async () => {
-    const { run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    const { run } = await mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
@@ -1224,8 +1224,8 @@ describe('merge kb_update: движок наследуется от development-
   })
 
   it('не перечитывает оверрайд этапа проекта после создания merge-рана', async () => {
-    const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
+    const { project, run } = await mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    await db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
@@ -1238,9 +1238,9 @@ describe('merge kb_update: движок наследуется от development-
   })
 
   it('не перечитывает оверрайд этапа задачи после создания merge-рана', async () => {
-    const { project, task, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
-    db.ci.setCiStageLlmConfig('task', task.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-luna' })
+    const { project, task, run } = await mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    await db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
+    await db.ci.setCiStageLlmConfig('task', task.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-luna' })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
@@ -1254,8 +1254,8 @@ describe('merge kb_update: движок наследуется от development-
   it('пустые поля уровня не расщепляют тройку: модель этапа, исполнитель и провайдер — из development-рана', async () => {
     // Переопределена ТОЛЬКО модель этапа. Провайдер и исполнитель обязаны
     // остаться от development-рана, иначе codex-модель уедет в Claude CLI.
-    const { project, run } = mergeSetup({ llmEngineId: 'engine-1', llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { model: 'gpt-5.6-luna' })
+    const { project, run } = await mergeSetup({ llmEngineId: 'engine-1', llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    await db.ci.setCiStageLlmConfig('project', project.id, 'kb_update', { model: 'gpt-5.6-luna' })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })
@@ -1267,8 +1267,8 @@ describe('merge kb_update: движок наследуется от development-
   })
 
   it('не перечитывает модель проекта после создания merge-рана', async () => {
-    const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    const { project, run } = await mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const claude = recorder(KB_REPLY)
     const codex = recorder(KB_REPLY)
     const hooks = hooksWith(claude.client, { codex: codex.client, kb: undefined, executor: diffExecutor })

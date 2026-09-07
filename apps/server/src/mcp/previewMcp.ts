@@ -184,15 +184,15 @@ export interface PreviewEnvironmentInfo {
 
 export interface PreviewTurnContext {
   /** agentId машины разговора или null (нет машины / нет доступа). */
-  machineOf(entry: PreviewToolEntry): string | null
+  machineOf(entry: PreviewToolEntry): Promise<string | null>
   /** Тестовые пользователи проекта разговора (пусто — не заведены). */
-  testUsersOf(entry: PreviewToolEntry): ProjectTestUser[]
+  testUsersOf(entry: PreviewToolEntry): Promise<ProjectTestUser[]>
   /** Активные feature-preview окружения проекта разговора. */
-  environmentsOf?(entry: PreviewToolEntry): PreviewEnvironmentInfo[]
+  environmentsOf?(entry: PreviewToolEntry): Promise<PreviewEnvironmentInfo[]>
   /** Сброс cookie-контейнера превью пользователя (host сужает до одного сайта). */
   clearCookies?(entry: PreviewToolEntry, host?: string): number
   /** Проектная/ролевая политика evaluate; audit вызывается для любого вердикта. */
-  gateEvaluate?(entry: PreviewToolEntry, code: string, confirmed: boolean): { allowed: boolean; needsConfirmation?: boolean; reason?: string }
+  gateEvaluate?(entry: PreviewToolEntry, code: string, confirmed: boolean): Promise<{ allowed: boolean; needsConfirmation?: boolean; reason?: string }>
 }
 
 export interface RegisterPreviewMcpOptions {
@@ -279,7 +279,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           // Алиас «машина разговора»: канонизируем до <agentId>.machine.internal,
           // чтобы страница и все её под-запросы держали конкретную машину.
           if (parsed.hostname === MACHINE_PREVIEW_ALIAS_HOST) {
-            const agentId = entry && opts.context ? opts.context.machineOf(entry) : null
+            const agentId = await (entry && opts.context ? opts.context.machineOf(entry) : null)
             if (!agentId) {
               return {
                 content: [{ type: 'text', text: 'У этого разговора нет доступной машины — выбери машину в настройках разговора, чтобы открывать её тестовое окружение.' }],
@@ -480,7 +480,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         },
         async ({ code, confirm }) => {
           if (!entry) return noContext
-          const verdict = opts.context?.gateEvaluate?.(entry, code, confirm === true)
+          const verdict = await opts.context?.gateEvaluate?.(entry, code, confirm === true)
           req.log.info({ event: 'reader.evaluate', userId: entry.userId, conversationId: entry.conversationId, allowed: verdict?.allowed ?? true, confirmed: confirm === true, reason: verdict?.reason }, 'reader evaluate gate')
           if (verdict && !verdict.allowed) {
             const prefix = verdict.needsConfirmation ? 'Требуется подтверждение пользователя. ' : 'Отклонено политикой проекта. '
@@ -612,7 +612,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         },
         async () => {
           if (!entry) return noContext
-          const environments = opts.context?.environmentsOf?.(entry) ?? []
+          const environments = (await opts.context?.environmentsOf?.(entry)) ?? []
           if (!environments.length) {
             return { content: [{ type: 'text', text: 'У проекта разговора нет активных feature-preview окружений. Запусти окружение из карточки задачи (секция «Тестовое окружение») либо подними dev-сервер на машине и открой http://machine.internal:<порт>/.' }] }
           }
@@ -630,7 +630,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         },
         async () => {
           if (!entry) return noContext
-          const users = opts.context?.testUsersOf(entry) ?? []
+          const users = (await opts.context?.testUsersOf(entry)) ?? []
           if (!users.length) {
             return { content: [{ type: 'text', text: 'У проекта нет тестовых пользователей. Их заводят в настройках проекта (секция «Тестовые пользователи»).' }] }
           }

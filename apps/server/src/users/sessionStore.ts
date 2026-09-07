@@ -10,8 +10,8 @@ import type { VoiceChatDb } from '../db/database.js'
 
 export function createDbSessionStore(db: VoiceChatDb, now: () => number = Date.now): SessionStore {
   return {
-    create(input: NewSession): void {
-      db.identity.createSession(input.sid, input.user, {
+    async create(input: NewSession): Promise<void> {
+      await db.identity.createSession(input.sid, input.user, {
         ip: input.ip,
         userAgent: input.userAgent,
         ttlMs: input.ttlMs,
@@ -22,20 +22,20 @@ export function createDbSessionStore(db: VoiceChatDb, now: () => number = Date.n
         at: now()
       })
     },
-    get(sid: string): DeviceSession | null {
-      const session = db.identity.getSession(sid)
+    async get(sid: string): Promise<DeviceSession | null> {
+      const session = await db.identity.getSession(sid)
       // Контракт ядра требует, чтобы истёкшая сессия читалась как отсутствующая;
       // в БД срок проверяет вызывающий, поэтому фильтруем здесь.
       return session && session.expiresAt > now() ? session : null
     },
-    has: (sid) => db.identity.hasSessionRow(sid),
-    list: (user) => db.identity.listSessions(user, now()),
-    touch(sid, input) {
-      db.identity.touchSession(sid, input.ttlMs, input.path, now())
+    has: async (sid) => await db.identity.hasSessionRow(sid),
+    list: async (user) => await db.identity.listSessions(user, now()),
+    async touch(sid, input) {
+      await db.identity.touchSession(sid, input.ttlMs, input.path, now())
     },
-    update: (sid, patch: SessionPatch) => db.identity.updateSession(sid, patch, now()),
-    revoke: (sid) => db.identity.revokeSessionById(sid, now()),
-    revokeAll: (user, exceptSid) => db.identity.revokeUserSessions(user, exceptSid ?? null, now()),
-    prune: (options) => db.identity.pruneSessions(options?.keepRevokedMs, now())
+    update: async (sid, patch: SessionPatch) => await db.identity.updateSession(sid, patch, now()),
+    revoke: async (sid) => await db.identity.revokeSessionById(sid, now()),
+    revokeAll: async (user, exceptSid) => await db.identity.revokeUserSessions(user, exceptSid ?? null, now()),
+    prune: async (options) => await db.identity.pruneSessions(options?.keepRevokedMs, now())
   }
 }

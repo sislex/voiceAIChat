@@ -9,9 +9,9 @@ import { randomUUID } from 'node:crypto'
 import { managedChatArtifactsPath, managedChatAttachmentsPath, managedChatTemporaryPath, validateStorageRelativePath, type ChatStorageBinding, type MachineStorage } from '@voicechat/shared'
 
 export interface ManagedChatStorageDeps {
-  getBinding(userId: string, conversationId: string): ChatStorageBinding | null
-  listStorages(userId: string, machineId: string): MachineStorage[]
-  ownsMachine(userId: string, machineId: string): boolean
+  getBinding(userId: string, conversationId: string): Promise<ChatStorageBinding | null>
+  listStorages(userId: string, machineId: string): Promise<MachineStorage[]>
+  ownsMachine(userId: string, machineId: string): Promise<boolean>
   isOnline(machineId: string): boolean
   /** Подождать возврата офлайн-машины (registry.waitForOnline); нет — отказ сразу. */
   waitOnline?(machineId: string): Promise<boolean>
@@ -38,11 +38,11 @@ export function machineStoragePath(root: string, relativePath: string): string {
 }
 
 export async function resolveManagedChatStorage(userId: string, conversationId: string, deps: ManagedChatStorageDeps): Promise<ResolvedManagedChatStorage | null> {
-  const binding = deps.getBinding(userId, conversationId)
+  const binding = await deps.getBinding(userId, conversationId)
   if (!binding) return null
-  if (!deps.ownsMachine(userId, binding.machineId)) throw new Error('Машина хранилища больше не принадлежит пользователю')
+  if (!await deps.ownsMachine(userId, binding.machineId)) throw new Error('Машина хранилища больше не принадлежит пользователю')
   if (!deps.isOnline(binding.machineId) && !(await deps.waitOnline?.(binding.machineId))) throw new Error('Машина хранилища не в сети')
-  const storage = deps.listStorages(userId, binding.machineId).find((item) => item.id === binding.storageId)
+  const storage = (await deps.listStorages(userId, binding.machineId)).find((item) => item.id === binding.storageId)
   if (!storage) throw new Error('Привязанное хранилище больше недоступно')
   await deps.verifyRoot(binding.machineId, storage.rootPath)
   const relativePath = validateStorageRelativePath(binding.relativePath)

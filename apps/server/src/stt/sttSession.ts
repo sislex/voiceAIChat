@@ -11,13 +11,13 @@ import type { DiarizationEngine } from '../diarization/types.js'
 export interface SttSessionDeps {
   engine?: SttEngine
   client?: SttClient
-  getModel?: () => import('@voicechat/shared').WhisperModel
+  getModel?: () => Promise<import('@voicechat/shared').WhisperModel>
   send: (msg: ServerMessage) => void
   language?: string
   partialIntervalMs?: number
   minPartialSamples?: number
   diarization?: DiarizationEngine
-  isDiarizationEnabled?: () => boolean
+  isDiarizationEnabled?: () => Promise<boolean>
 }
 
 export interface SttSession {
@@ -40,6 +40,14 @@ export function createSttSession(deps: SttSessionDeps): SttSession {
   let pendingFinal = false
   let timer: ReturnType<typeof setInterval> | null = null
   let remote: SttRun | null = null
+  /**
+   * Настройки старта (модель, диаризация) читаются из БД асинхронно, а чанки и
+   * audio.stop приходят сразу за audio.start. Поэтому состояние записи включаем
+   * синхронно, чанки копим, а удалённый прогон поднимаем по готовности настроек;
+   * stop дожидается этого старта — иначе финал ушёл бы пустым.
+   */
+  let starting: Promise<void> = Promise.resolve()
+  let startGen = 0
 
   function combined(): Int16Array {
     const out = new Int16Array(totalSamples)
@@ -67,7 +75,7 @@ export function createSttSession(deps: SttSessionDeps): SttSession {
       if (!deps.engine) return
       const result = await deps.engine.transcribe(buffer, sampleRate, { language, final })
       let segments = result.segments
-      if (final && deps.diarization && deps.isDiarizationEnabled?.() && segments.length > 0) {
+      if (final && deps.diarization && (await deps.isDiarizationEnabled?.()) && segments.length > 0) {
         segments = await deps.diarization.diarize(buffer, sampleRate, segments, { maxSpeakers: 4 })
       }
       deps.send({
@@ -101,19 +109,33 @@ export function createSttSession(deps: SttSessionDeps): SttSession {
   return {
     start(rate) {
       remote?.cancel()
-      remote = deps.client?.start({ runId: randomUUID(), model: deps.getModel?.() ?? 'small', language, diarization: deps.isDiarizationEnabled?.() === true }, (event) => {
-        if (event.t === 'partial' || event.t === 'final') deps.send({ t: event.t === 'partial' ? 'stt.partial' : 'stt.final', update: { text: event.text, segments: event.segments.map((segment) => ({ text: segment.text, speakerId: segment.speaker ?? 1, start: segment.startMs / 1000, end: segment.endMs / 1000 })) } })
-        else if (event.t === 'error') deps.send({ t: 'stt.error', message: event.message })
-      }) ?? null
+      remote = null
       chunks = []
       totalSamples = 0
       sampleRate = rate || 16_000
       recording = true
       pendingFinal = false
       stopTimer()
-      if (!remote) timer = setInterval(() => {
-        if (recording) void transcribe(false)
-      }, partialIntervalMs)
+      const gen = ++startGen
+      starting = (async () => {
+        const model = (await deps.getModel?.()) ?? 'small'
+        const diarization = (await deps.isDiarizationEnabled?.()) === true
+        if (gen !== startGen) return // за время чтения настроек началась новая запись
+        const run = deps.client?.start({ runId: randomUUID(), model, language, diarization }, (event) => {
+        if (event.t === 'partial' || event.t === 'final') deps.send({ t: event.t === 'partial' ? 'stt.partial' : 'stt.final', update: { text: event.text, segments: event.segments.map((segment) => ({ text: segment.text, speakerId: segment.speaker ?? 1, start: segment.startMs / 1000, end: segment.endMs / 1000 })) } })
+        else if (event.t === 'error') deps.send({ t: 'stt.error', message: event.message })
+      }) ?? null
+        if (run) {
+          // Чанки, пришедшие до готовности раннера, досылаем в том же порядке.
+          for (const pcm of chunks) run.write(pcm)
+          chunks = []
+          remote = run
+        } else if (recording) {
+          timer = setInterval(() => {
+            if (recording) void transcribe(false)
+          }, partialIntervalMs)
+        }
+      })()
     },
     chunk(pcm) {
       if (!recording) return
@@ -124,8 +146,10 @@ export function createSttSession(deps: SttSessionDeps): SttSession {
     stop() {
       recording = false
       stopTimer()
-      if (remote) remote.end()
-      else void transcribe(true)
+      void starting.then(() => {
+        if (remote) remote.end()
+        else void transcribe(true)
+      })
     },
     dispose() {
       recording = false

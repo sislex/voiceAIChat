@@ -48,9 +48,9 @@ const hit: KbSearchResult = {
 
 function stubKb(over: Partial<KnowledgeBaseService> = {}): KnowledgeBaseService {
   return {
-    status: () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'v', createdAt: 'now', documents: 1, chunks: 3, staleDocuments: 0 }),
-    topics: () => [{ id: 'protocol', title: 'Протокол', kind: 'protocol', scope: 'usage', tags: [], packages: [], freshness: 'current', sourcePath: 'docs/kb/protocol.md' }],
-    document: (id) => (id === 'protocol' ? doc : null),
+    status: async () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'v', createdAt: 'now', documents: 1, chunks: 3, staleDocuments: 0 }),
+    topics: async () => [{ id: 'protocol', title: 'Протокол', kind: 'protocol', scope: 'usage', tags: [], packages: [], freshness: 'current', sourcePath: 'docs/kb/protocol.md' }],
+    document: async (id) => (id === 'protocol' ? doc : null),
     search: async () => [hit],
     context: async () => ({ query: '', confidence: 'low', autoInjectAllowed: false, sections: [], relatedFiles: [], relatedDocuments: [], staleWarnings: [], estimatedTokens: 0 }),
     ...over
@@ -80,14 +80,14 @@ describe('kbMcp — инструменты базы знаний', () => {
     return { text: body.result.content.map((c) => c.text).join('\n'), isError: body.result.isError }
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     let id = 0
     let clock = 1_000
     db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-    db.identity.createUser(U, '', 'admin')
+    await db.identity.createUser(U, '', 'admin')
     triggerDeploy.mockReset()
     triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
-    convId = db.chat.createConversation(U, 'Чат').id
+    convId = (await db.chat.createConversation(U, 'Чат')).id
     kbToolBroker.register(TURN, { userId: U, conversationId: convId, projectId: null, turnId: 't1' })
   })
   afterEach(async () => {
@@ -117,7 +117,7 @@ describe('kbMcp — инструменты базы знаний', () => {
   })
 
   it('deploy_prod отказывает обычному пользователю без запуска', async () => {
-    db.identity.createUser('user', '', 'developer')
+    await db.identity.createUser('user', '', 'developer')
     kbToolBroker.register(TURN, { userId: 'user', conversationId: convId, projectId: null, turnId: 't1' })
     await makeApp()
     const result = await call('deploy_prod')
@@ -127,7 +127,7 @@ describe('kbMcp — инструменты базы знаний', () => {
   })
 
   it('deploy_prod перечитывает блокировку admin и отказывает без запуска', async () => {
-    db.identity.setUserBlocked(U, true)
+    await db.identity.setUserBlocked(U, true)
     await makeApp()
     const result = await call('deploy_prod')
     expect(JSON.parse(result.text)).toMatchObject({ error: { code: 'forbidden' } })
@@ -156,7 +156,7 @@ describe('kbMcp — инструменты базы знаний', () => {
   it('search пишет обращение с deliveredChars === длине отданного текста', async () => {
     await makeApp()
     const { text } = await call('search', { query: 'websocket' })
-    const report = db.kb.kbUsageReport(U, convId)!
+    const report = (await db.kb.kbUsageReport(U, convId))!
     expect(report.recent).toHaveLength(1)
     expect(report.recent[0]).toMatchObject({ source: 'tool_search', status: 'delivered', chars: text.length, turnId: 't1' })
     expect(report.recent[0].sections[0]).toMatchObject({ documentId: 'protocol', anchor: 'websocket' })
@@ -168,14 +168,14 @@ describe('kbMcp — инструменты базы знаний', () => {
     expect(text).toContain('Кадры JSON.')
     expect(text).toContain('Бинарные кадры.') // вложенный ### входит в раздел
     expect(text).not.toContain('Запрос-ответ.') // следующий ## — уже другой раздел
-    const q = db.kb.kbUsageReport(U, convId)!.recent[0]
+    const q = (await db.kb.kbUsageReport(U, convId))!.recent[0]
     expect(q).toMatchObject({ source: 'tool_document', chars: text.length })
     expect(q.estimatedTokens).toBe(Math.ceil(text.length / 4))
   })
 
   it('раздел длиннее капа обрезается с пометкой', async () => {
     const long = { ...doc, body: `# Протокол\n\n## WebSocket\n\n${'я'.repeat(KB_DOCUMENT_CHAR_CAP + 500)}\n` }
-    await makeApp(stubKb({ document: () => long }))
+    await makeApp(stubKb({ document: async () => long }))
     const { text } = await call('document', { documentId: 'protocol', anchor: 'websocket' })
     expect(text).toContain('раздел обрезан')
     expect(text.length).toBeLessThan(KB_DOCUMENT_CHAR_CAP + 300)
@@ -185,14 +185,14 @@ describe('kbMcp — инструменты базы знаний', () => {
     await makeApp()
     const { isError } = await call('document', { documentId: 'protocol', anchor: 'нет-такого' })
     expect(isError).toBe(true)
-    expect(db.kb.kbUsageReport(U, convId)!.recent[0].status).toBe('empty')
+    expect((await db.kb.kbUsageReport(U, convId))!.recent[0].status).toBe('empty')
   })
 
   it('topics отдаёт оглавление и считается отдельным источником', async () => {
     await makeApp()
     const { text } = await call('topics')
     expect(text).toContain('protocol · Протокол')
-    expect(db.kb.kbUsageReport(U, convId)!.recent[0]).toMatchObject({ source: 'tool_topics', chars: text.length })
+    expect((await db.kb.kbUsageReport(U, convId))!.recent[0]).toMatchObject({ source: 'tool_topics', chars: text.length })
   })
 
   it('просроченный ?turn= → isError без записи обращения', async () => {
@@ -200,7 +200,7 @@ describe('kbMcp — инструменты базы знаний', () => {
     const { isError, text } = await call('search', { query: 'x' }, `?k=${SECRET}&turn=устаревший`)
     expect(isError).toBe(true)
     expect(text).toContain('Контекст хода недоступен')
-    expect(db.kb.kbUsageReport(U, convId)!.totals.queries).toBe(0)
+    expect((await db.kb.kbUsageReport(U, convId))!.totals.queries).toBe(0)
   })
 
   it('после ответа не остаётся отложенных исключений (тело читает транспорт, не Fastify)', async () => {
@@ -227,7 +227,7 @@ describe('kbMcp — инструменты базы знаний', () => {
     await makeApp(stubKb({ search: async () => { throw new Error('индекс сломан') } }))
     const { isError } = await call('search', { query: 'x' })
     expect(isError).toBe(true)
-    expect(db.kb.kbUsageReport(U, convId)!.recent[0]).toMatchObject({ status: 'error', error: 'индекс сломан' })
+    expect((await db.kb.kbUsageReport(U, convId))!.recent[0]).toMatchObject({ status: 'error', error: 'индекс сломан' })
   })
 })
 

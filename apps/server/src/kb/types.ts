@@ -20,9 +20,9 @@ export interface KbView {
 export const PUBLIC_KB_VIEW: KbView = { userId: null, projectIds: [] }
 
 export interface KnowledgeBaseService {
-  status(): KbStatus
-  topics(view?: KbView): KbDocumentSummary[]
-  document(id: string, view?: KbView): KbDocument | null
+  status(): Promise<KbStatus>
+  topics(view?: KbView): Promise<KbDocumentSummary[]>
+  document(id: string, view?: KbView): Promise<KbDocument | null>
   search(request: KbSearchRequest, view?: KbView): Promise<KbSearchResult[]>
   context(query: string, budget?: number, view?: KbView): Promise<KbContextBundle>
 }

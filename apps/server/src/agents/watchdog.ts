@@ -7,13 +7,13 @@ import type { MachineStatusEvent, ServerMessage } from '@voicechat/shared'
 export interface WatchdogDeps {
   db: {
     machines: {
-      listAllAgents(): Array<{ id: string; name: string; lastSeen: number | null; userId: string | null }>
-      logMachineEvent(e: { machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }): void
+      listAllAgents(): Promise<Array<{ id: string; name: string; lastSeen: number | null; userId: string | null }>>
+      logMachineEvent(e: { machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }): Promise<void>
     }
   }
   registry: {
     isOnline(id: string): boolean
-    onChange(cb: () => void): () => void
+    onChange(cb: () => Promise<void>): () => void
   }
   /** Доставить событие владельцу (WS через ciRunManager.publish). */
   publish: (message: ServerMessage, userId: string) => void
@@ -24,7 +24,7 @@ export interface WatchdogDeps {
 
 export interface AgentWatchdog {
   /** Один проход: кого объявить пропавшим. Вызывается таймером и тестами. */
-  tick(): MachineStatusEvent[]
+  tick(): Promise<MachineStatusEvent[]>
   /** Машины, по которым тревога уже поднята и ещё не снята. */
   alerted(): string[]
   stop(): void
@@ -35,10 +35,10 @@ export function createAgentWatchdog(deps: WatchdogDeps): AgentWatchdog {
   // machineId → момент, с которого машина считается пропавшей (lastSeen на момент тревоги).
   const alertedSince = new Map<string, number>()
 
-  const tick = (): MachineStatusEvent[] => {
+  const tick = async (): Promise<MachineStatusEvent[]> => {
     const events: MachineStatusEvent[] = []
     const at = now()
-    for (const agent of deps.db.machines.listAllAgents()) {
+    for (const agent of await deps.db.machines.listAllAgents()) {
       // Машина, у которой агента никогда не было, не «пропала» — её ещё не подключали.
       if (!agent.userId || agent.lastSeen === null) continue
       if (deps.registry.isOnline(agent.id) || alertedSince.has(agent.id)) continue
@@ -46,7 +46,7 @@ export function createAgentWatchdog(deps: WatchdogDeps): AgentWatchdog {
       if (offlineForMs < deps.thresholdMs) continue
       alertedSince.set(agent.id, agent.lastSeen)
       const event: MachineStatusEvent = { machineId: agent.id, machineName: agent.name, state: 'offline', at, offlineForMs }
-      deps.db.machines.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'offline', at, offlineForMs })
+      await deps.db.machines.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'offline', at, offlineForMs })
       deps.publish({ t: 'machine.status', event }, agent.userId)
       events.push(event)
     }
@@ -54,15 +54,15 @@ export function createAgentWatchdog(deps: WatchdogDeps): AgentWatchdog {
   }
 
   // Возврат в сеть снимает тревогу — событие «вернулась» тем же владельцам.
-  const offChange = deps.registry.onChange(() => {
+  const offChange = deps.registry.onChange(async () => {
     if (alertedSince.size === 0) return
     const at = now()
-    for (const agent of deps.db.machines.listAllAgents()) {
+    for (const agent of await deps.db.machines.listAllAgents()) {
       const since = alertedSince.get(agent.id)
       if (since === undefined || !deps.registry.isOnline(agent.id) || !agent.userId) continue
       alertedSince.delete(agent.id)
       const event: MachineStatusEvent = { machineId: agent.id, machineName: agent.name, state: 'online', at, offlineForMs: at - since }
-      deps.db.machines.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'online', at, offlineForMs: at - since })
+      await deps.db.machines.logMachineEvent({ machineId: agent.id, userId: agent.userId, state: 'online', at, offlineForMs: at - since })
       deps.publish({ t: 'machine.status', event }, agent.userId)
     }
   })

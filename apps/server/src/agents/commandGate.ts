@@ -4,9 +4,9 @@ import { evaluateCommandLayers, isDangerousCommand, type CommandGateVerdict, typ
 import type { UserRole } from '@voicechat/shared'
 
 export interface CommandGateDeps {
-  projectPolicy(projectId: string): ProjectCommandPolicy | null
-  rolePolicies(): RoleCommandPolicies
-  userRole(userId: string): UserRole | null
+  projectPolicy(projectId: string): Promise<ProjectCommandPolicy | null>
+  rolePolicies(): Promise<RoleCommandPolicies>
+  userRole(userId: string): Promise<UserRole | null>
 }
 
 export interface CommandGateInput {
@@ -18,15 +18,15 @@ export interface CommandGateInput {
   confirm?: boolean
 }
 
-export type CommandGate = (input: CommandGateInput) => CommandGateVerdict
+export type CommandGate = (input: CommandGateInput) => Promise<CommandGateVerdict>
 
 export function createCommandGate(deps: CommandGateDeps): CommandGate {
-  return ({ command, userId, projectId, source, confirm }) => {
+  return async ({ command, userId, projectId, source, confirm }) => {
     const layers: Array<CommandPolicyLayer & { name: 'project' | 'role' }> = []
-    const project = projectId ? deps.projectPolicy(projectId) : null
+    const project = await (projectId ? deps.projectPolicy(projectId) : null)
     if (project) layers.push({ name: 'project', denyPatterns: project.denyPatterns, allowPatterns: project.allowPatterns })
-    const role = userId ? deps.userRole(userId) : null
-    const roleLayer = role ? deps.rolePolicies()[role] : undefined
+    const role = userId ? await deps.userRole(userId) : null
+    const roleLayer = role ? (await deps.rolePolicies())[role] : undefined
     if (roleLayer) layers.push({ name: 'role', ...roleLayer })
     const verdict = evaluateCommandLayers(command, layers)
     if (!verdict.allowed) return verdict

@@ -158,7 +158,7 @@ export interface RegisterKbMcpOptions {
    * Вид пользователя хода: без него модель видит только общий раздел
    * «Использование» (безопасный дефолт — инструмент не должен обходить доступ).
    */
-  viewOf?: (entry: KbToolEntry) => KbView
+  viewOf?: (entry: KbToolEntry) => Promise<KbView>
   /**
    * Живое состояние машин (реестр агентов): в БД его нет — статус, версия и ОС
    * известны только по текущему подключению. Не передан → инструмент «machines»
@@ -194,7 +194,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
       const entry = kbToolBroker.get(req.query.turn ?? '')
 
       // Вид считаем один раз на запрос: он же гейт доступа к знаниям проекта.
-      const view: KbView = entry && opts.viewOf ? opts.viewOf(entry) : PUBLIC_KB_VIEW
+      const view: KbView = await (entry && opts.viewOf ? opts.viewOf(entry) : PUBLIC_KB_VIEW)
 
       const server = new McpServer({ name: 'kb', version: '1.0.0' })
       /** Ход уже завершён (или токен чужой) — читать БЗ не от чьего имени. */
@@ -225,7 +225,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         },
         async ({ query, limit }) => {
           if (!entry) return noContext
-          const handle = open('tool_search', query)
+          const handle = await open('tool_search', query)
           try {
             const found = await kb.search({ query, limit: limit && limit > 0 ? Math.min(limit, 20) : 8 }, view)
             if (!found.length) {
@@ -274,9 +274,9 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         async ({ documentId, anchor }) => {
           if (!entry) return noContext
           const label = `${documentId}${anchor ? `#${anchor}` : ''}`
-          const handle = open('tool_document', label)
+          const handle = await open('tool_document', label)
           try {
-            const doc = kb.document(documentId, view)
+            const doc = await kb.document(documentId, view)
             const slice = doc ? sectionOf(doc, anchor) : null
             if (!doc || !slice) {
               handle?.empty('no-match')
@@ -310,9 +310,9 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         { description: 'Оглавление базы знаний: все документы с типом, тегами и путём к источнику.', inputSchema: {} },
         async () => {
           if (!entry) return noContext
-          const handle = open('tool_topics', 'оглавление')
+          const handle = await open('tool_topics', 'оглавление')
           try {
-            const topics = kb.topics(view)
+            const topics = await kb.topics(view)
             if (!topics.length) {
               handle?.empty('no-match')
               return { content: [{ type: 'text', text: 'База знаний пуста.' }] }
@@ -381,18 +381,18 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         }
       }, async ({ unit, from, to, conversationId }) => {
         if (!entry || !opts.db) return noContext
-        if (conversationId && !opts.db.chat.getConversation(entry.userId, conversationId)) {
+        if (conversationId && !await opts.db.chat.getConversation(entry.userId, conversationId)) {
           return { content: [{ type: 'text', text: 'Этот чат недоступен владельцу текущего хода.' }], isError: true }
         }
-        return { content: [{ type: 'text', text: JSON.stringify(opts.db.chat.usageReport(entry.userId, unit, from, to, conversationId), null, 2) }] }
+        return { content: [{ type: 'text', text: JSON.stringify(await opts.db.chat.usageReport(entry.userId, unit, from, to, conversationId), null, 2) }] }
       })
       server.registerTool('machines', {
         description: 'Подключённые машины владельца: статус, ОС, версия и политика команд. Токены машин не возвращаются.',
         inputSchema: {}
       }, async () => {
         if (!entry || !opts.db) return noContext
-        const settings = opts.db.settings.getSettings(entry.userId)
-        const machines = opts.db.machines.listAgents(entry.userId).map((agent) => ({
+        const settings = await opts.db.settings.getSettings(entry.userId)
+        const machines = (await opts.db.machines.listAgents(entry.userId)).map((agent) => ({
           id: agent.id, name: agent.name, online: opts.agents?.isOnline(agent.id) ?? false,
           version: opts.agents?.versionOf(agent.id) ?? null, os: opts.agents?.platformOf(agent.id) ?? null,
           policy: agent.policy, isDefault: settings.defaultAgentId === agent.id
@@ -406,7 +406,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         inputSchema: {}
       }, async () => {
         if (!entry || !opts.db) return noContext
-        const user = opts.db.identity.getUser(entry.userId)
+        const user = await opts.db.identity.getUser(entry.userId)
         if (!user || user.blocked || user.role !== 'admin') {
           return {
             content: [{ type: 'text', text: JSON.stringify({ error: { code: 'forbidden', message: 'Для запуска production-деплоя нужна актуальная роль admin.' } }) }],
@@ -436,12 +436,12 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         inputSchema: {}
       }, async () => {
         if (!entry || !opts.db) return noContext
-        const projects = opts.db.projects.listProjects(entry.userId).map((summary) => {
-          const project = opts.db!.projects.getProject(entry.userId, summary.id)
+        const projects = (await Promise.all((await opts.db.projects.listProjects(entry.userId)).map(async (summary) => {
+          const project = await opts.db!.projects.getProject(entry.userId, summary.id)
           if (!project) return null
           const { ciExecAuthRef: _secret, ...safe } = project
           return safe
-        }).filter(Boolean)
+        }))).filter(Boolean)
         return { content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }] }
       })
 
