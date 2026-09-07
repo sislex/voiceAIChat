@@ -32,6 +32,8 @@ export interface MachinesDeps {
 export interface MachinesModule {
   machines: MachinesService
   commandGate: CommandGate
+  /** Реестр как есть — только для внутреннего API машин (`machines/internalApi.ts`). */
+  registry: AgentRegistry
 }
 
 /** Гейт команд (п.10): политика проекта и роли поверх политики машины — только данные базы, поэтому есть и у ядра в режиме `remote`. */
@@ -119,5 +121,5 @@ export async function createMachinesModule(deps: MachinesDeps): Promise<Machines
     })
   })
 
-  return { machines: registry, commandGate }
+  return { machines: registry, commandGate, registry }
 }

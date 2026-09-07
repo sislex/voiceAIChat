@@ -101,6 +101,16 @@ EXPOSE 8793
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/machines/standalone/index.ts"]
 
+# ---- Runtime админки (отдельный сервис, профиль compose `admin`) ------------
+FROM runtime-base AS admin-runtime
+ENV PORT=8794
+RUN mkdir -p /data \
+  && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8794
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/admin/standalone/index.ts"]
+
 # ---- Изолированный runtime распознавания речи ---------------------------
 FROM runtime-base AS stt-runner-runtime
 ENV PORT=8791 \

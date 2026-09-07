@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: 1a932d19
+checked: b3091e19
 areas:
   - apps/server/src
 ---
@@ -371,6 +371,16 @@ artifacts привязанного хранилища через обратны�
 пересылкой в `/internal/whoami` ядра (`internal/forwardedAuth.ts`, общая с канбаном). Канбан и Make в этом
 режиме ничего не замечают: под фасадами `KanbanMachines`/`MakeCore.machineFs` стоит тот же порт. Контракт —
 `machines/internal.ts`; интеграционный тест — `machinesBridge/machinesRemote.integration.test.ts`.
+Внутренний API машин (`machines/internalApi.ts`) ядро поднимает и во встроенном режиме при заданном
+`VC_INTERNAL_TOKEN` — так соседи (админка) берут машины у того процесса, где живёт реестр, одним клиентом.
+
+**Админка отдельным процессом (`VC_ADMIN_MODE=remote`, 2026-09-07).** `admin/standalone/index.ts`
+(`buildAdminServer`, порт 8794, compose-профиль `admin`): `routes/admin.ts` на общей базе, авторизация —
+пересылкой в ядро, машины — `HttpMachines` к `VC_MACHINES_URL` или к ядру, Make — по RPC, деплой и живое
+уведомление об отзыве сессии — RPC к ядру `/internal/admin/rpc` (`admin/internal.ts`). Ядро проксирует
+`/api/admin/*` (типы проектов `/api/admin/project-types*` остаются у канбана — его роуты конкретнее);
+проверку роли `users:manage` делает preHandler ядра до прокси. Тест —
+`admin/standalone/adminRemote.integration.test.ts`.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 

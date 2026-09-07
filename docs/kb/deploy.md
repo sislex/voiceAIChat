@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-07
-checked: 1a932d19
+checked: b3091e19
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -185,6 +185,13 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 `VC_PUBLIC_URL`, тот же том `vc-data`. Компаньон-агенты ничего не меняют: они ходят на публичный хост `/agent`,
 ядро переправляет их WebSocket в процесс машин само (Caddy без изменений); REST машин и установщики ядро
 проксирует туда же. Откат — убрать `VC_MACHINES_MODE` (агенты переподключатся к ядру сами).
+
+**Админка отдельным сервисом (2026-09-07).** Профиль compose `admin` (образ `voicechat-admin`, стадия
+`admin-runtime`, порт 8794, точка входа `apps/server/src/admin/standalone/index.ts`), у ядра
+`VC_ADMIN_MODE=remote` + `VC_ADMIN_URL=http://admin:8794`. Требует `VC_DB_URL` (Postgres); у процесса —
+`VC_CORE_URL`, общие `VC_INTERNAL_TOKEN`/`VC_MCP_SECRET`, `VC_MAKE_URL`, при вынесенных машинах —
+`VC_ADMIN_MACHINES_URL=http://machines:8793` (иначе машины читаются у ядра). Деплой из админки по-прежнему
+выполняет ядро (сокет host-side API у него). Откат — убрать `VC_ADMIN_MODE`.
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,

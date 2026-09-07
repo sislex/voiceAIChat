@@ -112,8 +112,9 @@ export class HttpMachines implements MachinesService {
       case 'agentReady': this.readyListeners.emit(event.agentId); break
       case 'command': this.commandListeners.emit(event.report); break
       case 'tunnelAuthorize': {
+        // Отвечаем только за свои тоннели: к шине могут быть подключены и другие процессы (админка), чужой отказ не должен опережать наш ответ.
         const cb = this.tunnelCallbacks.get(event.id)
-        void (cb ? cb.authorize().catch(() => false) : Promise.resolve(false)).then((ok) => this.send({ kind: 'tunnelAuthorizeResult', requestId: event.requestId, ok }))
+        if (cb) void cb.authorize().catch(() => false).then((ok) => this.send({ kind: 'tunnelAuthorizeResult', requestId: event.requestId, ok }))
         break
       }
       case 'tunnelClosed': {
