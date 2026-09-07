@@ -32,7 +32,7 @@ import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { createQaRest } from './qaBridge'
-import { authHeaders as sessionHeaders, dropLegacyToken, getCsrf, getToken, hasSession, legacyToken, setToken, setUnauthorizedHandler } from './session'
+import { authHeaders as sessionHeaders, credentialedFetch, dropLegacyToken, getCsrf, getToken, hasSession, legacyToken, setCsrf, setToken, setUnauthorizedHandler } from './session'
 import { base64ToArrayBuffer } from './decode'
 
 function makeAuthBridge(ws: WsClient): RendererAuthBridge {
@@ -241,9 +241,35 @@ export async function migrateDesktopLegacy(httpBase: string, token: string): Pro
   if (!client) return
   const bundle = await client.exportLegacyData()
   if (!bundle) return
-  const response = await fetch(httpBase + REST.desktopMigration, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(bundle) })
+  const response = await credentialedFetch(httpBase + REST.desktopMigration, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify(bundle) })
   if (!response.ok) throw new Error(`desktop migration: HTTP ${response.status}`)
   await client.markLegacyMigrated()
+}
+
+function assertSafeCredentialUrl(httpBase: string): void {
+  if (!httpBase) return
+  let url: URL
+  try { url = new URL(httpBase) } catch { throw new Error('Некорректный адрес сервера') }
+  if (url.username || url.password) throw new Error('Адрес сервера с данными пользователя запрещён')
+  if (url.protocol === 'https:') return
+  const rawHost = httpBase.match(/^http:\/\/([^/?#]+)/i)?.[1]?.replace(/:\d+$/, '') ?? ''
+  const loopback = url.hostname === 'localhost' || url.hostname === '[::1]' ||
+    (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(rawHost) && rawHost.split('.').every((part) => Number(part) <= 255))
+  if (url.protocol !== 'http:' || !loopback) {
+    throw new Error('Вход с паролем доступен только по HTTPS (HTTP разрешён лишь для localhost)')
+  }
+}
+
+async function loginError(res: Response): Promise<Error> {
+  let detail = ''
+  try {
+    const body = await res.json() as { error?: unknown; retryAfterSec?: unknown }
+    if (typeof body.error === 'string') detail = body.error
+    if (typeof body.retryAfterSec === 'number' && detail && !detail.includes(String(body.retryAfterSec))) {
+      detail += ` (повторите через ${body.retryAfterSec} с)`
+    }
+  } catch {}
+  return Object.assign(new Error(detail || `Ошибка входа: HTTP ${res.status}`), { status: res.status })
 }
 
 /** Мост сессии поверх REST: логин сохраняет токен и перезапускает WS с ним. */
@@ -251,18 +277,24 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
   const authHeaders = (): Record<string, string> => sessionHeaders()
   return {
     login: async ({ name, password, remember }) => {
-      const res = await fetch(httpBase + REST.sessionLogin, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, password, remember: remember !== false })
-      })
-      if (!res.ok) return null
-      const body = (await res.json()) as { token?: string; user?: SessionUser; requires2fa?: true; ticket?: string }
+      assertSafeCredentialUrl(httpBase)
+      let res: Response
+      try {
+        res = await credentialedFetch(httpBase + REST.sessionLogin, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, password, remember: remember !== false })
+        })
+      } catch (cause) {
+        throw new Error('Сервер недоступен или запрос заблокирован сетью/CORS', { cause })
+      }
+      if (!res.ok) throw await loginError(res)
+      const body = (await res.json()) as { token?: string; csrf?: string; user?: SessionUser; requires2fa?: true; ticket?: string }
       if (body.requires2fa && body.ticket) return { requires2fa: true, ticket: body.ticket }
-      const { token, user } = body as { token: string; user: SessionUser }
-      // Токен — в память (auth-roadmap п.5): сервер уже положил HttpOnly-cookie, localStorage больше не используем.
+      const { token, user, csrf } = body as { token: string; csrf?: string; user: SessionUser }
       setToken(token)
-      ws.reconnect() // теперь есть сессия — поднимаем WS-соединение
+      setCsrf(csrf ?? null)
+      ws.reconnect()
       try {
         await migrateDesktopLegacy(httpBase, token)
       } catch (error) {
@@ -272,22 +304,23 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
     },
     // Второй фактор (auth-roadmap п.6): код по тикету → та же сессия, что и после обычного входа.
     login2fa: async ({ ticket, code }) => {
-      const res = await fetch(httpBase + REST.session2fa, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket, code }) })
+      const res = await credentialedFetch(httpBase + REST.session2fa, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket, code }) })
       if (!res.ok) return null
-      const { token, user } = (await res.json()) as { token: string; user: SessionUser }
+      const { token, user, csrf } = (await res.json()) as { token: string; user: SessionUser; csrf?: string }
       setToken(token)
+      setCsrf(csrf ?? null)
       ws.reconnect()
       return user
     },
     securityNotices: async () => {
-      const r = await fetch(httpBase + REST.sessionMe, { headers: authHeaders() })
+      const r = await credentialedFetch(httpBase + REST.sessionMe, { headers: authHeaders() })
       if (!r.ok) return []
       const { notices } = (await r.json()) as { notices?: Array<{ at: number; ip: string; userAgent: string; type: string }> }
       return notices ?? []
     },
-    securityNoticesSeen: async () => { await fetch(httpBase + REST.sessionNoticesSeen, { method: 'POST', headers: authHeaders() }) },
+    securityNoticesSeen: async () => { await credentialedFetch(httpBase + REST.sessionNoticesSeen, { method: 'POST', headers: authHeaders() }) },
     resetPassword: async ({ name, code, password }) => {
-      const r = await fetch(httpBase + REST.sessionReset, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, code, password }) })
+      const r = await credentialedFetch(httpBase + REST.sessionReset, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, code, password }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       const { token: t } = (await r.json()) as { token: string }
       setToken(t)
@@ -295,32 +328,32 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       return { ok: true }
     },
     requestPasswordReset: async (email) => {
-      const r = await fetch(httpBase + REST.sessionResetRequest, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) })
+      const r = await credentialedFetch(httpBase + REST.sessionResetRequest, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) })
       const body = (await r.json().catch(() => ({}))) as { ok?: true; message?: string; error?: string }
       return r.ok ? { ok: true, message: body.message ?? 'Если адрес подтверждён, письмо со ссылкой отправлено.' } : { error: body.error ?? `Ошибка ${r.status}` }
     },
     resetPasswordByEmail: async ({ token, password }) => {
-      const r = await fetch(httpBase + REST.sessionResetEmail, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) })
+      const r = await credentialedFetch(httpBase + REST.sessionResetEmail, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       return { ok: true }
     },
     changePassword: async ({ current, next }) => {
-      const r = await fetch(httpBase + REST.sessionPassword, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ current, next }) })
+      const r = await credentialedFetch(httpBase + REST.sessionPassword, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ current, next }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       return { ok: true }
     },
     // Признак cookie-сессии для предупреждения о «входе, который не переживёт F5»:
     // читаемая CSRF-cookie есть ровно тогда, когда браузер принял пару cookie.
     hasCookieSession: () => Boolean(getCsrf()),
-    signupEnabled: async () => { try { const r = await fetch(httpBase + REST.sessionSignup); return r.ok ? Boolean(((await r.json()) as { enabled?: boolean }).enabled) : false } catch { return false } },
+    signupEnabled: async () => { try { const r = await credentialedFetch(httpBase + REST.sessionSignup); return r.ok ? Boolean(((await r.json()) as { enabled?: boolean }).enabled) : false } catch { return false } },
     signup: async ({ name, email, password }) => {
-      const r = await fetch(httpBase + REST.sessionSignup, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, email, password }) })
+      const r = await credentialedFetch(httpBase + REST.sessionSignup, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, email, password }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       return (await r.json()) as { ok: true; mailSent: boolean }
     },
-    signupResend: async (email) => { await fetch(httpBase + REST.sessionSignupResend, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) }) },
+    signupResend: async (email) => { await credentialedFetch(httpBase + REST.sessionSignupResend, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) }) },
     verifyEmail: async (token) => {
-      const r = await fetch(httpBase + REST.sessionVerify, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })
+      const r = await credentialedFetch(httpBase + REST.sessionVerify, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       const { token: t } = (await r.json()) as { token: string }
       setToken(t)
@@ -332,15 +365,15 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       return () => setUnauthorizedHandler(null)
     },
     projectInvitationPreview: async (token) => {
-      const r = await fetch(httpBase + REST.invitationPreview(token))
+      const r = await credentialedFetch(httpBase + REST.invitationPreview(token))
       return r.ok ? ((await r.json()) as import('@shared/projects').ProjectInvitationPreview) : null
     },
     inviteInfo: async (token) => {
-      const r = await fetch(httpBase + REST.sessionInvite(token))
+      const r = await credentialedFetch(httpBase + REST.sessionInvite(token))
       return r.ok ? ((await r.json()) as { role: string; expiresAt: number; note: string }) : null
     },
     register: async ({ token, name, password }) => {
-      const r = await fetch(httpBase + REST.sessionRegister, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, name, password }) })
+      const r = await credentialedFetch(httpBase + REST.sessionRegister, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, name, password }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       const { token: t } = (await r.json()) as { token: string }
       setToken(t)
@@ -348,32 +381,34 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       return { ok: true }
     },
     twoFactor: {
-      status: async () => { const r = await fetch(httpBase + REST.session2fa, { headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось получить статус 2FA'); return (await r.json()) as { enabled: boolean } },
-      setup: async () => { const r = await fetch(httpBase + REST.session2faSetup, { method: 'POST', headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось создать секрет'); return (await r.json()) as { secret: string; otpauth: string } },
-      enable: async (code) => { const r = await fetch(httpBase + REST.session2faEnable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось включить 2FA') },
-      disable: async (code) => { const r = await fetch(httpBase + REST.session2faDisable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось выключить 2FA') }
+      status: async () => { const r = await credentialedFetch(httpBase + REST.session2fa, { headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось получить статус 2FA'); return (await r.json()) as { enabled: boolean } },
+      setup: async () => { const r = await credentialedFetch(httpBase + REST.session2faSetup, { method: 'POST', headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось создать секрет'); return (await r.json()) as { secret: string; otpauth: string } },
+      enable: async (code) => { const r = await credentialedFetch(httpBase + REST.session2faEnable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось включить 2FA') },
+      disable: async (code) => { const r = await credentialedFetch(httpBase + REST.session2faDisable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось выключить 2FA') }
     },
     me: async () => {
-      if (!hasSession()) return null
-      const res = await fetch(httpBase + REST.sessionMe, { headers: authHeaders() })
+      const res = await credentialedFetch(httpBase + REST.sessionMe, { headers: authHeaders() })
       if (!res.ok) return null
-      const { user } = (await res.json()) as { user: SessionUser | null }
+      const { user, csrf } = (await res.json()) as { user: SessionUser | null; csrf?: string }
+      setCsrf(user ? csrf ?? null : null)
+      if (user) ws.reconnect()
       return user ?? null
     },
     logout: async () => {
-      const res = await fetch(httpBase + REST.sessionLogout, { method: 'POST', headers: authHeaders() })
+      const res = await credentialedFetch(httpBase + REST.sessionLogout, { method: 'POST', headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось завершить сессию. Попробуйте ещё раз.')
       setToken(null)
+      setCsrf(null)
       ws.reconnect() // рвём авторизованное соединение
     },
     // Сессии (auth-roadmap п.4): список устройств, «выйти везде» (кроме текущей), отзыв одной.
     sessions: async () => {
-      const res = await fetch(httpBase + REST.sessionList, { headers: authHeaders() })
+      const res = await credentialedFetch(httpBase + REST.sessionList, { headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось получить список сессий')
       return ((await res.json()) as { sessions: SessionInfo[] }).sessions
     },
     logoutAll: async (options) => {
-      const res = await fetch(httpBase + REST.sessionLogoutAll, {
+      const res = await credentialedFetch(httpBase + REST.sessionLogoutAll, {
         method: 'POST',
         headers: { ...authHeaders(), 'content-type': 'application/json' },
         body: JSON.stringify({ includeCurrent: options?.includeCurrent === true })
@@ -382,32 +417,32 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       if (options?.includeCurrent) { setToken(null); ws.reconnect() }
     },
     revokeSession: async (sid) => {
-      const res = await fetch(httpBase + REST.sessionRevoke(sid), { method: 'DELETE', headers: authHeaders() })
+      const res = await credentialedFetch(httpBase + REST.sessionRevoke(sid), { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось завершить сессию')
     },
     endedSessions: async () => {
-      const res = await fetch(`${httpBase + REST.sessionList}?ended=1`, { headers: authHeaders() })
+      const res = await credentialedFetch(`${httpBase + REST.sessionList}?ended=1`, { headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось получить завершённые сессии')
       return ((await res.json()) as { ended?: SessionInfo[] }).ended ?? []
     },
     panicSessions: async () => {
-      const res = await fetch(httpBase + REST.sessionPanic, { method: 'POST', headers: authHeaders() })
+      const res = await credentialedFetch(httpBase + REST.sessionPanic, { method: 'POST', headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось закрыть все входы')
       // Сессия умерла вместе с остальными: держать мёртвый токен незачем.
       setToken(null)
       ws.reconnect()
     },
     sessionHistory: async (sid) => {
-      const res = await fetch(httpBase + REST.sessionHistory(sid), { headers: authHeaders() })
+      const res = await credentialedFetch(httpBase + REST.sessionHistory(sid), { headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось получить историю устройства')
       return ((await res.json()) as { events: Array<{ id: number; at: number; type: string; details: string }> }).events
     },
     untrustAllSessions: async () => {
-      const res = await fetch(httpBase + REST.sessionUntrustAll, { method: 'POST', headers: authHeaders() })
+      const res = await credentialedFetch(httpBase + REST.sessionUntrustAll, { method: 'POST', headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось снять доверие с устройств')
     },
     renameSession: async (sid, label) => {
-      const res = await fetch(httpBase + REST.sessionUpdate(sid), {
+      const res = await credentialedFetch(httpBase + REST.sessionUpdate(sid), {
         method: 'PATCH',
         headers: { ...authHeaders(), 'content-type': 'application/json' },
         body: JSON.stringify({ label })
@@ -415,7 +450,7 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       if (!res.ok) throw new Error('Не удалось переименовать устройство')
     },
     trustSession: async (sid, trusted) => {
-      const res = await fetch(httpBase + REST.sessionUpdate(sid), {
+      const res = await credentialedFetch(httpBase + REST.sessionUpdate(sid), {
         method: 'PATCH',
         headers: { ...authHeaders(), 'content-type': 'application/json' },
         body: JSON.stringify({ trusted })
@@ -432,7 +467,7 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
     ensurePreview: async () => {
       if (!hasSession()) return false
       try {
-        const res = await fetch(httpBase + REST.sessionPreview, { method: 'POST', headers: authHeaders() })
+        const res = await credentialedFetch(httpBase + REST.sessionPreview, { method: 'POST', headers: authHeaders() })
         return res.ok
       } catch {
         return false
@@ -449,7 +484,7 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
 export function makeBrowserBridge(httpBase: string): RendererBrowserBridge {
   const authJson = (): Record<string, string> => ({ 'content-type': 'application/json', ...sessionHeaders() })
   const post = async <T>(path: string, body: unknown): Promise<T> => {
-    const res = await fetch(httpBase + path, { method: 'POST', headers: authJson(), body: JSON.stringify(body) })
+    const res = await credentialedFetch(httpBase + path, { method: 'POST', headers: authJson(), body: JSON.stringify(body) })
     if (!res.ok) {
       let message = `Browser Runner: ${res.status}`
       try { const data = await res.json() as { message?: string }; if (data.message) message = data.message } catch { /* не JSON */ }
@@ -463,7 +498,7 @@ export function makeBrowserBridge(httpBase: string): RendererBrowserBridge {
     screenshot: (conversationId, req) => post(REST.browserSessionScreenshot(conversationId), req),
     stop: async (conversationId) => {
       const t = getToken()
-      await fetch(httpBase + REST.browserSession(conversationId), { method: 'DELETE', headers: t ? { authorization: `Bearer ${t}` } : {} })
+      await credentialedFetch(httpBase + REST.browserSession(conversationId), { method: 'DELETE', headers: t ? { authorization: `Bearer ${t}` } : {} })
     }
   }
 }
@@ -473,7 +508,7 @@ function makeFilesBridge(httpBase: string): RendererFilesBridge {
   return {
     read: async (path) => {
       const t = getToken()
-      const res = await fetch(
+      const res = await credentialedFetch(
         `${httpBase}${REST.serverFile}?path=${encodeURIComponent(path)}`,
         { headers: t ? { authorization: `Bearer ${t}` } : {} }
       )
@@ -505,27 +540,27 @@ export function makeFsBridge(httpBase: string): RendererFsBridge {
   const q = (agentId: string, path: string, projectId?: string): string =>
     `${httpBase}${REST.agentFs(agentId)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`
   return {
-    list: (id, path, projectId) => fetch(q(id, path, projectId), { headers: authHeaders() }).then(asResult),
+    list: (id, path, projectId) => credentialedFetch(q(id, path, projectId), { headers: authHeaders() }).then(asResult),
     read: (id, path, projectId) =>
-      fetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, {
+      credentialedFetch(`${httpBase}${REST.agentFsFile(id)}?path=${encodeURIComponent(path)}${projectQuery(projectId)}`, {
         headers: authHeaders()
       }).then(asResult),
     write: (id, path, dataBase64, projectId) =>
-      fetch(`${httpBase}${REST.agentFsFile(id)}${projectOnlyQuery(projectId)}`, {
+      credentialedFetch(`${httpBase}${REST.agentFsFile(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path, dataBase64 })
       }).then(asResult),
     remove: (id, path, projectId) =>
-      fetch(q(id, path, projectId), { method: 'DELETE', headers: authHeaders() }).then(asResult),
+      credentialedFetch(q(id, path, projectId), { method: 'DELETE', headers: authHeaders() }).then(asResult),
     trash: (id, path, projectId) =>
-      fetch(`${httpBase}${REST.agentFsTrash(id)}${projectOnlyQuery(projectId)}`, {
+      credentialedFetch(`${httpBase}${REST.agentFsTrash(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path })
       }).then(asResult),
     copyTo: async (id, path, targetAgentId, targetDir, projectId) => {
-      const res = await fetch(`${httpBase}${REST.agentFsCopyTo(id)}${projectOnlyQuery(projectId)}`, {
+      const res = await credentialedFetch(`${httpBase}${REST.agentFsCopyTo(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path, targetAgentId, ...(targetDir ? { targetDir } : {}) })
@@ -537,19 +572,19 @@ export function makeFsBridge(httpBase: string): RendererFsBridge {
       return res.json() as Promise<FsCopyResult>
     },
     rename: (id, from, to, projectId) =>
-      fetch(`${httpBase}${REST.agentFsRename(id)}${projectOnlyQuery(projectId)}`, {
+      credentialedFetch(`${httpBase}${REST.agentFsRename(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ from, to })
       }).then(asResult),
     mkdir: (id, path, projectId) =>
-      fetch(`${httpBase}${REST.agentFsMkdir(id)}${projectOnlyQuery(projectId)}`, {
+      credentialedFetch(`${httpBase}${REST.agentFsMkdir(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path })
       }).then(asResult),
     exec: async (id, command, signal, projectId) => {
-      const res = await fetch(`${httpBase}${REST.agentExec(id)}${projectOnlyQuery(projectId)}`, {
+      const res = await credentialedFetch(`${httpBase}${REST.agentExec(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ command }),
@@ -598,7 +633,7 @@ async function migrateLegacyToken(httpBase: string): Promise<void> {
   const legacy = legacyToken()
   if (!legacy) return
   try {
-    const res = await fetch(httpBase + REST.sessionCookie, { method: 'POST', headers: { authorization: `Bearer ${legacy}` } })
+    const res = await credentialedFetch(httpBase + REST.sessionCookie, { method: 'POST', headers: { authorization: `Bearer ${legacy}` } })
     if (res.ok || res.status === 401) dropLegacyToken()
     if (res.ok) ws?.reconnect()
   } catch { /* сеть недоступна — попробуем при следующей загрузке */ }

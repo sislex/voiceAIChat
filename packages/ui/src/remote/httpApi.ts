@@ -32,7 +32,7 @@ import type {
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
-import { authHeaders } from './session'
+import { authHeaders, credentialedFetch } from './session'
 import { notifyUnauthorized } from './session'
 import { serverErrorMessage } from '@shared/serverErrors'
 
@@ -49,7 +49,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
     const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
-    const res = await fetch(httpBase + path, { ...init, headers })
+    const res = await credentialedFetch(httpBase + path, { ...init, headers })
     const text = await res.text()
     if (res.status === 401) notifyUnauthorized()
     if (!res.ok) {
@@ -129,7 +129,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'imgstudio:read': async ({ conversationId, path }) => {
       // Байты картинки — через авторизованный fetch: <img src> без токена
       // получил бы 401, поэтому панель строит blob-URL сама.
-      const response = await fetch(`${httpBase}/api/image-studio/${encodeURIComponent(conversationId)}/file?path=${encodeURIComponent(path)}`, { headers: authHeaders() })
+      const response = await credentialedFetch(`${httpBase}/api/image-studio/${encodeURIComponent(conversationId)}/file?path=${encodeURIComponent(path)}`, { headers: authHeaders() })
       if (!response.ok) throw new Error(await response.text().catch(() => 'файл не найден'))
       const buffer = await response.arrayBuffer()
       let binary = ''
@@ -213,7 +213,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:get': async ({ id, scope, projectId }) => {
       const q = new URLSearchParams({ scope: scope ?? 'chat' })
       if (projectId) q.set('projectId', projectId)
-      const res = await fetch(httpBase + `${REST.conversation(id)}?${q.toString()}`, {
+      const res = await credentialedFetch(httpBase + `${REST.conversation(id)}?${q.toString()}`, {
         headers: authHeaders()
       })
       if (res.status === 404) return null
@@ -492,7 +492,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projectTypes:unpublish': ({ id }) => req(REST.projectTypeUnpublish(id), { method: 'POST', body: '{}' }),
     'projects:create': (b) => req(REST.projects, { method: 'POST', body: JSON.stringify(b) }),
     'projects:get': async ({ id }) => {
-      const res = await fetch(httpBase + REST.project(id), {
+      const res = await credentialedFetch(httpBase + REST.project(id), {
         headers: authHeaders()
       })
       if (res.status === 404) return null
@@ -661,7 +661,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'tasks:dismissPreparationNotification': ({ questionId }) =>
       req(`/api/task-preparation/notifications/${encodeURIComponent(questionId)}/dismiss`, { method: 'POST' }),
     'tasks:exportPreparationRun': async ({ runId, format }) => {
-      const response = await fetch(httpBase + `/api/task-preparation/runs/${encodeURIComponent(runId)}/export/${format}`, {
+      const response = await credentialedFetch(httpBase + `/api/task-preparation/runs/${encodeURIComponent(runId)}/export/${format}`, {
         headers: authHeaders()
       })
       if (!response.ok) throw new Error(`Экспорт подготовки → ${response.status}`)
@@ -698,7 +698,7 @@ export function createKbUsageRest(httpBase: string): RendererKbRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
-    const res = await fetch(httpBase + path, { ...init, headers })
+    const res = await credentialedFetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     return (await res.json()) as T
   }
@@ -713,7 +713,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
-    const res = await fetch(httpBase + path, { ...init, headers })
+    const res = await credentialedFetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     const text = await res.text()
     return (text ? JSON.parse(text) : undefined) as T

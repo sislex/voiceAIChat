@@ -11,7 +11,7 @@ import { createHttpApi } from './httpApi'
 import { createQaRest } from './qaBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { base64ToArrayBuffer } from './decode'
-import { getCsrf } from './session'
+import { getCsrf, setCsrf, setToken } from './session'
 import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
 
 class FakeWebSocket {
@@ -329,8 +329,67 @@ describe('base64ToArrayBuffer', () => {
   })
 })
 
+describe('Electron session transport', () => {
+  const ws = () => ({ reconnect: vi.fn() }) as unknown as WsClient
+
+  // @testCase TC-03
+  // @testCase TC-09
+  it('передаёт credentials include для login, восстановления и cookie-мутации с CSRF', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init })
+      if (url.endsWith('/login')) return { ok: true, status: 200, json: async () => ({ token: 'bearer', csrf: 'csrf-1', user: { name: 'ann', role: 'developer' } }) }
+      if (url.endsWith('/me')) return { ok: true, status: 200, json: async () => ({ user: { name: 'ann', role: 'developer' }, csrf: 'csrf-1' }) }
+      return { ok: true, status: 200, json: async () => ({}) }
+    })
+    const bridge = makeSessionBridge('https://chat.example', ws())
+    await bridge.login({ name: 'ann', password: 'secret' })
+    await bridge.me()
+    await bridge.securityNoticesSeen!()
+    expect(calls.every((call) => call.init?.credentials === 'include')).toBe(true)
+    expect(calls.at(-1)?.init?.headers).toMatchObject({ authorization: 'Bearer bearer', 'x-vc-csrf': 'csrf-1' })
+  })
+
+  // @testCase TC-05
+  it('отличает rejected fetch от ошибки учётных данных', async () => {
+    ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    await expect(makeSessionBridge('https://chat.example', ws()).login({ name: 'ann', password: 'bad' }))
+      .rejects.toThrow('Сервер недоступен или запрос заблокирован сетью/CORS')
+  })
+
+  // @testCase TC-06
+  it('блокирует удалённый HTTP до fetch, но разрешает HTTPS и валидный loopback HTTP', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ error: 'bad' }) })
+    ;(globalThis as unknown as { fetch: unknown }).fetch = fetchMock
+    for (const base of ['http://chat.example:8787', 'http://192.168.1.20:8787', 'http://2130706433:8787', 'ftp://localhost']) {
+      await expect(makeSessionBridge(base, ws()).login({ name: 'ann', password: 'secret' })).rejects.toThrow()
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+    for (const base of ['https://chat.example', 'http://localhost:5173', 'http://127.0.0.2:5173', 'http://[::1]:5173']) {
+      await expect(makeSessionBridge(base, ws()).login({ name: 'ann', password: 'secret' })).rejects.toThrow('bad')
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  // @testCase TC-07
+  it('после restart восстанавливает cookie-сессию, CSRF и WebSocket без сохранённого Bearer', async () => {
+    setToken(null)
+    setCsrf(null)
+    ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ user: { name: 'ann', role: 'developer' }, csrf: 'restored-csrf' })
+    }))
+    const socket = ws()
+    const user = await makeSessionBridge('https://chat.example', socket).me()
+    expect(user).toMatchObject({ name: 'ann' })
+    expect(getCsrf()).toBe('restored-csrf')
+    expect(socket.reconnect).toHaveBeenCalledOnce()
+  })
+})
+
 describe('session bridge logout', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => { localStorage.clear(); setCsrf(null) })
 
   it('вызывает server logout с Bearer и удаляет локальный токен только после успеха', async () => {
     localStorage.setItem('vc.session.token', 'session-token')
@@ -340,10 +399,11 @@ describe('session bridge logout', () => {
 
     await makeSessionBridge('http://srv', ws).logout()
 
-    expect(fetchMock).toHaveBeenCalledWith('http://srv/api/session/logout', {
+    expect(fetchMock).toHaveBeenCalledWith('http://srv/api/session/logout', expect.objectContaining({
       method: 'POST',
+      credentials: 'include',
       headers: { authorization: 'Bearer session-token' }
-    })
+    }))
     expect(localStorage.getItem('vc.session.token')).toBeNull()
     expect(ws.reconnect).toHaveBeenCalledOnce()
   })
