@@ -11,6 +11,7 @@
 
 import type { SttSegmentWire, UploadInfo } from '@shared/ipc'
 import type { TaskChatBadge, TaskChatContext } from '@shared/projects'
+import { CONVERSATIONS_PAGE } from '@shared/projects'
 import type { ActiveTurn, QueuedTurn, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { KbStatus, KbUsageQuery } from '@shared/kb'
@@ -167,6 +168,21 @@ export interface ChatState {
   imageStudioConversations: Conversation[]
   conversationsStatus: LoadStatus
   conversationsError: string | null
+  /**
+   * Догрузка списка при прокрутке: сайдбар показывает последние
+   * `CONVERSATIONS_PAGE` бесед и добавляет по столько же, когда доскроллили до
+   * конца. Раньше он получал всю историю разом — на боевом аккаунте это сотни
+   * записей на каждый вход.
+   */
+  moreStatus: LoadStatus
+  /** Есть ли ещё беседы за уже загруженными. */
+  hasMoreConversations: boolean
+  /**
+   * Готовность списка по разделам. Списки Reader, Make и студии картинок
+   * грузятся при входе в свой раздел, а не на старте: обычному чату они не
+   * нужны, а раньше их тянули все шесть сразу.
+   */
+  scopeStatus: Record<SectionScope, LoadStatus>
   searchQuery: string
   searchScope: SearchScope
   messageSearch: MessageSearchState
@@ -220,9 +236,22 @@ export interface ChatState {
   kbStatus: KbStatus | null
 }
 
+/** Разделы со своим списком бесед: грузятся при входе, а не на старте. */
+export type SectionScope = 'web-reader' | 'playwright-reader' | 'console' | 'make' | 'images'
+
 export interface ChatActions {
   /** Загрузка индекса разговоров (защищённый bootstrap). */
   loadConversationIndex(): Promise<Conversation[]>
+  /**
+   * Индекс разговоров по требованию: грузит его один раз и только когда список
+   * чатов кому-то понадобился. На канбане чаты не показываются, а их загрузка —
+   * шесть запросов плюс метки, поэтому старт доски их больше не ждёт.
+   */
+  ensureConversationIndex(): Promise<Conversation[]>
+  /** Догрузить следующую порцию бесед (прокрутка списка до конца). */
+  loadMoreConversations(): Promise<void>
+  /** Загрузить список раздела (Reader, Make, студия картинок) — один раз за сессию. */
+  ensureSectionConversations(scope: SectionScope): Promise<void>
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
   scheduleConversationsRefresh(): void
   retryConversations(): Promise<void>
@@ -355,6 +384,9 @@ function initialState(selection: { selectedIds: string[]; knownIds: string[]; in
     imageStudioConversations: [],
     conversationsStatus: 'loading',
     conversationsError: null,
+    moreStatus: 'idle',
+    hasMoreConversations: true,
+    scopeStatus: { 'web-reader': 'idle', 'playwright-reader': 'idle', console: 'idle', make: 'idle', images: 'idle' },
     searchQuery: '',
     searchScope: 'chats',
     messageSearch: { ...EMPTY_MESSAGE_SEARCH },
@@ -517,7 +549,35 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     return all.filter((item) => item.projectId != null && selected.has(item.projectId))
   }
 
+  /**
+   * Параллельные запросы списка схлопываем: на старте его просили и bootstrap, и
+   * синхронизация проектов сайдбара — сервер отдавал один и тот же ответ трижды.
+   * Ключ учитывает поиск и показ завершённых: с разными параметрами это разные
+   * списки, и склеивать их нельзя.
+   */
+  let conversationsFlight: { key: string; promise: Promise<void> } | null = null
+
+  /** Индекс грузится один раз: повторные входы в список не ходят на сервер снова. */
+  let indexLoaded = false
+  /** Курсор следующей страницы списка — последняя полученная беседа. */
+  let moreCursor: { updatedAt: number; id: string } | null = null
+  let indexFlight: Promise<Conversation[]> | null = null
+
   async function refreshConversations(
+    options: { keepActiveListed?: boolean } = {}
+  ): Promise<void> {
+    // Пока индекс никто не открывал (человек на доске), обновлять нечего:
+    // события доски исправно звали refresh, и список чатов вместе с метками
+    // грузился там, где его не показывают.
+    if (!indexLoaded && !indexFlight) return
+    const key = `${getState().searchQuery.trim()}|${getState().showDoneTaskChats}|${options.keepActiveListed === true}`
+    if (conversationsFlight?.key === key) return conversationsFlight.promise
+    const promise = runRefreshConversations(options)
+    conversationsFlight = { key, promise }
+    try { await promise } finally { if (conversationsFlight?.promise === promise) conversationsFlight = null }
+  }
+
+  async function runRefreshConversations(
     { keepActiveListed = false }: { keepActiveListed?: boolean } = {}
   ): Promise<void> {
     const seq = ++conversationsSeq
@@ -525,10 +585,19 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ conversationsStatus: 'loading', conversationsError: null })
     try {
       const includeCompleted = getState().showDoneTaskChats
+      // Поиск ищет по всей истории; обычное обновление перечитывает ровно
+      // столько бесед, сколько уже показано, — иначе долистанный список
+      // схлопнулся бы до первой страницы от любого события доски.
+      const shown = Math.max(CONVERSATIONS_PAGE, getState().conversations.length)
       const all = q
         ? await client['conversations:search']({ query: q, scope: 'chat', includeCompleted })
-        : await client['conversations:list']({ scope: 'chat', includeCompleted })
+        : await client['conversations:list']({ scope: 'chat', includeCompleted, limit: shown })
       if (core.disposed() || seq !== conversationsSeq) return
+      if (!q) {
+        // Перечитали ровно показанное — курсор обязан встать на его конец.
+        const oldest = all[all.length - 1]
+        moreCursor = oldest ? { updatedAt: oldest.updatedAt, id: oldest.id } : null
+      }
       if (keepActiveListed) {
         const activeId = getState().activeId
         const activeHidden = activeId != null && !q && !all.some((c) => c.id === activeId)
@@ -562,6 +631,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
    * перестал бы обновляться по событиям.
    */
   function scheduleConversationsRefresh(): void {
+    if (!indexLoaded && !indexFlight) return // список не показан — обновлять нечего
     if (conversationsRefreshTimer) return // окно уже открыто — повод склеится с прошлым
     conversationsRefreshTimer = setTimeout(() => {
       conversationsRefreshTimer = null
@@ -572,7 +642,131 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }, CONVERSATIONS_REFRESH_DEBOUNCE_MS)
   }
 
+  async function runLoadConversationIndex(): Promise<Conversation[]> {
+    setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
+    try {
+      const includeCompleted = getState().showDoneTaskChats
+      // Первая страница — последние `CONVERSATIONS_PAGE` бесед: ровно то, что
+      // сайдбар покажет сразу, остальное добавит прокрутка. Списки
+      // Reader/Make/картинок сюда не входят — их берёт свой экран.
+      const conversations = await client['conversations:list']({ scope: 'chat', includeCompleted, limit: CONVERSATIONS_PAGE })
+      const oldest = conversations[conversations.length - 1]
+      moreCursor = oldest ? { updatedAt: oldest.updatedAt, id: oldest.id } : null
+      setState({
+        conversations: sortConversations(filterBySidebarProjects(conversations)),
+        moreStatus: 'idle',
+        hasMoreConversations: conversations.length >= CONVERSATIONS_PAGE,
+        conversationsStatus: 'ready',
+        conversationsError: null
+      })
+      indexLoaded = true
+      void loadTaskChatBadges()
+      return getState().conversations
+    } catch (err) {
+      // Иначе сайдбар остался бы со скелетоном навсегда.
+      setState({
+        loadingMessages: false,
+        conversationsStatus: 'error',
+        conversationsError: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  }
+
+  /**
+   * Следующая страница списка: её просит прокрутка сайдбара до конца. Курсор —
+   * самая старая из уже загруженных бесед (пара «время + id»); страница короче
+   * `CONVERSATIONS_PAGE` означает, что дальше ничего нет.
+   */
+  async function loadMoreConversations(): Promise<void> {
+    if (getState().moreStatus === 'loading' || !getState().hasMoreConversations) return
+    setState({ moreStatus: 'loading' })
+    try {
+      const page = await client['conversations:list']({
+        scope: 'chat',
+        includeCompleted: getState().showDoneTaskChats,
+        ...(moreCursor ? { before: moreCursor } : {}),
+        limit: CONVERSATIONS_PAGE
+      })
+      if (core.disposed()) return
+      // Курсор двигаем по последней **полученной** беседе, а не по видимому
+      // списку: фильтр проектов может отсеять страницу целиком, и запрос с
+      // прежним курсором крутился бы по кругу.
+      const last = page[page.length - 1]
+      if (last) moreCursor = { updatedAt: last.updatedAt, id: last.id }
+      const known = new Set(getState().conversations.map((c) => c.id))
+      const added = filterBySidebarProjects(page).filter((c) => !known.has(c.id))
+      setState({
+        conversations: sortConversations([...getState().conversations, ...added]),
+        moreStatus: 'ready',
+        hasMoreConversations: page.length >= CONVERSATIONS_PAGE
+      })
+    } catch {
+      // Уже показанный список остаётся на месте; сайдбар предложит повтор.
+      if (!core.disposed()) setState({ moreStatus: 'error' })
+    }
+  }
+
+  /** Свежие сверху — тот же порядок, что у сервера. */
+  function sortConversations(items: Conversation[]): Conversation[] {
+    return [...items].sort((a, b) => b.updatedAt - a.updatedAt || (a.id < b.id ? 1 : -1))
+  }
+
+  /** Куда стор кладёт список раздела: поле состояния на каждый scope. */
+  const SECTION_FIELDS = {
+    'web-reader': 'readerConversations',
+    'playwright-reader': 'playwrightReaderConversations',
+    console: 'consoleReaderConversations',
+    make: 'makeConversations',
+    images: 'imageStudioConversations'
+  } as const
+
+  const sectionFlight = new Map<SectionScope, Promise<void>>()
+
+  /**
+   * Список раздела по требованию: Reader, Make и студия картинок нужны только
+   * внутри своих экранов. Раньше все пять ехали вместе с индексом чатов на
+   * каждом старте — пять лишних запросов ради данных, которые чаще всего не
+   * открывают.
+   */
+  async function ensureSectionConversations(scope: SectionScope): Promise<void> {
+    if (getState().scopeStatus[scope] === 'ready') return
+    const inFlight = sectionFlight.get(scope)
+    if (inFlight) return inFlight
+    const flight = (async () => {
+      setState({ scopeStatus: { ...getState().scopeStatus, [scope]: 'loading' } })
+      try {
+        const items = await client['conversations:list']({ scope, includeCompleted: getState().showDoneTaskChats })
+        if (core.disposed()) return
+        setState({ [SECTION_FIELDS[scope]]: items, scopeStatus: { ...getState().scopeStatus, [scope]: 'ready' } } as unknown as Partial<ChatState>)
+      } catch {
+        // Экран раздела сам покажет пустое состояние и даст создать чат.
+        if (!core.disposed()) setState({ scopeStatus: { ...getState().scopeStatus, [scope]: 'error' } })
+      }
+    })()
+    sectionFlight.set(scope, flight)
+    try { await flight } finally { if (sectionFlight.get(scope) === flight) sectionFlight.delete(scope) }
+  }
+
+  async function ensureConversationIndex(): Promise<Conversation[]> {
+    if (indexLoaded) return getState().conversations
+    if (indexFlight) return indexFlight
+    const flight = runLoadConversationIndex()
+    indexFlight = flight
+    try { return await flight } finally { if (indexFlight === flight) indexFlight = null }
+  }
+
+  /** Бейджи тянутся следом за каждым списком — параллельные вызовы схлопываем. */
+  let badgesFlight: Promise<void> | null = null
+
   async function loadTaskChatBadges(): Promise<void> {
+    if (badgesFlight) return badgesFlight
+    const flight = runLoadTaskChatBadges()
+    badgesFlight = flight
+    try { await flight } finally { if (badgesFlight === flight) badgesFlight = null }
+  }
+
+  async function runLoadTaskChatBadges(): Promise<void> {
     try {
       const badges = await client['conversations:taskChats']()
       if (core.disposed()) return
@@ -1557,40 +1751,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     subscribe: core.subscribe,
     dispose: core.dispose,
     actions: {
-      async loadConversationIndex() {
-        setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
-        try {
-          const includeCompleted = getState().showDoneTaskChats
-          const [conversations, readerConversations, playwrightReaderConversations, consoleReaderConversations, makeConversations, imageStudioConversations] = await Promise.all([
-            client['conversations:list']({ scope: 'chat', includeCompleted }),
-            client['conversations:list']({ scope: 'web-reader', includeCompleted }),
-            client['conversations:list']({ scope: 'playwright-reader', includeCompleted }),
-            client['conversations:list']({ scope: 'console', includeCompleted }),
-            client['conversations:list']({ scope: 'make', includeCompleted }),
-            client['conversations:list']({ scope: 'images', includeCompleted })
-          ])
-          setState({
-            conversations: filterBySidebarProjects(conversations),
-            readerConversations,
-            playwrightReaderConversations,
-            consoleReaderConversations,
-            makeConversations,
-            imageStudioConversations,
-            conversationsStatus: 'ready',
-            conversationsError: null
-          })
-          void loadTaskChatBadges()
-          return conversations
-        } catch (err) {
-          // Иначе сайдбар остался бы со скелетоном навсегда.
-          setState({
-            loadingMessages: false,
-            conversationsStatus: 'error',
-            conversationsError: err instanceof Error ? err.message : String(err)
-          })
-          throw err
-        }
-      },
+      loadConversationIndex: runLoadConversationIndex,
+      ensureConversationIndex,
+      loadMoreConversations,
+      ensureSectionConversations,
       refreshConversations,
       scheduleConversationsRefresh,
       async retryConversations() {
@@ -2053,6 +2217,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         if (searchTimer) clearTimeout(searchTimer)
         conversationsRefreshTimer = null
         searchTimer = null
+        // Вход другим пользователем: чужой индекс не должен считаться загруженным.
+        indexLoaded = false
+        indexFlight = null
+        moreCursor = null
         selectToken++
         searchSeq++
         pendingDraftKey = null

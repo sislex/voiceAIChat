@@ -30,7 +30,7 @@ export function ImageStudioShareBar({
       variant="ghost"
       title={views !== null ? `Просмотров всего: ${views}${views7 !== null ? ` · за 7 дней: ${views7}` : ''}` : 'Скопировать ссылку'}
       onClick={onCopyLink}
-    >Ссылка на галерею{views ? ` · ${views} 👁` : ''}</Button>
+    >Ссылка на галерею{views ? ` · ${views} 👁${views7 ? ` (${views7} за неделю)` : ''}` : ''}</Button>
     <Button size="sm" variant="ghost" onClick={onOpenPage}>Открыть страницу</Button>
     <Button size="sm" variant="ghost" title={passwordProtected ? 'Пароль установлен — изменить или снять' : 'Закрыть галерею паролем для зрителей'} onClick={onPassword}>
       {passwordProtected ? 'Пароль 🔒' : 'Пароль…'}

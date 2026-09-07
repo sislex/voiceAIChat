@@ -431,29 +431,38 @@ describe('Sidebar — недельные секции', () => {
 
     expect(Array.from(screen.getByRole('list', { name: 'Беседы' }).querySelectorAll('.ctitle'))
       .map((button) => button.textContent)).toEqual(['Свежий первый', 'На границе'])
-    expect(screen.queryByRole('button', { name: 'Старый первый' })).not.toBeInTheDocument()
 
-    const toggle = screen.getByRole('button', { name: 'Более старые 2' })
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle).toHaveAttribute('aria-controls', 'sidebar-older-conversations')
-    fireEvent.click(toggle)
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(Array.from(screen.getByRole('list', { name: 'Более старые беседы: 2' }).querySelectorAll('.ctitle'))
+    // Заголовки недель — разделители внутри одного списка: старые беседы видны
+    // сразу, ничего раскрывать не нужно (список листают, а не открывают).
+    expect(Array.from(screen.getByRole('list', { name: 'Более старые беседы' }).querySelectorAll('.ctitle'))
       .map((button) => button.textContent)).toEqual(['Старый первый', 'Старый второй'])
   })
 
-  it('не показывает пустые секции и сбрасывает раскрытие после remount', () => {
-    const conversations = [dated('c1', 'Только старый', monday - 1)]
-    const first = setup({ now: monday, conversations })
+  it('не показывает пустые секции', () => {
+    setup({ now: monday, conversations: [dated('c1', 'Только старый', monday - 1)] })
     expect(screen.queryByText('На этой неделе')).not.toBeInTheDocument()
-    const toggle = screen.getByRole('button', { name: 'Более старые 1' })
-    fireEvent.click(toggle)
+    expect(screen.getByText('Более старые')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Только старый' })).toBeInTheDocument()
+  })
 
-    first.unmount()
-    setup({ now: monday, conversations })
-    expect(screen.getByRole('button', { name: 'Более старые 1' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('button', { name: 'Только старый' })).not.toBeInTheDocument()
+  it('прокрутка до конца просит следующую страницу, а короткий список — сразу', () => {
+    const onLoadMore = vi.fn()
+    setup({ now: monday, conversations: [dated('c1', 'Единственный', monday)], hasMoreConversations: true, onLoadMore })
+    // Двадцать бесед помещаются на широком экране целиком: без этого правила
+    // автоподгрузка не сработала бы вовсе — прокручивать нечего.
+    expect(onLoadMore).toHaveBeenCalled()
+
+    onLoadMore.mockClear()
+    const list = screen.getByTestId('conversations-list')
+    Object.defineProperty(list, 'scrollHeight', { value: 1000, configurable: true })
+    Object.defineProperty(list, 'clientHeight', { value: 300, configurable: true })
+    list.scrollTop = 100
+    fireEvent.scroll(list)
+    expect(onLoadMore).not.toHaveBeenCalled()
+
+    list.scrollTop = 600
+    fireEvent.scroll(list)
+    expect(onLoadMore).toHaveBeenCalled()
   })
 
   it('поиск по сообщениям сохраняет несекционное представление', () => {

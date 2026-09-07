@@ -16,6 +16,36 @@ describe('CiTaskSettings', () => {
     expect(screen.queryByText(/InProgress/)).not.toBeInTheDocument()
   })
 
+  // Карточка задачи рендерит три экземпляра компонента, и раньше каждый грузил
+  // все четыре источника: четыре запроса превращались в двенадцать.
+  it('секция запрашивает только свои данные', async () => {
+    const ci = createFakeCi()
+    window.ci = ci
+    const commands = vi.spyOn(ci, 'listCommands')
+    const taskCi = vi.spyOn(ci, 'getTaskCi')
+    const llm = vi.spyOn(ci, 'getTaskCiLlm')
+    const machines = vi.spyOn(ci, 'getTaskMachines')
+
+    const view = render(<CiTaskSettings section="machine" projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(machines).toHaveBeenCalledTimes(1))
+    expect(commands).not.toHaveBeenCalled()
+    expect(taskCi).not.toHaveBeenCalled()
+    expect(llm).not.toHaveBeenCalled()
+    view.unmount()
+
+    const model = render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(llm).toHaveBeenCalledTimes(1))
+    expect(machines).toHaveBeenCalledTimes(1)
+    expect(commands).not.toHaveBeenCalled()
+    model.unmount()
+
+    render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(commands).toHaveBeenCalledTimes(1))
+    expect(taskCi).toHaveBeenCalledTimes(1)
+    expect(llm).toHaveBeenCalledTimes(1)
+    expect(machines).toHaveBeenCalledTimes(1)
+  })
+
   it('показывает все этапы отмеченными, сохраняет независимый выбор и восстанавливает его', async () => {
     const { unmount } = render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
     const model = await screen.findByRole('checkbox', { name: 'Работа модели' })

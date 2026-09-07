@@ -25,7 +25,15 @@ CREATE TABLE IF NOT EXISTS conversations (
   scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')),
   -- Режим применения мутаций канбан-ассистентом: auto (сразу) или confirm.
   assistant_autonomy TEXT,
-  status            TEXT NOT NULL DEFAULT 'developing'
+  status            TEXT NOT NULL DEFAULT 'developing',
+  -- Кэш стоимости беседы: пересчёт стоит скана всех её AI-сообщений с разбором
+  -- JSON-метаданных, а список сайдбара показывает итог в каждой строке.
+  -- cost_dirty ставится при любой записи сообщений, cost_prices_stamp ловит
+  -- смену прайса моделей.
+  cost_usd          REAL,
+  cost_status       TEXT,
+  cost_prices_stamp INTEGER,
+  cost_dirty        INTEGER NOT NULL DEFAULT 1
 );
 
 
@@ -724,22 +732,38 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_task_designs_unique
 CREATE INDEX IF NOT EXISTS idx_task_designs_source
   ON task_designs(conversation_id, path);
 
+-- Неизменяемые ручные циклы доработки. JSON-поля являются снимком пользовательского
+-- запроса; upload metadata копируется отдельно, чтобы история переживала очистку файла.
 CREATE TABLE IF NOT EXISTS task_rework_cycles (
   id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
   task_id TEXT NOT NULL,
   sequence INTEGER NOT NULL,
-  idempotency_key TEXT NOT NULL,
   description TEXT NOT NULL,
   criteria_json TEXT NOT NULL DEFAULT '[]',
   make_sources_json TEXT NOT NULL DEFAULT '[]',
+  implemented_result TEXT NOT NULL DEFAULT '',
   created_by TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   preparation_run_id TEXT,
-  UNIQUE(task_id, sequence),
-  UNIQUE(task_id, idempotency_key),
+  idempotency_key TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_task_rework_cycles_task ON task_rework_cycles(task_id, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_rework_cycles_sequence ON task_rework_cycles(task_id, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_rework_cycles_idempotency ON task_rework_cycles(task_id, idempotency_key);
+
+CREATE TABLE IF NOT EXISTS task_rework_attachments (
+  id TEXT PRIMARY KEY,
+  cycle_id TEXT NOT NULL,
+  upload_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  FOREIGN KEY (cycle_id) REFERENCES task_rework_cycles(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_rework_attachments_cycle ON task_rework_attachments(cycle_id, position);
 
 CREATE TABLE IF NOT EXISTS task_attachments (
   id TEXT PRIMARY KEY,
@@ -882,6 +906,9 @@ CREATE TABLE IF NOT EXISTS ci_workspaces (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_ci_workspaces_project ON ci_workspaces(project_id, state);
+-- Доска берёт последнюю отправленную рабочую копию задачи (ветка и SHA для merge).
+-- Без индекса по task_id каждая карточка вызывала полный скан таблицы.
+CREATE INDEX IF NOT EXISTS idx_ci_workspaces_task ON ci_workspaces(task_id, pushed, created_at DESC);
 
 -- Результаты гейта по коммиту: пост-development стадии выполняются на неизменном
 -- коде development-рана, поэтому один и тот же набор команд не гоняется дважды.
@@ -1807,6 +1834,9 @@ CREATE TABLE IF NOT EXISTS qa_sessions (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_sessions_one_active ON qa_sessions(task_id) WHERE status = 'active';
+-- Частичный индекс выше отвечает только за активную сессию. Сводка состояния
+-- задачи ищет последнюю сессию любого статуса — ей нужен полный индекс.
+CREATE INDEX IF NOT EXISTS idx_qa_sessions_task ON qa_sessions(task_id, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS qa_criterion_results (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL, criterion_id TEXT NOT NULL, criterion_version INTEGER NOT NULL,

@@ -28,9 +28,9 @@ let generated: Array<{ prompt: string; hasSource: boolean }>
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'img-routes-'))
   db = new VoiceChatDb(':memory:')
-  db.createUser(U, '', 'admin')
+  db.identity.createUser(U, '', 'admin')
   store = new ImageStudioStore(dir)
-  convId = db.createConversation(U, 'Студия', 'images')!.id
+  convId = db.chat.createConversation(U, 'Студия', 'images')!.id
   generated = []
   app = Fastify()
   app.decorateRequest('user', null)
@@ -86,7 +86,7 @@ describe('студия картинок: роуты', () => {
 
   it('пустой промпт — 400 словами; обычный чат — 404', async () => {
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: '  ' } })).statusCode).toBe(400)
-    const plain = db.createConversation(U, 'Обычный')!.id
+    const plain = db.chat.createConversation(U, 'Обычный')!.id
     expect((await app.inject({ method: 'GET', url: `/api/image-studio/${plain}/files` })).statusCode).toBe(404)
   })
 })
@@ -186,7 +186,9 @@ describe('студия картинок: публикация галереи', (
     expect(file.statusCode).toBe(200)
     expect(file.headers['content-type']).toMatch(/image\/png/)
 
-    // Статистика просмотров дошла до владельца.
+    // Статистика просмотров дошла до владельца. Счётчик страницы фоновый —
+    // ждём очередь публикации, иначе на медленной машине читаем ноль.
+    await store.publishSettled(convId)
     const info = (await app.inject({ method: 'GET', url: `/api/image-studio/${convId}/publication` })).json() as { views: number }
     expect(info.views).toBeGreaterThanOrEqual(1)
 
@@ -196,7 +198,7 @@ describe('студия картинок: публикация галереи', (
   })
 
   it('чужой или не-студийный чат публиковать нельзя', async () => {
-    const plain = db.createConversation(U, 'Обычный')
+    const plain = db.chat.createConversation(U, 'Обычный')
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${plain.id}/publish` })).statusCode).toBe(404)
   })
 
@@ -300,16 +302,16 @@ describe('студия картинок: референсы генерации',
 
 describe('студия картинок: автоназвание чата', () => {
   it('первый промпт переименовывает дефолтные «Картинки N», своё имя не трогается', async () => {
-    const auto = db.createConversation(U, 'Картинки 3', 'images')
+    const auto = db.chat.createConversation(U, 'Картинки 3', 'images')
     await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'синий кит в облаках' } })
-    expect(db.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
+    expect(db.chat.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
     // Повторная генерация не перезатирает уже говорящее имя.
     await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'другое' } })
-    expect(db.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
+    expect(db.chat.getConversation(U, auto.id)?.title).toBe('Картинки: синий кит в облаках')
 
-    const named = db.createConversation(U, 'Мой альбом', 'images')
+    const named = db.chat.createConversation(U, 'Мой альбом', 'images')
     await app.inject({ method: 'POST', url: `/api/image-studio/${named.id}/generate`, payload: { prompt: 'кот' } })
-    expect(db.getConversation(U, named.id)?.title).toBe('Мой альбом')
+    expect(db.chat.getConversation(U, named.id)?.title).toBe('Мой альбом')
   })
 })
 
@@ -325,7 +327,7 @@ describe('студия картинок: происхождение клиент
 
 describe('студия картинок: перенос между чатами', () => {
   it('move уносит файл с метой, copy оставляет оригинал; чужой чат — 404', async () => {
-    const target = db.createConversation(U, 'Картинки 9', 'images')
+    const target = db.chat.createConversation(U, 'Картинки 9', 'images')
     await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
     await store.setMeta(convId, 'кот.png', { prompt: 'рыжий кот' })
 
@@ -342,7 +344,7 @@ describe('студия картинок: перенос между чатами'
     expect(await store.list(target.id)).toHaveLength(1)
     expect((await store.list(convId)).map((f) => f.path)).toContain('кот.png')
 
-    const plain = db.createConversation(U, 'Обычный')
+    const plain = db.chat.createConversation(U, 'Обычный')
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/transfer`, payload: { path: 'кот.png', to: plain.id } })).statusCode).toBe(404)
   })
 })
@@ -368,6 +370,89 @@ describe('студия картинок: OG-мета публичной стра
     const page = await app.inject({ method: 'GET', url: pub.url, headers: { host: 'studio.test' } })
     expect(page.body).toContain('property="og:title"')
     expect(page.body).toContain(`og:image" content="http://studio.test${pub.url}file?path=`)
+  })
+})
+
+describe('студия картинок: пароль публичной галереи', () => {
+  it('перебор пароля упирается в лимит попыток', async () => {
+    await store.writeBuffer(convId, 'тайна.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: 'верный' } })).json() as { url: string }
+    const token = pub.url.split('/').filter(Boolean)[1]!
+
+    // Десять промахов — это ещё редирект «пароль не подошёл».
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const miss = await app.inject({ method: 'POST', url: `/g/${token}/__auth__`, payload: { password: 'мимо' } })
+      expect(miss.statusCode).toBe(302)
+    }
+    // Одиннадцатая попытка — отказ со сроком ожидания: иначе пароль просто перебирают.
+    const blocked = await app.inject({ method: 'POST', url: `/g/${token}/__auth__`, payload: { password: 'мимо' } })
+    expect(blocked.statusCode).toBe(429)
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
+    expect(blocked.body).toContain('Слишком много попыток')
+
+    // Даже верный пароль ждёт окончания окна — счёт идёт по попыткам, а не по промахам.
+    expect((await app.inject({ method: 'POST', url: `/g/${token}/__auth__`, payload: { password: 'верный' } })).statusCode).toBe(429)
+  })
+})
+
+describe('студия картинок: публичная страница', () => {
+  it('от дюжины файлов появляется поиск по имени, вес галереи — в заголовке', async () => {
+    for (let index = 0; index < 12; index += 1) await store.writeBuffer(convId, `кадр-${index}.png`, PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url, headers: { host: 'studio.test' } })
+
+    // Сотню кадров иначе листают руками: фильтр работает на самой странице.
+    expect(page.body).toContain('role="search"')
+    expect(page.body).toContain('data-name="кадр-0.png"')
+    expect(page.body).toContain('12 файлов')
+    expect(page.body).toContain('<main class="grid">')
+  })
+
+  it('файл галереи отдаётся с ETag и отвечает 304 на повторный запрос', async () => {
+    await store.writeBuffer(convId, 'кадр.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const url = `${pub.url}file?path=${encodeURIComponent('кадр.png')}`
+
+    const first = await app.inject({ method: 'GET', url })
+    expect(first.statusCode).toBe(200)
+    const etag = first.headers.etag as string
+    expect(etag).toMatch(/^"[0-9a-f]{40}"$/)
+    // `no-store` заставлял качать всю галерею заново на каждой прокрутке.
+    expect(first.headers['cache-control']).toBe('private, no-cache')
+
+    // Прямую ссылку на кадр достаточно один раз опубликовать, чтобы он ушёл
+    // в поиск по картинкам мимо приватности токена.
+    expect(first.headers['x-robots-tag']).toBe('noindex, noimageindex')
+
+    const again = await app.inject({ method: 'GET', url, headers: { 'if-none-match': etag } })
+    expect(again.statusCode).toBe(304)
+    expect(again.body).toBe('')
+
+    // Файл заменили под тем же именем — ETag меняется, и браузер получит новое тело.
+    await store.writeBuffer(convId, 'кадр.png', Buffer.concat([PNG_BYTES, Buffer.from([0])]))
+    const changed = await app.inject({ method: 'GET', url, headers: { 'if-none-match': etag } })
+    expect(changed.statusCode).toBe(200)
+    expect(changed.headers.etag).not.toBe(etag)
+  })
+
+  it('поле пароля названо для читалки, а не только placeholder', async () => {
+    await store.writeBuffer(convId, 'тайна.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish`, payload: { password: 'слово' } })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url })
+
+    expect(page.statusCode).toBe(401)
+    // Placeholder читалка подписью не считает — поле оставалось безымянным.
+    expect(page.body).toContain('aria-label="Пароль галереи"')
+    expect(page.body).toContain('autocomplete="current-password"')
+  })
+
+  it('маленькой галерее поиск не нужен', async () => {
+    await store.writeBuffer(convId, 'один.png', PNG_BYTES)
+    const pub = (await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/publish` })).json() as { url: string }
+    const page = await app.inject({ method: 'GET', url: pub.url, headers: { host: 'studio.test' } })
+
+    expect(page.body).not.toContain('role="search"')
+    expect(page.body).toContain('1 файл')
   })
 })
 

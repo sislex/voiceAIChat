@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, type UIEvent as ReactUIEvent } from 'react'
 import {
   activeStatusLabel,
   chatModeLabel,
@@ -10,6 +10,7 @@ import {
 } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectInvitationForUser, ProjectSummary, TaskChatBadge } from '@shared/projects'
+import { localWeekStart } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { ciCardPulse, ciSummaryForTask } from '@shared/ci'
 import { TypeIcon } from './kanban/kanbanMeta'
@@ -62,14 +63,8 @@ function pluralMessages(n: number): string {
   return 'сообщений'
 }
 
-/** Локальный понедельник 00:00; календарная арифметика сохраняет DST. */
-export function localWeekStart(now: number): number {
-  const date = new Date(now)
-  const daysFromMonday = (date.getDay() + 6) % 7
-  date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() - daysFromMonday)
-  return date.getTime()
-}
+/** Граница недели — общая со стором чатов: он по ней грузит первую страницу. */
+export { localWeekStart }
 
 /** Что показывает панель результатов поиска по сообщениям (данные из стора). */
 export interface MessageSearchView {
@@ -201,6 +196,12 @@ export interface SidebarProps {
   conversations: Conversation[]
   /** Состояние загрузки списка: скелетон на первой загрузке, ошибка — с «Повторить». */
   conversationsStatus?: LoadStatus
+  /** Состояние догрузки секции «Более старые» и наличие следующей порции. */
+  /** Состояние догрузки следующей страницы и наличие непрочитанного хвоста. */
+  moreStatus?: LoadStatus
+  hasMoreConversations?: boolean
+  /** Догрузить следующую страницу бесед — зовётся прокруткой списка до конца. */
+  onLoadMore?: () => void
   /** Техническая деталь ошибки загрузки списка (под «Подробнее»). */
   conversationsError?: string | null
   /** Повторить загрузку списка бесед. */
@@ -329,6 +330,9 @@ export interface SidebarProps {
 export function Sidebar({
   conversations,
   conversationsStatus = 'ready',
+  moreStatus = 'idle',
+  hasMoreConversations = false,
+  onLoadMore,
   conversationsError = null,
   onRetryConversations,
   activeId,
@@ -404,8 +408,6 @@ export function Sidebar({
   const [controlsOpen, setControlsOpen] = useState<Record<SidebarMode, boolean>>({ chats: false, projects: false })
   const resizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
   const wheelDeltaRef = useRef(0)
-  // Состояние намеренно локальное: remount снова сворачивает старую секцию.
-  const [olderOpen, setOlderOpen] = useState(false)
   const acctRef = useRef<HTMLDivElement | null>(null)
   const projectFilterRef = useRef<HTMLDivElement | null>(null)
   const selectedProjectSet = new Set(selectedProjectIds)
@@ -447,6 +449,24 @@ export function Sidebar({
     setControlsVisible(accumulated < 0)
     wheelDeltaRef.current = 0
   }
+  /**
+   * Догрузка при прокрутке: как только до конца списка остаётся меньше экрана,
+   * просим следующую страницу. Порог в высоту контейнера даёт странице приехать
+   * до того, как человек упрётся в низ.
+   */
+  const onListScroll = (event: ReactUIEvent<HTMLElement>): void => {
+    if (!onLoadMore || !hasMoreConversations || moreStatus === 'loading' || moreStatus === 'error') return
+    const list = event.currentTarget
+    if (list.scrollHeight - list.scrollTop - list.clientHeight <= list.clientHeight) onLoadMore()
+  }
+  const listRef = useRef<HTMLDivElement | null>(null)
+  // Страница короче контейнера не даёт прокрутки, и автоподгрузка не сработала бы
+  // вовсе: на широком экране двадцать бесед помещаются целиком.
+  useEffect(() => {
+    const list = listRef.current
+    if (!list || !onLoadMore || !hasMoreConversations || moreStatus === 'loading' || moreStatus === 'error') return
+    if (list.scrollHeight <= list.clientHeight) onLoadMore()
+  }, [conversations, hasMoreConversations, moreStatus, onLoadMore])
   const clampWidth = (next: number): number => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, next))
   const finishResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
     if (resizeRef.current?.pointerId !== event.pointerId) return
@@ -715,7 +735,7 @@ export function Sidebar({
           {...(onLoadMoreMessages ? { onLoadMore: onLoadMoreMessages } : {})}
         />
       ) : (
-      <div className="convolist" onWheel={onListWheel}>
+      <div className="convolist" ref={listRef} onWheel={onListWheel} onScroll={onListScroll} data-testid="conversations-list">
         {chats.state === 'skeleton' && (
           <div className="convolist-skel" aria-busy="true">
             {/* Высота косточки — высота .convo с названием, метой и статусом. */}
@@ -780,27 +800,18 @@ export function Sidebar({
           )}
           {olderConversations.length > 0 && (
             <section className="convo-section convo-section--older" aria-labelledby="sidebar-older-title">
-              <button
-                id="sidebar-older-title"
-                type="button"
-                className="convo-section-toggle"
-                aria-expanded={olderOpen}
-                aria-controls="sidebar-older-conversations"
-                onClick={() => setOlderOpen((open) => !open)}
-              >
-                <span>Более старые</span>
-                <span className="convo-section-count">{olderConversations.length}</span>
-              </button>
-              <div
-                id="sidebar-older-conversations"
-                className="convo-items"
-                role="list"
-                aria-label={`Более старые беседы: ${olderConversations.length}`}
-                hidden={!olderOpen}
-              >
+              <h2 id="sidebar-older-title" className="convo-section-title">Более старые</h2>
+              <div className="convo-items" role="list" aria-label="Более старые беседы">
                 {olderConversations.map(renderConversation)}
               </div>
             </section>
+          )}
+          {/* Хвост списка: сюда доскроллили — значит пора за следующей страницей.
+              Раньше на этом месте стояла свёрнутая секция с кнопкой, но список
+              бесед листают, а не раскрывают. */}
+          {moreStatus === 'loading' && <div className="convolist-more" aria-busy="true"><RefreshIndicator label="Загружаем ещё…" /></div>}
+          {moreStatus === 'error' && (
+            <ErrorState compact className="convolist-more" message="Не удалось загрузить ещё беседы" onRetry={() => onLoadMore?.()} />
           )}
         </div>
       </div>

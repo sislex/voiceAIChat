@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-03
-checked: b7bc606b
+updated: 2026-09-07
+checked: 33a7972d
 areas:
   - apps/server/src
 ---
@@ -51,14 +51,14 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 глубина ≤ 8; символические ссылки внутри проекта отвергаются; лимиты `MAKE_LIMITS`
 (2 МБ/файл, 400 файлов, 50 снимков). `rev` — счётчик изменений в памяти процесса.
 REST (`routes/make.ts`): `GET/PUT/DELETE /api/make/:id[/file]`, `/rename`, `/snapshots`,
-`/snapshots/:sid/restore`, `/reset`; все проверяют `db.getConversation(uid, id)` и
+`/snapshots/:sid/restore`, `/reset`; все проверяют `db.chat.getConversation(uid, id)` и
 `assistantKind === 'make'`. Превью и ZIP — `/api/preview/make/:id/*` и `…/export.zip`: под
 префиксом `/api/preview/` действует preview-cookie (`users/auth.ts`, `previewSession` принимает
 `startsWith('/api/preview/make/')`). HTML отдаётся с CSP `default-src 'self' 'unsafe-inline'
 'unsafe-eval' data: blob: https:; frame-ancestors 'self'` и инъекцией `MAKE_INSPECTOR_SCRIPT`.
 ZIP — собственный писатель без сжатия (`make/zip.ts`). События — `MakeHub` (`make/hub.ts`),
 сессия подписывается через `deps.make.subscribe` (как relay превью); владельца разговора для
-MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
+MCP даёт `db.chat.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
 `/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен). Фоновая очистка (roadmap-2 п.16): `MakeWorkspaces.sweep(maxAgeMs = 30 дней)` обходит все проекты и удаляет снимки старше срока (кроме закреплённого в публикации и самого свежего) и PNG-снимки стори того же возраста; `server.ts` запускает её после старта и каждые 6 часов рядом с `GeneratedCleanupService` (не в VITEST), результат — в лог `make_sweep`.
 **`.publish.json` пишется через временный файл и `rename`.** Счётчик просмотров
@@ -212,6 +212,8 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 По завершении сервер сохраняет AI message и метаданные в SQLite, обновляет conversation и отправляет `done`. Каждый возвращаемый `Conversation` содержит серверный агрегат стоимости сохранённых AI-сообщений: `costUsd` и `costStatus` (`known`, `partial`, `unknown`). Источник расчёта — `conversationCosts` в `apps/server/src/db/database.ts`: он связывает фактический `messages.engine` и `meta.model` с `model_prices`, используя `conversations.llm_model` только как fallback модели. Обычный вход равен `max(inputTokens - cacheReadTokens, 0)`, чтение и создание кэша и output тарифицируются отдельно. AI-ход считается известным только при числовых input/output (и, если присутствуют, cache) usage и найденном тарифе для provider/model; все известны — `known`, известна лишь часть — `partial`, нет ни одного известного или AI-ходов ещё нет — `unknown`. Для `partial`/`unknown` `costUsd` равен `null`, чтобы известная часть или отсутствие usage не выглядели полной нулевой суммой.
 
+**Итог кэшируется в самой беседе** (`conversations.cost_usd`, `cost_status`, `cost_prices_stamp`, `cost_dirty`): полный агрегат сканирует все AI-сообщения беседы и разбирает JSON каждого, и на списке сайдбара это было 95% его времени (17.5 мс на 22 беседы, 353 мс на 158). Протухание ловят **триггеры** на `messages` (INSERT/UPDATE/DELETE → `cost_dirty = 1`), а не вызовы по коду: сообщения пишет десяток мест (ход, правка, откат, импорт legacy), и любое забытое давало бы устаревшую цену в списке — ошибку, которую никто не заметит. Смену прайса ловит `cost_prices_stamp` (`MAX(updated_at)` и число строк `model_prices` — второе нужно, чтобы заметить удаление цены). Триггеры снимаются в начале миграций и создаются в конце: пересборка `conversations` (DROP + RENAME) падает, пока жив триггер с телом, ссылающимся на эту таблицу. После кэша список стоит 0.6 мс на окно недели и 7 мс на все 158 бесед.
+
 Список и поиск считают агрегаты одним batch-запросом для всех возвращаемых разговоров; одиночное чтение применяет тот же расчёт. Невалидный исторический JSON `messages.meta` изолируется через `json_valid`, а ошибка агрегации оставляет разговоры доступными со статусом `unknown`. Агрегат вычисляется из сохранённых сообщений при каждом чтении, поэтому восстанавливается после повторного открытия БД.
 
 По cancel/error менеджер ходов снимает handle и очищает map. Пользовательский cancel после уже полученной дельты сохраняет partial как AI message с `meta.interrupted=true` и отправляет `done` с этим partial; поздний callback модели игнорируется. Тест не должен ждать пустой `done`, если мок успел отдать токен: такое ожидание держало Vitest до глобального 10-минутного timeout. Проверка identity текущего turn не позволяет позднему callback старого процесса удалить новый ход того же разговора.
@@ -222,7 +224,7 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 ## SQLite и репозитории данных
 
-`VoiceChatDb` — синхронный адаптер `better-sqlite3`. При создании выполняет идемпотентную DDL и миграции старых колонок. WAL разрешает читателям не блокировать обычную запись; foreign keys обеспечивают cascade для conversation/project children.
+`VoiceChatDb` — синхронный адаптер `better-sqlite3`: ядро (`db/database.ts`) при создании выполняет идемпотентную DDL и миграции старых колонок и раздаёт доменные репозитории `db.chat`, `db.tasks`, `db.ci`, `db.machines`, `db.identity` и т.д. (`db/repos/<домен>.ts`, по одному владельцу на таблицу — `db/ownership.ts`). Маршруты и сервисы зовут методы адресно (`db.projects.getProject(...)`), а зависимости-интерфейсы в тестах описываются той же формой `{ projects: { getProject } }`. WAL разрешает читателям не блокировать обычную запись; foreign keys обеспечивают cascade для conversation/project children. Подробнее — [data-auth.md](data-auth.md#схема).
 
 Таблицы: `users`, `settings`, `conversations`, `messages`, `speakers`, `agents`, `projects`, `project_members`, `project_machines`, `kanban_columns`, `tasks`. JSON-поля (`skills`, technologies, policy, message meta, settings) кодируются/декодируются на границе DB.
 

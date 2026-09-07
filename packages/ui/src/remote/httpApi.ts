@@ -95,10 +95,13 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'kb:context': ({ query, budget }) => req(`${REST.kbContext}?q=${encodeURIComponent(query)}${budget ? `&budget=${budget}` : ''}`),
     'prompt:suggest': ({ prompt, modifiers }) => req(REST.promptSuggest, { method: 'POST', body: JSON.stringify({ prompt, modifiers }) }),
-    'conversations:list': ({ scope, projectId, includeCompleted }) => {
+    'conversations:list': ({ scope, projectId, includeCompleted, since, before, limit }) => {
       const q = new URLSearchParams({ scope: scope ?? 'chat' })
       if (projectId) q.set('projectId', projectId)
       if (includeCompleted) q.set('includeCompleted', '1')
+      if (since !== undefined) q.set('since', String(since))
+      if (before) { q.set('beforeAt', String(before.updatedAt)); q.set('beforeId', before.id) }
+      if (limit !== undefined) q.set('limit', String(limit))
       return req(`${REST.conversations}?${q.toString()}`)
     },
     'conversations:create': ({ title, scope, projectId, assistantKind }) =>
@@ -283,7 +286,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:setPreviewUrl': ({ id, previewUrl }) =>
       req(`/api/conversations/${encodeURIComponent(id)}/preview-url`, { method: 'POST', body: JSON.stringify({ previewUrl }) }),
     'conversations:taskContext': ({ id }) => req(REST.conversationTaskContext(id)),
-    'conversations:taskChats': () => req(REST.conversationTaskChats),
+    'conversations:taskChats': (arg) => req(REST.conversationTaskChats(arg?.withRuns)),
     'conversations:setStatus': ({ id, status }) =>
       req(REST.conversationStatus(id), { method: 'POST', body: JSON.stringify({ status }) }),
     'conversations:setExecTarget': ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode }) =>
@@ -581,6 +584,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:storybookSession': ({ id, workspace }) => req(REST.projectStorybook(id, workspace)),
     'projects:storybookAction': ({ id, ...body }) =>
       req(REST.projectStorybookAction(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:storybookOpen': ({ id, ...body }) =>
+      req(REST.projectStorybookOpen(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:storybookCloseTunnel': ({ id, tunnelId, workspace }) =>
+      req(REST.projectStorybookTunnel(id, tunnelId, workspace), { method: 'DELETE' }),
     'projects:componentTicket': ({ id, ...body }) =>
       req(REST.projectComponentTicket(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
@@ -593,6 +600,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:setUserDefaultMachine': ({ id, agentId }) =>
       req(REST.projectUserDefaultMachine(id), { method: 'PUT', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id, includeCompleted }) => req(REST.projectBoard(id, includeCompleted)),
+    'board:getStatuses': ({ id, includeCompleted }) => req(REST.projectBoardStatuses(id, includeCompleted)),
     'board:getView': ({ id }) => req(REST.projectBoardView(id)),
     'board:saveView': ({ id, view }) => req(REST.projectBoardView(id), { method: 'PUT', body: JSON.stringify(view) }),
     'columns:create': ({ projectId, name }) =>
@@ -615,6 +623,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/projects/${encodeURIComponent(projectId)}/task-launch/preparation`, { method: 'POST', body: JSON.stringify(b) }),
     'tasks:get': ({ projectId, taskId }) =>
       req(REST.projectTask(projectId, taskId)),
+    'tasks:listReworkCycles': ({ projectId, taskId }) =>
+      req(REST.projectTaskReworkCycles(projectId, taskId)),
+    'tasks:createReworkCycle': ({ projectId, taskId, input }) =>
+      req(REST.projectTaskReworkCycles(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
     'tasks:activity': ({ projectId, taskId }) => req(REST.taskActivity(projectId, taskId)),
     'tasks:commentAdd': ({ projectId, taskId, ...b }) =>
       req(REST.taskComments(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
@@ -671,7 +683,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.taskDesign(projectId, taskId, linkId), { method: 'DELETE' }),
     'projects:designSources': ({ id }) => req(REST.projectDesignSources(id)),
     'tasks:reworkCycles': ({ projectId, taskId }) => req(REST.taskReworkCycles(projectId, taskId)),
-    'tasks:createReworkCycle': ({ projectId, taskId, idempotencyKey, input }) =>
+    'tasks:createPersistentReworkCycle': ({ projectId, taskId, idempotencyKey, input }) =>
       req(REST.taskReworkCycles(projectId, taskId), { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) }),
     'tasks:attachments': ({ projectId, taskId, scope }) => req(REST.taskAttachments(projectId, taskId, scope)),
     'tasks:uploadAttachment': ({ projectId, taskId, ...body }) =>

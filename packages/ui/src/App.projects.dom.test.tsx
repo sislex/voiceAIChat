@@ -95,6 +95,21 @@ describe('App — страница проекта по URL', () => {
     expect(toggle).toHaveAttribute('title', 'Закрыть боковую панель')
   })
 
+  it('#/projects/:id/releases не грузит доску, переход на «Канбан» её догружает', async () => {
+    const { api, projectId } = await renderWithProject()
+    const boardCalls: string[] = []
+    const real = api['board:get']
+    api['board:get'] = async (arg) => { boardCalls.push(arg.id); return real(arg) }
+    window.location.hash = `#/projects/${projectId}/releases`
+    // Дождались самой страницы релизов: детали проекта пришли, доска — нет.
+    await screen.findByRole('heading', { name: 'Релизы' })
+    expect(boardCalls).toEqual([])
+
+    await userEvent.click(within(tabs()).getByRole('tab', { name: 'Канбан' }))
+    await waitFor(() => expect(screen.getByTestId('kanban-board')).toBeInTheDocument())
+    expect(boardCalls).toEqual([projectId])
+  })
+
   it('на десктопе переключатель сворачивает и возвращает Sidebar без сброса позиции доски', async () => {
     const { projectId } = await renderWithProject()
     window.location.hash = `#/projects/${projectId}`
@@ -354,11 +369,9 @@ describe('App — чаты завершённых задач в сайдбаре
   it('прямая ссылка открывает скрытый чат и показывает его строку', async () => {
     const { chatId } = await withDoneTaskChat()
     window.location.hash = `#/chat/${chatId}`
-    const older = await screen.findByRole('button', { name: /Более старые 1/ })
-    // Даже активный старый разговор не раскрывает секцию автоматически.
-    expect(screen.queryByRole('button', { name: 'Задача Скролл' })).not.toBeInTheDocument()
-    await userEvent.click(older)
-    const list = await screen.findByRole('list', { name: 'Более старые беседы: 1' })
+    // Чат завершённой задачи из списка убран, но открытый по ссылке — закреплён
+    // в списке своей недели, иначе активная беседа была бы нигде не видна.
+    const list = await chatList()
     const row = await within(list).findByRole('button', { name: 'Задача Скролл' })
     expect(row).toHaveAttribute('aria-current', 'true')
   })

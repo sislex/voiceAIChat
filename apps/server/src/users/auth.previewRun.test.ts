@@ -10,7 +10,7 @@ import type { VoiceChatDb } from '../db/database.js'
 const req = (cookie: string): FastifyRequest => ({ headers: { cookie } }) as unknown as FastifyRequest
 
 const dbWith = (user: { name: string; role: string; blocked?: boolean } | null): VoiceChatDb =>
-  ({ getUser: () => user }) as unknown as VoiceChatDb
+  ({identity:{getUser: () => user}}) as unknown as VoiceChatDb
 
 describe('пользователь ключа Chromium', () => {
   it('авторизует владельца ключа на пути прокси', () => {

@@ -174,6 +174,20 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
     setPropsOpen(true)
     onAutoPropsUsed?.()
   }, [autoProps, onAutoPropsUsed])
+  /** Меню «Ещё» шапки: вид, а не состояние картинки — держим здесь. */
+  const [more, setMore] = useState(false)
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null)
+  const moreMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!more) return
+    const close = (event: PointerEvent): void => {
+      if (!moreMenuRef.current?.contains(event.target as Node) && event.target !== moreButtonRef.current) setMore(false)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [more])
+  // Переключились на соседний кадр — меню предыдущего закрываем: оно про него.
+  useEffect(() => setMore(false), [viewing])
   /** Раскрытая панель свойств: полная мета и заметка одним списком. */
   const [propsOpen, setPropsOpen] = useState(false)
   /** Полный экран: браузерный fullscreen на теле лайтбокса. */
@@ -252,6 +266,11 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
      * перехвата, и перебить его можно только этим пропом.
      */
     onEscape={() => {
+      // Открытое меню шапки съедает Esc первым: закрывать картинку, пока
+      // человек смотрит список действий, — не то, чего он ждёт. Свой
+      // слушатель на window тут не поможет: `ToolFrame` регистрируется
+      // раньше меню и гасит событие до него — только этот контракт и работает.
+      if (more) { setMore(false); moreButtonRef.current?.focus(); return true }
       if (zoom.scale === 1 && !spin) return false
       setZoom({ scale: 1, x: 0, y: 0 })
       setSpin(0)
@@ -259,16 +278,10 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
     }}
     className="util-embed--img" testId="image-studio-viewer"
     actions={<>
-      {(sourceInGallery || compareWith || (compareGrid?.length ?? 0) > 2) && <IconButton size="sm" aria-label="Сравнить с исходником" title={compare ? 'Скрыть исходник' : 'Сравнить с исходником'} onClick={() => onCompareChange(!compare)}>⇄</IconButton>}
-      <IconButton size="sm" aria-label={annotating ? 'Выйти из режима разметки' : `Разметить ${viewing}`} title={annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'} aria-pressed={annotating} onClick={() => { stopSlideshow(); setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>✏️</IconButton>
-      <IconButton size="sm" aria-label={cropping ? 'Выйти из режима обрезки' : `Обрезать ${viewing}`} title={cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'} aria-pressed={cropping} onClick={() => { stopSlideshow(); setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>✂</IconButton>
-      <IconButton size="sm" aria-label={`Править ${viewing} по промпту`} title="Править по промпту" onClick={() => onPickForEdit(viewing)}>✎</IconButton>
-      <IconButton size="sm" aria-label={`Нарисовать вариацию ${viewing}`} title="Вариация" disabled={busy} onClick={() => onVariate(viewing)}>✦</IconButton>
-      {'EyeDropper' in globalThis && <IconButton size="sm" aria-label="Пипетка: взять цвет с экрана" title="Пипетка (цвет в буфер)" onClick={() => {
-        const Ctor = (globalThis as { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper
-        if (!Ctor) return
-        void new Ctor().open().then(({ sRGBHex }) => navigator.clipboard?.writeText(sRGBHex)).catch(() => undefined)
-      }}>💧</IconButton>}
+      {canStep && <>
+        <IconButton size="sm" aria-label="Предыдущая картинка" title="Предыдущая (←)" onClick={() => { onCompareChange(false); onStep(-1) }}>‹</IconButton>
+        <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { onCompareChange(false); onStep(1) }}>›</IconButton>
+      </>}
       {!compare && !cropping && !annotating && <>
         <IconButton size="sm" aria-label="Уменьшить масштаб" title="Уменьшить (колесо мыши тоже)" disabled={zoom.scale <= 1} onClick={() => zoomBy(-0.25)}>−</IconButton>
         <IconButton size="sm" aria-label={`Масштаб ${Math.round(zoom.scale * 100)} процентов, сбросить к 100`} title="Сбросить масштаб" disabled={zoom.scale === 1} onClick={() => setZoom({ scale: 1, x: 0, y: 0 })}>{`${Math.round(zoom.scale * 100)}%`}</IconButton>
@@ -281,48 +294,95 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
           const natural = Math.min(4, Math.max(1, Math.round(img.naturalWidth / img.clientWidth * 100) / 100))
           setZoom(natural <= 1 ? { scale: 1, x: 0, y: 0 } : { scale: natural, x: 0, y: 0 })
         }}>1:1</IconButton>
-        <IconButton size="sm" aria-label={spin ? `Просмотр повёрнут на ${spin} градусов — повернуть ещё` : 'Повернуть просмотр на 90 градусов'} title={spin ? `Просмотр повёрнут на ${spin}° (файл не меняется)` : 'Повернуть просмотр (файл не меняется)'} aria-pressed={spin > 0} onClick={() => setSpin((prev) => (prev + 90) % 360)}>⟳</IconButton>
       </>}
-      <IconButton size="sm" aria-label={`Фон подложки: ${BACKGROUND_LABELS[background]} — сменить`} title={`Фон: ${BACKGROUND_LABELS[background]}`} onClick={() => setBackground((prev) => {
-        const next = VIEWER_BACKGROUNDS[(VIEWER_BACKGROUNDS.indexOf(prev) + 1) % VIEWER_BACKGROUNDS.length]!
-        try { localStorage.setItem(IMAGE_STUDIO_VIEWER_BG_KEY, next) } catch { /* приватный режим */ }
-        return next
-      })}>◧</IconButton>
-      {canStep && <IconButton size="sm" aria-label={slideshow ? 'Остановить слайдшоу' : 'Запустить слайдшоу'} title={slideshow ? 'Стоп' : `Слайдшоу (${slideshowMs / 1000} с на кадр)`} aria-pressed={slideshow} onClick={() => setSlideshow((prev) => !prev)}>{slideshow ? '⏸' : '▶'}</IconButton>}
-      {/* Скорость показа рядом с кнопкой и только во время показа: в простое
-          это лишний селект в и без того плотной шапке. */}
+      {/* Режимные кнопки остаются в шапке, пока режим включён: выход из
+          разметки или обрезки не должен требовать захода в меню. */}
+      {annotating && <IconButton size="sm" aria-label="Выйти из режима разметки" title="Отменить разметку" aria-pressed onClick={() => { setAnnotating(false); setStrokes([]) }}>✏️</IconButton>}
+      {cropping && <>
+        <IconButton size="sm" aria-label="Выйти из режима обрезки" title="Отменить обрезку" aria-pressed onClick={() => { setCropping(false); setCropBox(null) }}>✂</IconButton>
+        <IconButton size="sm" aria-label={`Направляющие: ${GUIDE_LABELS[guides]} — сменить`} title={`Направляющие: ${GUIDE_LABELS[guides]}`} onClick={() => setGuides((prev) => GUIDE_MODES[(GUIDE_MODES.indexOf(prev) + 1) % GUIDE_MODES.length]!)}>#</IconButton>
+      </>}
+      {canStep && slideshow && <>
+        <IconButton size="sm" aria-label="Остановить слайдшоу" title="Стоп" aria-pressed onClick={() => setSlideshow(false)}>⏸</IconButton>
+        <select
+          aria-label="Секунд на кадр"
+          title="Сколько держать кадр"
+          value={slideshowMs}
+          onChange={(event) => setSlideshowMs(Number(event.target.value))}
+        >
+          {SLIDESHOW_STEPS.map((step) => <option key={step} value={step}>{step / 1000} с</option>)}
+        </select>
+      </>}
       {onToggleStar && <IconButton size="sm" aria-label={starred ? `Убрать ${viewing} из избранного` : `В избранное ${viewing}`} title={starred ? 'Убрать из избранного' : 'В избранное'} aria-pressed={starred} onClick={() => onToggleStar(viewing)}>{starred ? '★' : '☆'}</IconButton>}
-      {onCycleStatus && <IconButton
-        size="sm"
-        aria-label={status === 'ready' ? `${viewing}: готово — снять пометку` : status === 'draft' ? `${viewing}: черновик — отметить готовым` : `Отметить ${viewing} черновиком`}
-        title={status === 'ready' ? 'Готово' : status === 'draft' ? 'Черновик' : 'Готовность: не отмечено'}
-        onClick={() => onCycleStatus(viewing)}
-      >{status === 'ready' ? '✔' : status === 'draft' ? '✎' : '◦'}</IconButton>}
-      {cropping && <IconButton size="sm" aria-label={`Направляющие: ${GUIDE_LABELS[guides]} — сменить`} title={`Направляющие: ${GUIDE_LABELS[guides]}`} onClick={() => setGuides((prev) => GUIDE_MODES[(GUIDE_MODES.indexOf(prev) + 1) % GUIDE_MODES.length]!)}>#</IconButton>}
-      <IconButton size="sm" aria-label={loupe ? 'Убрать лупу' : 'Лупа: увеличить фрагмент под курсором'} title={loupe ? 'Убрать лупу' : 'Лупа (и цвет под курсором)'} aria-pressed={loupe} onClick={() => { setLoupe((prev) => !prev); setProbe(null) }}>🔍</IconButton>
-      <IconButton size="sm" aria-label={inverted ? 'Вернуть обычные цвета просмотра' : 'Инвертировать цвета просмотра'} title={inverted ? 'Обычные цвета' : 'Инверсия просмотра (файл не меняется)'} aria-pressed={inverted} onClick={() => setInverted((prev) => !prev)}>◑</IconButton>
-      {canStep && <IconButton size="sm" aria-label={strip ? 'Скрыть ленту кадров' : 'Показать ленту кадров'} title={strip ? 'Скрыть ленту' : 'Лента кадров'} aria-pressed={strip} onClick={() => setStrip((prev) => !prev)}>▤</IconButton>}
-      {canStep && slideshow && <select
-        aria-label="Секунд на кадр"
-        title="Сколько держать кадр"
-        value={slideshowMs}
-        onChange={(event) => setSlideshowMs(Number(event.target.value))}
-      >
-        {SLIDESHOW_STEPS.map((step) => <option key={step} value={step}>{step / 1000} с</option>)}
-      </select>}
       <IconButton size="sm" aria-label={fullscreen ? 'Выйти из полного экрана' : 'Показать на весь экран'} title={fullscreen ? 'Обычный размер' : 'Полный экран'} aria-pressed={fullscreen} onClick={() => {
         const node = frameRef.current
         if (document.fullscreenElement) { void document.exitFullscreen?.().catch(() => undefined); return }
         void node?.requestFullscreen?.().catch(() => undefined)
       }}>⛶</IconButton>
-      <IconButton size="sm" aria-label={propsOpen ? 'Скрыть свойства' : `Свойства ${viewing}`} title="Свойства и заметка" aria-pressed={propsOpen} onClick={() => setPropsOpen((prev) => !prev)}>ⓘ</IconButton>
-      <IconButton size="sm" aria-label={`Скопировать ${viewing} в буфер`} title="Копировать в буфер" onClick={() => onCopy(viewing)}>⧉</IconButton>
-      <IconButton size="sm" aria-label={`Скачать ${viewing}`} title="Скачать" onClick={() => onDownload(viewing)}>⇩</IconButton>
-      <IconButton size="sm" aria-label={`Удалить ${viewing}`} title="Удалить" onClick={() => onDelete(viewing)}>🗑</IconButton>
-      {canStep && <>
-        <IconButton size="sm" aria-label="Предыдущая картинка" title="Предыдущая (←)" onClick={() => { onCompareChange(false); onStep(-1) }}>‹</IconButton>
-        <IconButton size="sm" aria-label="Следующая картинка" title="Следующая (→)" onClick={() => { onCompareChange(false); onStep(1) }}>›</IconButton>
-      </>}
+      {/* В шапке было двадцать пять иконок подряд: подписей нет, порядок
+          случайный, нужную ищут перебором. Частое осталось снаружи, остальное
+          живёт в меню — том же по устройству, что у карточки галереи. */}
+      <span className="image-studio-viewer-more">
+        <IconButton size="sm" ref={moreButtonRef} aria-label="Ещё действия с картинкой" title="Ещё действия" aria-expanded={more} aria-haspopup="menu" onClick={() => setMore((open) => !open)}>⋯</IconButton>
+        {more && <div
+          className="image-studio-menu image-studio-viewer-menu"
+          role="menu"
+          aria-label={`Ещё действия: ${viewing}`}
+          ref={(node) => {
+            moreMenuRef.current = node
+            node?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus()
+          }}
+          onKeyDown={(event) => {
+            // Esc обрабатывается нативным перехватчиком выше — здесь только навигация.
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Tab'].includes(event.key)) return
+            event.stopPropagation()
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not([disabled])')]
+            if (!items.length) return
+            const index = items.indexOf(document.activeElement as HTMLButtonElement)
+            const focus = (next: number): void => {
+              event.preventDefault()
+              items[(next + items.length) % items.length]?.focus()
+            }
+            if (event.key === 'ArrowDown') focus(index + 1)
+            else if (event.key === 'ArrowUp') focus(index - 1)
+            else if (event.key === 'Home') focus(0)
+            else if (event.key === 'End') focus(items.length - 1)
+            else focus(index + (event.shiftKey ? -1 : 1))
+          }}
+        >
+          {(sourceInGallery || compareWith || (compareGrid?.length ?? 0) > 2) && <button type="button" role="menuitem" onClick={() => { setMore(false); onCompareChange(!compare) }}>{compare ? 'Скрыть исходник' : 'Сравнить с исходником'}</button>}
+          <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setAnnotating((prev) => !prev); setStrokes([]); setCropping(false); setCropBox(null); onCompareChange(false) }}>{annotating ? 'Отменить разметку' : 'Разметить (рисование поверх)'}</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); stopSlideshow(); setCropping((prev) => !prev); setCropBox(null); setAnnotating(false); setStrokes([]); onCompareChange(false) }}>{cropping ? 'Отменить обрезку' : 'Обрезать (выделите область)'}</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); onPickForEdit(viewing) }}>Править по промпту</button>
+          <button type="button" role="menuitem" disabled={busy} onClick={() => { setMore(false); onVariate(viewing) }}>Вариация</button>
+          {'EyeDropper' in globalThis && <button type="button" role="menuitem" onClick={() => {
+            setMore(false)
+            const Ctor = (globalThis as { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper
+            if (!Ctor) return
+            void new Ctor().open().then(({ sRGBHex }) => navigator.clipboard?.writeText(sRGBHex)).catch(() => undefined)
+          }}>Пипетка (цвет в буфер)</button>}
+          {!compare && !cropping && !annotating && <button type="button" role="menuitem" onClick={() => { setMore(false); setSpin((prev) => (prev + 90) % 360) }}>{spin ? `Повернуть ещё (сейчас ${spin}°)` : 'Повернуть просмотр (файл не меняется)'}</button>}
+          <button type="button" role="menuitem" onClick={() => {
+            setMore(false)
+            setBackground((prev) => {
+              const next = VIEWER_BACKGROUNDS[(VIEWER_BACKGROUNDS.indexOf(prev) + 1) % VIEWER_BACKGROUNDS.length]!
+              try { localStorage.setItem(IMAGE_STUDIO_VIEWER_BG_KEY, next) } catch { /* приватный режим */ }
+              return next
+            })
+          }}>{`Фон: ${BACKGROUND_LABELS[background]} — сменить`}</button>
+          {canStep && !slideshow && <button type="button" role="menuitem" onClick={() => { setMore(false); setSlideshow(true) }}>{`Слайдшоу (${slideshowMs / 1000} с на кадр)`}</button>}
+          {onCycleStatus && <button type="button" role="menuitem" onClick={() => { setMore(false); onCycleStatus(viewing) }}>
+            {status === 'ready' ? 'Готово — снять пометку' : status === 'draft' ? 'Черновик — отметить готовым' : 'Отметить черновиком'}
+          </button>}
+          <button type="button" role="menuitem" onClick={() => { setMore(false); setLoupe((prev) => !prev); setProbe(null) }}>{loupe ? 'Убрать лупу' : 'Лупа (и цвет под курсором)'}</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); setInverted((prev) => !prev) }}>{inverted ? 'Обычные цвета' : 'Инверсия просмотра (файл не меняется)'}</button>
+          {canStep && <button type="button" role="menuitem" onClick={() => { setMore(false); setStrip((prev) => !prev) }}>{strip ? 'Скрыть ленту кадров' : 'Лента кадров'}</button>}
+          <button type="button" role="menuitem" onClick={() => { setMore(false); setPropsOpen((prev) => !prev) }}>{propsOpen ? 'Скрыть свойства' : 'Свойства и заметка'}</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); onCopy(viewing) }}>Копировать в буфер</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); onDownload(viewing) }}>Скачать</button>
+          <button type="button" role="menuitem" onClick={() => { setMore(false); onDelete(viewing) }}>Удалить</button>
+        </div>}
+      </span>
     </>}>
     <div ref={frameRef} className={`imgbody image-studio-bg--${background}${fullscreen ? ' imgbody--fullscreen' : ''}`} tabIndex={-1}
       onKeyDown={(event) => {
@@ -711,7 +771,9 @@ export function ImageStudioViewer({ viewing, busy, files, previews, dimensions, 
       })()}
       <p className="image-studio-origin"><span className="image-studio-dim">← → — листать · Delete — удалить · Esc — закрыть{slideshow ? ' · слайдшоу идёт' : ''}</span></p>
       {meta && <p className="imgcap image-studio-origin">
-        <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{' · '}
+        {/* Разделитель — только если дальше есть что писать: строка кончалась
+            висячей точкой «6 КБ · 400×300 ·» у файлов без источника и промпта. */}
+        <span className="image-studio-dim">{formatBytes(meta.size)}{dimensions[meta.path] ? ` · ${dimensions[meta.path]}` : ''}</span>{meta.source || meta.prompt ? ' · ' : ''}
         {meta.source ? (sourceInGallery
           ? <>Из <button type="button" className="image-studio-cancel" onClick={() => { onCompareChange(false); onView(meta.source!) }}>«{meta.source}»</button> · </>
           : `Из «${meta.source}» · `) : ''}{meta.prompt ? `промпт: ${meta.prompt}` : ''}

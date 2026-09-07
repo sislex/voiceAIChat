@@ -48,6 +48,107 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required'])
   })
 
+  it('openProject без доски берёт только детали, ensureBoard догружает её один раз', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    const board = vi.spyOn(api, 'board:get')
+    const view = vi.spyOn(api, 'board:getView')
+    const statuses = vi.spyOn(api, 'board:getStatuses')
+    const detail = vi.spyOn(api, 'projects:get')
+
+    // Релизы/настройки/код: доска не показывается — и не грузится.
+    await store.actions.openProject(id, { board: false })
+    expect(store.getState().activeProjectId).toBe(id)
+    expect(store.getState().projectDetail?.id).toBe(id)
+    expect(store.getState().board).toBeNull()
+    expect(store.getState().boardLoading).toBe(false)
+    expect(board).not.toHaveBeenCalled()
+    expect(view).not.toHaveBeenCalled()
+    expect(statuses).not.toHaveBeenCalled()
+    expect(detail.mock.calls.length).toBe(1)
+
+    // Переход на вкладку доски догружает её, детали не перечитываются.
+    await store.actions.ensureBoard(id)
+    expect(store.getState().board?.columns.length).toBeGreaterThan(0)
+    expect(board.mock.calls.length).toBe(1)
+    expect(detail.mock.calls.length).toBe(1)
+
+    // Повторный вход на ту же вкладку доску не перезапрашивает.
+    await store.actions.ensureBoard(id)
+    expect(board.mock.calls.length).toBe(1)
+  })
+
+  it('ensureBoard на чужом проекте открывает его целиком', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const first = store.getState().projectDetail!.id
+    await store.actions.createProject({ name: 'P2' })
+    const second = store.getState().projectDetail!.id
+    await store.actions.openProject(first, { board: false })
+    await store.actions.ensureBoard(second)
+    expect(store.getState().activeProjectId).toBe(second)
+    expect(store.getState().board?.columns.length).toBeGreaterThan(0)
+  })
+
+  it('доска рисуется по скелету, состояние карточек догружается второй фазой', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    const column = store.getState().board!.columns[0]!
+    await store.actions.createTask(column.id, { title: 'Двухфазная' })
+
+    const gate = deferred<void>()
+    const real = api['board:getStatuses']
+    api['board:getStatuses'] = vi.fn(async (arg: { id: string; includeCompleted?: boolean }) => {
+      await gate.promise
+      return real(arg)
+    })
+    const opened = store.actions.openBoard(id)
+    // Пока вторая фаза в пути, доска уже показывает карточки: ради этого и
+    // разделили запросы — старт не ждёт обхода таблиц ранов на сервере.
+    await vi.waitFor(() => expect(store.getState().board?.tasks.map((t) => t.title)).toContain('Двухфазная'))
+    expect(store.getState().board!.tasks[0]!.mergePermitted).toBeUndefined()
+
+    gate.resolve()
+    await opened
+    expect(store.getState().board!.tasks[0]!.mergePermitted).toBe(false)
+    expect(store.getState().board!.tasks.map((t) => t.title)).toContain('Двухфазная')
+  })
+
+  it('включённый «показывать завершённые» не утяжеляет старт: сначала окно, потом догрузка', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    // Фильтр включён и сохранён в виде доски на сервере — как у постоянного пользователя.
+    await store.actions.setBoardIncludeCompleted(true)
+    store.actions.closeBoard()
+
+    const calls: Array<boolean | undefined> = []
+    const real = api['board:get']
+    api['board:get'] = vi.fn(async (arg: { id: string; includeCompleted?: boolean }) => {
+      calls.push(arg.includeCompleted)
+      return real(arg)
+    })
+    await store.actions.openBoard(id)
+    await vi.waitFor(() => expect(store.getState().boardIncludeCompleted).toBe(true))
+    // Первый запрос — без завершённых, и только следом полный.
+    expect(calls[0]).toBe(false)
+    expect(calls).toContain(true)
+  })
+
+  it('отказ второй фазы не роняет уже показанную доску', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    api['board:getStatuses'] = vi.fn(async () => { throw new Error('нет связи') })
+    await store.actions.openBoard(id)
+    expect(store.getState().board?.columns.length).toBeGreaterThan(0)
+    expect(store.getState().boardError).toBeNull()
+  })
+
   it('роль понизили: refreshMembership перечитывает проект, и владельческие действия исчезают', async () => {
     const { store, api } = makeStore()
     await store.actions.createProject({ name: 'P1' })
@@ -274,6 +375,8 @@ describe('voiceStore — проекты и доска', () => {
 
   it('ссылка на чат другого проекта не меняет фильтр сайдбара', async () => {
     const { store } = makeStore()
+    // Список бесед открыт — значит индекс загружен (на доске его не грузят).
+    await store.actions.ensureConversationIndex()
     await store.actions.createProject({ name: 'P1' })
     const p1 = store.getState().projectDetail!.id
     await store.actions.setSidebarProject(p1)
@@ -356,12 +459,35 @@ describe('voiceStore — проекты и доска', () => {
       await api['tasks:update']({ projectId: id, taskId: task.id, title: 'После action' })
 
       store.actions.applyBoardChanged('other')
-      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(450)
       expect(store.getState().board!.tasks[0]?.title).toBe('До action')
 
       store.actions.applyBoardChanged(id)
-      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(450)
       expect(store.getState().board!.tasks[0]?.title).toBe('После action')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('поток board.changed не превращается в поток запросов доски, но и не замирает', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, api } = makeStore()
+      await store.actions.createProject({ name: 'P1' })
+      const id = store.getState().projectDetail!.id
+      await store.actions.openBoard(id)
+      const get = vi.spyOn(api, 'board:get')
+
+      // Активный ран шлёт событие каждые 400 мс: раньше это давало запрос почти на
+      // каждое, теперь их склеивает дебаунс, а потолок ожидания не даёт доске замереть.
+      for (let i = 0; i < 15; i++) {
+        store.actions.applyBoardChanged(id)
+        await vi.advanceTimersByTimeAsync(400)
+      }
+      await vi.advanceTimersByTimeAsync(500)
+      expect(get.mock.calls.length).toBeGreaterThan(1)
+      expect(get.mock.calls.length).toBeLessThanOrEqual(5)
     } finally {
       vi.useRealTimers()
     }
@@ -442,6 +568,7 @@ describe('voiceStore — связка проекта с чатом', () => {
 describe('voiceStore — мультивыбор проектов в сайдбаре', () => {
   it('полный, частичный и пустой выбор фильтруют чаты, включая чат без проекта только полностью', async () => {
     const { store } = makeStore()
+    await store.actions.ensureConversationIndex()
     await store.actions.createProject({ name: 'P' })
     const pid = store.getState().projectDetail!.id
     await store.actions.syncSidebarProjects([pid, 'p2'])

@@ -39,7 +39,7 @@ function connectAgent(machineId: string) {
       else if (m.t === 'fs.delete') { files.delete(m.path!); ok({}) }
     }
   }
-  registry.register(machineId, 'Мак', socket, db.listAgents(U).find((a) => a.id === machineId)!.policy, '0.15.0')
+  registry.register(machineId, 'Мак', socket, db.machines.listAgents(U).find((a) => a.id === machineId)!.policy, '0.15.0')
   return { files, directories }
 }
 
@@ -59,11 +59,11 @@ afterEach(async () => { await app.close(); rmSync(dataDir, { recursive: true, fo
 
 describe('уведомления о долгих командах', () => {
   it('команда из чата пишет полный лог в artifacts/commands хранилища чата; консольная — нет', async () => {
-    const machine = db.createAgent(U, 'Мак')
+    const machine = db.machines.createAgent(U, 'Мак')
     const fs = connectAgent(machine.id)
     const inj = (opts: { method: 'GET' | 'POST' | 'PUT'; url: string; payload?: object }) => app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
     const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
-    const conv = db.createConversation(U, 'C')
+    const conv = db.chat.createConversation(U, 'C')
     expect((await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })).statusCode).toBe(200)
 
     await registry.exec(machine.id, 'npm test', 1000, undefined, { source: 'chat', userId: U, conversationId: conv.id })
@@ -79,6 +79,6 @@ describe('уведомления о долгих командах', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect([...fs.files.keys()].filter((p) => p.includes('/artifacts/commands/'))).toHaveLength(1)
     // журнал получил обе команды
-    expect(db.listMachineCommands(machine.id).map((r) => r.command)).toEqual(['uptime', 'npm test'])
+    expect(db.machines.listMachineCommands(machine.id).map((r) => r.command)).toEqual(['uptime', 'npm test'])
   })
 })

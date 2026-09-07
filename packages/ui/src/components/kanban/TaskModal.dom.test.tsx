@@ -311,15 +311,19 @@ describe('TaskModal — что грузится при открытии карт
     expect(calls()).toMatchObject({ kb: 1, report: 1 })
   })
 
-  it('улучшения запрашиваются только у задачи, у которой был ран', async () => {
+  it('улучшения запрашиваются только у задачи с раном и только на своей вкладке', async () => {
     const { calls } = spies()
     const { unmount } = render(<TaskModal {...props()} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     expect(calls().improvements).toBe(0)
     unmount()
 
-    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    // Ран есть, но карточку открыли на другой вкладке — запроса всё равно нет.
+    const withRun = render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    expect(calls().improvements).toBe(0)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     await waitFor(() => expect(calls().improvements).toBe(1))
+    withRun.unmount()
   })
 
   it('QA-этапы не опрашиваются у задачи, у которой не было ни одного рана', async () => {
@@ -885,6 +889,33 @@ describe('TaskModal — вкладки и merge', () => {
     for (const title of ['Использование БЗ', 'Тестовое окружение', 'Команды воркфлоу', 'Машина выполнения', 'Движок модели']) {
       expect(within(details).queryByText(title)).not.toBeInTheDocument()
     }
+  })
+
+  // Панель настроек рендерилась всегда, поэтому её четыре запроса уходили при
+  // любом открытии карточки — даже когда человек смотрит «Подготовку».
+  it('настройки выполнения грузятся при первом открытии вкладки и только раз', async () => {
+    const ci = createFakeCi()
+    window.ci = ci
+    const commands = vi.spyOn(ci, 'listCommands')
+    const machines = vi.spyOn(ci, 'getTaskMachines')
+    const llm = vi.spyOn(ci, 'getTaskCiLlm')
+    render(<TaskModal {...props()} />)
+    expect(commands).not.toHaveBeenCalled()
+    expect(machines).not.toHaveBeenCalled()
+    expect(llm).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    await waitFor(() => expect(within(screen.getByTestId('task-settings-panel')).getByLabelText('Движок модели')).toBeInTheDocument())
+    expect(commands).toHaveBeenCalledTimes(1)
+    expect(machines).toHaveBeenCalledTimes(1)
+    expect(llm).toHaveBeenCalledTimes(1)
+
+    // Уход на другую вкладку и возврат ничего не перечитывают.
+    fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    expect(commands).toHaveBeenCalledTimes(1)
+    expect(machines).toHaveBeenCalledTimes(1)
+    expect(llm).toHaveBeenCalledTimes(1)
   })
 
   it('машина и LLM размещены вертикально в настройках, черновик переживает переключение', async () => {
@@ -1467,6 +1498,8 @@ describe('TaskModal — подготовка к разработке', () => {
       onChanged: vi.fn(() => () => {}), onConnected: vi.fn(() => () => {}),
       onPreparationRunUpdated: vi.fn((cb) => { preparationUpdated = cb; return offUpdate }),
       onTaskRepositoriesUpdated: vi.fn(() => () => {}),
+      onQaStageUpdated: vi.fn(() => () => {}),
+      onImprovementsUpdated: vi.fn(() => () => {}),
       onReconnect: vi.fn((cb) => { reconnected = cb; return offReconnect })
     }
     const load = vi.fn(async () => [run('waiting_for_answer')])
@@ -1547,7 +1580,9 @@ describe('TaskModal — вкладка Merge', () => {
     expect(await screen.findByRole('option', { name: /MacBook/ })).toBeInTheDocument()
     const taskMachineCalls = getTaskMachines.mock.calls.length
     const mergeMachineCalls = getMergeMachines.mock.calls.length
-    await userEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    // Уходим на «Общее», а не на «Настройки»: те монтируются лениво и сами
+    // просят машины задачи — счёт вызовов перестал бы говорить о Merge-панели.
+    await userEvent.click(screen.getByRole('tab', { name: 'Общее' }))
     await userEvent.click(screen.getByRole('tab', { name: 'Merge' }))
 
     expect(screen.getByRole('option', { name: /MacBook/ })).toBeInTheDocument()

@@ -179,6 +179,23 @@ export class ImageStudioStore {
     })
   }
 
+  /**
+   * Ждёт, пока опустеет очередь мутаций публикации этого разговора. Просмотр
+   * считается фоном (`void countView(...)` в маршруте страницы), поэтому читать
+   * статистику сразу после ответа галереи — гонка: под нагрузкой запись sidecar
+   * не успевает. Тесты и диагностика дожидаются очереди явно, а не спят.
+   */
+  async publishSettled(conversationId: string): Promise<void> {
+    let current = this.publishChains.get(conversationId)
+    while (current) {
+      await current
+      const next = this.publishChains.get(conversationId)
+      // Пока ждали, в хвост могли встать новые мутации — добираем и их.
+      if (next === current) break
+      current = next
+    }
+  }
+
   private dirOf(conversationId: string): string {
     return join(this.rootDir, conversationId)
   }
@@ -285,11 +302,15 @@ export class ImageStudioStore {
     if (meta[name]) { delete meta[name]; await this.writeMeta(conversationId, meta) }
   }
 
-  /** Содержимое корзины (свежие сверху); заодно чистит записи старше TTL. */
-  async listTrash(conversationId: string): Promise<Array<{ name: string; deletedAt: number }>> {
+  /**
+   * Содержимое корзины (свежие сверху); заодно чистит записи старше TTL.
+   * Размер отдаём вместе с именем: корзина занимает ту же квоту разговора, и
+   * без веса вопрос «сколько освободит очистка» с экрана не ответить.
+   */
+  async listTrash(conversationId: string): Promise<Array<{ name: string; deletedAt: number; size: number }>> {
     const dir = this.trashDir(conversationId)
     if (!existsSync(dir)) return []
-    const out: Array<{ name: string; deletedAt: number; entry: string }> = []
+    const out: Array<{ name: string; deletedAt: number; size: number }> = []
     for (const entry of await readdir(dir)) {
       const sep = entry.indexOf(TRASH_SEP)
       if (sep <= 0) continue
@@ -300,9 +321,10 @@ export class ImageStudioStore {
         await rm(join(dir, entry), { force: true })
         continue
       }
-      out.push({ name, deletedAt, entry })
+      const size = await stat(join(dir, entry)).then((info) => info.size).catch(() => 0)
+      out.push({ name, deletedAt, size })
     }
-    return out.sort((a, b) => b.deletedAt - a.deletedAt).map(({ name, deletedAt }) => ({ name, deletedAt }))
+    return out.sort((a, b) => b.deletedAt - a.deletedAt)
   }
 
   /**

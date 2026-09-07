@@ -26,9 +26,9 @@ beforeEach(async () => {
   let clock = 1000
   sent = []
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('alice', '', 'developer')
-  db.createUser('bob', '', 'developer')
-  db.createUser('carol', '', 'developer')
+  db.identity.createUser('alice', '', 'developer')
+  db.identity.createUser('bob', '', 'developer')
+  db.identity.createUser('carol', '', 'developer')
   app = await buildServer({
     config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-inv-${Date.now()}-${id}`), VC_PUBLIC_URL: 'https://app.example' }),
     db,
@@ -132,8 +132,8 @@ describe('приглашения: сторона приглашённого', ()
     expect((await inj(bobTok, { method: 'POST', url: `/api/invitations/${token}/accept` })).statusCode).toBe(400)
 
     // Регистрируем адрес и повторяем — теперь приглашение адресовано ему.
-    db.createEmailVerification({ token: 'verify-1', name: 'dave', email: 'bob@example.com', password: 'x', ttlMs: 60_000 })
-    db.redeemEmailVerification('verify-1', 'developer')
+    db.identity.createEmailVerification({ token: 'verify-1', name: 'dave', email: 'bob@example.com', password: 'x', ttlMs: 60_000 })
+    db.identity.redeemEmailVerification('verify-1', 'developer')
     const daveTok = signToken({ name: 'dave', role: 'developer' }, SECRET)
     const accepted = await inj(daveTok, { method: 'POST', url: `/api/invitations/${token}/accept` })
     expect(accepted.statusCode).toBe(200)

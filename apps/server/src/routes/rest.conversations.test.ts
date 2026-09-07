@@ -29,7 +29,7 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('draft endpoint атомарно создаёт проектный чат с первой репликой и повторяет ответ', async () => {
-    const project = db.createProject(U, { name: 'Draft project', skills: ['ts'] })
+    const project = db.projects.createProject(U, { name: 'Draft project', skills: ['ts'] })
     const payload = {
       idempotencyKey: 'draft-request-1',
       title: 'Файл README.md',
@@ -50,10 +50,10 @@ describe('REST: conversations/messages/settings', () => {
     // Единственное, что Make делает с репозиторием: модель к машине не ходит
     // (`turns.ts`: makeChat), поэтому копию до актуального main доводит сервер
     // здесь, один раз при создании чата.
-    const project = db.createProject(U, { name: 'Витрина', gitUrl: 'https://example.com/repo.git' })
-    const agent = db.createAgent(U, 'Ноутбук')
-    db.linkMachine(U, project.id, agent.id)
-    db.setProjectMachinePath(U, project.id, agent.id, '/repo')
+    const project = db.projects.createProject(U, { name: 'Витрина', gitUrl: 'https://example.com/repo.git' })
+    const agent = db.machines.createAgent(U, 'Ноутбук')
+    db.machines.linkMachine(U, project.id, agent.id)
+    db.machines.setProjectMachinePath(U, project.id, agent.id, '/repo')
     vi.spyOn(agentRegistry, 'isOnline').mockReturnValue(true)
     const exec = vi.spyOn(agentRegistry, 'exec').mockResolvedValue({
       exitCode: 0, output: `BASE_SHA=${'a'.repeat(40)}\n`, timedOut: false
@@ -116,8 +116,34 @@ describe('REST: conversations/messages/settings', () => {
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
   })
 
+  // @testCase TC-API-01
+  it('Make notes GET/PUT сохраняет прежний контракт stack/uiKit и частичные обновления', async () => {
+    const conv = db.chat.createConversation(U, 'Настройки Make', 'make')
+    const pairs = [
+      ['react', 'none'],
+      ['angular', 'none'],
+      ['html-js', 'bootstrap'],
+      ['html-js', 'none'],
+      ['html', 'none']
+    ] as const
+    for (const [stack, uiKit] of pairs) {
+      const put = await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { stack, uiKit } })
+      expect(put.statusCode).toBe(200)
+      expect(put.json()).toMatchObject({ notes: '', mode: 'balanced', stack, uiKit })
+      const get = await inj({ method: 'GET', url: `/api/make/${conv.id}/notes` })
+      expect(get.statusCode).toBe(200)
+      expect(get.json()).toMatchObject({ notes: '', mode: 'balanced', stack, uiKit })
+    }
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { notes: 'Сохранить поля' } })
+    expect((await inj({ method: 'GET', url: `/api/make/${conv.id}/notes` })).json()).toMatchObject({
+      notes: 'Сохранить поля',
+      stack: 'html',
+      uiKit: 'none'
+    })
+  })
+
   it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
-    const conv = db.createConversation(U, 'Проект', 'make')
+    const conv = db.chat.createConversation(U, 'Проект', 'make')
     const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }
     expect(state.files.map((f) => f.path)).toContain('index.html')
     expect(state.published).toBeNull()
@@ -142,13 +168,13 @@ describe('REST: conversations/messages/settings', () => {
     await inj({ method: 'DELETE', url: `/api/make/${conv.id}/publish` })
     expect((await app.inject({ method: 'GET', url: `${published.published.url}index.html` })).statusCode).toBe(404)
     // Обычный (не make) разговор для маршрутов Make — 404.
-    const plain = db.createConversation(U, 'Чат')
+    const plain = db.chat.createConversation(U, 'Чат')
     expect((await inj({ method: 'GET', url: `/api/make/${plain.id}` })).statusCode).toBe(404)
     // Проверка и шаблон.
     const check = (await inj({ method: 'GET', url: `/api/make/${conv.id}/check` })).json() as { issues: unknown[] }
     expect(check.issues).toEqual([])
     const templated = (await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'landing' } })).json() as { snapshots: Array<{ label: string }> }
-    expect(templated.snapshots[0]?.label).toContain('Лендинг')
+    expect(templated.snapshots[0]?.label).toBe('До смены стека')
     // Загрузка бинарника: base64 → байты, отдаётся превью с image/png.
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3])
     const uploaded = (await inj({ method: 'POST', url: `/api/make/${conv.id}/upload`, payload: { path: 'img/logo.png', dataBase64: png.toString('base64') } })).json() as { files: Array<{ path: string }> }
@@ -157,6 +183,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(img.headers['content-type']).toMatch(/image\/png/)
     expect(img.rawPayload.equals(png)).toBe(true)
     // React: JSX транспилируется при отдаче, импорт без расширения дополняется; страница сториз собирается.
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/notes`, payload: { stack: 'react' } })
     await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'react' } })
     await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'src/Extra.jsx', content: "import { Button } from './components/Button'\nexport const X = () => <Button>x</Button>" } })
     const jsx = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/src/Extra.jsx` })
@@ -212,7 +239,7 @@ describe('REST: conversations/messages/settings', () => {
     const exp = (await inj({ method: 'POST', url: `/api/make/${conv.id}/library`, payload: { name: 'Button', paths: ['src/components/Button.jsx', 'src/components/Button.stories.jsx'] } })).json() as { item: { slug: string } }
     expect(exp.item.slug).toBe('button')
     expect(((await inj({ method: 'GET', url: '/api/make/library' })).json() as { items: unknown[] }).items).toHaveLength(1)
-    const other = db.createConversation(U, 'Другой', 'make')
+    const other = db.chat.createConversation(U, 'Другой', 'make')
     const inserted = (await inj({ method: 'POST', url: `/api/make/${other.id}/library/button/insert` })).json() as { state: { files: Array<{ path: string }> } }
     expect(inserted.state.files.map((f) => f.path)).toContain('src/components/Button.stories.jsx')
     expect(((await inj({ method: 'DELETE', url: '/api/make/library/button' })).json() as { items: unknown[] }).items).toHaveLength(0)
@@ -221,15 +248,15 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('POST /messages для ответа без engine/execTarget подставляет эффективные движок и машину разговора', async () => {
-    const conv = db.createConversation(U, 'Диагностика')
-    db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex' })
+    const conv = db.chat.createConversation(U, 'Диагностика')
+    db.settings.saveSettings(U, { ...db.settings.getSettings(U), llmProvider: 'codex' })
     const res = await inj({ method: 'POST', url: `/api/conversations/${conv.id}/messages`, payload: { role: 'ai', text: '✓ проверка', time: '10:00' } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ role: 'ai', engine: 'codex', execTarget: null })
   })
 
   it('снимок содержит группу «Инструкции чата»; тумблер выключает инструкцию только в разговоре', async () => {
-    const conv = db.createConversation(U, 'Чат')
+    const conv = db.chat.createConversation(U, 'Чат')
     const groupOf = (json: { groups: Array<{ id: string; items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean; toggleable: boolean; details?: Record<string, unknown> }> }> }) => json.groups.find((g) => g.id === 'chat-instructions')!
     const first = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
     expect(first.items.map((item) => item.id)).toEqual(['instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-questions', 'instruction-image', 'instruction-taskLaunch'])
@@ -244,9 +271,9 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('снимок проектного чата: пункт проекта несёт точный текст, уходящий в промпт', async () => {
-    const project = db.createProject(U, { name: 'Инспектор', gitUrl: 'https://example.com/repo.git', technologies: ['ts'] })
-    const conv = db.createConversation(U, 'Проектный')
-    db.setConversationProject(U, conv.id, project.id)
+    const project = db.projects.createProject(U, { name: 'Инспектор', gitUrl: 'https://example.com/repo.git', technologies: ['ts'] })
+    const conv = db.chat.createConversation(U, 'Проектный')
+    db.chat.setConversationProject(U, conv.id, project.id)
     const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json()
     const item = snapshot.groups.flatMap((g: { items: { id: string; details?: Record<string, unknown> }[] }) => g.items).find((e: { id: string }) => e.id === 'project-binding')
     expect(item.details).toMatchObject({ 'ID проекта': project.id, 'Git': 'https://example.com/repo.git', 'Технологии': 'ts' })
@@ -261,28 +288,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(off.statusCode).toBe(200)
     const kbItem = off.json().groups.flatMap((g: { items: { id: string; enabled: boolean; includedInNextTurn: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode')
     expect(kbItem).toMatchObject({ enabled: false, includedInNextTurn: false })
-    expect(db.getConversation(U, created.id)?.disabledContext).toContain('knowledge-mode')
+    expect(db.chat.getConversation(U, created.id)?.disabledContext).toContain('knowledge-mode')
     // Включаем обратно.
     const on = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: true } })
     expect(on.json().groups.flatMap((g: { items: { id: string; enabled: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode').enabled).toBe(true)
     // Безопасность выключить нельзя.
     expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/platform-instructions`, payload: { enabled: false } })).statusCode).toBe(400)
-    expect(db.getConversation(U, created.id)?.disabledContext).not.toContain('platform-instructions')
+    expect(db.chat.getConversation(U, created.id)?.disabledContext).not.toContain('platform-instructions')
   })
 
   it('снимок проектного чата наследует LLM проекта', async () => {
-    const settings = db.getSettings(U)
+    const settings = db.settings.getSettings(U)
     await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, llmProvider: 'claude', model: 'default' } })
-    const project = db.createProject(U, { name: 'Codex project' })
-    db.setCiLlmConfig('project', project.id, {
+    const project = db.projects.createProject(U, { name: 'Codex project' })
+    db.ci.setCiLlmConfig('project', project.id, {
       provider: 'codex',
       model: 'gpt-5.6-sol',
       mode: 'development',
       clarifyLevel: 'few',
       clarifyMax: 3
     })
-    const conversation = db.createConversation(U, 'Project context')
-    db.setConversationProject(U, conversation.id, project.id)
+    const conversation = db.chat.createConversation(U, 'Project context')
+    db.chat.setConversationProject(U, conversation.id, project.id)
 
     const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
     const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
@@ -296,17 +323,17 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('LLM override разговора имеет приоритет над проектом', async () => {
-    const project = db.createProject(U, { name: 'Project defaults' })
-    db.setCiLlmConfig('project', project.id, {
+    const project = db.projects.createProject(U, { name: 'Project defaults' })
+    db.ci.setCiLlmConfig('project', project.id, {
       provider: 'codex',
       model: 'gpt-5.6-sol',
       mode: 'development',
       clarifyLevel: 'few',
       clarifyMax: 3
     })
-    const conversation = db.createConversation(U, 'Conversation override')
-    db.setConversationProject(U, conversation.id, project.id)
-    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'claude', 'haiku')
+    const conversation = db.chat.createConversation(U, 'Conversation override')
+    db.chat.setConversationProject(U, conversation.id, project.id)
+    db.chat.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'claude', 'haiku')
 
     const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
     const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
@@ -320,9 +347,9 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('снимок непривязанного чата наследует пользовательскую LLM-пару', async () => {
-    const settings = db.getSettings(U)
+    const settings = db.settings.getSettings(U)
     await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' } })
-    const conversation = db.createConversation(U, 'Personal context')
+    const conversation = db.chat.createConversation(U, 'Personal context')
 
     const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
     const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
@@ -337,7 +364,7 @@ describe('REST: conversations/messages/settings', () => {
 
   it('не раскрывает снимок чужого или отсутствующего разговора', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Чужой' } })).json()
-    db.createUser('other', 'password', 'developer')
+    db.identity.createUser('other', 'password', 'developer')
     const other = signToken({ name: 'other', role: 'developer' }, SECRET)
     const hidden = await app.inject({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot`, headers: { authorization: `Bearer ${other}` } })
     expect(hidden.statusCode).toBe(404)
@@ -354,24 +381,24 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('чат задачи в «Готово» уходит из списка, но открывается по ссылке и из карточки', async () => {
-    const project = db.createProject(U, { name: 'P' })
-    const board = db.getBoard(U, project.id)!
+    const project = db.projects.createProject(U, { name: 'P' })
+    const board = db.tasks.getBoard(U, project.id)!
     const done = board.columns.find((c) => c.semanticType === 'done')!
-    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Скролл' })!
-    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+    const task = db.tasks.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Скролл' })!
+    const chat = db.chat.openOrCreateTaskChat(U, project.id, task.id)!
     const ids = async (url: string): Promise<string[]> =>
       (await inj({ method: 'GET', url })).json().map((c: { id: string }) => c.id)
 
     const context = `scope=kanban&projectId=${encodeURIComponent(project.id)}`
     expect(await ids(`/api/conversations?${context}`)).toContain(chat.id)
-    db.moveTask(U, project.id, task.id, { columnId: done.id })
+    db.tasks.moveTask(U, project.id, task.id, { columnId: done.id })
     expect(await ids(`/api/conversations?${context}`)).not.toContain(chat.id)
     expect(await ids(`/api/conversations?${context}&includeCompleted=1`)).toContain(chat.id)
     expect(await ids(`/api/conversations/search?${context}&q=${encodeURIComponent('Скролл')}`)).not.toContain(chat.id)
     expect(await ids(`/api/conversations/search?${context}&q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).toContain(chat.id)
 
     const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
-    db.moveTask(U, project.id, task.id, { columnId: cancelled.id })
+    db.tasks.moveTask(U, project.id, task.id, { columnId: cancelled.id })
     expect(await ids(`/api/conversations?${context}`)).not.toContain(chat.id)
     expect(await ids(`/api/conversations?${context}&includeCompleted=1`)).not.toContain(chat.id)
     expect(await ids(`/api/conversations/search?${context}&q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).not.toContain(chat.id)
@@ -444,7 +471,7 @@ describe('REST: conversations/messages/settings', () => {
         ['ai', 'Готово']
       ])
       // Разговор привязан к session-id → следующий ход пойдёт через --resume.
-      expect(db.getConversation(U, conversation.id)?.claudeSessionId).toBe('sess-42')
+      expect(db.chat.getConversation(U, conversation.id)?.claudeSessionId).toBe('sess-42')
     } finally {
       if (prev === undefined) delete process.env.VC_CC_DIR
       else process.env.VC_CC_DIR = prev
@@ -541,11 +568,11 @@ describe('REST: conversations/messages/settings', () => {
         payload: { role: 'u1', text: 'секрет', time: '10:00' }
       })
     ).json()
-    db.setClaudeSession(U, c.id, 'sess-abc')
-    expect(db.getConversation(U, c.id)?.claudeSessionId).toBe('sess-abc')
+    db.chat.setClaudeSession(U, c.id, 'sess-abc')
+    expect(db.chat.getConversation(U, c.id)?.claudeSessionId).toBe('sess-abc')
 
     await inj({ method: 'DELETE', url: `/api/conversations/${c.id}/messages/${m.id}` })
-    expect(db.getConversation(U, c.id)?.claudeSessionId).toBeNull()
+    expect(db.chat.getConversation(U, c.id)?.claudeSessionId).toBeNull()
   })
 
   it('список моделей содержит все поддерживаемые', async () => {
@@ -624,7 +651,7 @@ describe('REST: conversations/messages/settings', () => {
     await inj({ method: 'PUT', url: '/api/settings', payload: { defaultAgentId: agent.id, execTarget: agent.id } })
     expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ defaultAgentId: agent.id })
 
-    db.deleteAgent(U, agent.id) // удаление мимо REST — как чистка или другой сеанс
+    db.machines.deleteAgent(U, agent.id) // удаление мимо REST — как чистка или другой сеанс
 
     expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ defaultAgentId: null, execTarget: null })
   })
@@ -854,7 +881,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(withoutSession.size?.chars).toBeGreaterThan(0)
 
     // Живая сессия движка: история уже у модели, в промпт она не пересобирается.
-    db.setClaudeSession(U, created.id, 'claude:sess-1')
+    db.chat.setClaudeSession(U, created.id, 'claude:sess-1')
     const withSession = await item()
     expect(withSession.description).toContain('уже в сессии движка')
     expect(withSession.explanation).toContain('resume')
@@ -862,7 +889,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(withSession.details?.['Сессия движка']).toBe('есть (resume)')
 
     // Сессия другого движка чужой разговор не «продолжает»: у codex своя.
-    db.setClaudeSession(U, created.id, 'codex:sess-2')
+    db.chat.setClaudeSession(U, created.id, 'codex:sess-2')
     expect((await item()).explanation).toContain('пересобирается в промпт целиком')
   })
 
@@ -882,7 +909,7 @@ describe('REST: conversations/messages/settings', () => {
     // С машиной: два файла из пяти каталогов цепочки, остальные просто нет.
     // Файловые операции машины подменяем на инстансе реестра — своего сокета
     // этому тесту не нужно, проверяется сборка цепочки, а не транспорт.
-    const machine = db.createAgent(U, 'Мак')
+    const machine = db.machines.createAgent(U, 'Мак')
     const remoteFiles = new Map<string, string>([
       ['/Users/me/AGENTS.md', Buffer.from('# Общие правила').toString('base64')],
       ['/Users/me/work/project/AGENTS.md', Buffer.from('# Правила проекта').toString('base64')]
@@ -963,8 +990,8 @@ describe('REST: conversations/messages/settings', () => {
 
   it('админ видит и правит контекст чужого чата, обычный пользователь — нет', async () => {
     // Чужой разговор: владелец — другой пользователь.
-    db.createUser('marina', 'pass', 'developer')
-    const foreign = db.createConversation('marina', 'Чат Марины')
+    db.identity.createUser('marina', 'pass', 'developer')
+    const foreign = db.chat.createConversation('marina', 'Чат Марины')
 
     // Админ (текущий токен) видит снимок с пометкой «чужой» и владельцем.
     const asAdmin = await inj({ method: 'GET', url: `/api/conversations/${foreign.id}/context-snapshot` })
@@ -976,7 +1003,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(toggled.statusCode).toBe(200)
     expect(toggled.json().changes[0]).toMatchObject({ actor: U, itemId: 'personalization', enabled: false })
     // Правка легла в чужой разговор, а не в свой.
-    expect(db.getConversation('marina', foreign.id)?.disabledContext).toEqual(['personalization'])
+    expect(db.chat.getConversation('marina', foreign.id)?.disabledContext).toEqual(['personalization'])
 
     // Обычному пользователю чужой разговор неотличим от несуществующего.
     const marinaToken = signToken({ name: 'marina', role: 'developer' }, SECRET)
@@ -990,9 +1017,9 @@ describe('REST: conversations/messages/settings', () => {
 
   it('политика машины и «вслепую» видны в снимке', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Политика' } })).json()
-    const machine = db.createAgent(U, 'Мак с политикой')
-    db.setAgentPolicy(U, machine.id, {
-      ...db.listAgents(U).find((item) => item.id === machine.id)!.policy,
+    const machine = db.machines.createAgent(U, 'Мак с политикой')
+    db.machines.setAgentPolicy(U, machine.id, {
+      ...db.machines.listAgents(U).find((item) => item.id === machine.id)!.policy,
       allowedDirs: ['/Users/me/work'],
       denyPatterns: ['rm -rf'],
       allowWrite: false,
@@ -1016,7 +1043,7 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('выключенные проект, БЗ и персонализация вместе дают предупреждение «вслепую»', async () => {
-    const project = db.createProject(U, { name: 'Проект контекста' })
+    const project = db.projects.createProject(U, { name: 'Проект контекста' })
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Вслепую', projectId: project.id } })).json()
     for (const itemId of ['personalization', 'project-binding', 'knowledge-mode']) {
       await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${itemId}`, payload: { enabled: false } })
@@ -1209,12 +1236,12 @@ describe('REST: conversations/messages/settings', () => {
     // Свежая фича хода (turns.ts, buildTaskMakeSources по task_designs): чат
     // задачи читает файлы привязанного Make-макета. Инспектор обязан это
     // показывать — иначе «что сможет модель» снова отвечает неполно.
-    const project = db.createProject(U, { name: 'Проект макета' })
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'По макету' })!
-    const makeChat = db.createConversation(U, 'Макет', 'make', project.id)!
-    db.linkTaskDesign(U, project.id, task.id, { conversationId: makeChat.id })
-    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+    const project = db.projects.createProject(U, { name: 'Проект макета' })
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'По макету' })!
+    const makeChat = db.chat.createConversation(U, 'Макет', 'make', project.id)!
+    db.tasks.linkTaskDesign(U, project.id, task.id, { conversationId: makeChat.id })
+    const chat = db.chat.openOrCreateTaskChat(U, project.id, task.id)!
 
     const item = async (id: string): Promise<{ available: boolean; toggleable: boolean; lockReason?: string | null } | undefined> => {
       const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${chat.id}/context-snapshot` })).json()
@@ -1290,8 +1317,8 @@ describe('REST: conversations/messages/settings', () => {
 
     // Закрепляем движок, недоступный роли admin, — ход молча взял бы другой
     // раннер, и снимок обязан предупредить об этом до отправки.
-    const engine = db.createLlmEngine({ name: 'Только тестировщики', kind: 'claude', baseUrl: 'http://runner', token: 't', enabled: true, allowedRoles: ['tester'], isDefault: false })
-    db.setConversationExecTarget(U, created.id, null, null, undefined, null, null, null, engine.id)
+    const engine = db.llm.createLlmEngine({ name: 'Только тестировщики', kind: 'claude', baseUrl: 'http://runner', token: 't', enabled: true, allowedRoles: ['tester'], isDefault: false })
+    db.chat.setConversationExecTarget(U, created.id, null, null, undefined, null, null, null, engine.id)
     const after = await snap()
     expect(after.details?.['Замена движка']).toBeTruthy()
     expect(after.warnings.some((entry) => entry.text.includes('Закреплённый движок-исполнитель недоступен'))).toBe(true)
@@ -1302,11 +1329,11 @@ describe('REST: conversations/messages/settings', () => {
     // (`turns.ts`: permittedProvider). Снимок обязан показывать то же, иначе
     // инспектор обещает codex человеку, у которого он запрещён.
     // Права — deny-list: запись с modelId '*' закрывает движок целиком.
-    db.createUser('dev-access', 'password', 'developer')
+    db.identity.createUser('dev-access', 'password', 'developer')
     const token = signToken({ name: 'dev-access', role: 'developer' }, SECRET)
-    const conv = db.createConversation('dev-access', 'Без codex')!
-    db.setConversationExecTarget('dev-access', conv.id, null, null, undefined, 'codex', 'gpt-5.6-sol', null)
-    db.setUserLlmAccess('dev-access', [{ provider: 'codex', modelId: '*' }])
+    const conv = db.chat.createConversation('dev-access', 'Без codex')!
+    db.chat.setConversationExecTarget('dev-access', conv.id, null, null, undefined, 'codex', 'gpt-5.6-sol', null)
+    db.identity.setUserLlmAccess('dev-access', [{ provider: 'codex', modelId: '*' }])
 
     const snap = async (): Promise<{ provider: string; model: string }> =>
       (await app.inject({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot`, headers: { authorization: `Bearer ${token}` } })).json().summary
@@ -1315,7 +1342,7 @@ describe('REST: conversations/messages/settings', () => {
     // Модель приводится к алиасу меню тем же кодом, что в ходе: сохранённое
     // старое значение «opus» исполнитель резолвит в «opus[1m]», и показывать
     // сырое значение значит называть не ту модель.
-    db.setConversationExecTarget('dev-access', conv.id, null, null, undefined, 'claude', 'opus', null)
+    db.chat.setConversationExecTarget('dev-access', conv.id, null, null, undefined, 'claude', 'opus', null)
     expect((await snap()).model).toBe('opus[1m]')
   })
 
@@ -1325,10 +1352,10 @@ describe('REST: conversations/messages/settings', () => {
     // Вместо понижения запрещаются встроенные инструменты. Снимок обязан
     // говорить то же — иначе обычный пользователь читает «Только планирование»,
     // а ход правит файлы проекта.
-    db.createUser('dev-make', 'password', 'developer')
+    db.identity.createUser('dev-make', 'password', 'developer')
     const token = signToken({ name: 'dev-make', role: 'developer' }, SECRET)
-    const conv = db.createConversation('dev-make', 'Витрина', 'make')!
-    db.setConversationExecTarget('dev-make', conv.id, null, null, undefined, null, null, 'acceptEdits')
+    const conv = db.chat.createConversation('dev-make', 'Витрина', 'make')!
+    db.chat.setConversationExecTarget('dev-make', conv.id, null, null, undefined, null, null, 'acceptEdits')
     const snapshot = (await app.inject({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot`, headers: { authorization: `Bearer ${token}` } })).json()
     expect(snapshot.summary.permissionMode.value).not.toBe('plan')
     // Встроенные инструменты в списке запрещённых — модель их не получит.
@@ -1363,7 +1390,7 @@ describe('REST: conversations/messages/settings', () => {
     // не читает, всё равно попадает в disabledContext и выглядит рабочим.
     // Поэтому набор выключаемого зафиксирован здесь; расширяя его, надо сначала
     // научить ход (`turns.ts`) читать новый id — иначе тумблер будет врать.
-    const project = db.createProject(U, { name: 'Состав тумблеров' })
+    const project = db.projects.createProject(U, { name: 'Состав тумблеров' })
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Состав', projectId: project.id } })).json()
     const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
     const ids = snapshot.groups
@@ -1385,7 +1412,7 @@ describe('REST: conversations/messages/settings', () => {
     // выключение ни на что не влияет, потому что ход про этот id не знает.
     // Ровно так однажды появился тумблер у автопилота ассистента: проверять
     // `includedInNextTurn` бесполезно — он пересчитывается для любого пункта.
-    const project = db.createProject(U, { name: 'Проект инварианта' })
+    const project = db.projects.createProject(U, { name: 'Проект инварианта' })
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Все тумблеры', projectId: project.id } })).json()
     const snapshotOf = async (): Promise<{ items: Array<{ id: string; toggleable: boolean; enabled: boolean; available: boolean; includedInNextTurn: boolean; effect?: string | null }>; blocks: string[]; disallowed: string[] }> => {
       const value = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
@@ -1425,7 +1452,7 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('показывает автопилот ассистента и следует за его переключением', async () => {
-    const project = db.createProject(U, { name: 'Проект автопилота' })
+    const project = db.projects.createProject(U, { name: 'Проект автопилота' })
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'С доской', projectId: project.id } })).json()
     const autonomyItem = async (): Promise<{ title: string; details?: Record<string, unknown> } | undefined> => {
       const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
@@ -1493,7 +1520,7 @@ describe('REST: conversations/messages/settings', () => {
       chatInstructions: [{ id: 'custom-long', title: 'Длинная', text: 'и'.repeat(6000), enabled: true }] } })
     expect(await repeats()).toBe(false) // сессии ещё нет — повторять нечего
 
-    db.setClaudeSession(U, created.id, 'claude:sess-1')
+    db.chat.setClaudeSession(U, created.id, 'claude:sess-1')
     expect(await repeats()).toBe(true)
   })
 
@@ -1510,11 +1537,9 @@ describe('REST: conversations/messages/settings', () => {
       }
     }
     const before = await snap()
-    // Пункт есть всегда, а блок — только когда мастерская что-то отдала. В
-    // тестовом сервере `makeContext` не подключён, поэтому проверяем пункт и
-    // честное описание, а не выдуманный текст.
+    // Пункт и обязательные stack/uiKit hints есть всегда, даже пока проект не содержит пользовательского контекста.
     expect(before.item).toBeDefined()
-    expect(before.blocks.some((block) => block.title === 'Контекст проекта Make')).toBe(false)
+    expect(before.blocks.some((block) => block.title === 'Контекст проекта Make')).toBe(true)
     // Динамика хода перечислена прямо: человек видит её следы в ответах.
     expect(before.omitted.some((line) => line.includes('Режим Make'))).toBe(true)
 
@@ -1523,11 +1548,11 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   it('контекст задачи попадает в предпросмотр и выключается отдельным тумблером', async () => {
-    const project = db.createProject(U, { name: 'Проект задач' })
-    const board = db.getBoard(U, project.id)!
-    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Починить гейт' })!
-    db.updateTask(U, project.id, task.id, { description: 'Гейт красный', acceptanceCriteria: 'Зелёный гейт' })
-    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+    const project = db.projects.createProject(U, { name: 'Проект задач' })
+    const board = db.tasks.getBoard(U, project.id)!
+    const task = db.tasks.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Починить гейт' })!
+    db.tasks.updateTask(U, project.id, task.id, { description: 'Гейт красный', acceptanceCriteria: 'Зелёный гейт' })
+    const chat = db.chat.openOrCreateTaskChat(U, project.id, task.id)!
 
     const snap = async (): Promise<{ blocks: Array<{ title: string; text: string }>; item: { enabled: boolean; includedInNextTurn: boolean } }> => {
       const value = (await inj({ method: 'GET', url: `/api/conversations/${chat.id}/context-snapshot` })).json()
@@ -1658,8 +1683,8 @@ describe('REST: conversations/messages/settings', () => {
 describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
   /** Беседа с сообщениями пользователя (по умолчанию — admin из токена). */
   const seed = (user: string, title: string, texts: string[]): string => {
-    const conv = db.createConversation(user, title)
-    for (const t of texts) db.addMessage(user, conv.id, 'u1', t, '12:00')
+    const conv = db.chat.createConversation(user, title)
+    for (const t of texts) db.chat.addMessage(user, conv.id, 'u1', t, '12:00')
     return conv.id
   }
 
@@ -1693,7 +1718,7 @@ describe('REST: GET /api/search — полнотекстовый поиск по
   })
 
   it('не выдаёт сообщения другого пользователя', async () => {
-    db.createUser('mallory', '', 'developer')
+    db.identity.createUser('mallory', '', 'developer')
     const theirs = seed('mallory', 'Чужая беседа', ['чужой секрет про миграцию'])
     seed(U, 'Своя беседа', ['свой текст про миграцию'])
 
@@ -1707,9 +1732,9 @@ describe('REST: GET /api/search — полнотекстовый поиск по
   })
 
   it('сужает по проекту, projectId=none — только беседы без проекта', async () => {
-    const project = db.createProject(U, { name: 'Проект' })
+    const project = db.projects.createProject(U, { name: 'Проект' })
     const inProject = seed(U, 'С проектом', ['миграция схемы'])
-    db.setConversationProject(U, inProject, project.id)
+    db.chat.setConversationProject(U, inProject, project.id)
     seed(U, 'Без проекта', ['миграция схемы'])
 
     const byProject = await inj({ method: 'GET', url: `/api/search?q=миграция%20&projectId=${project.id}` })

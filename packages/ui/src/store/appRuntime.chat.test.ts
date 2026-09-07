@@ -7,6 +7,7 @@ import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { ClaudeLogEntry, Message } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
+import { CONVERSATIONS_PAGE } from '@shared/projects'
 
 // Быстрые задержки + фейковые таймеры делают мок-пайплайн детерминированным.
 const DELAYS = { frame: 20, transcribe: 20, think: 20, speak: 20 }
@@ -2248,6 +2249,98 @@ describe('voiceStore — помощник промптов', () => {
     expect(helper.loading).toBe(false)
     expect(helper.error).toBe('Движок недоступен')
     expect(helper.variants).toEqual([])
+  })
+})
+
+describe('voiceStore — списки разделов грузятся при входе в раздел', () => {
+  it('индекс тянет только чаты, а Reader/Make/картинки — по требованию и один раз', async () => {
+    const api = createFakeApi(['Обычный чат'])
+    const scopes: Array<string | undefined> = []
+    const real = api['conversations:list']
+    api['conversations:list'] = vi.fn(async (arg: Parameters<typeof real>[0]) => {
+      scopes.push(arg?.scope)
+      return real(arg)
+    })
+    const store = createTestStore({ api })
+    await store.actions.ensureConversationIndex()
+    // Раньше на старте ехали все шесть списков.
+    expect(scopes).toEqual(['chat'])
+    expect(store.getState().scopeStatus.make).toBe('idle')
+
+    await store.actions.ensureSectionConversations('make')
+    expect(scopes).toEqual(['chat', 'make'])
+    expect(store.getState().scopeStatus.make).toBe('ready')
+
+    // Повторный вход в раздел на сервер уже не ходит.
+    await store.actions.ensureSectionConversations('make')
+    expect(scopes).toEqual(['chat', 'make'])
+  })
+})
+
+describe('voiceStore — список бесед грузится страницами по 20', () => {
+  it('сразу показывает последнюю страницу, а догрузка знает, когда история кончилась', async () => {
+    const api = createFakeApi([])
+    // 45 бесед: две полные страницы и хвост.
+    for (let i = 0; i < 45; i++) await api['conversations:create']({ title: `Беседа ${i}` })
+
+    const store = createTestStore({ api })
+    await store.actions.ensureConversationIndex()
+    expect(store.getState().conversations).toHaveLength(CONVERSATIONS_PAGE)
+    // Самая свежая беседа — сверху: список показывает последние, а не первые.
+    expect(store.getState().conversations[0]!.title).toBe('Беседа 44')
+    expect(store.getState().hasMoreConversations).toBe(true)
+
+    await store.actions.loadMoreConversations()
+    expect(store.getState().conversations).toHaveLength(2 * CONVERSATIONS_PAGE)
+    expect(store.getState().hasMoreConversations).toBe(true)
+
+    await store.actions.loadMoreConversations()
+    expect(store.getState().conversations).toHaveLength(45)
+    // Страница короче размера — дальше ничего нет, прокрутка больше не запросит.
+    expect(store.getState().hasMoreConversations).toBe(false)
+  })
+
+  it('страница, отсеянная фильтром проектов, всё равно двигает курсор', async () => {
+    const api = createFakeApi([])
+    // Первая страница — беседы проекта, дальше идут беседы без проекта.
+    const project = await api['projects:create']({ name: 'P' })
+    for (let i = 0; i < CONVERSATIONS_PAGE; i++) {
+      const conv = await api['conversations:create']({ title: `Без проекта ${i}` })
+      void conv
+    }
+    for (let i = 0; i < CONVERSATIONS_PAGE; i++) {
+      await api['conversations:create']({ title: `В проекте ${i}`, projectId: project.id })
+    }
+    const store = createTestStore({ api })
+    await store.actions.ensureConversationIndex()
+    await store.actions.setSidebarProjectIds([project.id])
+
+    const seen: Array<string | undefined> = []
+    const real = api['conversations:list']
+    api['conversations:list'] = vi.fn(async (arg: Parameters<typeof real>[0]) => {
+      seen.push(arg?.before?.id)
+      return real(arg)
+    })
+    await store.actions.loadMoreConversations()
+    await store.actions.loadMoreConversations()
+    // Курсор идёт по последней полученной беседе: иначе страница, целиком
+    // скрытая фильтром, запрашивалась бы по кругу — и вешала приложение.
+    expect(seen).toHaveLength(2)
+    expect(seen[0]).not.toBe(seen[1])
+  })
+
+  it('обновление списка не схлопывает уже долистанное', async () => {
+    const api = createFakeApi([])
+    for (let i = 0; i < 30; i++) await api['conversations:create']({ title: `Беседа ${i}` })
+
+    const store = createTestStore({ api })
+    await store.actions.ensureConversationIndex()
+    await store.actions.loadMoreConversations()
+    expect(store.getState().conversations).toHaveLength(30)
+
+    await store.actions.refreshConversations()
+    // Событие доски не должно возвращать человека к первой странице.
+    expect(store.getState().conversations).toHaveLength(30)
   })
 })
 

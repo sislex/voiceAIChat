@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@voicechat/ui-kit'
-import { issueKey, QA_WORKFLOW, type KanbanColumnSemanticType } from '@shared/projects'
+import { issueKey, QA_WORKFLOW, type KanbanColumnSemanticType, type TaskReworkCycle } from '@shared/projects'
 import type { TaskModalProps } from './TaskModal'
 import { TaskModal } from './TaskModal'
 import { NewTaskCardView } from './NewTaskCardView'
@@ -20,7 +20,9 @@ const fileView = (file: { id: string; name: string; size: number; mimeType: stri
 export interface TaskCardContainerProps extends TaskModalProps {
   initialVersion?: TaskCardVersion
   reworkCycles?: TaskReworkCycleViewModel[]
-  onCreateReworkCycle?: (taskId: string, draft: TaskReworkDraft, idempotencyKey: string) => Promise<TaskReworkCycleViewModel>
+  loadReworkCycles?: (taskId: string) => Promise<TaskReworkCycle[]>
+  onCreateReworkCycle?: (taskId: string, draft: TaskReworkDraft, idempotencyKey: string) => Promise<TaskReworkCycle>
+  uploadReworkAttachment?: (file: File) => Promise<{ id: string; name: string; mimeType: string; size: number }>
 }
 
 function runStatus(status: string | undefined, awaiting = false): TaskCardRunStatus {
@@ -110,7 +112,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     const api = window.api
     if (!api) return
     const [history, files] = await Promise.all([
-      api['tasks:reworkCycles']({ projectId: props.task.projectId, taskId: props.task.id }),
+      props.loadReworkCycles ? props.loadReworkCycles(props.task.id) : api['tasks:reworkCycles']({ projectId: props.task.projectId, taskId: props.task.id }),
       api['tasks:attachments']({ projectId: props.task.projectId, taskId: props.task.id, scope: 'source' })
     ])
     setCycles(history.map((cycle) => ({ ...cycle, makeSources: cycle.makeSources.map((source) => ({ ...source, id: source.conversationId, paths: source.paths.map((path) => ({ path, available: source.fileStatuses?.find((item) => item.path === path)?.available ?? true })) })), attachments: cycle.attachments.map(fileView) })))
@@ -177,9 +179,10 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
         if (!next.description.trim()) { setError('Опишите, что нужно доработать.'); return }
         setPending(true); setError(null)
         try {
-          const cycle = props.onCreateReworkCycle
+          const rawCycle = props.onCreateReworkCycle
             ? await props.onCreateReworkCycle(props.task.id, next, key)
-            : (await window.api['tasks:createReworkCycle']({ projectId: props.task.projectId, taskId: props.task.id, idempotencyKey: key, input: { description: next.description, criteria: next.criteria, makeSources: next.makeSources ?? [], attachmentIds: next.attachments.map((item) => item.id) } })).cycle as unknown as TaskReworkCycleViewModel
+            : (await window.api['tasks:createPersistentReworkCycle']({ projectId: props.task.projectId, taskId: props.task.id, idempotencyKey: key, input: { description: next.description, criteria: next.criteria, makeSources: next.makeSources ?? [], attachmentIds: next.attachments.map((item) => item.id) } })).cycle
+          const cycle: TaskReworkCycleViewModel = { ...rawCycle, makeSources: rawCycle.makeSources.map((source, index) => ({ ...source, id: source.conversationId || `source-${index}`, paths: source.paths.map((path) => ({ path, available: true })) })), attachments: rawCycle.attachments.map(fileView) }
           setCycles((all) => all.some((item) => item.id === cycle.id) ? all : [...all, cycle])
           setDraft(EMPTY_DRAFT); setReworkOpen(false)
         } catch (cause) {

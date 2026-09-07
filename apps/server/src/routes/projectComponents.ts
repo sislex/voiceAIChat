@@ -9,9 +9,10 @@
 // второй редактор файла означал бы вторую проверку прав и второй набор ошибок.
 
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import { createHash } from 'node:crypto'
 import {
-  isProjectStoryPath, parseStorybookIndex, storybookStoryId, storybookStoryName,
-  type ProjectComponentEntry, type ProjectComponentsListing, type ProjectStorybookAction
+  isProjectStoryPath, machineOrigin, parseStorybookIndex, storyPathMatches, storybookStoryId, storybookStoryName,
+  type ProjectComponentEntry, type ProjectComponentsListing, type ProjectStorybookAccess, type ProjectStorybookAction
 } from '@voicechat/shared'
 import { uid } from '../users/auth.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
@@ -42,10 +43,26 @@ function titleFromPath(path: string): string {
   return path.replace(/\.stories\.(t|j)sx?$/i, '').split('/').filter(Boolean).pop() ?? path
 }
 
+/** Детерминированный id туннеля: тот же вход даёт тот же туннель, чужой — другой. */
+function tunnelIdFor(userId: string, workspace: string, agentId: string, port: number): string {
+  return createHash('sha256').update(`${userId}:${workspace}:${agentId}:${port}`).digest('hex').slice(0, 32)
+}
+
 export interface ProjectComponentsDeps {
   git: GitWorkspaceService
   storybook: StorybookSessions
   tickets: ComponentTicketService
+  /**
+   * Туннель до машины со Storybook (тот же механизм, что у feature-preview).
+   * Нужен, когда браузер и Storybook на разных машинах: каждый модуль Vite через
+   * HTTP-мост агента идёт секунды, и кадр не успевает собраться.
+   */
+  tunnels?: {
+    isOnline(agentId: string): boolean
+    ownsAgent(userId: string, agentId: string): boolean
+    create(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => boolean): Promise<number>
+    close(id: string): boolean
+  }
 }
 
 export function registerProjectComponentsRoutes(app: FastifyInstance, deps: ProjectComponentsDeps): void {
@@ -70,8 +87,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
         // Подхваченный Storybook мог быть запущен для другого каталога — тогда его
         // компоненты не имеют отношения к этой копии. Признак принадлежности —
         // пересечение путей файлов сториз; без него берём список из репозитория.
-        const known = new Set(files.paths)
-        const belongs = !session.adopted || fromIndex.some((entry) => entry.path && known.has(entry.path))
+        const belongs = !session.adopted || fromIndex.some((entry) => entry.path && storyPathMatches(entry.path, files.paths))
         if (fromIndex.length && belongs) {
           return { workspaceId: workspace, source: 'storybook', components: fromIndex, truncated: false }
         }
@@ -143,6 +159,67 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
         if (action === 'stop') return storybook.stop(ref.agentId, workspace, ref.path)
         const input = { agentId: ref.agentId, workspaceId: workspace, path: ref.path, port: req.body?.port, ...(command ? { command } : {}) }
         return action === 'restart' ? await storybook.restart(input) : await storybook.start(input)
+      })
+    }
+  )
+
+  /**
+   * Как открыть кадр стори. Выбор пути делает сервер, а не панель: только он знает,
+   * онлайн ли локальный агент и на какой машине живёт Storybook.
+   */
+  app.post<{ Params: { id: string }; Body: { workspace?: string; localAgentId?: string | null } }>(
+    '/api/projects/:id/components/storybook/open',
+    async (req, reply) => {
+      const workspace = req.body?.workspace
+      if (!workspace) return required(reply, 'workspace')
+      return handle(reply, async (): Promise<ProjectStorybookAccess> => {
+        const userId = uid(req)
+        const ref = git.resolve(userId, req.params.id, workspace, { write: false })
+        const session = await storybook.refresh(ref.agentId, workspace, ref.path)
+        if (session.state !== 'running') throw new GitError(409, 'storybook_not_running', 'Storybook не запущен — сначала поднимите его на машине')
+        const proxy: ProjectStorybookAccess = {
+          kind: 'proxy',
+          url: `/api/preview?url=${encodeURIComponent(machineOrigin(ref.agentId, session.port))}`,
+          tunnelId: null,
+          note: 'Кадр идёт через мост машины: на медленном канале он собирается долго.'
+        }
+        const localAgentId = req.body?.localAgentId?.trim() || null
+        if (!localAgentId) return proxy
+        // Браузер на той же машине, что и Storybook: посредник не нужен вовсе.
+        if (localAgentId === ref.agentId) {
+          return { kind: 'direct', url: `http://127.0.0.1:${session.port}`, tunnelId: null, note: 'Storybook на этой же машине — кадр берётся напрямую.' }
+        }
+        const tunnels = deps.tunnels
+        if (!tunnels || !tunnels.ownsAgent(userId, localAgentId) || !tunnels.isOnline(localAgentId)) return proxy
+        const tunnelId = tunnelIdFor(userId, workspace, ref.agentId, session.port)
+        try {
+          const port = await tunnels.create(tunnelId, localAgentId, ref.agentId, session.port, () => true)
+          return { kind: 'tunnel', url: `http://127.0.0.1:${port}`, tunnelId, note: 'Кадр идёт через локальный агент — без задержек моста.' }
+        } catch {
+          // Туннель не поднялся (старый агент, занятый порт) — прокси всё равно работает.
+          return proxy
+        }
+      })
+    }
+  )
+
+  /**
+   * Закрыть туннель кадра: панель зовёт при уходе с вкладки. Id туннеля —
+   * детерминированный хеш, поэтому доступ проверяем заново: чужой туннель нельзя
+   * гасить, даже зная его идентификатор.
+   */
+  app.delete<{ Params: { id: string; tunnelId: string }; Querystring: { workspace?: string } }>(
+    '/api/projects/:id/components/storybook/tunnels/:tunnelId',
+    async (req, reply) => {
+      const workspace = req.query.workspace
+      if (!workspace) return required(reply, 'workspace')
+      return handle(reply, async () => {
+        const userId = uid(req)
+        const ref = git.resolve(userId, req.params.id, workspace, { write: false })
+        const session = await storybook.refresh(ref.agentId, workspace, ref.path)
+        const expected = tunnelIdFor(userId, workspace, ref.agentId, session.port)
+        if (req.params.tunnelId !== expected) throw new GitError(404, 'tunnel_not_found', 'Туннель не найден')
+        return { closed: deps.tunnels?.close(req.params.tunnelId) ?? false }
       })
     }
   )

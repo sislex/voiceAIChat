@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rewriteRelativeImports, transpileForPreview } from './transpile'
+import { compileDiagnostics, rewriteRelativeImports, transpileForPreview } from './transpile'
 
 describe('make transpile', () => {
   it('дополняет относительные импорты расширением существующего файла и не трогает остальные', () => {
@@ -12,6 +12,17 @@ describe('make transpile', () => {
     expect(out).toContain("from 'react'")
     expect(out).toContain("import './styles.css'")
     expect(out).toContain("import('./App.jsx')")
+  })
+
+  // @testCase TC-06
+  it('transpiles Angular standalone decorators with the same preview configuration', async () => {
+    const source = `import { Component } from '@angular/core'
+@Component({ selector: 'x-app', standalone: true, template: '<h1>ok</h1>' })
+export class AppComponent {}`
+    expect(await compileDiagnostics('src/main.ts', source)).toEqual([])
+    const code = await transpileForPreview('angular', 'src/main.ts', source, 1, () => false)
+    expect(code).toContain('AppComponent')
+    expect(code).not.toContain('@Component')
   })
 
   it('JSX → ESM с automatic runtime; ошибка компиляции — модуль, бросающий понятную ошибку; кэш по rev', async () => {

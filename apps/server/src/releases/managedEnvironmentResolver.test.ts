@@ -20,7 +20,7 @@ const machine = {
   }
 }
 const deps=(online=true,exitCode=0,machineValue=machine)=>{
-  const db={getProject:()=>project,getProjectMachine:()=>machineValue} as unknown as VoiceChatDb
+  const db={projects:{getProject:()=>project},machines:{getProjectMachine:()=>machineValue}} as unknown as VoiceChatDb
   const releases={isOnline:()=>online,runPreflight:vi.fn(async()=>({exitCode,output:exitCode?'failed':'ok'}))} as unknown as ReleaseManager
   return {db,releases}
 }

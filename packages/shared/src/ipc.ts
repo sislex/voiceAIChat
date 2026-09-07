@@ -149,7 +149,21 @@ export interface IpcInvokeMap {
    * «Готово»: по умолчанию сервер их не отдаёт (переключатель «Показывать чаты
    * завершённых задач»).
    */
-  'conversations:list': { arg: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }; result: Conversation[] }
+  /**
+   * Список бесед. `since` — окно свежих (сайдбар грузит текущую неделю),
+   * `before` + `limit` — курсорная догрузка секции «Более старые».
+   */
+  'conversations:list': {
+    arg: {
+      scope?: ConversationScope
+      projectId?: string
+      includeCompleted?: boolean
+      since?: number
+      before?: { updatedAt: number; id: string }
+      limit?: number
+    }
+    result: Conversation[]
+  }
   /** Make: состояние проекта разговора (файлы, снимки, rev) и операции с файлами. */
   'make:state': { arg: { conversationId: string }; result: MakeProjectState }
   'make:read': { arg: { conversationId: string; path: string }; result: MakeFileContent }
@@ -269,7 +283,7 @@ export interface IpcInvokeMap {
   /** Контекст задачи для шапки связанного чата; null — чат не привязан к задаче. */
   'conversations:taskContext': { arg: { id: string }; result: TaskChatContext | null }
   /** Метки чатов задач для списка бесед: ключ, тип и последний ран. */
-  'conversations:taskChats': { arg: void; result: TaskChatBadge[] }
+  'conversations:taskChats': { arg: { withRuns?: boolean } | void; result: TaskChatBadge[] }
   /** Сменить статус жизненного цикла чата. */
   'conversations:setStatus': { arg: { id: string; status: ConversationStatus }; result: Conversation }
   'conversations:setExecTarget': {
@@ -578,6 +592,11 @@ export interface IpcInvokeMap {
   'projects:componentStories': { arg: { id: string; workspace: string; path: string }; result: ProjectComponentEntry }
   'projects:storybookSession': { arg: { id: string; workspace: string }; result: ProjectStorybookSession }
   'projects:storybookAction': { arg: { id: string; workspace: string; action: ProjectStorybookAction; port?: number; command?: string }; result: ProjectStorybookSession }
+  'projects:storybookOpen': {
+    arg: { id: string; workspace: string; localAgentId?: string | null }
+    result: import('./projectComponents').ProjectStorybookAccess
+  }
+  'projects:storybookCloseTunnel': { arg: { id: string; tunnelId: string; workspace: string }; result: { closed: boolean } }
   'projects:componentTicket': {
     arg: { id: string; workspace: string; title: string; description?: string; paths: string[]; labels?: string[] }
     result: ProjectComponentTicketResult
@@ -594,6 +613,8 @@ export interface IpcInvokeMap {
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
   'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
+  /** Состояние карточек доски: вторая фаза, приезжает следом за скелетом. */
+  'board:getStatuses': { arg: { id: string; includeCompleted?: boolean }; result: import('./projects').BoardStatuses }
   /** Вид доски человека в проекте (фильтры и раскладка) — хранится на сервере. */
   'board:getView': { arg: { id: string }; result: import('./projects').BoardView }
   /** Патч вида доски: присланные поля поверх сохранённых, в ответе — весь вид. */
@@ -605,6 +626,8 @@ export interface IpcInvokeMap {
   'columns:delete': { arg: { projectId: string; columnId: string }; result: void }
   /** Полная задача по id (тяжёлые поля, которых нет в лёгкой доске): грузит TaskModal. */
   'tasks:get': { arg: { projectId: string; taskId: string }; result: Task | null }
+  'tasks:listReworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
+  'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; input: import('./projects').CreateTaskReworkCycleInput }; result: import('./projects').TaskReworkCycle }
   'tasks:create': {
     arg: {
       projectId: string
@@ -700,7 +723,7 @@ export interface IpcInvokeMap {
   /** Make-проекты, привязанные к проекту: выбор источника дизайна в карточке. */
   'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
   'tasks:reworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
-  'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; idempotencyKey: string; input: import('./projects').CreateTaskReworkCycle }; result: { cycle: import('./projects').TaskReworkCycle; task: import('./projects').Task; replayed: boolean } }
+  'tasks:createPersistentReworkCycle': { arg: { projectId: string; taskId: string; idempotencyKey: string; input: import('./projects').CreateTaskReworkCycle }; result: { cycle: import('./projects').TaskReworkCycle; task: import('./projects').Task; replayed: boolean } }
   'tasks:attachments': { arg: { projectId: string; taskId: string; scope?: 'source' | 'rework_draft' }; result: import('./projects').TaskAttachment[] }
   'tasks:uploadAttachment': { arg: { projectId: string; taskId: string; scope: 'source' | 'rework_draft'; name: string; mimeType?: string; dataBase64: string }; result: import('./projects').TaskAttachment }
   'tasks:deleteAttachment': { arg: { projectId: string; taskId: string; attachmentId: string }; result: { deleted: boolean } }
@@ -721,7 +744,7 @@ export interface IpcInvokeMap {
   'imgstudio:unpublish': { arg: { conversationId: string }; result: { url: null } }
   'imgstudio:run': { arg: { conversationId: string }; result: { active: boolean } }
   'imgstudio:transfer': { arg: { conversationId: string; path: string; to: string; copy?: boolean }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
-  'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number }> } }
+  'imgstudio:trash': { arg: { conversationId: string }; result: { items: Array<{ name: string; deletedAt: number; size: number }> } }
   'imgstudio:restore': { arg: { conversationId: string; name: string }; result: { name: string; files: import('./imageStudio').ImageStudioFile[] } }
   /** Очистка корзины: без `name` — вся, с `name` — только этот файл. */
   'imgstudio:purge': { arg: { conversationId: string; name?: string }; result: { removed: number; items: Array<{ name: string; deletedAt: number }> } }
@@ -970,6 +993,10 @@ export interface RendererBoardBridge {
   onPreparationRunUpdated(cb: (m: { projectId: string; taskId: string; runId: string }) => void): () => void
   /** Адресная инвалидация списка репозиториев задачи. */
   onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
+  /** Адресная инвалидация состояния QA-этапа: панель перечитывает снимок вместо опроса. */
+  onQaStageUpdated(cb: (m: { projectId: string; taskId: string; stage: import('./qa').QaRunStage }) => void): () => void
+  /** Адресная инвалидация очереди «Улучшения» проекта. */
+  onImprovementsUpdated(cb: (m: { projectId: string }) => void): () => void
   /** Успешное восстановление WS после уже состоявшегося подключения. */
   onReconnect(cb: () => void): () => void
 }
@@ -1461,12 +1488,15 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:componentStories',
   'projects:storybookSession',
   'projects:storybookAction',
+  'projects:storybookOpen',
+  'projects:storybookCloseTunnel',
   'projects:componentTicket',
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',
   'projects:setUserDefaultMachine',
   'board:get',
+  'board:getStatuses',
   'board:getView',
   'board:saveView',
   'columns:create',
@@ -1475,6 +1505,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'columns:reorder',
   'columns:delete',
   'tasks:get',
+  'tasks:listReworkCycles',
+  'tasks:createReworkCycle',
   'tasks:create',
   'tasks:createFromProposalInPreparation',
   'tasks:activity',
