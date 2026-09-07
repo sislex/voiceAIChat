@@ -59,8 +59,8 @@ export interface ProjectComponentsDeps {
    */
   tunnels?: {
     isOnline(agentId: string): boolean
-    ownsAgent(userId: string, agentId: string): boolean
-    create(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => boolean): Promise<number>
+    ownsAgent(userId: string, agentId: string): Promise<boolean>
+    create(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => Promise<boolean>): Promise<number>
     close(id: string): boolean
   }
 }
@@ -79,7 +79,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
       const workspace = req.query.workspace
       if (!workspace) return required(reply, 'workspace')
       return handle(reply, async (): Promise<ProjectComponentsListing> => {
-        const ref = git.resolve(uid(req), req.params.id, workspace, { write: false })
+        const ref = await git.resolve(uid(req), req.params.id, workspace, { write: false })
         const session = await storybook.refresh(ref.agentId, workspace, ref.path)
         const index = await storybook.index(ref.agentId, workspace, ref.path)
         const fromIndex = index ? parseStorybookIndex(index) : []
@@ -128,7 +128,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
       const workspace = req.query.workspace
       if (!workspace) return required(reply, 'workspace')
       return handle(reply, async () => {
-        const ref = git.resolve(uid(req), req.params.id, workspace, { write: false })
+        const ref = await git.resolve(uid(req), req.params.id, workspace, { write: false })
         return await storybook.refresh(ref.agentId, workspace, ref.path)
       })
     }
@@ -155,7 +155,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
         return reply.code(400).send({ error: 'bad_request', message: 'Команда запуска слишком длинная или многострочная' })
       }
       return handle(reply, async () => {
-        const ref = git.resolve(uid(req), req.params.id, workspace, { write: action === 'stop' ? false : true })
+        const ref = await git.resolve(uid(req), req.params.id, workspace, { write: action === 'stop' ? false : true })
         if (action === 'stop') return storybook.stop(ref.agentId, workspace, ref.path)
         const input = { agentId: ref.agentId, workspaceId: workspace, path: ref.path, port: req.body?.port, ...(command ? { command } : {}) }
         return action === 'restart' ? await storybook.restart(input) : await storybook.start(input)
@@ -174,7 +174,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
       if (!workspace) return required(reply, 'workspace')
       return handle(reply, async (): Promise<ProjectStorybookAccess> => {
         const userId = uid(req)
-        const ref = git.resolve(userId, req.params.id, workspace, { write: false })
+        const ref = await git.resolve(userId, req.params.id, workspace, { write: false })
         const session = await storybook.refresh(ref.agentId, workspace, ref.path)
         if (session.state !== 'running') throw new GitError(409, 'storybook_not_running', 'Storybook не запущен — сначала поднимите его на машине')
         const proxy: ProjectStorybookAccess = {
@@ -190,10 +190,10 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
           return { kind: 'direct', url: `http://127.0.0.1:${session.port}`, tunnelId: null, note: 'Storybook на этой же машине — кадр берётся напрямую.' }
         }
         const tunnels = deps.tunnels
-        if (!tunnels || !tunnels.ownsAgent(userId, localAgentId) || !tunnels.isOnline(localAgentId)) return proxy
+        if (!tunnels || !await tunnels.ownsAgent(userId, localAgentId) || !tunnels.isOnline(localAgentId)) return proxy
         const tunnelId = tunnelIdFor(userId, workspace, ref.agentId, session.port)
         try {
-          const port = await tunnels.create(tunnelId, localAgentId, ref.agentId, session.port, () => true)
+          const port = await tunnels.create(tunnelId, localAgentId, ref.agentId, session.port, async () => true)
           return { kind: 'tunnel', url: `http://127.0.0.1:${port}`, tunnelId, note: 'Кадр идёт через локальный агент — без задержек моста.' }
         } catch {
           // Туннель не поднялся (старый агент, занятый порт) — прокси всё равно работает.
@@ -215,7 +215,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
       if (!workspace) return required(reply, 'workspace')
       return handle(reply, async () => {
         const userId = uid(req)
-        const ref = git.resolve(userId, req.params.id, workspace, { write: false })
+        const ref = await git.resolve(userId, req.params.id, workspace, { write: false })
         const session = await storybook.refresh(ref.agentId, workspace, ref.path)
         const expected = tunnelIdFor(userId, workspace, ref.agentId, session.port)
         if (req.params.tunnelId !== expected) throw new GitError(404, 'tunnel_not_found', 'Туннель не найден')

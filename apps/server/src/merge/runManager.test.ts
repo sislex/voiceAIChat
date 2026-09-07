@@ -75,10 +75,10 @@ describe('MergeRunManager',()=>{
     expect(await manager.checkReadiness('admin','p1','t1','a1')).toMatchObject({ready:false,code:'machine_offline'})
     expect(executor.run).not.toHaveBeenCalled()
   })
-  it('keeps the task in merge when an active run is cancelled',()=>{
+  it('keeps the task in merge when an active run is cancelled',async ()=>{
     const s=setup([])
     s.manager.start(s.run)
-    expect(s.manager.cancel(s.run.id,'admin')?.status).toBe('cancelled')
+    expect((await s.manager.cancel(s.run.id,'admin'))?.status).toBe('cancelled')
     expect(s.moves).toEqual(['merge'])
   })
   it('merges from a temporary clone when the released CI workspace no longer exists',async()=>{

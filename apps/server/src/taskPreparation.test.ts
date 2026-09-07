@@ -90,13 +90,13 @@ function fakeCli(calls: LlmRequest[], answer: () => (attempt: number) => Answer)
       calls.push(req)
       const attempt = calls.length
       const reply = answer()(attempt)
-      const timer = setTimeout(() => {
-        if ('error' in reply) handlers.onError(reply.error)
+      const timer = setTimeout(async () => {
+        if ('error' in reply) await handlers.onError(reply.error)
         else if ('text' in reply) {
-          handlers.onDelta('фрагмент-1')
-          handlers.onDelta('фрагмент-2')
-          handlers.onDelta('фрагмент-3')
-          handlers.onDone(reply.text)
+          await handlers.onDelta('фрагмент-1')
+          await handlers.onDelta('фрагмент-2')
+          await handlers.onDelta('фрагмент-3')
+          await handlers.onDone(reply.text)
         }
       }, 0)
       return { cancel: () => { cancelled++; clearTimeout(timer) } }
@@ -112,7 +112,7 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.identity.createUser('bob', '', 'developer')
+  await db.identity.createUser('bob', '', 'developer')
   claudeCalls = []
   codexCalls = []
   cancelled = 0
@@ -161,8 +161,8 @@ async function settled(token: string, runId: string): Promise<TaskPreparationRun
   throw new Error('подготовка не завершилась')
 }
 
-function useCodex(userId: string): void {
-  db.settings.saveSettings(userId, { ...DEFAULT_SETTINGS, llmProvider: 'codex' })
+async function useCodex(userId: string): Promise<void> {
+  await db.settings.saveSettings(userId, { ...DEFAULT_SETTINGS, llmProvider: 'codex' })
 }
 
 describe('синхронизация общей базовой ветки перед подготовкой', () => {
@@ -384,10 +384,10 @@ describe('синхронизация общей базовой ветки пер
 
 describe('DELETE /api/agents/:id', () => {
   it('удаляет машину с RESTRICT-связью, а повторно отвечает not found', async () => {
-    const machine = db.machines.createAgent('admin', 'MacBook')
-    const storage = db.machines.saveMachineStorage('admin', machine.id, '/Users/admin/ChatAI', 1)
-    const conversation = db.chat.createConversation('admin', 'Storage')
-    db.machines.saveChatStorageBinding('admin', {
+    const machine = await db.machines.createAgent('admin', 'MacBook')
+    const storage = await db.machines.saveMachineStorage('admin', machine.id, '/Users/admin/ChatAI', 1)
+    const conversation = await db.chat.createConversation('admin', 'Storage')
+    await db.machines.saveChatStorageBinding('admin', {
       conversationId: conversation.id,
       machineId: machine.id,
       storageId: storage.id,
@@ -404,12 +404,12 @@ describe('DELETE /api/agents/:id', () => {
   })
 
   it('не раскрывает и не удаляет чужую машину', async () => {
-    const machine = db.machines.createAgent('admin', 'MacBook')
+    const machine = await db.machines.createAgent('admin', 'MacBook')
     const response = await inj(bobTok, { method: 'DELETE', url: `/api/agents/${machine.id}` })
 
     expect(response.statusCode).toBe(404)
     expect(response.json()).toEqual({ error: 'not found' })
-    expect(db.machines.listAgents('admin')).toHaveLength(1)
+    expect(await db.machines.listAgents('admin')).toHaveLength(1)
   })
 })
 
@@ -441,7 +441,7 @@ describe('подготовка к разработке: движок из нас
 
   it('проект на Codex: запрос уходит в Codex-клиент и подготовка проходит', async () => {
     const { project, task } = await taskInBacklog()
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
 
     const run = await settled(bobTok, (await launch(bobTok, project.id, task.id)).id)
 
@@ -455,9 +455,9 @@ describe('подготовка к разработке: движок из нас
 
   it('подключает БЗ и настроенную рабочую директорию машины только для чтения с явным бюджетом', async () => {
     const { project, task } = await taskInBacklog()
-    const machine = db.machines.createAgent('admin', 'Project machine')
-    db.machines.linkMachine('admin', project.id, machine.id)
-    db.machines.setProjectMachinePath('admin', project.id, machine.id, '/srv/project')
+    const machine = await db.machines.createAgent('admin', 'Project machine')
+    await db.machines.linkMachine('admin', project.id, machine.id)
+    await db.machines.setProjectMachinePath('admin', project.id, machine.id, '/srv/project')
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
@@ -490,7 +490,7 @@ describe('подготовка к разработке: движок из нас
 
   it('разовый выбор при запуске не перебивает модель проекта', async () => {
     const { project, task } = await taskInBacklog()
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const launched = await launch(adminTok, project.id, task.id, { provider: 'claude', model: 'haiku', llmEngineId: null })
     const run = await settled(adminTok, launched.id)
 
@@ -501,14 +501,14 @@ describe('подготовка к разработке: движок из нас
 
   it('отклоняет недоступную проектную модель до создания попытки без скрытой подмены', async () => {
     const { project, task } = await taskInBacklog()
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
-    db.identity.setUserLlmAccess('bob', [{ provider: 'codex', modelId: 'gpt-5.6-sol' }])
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.identity.setUserLlmAccess('bob', [{ provider: 'codex', modelId: 'gpt-5.6-sol' }])
 
     const response = await inj(bobTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/preparation/run`, payload: {} })
 
     expect(response.statusCode).toBe(409)
     expect(response.json().error).toContain('Проектная модель codex:gpt-5.6-sol недоступна пользователю')
-    expect(db.tasks.listTaskPreparationRuns('bob', project.id, task.id)).toHaveLength(0)
+    expect(await db.tasks.listTaskPreparationRuns('bob', project.id, task.id)).toHaveLength(0)
     expect(claudeCalls).toHaveLength(0)
     expect(codexCalls).toHaveLength(0)
   })
@@ -525,7 +525,7 @@ describe('подготовка к разработке: движок из нас
 
   it('сброс LLM проекта и effective planning возвращаются к настройкам пользователя', async () => {
     const { project, task } = await taskInBacklog()
-    useCodex('admin')
+    await useCodex('admin')
     await inj(adminTok, { method: 'PUT', url: `/api/projects/${project.id}/ci/llm`, payload: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 } })
 
     const reset = await inj(adminTok, { method: 'DELETE', url: `/api/projects/${project.id}/ci/llm` })
@@ -536,7 +536,7 @@ describe('подготовка к разработке: движок из нас
 
   it('игнорирует настройки planning и использует модель проекта для каждой новой попытки', async () => {
     const { project, task, backlogId } = await taskInBacklog()
-    useCodex('bob')
+    await useCodex('bob')
     // Успешная подготовка увозит задачу в Ready for Development, а запускать её
     // можно только из бэклога или подготовки — возвращаем карточку между шагами.
     const prepare = async (): Promise<void> => {
@@ -544,14 +544,14 @@ describe('подготовка к разработке: движок из нас
       await settled(bobTok, (await launch(bobTok, project.id, task.id)).id)
     }
 
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
-    db.ci.setCiStageLlmConfig('project', project.id, 'planning', { provider: 'claude', model: 'fable' })
-    db.ci.setCiStageLlmConfig('task', task.id, 'planning', { provider: 'codex', model: 'gpt-5.4-mini' })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiStageLlmConfig('project', project.id, 'planning', { provider: 'claude', model: 'fable' })
+    await db.ci.setCiStageLlmConfig('task', task.id, 'planning', { provider: 'codex', model: 'gpt-5.4-mini' })
     await prepare()
     expect(codexCalls).toHaveLength(0)
     expect(claudeCalls.map((call) => call.model)).toEqual(['haiku'])
 
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     await prepare()
     expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.6-sol'])
   })
@@ -560,7 +560,7 @@ describe('подготовка к разработке: движок из нас
 describe('подготовка к разработке: диагностика и контракт', () => {
   it('ошибка авторизации CLI называет движок и профиль пользователя', async () => {
     const { project, task } = await taskInBacklog()
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     codexAnswer = () => ({ error: 'Failed to authenticate: OAuth session expired and could not be refreshed' })
 
     const run = await settled(bobTok, (await launch(bobTok, project.id, task.id)).id)
@@ -776,7 +776,7 @@ describe('подготовка к разработке: диагностика �
     recovered.acceptanceCriteria += '\\n2. Дефект подготовки предотвращён проверяемыми инфраструктурными изменениями'
     recovered.acceptanceCriteriaItems.push({ id: 'AC-INFRA', title: 'Защита подготовки', precondition: 'Модель вернула совместимый вариант', action: 'Выполнена нормализация и валидация', observableResult: 'Brief проходит без повторения класса ошибки' })
     recovered.testCases.push({ ...recovered.testCases[0], id: 'TC-INFRA', title: 'Регрессия recovery' })
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     codexAnswer = (attempt) => ({ text: attempt < 3 ? broken : JSON.stringify(recovered) })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
@@ -882,7 +882,7 @@ describe('подготовка к разработке: выбор модели 
 describe('интерактивная попытка, события и экспорт', () => {
   it('сохраняет монотонную ленту и продолжает попытку через её LLM-снимок после смены проекта', async () => {
     const { project, task } = await taskInBacklog()
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     codexAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify({ question: 'Какой публичный контракт обязателен?', material: true }) : READINESS })
     const started = await launch(adminTok, project.id, task.id)
     let waiting: TaskPreparationRun | null = null
@@ -893,7 +893,7 @@ describe('интерактивная попытка, события и эксп�
     }
     expect(waiting?.questions).toHaveLength(1)
     expect(waiting).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol' })
-    db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    await db.ci.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const questionId = waiting!.questions![0].questionId
     const first = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'REST v2' } })
     const duplicate = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'Другое решение' } })
@@ -950,9 +950,9 @@ describe('task-launch создаёт сразу в подготовке', () => 
 
   it('находит переименованную колонку только по semantic type и идемпотентен', async () => {
     const { project } = await taskInBacklog()
-    const board = db.tasks.getBoard('admin', project.id)!
+    const board = (await db.tasks.getBoard('admin', project.id))!
     const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
-    db.projects.updateColumn('admin', project.id, preparation.id, { name: 'Любое новое имя' })
+    await db.projects.updateColumn('admin', project.id, preparation.id, { name: 'Любое новое имя' })
     claudeAnswer = () => ({ silent: true })
 
     const first = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
@@ -962,20 +962,20 @@ describe('task-launch создаёт сразу в подготовке', () => 
     expect(second.json()).toEqual(first.json())
     const result = first.json() as { taskId: string; runId: string; status: string }
     expect(result.status).toBe('success')
-    expect(db.tasks.getBoard('admin', project.id)!.tasks.find((task) => task.id === result.taskId)?.columnId).toBe(preparation.id)
-    expect(db.tasks.listTaskPreparationRuns('admin', project.id, result.taskId)).toHaveLength(1)
+    expect((await db.tasks.getBoard('admin', project.id))!.tasks.find((task) => task.id === result.taskId)?.columnId).toBe(preparation.id)
+    expect(await db.tasks.listTaskPreparationRuns('admin', project.id, result.taskId)).toHaveLength(1)
     expect(claudeCalls).toHaveLength(1)
   })
 
   it('без semantic preparation возвращает ошибку конфигурации и ничего не создаёт', async () => {
     const { project } = await taskInBacklog()
-    const before = db.tasks.getBoard('admin', project.id)!.tasks.length
+    const before = (await db.tasks.getBoard('admin', project.id))!.tasks.length
     ;(db as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND semantic_type='preparation'`).run(project.id)
 
     const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
 
     expect(response.statusCode).toBe(409)
     expect(response.json().error).toContain('semantic type preparation')
-    expect(db.tasks.getBoard('admin', project.id)!.tasks).toHaveLength(before)
+    expect((await db.tasks.getBoard('admin', project.id))!.tasks).toHaveLength(before)
   })
 })

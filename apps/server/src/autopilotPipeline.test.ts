@@ -28,9 +28,9 @@ function fakeCli(): LlmClient {
     send(_req: LlmRequest, handlers): LlmHandle {
       const reply = answer()
       if ('hang' in reply) return { cancel: () => {} }
-      const timer = setTimeout(() => {
-        if ('error' in reply) handlers.onError(reply.error)
-        else { handlers.onDelta(reply.text); handlers.onDone(reply.text) }
+      const timer = setTimeout(async () => {
+        if ('error' in reply) await handlers.onError(reply.error)
+        else { await handlers.onDelta(reply.text); await handlers.onDone(reply.text) }
       }, 0)
       return { cancel: () => clearTimeout(timer) }
     }
@@ -143,10 +143,10 @@ describe('автопроход: начало конвейера', () => {
     const { projectId, taskId } = await taskInBacklog()
     // Git-проекту нужна копия на машине: без online-машины запускать нечего, и
     // прежний перезапуск «на автомате» только сжигал круги за чужой сбой.
-    const agent = db.machines.createAgent('admin', 'Спящий ноутбук')
-    db.machines.linkMachine('admin', projectId, agent.id)
-    db.machines.setProjectMachinePath('admin', projectId, agent.id, '/srv/app')
-    db.projects.updateProject('admin', projectId, { gitUrl: 'git@github.com:x/y.git' })
+    const agent = await db.machines.createAgent('admin', 'Спящий ноутбук')
+    await db.machines.linkMachine('admin', projectId, agent.id)
+    await db.machines.setProjectMachinePath('admin', projectId, agent.id, '/srv/app')
+    await db.projects.updateProject('admin', projectId, { gitUrl: 'git@github.com:x/y.git' })
 
     await enableAutoPilot(projectId, taskId)
     await new Promise((resolve) => setTimeout(resolve, 80))

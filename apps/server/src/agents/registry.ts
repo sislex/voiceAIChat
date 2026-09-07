@@ -138,7 +138,7 @@ interface TunnelSession {
   reject?: (error: Error) => void
   timer: NodeJS.Timeout
   idleTimer: NodeJS.Timeout
-  authorize: () => boolean
+  authorize: () => Promise<boolean>
   onClose?: () => void
 }
 const TUNNEL_START_TIMEOUT_MS = 10_000
@@ -256,7 +256,7 @@ export class AgentRegistry {
 
   private readonly onlineListeners = new Set<(agentId: string) => void>()
   /** Подписка «машина подключилась и прислала телеметрию». */
-  onAgentReady(cb: (agentId: string) => void): () => void {
+  onAgentReady(cb: (agentId: string) => Promise<void>): () => void {
     this.onlineListeners.add(cb)
     return () => { this.onlineListeners.delete(cb) }
   }
@@ -377,7 +377,7 @@ export class AgentRegistry {
   /** Кто и откуда запустил команду — для журнала команд машины. */
   private readonly commandListeners = new Set<(rec: Omit<MachineCommandRecord, 'id'> & { output: string }) => void>()
   /** Подписка на завершённые команды; `output` — полный вывод (в журнал идёт только выдержка). */
-  onCommand(cb: (rec: Omit<MachineCommandRecord, 'id'> & { output: string }) => void): () => void {
+  onCommand(cb: (rec: Omit<MachineCommandRecord, 'id'> & { output: string }) => Promise<void>): () => void {
     this.commandListeners.add(cb)
     return () => { this.commandListeners.delete(cb) }
   }
@@ -756,7 +756,7 @@ export class AgentRegistry {
     return this.ptys.get(ptyId)?.context ?? null
   }
 
-  createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => boolean = () => true, onClose?: () => void): Promise<number> {
+  createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => Promise<boolean> = async () => true, onClose?: () => Promise<void>): Promise<number> {
     const existing = this.tunnels.get(id)
     if (existing?.localPort) return Promise.resolve(existing.localPort)
     if (!this.online.has(sourceAgentId)) return Promise.reject(new Error('Требуется локальный агент'))
@@ -800,7 +800,7 @@ export class AgentRegistry {
   }
 
   /** Обрабатывает сообщение от агента (exec.* и fs.result/fs.error). */
-  handleMessage(agentId: string, msg: AgentToServer): void {
+  async handleMessage(agentId: string, msg: AgentToServer): Promise<void> {
     if (msg.t === 'agent.register') return // повторная регистрация — игнор
     if (msg.t === 'agent.setPolicy') return // обрабатывается в wsAgent (нужен owner/БД)
     if (msg.t === 'agent.telemetry') {
@@ -814,7 +814,7 @@ export class AgentRegistry {
     if ('tunnelId' in msg) {
       const tunnel = this.tunnels.get(msg.tunnelId)
       if (!tunnel || (agentId !== tunnel.sourceAgentId && agentId !== tunnel.targetAgentId)) return
-      if (!tunnel.authorize()) { this.closeTunnel(tunnel.id); return }
+      if (!await tunnel.authorize()) { this.closeTunnel(tunnel.id); return }
       clearTimeout(tunnel.idleTimer)
       tunnel.idleTimer = setTimeout(() => this.closeTunnel(tunnel.id), TUNNEL_IDLE_TTL_MS); tunnel.idleTimer.unref?.()
       if (msg.t === 'tunnel.listening' && agentId === tunnel.sourceAgentId) {

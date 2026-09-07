@@ -3,7 +3,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CROSS_READ_BUDGET, KNOWN_CROSS_WRITES, TABLE_OWNER, type RepoDomain } from './ownership.js'
+import { CROSS_READ_BUDGET, TABLE_OWNER, type RepoDomain } from './ownership.js'
 
 const dbDir = __dirname
 const reposDir = join(dbDir, 'repos')
@@ -44,14 +44,14 @@ describe('владение таблицами (db/ownership.ts)', () => {
     }
   })
 
-  it('пишет в чужие таблицы только то, что записано в KNOWN_CROSS_WRITES — и ровно то', () => {
+  it('в чужие таблицы не пишет никто — только через метод владельца', () => {
     for (const d of domains) {
       const actual = new Set<string>()
       for (const m of repoSource(d).matchAll(writeRe)) {
         const t = m[1].toLowerCase()
         if (ownerOf.get(t) !== d) actual.add(t)
       }
-      expect([...actual].sort(), `repos/${d}.ts: чужие записи`).toEqual([...(KNOWN_CROSS_WRITES[d] ?? [])].sort())
+      expect([...actual].sort(), `repos/${d}.ts пишет в чужие таблицы — добавь метод у владельца`).toEqual([])
     }
   })
 
@@ -63,6 +63,20 @@ describe('владение таблицами (db/ownership.ts)', () => {
         if (ownerOf.get(t) !== d) actual.add(t)
       }
       expect(actual.size, `repos/${d}.ts читает чужие таблицы: ${[...actual].sort().join(', ')}`).toBeLessThanOrEqual(CROSS_READ_BUDGET[d])
+    }
+  })
+
+  it('реализация домена на другом движке (db/pg/<домен>Pg.ts) пишет только в таблицы своего домена', () => {
+    const pgDir = join(dbDir, 'pg')
+    for (const f of readdirSync(pgDir).filter((name) => /^[a-z]+Pg\.ts$/.test(name))) {
+      const d = f.replace(/Pg\.ts$/, '') as RepoDomain
+      expect(domains, `${f}: домен ${d} не описан в TABLE_OWNER`).toContain(d)
+      const src = readFileSync(join(pgDir, f), 'utf8')
+      const foreign = new Set<string>()
+      for (const m of src.matchAll(writeRe)) { const t = m[1].toLowerCase(); if (ownerOf.get(t) !== d) foreign.add(t) }
+      for (const m of src.matchAll(readRe)) { const t = m[1].toLowerCase(); if (ownerOf.get(t) !== d) foreign.add(t) }
+      // На другом движке чужих таблиц нет вовсе — ни записи, ни JOIN: соседей спрашиваем через порты.
+      expect([...foreign], `${f}: обращается к чужим таблицам`).toEqual([])
     }
   })
 

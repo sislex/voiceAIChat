@@ -49,18 +49,18 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     private readonly reranker?: KbSemanticReranker
   ) {}
 
-  private stored(): { rows: KbStoredDocument[]; indexed: Map<string, IndexedDocument> } {
-    const version = this.db.kb.kbDocumentsVersion()
+  private async stored(): Promise<{ rows: KbStoredDocument[]; indexed: Map<string, IndexedDocument> }> {
+    const version = await this.db.kb.kbDocumentsVersion()
     if (!this.cache || this.cache.version !== version) {
-      const rows = this.db.kb.kbDocuments()
+      const rows = await this.db.kb.kbDocuments()
       this.cache = { version, rows, indexed: new Map(rows.map((row) => [row.id, indexStored(row)])) }
     }
     return this.cache
   }
 
   /** Статьи БД, видимые виду и прошедшие его фильтры. */
-  private visibleStored(view: KbView): Array<{ row: KbStoredDocument; indexed: IndexedDocument }> {
-    const { rows, indexed } = this.stored()
+  private async visibleStored(view: KbView): Promise<Array<{ row: KbStoredDocument; indexed: IndexedDocument }>> {
+    const { rows, indexed } = await this.stored()
     return rows
       .filter((row) => canSee(row, view))
       .filter((row) => (view.scope ? row.scope === view.scope : true))
@@ -75,19 +75,19 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     return !view.scope || view.scope === 'usage'
   }
 
-  status(): KbStatus {
-    const base = this.base.status()
-    const stored = this.stored().rows.length
+  async status(): Promise<KbStatus> {
+    const base = await this.base.status()
+    const stored = (await this.stored()).rows.length
     return { ...base, available: base.available || stored > 0, documents: base.documents + stored }
   }
 
-  topics(view: KbView = PUBLIC_KB_VIEW): KbDocumentSummary[] {
-    const usage = this.usageIncluded(view) ? this.base.topics().map((topic) => ({ ...topic, scope: topic.scope ?? 'usage' })) : []
-    return [...usage, ...this.visibleStored(view).map(({ indexed }) => summaryOf(indexed.document))]
+  async topics(view: KbView = PUBLIC_KB_VIEW): Promise<KbDocumentSummary[]> {
+    const usage = this.usageIncluded(view) ? (await this.base.topics()).map((topic) => ({ ...topic, scope: topic.scope ?? 'usage' })) : []
+    return [...usage, ...(await this.visibleStored(view)).map(({ indexed }) => summaryOf(indexed.document))]
   }
 
-  document(id: string, view: KbView = PUBLIC_KB_VIEW): KbDocument | null {
-    const { rows, indexed } = this.stored()
+  async document(id: string, view: KbView = PUBLIC_KB_VIEW): Promise<KbDocument | null> {
+    const { rows, indexed } = await this.stored()
     const row = rows.find((item) => item.id === id)
     // Чужая статья — как отсутствующая: наличие id тоже не должно утекать.
     if (row) return canSee(row, view) ? indexed.get(row.id)?.document ?? null : null
@@ -102,7 +102,7 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     if (projectId && !view.projectIds.includes(projectId)) return []
     const effective: KbView = { ...view, ...(scope ? { scope } : {}), projectId }
     const limit = Math.min(Math.max(request.limit ?? 20, 1), 50)
-    const stored = this.visibleStored(effective)
+    const stored = await this.visibleStored(effective)
     const [usage, own] = await Promise.all([
       this.usageIncluded(effective) ? this.base.search({ ...request, limit }) : Promise.resolve([]),
       stored.length ? searchDocuments(stored.map((item) => item.indexed), { ...request, limit }, this.reranker) : Promise.resolve([])
@@ -117,12 +117,12 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
 
   async context(query: string, budget = 3500, view: KbView = PUBLIC_KB_VIEW): Promise<KbContextBundle> {
     void budget
-    const stored = this.visibleStored(view)
+    const stored = await this.visibleStored(view)
     const texts = new Map(stored.flatMap((item) => item.indexed.chunks.map((chunk) => [chunk.id, chunk.text] as const)))
-    return buildContext(query, await this.search({ query, limit: 8 }, view), (result) => {
+    return buildContext(query, await this.search({ query, limit: 8 }, view), async (result) => {
       const storedText = texts.get(result.chunkId)
       if (storedText !== undefined) return storedText
-      const document = this.base.document(result.documentId)
+      const document = await this.base.document(result.documentId)
       // Старые/внешние реализации KnowledgeBaseService могли не отдавать документ:
       // не роняем ход, но реальные File/Scoped-сервисы всегда проходят ветку выше.
       return document ? documentChunkText(document, result.chunkId) : result.excerpt

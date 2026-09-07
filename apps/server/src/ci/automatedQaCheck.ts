@@ -11,7 +11,7 @@ import { scenarioLabel } from '@voicechat/shared'
 import type { AutomatedQaScenarioRunner } from './automatedQaScenario.js'
 
 export interface AutomatedQaCheckDeps {
-  scenariosOf: (userId: string, projectId: string) => AutomatedQaScenario[]
+  scenariosOf: (userId: string, projectId: string) => Promise<AutomatedQaScenario[]>
   runner: AutomatedQaScenarioRunner
   /** Бюджет на весь прогон, а не на каждый сценарий. */
   budgetMs: number
@@ -34,7 +34,7 @@ export function createAutomatedQaCheck(deps: AutomatedQaCheckDeps): AutomatedQaC
     if (running.has(projectId)) throw new Error('check_already_running')
     running.add(projectId)
     try {
-      const all = deps.scenariosOf(userId, projectId)
+      const all = await deps.scenariosOf(userId, projectId)
       // Отладка записи не должна стоить прогона всего набора.
       const chosen = scenarioIndex === undefined
         ? all.map((scenario, index) => ({ scenario, index }))

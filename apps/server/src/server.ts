@@ -11,6 +11,8 @@ import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllow
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
+import { createPgliteClient, type SqlClient } from './db/pg/sqlClient.js'
+import { ReleasesPgRepo } from './db/pg/releasesPg.js'
 import { registerRest } from './routes/rest.js'
 import { clearPreviewCookies, registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAgentRoutes } from './routes/agents.js'
@@ -365,19 +367,31 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Явный предел делает допустимый размер независимым от дефолта библиотеки ws.
   await app.register(fastifyWebsocket, { options: { maxPayload: 48 * 1024 * 1024 } })
 
+  // Домен «релизы» может жить на встроенном Postgres (VC_DB_RELEASES=pglite): порт
+  // подменяется фабрикой, остальные домены — в SQLite как раньше.
+  let releasesSql: SqlClient | null = null
   const db =
     opts.db ??
-    (() => {
+    (await (async () => {
       mkdirSync(opts.config.dataDir, { recursive: true })
-      return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'))
-    })()
+      if (opts.config.dbReleasesEngine !== 'pglite') return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'))
+      mkdirSync(opts.config.dbReleasesDir, { recursive: true })
+      releasesSql = await createPgliteClient(opts.config.dbReleasesDir)
+      let releasesPg: ReleasesPgRepo | null = null
+      const created = new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'), {
+        ports: { releases: (ports) => (releasesPg = new ReleasesPgRepo({ sql: releasesSql!, projects: ports.projects, newId: () => randomUUID(), now: () => Date.now() })) }
+      })
+      await releasesPg!.ensureSchema()
+      app.log.info({ dir: opts.config.dbReleasesDir }, 'домен releases — на встроенном Postgres (pglite)')
+      return created
+    })())
 
   // Аутентификация приложения (многопользовательский режим web): секрет подписи
   // токенов из dataDir (переживает рестарт); в тестах (opts.db) — эфемерный, без диска.
   const sessionSecret =
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
-  db.identity.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
+  await db.identity.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
   // Мейлер один на приложение: им пользуются и подтверждение регистрации, и
   // приглашения в проект. Без VC_SMTP_URL это «консольный» мейлер — письмо
   // уходит в лог, и оба потока остаются проверяемыми на стенде.
@@ -393,7 +407,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
   const previewRunCookie = (userId: string): { name: string; value: string; url: string } =>
     ({ name: PREVIEW_RUN_COOKIE, value: previewRunKeys.issue(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` })
-  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
+  await registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
@@ -427,9 +441,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
    * чтобы это попало в лог подготовки и в промпт хода.
    */
   const projectMainRefreshes = new Map<string, Promise<{ baseSha: string; autoHealed?: string }>>()
-  const ensureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl?: string | null }): Promise<{ baseSha: string; autoHealed?: string }> => {
+  const ensureProjectMainCurrent = async (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl?: string | null }): Promise<{ baseSha: string; autoHealed?: string }> => {
     const key = [args.projectId, args.agentId, args.path, args.branch].join('\u0000')
-    const activeRefresh = projectMainRefreshes.get(key)
+    const activeRefresh = await projectMainRefreshes.get(key)
     if (activeRefresh) return activeRefresh
     const script = projectMainRefreshScript(args.path, args.branch, args.gitUrl)
     const operation = syncProjectWithRetry(() =>
@@ -461,8 +475,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // раз при создании чата — единственное, что Make делает с репозиторием.
     // Ошибка (нет машины, offline, dirty без возможности stash) не мешает
     // создать чат: мастерская работает и без свежей копии, а причина уходит в лог.
-    refreshProjectMain: (userId, projectId) => {
-      const project = db.projects.getProject(userId, projectId)
+    refreshProjectMain: async (userId, projectId) => {
+      const project = await db.projects.getProject(userId, projectId)
       if (!project?.gitUrl) return
       const machine = (project.machines ?? []).find((candidate) => candidate.canUse !== false && candidate.path.trim() && agentRegistry.isOnline(candidate.agentId))
       if (!machine) return
@@ -478,7 +492,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerPreviewProxy(app, {
     machines: {
       bridge: agentRegistry,
-      canUse: (userId, agentId) => db.machines.canUseAgentForPreview(userId, agentId)
+      canUse: async (userId, agentId) => await db.machines.canUseAgentForPreview(userId, agentId)
     }
   })
 
@@ -487,7 +501,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Движок либо запускается рядом (spawn CLI), либо живёт в контейнере-исполнителе
   // и вызывается по HTTP. Выбор — по наличию адреса в env; реестра исполнителей
   // пока нет (docs/plans/llm-runners.md, срез 2).
-  const runner = (kind: 'claude' | 'codex', baseUrl: string): LlmClient =>
+  const runner = async (kind: 'claude' | 'codex', baseUrl: string): Promise<LlmClient> =>
     new RemoteLlmClient({
       kind,
       baseUrl,
@@ -497,18 +511,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         : {})
     })
   const claude =
-    opts.claude ??
+    await (opts.claude ??
     (opts.config.llmRunnerClaudeUrl
       ? runner('claude', opts.config.llmRunnerClaudeUrl)
-      : new ClaudeCli({ profileHome }))
+      : new ClaudeCli({ profileHome })))
   const codex =
-    opts.codex ??
+    await (opts.codex ??
     (opts.config.llmRunnerCodexUrl
       ? runner('codex', opts.config.llmRunnerCodexUrl)
-      : new CodexCli({ profileHome }))
+      : new CodexCli({ profileHome })))
   const reranker = opts.config.kbRerankProvider === 'disabled'
     ? undefined
-    : new LlmKbReranker(opts.config.kbRerankProvider === 'claude' ? claude : codex)
+    : new LlmKbReranker(await (opts.config.kbRerankProvider === 'claude' ? claude : codex))
   // Файловые темы docs/kb — раздел «Использование» (общий для всех); поверх них
   // ScopedKnowledgeBase добавляет статьи из БД (персональные и проектные) и
   // решает, что кому видно.
@@ -524,8 +538,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   app.post<{ Body: { prompt?: string; modifiers?: import('@voicechat/shared').ModifierPrompt[] } }>(REST.promptSuggest, async (req, reply) => {
     const prompt = (req.body?.prompt ?? '').trim()
     if (!prompt) return { variants: [] as Array<{ id: string; text: string }> }
-    const settings = db.settings.getSettings(uid(req))
-    const access = db.identity.getUserLlmAccess(uid(req))
+    const settings = await db.settings.getSettings(uid(req))
+    const access = await db.identity.getUserLlmAccess(uid(req))
     const provider = isProviderAllowed(access, settings.aiAssistProvider)
       ? settings.aiAssistProvider
       : firstAllowedProvider(access)
@@ -533,7 +547,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const requestedModel = settings.aiAssistModel || (provider === 'claude' ? 'haiku' : '')
     const model = clampModel(access, provider, requestedModel)
     if (!model) return reply.code(403).send({ error: 'Нет доступных моделей' }) as never
-    const client = provider === 'codex' ? codex : claude
+    const client = await (provider === 'codex' ? codex : claude)
     const modifiers = (req.body?.modifiers ?? []).filter((item) => item.enabled && item.text.trim())
     try {
       const texts = await new PromptSuggester(client, model).suggest(prompt, modifiers, uid(req))
@@ -548,7 +562,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.
   registerAnthropicGateway(app, {
     backend: opts.config.claudeGatewayBackend,
-    codex,
+    codex: await codex,
     upstreamUrl: opts.config.claudeGatewayUpstreamUrl,
     upstreamApiKey: opts.config.claudeGatewayUpstreamKey,
     authMode: opts.config.claudeGatewayAuthMode,
@@ -558,9 +572,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
   // Гейт команд (п.10): политика проекта и роли поверх политики машины; опасные команды в чате — с подтверждением.
   const commandGate = createCommandGate({
-    projectPolicy: (projectId) => db.projects.getProjectCommandPolicy(projectId),
-    rolePolicies: () => db.machines.getRoleCommandPolicies(),
-    userRole: (userId) => db.identity.getUser(userId)?.role ?? null
+    projectPolicy: async (projectId) => await db.projects.getProjectCommandPolicy(projectId),
+    rolePolicies: async () => await db.machines.getRoleCommandPolicies(),
+    userRole: async (userId) => (await db.identity.getUser(userId))?.role ?? null
   })
   await registerAgentRoutes(app, db, agentRegistry, {
     agentApp: opts.config.agentAppPath,
@@ -587,10 +601,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     app,
     agentRegistry,
     mcpSecret,
-    () => ciToolOutputLimits(db.ci.getCiSettings()),
+    async () => ciToolOutputLimits(await db.ci.getCiSettings()),
     // Машины проекта для адресации операций (query `project` дописывает
     // отправитель хода — turns.ts у чата, modelHooks.ts у CI-рана).
-    (projectId) => db.machines.listProjectMachines(projectId),
+    async (projectId) => await db.machines.listProjectMachines(projectId),
     (token) => remoteFileBroker.get(token),
     commandGate
   )
@@ -603,23 +617,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const makeWorkspaces = new MakeWorkspaces(opts.config.dataDir)
   const makeHub = new MakeHub()
   // Квота на пользователя (roadmap-2 п.15): все проекты Make владельца разговора.
-  makeWorkspaces.setProjectsOfOwner((id) => {
-    const owner = db.chat.conversationOwner(id)
-    return owner ? db.chat.listConversations(owner, { includeCompleted: true }).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
+  makeWorkspaces.setProjectsOfOwner(async (id) => {
+    const owner = await db.chat.conversationOwner(id)
+    return owner ? (await db.chat.listConversations(owner, { includeCompleted: true })).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
   })
   const makeTaskScopes = new MakeTaskScopeBroker()
   registerMakeMcp(app, {
     workspaces: makeWorkspaces,
     hub: makeHub,
-    ownerOf: (id) => db.chat.conversationOwner(id),
+    ownerOf: async (id) => await db.chat.conversationOwner(id),
     taskScopes: makeTaskScopes,
-    authorizeTaskSource: (scope, conversationId) => {
-      const task = db.tasks.getCiTask(scope.userId, scope.projectId, scope.taskId)
+    authorizeTaskSource: async (scope, conversationId) => {
+      const task = await db.tasks.getCiTask(scope.userId, scope.projectId, scope.taskId)
       const scopedSource = scope.sources.find((source) => source.conversationId === conversationId)
       const current = task?.designs?.find((design) => design.conversationId === conversationId)
       return Boolean(task && scopedSource && current
-        && db.chat.makeConversationProject(conversationId) === scope.projectId
-        && db.chat.isMakeProjectViewer(scope.userId, conversationId)
+        && await db.chat.makeConversationProject(conversationId) === scope.projectId
+        && await db.chat.isMakeProjectViewer(scope.userId, conversationId)
         && current.mode === scopedSource.mode
         && JSON.stringify(current.paths) === JSON.stringify(scopedSource.paths))
     }
@@ -637,7 +651,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     orchestration: () => orchestrationManager,
     // Менеджеры ранов создаются ниже по файлу, поэтому читаются лениво — в
     // момент вызова инструмента они уже есть.
-    runs: () => kanbanRunLaunchers
+    runs: async () => kanbanRunLaunchers
   }, mcpSecret)
   // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
   // Студия картинок: галерея на разговор + генерация/правка через LLM — тем же
@@ -646,10 +660,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerImageStudioRoutes(app, {
     db,
     store: imageStudioStore,
-    generator: (userId) => llmImageStudioGenerator({
+    generator: async (userId) => llmImageStudioGenerator({
       client: codex,
       userId,
-      model: db.settings.getSettings(userId).codexModel,
+      model: (await db.settings.getSettings(userId)).codexModel,
       cwd: profileHome(userId),
       readGenerated: async (path) => {
         if (runnerFs) return runnerFs.readFile(userId, path)
@@ -677,7 +691,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     secret: mcpSecret,
     usage: kbUsage,
     db,
-    viewOf: (entry) => ({ ...kbViewOf(db, entry.userId), ...(entry.projectId ? { projectId: entry.projectId } : {}) }),
+    viewOf: async (entry) => ({ ...(await kbViewOf(db, entry.userId)), ...(entry.projectId ? { projectId: entry.projectId } : {}) }),
     agents: {
       isOnline: (agentId) => agentRegistry.isOnline(agentId),
       versionOf: (agentId) => agentRegistry.versionOf(agentId),
@@ -698,16 +712,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
    * файл: base64 в логе распухал бы на сотни килобайт при каждом реплее ленты.
    * Нет рана или шага — кадр просто не логируется: модель его уже получила.
    */
-  const logBrowserCheckShot = (conversationId: string, userId: string, png: Buffer): void => {
-    const taskId = db.chat.getConversation(userId, conversationId)?.taskId
-    if (!taskId || db.ci.getTaskBrowserCheck(taskId).mode !== 'chromium') return
-    const run = db.ci.activeCiRunForTask(taskId)
+  const logBrowserCheckShot = async (conversationId: string, userId: string, png: Buffer): Promise<void> => {
+    const taskId = (await db.chat.getConversation(userId, conversationId))?.taskId
+    if (!taskId || (await db.ci.getTaskBrowserCheck(taskId)).mode !== 'chromium') return
+    const run = await db.ci.activeCiRunForTask(taskId)
     if (!run) return
-    const step = db.ci.getCiRun(run.triggeredBy, run.id)?.steps.filter((item) => item.status === 'running').at(-1)
+    const step = (await db.ci.getCiRun(run.triggeredBy, run.id))?.steps.filter((item) => item.status === 'running').at(-1)
     if (!step) return
     const saved = saveBrowserShot(browserShotsRoot, run.id, png)
     if (!saved) return
-    const line = db.ci.appendCiLog(run.id, step.id, 'system', `Снимок страницы проверки: ${saved.url}\n`)
+    const line = await db.ci.appendCiLog(run.id, step.id, 'system', `Снимок страницы проверки: ${saved.url}\n`)
     ciRunManagerRef.current?.publish({ t: 'ci.log', runId: run.id, line }, run.triggeredBy)
   }
 
@@ -716,15 +730,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
    * браузерную проверку задачи (её режим — настройка CI задачи). Всё остальное
    * идёт прежним путём — в панель браузера пользователя.
    */
-  const browserCheckTargetOf = (userId: string, conversationId: string): BrowserCheckTarget | null => {
-    const conversation = db.chat.getConversation(userId, conversationId)
+  const browserCheckTargetOf = async (userId: string, conversationId: string): Promise<BrowserCheckTarget | null> => {
+    const conversation = await db.chat.getConversation(userId, conversationId)
     if (!conversation) return null
     const taskId = conversation.taskId ?? null
     return browserCheckTarget({
       conversationId,
       taskId,
       playwrightReader: isPlaywrightReaderConversation(conversation),
-      check: taskId ? db.ci.getTaskBrowserCheck(taskId) : DEFAULT_CI_BROWSER_CHECK
+      check: taskId ? await db.ci.getTaskBrowserCheck(taskId) : DEFAULT_CI_BROWSER_CHECK
     })
   }
   registerPreviewMcp(app, {
@@ -734,7 +748,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // relay пушит действие в браузер пользователя, а страницы там нет.
     browserExecutor: async (userId, conversationId, action) => {
       if (!browserRunner) return null
-      const target = browserCheckTargetOf(userId, conversationId)
+      const target = await browserCheckTargetOf(userId, conversationId)
       if (!target) return null
       const plan = planModelAction(withMachinePreviewTarget(action, runnerFacingBase))
       if (plan.kind === 'unsupported') return { ok: false, error: plan.reason }
@@ -756,7 +770,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // возвращает картинку, а не структуру действия.
     browserScreenshot: async (userId, conversationId, args) => {
       if (!browserRunner) return null
-      const target = browserCheckTargetOf(userId, conversationId)
+      const target = await browserCheckTargetOf(userId, conversationId)
       if (!target) return null
       try {
         const session = await browserRunner.start({
@@ -767,7 +781,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
           command: { type: 'screenshot', format: 'png', ...(args.selector ? { selector: args.selector } : {}) }
         })
-        logBrowserCheckShot(conversationId, userId, shot.buffer)
+        await logBrowserCheckShot(conversationId, userId, shot.buffer)
         return {
           ok: true,
           result: {
@@ -782,20 +796,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     context: {
       // Машина алиаса machine.internal: execTarget разговора (agentId) с гейтом доступа.
-      machineOf: ({ userId, conversationId }) => {
-        const conversation = db.chat.getConversation(userId, conversationId)
+      machineOf: async ({ userId, conversationId }) => {
+        const conversation = await db.chat.getConversation(userId, conversationId)
         const target = conversation?.execTarget
         if (!target || target === 'none' || target === 'server') return null
-        return db.machines.canUseAgentForPreview(userId, target) || db.machines.canUseAgent(userId, target, conversation?.projectId ?? null) ? target : null
+        return await db.machines.canUseAgentForPreview(userId, target) || await db.machines.canUseAgent(userId, target, conversation?.projectId ?? null) ? target : null
       },
-      testUsersOf: ({ userId, conversationId }) => {
-        const projectId = db.chat.getConversation(userId, conversationId)?.projectId
+      testUsersOf: async ({ userId, conversationId }) => {
+        const projectId = (await db.chat.getConversation(userId, conversationId))?.projectId
         if (!projectId) return []
-        return db.projects.getProject(userId, projectId)?.testUsers ?? []
+        return (await db.projects.getProject(userId, projectId))?.testUsers ?? []
       },
-      environmentsOf: ({ userId, conversationId }) => {
-        const projectId = db.chat.getConversation(userId, conversationId)?.projectId
-        if (!projectId || !db.projects.getProject(userId, projectId)) return []
+      environmentsOf: async ({ userId, conversationId }) => {
+        const projectId = (await db.chat.getConversation(userId, conversationId))?.projectId
+        if (!projectId || !await db.projects.getProject(userId, projectId)) return []
         const toMachineUrl = (agentId: string, raw: string | null): string | null => {
           if (!raw) return null
           try {
@@ -816,9 +830,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           }))
       },
       clearCookies: ({ userId }, host) => clearPreviewCookies(userId, host),
-      gateEvaluate: ({ userId, conversationId }, code, confirmed) => {
-        const conversation = db.chat.getConversation(userId, conversationId)
-        const project = conversation?.projectId ? db.projects.getProject(userId, conversation.projectId) : null
+      gateEvaluate: async ({ userId, conversationId }, code, confirmed) => {
+        const conversation = await db.chat.getConversation(userId, conversationId)
+        const project = conversation?.projectId ? await db.projects.getProject(userId, conversation.projectId) : null
         const policy = project?.commandPolicy
         if (policy) {
           const verdict = evaluateCommandLayers(code, [{ ...policy, name: 'project' }])
@@ -845,18 +859,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const automatedQaScreenshotDir = join(opts.config.dataDir, 'qa-screenshots')
   // Снимки не удалялись ни при удалении задачи (каскад чистит строку рана, но не
   // файл), ни по возрасту. Уборка при старте и раз в сутки.
-  const sweepScreenshots = (): void => {
-    try { sweepQaScreenshots({ dir: automatedQaScreenshotDir, knownRunIds: db.qa.qaStageRunIds(), maxAgeMs: 30 * 24 * 60 * 60_000 }) }
+  const sweepScreenshots = async (): Promise<void> => {
+    try { sweepQaScreenshots({ dir: automatedQaScreenshotDir, knownRunIds: await db.qa.qaStageRunIds(), maxAgeMs: 30 * 24 * 60 * 60_000 }) }
     catch (error) { app.log.warn({ error }, 'qa screenshot sweep failed') }
   }
-  sweepScreenshots()
+  await sweepScreenshots()
   // Кадры проверки живут короче снимков вердикта: их за ран много, а смысл
   // они имеют, пока лента этого рана кому-то интересна.
-  const sweepBrowserCheckShots = (): void => {
-    try { sweepBrowserShots({ root: browserShotsRoot, knownRunIds: db.ci.ciRunIds(), maxAgeMs: 7 * 24 * 60 * 60_000 }) }
+  const sweepBrowserCheckShots = async (): Promise<void> => {
+    try { sweepBrowserShots({ root: browserShotsRoot, knownRunIds: await db.ci.ciRunIds(), maxAgeMs: 7 * 24 * 60 * 60_000 }) }
     catch (error) { app.log.warn({ error }, 'browser check shot sweep failed') }
   }
-  sweepBrowserCheckShots()
+  await sweepBrowserCheckShots()
   const browserShotSweepTimer = setInterval(sweepBrowserCheckShots, 24 * 60 * 60_000)
   browserShotSweepTimer.unref?.()
   app.addHook('onClose', async () => clearInterval(browserShotSweepTimer))
@@ -887,15 +901,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     new KbResearchManager({
       db,
-      claude,
-      codex,
+      claude: await claude,
+      codex: await codex,
       mcpBaseUrl: remoteBashMcpBaseUrl,
       agentNameOf: (agentId) => agentRegistry.nameOf(agentId)
     })
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.chat.conversationOwner(id)), mailer, opts.config.publicUrl, sessionHub)
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats(async (id) => await db.chat.conversationOwner(id)), mailer, opts.config.publicUrl, sessionHub)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
@@ -918,7 +932,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const notificationHub = new NotificationHub()
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
-  const machineWhisperModel = (): WhisperModel => db.settings.getSettings('admin').whisperModel
+  const machineWhisperModel = async (): Promise<WhisperModel> => (await db.settings.getSettings('admin')).whisperModel
 
   const sttClient = opts.sttClient ?? (opts.config.sttRunnerUrl && opts.config.sttRunnerToken
     ? new RemoteSttClient({ baseUrl: opts.config.sttRunnerUrl, token: opts.config.sttRunnerToken, connectTimeoutMs: opts.config.sttRunnerConnectTimeoutMs })
@@ -939,15 +953,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   app.get(REST.sttStatus, async (): Promise<SttStatus> => {
     await refreshSttHealth()
-    const model = machineWhisperModel()
-    return { present: sttRunnerHealthy && runnerModels.some((item) => item.model === model && item.present), model }
+    const model = await machineWhisperModel()
+    return { present: sttRunnerHealthy && runnerModels.some((item) => item.model === model && item.present), model: await model }
   })
 
   const resources = detectResources()
-  const capabilities = (): SystemCapabilities => {
-    const value = computeCapabilities(resources, machineWhisperModel(), undefined, { stt: opts.config.minMemSttBytes, tts: opts.config.minMemTtsBytes })
+  const capabilities = async (): Promise<SystemCapabilities> => {
+    const whisperModel = await machineWhisperModel()
+    const value = computeCapabilities(resources, whisperModel, undefined, { stt: opts.config.minMemSttBytes, tts: opts.config.minMemTtsBytes })
     if (!sttRunnerHealthy) value.stt = { available: false, reason: 'Сервис распознавания речи недоступен' }
-    else if (sttClient && !runnerModels.some((item) => item.model === machineWhisperModel() && item.present)) value.stt = { available: false, reason: 'Модель распознавания речи не установлена' }
+    else if (sttClient && !runnerModels.some((item) => item.model === whisperModel && item.present)) value.stt = { available: false, reason: 'Модель распознавания речи не установлена' }
     if (!opts.ttsClient && (!opts.config.ttsRunnerUrl || !opts.config.ttsRunnerToken)) {
       value.tts = { available: false, reason: 'Нет доступного сервиса озвучки: TTS Runner не настроен' }
     }
@@ -963,7 +978,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return { ok: true }
   })
   const sttEngine = opts.sttEngine
-  const modelDownload = sttClient ? new ModelDownloadManager((onProgress) => sttClient.downloadModel(machineWhisperModel(), onProgress)) : undefined
+  const modelDownload = sttClient ? new ModelDownloadManager(async (onProgress) => sttClient.downloadModel(await machineWhisperModel(), onProgress)) : undefined
   const ttsClient = opts.ttsClient ?? new RemoteTtsClient({ baseUrl: opts.config.ttsRunnerUrl ?? 'http://127.0.0.1:8791', token: opts.config.ttsRunnerToken ?? '' })
   const diarization = new StubDiarizationEngine()
 
@@ -976,10 +991,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Журнал команд машины: пишем всё, что прошло через registry.exec (консоль, чат, системные вызовы).
   // Публикация в WS владельцу (ciRunManager создаётся ниже — привязываем лениво).
   let publishToUser: ((message: ServerMessage, userId: string) => void) | null = null
-  agentRegistry.onCommand((rec) => {
+  agentRegistry.onCommand(async (rec) => {
     const { output, ...record } = rec
-    const userId = record.userId || (db.machines.agentOwnerId(record.machineId) ?? '')
-    try { db.machines.addMachineCommand({ ...record, userId }) } catch (error) { app.log.warn({ error }, 'machine command log failed') }
+    const userId = record.userId || (await db.machines.agentOwnerId(record.machineId) ?? '')
+    try { await db.machines.addMachineCommand({ ...record, userId }) } catch (error) { app.log.warn({ error }, 'machine command log failed') }
     // Долгая команда (п.17): тост владельцу; для команды из чата — полный лог в artifacts/commands чата.
     if (!userId || record.source === 'system' || record.durationMs < opts.config.longCommandMs) return
     void (async () => {
@@ -1003,48 +1018,48 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         }
       }
       const event: MachineCommandEvent = {
-        machineId: record.machineId, machineName: agentRegistry.nameOf(record.machineId) ?? db.machines.listAgents(userId).find((a) => a.id === record.machineId)?.name ?? record.machineId,
+        machineId: record.machineId, machineName: agentRegistry.nameOf(record.machineId) ?? (await db.machines.listAgents(userId)).find((a) => a.id === record.machineId)?.name ?? record.machineId,
         source: record.source, command: record.command, exitCode: record.exitCode, timedOut: record.timedOut, error: record.error,
         durationMs: record.durationMs, conversationId: record.conversationId, ...(logPath ? { logPath } : {})
       }
       publishToUser?.({ t: 'machine.command', event }, userId)
     })()
   })
-  agentRegistry.onAgentReady((agentId) => {
-    const owner = db.machines.agentOwnerId(agentId)
-    if (owner) void ensureDefaultStorage(defaultStorageDeps, owner, agentId)
+  agentRegistry.onAgentReady(async (agentId) => {
+    const owner = await db.machines.agentOwnerId(agentId)
+    if (owner) void await ensureDefaultStorage(defaultStorageDeps, owner, agentId)
   })
-  const ensureChatStorage = (userId: string, conversationId: string, machineId: string) => ensureDefaultChatBinding(defaultStorageDeps, userId, conversationId, machineId)
+  const ensureChatStorage = async (userId: string, conversationId: string, machineId: string) => await ensureDefaultChatBinding(defaultStorageDeps, userId, conversationId, machineId)
   // Вложения/ретушь/публикация: чат без привязки сначала привязывается к ChatAI машины разговора (если она в сети).
   const managedChatStorage = async (userId: string, conversationId: string) => {
-    if (!db.machines.getChatStorageBinding(userId, conversationId)) {
-      const machine = db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
+    if (!await db.machines.getChatStorageBinding(userId, conversationId)) {
+      const machine = await db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
       if (machine?.agentId && machine.source !== 'disabled') await ensureChatStorage(userId, conversationId, machine.agentId)
     }
     return resolveManagedChatStorage(userId, conversationId, {
-      getBinding: (uid, id) => db.machines.getChatStorageBinding(uid, id),
-      listStorages: (uid, machineId) => db.machines.listMachineStorages(uid, machineId),
-      ownsMachine: (uid, machineId) => db.machines.listAgents(uid).some((agent) => agent.id === machineId),
+      getBinding: async (uid, id) => await db.machines.getChatStorageBinding(uid, id),
+      listStorages: async (uid, machineId) => await db.machines.listMachineStorages(uid, machineId),
+      ownsMachine: async (uid, machineId) => (await db.machines.listAgents(uid)).some((agent) => agent.id === machineId),
       isOnline: (machineId) => agentRegistry.isOnline(machineId),
       waitOnline: (machineId) => agentRegistry.waitForOnline(machineId),
       verifyRoot: async (machineId, rootPath) => {
         const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
         const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
         const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
-        const binding = db.machines.getChatStorageBinding(userId, conversationId)
+        const binding = await db.machines.getChatStorageBinding(userId, conversationId)
         if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
       }
     })
   }
   const generatedCleanup = new GeneratedCleanupService({
-    targets: () => db.machines.listGeneratedCleanupTargets(),
-    ttlDays: (userId) => db.settings.getSettings(userId).generatedFilesTtlDays,
-    messages: (userId, conversationId) => db.chat.listMessages(userId, conversationId),
+    targets: async () => await db.machines.listGeneratedCleanupTargets(),
+    ttlDays: async (userId) => (await db.settings.getSettings(userId)).generatedFilesTtlDays,
+    messages: async (userId, conversationId) => await db.chat.listMessages(userId, conversationId),
     resolve: managedChatStorage,
     list: (machineId, path) => agentRegistry.fsList(machineId, path),
     deleteFile: (machineId, path) => agentRegistry.fsDeleteFileSafe(machineId, path),
-    defer: (target, error, nextAttemptAt) => db.machines.deferGeneratedCleanup(target.userId, target.conversationId, error, nextAttemptAt),
-    complete: (target) => db.machines.completeGeneratedCleanup(target.conversationId),
+    defer: async (target, error, nextAttemptAt) => await db.machines.deferGeneratedCleanup(target.userId, target.conversationId, error, nextAttemptAt),
+    complete: async (target) => await db.machines.completeGeneratedCleanup(target.conversationId),
     log: opts.generatedCleanupLog ?? ((result) => app.log.info({ event: 'generated_cleanup', ...result }))
   })
   // Тестовые buildServer используют фейковые реестры и запускают сервис явно.
@@ -1060,19 +1075,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     queueMicrotask(() => { void makeSweep() })
     // Учётки и сессии (auth-roadmap п.18): раз в сутки чистим истёкшие сессии/инвайты и отключаем неактивных (VC_INACTIVE_DAYS, 0 — выкл).
     const inactiveDays = Number(process.env.VC_INACTIVE_DAYS ?? 180)
-    const accountsSweep = (): void => {
+    const accountsSweep = async (): Promise<void> => {
       try {
         // Брошенные сессии сначала гасим, потом чистим: порядок важен, иначе
         // только что отозванная строка ждала бы неделю до следующего прохода.
         const staleDays = Number(process.env.VC_SESSION_STALE_DAYS ?? 90)
-        const stale = db.identity.revokeStaleSessions(Number.isFinite(staleDays) ? staleDays : 0)
-        const sessions = db.identity.pruneSessions(), invites = db.identity.pruneInvites()
-        const blocked = inactiveDays > 0 ? db.identity.blockInactiveUsers(inactiveDays) : []
-        for (const name of blocked) db.identity.logSecurityEvent({ user: name, type: 'inactive_blocked', details: `нет входов ${inactiveDays} дн.` })
+        const stale = await db.identity.revokeStaleSessions(Number.isFinite(staleDays) ? staleDays : 0)
+        const sessions = await db.identity.pruneSessions(), invites = await db.identity.pruneInvites()
+        const blocked = inactiveDays > 0 ? await db.identity.blockInactiveUsers(inactiveDays) : []
+        for (const name of blocked) await db.identity.logSecurityEvent({ user: name, type: 'inactive_blocked', details: `нет входов ${inactiveDays} дн.` })
         if (sessions || invites || stale || blocked.length) app.log.info({ event: 'accounts_sweep', sessions, invites, stale, blocked }, 'accounts sweep')
       } catch (error) { app.log.warn({ error }, 'accounts sweep failed') }
     }
-    accountsSweep()
+    await accountsSweep()
     const accountsTimer = setInterval(accountsSweep, 24 * 60 * 60 * 1000)
     accountsTimer.unref()
     app.addHook('onClose', async () => clearInterval(accountsTimer))
@@ -1088,9 +1103,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     async (req, reply): Promise<UploadInfo> => {
       const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
       const userId = uid(req)
-      if (conversationId && !db.chat.getConversation(userId, conversationId)) return reply.code(404).send({ error: 'conversation not found' }) as never
+      if (conversationId && !await db.chat.getConversation(userId, conversationId)) return reply.code(404).send({ error: 'conversation not found' }) as never
       const resolvedMachine = !requestedAgentId && conversationId
-        ? db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
+        ? await db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
         : null
       const agentId = requestedAgentId ?? (resolvedMachine?.source === 'disabled' ? undefined : resolvedMachine?.agentId ?? undefined)
       if (!dataBase64 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) return reply.code(400).send({ error: 'invalid data' }) as never
@@ -1111,7 +1126,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
       const writeAgentId = managed?.binding.machineId ?? agentId
       if (writeAgentId) {
-        if (!db.machines.listAgents(userId).some((agent) => agent.id === writeAgentId)) {
+        if (!(await db.machines.listAgents(userId)).some((agent) => agent.id === writeAgentId)) {
           return reply.code(404).send({ error: 'machine not found' }) as never
         }
         try {
@@ -1139,9 +1154,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     async (req, reply): Promise<ImageRetouchResult> => {
       const userId = uid(req)
       const body = req.body
-      if (!body || !db.chat.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
+      if (!body || !await db.chat.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
       if (!body.prompt?.trim() || body.prompt.length > 4000) return reply.code(400).send({ error: 'Введите описание ретуши длиной до 4000 символов' }) as never
-      const historyFiles = db.chat.listMessages(userId, body.conversationId).flatMap((message) => message.attachments ?? [])
+      const historyFiles = (await db.chat.listMessages(userId, body.conversationId)).flatMap((message) => message.attachments ?? [])
       const allowed = (file: MessageAttachment): boolean => {
         if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId)) return true
         const upload = file.uploadId ? uploads.get(file.uploadId) : undefined
@@ -1151,7 +1166,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
       const readAttachment = async (file: MessageAttachment): Promise<Buffer> => {
         if (file.agentId) {
-          if (!db.machines.listAgents(userId).some((agent) => agent.id === file.agentId)) throw new Error('Машина-источник недоступна')
+          if (!(await db.machines.listAgents(userId)).some((agent) => agent.id === file.agentId)) throw new Error('Машина-источник недоступна')
           const result = await agentRegistry.fsRead(file.agentId, file.path)
           if (!result.dataBase64) throw new Error(`Файл ${file.name} не найден на машине-источнике`)
           return Buffer.from(result.dataBase64, 'base64')
@@ -1160,7 +1175,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           const result = await runnerFs.readFile(userId, file.path)
           if (result?.dataBase64) return Buffer.from(result.dataBase64, 'base64')
         }
-        const settings = db.settings.getSettings(userId)
+        const settings = await db.settings.getSettings(userId)
         const local = readUserFile(file.path, [profileHome(userId), join(opts.config.dataDir, 'uploads'), ...(settings.workdir ? [settings.workdir] : [])])
         if (!local.ok) throw new Error(`Файл ${file.name} не найден на сервере`)
         return Buffer.from(local.file.dataBase64, 'base64')
@@ -1174,7 +1189,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const generator = opts.imageRetouchGenerator ?? llmRetouchGenerator({
           client: codex,
           userId,
-          model: db.settings.getSettings(userId).codexModel,
+          model: (await db.settings.getSettings(userId)).codexModel,
           readGenerated: async (path) => {
             if (runnerFs) return runnerFs.readFile(userId, path)
             const local = readUserFile(path, [profileHome(userId)])
@@ -1208,7 +1223,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         }
         const text = imageBlock({ path, ...(image.agentId ? { agentId: image.agentId } : {}), caption: `Локальная ретушь: ${body.prompt.trim()}` })
         const now = new Date()
-        const message = db.chat.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, image.agentId ?? null, [image])
+        const message = await db.chat.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, image.agentId ?? null, [image])
         return { message, image }
         }
         return managed
@@ -1226,7 +1241,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     async (req, reply): Promise<ArtifactPublishResult> => {
       const userId = uid(req)
       const body = req.body
-      if (!body || !db.chat.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
+      if (!body || !await db.chat.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
       try {
         const managed = await managedChatStorage(userId, body.conversationId)
         if (!managed) return reply.code(409).send({ error: 'Публикация доступна только для разговора с MachineStorage' }) as never
@@ -1234,7 +1249,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const separator = managed.generated.includes('\\') && !managed.generated.includes('/') ? '\\' : '/'
         const sourceParent = body.source.path.slice(0, Math.max(body.source.path.lastIndexOf('/'), body.source.path.lastIndexOf('\\')))
         if (sourceParent !== managed.generated) return reply.code(403).send({ error: 'Публиковать можно только непосредственный файл из .generated этого разговора' }) as never
-        const known = db.chat.listMessages(userId, body.conversationId).some((message) =>
+        const known = (await db.chat.listMessages(userId, body.conversationId)).some((message) =>
           (message.attachments ?? []).some((file) => file.path === body.source.path && file.agentId === body.source.agentId)
           || parseImages(message.text).images.some((image) => image.path === body.source.path && image.agentId === body.source.agentId)
         )
@@ -1267,7 +1282,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         }
         const text = imageBlock({ path: target, agentId: managed.binding.machineId, caption: `Опубликованный результат: ${finalName}` })
         const now = new Date()
-        const message = db.chat.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, managed.binding.machineId, [artifact])
+        const message = await db.chat.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, managed.binding.machineId, [artifact])
         return { artifact, message }
         })
       } catch (error) {
@@ -1293,8 +1308,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // ответ сохраняется в БД сервером, клиенты получают события broadcast'ом.
   const turnManager = createTurnManager({
     db,
-    claude,
-    codex,
+    claude: await claude,
+    codex: await codex,
     engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
     kb,
     kbUsage,
@@ -1353,7 +1368,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
-      const settings = db.settings.getSettings(userId)
+      const settings = await db.settings.getSettings(userId)
       const roots = [
         ensureCliProfile(opts.config.dataDir, userId).home,
         join(opts.config.dataDir, 'uploads'),
@@ -1384,8 +1399,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const ciExecutor = opts.ciExecutor ?? new AgentCommandExecutor(agentRegistry)
   const ciModelHooks = createCiModelHooks({
     db,
-    claude,
-    codex,
+    claude: await claude,
+    codex: await codex,
     engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
     mcpBaseUrl: remoteBashMcpBaseUrl,
     ciMcpBaseUrl: ciCommandsMcpBaseUrl,
@@ -1413,49 +1428,49 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const d = new Date()
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
-  const launchQaPreparation = (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string; runId?: string }, retry = false): boolean => {
+  const launchQaPreparation = async (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string; runId?: string }, retry = false): Promise<boolean> => {
     const { userId, projectId, taskId, branch, commitSha } = args
-    const preparation = db.qa.startQaPreparationRun(projectId, taskId, branch, commitSha, retry)
+    const preparation = await db.qa.startQaPreparationRun(projectId, taskId, branch, commitSha, retry)
     if (!preparation) return false
-    const task = db.tasks.getCiTask(userId, projectId, taskId)
-    const existing = db.qa.getQaTaskState(userId, projectId, taskId)?.criteria.filter((criterion) => criterion.active) ?? []
-    const development = args.runId ? db.ci.getCiRun(userId, args.runId) : null
+    const task = await db.tasks.getCiTask(userId, projectId, taskId)
+    const existing = (await db.qa.getQaTaskState(userId, projectId, taskId))?.criteria.filter((criterion) => criterion.active) ?? []
+    const development = args.runId ? await db.ci.getCiRun(userId, args.runId) : null
     const basePrompt = `Ты формируешь финальные структурированные сценарии ручного QA. Не запускай агентов или инструменты, не делегируй работу, не переходи в режим ожидания и не описывай свои действия. Ответь за один ход ТОЛЬКО JSON-массивом без Markdown и пояснений. Каждый объект обязан содержать строковые поля title, description, preconditions, steps, testData, expectedResult, boolean required и testType: manual|mixed|not_testable_in_app. title, steps и expectedResult должны быть непустыми.\n\nЗадача: ${task?.title ?? ''}\nОписание: ${task?.description ?? ''}\nAcceptance criteria: ${task?.acceptanceCriteria ?? ''}\nFeature branch: ${branch}\nCommit SHA: ${commitSha}\nАвтотесты: ${(development?.steps ?? []).map((step) => `${step.title}: ${step.status}`).join('; ')}\nУже активные сценарии (не дублировать): ${existing.map((criterion) => criterion.title).join('; ')}`
-    const sendAttempt = (attempt: number, correction?: string): void => {
+    const sendAttempt = async (attempt: number, correction?: string): Promise<void> => {
       const prompt = correction ? `${basePrompt}\n\nПредыдущий ответ отклонён: ${correction}. Исправь ошибку и верни только валидный JSON-массив установленной схемы.` : basePrompt
-      claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
-        onDelta: (chunk) => db.qa.appendQaPreparationLog(preparation.id, chunk),
-        onSession: () => {},
-        onDone: (text) => {
+      await claude.send({ userId, prompt, sessionId: null, model: 'sonnet', executionDisabled: true }, {
+        onDelta: async (chunk) => await db.qa.appendQaPreparationLog(preparation.id, chunk),
+        onSession: async () => {},
+        onDone: async (text) => {
           try {
             const scenarios = parseQaPreparationResponse(text)
-            db.qa.recordQaPreparationAttempt(preparation.id, attempt, text, null)
+            await db.qa.recordQaPreparationAttempt(preparation.id, attempt, text, null)
             const existingTitles = new Set(existing.map((criterion) => criterion.title.trim().toLocaleLowerCase()))
             for (const scenario of scenarios) {
               if (existingTitles.has(scenario.title.toLocaleLowerCase())) continue
-              db.qa.createAcceptanceCriterion(userId, projectId, taskId, scenario)
+              await db.qa.createAcceptanceCriterion(userId, projectId, taskId, scenario)
               existingTitles.add(scenario.title.toLocaleLowerCase())
             }
-            db.qa.completeQaPreparation(userId, projectId, taskId)
-            const qaState = db.qa.getQaTaskState(userId, projectId, taskId)
-            if (!qaState?.activeSession) db.qa.startQaSession(userId, { projectId, taskId, branch, commitSha, testRunId: args.runId ?? preparation.id }, true)
-            db.qa.finishQaPreparationRun(preparation.id, 'success')
+            await db.qa.completeQaPreparation(userId, projectId, taskId)
+            const qaState = await db.qa.getQaTaskState(userId, projectId, taskId)
+            if (!qaState?.activeSession) await db.qa.startQaSession(userId, { projectId, taskId, branch, commitSha, testRunId: args.runId ?? preparation.id }, true)
+            await db.qa.finishQaPreparationRun(preparation.id, 'success')
             boardHub.emit(projectId)
           } catch (cause) {
             const message = cause instanceof Error ? cause.message : String(cause)
-            db.qa.recordQaPreparationAttempt(preparation.id, attempt, text, message)
-            if (attempt < 2) sendAttempt(attempt + 1, message)
-            else { db.qa.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
+            await db.qa.recordQaPreparationAttempt(preparation.id, attempt, text, message)
+            if (attempt < 2) await sendAttempt(attempt + 1, message)
+            else { await db.qa.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
           }
         },
-        onError: (message) => {
-          db.qa.recordQaPreparationAttempt(preparation.id, attempt, '', message)
-          if (attempt < 2) sendAttempt(attempt + 1, message)
-          else { db.qa.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
+        onError: async (message) => {
+          await db.qa.recordQaPreparationAttempt(preparation.id, attempt, '', message)
+          if (attempt < 2) await sendAttempt(attempt + 1, message)
+          else { await db.qa.finishQaPreparationRun(preparation.id, 'failed', message); boardHub.emit(projectId) }
         }
       })
     }
-    sendAttempt(1)
+    await sendAttempt(1)
     boardHub.emit(projectId)
     return true
   }
@@ -1603,26 +1618,26 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     for (const handle of taskPreparationHandles.values()) handle.cancel()
     taskPreparationHandles.clear()
   })
-  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
-    let run = db.tasks.activeTaskPreparationRun(userId, projectId, taskId)
+  const launchTaskPreparation = async (userId: string, projectId: string, taskId: string, selection?: import('@voicechat/shared').TaskPreparationLlmSelection): Promise<import('@voicechat/shared').TaskPreparationRun> => {
+    let run = await db.tasks.activeTaskPreparationRun(userId, projectId, taskId)
     if (!run) {
-      const project = db.projects.getProject(userId, projectId)
+      const project = await db.projects.getProject(userId, projectId)
       if (!project) throw new Error('Проект недоступен')
-      const projectLlm = db.ci.getCiLlmConfig('project', projectId) ?? db.ci.ciLlmDefaultsForUser(userId)
+      const projectLlm = await db.ci.getCiLlmConfig('project', projectId) ?? await db.ci.ciLlmDefaultsForUser(userId)
       const explicitSelection = Boolean(selection?.machineId)
       const provider = explicitSelection ? selection!.provider : projectLlm.provider
       const model = taskPreparationModel(provider, explicitSelection ? selection!.model : projectLlm.model)
       const llmEngineId = explicitSelection ? selection!.llmEngineId ?? null : projectLlm.llmEngineId ?? null
-      const access = db.identity.getUserLlmAccess(userId)
+      const access = await db.identity.getUserLlmAccess(userId)
       if (!isProviderAllowed(access, provider)) throw new Error(explicitSelection ? 'model_unavailable: выбранный провайдер недоступен' : `Проектный движок ${provider === 'codex' ? 'Codex' : 'Claude'} недоступен пользователю`)
       if (!isModelAllowedForUser(access, provider, model)) throw new Error(explicitSelection ? 'model_unavailable: выбранная модель недоступна' : `Проектная модель ${provider}:${model} недоступна пользователю`)
-      const usable = db.machines.listUsableAgents(userId, projectId)
-      const machineId = selection?.machineId ?? db.machines.getUserProjectDefaultMachine(userId, projectId) ?? project.defaultAgentId ?? project.machines.find((candidate) => candidate.canUse !== false && candidate.path.trim())?.agentId ?? ''
+      const usable = await db.machines.listUsableAgents(userId, projectId)
+      const machineId = selection?.machineId ?? await db.machines.getUserProjectDefaultMachine(userId, projectId) ?? project.defaultAgentId ?? project.machines.find((candidate) => candidate.canUse !== false && candidate.path.trim())?.agentId ?? ''
       const agent = usable.find((candidate) => candidate.id === machineId)
       const configured = project.machines.find((candidate) => candidate.agentId === machineId && candidate.canUse !== false && candidate.path.trim())
       if (explicitSelection && (!agent || !configured)) throw new Error('unknown_machine: выбранная машина недоступна проекту')
       if (explicitSelection && !agentRegistry.isOnline(machineId)) throw new Error('machine_offline: выбранная машина offline')
-      run = db.tasks.startTaskPreparationRun(userId, projectId, taskId, {
+      run = await db.tasks.startTaskPreparationRun(userId, projectId, taskId, {
         machineId: configured?.agentId ?? null,
         machineName: configured?.name ?? agent?.name ?? null,
         llmEngineId,
@@ -1633,17 +1648,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (run.status === 'waiting_for_answer' || taskPreparationHandles.has(run.id)) return run
     if (run.status !== 'running' && run.status !== 'queued') return run
     if (run.status === 'running' && run.log) return run
-    const task = db.tasks.getCiTask(userId, projectId, taskId)
+    const task = await db.tasks.getCiTask(userId, projectId, taskId)
     const preparationMakeSources = task ? buildTaskMakeSources({ designs: task.designs ?? [], userId, projectId, taskId, baseUrl: makeMcpBaseUrl, broker: makeTaskScopes }) : []
     // Любое продолжение использует снимок попытки, а не текущие настройки проекта.
     const provider: LlmProvider = run.provider ?? 'claude'
     const model = taskPreparationModel(provider, run.model ?? '')
     const llmEngineId = run.llmEngineId ?? null
-    const client = provider === 'codex' ? codex : claude
-    const project = db.projects.getProject(userId, projectId)
+    const client = await (provider === 'codex' ? codex : claude)
+    const project = await db.projects.getProject(userId, projectId)
     const configuredMachines = (project?.machines ?? []).filter((machine) => machine.canUse !== false && machine.path.trim())
     const selectedMachine = configuredMachines.find((machine) => machine.agentId === run.machineId) ?? null
-    const projectMachines = db.machines.listProjectMachines(projectId)
+    const projectMachines = await db.machines.listProjectMachines(projectId)
     const kbToken = randomUUID()
     const kbEnabled = opts.config.kbToolEnabled
     if (kbEnabled) {
@@ -1681,8 +1696,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       : 'Критичный источник недоступен: в конфигурации проекта нет доступной машины с рабочей директорией.'
     // Чем шла подготовка — первой строкой ленты: без этого причину падения CLI
     // приходится искать в коде подготовки.
-    db.tasks.setTaskPreparationExecution(run.id, { llmEngineId, provider, model })
-    db.tasks.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n[система] ${machineDiagnostic}\n`)
+    await db.tasks.setTaskPreparationExecution(run.id, { llmEngineId, provider, model })
+    await db.tasks.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n[система] ${machineDiagnostic}\n`)
     const answeredContext = (run.questions ?? []).filter((question) => question.answer).map((question) => `Вопрос ${question.questionId}: ${question.text}\\nОтвет: ${question.answer}`).join('\\n')
     const researchDirective = `Начни с базы знаний проекта, затем сверяй её с кодом; инструменты подготовки работают только на чтение.
 
@@ -1697,26 +1712,26 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
 ${machineDiagnostic}
 ${preparationDesignNote(task?.designs ?? [], preparationMakeSources)}
-${task ? taskReworkContext(task, db.taskReworkCycles(userId, projectId, taskId) ?? [], db.taskAttachments(userId, projectId, taskId, 'source') ?? []) : ''}`
+${task ? taskReworkContext(task, await db.tasks.taskReworkCycles(userId, projectId, taskId) ?? [], await db.tasks.taskAttachments(userId, projectId, taskId, 'source') ?? []) : ''}`
     const basePrompt = `${researchDirective}
 
 Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект: первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
 const ordinaryResponses: string[] = []
-    const terminalValidationFailure = (message: string, text: string, recoveryDetail?: string): void => {
+    const terminalValidationFailure = async (message: string, text: string, recoveryDetail?: string): Promise<void> => {
       const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
       const readiness = (() => { try { return parseTaskPreparation(text) } catch { return null } })()
       const results = readiness ? developmentReadinessGateResults(readiness) : []
-      db.tasks.blockTaskPreparationRun(run.id, terminalMessage, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
+      await db.tasks.blockTaskPreparationRun(run.id, terminalMessage, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
       closePreparationTools()
       preparationRunUpdated(userId, projectId, taskId, run.id)
     }
-    const sendRecovery = (reason: string): void => {
+    const sendRecovery = async (reason: string): Promise<void> => {
       const sourceName = `${provider}:${model}`
       const recoveryName = sourceName
-      db.tasks.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Аварийное восстановление Development Brief')
+      await db.tasks.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Аварийное восстановление Development Brief')
       preparationRunUpdated(userId, projectId, taskId, run.id)
-      db.tasks.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Recovery через зафиксированную проектную пару ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, reason })
-      db.tasks.appendTaskPreparationLog(run.id, `[система] Recovery через зафиксированную проектную пару: ${recoveryName}; причина: ${reason}\\n`)
+      await db.tasks.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Recovery через зафиксированную проектную пару ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, reason })
+      await db.tasks.appendTaskPreparationLog(run.id, `[система] Recovery через зафиксированную проектную пару: ${recoveryName}; причина: ${reason}\\n`)
       const recoveryPrompt = `Исправь ТОЛЬКО структуру уже подготовленного Development Brief без повторного исследования и без изменения смысла требований. Верни ровно один JSON-объект schemaVersion=2: первый непробельный символ «{», последний — «}»; Markdown-ограда и любой текст вне объекта запрещены.\\n
 Диагностика валидатора (точные пути/гейты): ${reason}\\n
 Исходный ответ: ${ordinaryResponses[0] ?? ''}\\n
@@ -1729,53 +1744,53 @@ affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reus
 openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
 sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
 Сохрани исходные требования. Если диагностика выявляет дефект подготовки, добавь в scope, acceptanceCriteria/acceptanceCriteriaItems и testCases отдельные проверяемые работы: усиление prompt/schema, безопасная нормализация однозначных совместимых значений, регрессионные тесты и актуализация существующего раздела БЗ. Не добавляй новые исследования и не выдумывай источники.`
-      const handle = client.send({ userId, prompt: recoveryPrompt, sessionId: null, model, executionDisabled: true, makeSources: preparationMakeSources }, {
-        onDelta: () => {},
-        onSession: () => {},
-        onDone: (text) => {
+      const handle = await client.send({ userId, prompt: recoveryPrompt, sessionId: null, model, executionDisabled: true, makeSources: preparationMakeSources }, {
+        onDelta: async () => {},
+        onSession: async () => {},
+        onDone: async (text) => {
           taskPreparationHandles.delete(run.id)
-          if (db.tasks.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
+          if ((await db.tasks.getTaskPreparationRun(userId, run.id))?.status !== 'running') return
           try {
-            db.tasks.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка восстановленного Development Brief')
+            await db.tasks.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка восстановленного Development Brief')
             preparationRunUpdated(userId, projectId, taskId, run.id)
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
-            db.tasks.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'success' })
-            db.tasks.completeTaskPreparationRun(userId, run.id, readiness)
+            await db.tasks.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'success' })
+            await db.tasks.completeTaskPreparationRun(userId, run.id, readiness)
             closePreparationTools()
             preparationRunUpdated(userId, projectId, taskId, run.id)
           } catch (error) {
             const recoveryError = redactPreparationText(error instanceof Error ? error.message : String(error))
-            db.tasks.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'failed', error: recoveryError })
-            terminalValidationFailure(reason, text, recoveryError)
+            await db.tasks.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'failed', error: recoveryError })
+            await terminalValidationFailure(reason, text, recoveryError)
           }
         },
-        onError: (message) => {
+        onError: async (message) => {
           taskPreparationHandles.delete(run.id)
-          if (db.tasks.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
+          if ((await db.tasks.getTaskPreparationRun(userId, run.id))?.status !== 'running') return
           const recoveryError = taskPreparationFailure(provider, userId, message)
-          db.tasks.appendTaskPreparationEvent(run.id, 'recovery_failed', 'brief_generation', `Recovery ${recoveryName} не выполнен: ${recoveryError}`, { result: 'failed', error: recoveryError })
-          terminalValidationFailure(reason, ordinaryResponses[1] ?? '', recoveryError)
+          await db.tasks.appendTaskPreparationEvent(run.id, 'recovery_failed', 'brief_generation', `Recovery ${recoveryName} не выполнен: ${recoveryError}`, { result: 'failed', error: recoveryError })
+          await terminalValidationFailure(reason, ordinaryResponses[1] ?? '', recoveryError)
         }
       })
       if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
     }
-    const sendAttempt = (attempt: number, correction?: string): void => {
+    const sendAttempt = async (attempt: number, correction?: string): Promise<void> => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный единственный JSON-объект без любого текста вне JSON.` : basePrompt
-      const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, makeSources: preparationMakeSources, ...remote, ...kbFields }, {
-        onDelta: (chunk) => { db.tasks.appendTaskPreparationLog(run.id, chunk); preparationRunDelta(userId, projectId, taskId, run.id) },
-        onSession: () => {},
-        onDone: (text) => {
+      const handle = await client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, makeSources: preparationMakeSources, ...remote, ...kbFields }, {
+        onDelta: async (chunk) => { await db.tasks.appendTaskPreparationLog(run.id, chunk); preparationRunDelta(userId, projectId, taskId, run.id) },
+        onSession: async () => {},
+        onDone: async (text) => {
           taskPreparationHandles.delete(run.id)
-          if (db.tasks.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
+          if ((await db.tasks.getTaskPreparationRun(userId, run.id))?.status !== 'running') return
           ordinaryResponses[attempt - 1] = text
           try {
             const questionRaw = text.trim()
             if (!questionRaw.startsWith('{') || !questionRaw.endsWith('}')) throw new Error('Ожидался чистый JSON-объект')
             const candidate = JSON.parse(questionRaw) as { question?: unknown; material?: unknown }
             if (typeof candidate.question === 'string' && candidate.question.trim()) {
-              const question = db.tasks.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
+              const question = await db.tasks.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
               if (!question) throw new Error('Не удалось сохранить уточняющий вопрос')
               closePreparationTools()
               preparationRunUpdated(userId, projectId, taskId, run.id)
@@ -1785,32 +1800,32 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
             // Обычный readiness JSON разбирается и диагностируется ниже.
           }
           try {
-            db.tasks.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка Development Brief')
+            await db.tasks.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка Development Brief')
             preparationRunUpdated(userId, projectId, taskId, run.id)
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
-            db.tasks.completeTaskPreparationRun(userId, run.id, readiness)
+            await db.tasks.completeTaskPreparationRun(userId, run.id, readiness)
             closePreparationTools()
             preparationRunUpdated(userId, projectId, taskId, run.id)
           } catch (error) {
             const message = redactPreparationText(error instanceof Error ? error.message : String(error))
             if (attempt < 2) {
-              db.tasks.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Исправление Development Brief после проверки')
+              await db.tasks.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Исправление Development Brief после проверки')
               preparationRunUpdated(userId, projectId, taskId, run.id)
-              sendAttempt(attempt + 1, message)
+              await sendAttempt(attempt + 1, message)
             } else if (message.includes('.kind имеет недопустимое значение')) {
-              terminalValidationFailure(message, text)
+              await terminalValidationFailure(message, text)
             } else {
-              sendRecovery(message)
+              await sendRecovery(message)
             }
           }
         },
-        onError: (message) => {
+        onError: async (message) => {
           taskPreparationHandles.delete(run.id)
-          if (db.tasks.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
-          if (attempt < 2) sendAttempt(attempt + 1, message)
-          else { db.tasks.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); closePreparationTools(); preparationRunUpdated(userId, projectId, taskId, run.id) }
+          if ((await db.tasks.getTaskPreparationRun(userId, run.id))?.status !== 'running') return
+          if (attempt < 2) await sendAttempt(attempt + 1, message)
+          else { await db.tasks.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); closePreparationTools(); preparationRunUpdated(userId, projectId, taskId, run.id) }
         }
       })
       if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
@@ -1826,15 +1841,15 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           userId, projectId, conversationId: null, agentId: selectedMachine.agentId,
           path: selectedMachine.path, branch: project.ciBaseBranch || 'main', gitUrl: project.gitUrl
         })
-        db.tasks.appendTaskPreparationLog(run.id, `[система] Актуальная базовая ветка: ${project.ciBaseBranch || 'main'} @ ${snapshot.baseSha}; совпадение с origin подтверждено.\n`)
+        await db.tasks.appendTaskPreparationLog(run.id, `[система] Актуальная базовая ветка: ${project.ciBaseBranch || 'main'} @ ${snapshot.baseSha}; совпадение с origin подтверждено.\n`)
         // Автолечение копии видно в логе подготовки: иначе спрятанный stash
         // остаётся невидимым и человек не знает, где искать свои правки.
-        if (snapshot.autoHealed) db.tasks.appendTaskPreparationLog(run.id, `[система] Общая копия проекта приведена в порядок автоматически: ${snapshot.autoHealed}.\n`)
+        if (snapshot.autoHealed) await db.tasks.appendTaskPreparationLog(run.id, `[система] Общая копия проекта приведена в порядок автоматически: ${snapshot.autoHealed}.\n`)
       }
-      sendAttempt(1)
-    })().catch((error) => {
+      await sendAttempt(1)
+    })().catch(async (error) => {
       const message = `Не удалось синхронизировать проект с origin: ${error instanceof Error ? error.message : String(error)}`
-      db.tasks.failTaskPreparationRun(run.id, message)
+      await db.tasks.failTaskPreparationRun(run.id, message)
       closePreparationTools()
       preparationRunUpdated(userId, projectId, taskId, run.id)
     })
@@ -1843,11 +1858,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   }
 
   app.get('/api/task-preparation/notifications', async (req) =>
-    db.tasks.listTaskPreparationNotifications(uid(req))
+    await db.tasks.listTaskPreparationNotifications(uid(req))
   )
   app.post<{ Params: { questionId: string } }>('/api/task-preparation/notifications/:questionId/dismiss', async (req, reply) => {
-    const current = db.tasks.listTaskPreparationNotifications(uid(req)).find((item) => item.questionId === req.params.questionId)
-    const dismissed = db.tasks.dismissTaskPreparationNotification(uid(req), req.params.questionId)
+    const current = (await db.tasks.listTaskPreparationNotifications(uid(req))).find((item) => item.questionId === req.params.questionId)
+    const dismissed = await db.tasks.dismissTaskPreparationNotification(uid(req), req.params.questionId)
     if (!dismissed) return reply.code(404).send({ error: 'not found' })
     if (current) notificationHub.emit(current.projectId, uid(req))
     return { dismissed: true }
@@ -1855,22 +1870,22 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   app.post<{ Params: { id: string; taskId: string }; Body: Partial<import('@voicechat/shared').TaskPreparationLlmSelection> }>('/api/projects/:id/tasks/:taskId/preparation/run', async (req, reply) => {
     const selection = req.body?.provider && typeof req.body.model === 'string' ? { llmEngineId: req.body.llmEngineId ?? null, provider: req.body.provider, model: req.body.model } : undefined
-    try { return launchTaskPreparation(uid(req), req.params.id, req.params.taskId, selection) }
+    try { return await launchTaskPreparation(uid(req), req.params.id, req.params.taskId, selection) }
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/preparation/runs', async (req) =>
-    db.tasks.listTaskPreparationRuns(uid(req), req.params.id, req.params.taskId)
+    await db.tasks.listTaskPreparationRuns(uid(req), req.params.id, req.params.taskId)
   )
   app.get<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId', async (req, reply) =>
-    db.tasks.getTaskPreparationRun(uid(req), req.params.runId) ?? reply.code(404).send({ error: 'not found' })
+    await db.tasks.getTaskPreparationRun(uid(req), req.params.runId) ?? reply.code(404).send({ error: 'not found' })
   )
   app.post<{ Params: { questionId: string }; Body: { answer?: string } }>('/api/task-preparation/questions/:questionId/answer', async (req, reply) => {
     try {
-      const result = db.tasks.answerTaskPreparationQuestion(uid(req), req.params.questionId, req.body?.answer ?? '')
+      const result = await db.tasks.answerTaskPreparationQuestion(uid(req), req.params.questionId, req.body?.answer ?? '')
       if (!result) return reply.code(404).send({ error: 'not found' })
       if (result.accepted) {
-        const run = db.tasks.getTaskPreparationRun(uid(req), result.question.attemptId)
-        if (run) launchTaskPreparation(uid(req), run.projectId, run.taskId)
+        const run = await db.tasks.getTaskPreparationRun(uid(req), result.question.attemptId)
+        if (run) await launchTaskPreparation(uid(req), run.projectId, run.taskId)
       }
       return result
     } catch (error) {
@@ -1878,7 +1893,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     }
   })
   app.get<{ Params: { runId: string; format: 'json' | 'md' | 'txt' } }>('/api/task-preparation/runs/:runId/export/:format', async (req, reply) => {
-    const run = db.tasks.getTaskPreparationRun(uid(req), req.params.runId)
+    const run = await db.tasks.getTaskPreparationRun(uid(req), req.params.runId)
     if (!run) return reply.code(404).send({ error: 'not found' })
     const format = req.params.format
     if (format !== 'json' && format !== 'md' && format !== 'txt') return reply.code(400).send({ error: 'unsupported format' })
@@ -1907,18 +1922,18 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     return redactPreparationText(lines.join('\\n'))
   })
   app.delete<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId', async (req, reply) => {
-    const run = db.tasks.cancelTaskPreparationRun(uid(req), req.params.runId)
+    const run = await db.tasks.cancelTaskPreparationRun(uid(req), req.params.runId)
     if (!run) return reply.code(404).send({ error: 'not found' })
     try { taskPreparationHandles.get(run.id)?.cancel() } finally { taskPreparationHandles.delete(run.id) }
     preparationRunUpdated(uid(req), run.projectId, run.taskId, run.id)
     return run
   })
   app.post<{ Params: { runId: string }; Body: Partial<import('@voicechat/shared').TaskPreparationLlmSelection> }>('/api/task-preparation/runs/:runId/retry', async (req, reply) => {
-    const previous = db.tasks.getTaskPreparationRun(uid(req), req.params.runId)
+    const previous = await db.tasks.getTaskPreparationRun(uid(req), req.params.runId)
     if (!previous) return reply.code(404).send({ error: 'not found' })
     if (!previous.canRetry) return reply.code(409).send({ error: 'Эту попытку нельзя повторить' })
     const selection = req.body?.provider && typeof req.body.model === 'string' ? { llmEngineId: req.body.llmEngineId ?? null, provider: req.body.provider, model: req.body.model } : undefined
-    try { return launchTaskPreparation(uid(req), previous.projectId, previous.taskId, selection) }
+    try { return await launchTaskPreparation(uid(req), previous.projectId, previous.taskId, selection) }
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
@@ -1937,16 +1952,16 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     // Боевой исполнитель не ждёт reconnect агента; тестовый executor сам задаёт
     // доступность и не зависит от реестра WebSocket.
     isAgentOnline: opts.ciExecutor ? undefined : (agentId) => agentRegistry.isOnline(agentId),
-    postToChat: ({ userId, conversationId, text, runId, interactionId }) => {
+    postToChat: async ({ userId, conversationId, text, runId, interactionId }) => {
       try {
-        return db.chat.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciInteraction: { runId, interactionId } }).id
+        return (await db.chat.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciInteraction: { runId, interactionId } })).id
       } catch {
         return null
       }
     },
-    postAnswerToChat: ({ userId, conversationId, text }) => {
+    postAnswerToChat: async ({ userId, conversationId, text }) => {
       try {
-        db.chat.addMessage(userId, conversationId, 'u1', text, ciChatTime())
+        await db.chat.addMessage(userId, conversationId, 'u1', text, ciChatTime())
       } catch {
         /* чат мог быть удалён — не роняем ответ на вопрос */
       }
@@ -1958,9 +1973,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     },
     // Резюме законченного рана — обычное AI-сообщение чата; метка `ciRunSummary`
     // связывает его с раном и отличает от ответа хода модели.
-    postSummaryToChat: ({ userId, conversationId, text, runId }) => {
+    postSummaryToChat: async ({ userId, conversationId, text, runId }) => {
       try {
-        return db.chat.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciRunSummary: { runId } })
+        return await db.chat.addMessage(userId, conversationId, 'ai', text, ciChatTime(), undefined, { ciRunSummary: { runId } })
       } catch {
         return null // чат удалён — резюме от этого не падает
       }
@@ -2012,8 +2027,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     tunnels: {
       isOnline: (agentId) => agentRegistry.isOnline(agentId),
       // Туннель поднимает только своя машина пользователя: чужой агент слушать порт не должен.
-      ownsAgent: (userId, agentId) => db.machines.listAgents(userId).some((agent) => agent.id === agentId),
-      create: (id, sourceAgentId, targetAgentId, targetPort, authorize) =>
+      ownsAgent: async (userId, agentId) => (await db.machines.listAgents(userId)).some((agent) => agent.id === agentId),
+      create: async (id, sourceAgentId, targetAgentId, targetPort, authorize) =>
         agentRegistry.createTunnel(id, sourceAgentId, targetAgentId, targetPort, authorize),
       close: (id) => agentRegistry.closeTunnel(id)
     }
@@ -2056,15 +2071,15 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     }
   })
   const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => agentRegistry.policyOf(agentId)?.allowedDirs ?? [])
-  releaseManager.reconcile((release) => {
-    const project = db.projects.getProject(release.triggeredBy, release.projectId)
+  await releaseManager.reconcile(async (release) => {
+    const project = await db.projects.getProject(release.triggeredBy, release.projectId)
     const agentId = project?.productionAgentId
     const linked = agentId ? project?.machines.some(machine => machine.agentId === agentId) : false
     if (!project || !agentId || !linked || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
     // requireOnline:false — target resolvable даже если companion-агент прод-машины
     // ещё не переподключился после рестарта; monitorHealth сам дождётся онлайна и
     // корректной версии в пределах health-check бюджета, а не падает мгновенно.
-    if(project.productionEnvironmentMode==='managed'){try{return managedEnvironments.resolve(release.triggeredBy,release.projectId,'production',{requireOnline:false}).target}catch{return null}}
+    if(project.productionEnvironmentMode==='managed'){try{return (await managedEnvironments.resolve(release.triggeredBy,release.projectId,'production',{requireOnline:false})).target}catch{return null}}
     if(!project.productionCheckoutPath)return null
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
@@ -2072,7 +2087,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   publishToUser = (message, userId) => ciRunManager.publish(message, userId)
   // Watchdog агентов (п.1): раз в минуту ищем машины, пропавшие дольше порога.
   const agentWatchdog = createAgentWatchdog({ db, registry: agentRegistry, publish: (m, uid) => ciRunManager.publish(m, uid), thresholdMs: opts.config.agentOfflineAlertMs })
-  const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(() => { try { agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
+  const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(async () => { try { await agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
   watchdogTimer?.unref?.()
   app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
@@ -2083,43 +2098,43 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     // воркспейса — человек проверяет сценарий сразу после записи.
     automatedQaScenarioRunner
       ? createAutomatedQaCheck({
-          scenariosOf: (userId, projectId) => db.projects.getProject(userId, projectId)?.automatedQaScenarios ?? [],
+          scenariosOf: async (userId, projectId) => (await db.projects.getProject(userId, projectId))?.automatedQaScenarios ?? [],
           runner: automatedQaScenarioRunner,
           budgetMs: CHECK_BUDGET_MS
         })
       : undefined,
-    { cancel: (owner, planId) => orchestrationManager.cancel(owner, planId) },
+    { cancel: async (owner, planId) => await orchestrationManager.cancel(owner, planId) },
     makeWorkspaces,
     uploads)
-  mergeRunManager.reconcile()
-  const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): void => {
-    const run = stage === 'component_qa' ? db.ci.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? db.ci.getIntegrationTestRun(userId, runId) : db.qa.getQaStageRun(userId, runId)
+  await mergeRunManager.reconcile()
+  const onAutoPilotFailure = async (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): Promise<void> => {
+    const run = stage === 'component_qa' ? await db.ci.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? await db.ci.getIntegrationTestRun(userId, runId) : await db.qa.getQaStageRun(userId, runId)
     if (!run) return
     // Инфраструктурный сбой (недоступный воркспейс, таймаут, отключившийся
     // исполнитель) — не дефект разработчика: возвращать задачу и жечь цикл
     // автопрохода за чужой сбой нельзя, поэтому автопроход просто встаёт.
     if (options?.classification === 'infrastructure') {
-      db.qa.recordAutoPilotEvent(run.projectId, run.taskId, 'autopilot.stopped', { stage, runId, reason, blockedBy: 'infrastructure' })
+      await db.qa.recordAutoPilotEvent(run.projectId, run.taskId, 'autopilot.stopped', { stage, runId, reason, blockedBy: 'infrastructure' })
       emitBoard(run.projectId)
       return
     }
-    const handled = db.tasks.handleAutoPilotFailure(userId, run.projectId, run.taskId, stage, runId, reason, options?.remarks ?? '')
-    if (handled && !handled.decisionRequired) ciRunManager.start(userId, run.projectId, run.taskId, { mode: 'development' })
+    const handled = await db.tasks.handleAutoPilotFailure(userId, run.projectId, run.taskId, stage, runId, reason, options?.remarks ?? '')
+    if (handled && !handled.decisionRequired) await ciRunManager.start(userId, run.projectId, run.taskId, { mode: 'development' })
     emitBoard(run.projectId)
   }
-  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'component_qa'}),completed:(runId,userId,passed,reason,classification)=>{
-    const run=db.ci.getComponentQaRun(userId,runId);if(!run)return
-    if(passed){try{db.tasks.completeComponentQaRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'component_qa',error instanceof Error?error.message:String(error))}}
-    else onAutoPilotFailure(runId,userId,'component_qa',reason,{classification:classification??null})
+  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'component_qa'}),completed:async (runId,userId,passed,reason,classification)=>{
+    const run=await db.ci.getComponentQaRun(userId,runId);if(!run)return
+    if(passed){try{await db.tasks.completeComponentQaRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){await onAutoPilotFailure(runId,userId,'component_qa',error instanceof Error?error.message:String(error))}}
+    else await onAutoPilotFailure(runId,userId,'component_qa',reason,{classification:classification??null})
   }})
-  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'integration_tests'}),completed:(runId,userId,passed,reason,classification)=>{
-    const run=db.ci.getIntegrationTestRun(userId,runId);if(!run)return
-    if(passed){try{db.ci.completeIntegrationTestRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'integration_tests',error instanceof Error?error.message:String(error))}}
-    else onAutoPilotFailure(runId,userId,'integration_tests',reason,{classification:classification??null})
+  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'integration_tests'}),completed:async (runId,userId,passed,reason,classification)=>{
+    const run=await db.ci.getIntegrationTestRun(userId,runId);if(!run)return
+    if(passed){try{await db.ci.completeIntegrationTestRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){await onAutoPilotFailure(runId,userId,'integration_tests',error instanceof Error?error.message:String(error))}}
+    else await onAutoPilotFailure(runId,userId,'integration_tests',reason,{classification:classification??null})
   }})
-  const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,scenarioRunner:automatedQaScenarioRunner,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'automated_qa'}),completed:(runId,userId,passed,reason,verdict)=>{
+  const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,scenarioRunner:automatedQaScenarioRunner,boardChanged:emitBoard,qaStageChanged:(projectId,taskId)=>boardHub.emitQaStage({projectId,taskId,stage:'automated_qa'}),completed:async (runId,userId,passed,reason,verdict)=>{
     if(passed)return
-    onAutoPilotFailure(runId,userId,'automated_qa',reason,{classification:verdict?.classification??null,remarks:verdict?automatedQaRemarks(verdict):''})
+    await onAutoPilotFailure(runId,userId,'automated_qa',reason,{classification:verdict?.classification??null,remarks:verdict?automatedQaRemarks(verdict):''})
   }})
   /**
    * Начало конвейера у автопрохода: карточка в TODO или в подготовке сама уходит
@@ -2135,26 +2150,26 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
    * отвалившаяся машина) не должен требовать ручного «Повторить», но и крутить
    * бесконечный цикл на сломанном окружении координатор не имеет права.
    */
-  const autoPilotPreparation = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
-    if (db.tasks.activeTaskPreparationRun(userId, projectId, task.id)) return
-    const runs = db.tasks.listTaskPreparationRuns(userId, projectId, task.id)
+  const autoPilotPreparation = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<void> => {
+    if (await db.tasks.activeTaskPreparationRun(userId, projectId, task.id)) return
+    const runs = await db.tasks.listTaskPreparationRuns(userId, projectId, task.id)
     if (runs.some((run) => run.status === 'success' || run.status === 'completed')) return
-    const limit = db.projects.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
+    const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
     const failed = runs.filter((run) => run.status === 'failed' || run.status === 'blocked').length
     if (failed >= limit) {
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: 'Подготовка не прошла после автоматических повторов', attempts: failed, limit })
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: 'Подготовка не прошла после автоматических повторов', attempts: failed, limit })
       // Из TODO пути в decision_required нет (карту переходов автопроход не
       // обходит): там карточка просто остаётся ждать человека с записью в аудите.
-      try { db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.preparation_limit_exhausted') }
+      try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.preparation_limit_exhausted') }
       catch { /* переход недоступен из текущей колонки */ }
       emitBoard(projectId)
       return
     }
-    try { launchTaskPreparation(userId, projectId, task.id) }
+    try { await launchTaskPreparation(userId, projectId, task.id) }
     catch (error) {
       // Причина запуска (нет машины, недоступная модель) не лечится повтором в том
       // же тике: событие остаётся в аудите, а следующий board event попробует снова.
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: error instanceof Error ? error.message : String(error), attempts: failed, limit })
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'preparation', reason: error instanceof Error ? error.message : String(error), attempts: failed, limit })
     }
   }
   /**
@@ -2164,19 +2179,19 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
    * тот же ран с упавшего шага. Повторов конечное число: сломанное окружение не
    * должно крутить ран по кругу.
    */
-  const autoPilotResumeAfterInfraFailure = (userId: string, projectId: string, task: import('@voicechat/shared').Task): boolean => {
-    const last = db.ci.latestCiRunSummary(task.id)
+  const autoPilotResumeAfterInfraFailure = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<boolean> => {
+    const last = await db.ci.latestCiRunSummary(task.id)
     if (!last) return false
     const allowed = shouldResumeAfterInfraFailure({
       status: last.status,
-      infraErrors: db.ci.countCiEvents(last.id, 'run.infra_error'),
-      resumes: db.ci.countCiEvents(last.id, 'run.autopilot_infra_resume'),
+      infraErrors: await db.ci.countCiEvents(last.id, 'run.infra_error'),
+      resumes: await db.ci.countCiEvents(last.id, 'run.autopilot_infra_resume'),
       limit: AUTOPILOT_INFRA_RESUMES
     })
     if (!allowed) return false
-    const resumed = ciRunManager.retryFromFailed(userId, last.id)
+    const resumed = await ciRunManager.retryFromFailed(userId, last.id)
     if ('error' in resumed) return false
-    db.ci.addCiEvent({ projectId, runId: last.id, type: 'run.autopilot_infra_resume', actorType: 'system', payload: { taskId: task.id, status: last.status } })
+    await db.ci.addCiEvent({ projectId, runId: last.id, type: 'run.autopilot_infra_resume', actorType: 'system', payload: { taskId: task.id, status: last.status } })
     emitBoard(projectId)
     return true
   }
@@ -2187,40 +2202,40 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
    * упавших ранов меньше лимита доработок: бесконечно долбиться в сломанную
    * задачу автопроход не должен, для этого есть `decision_required`.
    */
-  const autoPilotDevelopmentStuck = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
-    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
-    const last = db.ci.latestCiRunSummary(task.id)
+  const autoPilotDevelopmentStuck = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<void> => {
+    if (await autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    const last = await db.ci.latestCiRunSummary(task.id)
     if (!last || (last.status !== 'failed' && last.status !== 'timeout')) return
     // Незакоммиченная работа модели в копии задачи: перезапуск падает мгновенно и
     // только жжёт попытки, а сброс копии уничтожил бы саму работу.
     if (isDirtyWorkspaceFailure(last.error)) {
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Рабочая копия задачи содержит несохранённые изменения', runId: last.id })
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Рабочая копия задачи содержит несохранённые изменения', runId: last.id })
       return
     }
-    if (!retryAllowedNow({ finishedAt: db.ci.lastCiRunFinishedAt(task.id), now: Date.now() })) return
-    const limit = db.projects.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
-    const failures = db.ci.countTrailingFailedCiRuns(task.id)
+    if (!retryAllowedNow({ finishedAt: await db.ci.lastCiRunFinishedAt(task.id), now: Date.now() })) return
+    const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
+    const failures = await db.ci.countTrailingFailedCiRuns(task.id)
     if (failures >= limit) {
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Подряд упавшие development-раны', failures, limit })
-      try { db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted') }
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: 'Подряд упавшие development-раны', failures, limit })
+      try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.development_limit_exhausted') }
       catch { /* переход недоступен из текущей колонки */ }
       emitBoard(projectId)
       return
     }
-    const started = ciRunManager.start(userId, projectId, task.id, { mode: 'development' })
+    const started = await ciRunManager.start(userId, projectId, task.id, { mode: 'development' })
     if ('error' in started) {
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: started.error, failures, limit })
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'development', reason: started.error, failures, limit })
       return
     }
-    db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.development_retry', { runId: started.run.id, failures, limit })
+    await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.development_retry', { runId: started.run.id, failures, limit })
     emitBoard(projectId)
   }
   /** Готовая к разработке карточка сама встаёт в очередь development-рана. */
-  const autoPilotDevelopment = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
-    if (autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
-    const result = ciRunManager.startForDevelopmentTransition(userId, projectId, task.id, true)
+  const autoPilotDevelopment = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<void> => {
+    if (await autoPilotResumeAfterInfraFailure(userId, projectId, task)) return
+    const result = await ciRunManager.startForDevelopmentTransition(userId, projectId, task.id, true)
     if ('error' in result) {
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'ready', reason: result.error })
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'ready', reason: result.error })
       return
     }
     if (!result.existing) emitBoard(projectId)
@@ -2231,8 +2246,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
    * и падал снова — так задача жгла круги доработки за чужой сбой. Пока online-машины
    * у проекта нет, автопроход просто ждёт: фоновый тик вернётся к нему сам.
    */
-  const projectHasOnlineMachine = (userId: string, projectId: string): boolean =>
-    db.machines.listUsableAgents(userId, projectId).some((agent) => agentRegistry.isOnline(agent.id))
+  const projectHasOnlineMachine = async (userId: string, projectId: string): Promise<boolean> =>
+    (await db.machines.listUsableAgents(userId, projectId)).some((agent) => agentRegistry.isOnline(agent.id))
   /**
    * Merge — такой же этап конвейера, как QA: карточка в нём с упавшим раном
    * никем не подхватывалась, а «Машина отключилась во время выполнения команды»
@@ -2240,22 +2255,22 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
    * (`startMergeRun` возвращает активный ран), поэтому повторные тики безопасны;
    * предохранитель — число подряд упавших ранов и пауза между попытками.
    */
-  const autoPilotMerge = (userId: string, projectId: string, task: import('@voicechat/shared').Task): void => {
-    const limit = db.projects.getProject(userId, projectId)?.autoPilotFixLimit ?? 3
-    const failures = db.ci.countTrailingFailedMergeRuns(task.id)
+  const autoPilotMerge = async (userId: string, projectId: string, task: import('@voicechat/shared').Task): Promise<void> => {
+    const limit = (await db.projects.getProject(userId, projectId))?.autoPilotFixLimit ?? 3
+    const failures = await db.ci.countTrailingFailedMergeRuns(task.id)
     if (failures >= limit) {
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'merge', reason: 'Подряд упавшие merge-раны', failures, limit })
-      try { db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.merge_limit_exhausted') }
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'merge', reason: 'Подряд упавшие merge-раны', failures, limit })
+      try { await db.tasks.transitionAutoPilotTask(projectId, task.id, 'decision_required', 'autopilot.merge_limit_exhausted') }
       catch { /* переход недоступен из текущей колонки */ }
       emitBoard(projectId)
       return
     }
-    if (failures > 0 && !retryAllowedNow({ finishedAt: db.ci.lastMergeRunFinishedAt(task.id), now: Date.now() })) return
+    if (failures > 0 && !retryAllowedNow({ finishedAt: await db.ci.lastMergeRunFinishedAt(task.id), now: Date.now() })) return
     try {
-      const run = db.ci.startMergeRun(userId, projectId, task.id)
+      const run = await db.ci.startMergeRun(userId, projectId, task.id)
       mergeRunManager.start(run)
     } catch (error) {
-      db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'merge', reason: error instanceof Error ? error.message : String(error), failures, limit })
+      await db.qa.recordAutoPilotEvent(projectId, task.id, 'autopilot.stopped', { stage: 'merge', reason: error instanceof Error ? error.message : String(error), failures, limit })
     }
   }
   const ticking = new Set<string>()
@@ -2264,26 +2279,26 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   autoPilotTick = (projectId) => {
     if (ticking.has(projectId)) { pendingTicks.add(projectId); return }
     ticking.add(projectId)
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
       try {
-        for (const item of db.tasks.autoPilotSnapshot(projectId)) {
+        for (const item of await db.tasks.autoPilotSnapshot(projectId)) {
           const { task, stage, userId } = item
           // Машина нужна не всем стадиям: пропуск ручного QA — чистая работа с
           // доской, а подготовка требует копию проекта только у Git-проекта.
           const needsMachine = stage === 'manual_qa'
             ? false
             : stage === 'backlog' || stage === 'preparation'
-              ? Boolean(db.projects.getProject(userId, projectId)?.gitUrl)
+              ? Boolean((await db.projects.getProject(userId, projectId))?.gitUrl)
               : true
-          if (needsMachine && !projectHasOnlineMachine(userId, projectId)) continue
-          if (stage === 'backlog' || stage === 'preparation') autoPilotPreparation(userId, projectId, task)
-          else if (stage === 'ready') autoPilotDevelopment(userId, projectId, task)
-          else if (stage === 'development') autoPilotDevelopmentStuck(userId, projectId, task)
-          else if (stage === 'component_qa') { const run=db.ci.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
-          else if (stage === 'integration_tests') { const run=db.ci.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
-          else if (stage === 'automated_qa') { const run=db.qa.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')automatedQaRunner.launch(run.id,userId) }
-          else if (stage === 'manual_qa' && !item.requiresManualQa) db.tasks.transitionAutoPilotTask(projectId,task.id,'awaiting_merge','autopilot.skip_manual_qa')
-          else if (stage === 'awaiting_merge' || stage === 'merge') autoPilotMerge(userId, projectId, task)
+          if (needsMachine && !await projectHasOnlineMachine(userId, projectId)) continue
+          if (stage === 'backlog' || stage === 'preparation') await autoPilotPreparation(userId, projectId, task)
+          else if (stage === 'ready') await autoPilotDevelopment(userId, projectId, task)
+          else if (stage === 'development') await autoPilotDevelopmentStuck(userId, projectId, task)
+          else if (stage === 'component_qa') { const run=await db.ci.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')await componentQaRunner.launch(run.id,userId) }
+          else if (stage === 'integration_tests') { const run=await db.ci.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
+          else if (stage === 'automated_qa') { const run=await db.qa.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')await automatedQaRunner.launch(run.id,userId) }
+          else if (stage === 'manual_qa' && !item.requiresManualQa) await db.tasks.transitionAutoPilotTask(projectId,task.id,'awaiting_merge','autopilot.skip_manual_qa')
+          else if (stage === 'awaiting_merge' || stage === 'merge') await autoPilotMerge(userId, projectId, task)
         }
       } catch (error) { app.log.warn({ projectId, error }, 'autopilot tick failed') }
       finally {
@@ -2296,8 +2311,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   // машины в онлайн: этап, брошенный уснувшим ноутбуком, ждал бы человека. Раз в
   // минуту координатор сам проходит проекты с автопроходом — тик идемпотентен,
   // и на живом конвейере этот проход ничего не делает.
-  const autoPilotTimer = setInterval(() => {
-    try { for (const projectId of db.tasks.autoPilotProjectIds()) autoPilotTick(projectId) }
+  const autoPilotTimer = setInterval(async () => {
+    try { for (const projectId of await db.tasks.autoPilotProjectIds()) autoPilotTick(projectId) }
     catch (error) { app.log.warn({ error }, 'autopilot sweep failed') }
   }, AUTOPILOT_SWEEP_MS)
   autoPilotTimer.unref?.()
@@ -2319,46 +2334,46 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       featurePreviews.operate(userId, projectId, taskId, operation, options),
     startPreparation: (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId),
     createReleaseBranch: async (userId, projectId, branch, baseBranch) => {
-      const target = releaseCiTarget(db, releaseManager, userId, projectId)
+      const target = await releaseCiTarget(db, releaseManager, userId, projectId)
       return releaseManager.createBranch(userId, target, branch, baseBranch ?? target.baseBranch)
     },
     deployRelease: async (userId, projectId, branch) => {
-      const production = releaseProductionTarget(db, managedEnvironments, userId, projectId)
+      const production = await releaseProductionTarget(db, managedEnvironments, userId, projectId)
       if (!production) throw new Error('Production-машина, checkout, deploy-команда или health-check не настроены')
       if (production.mode === 'managed') {
         const check = await managedEnvironments.preflight(userId, projectId, 'production')
         if (!check.ok) throw new Error('Managed production не готов к выкладке')
       }
-      return releaseManager.start(userId, releaseCiTarget(db, releaseManager, userId, projectId), production, branch)
+      return releaseManager.start(userId, await releaseCiTarget(db, releaseManager, userId, projectId), production, branch)
     },
     startMerge: async (userId, projectId, taskId, agentId) => {
       // Та же проверка готовности, что и у кнопки «Влить» в карточке.
-      const workspace = db.ci.findLatestPushedCiWorkspace(projectId, taskId)
+      const workspace = await db.ci.findLatestPushedCiWorkspace(projectId, taskId)
       const targetAgentId = agentId ?? workspace?.agentId
       if (targetAgentId) {
         const readiness = await mergeRunManager.checkReadiness(userId, projectId, taskId, targetAgentId)
         if (!readiness.ready) throw new Error(readiness.message)
       }
-      const run = db.ci.startMergeRun(userId, projectId, taskId, agentId)
+      const run = await db.ci.startMergeRun(userId, projectId, taskId, agentId)
       mergeRunManager.start(run)
       boardHub.emit(projectId)
       return run
     },
     startQa: async (userId, projectId, taskId, stage) => {
       if (stage === 'component_qa') {
-        const run = db.ci.startComponentQaRun(userId, projectId, taskId)
-        if (run.status === 'queued') componentQaRunner.launch(run.id, userId)
+        const run = await db.ci.startComponentQaRun(userId, projectId, taskId)
+        if (run.status === 'queued') await componentQaRunner.launch(run.id, userId)
         boardHub.emit(projectId)
         return run
       }
       if (stage === 'integration_tests') {
-        const run = db.ci.startIntegrationTestRun(userId, projectId, taskId)
+        const run = await db.ci.startIntegrationTestRun(userId, projectId, taskId)
         if (run.status === 'queued') integrationTestRunner.launch(run.id, userId)
         boardHub.emit(projectId)
         return run
       }
-      const run = db.qa.startQaStageRun(userId, projectId, taskId, 'automated_qa')
-      if (run.status === 'queued' || run.status === 'running') automatedQaRunner.launch(run.id, userId)
+      const run = await db.qa.startQaStageRun(userId, projectId, taskId, 'automated_qa')
+      if (run.status === 'queued' || run.status === 'running') await automatedQaRunner.launch(run.id, userId)
       boardHub.emit(projectId)
       return run
     }
@@ -2368,7 +2383,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   // подхватываются после рестарта, потому что ожидание merge длиннее процесса.
   const orchestrationManager = createOrchestrationManager({
     db,
-    runs: () => kanbanRunLaunchers,
+    runs: async () => kanbanRunLaunchers,
     boardChanged: (projectId) => boardHub.emit(projectId),
     publish: (plan) => ciRunManager.publish({ t: 'assistant.orchestration', plan }, plan.owner),
     // Итог плана попадает в тот же чат ассистента обычным сообщением: панель
@@ -2376,12 +2391,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     // Кадра «в разговоре появилось сообщение» в протоколе нет, и заводить его
     // ради одного отчёта незачем: панель ассистента перечитывает ленту сама,
     // когда план приходит в терминальном статусе кадром assistant.orchestration.
-    report: (plan, text) => {
+    report: async (plan, text) => {
       if (!plan.conversationId) return
-      db.chat.addMessage(plan.owner, plan.conversationId, 'ai', text, new Date().toTimeString().slice(0, 5))
+      await db.chat.addMessage(plan.owner, plan.conversationId, 'ai', text, new Date().toTimeString().slice(0, 5))
     }
   })
-  orchestrationManager.restore()
+  await orchestrationManager.restore()
   // Планы двигаются по событиям, а не по таймеру: доска меняется после каждого
   // шага CI, merge и QA, и этого достаточно, чтобы продолжить следующий шаг.
   boardHub.onChange(() => orchestrationManager.notify())
@@ -2389,25 +2404,25 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   // Восстанавливаем process-local очередь. Уже начатые раны закрываются как
   // interrupted, а не начавшиеся снова занимают очередь нового менеджера.
-  const ciReconciliation = ciRunManager.reconcile()
+  const ciReconciliation = await ciRunManager.reconcile()
   if (ciReconciliation.queued.length) app.log.info({ runs: ciReconciliation.queued.map((r) => r.id) }, 'ci: незапущенные раны возвращены в очередь')
   if (ciReconciliation.interrupted.length) app.log.warn({ runs: ciReconciliation.interrupted.map((r) => r.id) }, 'ci: начатые раны прерваны рестартом сервера')
-  const interruptedPreparation = db.tasks.failInterruptedTaskPreparationRuns()
+  const interruptedPreparation = await db.tasks.failInterruptedTaskPreparationRuns()
   if (interruptedPreparation.length) app.log.warn({ runs: interruptedPreparation }, 'task preparation: прерванные раны закрыты как failed')
-  const interruptedQa = db.qa.failInterruptedQaPreparationRuns()
+  const interruptedQa = await db.qa.failInterruptedQaPreparationRuns()
   if (interruptedQa.length) app.log.warn({ runs: interruptedQa }, 'qa preparation: прерванные раны закрыты как failed')
-  const interruptedQaStages = db.qa.failInterruptedQaStageRuns()
+  const interruptedQaStages = await db.qa.failInterruptedQaStageRuns()
   if (interruptedQaStages.length) app.log.warn({ runs: interruptedQaStages }, 'qa stages: прерванные раны закрыты как interrupted')
-  for (const run of db.qa.recoverableAutomatedQaRuns()) automatedQaRunner.launch(run.id, run.userId)
-  const interruptedComponentQa=db.ci.failInterruptedComponentQaRuns()
+  for (const run of await db.qa.recoverableAutomatedQaRuns()) await automatedQaRunner.launch(run.id, run.userId)
+  const interruptedComponentQa=await db.ci.failInterruptedComponentQaRuns()
   if (interruptedComponentQa.length) app.log.warn({runs:interruptedComponentQa},'component QA: прерванные раны закрыты как blocked infrastructure')
-  const interruptedIntegrationTests=db.ci.failInterruptedIntegrationTestRuns()
+  const interruptedIntegrationTests=await db.ci.failInterruptedIntegrationTestRuns()
   if(interruptedIntegrationTests.length)app.log.warn({runs:interruptedIntegrationTests},'integration tests: прерванные раны закрыты как blocked infrastructure')
 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
   app.addHook('onClose', async () => {
-    turnManager.flushInterrupted()
+    await turnManager.flushInterrupted()
   })
 
   const makeHandlers = (user: SessionUser, sid: string | null): WsHandlers =>
@@ -2428,9 +2443,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       modelDownload,
       agentsFeed: {
         // Список машин — только этого пользователя (изоляция).
-        list: () => {
+        list: async () => {
           const online = agentRegistry.onlineIds()
-          return db.machines.listAgents(user.name).map((a) => ({
+          return (await db.machines.listAgents(user.name)).map((a) => ({
             ...a,
             online: online.has(a.id),
             version: agentRegistry.versionOf(a.id),
@@ -2458,7 +2473,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       },
       // Живая канбан-доска: чтение снапшота (с проверкой членства) + подписка на изменения.
       board: {
-        getBoard: (projectId, includeCompleted) => db.tasks.getBoard(user.name, projectId, { includeCompleted }),
+        getBoard: async (projectId, includeCompleted) => await db.tasks.getBoard(user.name, projectId, { includeCompleted }),
         subscribe: (cb) => boardHub.onChange(cb),
         subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
         subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb),
@@ -2466,7 +2481,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb)
       },
       preparationNotifications: {
-        canAccess: (projectId) => db.projects.getProject(user.name, projectId) !== null,
+        canAccess: async (projectId) => await db.projects.getProject(user.name, projectId) !== null,
         subscribe: (cb) => notificationHub.onChange(cb)
       },
       ci: ciRunManager,
@@ -2482,28 +2497,28 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         resolve: (userId, requestId, outcome, conversationId) => widgetUiRelay.resolve(userId, requestId, outcome, conversationId),
         // Снимок принимаем только от владельца разговора: чужой кадр не должен
         // подменять ассистенту представление о чужом экране.
-        surfaceChanged: (userId, conversationId, surface) => {
-          if (db.chat.conversationOwner(conversationId) === userId) widgetContexts.updateSurface(conversationId, surface)
+        surfaceChanged: async (userId, conversationId, surface) => {
+          if (await db.chat.conversationOwner(conversationId) === userId) widgetContexts.updateSurface(conversationId, surface)
         }
       }
     })
 
   await app.register(async (scoped) => {
-    scoped.get('/ws', { websocket: true }, (socket, request) => {
+    scoped.get('/ws', { websocket: true }, async (socket, request) => {
       // Тестовый оверрайд обработчиков — без аутентификации.
       if (opts.createWsHandlers) {
-        attachWs(socket, opts.createWsHandlers())
+        await attachWs(socket, opts.createWsHandlers())
         return
       }
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
       // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
       const token = (request.query as { token?: string } | undefined)?.token ?? cookieToken(request.headers.cookie)
-      const user = resolveActiveUser(db, token, sessionSecret)
+      const user = await resolveActiveUser(db, token, sessionSecret)
       if (!user) {
         socket.close()
         return
       }
-      attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null))
+      await attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null))
     })
     scoped.get('/agent', { websocket: true }, (socket, request) => {
       const fwd = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
@@ -2549,6 +2564,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   app.addHook('onClose', async () => {
     if (!opts.db) db.close() // закрываем только созданную нами БД
+    await releasesSql?.close()
   })
 
   return app

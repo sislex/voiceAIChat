@@ -48,7 +48,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
   if (deps.shotsRoot) {
     const shotsRoot = deps.shotsRoot
     app.get<{ Params: { runId: string; name: string } }>('/api/ci/runs/:runId/browser-shots/:name', async (req, reply) => {
-      if (!db.ci.getCiRun(uid(req), req.params.runId)) return reply.code(404).send({ error: 'not_found' })
+      if (!await db.ci.getCiRun(uid(req), req.params.runId)) return reply.code(404).send({ error: 'not_found' })
       const png = readBrowserShot(shotsRoot, req.params.runId, req.params.name)
       if (!png) return reply.code(404).send({ error: 'not_found' })
       return reply.type('image/png').header('cache-control', 'private, max-age=86400').send(png)
@@ -57,9 +57,9 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   // Общая проверка: разговор существует, принадлежит пользователю и это
   // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.
-  const guard = (req: FastifyRequest, id: string): string => {
+  const guard = async (req: FastifyRequest, id: string): Promise<string> => {
     if (!runner) throw new BrowserRunnerError(501, 'Browser Runner не настроен на этом сервере')
-    const conversation = db.chat.getConversation(uid(req), id)
+    const conversation = await db.chat.getConversation(uid(req), id)
     if (!conversation) throw new BrowserRunnerError(404, 'Разговор не найден')
     if (!isPlaywrightReaderConversation(conversation)) throw new BrowserRunnerError(403, 'Изолированный Chromium доступен только в Playwright Reader-разговоре')
     return id
@@ -72,7 +72,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   app.post<{ Params: { id: string }; Body: { viewport?: unknown } }>('/api/browser/:id/start', async (req, reply) => {
     try {
-      const id = guard(req, req.params.id)
+      const id = await guard(req, req.params.id)
       const viewport = normalizeViewport(req.body?.viewport)
       return await runner!.start({ sessionId: id, userKey: uid(req), conversationKey: id, ...(viewport ? { viewport } : {}) })
     } catch (err) {
@@ -82,7 +82,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   app.post<{ Params: { id: string }; Body: { incarnation?: string; tabId?: string; command?: BrowserCommand } }>('/api/browser/:id/command', async (req, reply) => {
     try {
-      const id = guard(req, req.params.id)
+      const id = await guard(req, req.params.id)
       const { incarnation, tabId, command } = req.body ?? {}
       if (typeof incarnation !== 'string' || !command || typeof command !== 'object' || command.type === 'screenshot') {
         throw new BrowserRunnerError(400, 'Нужны incarnation и command (кроме screenshot — для него отдельный роут)')
@@ -100,7 +100,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   app.post<{ Params: { id: string }; Body: { incarnation?: string; tabId?: string; fullPage?: boolean; format?: 'png' | 'jpeg' | 'webp'; quality?: number } }>('/api/browser/:id/screenshot', async (req, reply) => {
     try {
-      const id = guard(req, req.params.id)
+      const id = await guard(req, req.params.id)
       const { incarnation, tabId, fullPage, format, quality } = req.body ?? {}
       if (typeof incarnation !== 'string') throw new BrowserRunnerError(400, 'Нужен incarnation')
       const shot = await runner!.screenshot(id, {
@@ -118,7 +118,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   app.delete<{ Params: { id: string } }>('/api/browser/:id', async (req, reply) => {
     try {
-      const id = guard(req, req.params.id)
+      const id = await guard(req, req.params.id)
       return { stopped: await runner!.stop(id) }
     } catch (err) {
       return fail(reply, err)

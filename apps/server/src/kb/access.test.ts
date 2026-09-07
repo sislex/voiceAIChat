@@ -27,9 +27,9 @@ function usageKb(): KnowledgeBaseService {
     symbols: [], protocols: [], areas: [], related: [], headings: []
   }
   return {
-    status: () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'v', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
-    topics: () => [{ id: doc.id, title: doc.title, kind: doc.kind, scope: 'usage', tags: [], packages: [], freshness: 'current', sourcePath: doc.sourcePath }],
-    document: (id) => (id === doc.id ? doc : null),
+    status: async () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'v', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
+    topics: async () => [{ id: doc.id, title: doc.title, kind: doc.kind, scope: 'usage', tags: [], packages: [], freshness: 'current', sourcePath: doc.sourcePath }],
+    document: async (id) => (id === doc.id ? doc : null),
     search: async ({ query }) => query.includes('голос')
       ? [{ documentId: doc.id, chunkId: `${doc.id}#overview`, title: doc.title, heading: doc.title, excerpt: 'Голосом или текстом.', score: 3, matchTypes: ['lexical'], explanation: 'Полнотекстовое совпадение', freshness: 'current', sourcePath: doc.sourcePath, anchor: '', symbols: [], relatedFiles: [], scope: 'usage' }]
       : [],
@@ -45,7 +45,7 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.identity.createUser('bob', '', 'developer')
+  await db.identity.createUser('bob', '', 'developer')
   app = await buildServer({
     config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-kb-access-${Date.now()}-${id}`) }),
     db,
@@ -69,7 +69,7 @@ async function project(name = 'Секретный'): Promise<ProjectDetail> {
 describe('разделы базы знаний', () => {
   it('новый проект получает скелет раздела «Разработка»', async () => {
     const p = await project()
-    const docs = db.kb.kbDocuments({ scope: 'project', projectId: p.id })
+    const docs = await db.kb.kbDocuments({ scope: 'project', projectId: p.id })
     expect(docs).toHaveLength(1)
     expect(docs[0].title).toBe('Разработка: Секретный')
     expect(docs[0].body).toContain('Исследовать проект')
@@ -88,9 +88,9 @@ describe('разделы базы знаний', () => {
 
   it('не-участник не видит знания чужого проекта ни фильтром, ни по id, ни поиском', async () => {
     const p = await project()
-    const docId = db.kb.kbDocuments({ scope: 'project', projectId: p.id })[0].id
+    const docId = (await db.kb.kbDocuments({ scope: 'project', projectId: p.id }))[0].id
     // Модель уже дописала в раздел проекта статью с приметным словом.
-    db.kb.saveKbDocument({ scope: 'project', projectId: p.id, title: 'Развёртывание', body: '# Развёртывание\n\nСекретный ключ деплоя лежит в vault и в репозиторий не попадает.', createdBy: 'admin' })
+    await db.kb.saveKbDocument({ scope: 'project', projectId: p.id, title: 'Развёртывание', body: '# Развёртывание\n\nСекретный ключ деплоя лежит в vault и в репозиторий не попадает.', createdBy: 'admin' })
 
     expect((await inj(bobTok, { method: 'GET', url: `${REST.kbTopics}?scope=project&projectId=${p.id}` })).statusCode).toBe(403)
     expect((await inj(bobTok, { method: 'GET', url: `${REST.kbSearch}?q=vault&scope=project&projectId=${p.id}` })).statusCode).toBe(403)
@@ -100,7 +100,7 @@ describe('разделы базы знаний', () => {
     const wide = (await inj(bobTok, { method: 'GET', url: `${REST.kbSearch}?q=vault` })).json() as KbSearchResult[]
     expect(wide).toEqual([])
     const mine = (await inj(adminTok, { method: 'GET', url: `${REST.kbSearch}?q=vault` })).json() as KbSearchResult[]
-    expect(mine.map((r) => r.documentId)).toContain(db.kb.kbDocuments({ scope: 'project', projectId: p.id }).find((d) => d.title === 'Развёртывание')?.id)
+    expect(mine.map((r) => r.documentId)).toContain((await db.kb.kbDocuments({ scope: 'project', projectId: p.id })).find((d) => d.title === 'Развёртывание')?.id)
 
     // Участнику проекта то же самое доступно.
     expect((await inj(adminTok, { method: 'GET', url: REST.kbDocument(docId) })).statusCode).toBe(200)

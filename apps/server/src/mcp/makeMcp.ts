@@ -68,10 +68,10 @@ export interface MakeMcpDeps {
   workspaces: MakeWorkspaces
   hub: MakeHub
   /** Владелец разговора (для адресации make.changed); null — разговора нет. */
-  ownerOf(conversationId: string): string | null
+  ownerOf(conversationId: string): Promise<string | null>
   taskScopes?: MakeTaskScopeBroker
   /** Перепроверяет актуальную task_designs, проект разговора и членство пользователя. */
-  authorizeTaskSource?(scope: MakeTaskScope, conversationId: string): boolean
+  authorizeTaskSource?(scope: MakeTaskScope, conversationId: string): Promise<boolean>
 }
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
@@ -95,14 +95,14 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
         const conv = req.query.conv ?? ''
         const taskScope = req.query.scope ? deps.taskScopes?.get(req.query.scope) ?? null : null
         const scopedSource = taskScope?.sources.find((source) => source.conversationId === conv)
-        if (req.query.scope && (!taskScope || !scopedSource || !deps.authorizeTaskSource?.(taskScope, conv))) {
+        if (req.query.scope && (!taskScope || !scopedSource || !await deps.authorizeTaskSource?.(taskScope, conv))) {
           return reply.code(403).send({ error: `Make-источник ${conv} недоступен: scope отсутствует, истёк или отозван` })
         }
         const taskReadOnly = Boolean(taskScope)
         const turn = req.query.turn ?? ''
         const readOnly = taskReadOnly || req.query.ro === '1'
         const note = (req.query.note ?? '').trim().slice(0, 80)
-        const owner = deps.ownerOf(conv)
+        const owner = await deps.ownerOf(conv)
         if (!owner) return reply.code(404).send({ error: 'conversation not found' })
         const { workspaces, hub } = deps
 

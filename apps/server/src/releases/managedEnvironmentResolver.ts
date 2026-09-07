@@ -13,10 +13,10 @@ export class ManagedEnvironmentResolver {
   // транзиентное состояние (companion-агент переподключается через секунды).
   // Иначе managed-релиз, доживший до health_check, ложно падал «Production-
   // конфигурация недоступна после рестарта», хотя деплой уже применён.
-  resolve(userId:string,projectId:string,kind:'production'|'staging',opts:{requireOnline?:boolean}={}){
-    const project=this.db.projects.getProject(userId,projectId)
+  async resolve(userId:string,projectId:string,kind:'production'|'staging',opts:{requireOnline?:boolean}={}){
+    const project=await this.db.projects.getProject(userId,projectId)
     if(!project?.productionAgentId||!project.gitUrl)throw new Error('Managed-машина или gitUrl не настроены')
-    const machine=this.db.machines.getProjectMachine(projectId,project.productionAgentId)
+    const machine=await this.db.machines.getProjectMachine(projectId,project.productionAgentId)
     if(!machine?.storageId||!machine.storageRoot)throw new Error('Для managed-окружения не настроено MachineStorage выбранной машины')
     if(opts.requireOnline!==false&&!this.releases.isOnline(machine.agentId))throw new Error('Managed-машина offline')
     const platform=platformFor(machine.storageRoot)
@@ -30,7 +30,7 @@ export class ManagedEnvironmentResolver {
   }
 
   async preflight(userId:string,projectId:string,kind:'production'|'staging'='production'):Promise<ManagedPreflightResult>{
-    const {target,paths,storageId,storageRoot}=this.resolve(userId,projectId,kind)
+    const {target,paths,storageId,storageRoot}=await this.resolve(userId,projectId,kind)
     const separator=platformFor(storageRoot)==='win32'?'\\':'/'
     const marker=`${storageRoot}${separator}.voicechat${separator}storage.json`
     const manifest=JSON.stringify(target.managedManifest)

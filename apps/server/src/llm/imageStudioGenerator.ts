@@ -37,8 +37,8 @@ export function llmImageStudioGenerator(opts: {
           `Промпт пользователя: ${prompt}`,
           IMAGE_HINT
         ]
-    const fullText = await new Promise<string>((resolve, reject) => {
-      const handle = opts.client.send({
+    const fullText = await new Promise<string>(async (resolve, reject) => {
+      const handle = await opts.client.send({
         userId: opts.userId,
         prompt: lines.join('\n'),
         sessionId: null,
@@ -47,7 +47,7 @@ export function llmImageStudioGenerator(opts: {
         permissionMode: 'acceptEdits',
         ...(opts.cwd ? { cwd: opts.cwd } : {}),
         ...(attachments.length ? { attachments } : {})
-      }, { onDelta: () => {}, onSession: () => {}, onDone: resolve, onError: reject })
+      }, { onDelta: async () => {}, onSession: async () => {}, onDone: resolve, onError: reject })
       // cancel() у CLI-клиентов молчит (finished=true глушит onDone/onError),
       // поэтому промис реджектим сами — иначе ран отмены не дождётся никогда.
       onCancel?.(() => { handle.cancel(); reject(new Error('Генерация отменена')) })

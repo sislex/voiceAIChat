@@ -175,9 +175,9 @@ describe('previewMcp — инструменты browser', () => {
   it('environment отдаёт окружения проекта, reset-session чистит cookie через контекст', async () => {
     const clears: Array<string | undefined> = []
     await makeApp({
-      machineOf: () => null,
-      testUsersOf: () => [],
-      environmentsOf: () => [{ taskId: 't1', branch: 'CHAT-1', state: 'running', healthy: true, appUrl: 'http://agent-1.machine.internal:18123/', storybookUrl: null }],
+      machineOf: async () => null,
+      testUsersOf: async () => [],
+      environmentsOf: async () => [{ taskId: 't1', branch: 'CHAT-1', state: 'running', healthy: true, appUrl: 'http://agent-1.machine.internal:18123/', storybookUrl: null }],
       clearCookies: (_entry, host) => { clears.push(host); return 2 }
     })
     const environments = await call('environment')
@@ -188,7 +188,7 @@ describe('previewMcp — инструменты browser', () => {
   })
 
   it('environment без окружений объясняет, как их поднять', async () => {
-    await makeApp({ machineOf: () => null, testUsersOf: () => [], environmentsOf: () => [], clearCookies: () => 0 })
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], environmentsOf: async () => [], clearCookies: () => 0 })
     const result = await call('environment')
     expect(result.text).toContain('карточки задачи')
   })
@@ -248,7 +248,7 @@ describe('previewMcp — инструменты browser', () => {
   })
 
   it('open разворачивает алиас machine.internal в машину разговора', async () => {
-    await makeApp({ machineOf: () => 'agent-7', testUsersOf: () => [] })
+    await makeApp({ machineOf: async () => 'agent-7', testUsersOf: async () => [] })
     let seen: unknown
     client = (m) => {
       seen = m.action
@@ -260,7 +260,7 @@ describe('previewMcp — инструменты browser', () => {
   })
 
   it('алиас machine.internal без машины разговора — понятная ошибка без похода к клиенту', async () => {
-    await makeApp({ machineOf: () => null, testUsersOf: () => [] })
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [] })
     let touched = false
     client = () => { touched = true }
     const result = await call('open', { url: 'http://machine.internal:5173/' })
@@ -271,8 +271,8 @@ describe('previewMcp — инструменты browser', () => {
 
   it('test-users возвращает тестовые учётки проекта разговора', async () => {
     await makeApp({
-      machineOf: () => null,
-      testUsersOf: (entry) => (entry.conversationId === CONV ? [{ name: 'tester', password: 'test-pass', role: 'admin' }] : [])
+      machineOf: async () => null,
+      testUsersOf: async (entry) => (entry.conversationId === CONV ? [{ name: 'tester', password: 'test-pass', role: 'admin' }] : [])
     })
     const result = await call('test-users')
     expect(JSON.parse(result.text)).toEqual([{ name: 'tester', password: 'test-pass', role: 'admin' }])
@@ -280,7 +280,7 @@ describe('previewMcp — инструменты browser', () => {
   })
 
   it('test-users без заведённых учёток объясняет, где их завести', async () => {
-    await makeApp({ machineOf: () => null, testUsersOf: () => [] })
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [] })
     const result = await call('test-users')
     expect(result.text).toContain('настройках проекта')
   })
@@ -347,9 +347,9 @@ describe('previewMcp — инструменты browser', () => {
   it('evaluate проходит гейт и требует явное подтверждение', async () => {
     let confirmed = false
     await makeApp({
-      machineOf: () => null,
-      testUsersOf: () => [],
-      gateEvaluate: (_entry, _code, value) => value ? { allowed: true } : { allowed: false, needsConfirmation: true, reason: 'опасный код' }
+      machineOf: async () => null,
+      testUsersOf: async () => [],
+      gateEvaluate: async (_entry, _code, value) => value ? { allowed: true } : { allowed: false, needsConfirmation: true, reason: 'опасный код' }
     })
     client = (message) => { confirmed = true; relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://a.b', title: 'A' }, value: '1' } }) }
     const denied = await call('evaluate', { code: 'document.body.remove()' })

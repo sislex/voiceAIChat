@@ -35,7 +35,7 @@ import { uid } from '../users/auth.js'
 export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: FeaturePreviewManager, db: VoiceChatDb, agents: AgentRegistry): void {
   const base = '/api/projects/:projectId/tasks/:taskId/preview'
   app.get<{ Params: { projectId: string; taskId: string } }>(base, async (req, reply) => {
-    const env = previews.get(uid(req), req.params.projectId, req.params.taskId)
+    const env = await previews.get(uid(req), req.params.projectId, req.params.taskId)
     return env ?? reply.code(404).send({ error: 'preview not created' })
   })
   app.post<{
@@ -60,7 +60,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
   })
   app.post<{ Params: { projectId: string; taskId: string }; Body: { service?: PreviewServiceKind; localAgentId?: string | null } }>(`${base}/open`, async (req, reply) => {
     const userId = uid(req)
-    const env = previews.get(userId, req.params.projectId, req.params.taskId)
+    const env = await previews.get(userId, req.params.projectId, req.params.taskId)
     if (!env) return reply.code(404).send({ error: 'preview not created or access denied' })
     if (env.state !== 'running' || env.healthStatus !== 'healthy') return reply.code(409).send({ error: 'preview is not ready' })
     const kind = req.body?.service === 'storybook' ? 'storybook' : 'app'
@@ -75,11 +75,11 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     if (!loopback || isLocalPreview(env.agentId, localAgentId)) {
       const url = loopback ? `http://127.0.0.1:${service.hostPort}` : internalUrl
       const result: PreviewAccessResult = { connectionType: 'direct', state: 'connected', url, tunnelId: null, manualCommand: null, internalUrl, localAgentId, error: null }
-      db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.open.direct', { environmentId: env.id, service: kind })
+      await db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.open.direct', { environmentId: env.id, service: kind })
       return result
     }
 
-    const project = db.projects.getProject(userId, req.params.projectId)
+    const project = await db.projects.getProject(userId, req.params.projectId)
     const machine = project?.machines.find((item) => item.agentId === env.agentId)
     const missingSshSettings: Array<'hostname' | 'user'> = []
     if (!machine?.sshHost?.trim()) missingSshSettings.push('hostname')
@@ -90,7 +90,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
       ? `Заполните в настройках машины: ${missingSshSettings.includes('hostname') ? 'SSH hostname/IP' : ''}${missingSshSettings.length === 2 ? ' и ' : ''}${missingSshSettings.includes('user') ? 'SSH-пользователя' : ''}`
       : manualCommand ? null : 'SSH hostname/IP или SSH-пользователь имеют недопустимый формат'
 
-    const localAgent = localAgentId && localAgentId !== env.agentId && db.machines.listAgents(userId).some((agent) => agent.id === localAgentId) && agents.isOnline(localAgentId)
+    const localAgent = localAgentId && localAgentId !== env.agentId && (await db.machines.listAgents(userId)).some((agent) => agent.id === localAgentId) && agents.isOnline(localAgentId)
       ? { id: localAgentId }
       : null
     if (!localAgent) {
@@ -99,9 +99,9 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     }
     const tunnelId = createHash('sha256').update(`${userId}:${env.id}:${env.builtCommitSha}:${kind}`).digest('hex').slice(0, 32)
     try {
-      const port = await agents.createTunnel(tunnelId, localAgent.id, env.agentId, service.hostPort, () => Boolean(previews.get(userId, req.params.projectId, req.params.taskId)), () => db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.close', { environmentId: env.id, tunnelId }))
+      const port = await agents.createTunnel(tunnelId, localAgent.id, env.agentId, service.hostPort, async () => Boolean(await previews.get(userId, req.params.projectId, req.params.taskId)), async () => await db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.close', { environmentId: env.id, tunnelId }))
       const result: PreviewAccessResult = { connectionType: 'tunnel', state: 'connected', url: `http://127.0.0.1:${port}`, tunnelId, manualCommand: null, internalUrl, localAgentId: localAgent.id, error: null }
-      db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.open', { environmentId: env.id, service: kind, tunnelId, localAgentId: localAgent.id })
+      await db.qa.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.open', { environmentId: env.id, service: kind, tunnelId, localAgentId: localAgent.id })
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -111,7 +111,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
   })
   app.delete<{ Params: { projectId: string; taskId: string; tunnelId: string } }>(`${base}/tunnels/:tunnelId`, async (req, reply) => {
     const userId = uid(req)
-    const env = previews.get(userId, req.params.projectId, req.params.taskId)
+    const env = await previews.get(userId, req.params.projectId, req.params.taskId)
     if (!env) return reply.code(404).send({ error: 'preview not created or access denied' })
     const expected = ['app', 'storybook'].map((kind) => createHash('sha256').update(`${userId}:${env.id}:${env.builtCommitSha}:${kind}`).digest('hex').slice(0, 32))
     if (!expected.includes(req.params.tunnelId)) return reply.code(404).send({ error: 'tunnel not found' })
@@ -120,12 +120,12 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     return { closed }
   })
   app.post<{ Params: { projectId: string; taskId: string } }>(`${base}/cancel`, async (req, reply) =>
-    previews.cancel(uid(req), req.params.projectId, req.params.taskId)
+    await previews.cancel(uid(req), req.params.projectId, req.params.taskId)
       ? { cancelled: true }
       : reply.code(409).send({ error: 'active operation not found' })
   )
   app.get<{ Params: { projectId: string; taskId: string }; Querystring: { sha?: string } }>(`${base}/playwright-target`, async (req, reply) => {
-    const env = previews.get(uid(req), req.params.projectId, req.params.taskId)
+    const env = await previews.get(uid(req), req.params.projectId, req.params.taskId)
     if (!env) return reply.code(404).send({ error: 'preview not created' })
     const sha = req.query.sha?.trim()
     if (!sha || env.state === 'stale' || env.state !== 'running' || env.healthStatus !== 'healthy' || env.builtCommitSha !== sha || env.currentCommitSha !== sha || !env.dataReady || !env.appUrl) {
@@ -134,7 +134,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     return { url: env.appUrl, commitSha: sha, seedScenario: env.selectedSeedScenario }
   })
   app.get<{ Params: { projectId: string; taskId: string; runId: string } }>(`${base}/runs/:runId/log`, async (req, reply) => {
-    const env = previews.get(uid(req), req.params.projectId, req.params.taskId)
+    const env = await previews.get(uid(req), req.params.projectId, req.params.taskId)
     const run = env?.runs.find((item) => item.id === req.params.runId)
     return run ? { runId: run.id, log: run.log } : reply.code(404).send({ error: 'run not found' })
   })

@@ -14,41 +14,41 @@ function setup(thresholdMs = 10 * 60_000) {
   const logged: unknown[] = []
   const published: Array<{ m: ServerMessage; user: string }> = []
   const wd = createAgentWatchdog({
-    db: {machines:{listAllAgents: () => agents,logMachineEvent: (e) => logged.push(e)}},
+    db: {machines:{listAllAgents: async () => agents,logMachineEvent: async (e) => { logged.push(e) }}},
     registry: { isOnline: (id) => online.has(id), onChange: (cb) => { changeListeners.add(cb); return () => changeListeners.delete(cb) } },
     publish: (m, user) => published.push({ m, user }),
     thresholdMs,
     now: () => now
   })
-  return { wd, online, logged, published, agents, advance: (ms: number) => { now += ms }, change: () => changeListeners.forEach((cb) => cb()) }
+  return { wd, online, logged, published, agents, advance: (ms: number) => { now += ms }, change: async () => { await Promise.all([...changeListeners].map((cb) => cb())) } }
 }
 
 describe('agent watchdog', () => {
-  it('тревога только по машине, пропавшей дольше порога и имевшей агента; повторно не шлётся', () => {
+  it('тревога только по машине, пропавшей дольше порога и имевшей агента; повторно не шлётся', async () => {
     const s = setup()
-    const events = s.wd.tick()
+    const events = await s.wd.tick()
     expect(events.map((e) => e.machineId)).toEqual(['a1'])
     expect(s.published[0]).toMatchObject({ user: 'bob', m: { t: 'machine.status', event: { machineId: 'a1', state: 'offline', offlineForMs: 20 * 60_000 } } })
-    expect(s.wd.tick()).toEqual([])
+    expect(await s.wd.tick()).toEqual([])
     expect(s.wd.alerted()).toEqual(['a1'])
     // a2 дозрела до порога
     s.advance(10 * 60_000)
-    expect(s.wd.tick().map((e) => e.machineId)).toEqual(['a2'])
+    expect((await s.wd.tick()).map((e) => e.machineId)).toEqual(['a2'])
     expect(s.logged).toHaveLength(2)
   })
 
-  it('возврат машины в сеть снимает тревогу и публикует «вернулась» с длительностью простоя', () => {
+  it('возврат машины в сеть снимает тревогу и публикует «вернулась» с длительностью простоя', async () => {
     const s = setup()
-    s.wd.tick()
+    await s.wd.tick()
     s.advance(5 * 60_000)
     s.online.add('a1')
-    s.change()
+    await s.change()
     expect(s.wd.alerted()).toEqual([])
     const back = s.published.at(-1)!.m as Extract<ServerMessage, { t: 'machine.status' }>
     expect(back.event).toMatchObject({ machineId: 'a1', state: 'online', offlineForMs: 25 * 60_000 })
     // без тревог onChange ничего не делает
     const before = s.published.length
-    s.change()
+    await s.change()
     expect(s.published).toHaveLength(before)
     s.wd.stop()
     vi.restoreAllMocks()

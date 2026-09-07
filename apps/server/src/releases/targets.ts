@@ -13,17 +13,17 @@ import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from './r
 const DEFAULT_TEST_COMMAND = 'npm run typecheck && npm run test'
 
 /** Бросает с человеческим текстом: он же уходит и в 400 REST, и в ответ инструмента. */
-export function releaseCiTarget(
+export async function releaseCiTarget(
   db: VoiceChatDb,
   releases: Pick<ReleaseManager, 'isOnline'>,
   userId: string,
   projectId: string
-): ReleaseProjectTarget {
-  const value = db.projects.getProject(userId, projectId)
+): Promise<ReleaseProjectTarget> {
+  const value = await db.projects.getProject(userId, projectId)
   const agentId = value?.defaultAgentId
   if (!value || !agentId) throw new Error('В настройках проекта не выбрана машина по умолчанию')
   const machine = value.machines.find((item) => item.agentId === agentId)
-  if (!machine || !db.machines.canUseAgent(userId, agentId, projectId)) throw new Error('Нет доступа к машине проекта по умолчанию или она не подключена к проекту')
+  if (!machine || !await db.machines.canUseAgent(userId, agentId, projectId)) throw new Error('Нет доступа к машине проекта по умолчанию или она не подключена к проекту')
   if (!releases.isOnline(agentId)) throw new Error('Машина проекта по умолчанию offline')
   if (!value.gitUrl) throw new Error('Для проекта не задан gitUrl')
   const existingPath = machine.path?.trim()
@@ -42,17 +42,17 @@ export function releaseCiTarget(
 }
 
 /** null — выкладывать некуда: production не настроен до конца. */
-export function releaseProductionTarget(
+export async function releaseProductionTarget(
   db: VoiceChatDb,
   managed: ManagedEnvironmentResolver,
   userId: string,
   projectId: string
-): ProductionTarget | null {
-  const value = db.projects.getProject(userId, projectId)
+): Promise<ProductionTarget | null> {
+  const value = await db.projects.getProject(userId, projectId)
   const agentId = value?.productionAgentId
   const linked = agentId ? value?.machines.some((item) => item.agentId === agentId) : false
   if (!value || !agentId || !linked || !value.productionDeployCommand || !value.productionHealthCheckCommand || !value.gitUrl) return null
-  if (value.productionEnvironmentMode === 'managed') return managed.resolve(userId, projectId, 'production').target
+  if (value.productionEnvironmentMode === 'managed') return (await managed.resolve(userId, projectId, 'production')).target
   if (!value.productionCheckoutPath) return null
   return {
     projectId,
