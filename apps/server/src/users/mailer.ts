@@ -1,6 +1,6 @@
-// Отправка писем (регистрация с подтверждением email). Минимальный SMTP-клиент без зависимостей:
-// smtps:// — TLS сразу, smtp:// — STARTTLS при поддержке; AUTH PLAIN/LOGIN. Без VC_SMTP_URL письма
-// не отправляются, а ссылка подтверждения пишется в лог сервера — так регистрацию можно проверить на стенде.
+// Отправка писем (регистрация с подтверждением email): Brevo через HTTPS либо минимальный
+// SMTP-клиент без зависимостей (smtps:// — TLS сразу, smtp:// — STARTTLS; AUTH PLAIN/LOGIN).
+// Без настроенного транспорта ссылка подтверждения пишется в лог для проверки стенда.
 import { connect as tlsConnect, type TLSSocket } from 'node:tls'
 import { connect as netConnect, type Socket } from 'node:net'
 
@@ -70,12 +70,111 @@ export async function sendSmtp(cfg: SmtpConfig, msg: MailMessage): Promise<void>
   } finally { clearTimeout(timer); sock.end(); sock.destroy() }
 }
 
-/** Мейлер из окружения: SMTP при VC_SMTP_URL, иначе «консольный» — пишет письмо в лог и ничего не шлёт. */
-export function createMailer(cfg: { smtpUrl?: string | null; mailFrom?: string | null }, log: (msg: string, extra?: Record<string, unknown>) => void): Mailer {
-  if (cfg.smtpUrl) {
+export interface HttpMailConfig {
+  apiKey: string
+  apiUrl: string
+  from: string
+  fetch?: typeof fetch
+  timeoutMs?: number
+  log?: (msg: string, extra?: Record<string, unknown>) => void
+}
+
+function parseMailbox(value: string): { email: string; name?: string } {
+  const match = /^\s*(?:(.*?)\s*)?<([^<>\s@]+@[^<>\s@]+)>\s*$/.exec(value)
+  const email = (match?.[2] ?? value.trim()).toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Некорректная конфигурация отправителя почты')
+  const name = match?.[1]?.trim().replace(/^["']|["']$/g, '')
+  return name ? { email, name } : { email }
+}
+
+function safeProviderCode(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(value) ? value : undefined
+}
+
+/** Отправляет письмо через Brevo Transactional Email API. */
+export async function sendHttp(cfg: HttpMailConfig, msg: MailMessage): Promise<void> {
+  const sender = parseMailbox(cfg.from)
+  const recipient = msg.to.trim().toLowerCase()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) throw new Error('Некорректный адрес получателя')
+  const body: Record<string, unknown> = {
+    sender,
+    to: [{ email: recipient }],
+    subject: msg.subject,
+    textContent: msg.text
+  }
+  if (msg.html !== undefined) body.htmlContent = msg.html
+
+  const request = cfg.fetch ?? globalThis.fetch
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), cfg.timeoutMs ?? 20_000)
+    let response: Response
+    try {
+      response = await request(cfg.apiUrl, {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json', 'api-key': cfg.apiKey },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      })
+    } catch (error) {
+      const timeout = controller.signal.aborted
+      cfg.log?.('mail http request failed', { method: 'POST', reason: timeout ? 'timeout' : 'network' })
+      throw new Error(timeout ? 'HTTP mail delivery timed out' : 'HTTP mail delivery failed')
+    } finally {
+      clearTimeout(timer)
+    }
+
+    let payload: unknown
+    try { payload = await response.json() } catch { payload = null }
+    const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
+    if (response.status === 201 && typeof record.messageId === 'string' && record.messageId) return
+
+    const retryable = response.status === 429 || response.status >= 500
+    if (retryable && attempt === 1) continue
+    cfg.log?.('mail http provider rejected request', {
+      method: 'POST',
+      status: response.status,
+      code: safeProviderCode(record.code)
+    })
+    throw new Error(response.status === 201 ? 'HTTP mail provider returned an invalid response' : `HTTP mail delivery failed (${response.status})`)
+  }
+}
+
+export interface MailerConfig {
+  mailTransport?: string | null
+  mailApiKey?: string | null
+  mailApiUrl?: string | null
+  smtpUrl?: string | null
+  mailFrom?: string | null
+  fetch?: typeof fetch
+  httpTimeoutMs?: number
+}
+
+/** Мейлер из окружения: явный transport либо совместимый приоритет HTTP → SMTP → console. */
+export function createMailer(cfg: MailerConfig, log: (msg: string, extra?: Record<string, unknown>) => void): Mailer {
+  if (cfg.mailTransport && cfg.mailTransport !== 'http' && cfg.mailTransport !== 'smtp') {
+    throw new Error('VC_MAIL_TRANSPORT должен быть http или smtp')
+  }
+  const transport = cfg.mailTransport ?? (cfg.mailApiKey ? 'http' : cfg.smtpUrl ? 'smtp' : 'console')
+  if (transport === 'http') {
+    if (!cfg.mailApiKey) throw new Error('Для HTTP mail transport требуется VC_MAIL_API_KEY')
+    if (!cfg.mailFrom) throw new Error('Для HTTP mail transport требуется VC_MAIL_FROM')
+    parseMailbox(cfg.mailFrom)
+    const httpCfg: HttpMailConfig = {
+      apiKey: cfg.mailApiKey,
+      apiUrl: cfg.mailApiUrl || 'https://api.brevo.com/v3/smtp/email',
+      from: cfg.mailFrom,
+      log,
+      ...(cfg.fetch ? { fetch: cfg.fetch } : {}),
+      ...(cfg.httpTimeoutMs !== undefined ? { timeoutMs: cfg.httpTimeoutMs } : {})
+    }
+    return { configured: true, send: (msg) => sendHttp(httpCfg, msg) }
+  }
+  if (transport === 'smtp') {
+    if (!cfg.smtpUrl) throw new Error('Для SMTP mail transport требуется VC_SMTP_URL')
     const from = cfg.mailFrom || 'ChatAI <no-reply@localhost>'
     return { configured: true, send: (msg) => sendSmtp({ url: cfg.smtpUrl!, from }, msg) }
   }
-  // Дублируем в stdout: логгер Fastify на стенде может быть отключён или на уровне выше warn, а ссылку подтверждения надо где-то увидеть.
-  return { configured: false, send: async (msg) => { log('mail (SMTP не настроен, письмо не отправлено)', { to: msg.to, subject: msg.subject, text: msg.text }); console.warn(`[mail] SMTP не настроен — письмо для ${msg.to}: ${msg.subject}\n${msg.text}`) } }
+  // Дублируем в stdout: на стенде verification-ссылка должна оставаться доступной.
+  return { configured: false, send: async (msg) => { log('mail (транспорт не настроен, письмо не отправлено)', { to: msg.to, subject: msg.subject, text: msg.text }); console.warn(`[mail] транспорт не настроен — письмо для ${msg.to}: ${msg.subject}\n${msg.text}`) } }
 }

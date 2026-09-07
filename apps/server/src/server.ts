@@ -392,10 +392,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
   await db.identity.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
-  // Мейлер один на приложение: им пользуются и подтверждение регистрации, и
-  // приглашения в проект. Без VC_SMTP_URL это «консольный» мейлер — письмо
-  // уходит в лог, и оба потока остаются проверяемыми на стенде.
-  const mailer = opts.mailer ?? createMailer({ smtpUrl: opts.config.smtpUrl, mailFrom: opts.config.mailFrom }, (m, extra) => app.log.warn(extra ?? {}, m))
+  // Мейлер один на приложение: им пользуются регистрация, resend и приглашения.
+  const mailer = opts.mailer ?? createMailer({
+    mailTransport: opts.config.mailTransport,
+    mailApiKey: opts.config.mailApiKey,
+    mailApiUrl: opts.config.mailApiUrl,
+    smtpUrl: opts.config.smtpUrl,
+    mailFrom: opts.config.mailFrom
+  }, (m, extra) => app.log.warn(extra ?? {}, m))
   // Хаб сессий один на процесс: его слушают WS-соединения, а публикуют в него
   // и сессионные роуты, и админский отзыв чужой сессии.
   const sessionHub = new SessionHub()
