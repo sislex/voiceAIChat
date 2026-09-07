@@ -65,8 +65,13 @@ afterAll(async () => {
 })
 
 describe('ядро (remote) + отдельный процесс Make', () => {
-  it('роуты Make живут только в процессе Make; здоровье и внутренние пути закрыты токеном', async () => {
-    expect((await fetch(`${coreUrl}/api/make/${convId}`, { headers: auth })).status).toBe(404)
+  it('ядро переправляет пути Make в его процесс (стенд доступен и без Caddy); здоровье и внутренние пути закрыты токеном', async () => {
+    // Через ядро — тот же ответ, что напрямую у Make: авторизация ядра, потом whoami у Make.
+    const viaCore = await fetch(`${coreUrl}/api/make/${convId}`, { headers: auth })
+    expect(viaCore.status).toBe(200)
+    expect(((await viaCore.json()) as { conversationId: string }).conversationId).toBe(convId)
+    expect((await fetch(`${coreUrl}/api/make/${convId}`)).status).toBe(401)
+    expect((await fetch(`${coreUrl}/api/make/unknown`, { headers: auth })).status).toBe(404)
     expect(await (await fetch(`${makeUrl}${MAKE_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'make', version: 'test' })
     expect((await fetch(`${coreUrl}${INTERNAL_WHOAMI_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
     expect((await fetch(`${makeUrl}/internal/service`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
