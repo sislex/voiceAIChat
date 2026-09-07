@@ -33,7 +33,8 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `stt/` (whisper, модели, скачивание, wav), `tts/` (piper, say, каталог, голоса),
 `claude/`, `codex/`, `llm/` (`RemoteLlmClient`, `RunnerFsClient`, общий приёмник потока),
 `cc/` (наблюдатель сессий Claude Code),
-`agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android),
+`agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android), `machines/` (сборка модуля машин
+`createMachinesModule(deps)`, порт `MachinesService` для потребителей, гейт границы — потребители не импортируют `AgentRegistry`),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
 `auth/loginStatus.ts`, `diarization/` (заглушка);
 `kanban/` (сборка канбан-кластера `createKanbanModule(deps)`; порты `core.ts` — что кластер берёт у процесса ядра

@@ -7,15 +7,12 @@ import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
 import { DEFAULT_CI_BROWSER_CHECK, isPlaywrightReaderConversation, planModelAction } from '@voicechat/shared'
-import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
+import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { clearPreviewCookies, registerPreviewProxy } from './routes/previewProxy.js'
-import { registerAgentRoutes } from './routes/agents.js'
-import { StorageMigrationManager } from './storageMigration/manager.js'
-import { registerStorageMigrationRoutes } from './storageMigration/routes.js'
 import { registerAdminRoutes } from './routes/admin.js'
 
 
@@ -44,9 +41,7 @@ import { syncProjectWithRetry } from './projectSync.js'
 import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { registerAuth, resolveActiveUser, uid } from './users/auth.js'
-import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
-import { createAgentWatchdog } from './agents/watchdog.js'
-import { createCommandGate } from './agents/commandGate.js'
+import { ensureDefaultChatBinding } from './agents/defaultStorage.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
 import { registerProjectComponentsRoutes } from './routes/projectComponents.js'
@@ -74,8 +69,9 @@ function cookieToken(header: string | undefined): string | undefined {
 }
 import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
-import { AgentRegistry } from './agents/registry.js'
-import { attachAgentWs } from './agents/wsAgent.js'
+import type { AgentRegistry } from './agents/registry.js'
+import { createMachinesModule } from './machines/module.js'
+import type { MachinesService } from './machines/service.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { ImageStudioStore } from './images/studio.js'
@@ -384,7 +380,22 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   // Реестр создаётся до REST: task-chat context обязан показывать ту же effective
   // online-машину, которую затем использует фактический ход.
-  const agentRegistry = opts.agentRegistry ?? new AgentRegistry({ offlineGraceMs: opts.config.agentOfflineGraceMs })
+  // Шина кадров ядра для WS-сессий (журнал команд машины, watchdog, снимки проверки).
+  const frames = new UserFrameHub()
+  // Машины: реестр, WS агентов `/agent`, роуты и установщики, политика команд, журнал команд, watchdog,
+  // перенос хранилищ — отдельным модулем; ядро видит только порт `MachinesService` (docs/plans/machines-service.md).
+  const machinesModule = await createMachinesModule({
+    app, db, config: opts.config,
+    publish: (message, userId) => frames.publish(message, userId),
+    // Полный лог долгой команды из чата — в artifacts привязанного хранилища разговора (знание о нём у ядра).
+    chatArtifacts: async (userId, conversationId) => {
+      const managed = await managedChatStorage(userId, conversationId)
+      return managed ? { machineId: managed.binding.machineId, artifacts: managed.artifacts } : null
+    },
+    ...(opts.agentRegistry ? { registry: opts.agentRegistry } : {})
+  })
+  const agentRegistry: MachinesService = machinesModule.machines
+  const commandGate = machinesModule.commandGate
   /**
    * Системная граница актуальности общей копии проекта. Модель не участвует:
    * чистая базовая ветка обновляется только fast-forward, а посторонние
@@ -521,27 +532,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     modelMap: opts.config.claudeGatewayModelMap
   })
 
-  // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
-  // Гейт команд (п.10): политика проекта и роли поверх политики машины; опасные команды в чате — с подтверждением.
-  const commandGate = createCommandGate({
-    projectPolicy: async (projectId) => await db.projects.getProjectCommandPolicy(projectId),
-    rolePolicies: async () => await db.machines.getRoleCommandPolicies(),
-    userRole: async (userId) => (await db.identity.getUser(userId))?.role ?? null
-  })
-  await registerAgentRoutes(app, db, agentRegistry, {
-    agentApp: opts.config.agentAppPath,
-    desktopApp: opts.config.desktopAppPath,
-    loginApplication: opts.config.loginApplicationPath
-  }, commandGate)
-  const storageMigrations = new StorageMigrationManager(join(opts.config.dataDir, 'storage-migrations.json'), {
-    list: (machineId, path) => agentRegistry.fsList(machineId, path),
-    read: (machineId, path) => agentRegistry.fsRead(machineId, path),
-    write: (machineId, path, dataBase64) => agentRegistry.fsWrite(machineId, path, dataBase64),
-    mkdir: (machineId, path) => agentRegistry.fsMkdir(machineId, path),
-    rename: (machineId, from, to) => agentRegistry.fsRename(machineId, from, to),
-    deleteFile: (machineId, path) => agentRegistry.fsDeleteFileSafe(machineId, path)
-  })
-  registerStorageMigrationRoutes(app, db, agentRegistry, storageMigrations)
+  // Машины-агенты: MCP-мост для проброса Bash (реестр и роуты машин — в модуле машин выше).
   // Секрет MCP: в режиме remote общий с процессом Make (он проверяет им scope-токены), иначе — свой на процесс.
   const mcpSecret = opts.config.mcpSecret || randomBytes(16).toString('hex')
   const remoteFileBroker = new RemoteFileBroker()
@@ -644,8 +635,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
   // FeaturePreviewManager создаётся ниже по файлу — previewMcp получает его лениво.
   const featurePreviewsRef: { current: FeaturePreviewManager | null } = { current: null }
-  // Шина кадров ядра для WS-сессий (журнал команд машины, watchdog, снимки проверки).
-  const frames = new UserFrameHub()
 
   /**
    * Кадр браузерной проверки уходит в ленту активного рана задачи ссылкой на
@@ -911,47 +900,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
   // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
   const defaultStorageDeps = { db, registry: agentRegistry, log: (m: string, extra?: Record<string, unknown>) => app.log.info(extra ?? {}, m) }
-  // Журнал команд машины: пишем всё, что прошло через registry.exec (консоль, чат, системные вызовы).
-  // Публикация в WS владельцу — шиной кадров ядра.
-  const publishToUser = (message: ServerMessage, userId: string): void => frames.publish(message, userId)
-  agentRegistry.onCommand(async (rec) => {
-    const { output, ...record } = rec
-    const userId = record.userId || (await db.machines.agentOwnerId(record.machineId) ?? '')
-    try { await db.machines.addMachineCommand({ ...record, userId }) } catch (error) { app.log.warn({ error }, 'machine command log failed') }
-    // Долгая команда (п.17): тост владельцу; для команды из чата — полный лог в artifacts/commands чата.
-    if (!userId || record.source === 'system' || record.durationMs < opts.config.longCommandMs) return
-    void (async () => {
-      let logPath: string | undefined
-      if (record.source === 'chat' && record.conversationId) {
-        try {
-          const managed = await managedChatStorage(userId, record.conversationId)
-          if (managed) {
-            const separator = managed.artifacts.includes('\\') && !managed.artifacts.includes('/') ? '\\' : '/'
-            const dir = `${managed.artifacts}${separator}commands`
-            await agentRegistry.fsMkdir(managed.binding.machineId, dir)
-            const stamp = new Date(record.startedAt).toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
-            const slug = record.command.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'command'
-            logPath = `${dir}${separator}${stamp}__${slug}.log`
-            const header = `$ ${record.command}\n# exit ${record.exitCode ?? 'null'} · ${record.durationMs} ms · ${new Date(record.startedAt).toISOString()}\n\n`
-            await agentRegistry.fsWrite(managed.binding.machineId, logPath, Buffer.from(header + output).toString('base64'))
-          }
-        } catch (error) {
-          app.log.warn({ error }, 'command log save failed')
-          logPath = undefined
-        }
-      }
-      const event: MachineCommandEvent = {
-        machineId: record.machineId, machineName: agentRegistry.nameOf(record.machineId) ?? (await db.machines.listAgents(userId)).find((a) => a.id === record.machineId)?.name ?? record.machineId,
-        source: record.source, command: record.command, exitCode: record.exitCode, timedOut: record.timedOut, error: record.error,
-        durationMs: record.durationMs, conversationId: record.conversationId, ...(logPath ? { logPath } : {})
-      }
-      publishToUser({ t: 'machine.command', event }, userId)
-    })()
-  })
-  agentRegistry.onAgentReady(async (agentId) => {
-    const owner = await db.machines.agentOwnerId(agentId)
-    if (owner) void await ensureDefaultStorage(defaultStorageDeps, owner, agentId)
-  })
   const ensureChatStorage = async (userId: string, conversationId: string, machineId: string) => await ensureDefaultChatBinding(defaultStorageDeps, userId, conversationId, machineId)
   // Вложения/ретушь/публикация: чат без привязки сначала привязывается к ChatAI машины разговора (если она в сети).
   const managedChatStorage = async (userId: string, conversationId: string) => {
@@ -1392,11 +1340,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       close: (id) => agentRegistry.closeTunnel(id)
     }
   })
-  // Watchdog агентов (п.1): раз в минуту ищем машины, пропавшие дольше порога.
-  const agentWatchdog = createAgentWatchdog({ db, registry: agentRegistry, publish: (m, uid) => frames.publish(m, uid), thresholdMs: opts.config.agentOfflineAlertMs })
-  const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(async () => { try { await agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
-  watchdogTimer?.unref?.()
-  app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
 
   // Плановая остановка (деплой/SIGTERM → app.close()): сохранить частичные
   // ответы активных ходов, чтобы рестарт контейнера не терял набранный текст.
@@ -1507,10 +1450,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
       await attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null))
       for (const [data, isBinary] of early) socket.emit('message', data, isBinary)
-    })
-    scoped.get('/agent', { websocket: true }, (socket, request) => {
-      const fwd = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
-      attachAgentWs(socket, db, agentRegistry, { ip: fwd || request.socket.remoteAddress || '' })
     })
   })
 

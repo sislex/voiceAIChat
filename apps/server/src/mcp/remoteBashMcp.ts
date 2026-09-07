@@ -11,7 +11,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { DEFAULT_TOOL_OUTPUT_LIMITS, TOOL_OUTPUT_TRIM_MARK, imageMime, imageName, trimToolOutput } from '@voicechat/shared'
 import type { ToolOutputLimits } from '@voicechat/shared'
-import { AgentFsError, type AgentRegistry } from '../agents/registry.js'
+import { AgentFsError } from '../agents/registry.js'
+import type { MachinesService } from '../machines/service.js'
 import { evaluatePlanModeCommand } from './planMode.js'
 import { bashFileReadRejection, evaluateBashFileRead } from './bashFileRead.js'
 
@@ -205,7 +206,7 @@ export class RemoteFileBroker {
  */
 export function registerRemoteBashMcp(
   app: FastifyInstance,
-  registry: AgentRegistry,
+  registry: MachinesService,
   secret: string,
   limits?: () => Promise<ToolOutputLimits>,
   projectMachines?: (projectId: string) => Promise<RemoteMcpMachine[]>,
@@ -460,7 +461,7 @@ export function registerRemoteBashMcp(
                   if (projectDir && projectDir !== target.cwd) candidates.push(`${projectDir.replace(/[\\/]+$/, '')}/${requested}`)
                 }
                 if (absolute) candidates.push(requested)
-                let found: Awaited<ReturnType<AgentRegistry['fsRead']>> | undefined
+                let found: Awaited<ReturnType<MachinesService['fsRead']>> | undefined
                 let lastError: unknown
                 for (const candidate of candidates) {
                   try {
