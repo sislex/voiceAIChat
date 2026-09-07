@@ -1,13 +1,16 @@
-// Авторизация в отдельном процессе канбана: своей у него нет и не должно быть — одна авторизация на
-// все сервисы. Cookie/Bearer запроса пересылаются ядру (`/internal/whoami`), ответ кладётся в
-// `req.user`, как это делает preHandler ядра, — `uid(req)`/`requireProjectPermission` кластера работают
-// без изменений. Права проекта по пути запроса проверяет ядро до пересылки: пути канбана снаружи идут
-// только через прокси ядра (`kanbanBridge/proxy.ts`). Чтения кэшируются на 30 с по значению токена;
+// Авторизация в отдельном процессе-соседе ядра (канбан, машины, админка): своей у него нет и не должно
+// быть — одна авторизация на все сервисы. Cookie/Bearer запроса пересылаются ядру (`/internal/whoami`), ответ кладётся в
+// `req.user`, как это делает preHandler ядра, — `uid(req)`/`requireProjectPermission` работают без
+// изменений. Права проекта по пути запроса проверяет ядро до пересылки: пути соседей снаружи идут
+// только через прокси ядра (`makeBridge/proxy.ts#registerServiceProxy`). Публичные пути — те же, что у ядра. Чтения кэшируются на 30 с по значению токена;
 // мутации в кэш не ходят — у них CSRF-проверка на каждый запрос.
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { INTERNAL_WHOAMI_PATH, type SessionUser, type WhoamiRequest, type WhoamiResponse } from '@voicechat/shared'
+import { isPublic } from '../users/auth.js'
 
 export interface ForwardedAuthOptions {
+  /** Имя сервиса — для лога. */
+  name: string
   coreUrl: string
   token: string
   fetchImpl?: typeof fetch
@@ -16,11 +19,6 @@ export interface ForwardedAuthOptions {
 }
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
-
-/** Публичные пути кластера — те же, что у ядра (`isPublic`): приглашение по токену не требует сессии. */
-function isPublic(path: string): boolean {
-  return path.startsWith('/api/session/')
-}
 
 export function registerForwardedAuth(app: FastifyInstance, opts: ForwardedAuthOptions): void {
   const fetchImpl = opts.fetchImpl ?? fetch
@@ -56,7 +54,7 @@ export function registerForwardedAuth(app: FastifyInstance, opts: ForwardedAuthO
     }
     let verdict: WhoamiResponse
     try { verdict = await whoami(req) } catch (error) {
-      req.log.error({ err: error }, '[kanban] ядро недоступно для проверки сессии')
+      req.log.error({ err: error }, `[${opts.name}] ядро недоступно для проверки сессии`)
       await reply.code(503).send({ error: 'core_unavailable' })
       return reply
     }

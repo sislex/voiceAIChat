@@ -5,8 +5,8 @@
 import { createRpcClient } from '@voicechat/shared'
 import type { EnsureProjectMainCurrent, KanbanCore, KanbanMachines, KanbanUploads, KanbanWidgets } from '../core.js'
 import type { KbView, KnowledgeBaseService } from '../../kb/types.js'
-import { INTERNAL_KANBAN_CORE_PATH, type MachineSnapshot } from '../internal.js'
-import { execViaCore } from './execStream.js'
+import { INTERNAL_KANBAN_CORE_PATH, INTERNAL_KANBAN_EXEC_STREAM_PATH, type MachineSnapshot } from '../internal.js'
+import { execOverHttp } from '../../internal/execStream.js'
 import { MachinesMirror } from './machinesMirror.js'
 
 export interface HttpKanbanCoreOptions {
@@ -52,15 +52,15 @@ export class HttpKanbanCore implements KanbanCore {
     this.slow = (method, ...args) => slow(method, ...trim(args))
     const background = (what: string) => (error: unknown): void => { this.opts.onError?.(error, what) }
     const mirror = this.mirror
-    const stream = { coreUrl: opts.coreUrl, token: opts.token }
+    const stream = { baseUrl: opts.coreUrl, token: opts.token, path: INTERNAL_KANBAN_EXEC_STREAM_PATH }
     this.machines = {
       isOnline: (id) => mirror.isOnline(id),
       nameOf: (id) => mirror.nameOf(id),
       platformOf: (id) => mirror.platformOf(id),
       policyOf: (id) => mirror.policyOf(id),
       telemetryOf: (id) => mirror.telemetryOf(id),
-      exec: (agentId, command, timeoutMs, signal, meta) => execViaCore(stream, { agentId, command, timeoutMs, stream: false, ...(meta ? { meta } : {}) }, undefined, signal),
-      execStream: (agentId, command, timeoutMs, onChunk, signal) => execViaCore(stream, { agentId, command, timeoutMs, stream: true }, onChunk, signal),
+      exec: (agentId, command, timeoutMs, signal, meta) => execOverHttp(stream, { agentId, command, timeoutMs, stream: false, ...(meta ? { meta } : {}) }, undefined, signal),
+      execStream: (agentId, command, timeoutMs, onChunk, signal) => execOverHttp(stream, { agentId, command, timeoutMs, stream: true }, onChunk, signal),
       fsRead: (agentId, path) => this.slow('machines.fsRead', agentId, path),
       fsWrite: (agentId, path, dataBase64) => this.slow('machines.fsWrite', agentId, path, dataBase64),
       fsMkdir: (agentId, path) => this.slow('machines.fsMkdir', agentId, path),

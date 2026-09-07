@@ -28,7 +28,7 @@ import {
   INTERNAL_KANBAN_EVENTS_PATH, KANBAN_HEALTH_PATH, KANBAN_INTERNAL_MACHINES_PATH, KANBAN_INTERNAL_SERVICE_PATH, KANBAN_SERVICE_RPC_METHODS,
   type KanbanEvent, type KanbanEventsRequest, type MachinesSnapshotRequest
 } from '../internal.js'
-import { registerForwardedAuth } from './auth.js'
+import { registerForwardedAuth } from '../../internal/forwardedAuth.js'
 import { HttpKanbanCore } from './httpCore.js'
 
 export interface BuildKanbanServerOptions {
@@ -78,7 +78,7 @@ export async function buildKanbanServer(opts: BuildKanbanServerOptions): Promise
   // Зеркало машин заполняем до сборки кластера: реконсиляция ранов при старте смотрит на онлайн машин.
   if (httpCore) { try { await httpCore.start() } catch (error) { warn({ err: error }, '[kanban] ядро недоступно при старте: машины считаются offline до первого снимка') } }
 
-  registerForwardedAuth(app, { coreUrl, token, fetchImpl })
+  registerForwardedAuth(app, { name: 'kanban', coreUrl, token, fetchImpl })
 
   const runner = (kind: 'claude' | 'codex', baseUrl: string): LlmClient => new RemoteLlmClient({
     kind, baseUrl,
