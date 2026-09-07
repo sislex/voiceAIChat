@@ -15,7 +15,18 @@
 
 https://{$VC_PUBLIC_HOST} {
 	tls internal
-	reverse_proxy voicechat:8787
+	# Make — отдельный сервис: его пути идут в make:8788 напрямую, минуя ядро (ядро тоже умеет
+	# их переправлять — для доступа портом 8787 без Caddy). Внутренний API сервисов наружу закрыт.
+	handle /internal/* {
+		respond 404
+	}
+	@make path /api/make /api/make/* /api/preview/make/* /api/preview/make-shared/* /p/* /s/*
+	handle @make {
+		reverse_proxy make:8788
+	}
+	handle {
+		reverse_proxy voicechat:8787
+	}
 }
 
 # Обычный HTTP на 80 порту — редирект на HTTPS.
@@ -30,5 +41,16 @@ http://{$VC_PUBLIC_HOST} {
 # же локального CA, которому раннер уже доверяет.
 https://caddy {
 	tls internal
-	reverse_proxy voicechat:8787
+	# Make — отдельный сервис: его пути идут в make:8788 напрямую, минуя ядро (ядро тоже умеет
+	# их переправлять — для доступа портом 8787 без Caddy). Внутренний API сервисов наружу закрыт.
+	handle /internal/* {
+		respond 404
+	}
+	@make path /api/make /api/make/* /api/preview/make/* /api/preview/make-shared/* /p/* /s/*
+	handle @make {
+		reverse_proxy make:8788
+	}
+	handle {
+		reverse_proxy voicechat:8787
+	}
 }

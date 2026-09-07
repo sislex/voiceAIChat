@@ -1,0 +1,32 @@
+{
+  "name": "@voicechat/make",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "//": "Как и сервер, не компилируется в JS: запуск через tsx из исходников, относительные импорты — с .js. Ядро подключает Make как модуль (`.`), отдельный процесс — `src/standalone/index.ts`.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./standalone": "./src/standalone/server.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/standalone/index.ts",
+    "start": "tsx src/standalone/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --silent"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@voicechat/shared": "*",
+    "esbuild": "^0.21.5",
+    "fastify": "^5.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -4,9 +4,11 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { ServerMessage } from '@voicechat/shared'
-import { MakeHub } from '../make/hub'
-import { MakeWorkspaces } from '../make/workspace'
-import { MakeTaskScopeBroker, registerMakeMcp } from './makeMcp'
+import { MakeHub } from './hub'
+import { MakeWorkspaces } from './workspace'
+import { signTaskScope } from './taskScope'
+import type { MakeMcpDeps } from './mcp'
+import { registerMakeMcp } from './mcp'
 
 const SECRET = 's'
 const CONV = 'conv-mcp'
@@ -24,16 +26,30 @@ let workspaces: MakeWorkspaces
 let hub: MakeHub
 let events: ServerMessage[]
 
-async function setup(owner: string | null = 'ann', taskAuth?: { broker: MakeTaskScopeBroker; allowed: boolean }): Promise<void> {
+/** Токен рана на дизайн этого разговора: подписан тем же секретом, что и MCP. */
+const scopeToken = (mode: 'whole_project' | 'files' = 'whole_project', paths: string[] = [], opts: { ttlMs?: number; now?: number } = {}): string =>
+  signTaskScope(SECRET, { userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: mode === 'files' ? 'Макет оплаты' : 'Макет', mode, paths }] }, opts)
+
+/**
+ * Ядро глазами MCP: владелец разговора и данные для проверки scope. `allowed` — у задачи
+ * есть дизайн ровно на этот разговор с теми же mode/paths; иначе дизайн снят.
+ */
+function fakeCore(owner: string | null, allowed: { mode: 'whole_project' | 'files'; paths: string[] } | null): MakeMcpDeps['core'] {
+  return {
+    conversationOwner: async () => owner,
+    conversationProject: async () => 'p1',
+    isProjectViewer: async () => true,
+    taskDesigns: async () => allowed ? [{ id: 'd1', conversationId: CONV, title: 'Макет', mode: allowed.mode, paths: allowed.paths } as never] : []
+  }
+}
+
+async function setup(owner: string | null = 'ann', allowed: { mode: 'whole_project' | 'files'; paths: string[] } | null = null): Promise<void> {
   workspaces = new MakeWorkspaces(await mkdtemp(join(tmpdir(), 'vc-make-mcp-')))
   hub = new MakeHub()
   events = []
   hub.subscribe('ann', (m) => events.push(m))
   app = Fastify({ logger: false })
-  registerMakeMcp(app, {
-    workspaces, hub, ownerOf: async () => owner,
-    ...(taskAuth ? { taskScopes: taskAuth.broker, authorizeTaskSource: async () => taskAuth.allowed } : {})
-  }, SECRET)
+  registerMakeMcp(app, { workspaces, hub, core: fakeCore(owner, allowed) }, SECRET)
   await app.ready()
 }
 
@@ -93,34 +109,36 @@ describe('makeMcp', () => {
     expect(ro.text).toMatch(/План/)
   })
 
-  it('task scope публикует только list/read и отклоняет истёкший или неавторизованный scope', async () => {
-    let now = 1_000
-    const broker = new MakeTaskScopeBroker(100, () => now)
-    await setup('ann', { broker, allowed: true })
-    const token = broker.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет', mode: 'whole_project', paths: [] }] })
-    const query = `?k=${SECRET}&conv=${CONV}&scope=${token}`
+  it('task scope публикует только list/read и отклоняет истёкший, поддельный или неавторизованный scope', async () => {
+    await setup('ann', { mode: 'whole_project', paths: [] })
+    const token = scopeToken('whole_project', [], { ttlMs: 100, now: Date.now() })
+    const query = `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(token)}`
     expect((await rpc(INIT, query)).statusCode).toBe(200)
     const listed = (await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }, query)).json() as { result?: { tools?: Array<{ name: string }> } }
     expect(listed.result?.tools?.map((tool) => tool.name)).toEqual(['make_list_files', 'make_read_file'])
     const mutation = (await rpc(call('make_write_file', { path: 'x', content: 'x' }), query)).json()
     expect(JSON.stringify(mutation)).toMatch(/not found/i)
 
-    now += 101
-    expect((await rpc(INIT, query)).statusCode).toBe(403)
+    // Истёк: тот же документ, но выписанный 101 мс «в прошлом».
+    const expired = scopeToken('whole_project', [], { ttlMs: 100, now: Date.now() - 101 })
+    expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(expired)}`)).statusCode).toBe(403)
+    // Подделка: чужой секрет или правленый payload.
+    const forged = signTaskScope('other', { userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет', mode: 'whole_project', paths: [] }] })
+    expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(forged)}`)).statusCode).toBe(403)
+    const tampered = `${Buffer.from(JSON.stringify({ userId: 'eve', projectId: 'p1', taskId: 't1', sources: [], expiresAt: Date.now() + 1e6 })).toString('base64url')}.${token.split('.')[1]}`
+    expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(tampered)}`)).statusCode).toBe(403)
     await app.close()
-    const denied = new MakeTaskScopeBroker()
-    await setup('ann', { broker: denied, allowed: false })
-    const deniedToken = denied.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет', mode: 'whole_project', paths: [] }] })
-    expect((await rpc(INIT, `?k=${SECRET}&conv=${CONV}&scope=${deniedToken}`)).statusCode).toBe(403)
+    // Дизайн с задачи сняли — токен ещё жив, но ядро его не подтверждает.
+    await setup('ann', null)
+    expect((await rpc(INIT, query)).statusCode).toBe(403)
   })
 
   it('файловый task scope разрешает только выбранные пути и сохраняет частичный доступ', async () => {
-    const broker = new MakeTaskScopeBroker()
-    await setup('ann', { broker, allowed: true })
+    await setup('ann', { mode: 'files', paths: ['allowed.css', 'missing.tsx'] })
     await workspaces.write(CONV, 'allowed.css', 'body{}')
     await workspaces.write(CONV, 'secret.txt', 'secret')
-    const token = broker.issue({ userId: 'ann', projectId: 'p1', taskId: 't1', sources: [{ conversationId: CONV, title: 'Макет оплаты', mode: 'files', paths: ['allowed.css', 'missing.tsx'] }] })
-    const query = `?k=${SECRET}&conv=${CONV}&scope=${token}`
+    const token = scopeToken('files', ['allowed.css', 'missing.tsx'])
+    const query = `?k=${SECRET}&conv=${CONV}&scope=${encodeURIComponent(token)}`
     expect(resultText((await rpc(call('make_read_file', { path: 'allowed.css' }), query)).json()).text).toBe('body{}')
     const denied = resultText((await rpc(call('make_read_file', { path: 'secret.txt' }), query)).json())
     expect(denied.isError).toBe(true)

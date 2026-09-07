@@ -35,7 +35,12 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `cc/` (наблюдатель сессий Claude Code),
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
-`auth/loginStatus.ts`, `diarization/` (заглушка).
+`auth/loginStatus.ts`, `diarization/` (заглушка);
+`makeBridge/` (Make живёт в пакете `@voicechat/make`; здесь — реализация его порта `MakeCore`
+поверх `db.*` (`localCore.ts`), `MakeService` для режима `remote` (`remote.ts`) и гейт границы
+`boundary.test.ts`: ядро импортирует из Make только типы и `createMakeModule`),
+`routes/internal.ts` (внутренний API `/internal/*` для соседних сервисов под `VC_INTERNAL_TOKEN`),
+`util/` (общие утилиты без владельца: `publicHost`).
 
 ## Тесты
 

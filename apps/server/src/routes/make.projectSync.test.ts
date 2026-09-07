@@ -8,10 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
-import { MakeWorkspaces } from '../make/workspace.js'
-import { MakeHub } from '../make/hub.js'
-import { MakeLibrary } from '../make/library.js'
-import { registerMakeRoutes } from './make.js'
+import { MakeHub, MakeLibrary, MakeWorkspaces, registerMakeRoutes } from '@voicechat/make'
+import { LocalMakeCore } from '../makeBridge/localCore.js'
 
 const U = 'admin'
 let app: FastifyInstance
@@ -71,8 +69,8 @@ beforeEach(async () => {
   app.decorateRequest('user', null)
   app.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
   registerMakeRoutes(app, {
-    db, workspaces, hub: new MakeHub(), library: new MakeLibrary(dataDir),
-    machineFs: fakeMachineFs()
+    core: new LocalMakeCore({ db, machineFs: fakeMachineFs() }),
+    workspaces, hub: new MakeHub(), library: new MakeLibrary(dataDir)
   })
   await app.ready()
 })
