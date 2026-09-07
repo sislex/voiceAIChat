@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import { SlidingWindowLimiter } from '../make/rateLimit.js'
+import { SlidingWindowLimiter } from '@voicechat/shared'
 import { ImageStudioError, type ImageStudioStore } from '../images/studio.js'
 import type { ImageStudioGenerator } from '../llm/imageStudioGenerator.js'
 
