@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 48 коммит(ов) в areas после сверки: 7050490d Merge remote-tracking branch 'origin/main' into feat/make-standalone … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 57 коммит(ов) в areas после сверки: 399e57aa Merge main into CHAT-423 (task d21dcb8a-a342-4fc1-91d1-685f2c01c439) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 50 коммит(ов) в areas после сверки: 8ccad34f fix: preserve Make conversation modes … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1239 коммит(ов) в areas после сверки: 399e57aa Merge main into CHAT-423 (task d21dcb8a-a342-4fc1-91d1-685f2c01c439) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1240 коммит(ов) в areas после сверки: c8df3166 docs(kb): update after merge d21dcb8a-a342-4fc1-91d1-685f2c01c439 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 20 коммит(ов) в areas после сверки: 7050490d Merge remote-tracking branch 'origin/main' into feat/make-standalone … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 55 коммит(ов) в areas после сверки: 399e57aa Merge main into CHAT-423 (task d21dcb8a-a342-4fc1-91d1-685f2c01c439) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 28 коммит(ов) в areas после сверки: 7050490d Merge remote-tracking branch 'origin/main' into feat/make-standalone … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-04 | ⚠ 2 коммит(ов) в areas после сверки: 39809b14 feat(make): отдельный сервис в compose — образ make-runtime, path-routing Caddy, прокси путей Make в ядре … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 130 коммит(ов) в areas после сверки: 7050490d Merge remote-tracking branch 'origin/main' into feat/make-standalone … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-07 | ⚠ 23 коммит(ов) в areas после сверки: 399e57aa Merge main into CHAT-423 (task d21dcb8a-a342-4fc1-91d1-685f2c01c439) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-07 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-07, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -62,9 +62,10 @@
 
 ## Журнал сессий
 
-Всего записей: 645. Последние:
+Всего записей: 646. Последние:
 
 - [2026-09-07-macbook-air-user-make-permission-mode.md](log/2026-09-07-macbook-air-user-make-permission-mode.md) — make-permission-mode
+- [2026-09-07-macbook-air-user-chat-message-switch-isolation.md](log/2026-09-07-macbook-air-user-chat-message-switch-isolation.md) — chat-message-switch-isolation
 - [2026-09-07-alexeys-macbook-air-2-task-rework-cycles.md](log/2026-09-07-alexeys-macbook-air-2-task-rework-cycles.md) — task-rework-cycles
 - [2026-09-07-alexeys-macbook-air-2-task-card-request-storm.md](log/2026-09-07-alexeys-macbook-air-2-task-card-request-storm.md) — task-card-request-storm
 - [2026-09-07-alexeys-macbook-air-2-scroll-paged-chat-list.md](log/2026-09-07-alexeys-macbook-air-2-scroll-paged-chat-list.md) — scroll-paged-chat-list
@@ -73,7 +74,6 @@
 - [2026-09-07-alexeys-macbook-air-2-make-standalone-round1.md](log/2026-09-07-alexeys-macbook-air-2-make-standalone-round1.md) — make-standalone-round1
 - [2026-09-07-alexeys-macbook-air-2-electron-cors-auth.md](log/2026-09-07-alexeys-macbook-air-2-electron-cors-auth.md) — electron-cors-auth
 - [2026-09-07-alexeys-macbook-air-2-db-repositories.md](log/2026-09-07-alexeys-macbook-air-2-db-repositories.md) — db-repositories
-- [2026-09-06-pc-radvilovich-make-stack-settings.md](log/2026-09-06-pc-radvilovich-make-stack-settings.md) — make-stack-settings
 
 ## Исторические планы
 
