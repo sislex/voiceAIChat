@@ -39,7 +39,10 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `kanban/` (сборка канбан-кластера `createKanbanModule(deps)`; порты `core.ts` — что кластер берёт у процесса ядра
 (узкий фасад машин `KanbanMachines`, KB, вложения, виджет), `service.ts` — что ядро берёт у кластера (ленты ранов,
 доски, уведомлений); гейт границы `boundary.test.ts` с аллоулистом импортов; чистые функции подготовки — `preparation.ts`),
-`kanbanBridge/localCore.ts` (локальная реализация `KanbanCore` поверх `AgentRegistry` и сервисов ядра),
+`kanban/standalone/` (отдельный процесс канбана: `HttpKanbanCore` с зеркалом машин и потоковым exec через ядро,
+пересылка авторизации в `/internal/whoami`, сборка `buildKanbanServer`; контракт протокола — `kanban/internal.ts`),
+`kanbanBridge/` (сторона ядра: `localCore.ts` — `KanbanCore` поверх `AgentRegistry`, `remote.ts` — `KanbanService` для
+режима `VC_KANBAN_MODE=remote`, `proxy.ts` — прокси путей канбана, `internal.ts` — RPC-диспетчер порта),
 `frameHub.ts` (шина кадров ядра для WS-сессий: команды машин, watchdog, снимки проверки),
 `makeBridge/` (Make живёт в пакете `@voicechat/make`; здесь — реализация его порта `MakeCore`
 поверх `db.*` (`localCore.ts`), `MakeService` для режима `remote` (`remote.ts`) и гейт границы

@@ -30,6 +30,8 @@ function listTs(dir: string): string[] {
   const out: string[] = []
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
+    // Сборка отдельного процесса — composition root: ей положено собирать клиентов ядра (LLM, почта, браузер).
+    if (relative(srcDir, full) === 'kanban/standalone') continue
     if (statSync(full).isDirectory()) out.push(...listTs(full))
     else if (name.endsWith('.ts') && !name.endsWith('.test.ts')) out.push(full)
   }
@@ -95,6 +97,16 @@ describe('граница канбан-кластера', () => {
         } else if (!ALLOWED_VALUE_IMPORTS.includes(target)) {
           offenders.push(`${rel} → ${target}`)
         }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('сборка отдельного процесса не трогает состояние ядра напрямую — только через HttpKanbanCore', () => {
+    const offenders: string[] = []
+    for (const file of listTs(join(srcDir, 'kanban', 'standalone'))) {
+      for (const { target } of externalImports(file)) {
+        if (FORBIDDEN_TYPE_IMPORTS.includes(target)) offenders.push(`${relative(srcDir, file)} → ${target}`)
       }
     }
     expect(offenders).toEqual([])

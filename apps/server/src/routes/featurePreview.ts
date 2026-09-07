@@ -115,7 +115,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     if (!env) return reply.code(404).send({ error: 'preview not created or access denied' })
     const expected = ['app', 'storybook'].map((kind) => createHash('sha256').update(`${userId}:${env.id}:${env.builtCommitSha}:${kind}`).digest('hex').slice(0, 32))
     if (!expected.includes(req.params.tunnelId)) return reply.code(404).send({ error: 'tunnel not found' })
-    const closed = agents.closeTunnel(req.params.tunnelId)
+    const closed = await agents.closeTunnel(req.params.tunnelId)
     // close callback records explicit and automatic shutdowns in the same audit stream.
     return { closed }
   })

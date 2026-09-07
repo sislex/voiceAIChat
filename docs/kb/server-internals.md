@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: 40bd5a58
+checked: a994f3ac
 areas:
   - apps/server/src
 ---
@@ -323,6 +323,25 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 фасада машин. Чистые функции подготовки (`parseQaPreparationResponse`, `taskPreparationModel`,
 `taskPreparationFailure`) — `kanban/preparation.ts`, из `server.ts` реэкспорт. В `server.ts` из этого
 блока остались git-панель (`GitWorkspaceService`), Storybook/компоненты проекта и watchdog машин.
+
+**Режим `VC_KANBAN_MODE=remote` (2026-09-07).** Кластер работает отдельным процессом на той же базе
+(только Postgres): точка входа `kanban/standalone/index.ts`, сборка `buildKanbanServer` (тот же
+`loadConfig`, тот же `createKanbanModule`). Порт `KanbanCore` там реализует `HttpKanbanCore`: синхронные
+чтения о машинах (`isOnline`, `nameOf`, `policyOf`, `telemetryOf`, …) отвечает зеркало `MachinesMirror`,
+которое ядро наполняет пушем `POST /internal/machines` после каждого `AgentRegistry.onChange` (с задержкой
+250 мс); `exec`/`execStream` идут потоковым NDJSON-эндпоинтом ядра `/internal/kanban/exec-stream` через
+`node:http` (без таймаута тела, обрыв по `signal` отменяет команду); остальное — RPC `/internal/kanban/core`
+(`kb.*`, `uploads.get`, `widgets.*`, `ensureProjectMainCurrent`, `machines.fs*`/`gitAccess`/тоннели).
+Обратные вызовы тоннелей превью хранит канбан, ядро спрашивает их RPC `authorizeTunnel`/`tunnelClosed` на
+`/internal/service` канбана (там же `snapshot` рана и `boardChanged` от Make). События кластера (кадры
+ранов, доска, подготовка, QA-стадии, репозитории, улучшения, уведомления) канбан шлёт ядру пачками на
+`/internal/kanban/events`; `kanbanBridge/remote.ts` воспроизводит их на локальных лентах `KanbanService`.
+Авторизация у канбана — пересылкой в `/internal/whoami` ядра (`kanban/standalone/auth.ts`, кэш чтений
+30 с); снаружи пути канбана идут только через прокси ядра `kanbanBridge/proxy.ts` (`KANBAN_PROXY_PREFIXES`),
+где preHandler ядра уже проверил права проекта. Контракт протокола — `kanban/internal.ts`, транспорт RPC
+общий с Make — `@voicechat/shared` (`internalRpc.ts`). Интеграционный тест границы —
+`kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
+идут через `UserFrameHub`.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 

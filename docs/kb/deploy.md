@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-07
-checked: f7925b34
+checked: a994f3ac
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -162,6 +162,20 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 `docker compose up -d --build make` — ядро при этом не трогается (Release Center пока пересобирает
 всё; отдельный профиль — круг 4 плана). Без compose (dev, desktop) `VC_MAKE_MODE` не задан → Make
 встроен в процесс ядра, как раньше.
+
+**Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
+(образ `voicechat-kanban`, стадия `kanban-runtime`, порт 8789, тот же код `apps/server`, точка входа
+`src/kanban/standalone/index.ts`). По умолчанию выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
+в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
+**только Postgres** — файл SQLite из двух процессов не открыть), поднять
+`docker compose --profile postgres --profile kanban up -d --build`. У ядра `VC_KANBAN_URL=http://kanban:8789`
+и `VC_KANBAN_MCP_PUBLIC_BASE` (адрес MCP канбана и CI-команд глазами исполнителя); у канбана —
+`VC_CORE_URL`, общие `VC_INTERNAL_TOKEN`/`VC_MCP_SECRET`, `VC_MCP_PUBLIC_BASE` = адрес ядра (MCP машин, KB
+и превью остаются у ядра), адреса раннеров LLM/браузера, SMTP и **тот же том** `vc-data` (скриншоты QA и
+вложения читаются с диска). Пути канбана снаружи идут только через ядро — Caddy их не выделяет: под
+`/api/projects/*` у ядра свои роуты (git-панель, KB), а права проекта проверяет preHandler ядра по пути;
+ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
+`/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,

@@ -290,7 +290,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         }, async () => {
           const detail = await project()
           const snapshot = await board()
-          const surface = contexts.surface(conv)
+          const surface = await contexts.surface(conv)
           return toolJson({
             project: detail ? { id: detail.id, name: detail.name, description: detail.description, technologies: detail.technologies, skills: detail.skills } : null,
             conversationId: conv,

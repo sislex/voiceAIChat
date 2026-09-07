@@ -67,6 +67,17 @@ export interface ServerConfig {
   makeUrl?: string
   /** База `/mcp/make` глазами исполнителя LLM в режиме `remote`; без неё — `makeUrl`. */
   makeMcpPublicBase?: string
+  /**
+   * Канбан: `embedded` — кластер проектов/CI/QA/релизов в этом процессе; `remote` — отдельный процесс
+   * канбана по адресу `kanbanUrl` на той же базе (только Postgres), ядро переправляет ему пути канбана,
+   * отдаёт состояние машин/KB/виджета по `/internal/*` и принимает ленты событий. См. docs/plans/kanban-service.md.
+   */
+  kanbanMode: 'embedded' | 'remote'
+  kanbanUrl?: string
+  /** База `/mcp/kanban` и `/mcp/ci-commands` глазами исполнителя LLM в режиме `remote`; без неё — `kanbanUrl`. */
+  kanbanMcpPublicBase?: string
+  /** Адрес ядра для отдельного процесса канбана (`VC_CORE_URL`); самому ядру не нужен. */
+  coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
   internalToken?: string
   /** Секрет MCP-эндпоинтов (`?k=`); в `remote` обязан совпадать у ядра и Make, иначе — случайный на процесс. */
@@ -229,6 +240,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     makeMode: env.VC_MAKE_MODE === 'remote' ? 'remote' : 'embedded',
     makeUrl: env.VC_MAKE_URL,
     makeMcpPublicBase: env.VC_MAKE_MCP_PUBLIC_BASE,
+    kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'embedded',
+    kanbanUrl: env.VC_KANBAN_URL,
+    kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
+    coreUrl: env.VC_CORE_URL,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,
     browserPreviewBase: env.VC_BROWSER_PREVIEW_BASE,
