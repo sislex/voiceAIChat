@@ -541,16 +541,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     try { await window.api['make:restore']({ conversationId: chat.activeId, snapshotId }); toast.success('Правки откачены') } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) }
   }
   const [makeAskOnly, setMakeAskOnly] = useState(false)
-  const askRestoreRef = useRef<PermissionMode | null>(null)
+  const askRestoreRef = useRef<{ mode: PermissionMode; turnStarted: boolean; messageCount: number } | null>(null)
   useEffect(() => {
-    if (voice.voice !== 'idle' || !askRestoreRef.current) return
-    const prev = askRestoreRef.current; askRestoreRef.current = null
+    const restore = askRestoreRef.current
+    if (!restore) return
+    if (voice.voice !== 'idle') {
+      restore.turnStarted = true
+      return
+    }
+    const responseCompleted = chat.messages.length > restore.messageCount && chat.messages.at(-1)?.role === 'ai'
+    if (!restore.turnStarted && !responseCompleted) return
+    askRestoreRef.current = null
     setMakeAskOnly(false)
     // Возврат режима без диалога подтверждения: пользователь его не менял, это откат нашего временного «Плана».
-    if (activeConversation) void chatActions.setConversationExecTarget(activeConversation.id, activeConversation.execTarget ?? null, undefined, undefined, undefined, undefined, prev)
-    else applySettings({ permissionMode: prev })
+    if (activeConversation) void chatActions.setConversationExecTarget(activeConversation.id, activeConversation.execTarget ?? null, undefined, undefined, undefined, undefined, restore.mode)
+    else applySettings({ permissionMode: restore.mode })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice.voice])
+  }, [voice.voice, chat.messages.length])
   const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem(KANBAN_ASSISTANT_OPEN_KEY) === '1')
@@ -1891,7 +1898,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (authed && chat.activeId) void chatActions.loadKbUsage(chat.activeId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, chat.activeId, chat.messages.length])
-  const forcedPlan = session.currentUser?.role !== 'admin' && (!activeExecTarget || activeExecTarget === 'none')
+  const forcedPlan = activeConversation?.assistantKind !== 'make' && session.currentUser?.role !== 'admin' && (!activeExecTarget || activeExecTarget === 'none')
   const activePermissionMode: PermissionMode = forcedPlan
     ? 'plan'
     : activeConversation?.permissionMode ?? settingsState.settings.permissionMode
@@ -2681,7 +2688,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               if (isChatDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startChatDiagnostics(); return }
               void (async () => {
                 // Режим вопроса Make (roadmap-4 п.4): один ход в «Плане», прежний режим вернётся по завершении хода.
-                if (inMake && makeAskOnly && activePermissionMode !== 'plan') { askRestoreRef.current = activePermissionMode; await changeConversationMode('plan') }
+                if (inMake && makeAskOnly && activePermissionMode !== 'plan') { askRestoreRef.current = { mode: activePermissionMode, turnStarted: false, messageCount: chat.messages.length }; await changeConversationMode('plan') }
                 const sent = await chatActions.submitText(previewElement ?? undefined, inMake ? makeEditorContext ?? undefined : undefined)
                 if (sent) setPreviewElement(null)
               })()
