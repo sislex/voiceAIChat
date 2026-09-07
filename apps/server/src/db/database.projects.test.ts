@@ -794,6 +794,34 @@ describe('projects: навыки по умолчанию и связанный �
     expect(upd.skills).toEqual(['ts', 'redis'])
   })
 
+  it('createTask сразу создаёт чат автору только для пользовательского таска', () => {
+    const p = db.projects.createProject('alice', { name: 'P' })
+    const col = db.tasks.getBoard('alice', p.id)!.columns[0]
+    const task = db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Пользовательская', source: 'rest' })!
+    const chatId = db.tasks.getBoard('alice', p.id)!.tasks.find((item) => item.id === task.id)!.chatId
+    expect(chatId).toBeTruthy()
+    expect(db.chat.getConversation('alice', chatId!)).toMatchObject({
+      title: 'Задача Пользовательская',
+      projectId: p.id,
+      taskId: task.id,
+      scope: 'kanban'
+    })
+
+    const replay = db.tasks.createTask('alice', p.id, {
+      columnId: col.id, title: 'Повтор', source: 'rest', idempotencyKey: 'create-1'
+    })!
+    const replayed = db.tasks.createTask('alice', p.id, {
+      columnId: col.id, title: 'Повтор', source: 'rest', idempotencyKey: 'create-1'
+    })!
+    expect(replayed.id).toBe(replay.id)
+    expect(db.tasks.getBoard('alice', p.id)!.tasks.find((item) => item.id === replay.id)!.chatId).toBeTruthy()
+
+    const epic = db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Эпик', type: 'epic', source: 'rest' })!
+    const system = db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Системная' })!
+    expect(db.tasks.getBoard('alice', p.id)!.tasks.find((item) => item.id === epic.id)!.chatId).toBeNull()
+    expect(db.tasks.getBoard('alice', p.id)!.tasks.find((item) => item.id === system.id)!.chatId).toBeNull()
+  })
+
   it('openOrCreateTaskChat: наследует LLM-настройки пользователя, привязывает задачу/проект/навыки и виден в board.chatId', () => {
     const engine = db.llm.createLlmEngine({ name: 'Codex', kind: 'codex', baseUrl: 'http://codex', token: '', enabled: true, allowedRoles: ['developer'], isDefault: false })
     db.settings.saveSettings('alice', { ...DEFAULT_SETTINGS, llmEngineId: engine.id, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
