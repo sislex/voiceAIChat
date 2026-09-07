@@ -7,7 +7,7 @@ import type { LoadStatus } from './lib/loadState'
 import type { RendererApi } from '@shared/ipc'
 import { summarizeConversationUsage } from '@shared/usageSummary'
 import { MakeSharedView } from './components/MakeSharedView'
-import type { EditorContextPayload, LlmProvider, PermissionMode, Settings, TaskLaunchProposal } from '@shared/types'
+import type { Conversation, EditorContextPayload, LlmProvider, PermissionMode, Settings, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
 import { AGENT_VERSION } from '@shared/version'
@@ -984,10 +984,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [compactChat, sidebarOpen])
-  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab')
-  useEffect(() => {
-    if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') setConversationSettingsOpen(true)
-  }, [chatRoute?.kind])
+  const [conversationSettingsTarget, setConversationSettingsTarget] = useState<{ id: string; conversation: Conversation | null } | null>(null)
+  const conversationSettingsRequest = useRef(0)
+  const contextSettingsRouteAttempt = useRef<string | null>(null)
   const [createChatOpen, setCreateChatOpen] = useState(false)
   const [createChatTitle, setCreateChatTitle] = useState('Новый разговор')
   const [createChatProjectId, setCreateChatProjectId] = useState('')
@@ -1669,7 +1668,54 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const makeRouteReady = !inMake || (routeMakeChatId !== null && chat.activeId === routeMakeChatId && makeActiveListed)
   const imageStudioRouteReady = !inImageStudio || (routeImageStudioChatId !== null && chat.activeId === routeImageStudioChatId && imageStudioActiveListed)
   const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady && imageStudioRouteReady
-  const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
+  const activeConversation = chat.activeConversation?.id === chat.activeId
+    ? chat.activeConversation
+    : chat.conversations.find((c) => c.id === chat.activeId)
+  const activeConversationIdRef = useRef(chat.activeId)
+  activeConversationIdRef.current = chat.activeId
+  const closeConversationSettings = useCallback((): void => {
+    conversationSettingsRequest.current++
+    setConversationSettingsTarget(null)
+  }, [])
+  const openConversationSettings = useCallback(async (id: string): Promise<void> => {
+    const request = ++conversationSettingsRequest.current
+    setConversationSettingsTarget({ id, conversation: null })
+    void projectsActions.refreshProjects()
+    try {
+      const known = chat.activeConversation?.id === id ? chat.activeConversation : chat.conversations.find((entry) => entry.id === id)
+      const result = await api['conversations:get']({
+        id,
+        scope: known?.scope ?? 'chat',
+        ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {})
+      })
+      if (request !== conversationSettingsRequest.current) return
+      if (activeConversationIdRef.current !== id || !result || result.conversation.id !== id) {
+        setConversationSettingsTarget(null)
+        if (!result) toast.error('Настройки недоступны: разговор удалён или недоступен.')
+        return
+      }
+      setConversationSettingsTarget({ id, conversation: result.conversation })
+    } catch {
+      if (request !== conversationSettingsRequest.current) return
+      setConversationSettingsTarget(null)
+      toast.error('Не удалось открыть настройки разговора.')
+    }
+  }, [api, chat.activeConversation, chat.conversations, projectsActions, toast])
+  useEffect(() => {
+    if (chatRoute?.kind !== 'context-item' && chatRoute?.kind !== 'context-tab') {
+      contextSettingsRouteAttempt.current = null
+      return
+    }
+    if (chat.activeId !== chatRoute.conversationId) return
+    const routeAttempt = `${chatRoute.kind}:${chatRoute.conversationId}`
+    if (contextSettingsRouteAttempt.current === routeAttempt || conversationSettingsTarget?.id === chatRoute.conversationId) return
+    contextSettingsRouteAttempt.current = routeAttempt
+    void openConversationSettings(chatRoute.conversationId)
+  }, [chat.activeId, chatRoute, conversationSettingsTarget?.id, openConversationSettings])
+  useEffect(() => {
+    if (conversationSettingsTarget?.conversation || !conversationSettingsTarget) return
+    if (chat.activeId !== conversationSettingsTarget.id) closeConversationSettings()
+  }, [chat.activeId, closeConversationSettings, conversationSettingsTarget])
   // Каталог результатов активного чата — для чипа в шапке; обновляется при смене чата, закрытии настроек и после хода.
   const [activeStorage, setActiveStorage] = useState<ChatStorageView | null>(null)
   useEffect(() => {
@@ -1678,7 +1724,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     let cancelled = false
     window.api['conversations:getStorage']({ id }).then((view) => { if (!cancelled) setActiveStorage(view) }).catch(() => { if (!cancelled) setActiveStorage(null) })
     return () => { cancelled = true }
-  }, [chat.activeId, conversationSettingsOpen, voice.voice])
+  }, [chat.activeId, conversationSettingsTarget, voice.voice])
   const startWebReaderDiagnostics = useCallback((): void => {
     const conversationId = chat.activeId
     if (!inReader || !conversationId || !activeConversation || !isReaderConversation(activeConversation)) {
@@ -1693,7 +1739,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     diagnosticsControllerRef.current?.abort()
     const controller = new AbortController()
     diagnosticsControllerRef.current = controller
-    setConversationSettingsOpen(false)
+    closeConversationSettings()
     // diagnostics-start переводит Reader в режим прогресс-панели и глушит запись
     // сценария на время проверок; finally гарантирует выключение режима.
     registration.beginDiagnostics()
@@ -1726,7 +1772,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const controller = new AbortController()
     diagnosticsControllerRef.current = controller
     // Ход диагностики виден в ленте — настройки разговора закрываем сразу.
-    setConversationSettingsOpen(false)
+    closeConversationSettings()
     const engine = (): 'claude' | 'codex' => (activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'codex' : 'claude'
     void runChatDiagnostics({
       signal: controller.signal,
@@ -1769,7 +1815,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     diagnosticsControllerRef.current?.abort()
     const controller = new AbortController()
     diagnosticsControllerRef.current = controller
-    setConversationSettingsOpen(false)
+    closeConversationSettings()
     let incarnation: string | null = null
     void runPlaywrightReaderDiagnostics({
       signal: controller.signal,
@@ -1810,7 +1856,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     diagnosticsControllerRef.current?.abort()
     const controller = new AbortController()
     diagnosticsControllerRef.current = controller
-    setConversationSettingsOpen(false)
+    closeConversationSettings()
     void runMakeDiagnostics({
       signal: controller.signal,
       publish: (text) => chatActions.publishDiagnosticMessage(conversationId, text),
@@ -1849,7 +1895,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     diagnosticsControllerRef.current?.abort()
     const controller = new AbortController()
     diagnosticsControllerRef.current = controller
-    setConversationSettingsOpen(false)
+    closeConversationSettings()
     const ptyId = consolePtyId(conversationId)
     void runConsoleReaderDiagnostics({
       signal: controller.signal,
@@ -2557,7 +2603,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onRenameTitle={(t) => {
           if (chat.activeId) void chatActions.renameConversation(chat.activeId, t)
         }}
-        onOpenConversationSettings={() => { setConversationSettingsOpen(true); void projectsActions.refreshProjects() }}
+        onOpenConversationSettings={() => { if (chat.activeId) void openConversationSettings(chat.activeId) }}
         {...(activeConversation?.projectId && chat.activeId
           ? { onOpenGit: () => setGitChatPanel({ projectId: activeConversation.projectId!, conversationId: chat.activeId! }) }
           : {})}
@@ -2566,8 +2612,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         disabledContextCount={activeConversation?.disabledContext?.length ?? 0}
         onOpenContextSettings={() => {
           if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context`
-          setConversationSettingsOpen(true)
-          void projectsActions.refreshProjects()
+          if (chat.activeId) void openConversationSettings(chat.activeId)
         }}
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
@@ -3251,13 +3296,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           </ToolFrame>
         </Suspense>
       )}
-      {conversationSettingsOpen && activeConversation && (
+      {conversationSettingsTarget?.conversation && (
         <ConversationSettings
-          conversation={activeConversation}
+          conversation={conversationSettingsTarget.conversation}
           agents={operations.agents}
           // Список для «скопировать контекст из»: только чаты этого человека,
           // текущий из него исключён — копировать в себя нечего.
-          otherConversations={chat.conversations.filter((entry) => entry.id !== activeConversation.id).slice(0, 30).map((entry) => ({ id: entry.id, title: entry.title }))}
+          otherConversations={chat.conversations.filter((entry) => entry.id !== conversationSettingsTarget.id).slice(0, 30).map((entry) => ({ id: entry.id, title: entry.title }))}
           contextPresets={settingsState.settings.contextPresets}
           onSavePresets={async (presets) => { await settingsActions.updateSettings({ contextPresets: presets }) }}
           defaultPresetId={settingsState.settings.defaultContextPresetId}
@@ -3274,7 +3319,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onOpenInstructionSettings={() => {
             // Открываем общие настройки сразу на «Инструкциях»: иначе человек,
             // пришедший из карточки инструкции, ищет раздел глазами.
-            setConversationSettingsOpen(false)
+            closeConversationSettings()
             setSettingsSection('instructions')
             shellActions.openSettings()
           }}
@@ -3308,11 +3353,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           chatDiagnostics={!inSplit ? { running: diagnosticsControllerRef.current !== null, onRun: startChatDiagnostics } : undefined}
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
-          onOpenExplorer={(agentId, path) => { setConversationSettingsOpen(false); operationsActions.openUtility('explorer', agentId, path) }}
+          onOpenExplorer={(agentId, path) => { closeConversationSettings(); operationsActions.openUtility('explorer', agentId, path) }}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
-            await chatActions.renameConversation(activeConversation.id, title)
-            await chatActions.setConversationProject(activeConversation.id, projectId)
-            await chatActions.setConversationExecTarget(activeConversation.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
+            await chatActions.renameConversation(conversationSettingsTarget.id, title)
+            await chatActions.setConversationProject(conversationSettingsTarget.id, projectId)
+            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = operations.agents.find((item) => item.id === agentId)
@@ -3320,12 +3365,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             await operationsActions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
           }}
           onOpenKbUsage={() => {
-            setConversationSettingsOpen(false)
+            closeConversationSettings()
             runtime.openKbUsage()
           }}
           onClose={() => {
-            setConversationSettingsOpen(false)
-            if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') navigate(`/chat/${activeConversation.id}`)
+            closeConversationSettings()
+            if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') navigate(`/chat/${conversationSettingsTarget.id}`)
           }}
         />
       )}
@@ -3381,7 +3426,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onClose={runtime.closeKbUsage}
           onOpenDocument={(documentId) => { runtime.closeKbUsage(); navigate(`/kb/${encodeURIComponent(documentId)}`) }}
           onOpenKnowledgeBase={() => { runtime.closeKbUsage(); navigate('/kb') }}
-          onOpenConversationSettings={() => { runtime.closeKbUsage(); setConversationSettingsOpen(true) }}
+          onOpenConversationSettings={() => { runtime.closeKbUsage(); if (chat.activeId) void openConversationSettings(chat.activeId) }}
           titleOf={(id) => chat.conversations.find((c) => c.id === id)?.title}
           onOpenRun={(runId) => { runtime.closeKbUsage(); projectsActions.openCiRun(runId) }}
         />

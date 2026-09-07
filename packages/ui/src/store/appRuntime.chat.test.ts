@@ -2381,7 +2381,9 @@ describe('voiceStore — чаты завершённых задач', () => {
     expect(store.getState().conversations.map((c) => c.id)).toContain(chatId)
   })
 
-  it('cancelled скрыт даже при включённых done-чатах и возвращается без потери черновика', async () => {
+  // @testCase TC-INT-4
+  // @testCase TC-INT-7
+  it('cancelled скрыт из индекса, но полный снимок активного разговора сохраняется', async () => {
     const { store, api } = makeStore(['Обычный'])
     const p = await api['projects:create']({ name: 'P' })
     const board = await api['board:get']({ id: p.id })
@@ -2398,6 +2400,7 @@ describe('voiceStore — чаты завершённых задач', () => {
     await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: cancelled.id })
     await store.actions.retryConversations()
     expect(store.getState().activeId).toBe(chat.id)
+    expect(store.getState().activeConversation).toMatchObject({ id: chat.id, title: chat.title })
     expect(store.getState().draft).toBe('не потерять')
     expect(store.getState().conversations.map((c) => c.id)).not.toContain(chat.id)
 
