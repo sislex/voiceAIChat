@@ -164,19 +164,15 @@ export class KbRepo extends BaseRepo {
    * запросы), а вопрос, который позже ВСЁ ЖЕ был отвечен тем же текстом, из
    * списка выпадает: там пробела нет, была неудачная попытка.
    */
-  kbUsageRunGaps(runId: string, limit = 12): Array<{ query: string; reason: string }> {
-    return (this.db
-      .prepare(
-        `SELECT q.query AS query, MAX(COALESCE(q.error, '')) AS reason, MIN(q.created_at) AS at
+  async kbUsageRunGaps(runId: string, limit = 12): Promise<Array<{ query: string; reason: string }>> {
+    return ((await this.sql.all(`SELECT q.query AS query, MAX(COALESCE(q.error, '')) AS reason, MIN(q.created_at) AS at
            FROM kb_usage_queries q
           WHERE q.ci_run_id = ? AND q.status IN ('empty', 'error')
             AND NOT EXISTS (SELECT 1 FROM kb_usage_queries d
                              WHERE d.ci_run_id = q.ci_run_id AND d.query = q.query AND d.status = 'delivered')
           GROUP BY q.query
           ORDER BY at ASC
-          LIMIT ?`
-      )
-      .all(runId, Math.max(1, Math.min(limit, 50))) as Array<{ query: string; reason: string; at: number }>)
+          LIMIT ?`, [runId, Math.max(1, Math.min(limit, 50))])) as Array<{ query: string; reason: string; at: number }>)
       .map((row) => ({ query: row.query, reason: row.reason || 'база знаний не ответила' }))
   }
 
@@ -187,7 +183,7 @@ export class KbRepo extends BaseRepo {
   // и висящих pending после падения процесса).
 
   /** Записать состоявшееся обращение. `seq` монотонен внутри разговора. */
-  addKbUsage(args: {
+  async addKbUsage(args: {
     /** Заранее сгенерированный id: тот же, что ушёл в кадр `pending`. */
     id?: string
     userId: string
@@ -223,7 +219,7 @@ export class KbRepo extends BaseRepo {
       matchTypes?: KbMatchType[]
       freshness?: KbFreshness
     }>
-  }): KbUsageQuery {
+  }): Promise<KbUsageQuery> {
     const id = args.id ?? this.newId()
     const createdAt = this.now()
     const status = args.status ?? 'delivered'
@@ -241,13 +237,13 @@ export class KbRepo extends BaseRepo {
       matchTypes: item.matchTypes ?? [],
       freshness: item.freshness ?? 'unknown'
     }))
-    const insertQuery = this.db.prepare(
+    const insertQuery = this.sql.prepare(
       `INSERT INTO kb_usage_queries (id, seq, user_id, conversation_id, project_id, turn_id, message_id, ci_run_id,
          ci_step_id, source, status, query, confidence, injected, sections_count, chars, est_tokens, bundle_tokens,
          prompt_chars, turn_input_tokens, duration_ms, error, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    const insertSection = this.db.prepare(
+    const insertSection = this.sql.prepare(
       `INSERT INTO kb_usage_sections (id, query_id, document_id, title, heading, anchor, source_path, related_files, chars, est_tokens,
          score, match_types, freshness, position)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -255,26 +251,24 @@ export class KbRepo extends BaseRepo {
     // Одна транзакция: MAX(seq)+1 считается внутри неё, иначе параллельные
     // обращения одного разговора получили бы один и тот же курсор.
     let seq = 0
-    this.db.transaction(() => {
-      const row = this.db
-        .prepare(`SELECT COALESCE(MAX(seq), 0) AS m FROM kb_usage_queries WHERE conversation_id = ?`)
-        .get(args.conversationId) as { m: number }
+    await this.sql.transaction(async () => {
+      const row = (await this.sql.get(`SELECT COALESCE(MAX(seq), 0) AS m FROM kb_usage_queries WHERE conversation_id = ?`, [args.conversationId])) as { m: number }
       seq = row.m + 1
-      insertQuery.run(
+      await insertQuery.run(
         id, seq, args.userId, args.conversationId, args.projectId ?? null, args.turnId ?? null, args.messageId ?? null,
         args.ciRunId ?? null, args.ciStepId ?? null,
         args.source, status, args.query, args.confidence ?? null, args.injected ? 1 : 0, sections.length, args.chars,
         estTokens, args.bundleTokens ?? null, args.promptChars ?? null, args.turnInputTokens ?? null,
         args.durationMs ?? null, args.error ?? null, createdAt
       )
-      sections.forEach((section, position) => {
-        insertSection.run(
+      for (const [position, section] of sections.entries()) {
+        await insertSection.run(
           this.newId(), id, section.documentId, section.title, section.heading, section.anchor, section.sourcePath, JSON.stringify(section.relatedFiles),
           section.chars, section.estimatedTokens, section.score, JSON.stringify(section.matchTypes), section.freshness,
           position
         )
-      })
-    })()
+      }
+    })
     return {
       id,
       seq,
@@ -307,14 +301,14 @@ export class KbRepo extends BaseRepo {
    * размер промпта и суммарный вход. Известны они только после `claude.done`,
    * а обращения записаны раньше — поэтому отдельный шаг, а не поле в addKbUsage.
    */
-  attachKbUsageTurn(args: { turnId: string; messageId?: string | null; promptChars?: number | null; turnInputTokens?: number | null }): number {
+  async attachKbUsageTurn(args: { turnId: string; messageId?: string | null; promptChars?: number | null; turnInputTokens?: number | null }): Promise<number> {
     const set: string[] = []
     const vals: unknown[] = []
     if (args.messageId !== undefined) { set.push('message_id = ?'); vals.push(args.messageId) }
     if (args.promptChars !== undefined) { set.push('prompt_chars = ?'); vals.push(args.promptChars) }
     if (args.turnInputTokens !== undefined) { set.push('turn_input_tokens = ?'); vals.push(args.turnInputTokens) }
     if (!set.length) return 0
-    const info = this.db.prepare(`UPDATE kb_usage_queries SET ${set.join(', ')} WHERE turn_id = ?`).run(...vals, args.turnId)
+    const info = await this.sql.run(`UPDATE kb_usage_queries SET ${set.join(', ')} WHERE turn_id = ?`, [...vals, args.turnId])
     return info.changes
   }
 
@@ -322,55 +316,48 @@ export class KbRepo extends BaseRepo {
    * Последний курсор обращений разговора. Нужен трекеру: кадр `pending` строки в
    * БД не имеет, а клиент отбрасывает кадры с seq ≤ lastSeq.
    */
-  kbUsageLastSeq(conversationId: string): number {
-    return (this.db
-      .prepare(`SELECT COALESCE(MAX(seq), 0) AS m FROM kb_usage_queries WHERE conversation_id = ?`)
-      .get(conversationId) as { m: number }).m
+  async kbUsageLastSeq(conversationId: string): Promise<number> {
+    return ((await this.sql.get(`SELECT COALESCE(MAX(seq), 0) AS m FROM kb_usage_queries WHERE conversation_id = ?`, [conversationId])) as { m: number }).m
   }
 
   /**
    * Продвинуть границу просмотра только вперёд. Проверка владельца выполняется до
    * upsert, поэтому строку другого пользователя нельзя ни читать, ни менять.
    */
-  markKbUsageViewed(userId: string, conversationId: string, lastSeq: number): { lastSeq: number; unreadCount: number } | null {
-    if (!this.repos.chat.getConversation(userId, conversationId)) return null
-    const boundary = Math.max(0, Math.min(Math.trunc(lastSeq), this.kbUsageLastSeq(conversationId)))
-    this.db.prepare(
-      `INSERT INTO kb_usage_views (user_id, conversation_id, last_seq, viewed_at)
+  async markKbUsageViewed(userId: string, conversationId: string, lastSeq: number): Promise<{ lastSeq: number; unreadCount: number } | null> {
+    if (!(await this.repos.chat.getConversation(userId, conversationId))) return null
+    const boundary = Math.max(0, Math.min(Math.trunc(lastSeq), await this.kbUsageLastSeq(conversationId)))
+    await this.sql.run(`INSERT INTO kb_usage_views (user_id, conversation_id, last_seq, viewed_at)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(user_id, conversation_id) DO UPDATE SET
          last_seq = MAX(kb_usage_views.last_seq, excluded.last_seq),
-         viewed_at = CASE WHEN excluded.last_seq > kb_usage_views.last_seq THEN excluded.viewed_at ELSE kb_usage_views.viewed_at END`
-    ).run(userId, conversationId, boundary, this.now())
-    return { lastSeq: this.kbUsageViewedSeq(userId, conversationId), unreadCount: this.kbUsageUnreadCount(userId, conversationId) }
+         viewed_at = CASE WHEN excluded.last_seq > kb_usage_views.last_seq THEN excluded.viewed_at ELSE kb_usage_views.viewed_at END`, [userId, conversationId, boundary, this.now()])
+    return { lastSeq: await this.kbUsageViewedSeq(userId, conversationId), unreadCount: await this.kbUsageUnreadCount(userId, conversationId) }
   }
 
-  private kbUsageViewedSeq(userId: string, conversationId: string): number {
-    const row = this.db.prepare(`SELECT last_seq FROM kb_usage_views WHERE user_id = ? AND conversation_id = ?`)
-      .get(userId, conversationId) as { last_seq: number } | undefined
+  private async kbUsageViewedSeq(userId: string, conversationId: string): Promise<number> {
+    const row = (await this.sql.get(`SELECT last_seq FROM kb_usage_views WHERE user_id = ? AND conversation_id = ?`, [userId, conversationId])) as { last_seq: number } | undefined
     return row?.last_seq ?? 0
   }
 
-  private kbUsageUnreadCount(userId: string, conversationId: string): number {
-    return (this.db.prepare(
-      `SELECT COUNT(*) AS n FROM kb_usage_queries
-       WHERE conversation_id = ? AND seq > ?`
-    ).get(conversationId, this.kbUsageViewedSeq(userId, conversationId)) as { n: number }).n
+  private async kbUsageUnreadCount(userId: string, conversationId: string): Promise<number> {
+    return ((await this.sql.get(`SELECT COUNT(*) AS n FROM kb_usage_queries
+       WHERE conversation_id = ? AND seq > ?`, [conversationId, await this.kbUsageViewedSeq(userId, conversationId)])) as { n: number }).n
   }
 
   /** Отчёт по чату: свой чат (изоляция по владельцу) — иначе null → 404 у роута. */
-  kbUsageReport(userId: string, conversationId: string, limit = 40): KbChatUsage | null {
-    const conv = this.repos.chat.getConversation(userId, conversationId)
+  async kbUsageReport(userId: string, conversationId: string, limit = 40): Promise<KbChatUsage | null> {
+    const conv = await this.repos.chat.getConversation(userId, conversationId)
     if (!conv) return null
-    const totals = this.kbUsageTotals('q.conversation_id = ?', [conversationId])
-    const sections = this.kbUsageSections('q.conversation_id = ?', [conversationId])
-    const recent = this.kbUsageQueries('q.conversation_id = ?', [conversationId], limit)
+    const totals = await this.kbUsageTotals('q.conversation_id = ?', [conversationId])
+    const sections = await this.kbUsageSections('q.conversation_id = ?', [conversationId])
+    const recent = await this.kbUsageQueries('q.conversation_id = ?', [conversationId], limit)
     return {
       conversationId,
       projectId: conv.projectId ?? null,
       kbContextMode: conv.kbContextMode ?? 'auto',
-      lastSeq: this.kbUsageLastSeq(conversationId),
-      unreadCount: this.kbUsageUnreadCount(userId, conversationId),
+      lastSeq: await this.kbUsageLastSeq(conversationId),
+      unreadCount: await this.kbUsageUnreadCount(userId, conversationId),
       totals,
       sections,
       recent
@@ -378,40 +365,36 @@ export class KbRepo extends BaseRepo {
   }
 
   /** Агрегат по всем чатам проекта: только участнику проекта — иначе null. */
-  kbUsageProjectReport(userId: string, projectId: string, limit = 40): KbProjectUsage | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    const totals = this.kbUsageTotals('q.project_id = ?', [projectId])
-    const sections = this.kbUsageSections('q.project_id = ?', [projectId], { withConversations: true })
-    const conversations = (this.db
-      .prepare(
-        `SELECT q.conversation_id, COALESCE(c.title, '') AS title, COUNT(*) AS queries, SUM(q.chars) AS chars,
+  async kbUsageProjectReport(userId: string, projectId: string, limit = 40): Promise<KbProjectUsage | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    const totals = await this.kbUsageTotals('q.project_id = ?', [projectId])
+    const sections = await this.kbUsageSections('q.project_id = ?', [projectId], { withConversations: true })
+    const conversations = ((await this.sql.all(`SELECT q.conversation_id, COALESCE(c.title, '') AS title, COUNT(*) AS queries, SUM(q.chars) AS chars,
                 SUM(q.est_tokens) AS est_tokens, MAX(q.created_at) AS last_at
            FROM kb_usage_queries q LEFT JOIN conversations c ON c.id = q.conversation_id
           WHERE q.project_id = ?
-          GROUP BY q.conversation_id
-          ORDER BY last_at DESC`
-      )
-      .all(projectId) as Array<{ conversation_id: string; title: string; queries: number; chars: number; est_tokens: number; last_at: number }>)
+          GROUP BY q.conversation_id, c.title
+          ORDER BY last_at DESC`, [projectId])) as Array<{ conversation_id: string; title: string; queries: number; chars: number; est_tokens: number; last_at: number }>)
       .map((r) => ({ conversationId: r.conversation_id, title: r.title, queries: r.queries, chars: r.chars, estimatedTokens: r.est_tokens, lastAt: r.last_at }))
-    return { projectId, totals, sections, recent: this.kbUsageQueries('q.project_id = ?', [projectId], limit), conversations }
+    return { projectId, totals, sections, recent: await this.kbUsageQueries('q.project_id = ?', [projectId], limit), conversations }
   }
 
   /**
    * Обращения к БЗ внутри одного CI-рана. Гейт — членство в проекте рана (как у
    * ленты), поэтому чужой пользователь получает null → 404 у роута.
    */
-  kbUsageRunReport(userId: string, runId: string, limit = 40): KbRunUsageReport | null {
-    const run = this.repos.ci.getCiRunRaw(runId)
-    if (!run || !this.repos.projects.isProjectMember(userId, run.projectId)) return null
+  async kbUsageRunReport(userId: string, runId: string, limit = 40): Promise<KbRunUsageReport | null> {
+    const run = await this.repos.ci.getCiRunRaw(runId)
+    if (!run || !(await this.repos.projects.isProjectMember(userId, run.projectId))) return null
     return {
       runId,
       projectId: run.projectId,
       taskId: run.taskId,
       kbContextMode: run.kbContextMode,
       conversationId: run.conversationId,
-      totals: this.kbUsageTotals('q.ci_run_id = ?', [runId]),
-      sections: this.kbUsageSections('q.ci_run_id = ?', [runId]),
-      recent: this.kbUsageQueries('q.ci_run_id = ?', [runId], limit)
+      totals: await this.kbUsageTotals('q.ci_run_id = ?', [runId]),
+      sections: await this.kbUsageSections('q.ci_run_id = ?', [runId]),
+      recent: await this.kbUsageQueries('q.ci_run_id = ?', [runId], limit)
     }
   }
 
@@ -420,21 +403,19 @@ export class KbRepo extends BaseRepo {
    * подзапросом по `ci_runs`, а не сохранённым task_id в самой телеметрии:
    * привязка «обращение → ран» одна, и дублировать её нечем.
    */
-  kbUsageTaskReport(userId: string, projectId: string, taskId: string, limit = 40): KbTaskUsageReport | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId)) return null
+  async kbUsageTaskReport(userId: string, projectId: string, taskId: string, limit = 40): Promise<KbTaskUsageReport | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    if (!(await this.sql.get(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`, [taskId, projectId]))) return null
     const where = 'q.ci_run_id IN (SELECT id FROM ci_runs WHERE task_id = ? AND project_id = ?)'
     const params = [taskId, projectId]
-    const runs = (this.db
-      .prepare(`SELECT COUNT(DISTINCT q.ci_run_id) AS n FROM kb_usage_queries q WHERE ${where}`)
-      .get(...params) as { n: number }).n
+    const runs = ((await this.sql.get(`SELECT COUNT(DISTINCT q.ci_run_id) AS n FROM kb_usage_queries q WHERE ${where}`, [...params])) as { n: number }).n
     return {
       projectId,
       taskId,
       runs,
-      totals: this.kbUsageTotals(where, params),
-      sections: this.kbUsageSections(where, params),
-      recent: this.kbUsageQueries(where, params, limit)
+      totals: await this.kbUsageTotals(where, params),
+      sections: await this.kbUsageSections(where, params),
+      recent: await this.kbUsageQueries(where, params, limit)
     }
   }
 
@@ -442,38 +423,26 @@ export class KbRepo extends BaseRepo {
    * Итоги по обращениям — ОТДЕЛЬНЫМ запросом, без JOIN с разделами: иначе суммы
    * размножились бы по числу разделов каждого обращения.
    */
-  private kbUsageTotals(where: string, params: unknown[]): KbUsageTotals {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) AS queries,
+  private async kbUsageTotals(where: string, params: unknown[]): Promise<KbUsageTotals> {
+    const row = (await this.sql.get(`SELECT COUNT(*) AS queries,
                 SUM(CASE WHEN q.status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
                 SUM(CASE WHEN q.status = 'empty' THEN 1 ELSE 0 END) AS empty,
                 SUM(CASE WHEN q.status = 'error' THEN 1 ELSE 0 END) AS errors,
                 SUM(CASE WHEN q.source <> 'auto' THEN 1 ELSE 0 END) AS tool_queries,
                 SUM(q.sections_count) AS sections, SUM(q.chars) AS chars, SUM(q.est_tokens) AS est_tokens,
                 MAX(q.created_at) AS last_at
-           FROM kb_usage_queries q WHERE ${where}`
-      )
-      .get(...params) as {
+           FROM kb_usage_queries q WHERE ${where}`, [...params])) as {
         queries: number; delivered: number | null; empty: number | null; errors: number | null
         tool_queries: number | null; sections: number | null; chars: number | null; est_tokens: number | null
         last_at: number | null
       }
-    const documents = (this.db
-      .prepare(
-        `SELECT COUNT(DISTINCT s.document_id) AS n FROM kb_usage_sections s
-           JOIN kb_usage_queries q ON q.id = s.query_id WHERE ${where}`
-      )
-      .get(...params) as { n: number }).n
+    const documents = ((await this.sql.get(`SELECT COUNT(DISTINCT s.document_id) AS n FROM kb_usage_sections s
+           JOIN kb_usage_queries q ON q.id = s.query_id WHERE ${where}`, [...params])) as { n: number }).n
     // Промпт одного хода общий для всех его обращений — берём его по одному разу
     // на turn_id, иначе доля «сколько из промпта от БЗ» была бы заниженной.
-    const promptChars = (this.db
-      .prepare(
-        `SELECT COALESCE(SUM(prompt_chars), 0) AS n FROM (
+    const promptChars = ((await this.sql.get(`SELECT COALESCE(SUM(prompt_chars), 0) AS n FROM (
            SELECT COALESCE(q.turn_id, q.id) AS turn, MAX(q.prompt_chars) AS prompt_chars
-             FROM kb_usage_queries q WHERE ${where} AND q.prompt_chars IS NOT NULL GROUP BY turn)`
-      )
-      .get(...params) as { n: number }).n
+             FROM kb_usage_queries q WHERE ${where} AND q.prompt_chars IS NOT NULL GROUP BY turn)`, [...params])) as { n: number }).n
     return {
       queries: row.queries,
       delivered: row.delivered ?? 0,
@@ -494,32 +463,24 @@ export class KbRepo extends BaseRepo {
    * Один запрос на чат, проект, ран и задачу: иначе четыре копии одного GROUP BY
    * неизбежно разъедутся в мелочах вроде порядка сортировки.
    */
-  private kbUsageSections(where: string, params: unknown[], opts: { withConversations?: boolean } = {}): KbUsageSectionAggregate[] {
+  private async kbUsageSections(where: string, params: unknown[], opts: { withConversations?: boolean } = {}): Promise<KbUsageSectionAggregate[]> {
     const conversations = opts.withConversations ? ', COUNT(DISTINCT q.conversation_id) AS conversations' : ''
-    return (this.db
-      .prepare(
-        `SELECT s.document_id, s.anchor, MAX(s.title) AS title, MAX(s.heading) AS heading,
+    return ((await this.sql.all(`SELECT s.document_id, s.anchor, MAX(s.title) AS title, MAX(s.heading) AS heading,
                 MAX(s.source_path) AS source_path, MAX(s.freshness) AS freshness, COUNT(*) AS times,
                 SUM(CASE WHEN q.source = 'auto' THEN 1 ELSE 0 END) AS auto_times, SUM(s.chars) AS chars,
                 SUM(s.est_tokens) AS est_tokens, MAX(q.created_at) AS last_at${conversations}
            FROM kb_usage_sections s JOIN kb_usage_queries q ON q.id = s.query_id
           WHERE ${where}
           GROUP BY s.document_id, s.anchor
-          ORDER BY times DESC, chars DESC`
-      )
-      .all(...params) as KbSectionAggRow[]).map(mapKbSectionAggregate)
+          ORDER BY times DESC, chars DESC`, [...params])) as KbSectionAggRow[]).map(mapKbSectionAggregate)
   }
 
   /** Последние обращения (новые сверху) вместе с их разделами. */
-  private kbUsageQueries(where: string, params: unknown[], limit: number): KbUsageQuery[] {
-    const rows = this.db
-      .prepare(`SELECT q.* FROM kb_usage_queries q WHERE ${where} ORDER BY q.created_at DESC, q.seq DESC LIMIT ?`)
-      .all(...params, Math.max(1, Math.min(limit, 200))) as KbUsageQueryRow[]
+  private async kbUsageQueries(where: string, params: unknown[], limit: number): Promise<KbUsageQuery[]> {
+    const rows = (await this.sql.all(`SELECT q.* FROM kb_usage_queries q WHERE ${where} ORDER BY q.created_at DESC, q.seq DESC LIMIT ?`, [...params, Math.max(1, Math.min(limit, 200))])) as KbUsageQueryRow[]
     if (!rows.length) return []
     const placeholders = rows.map(() => '?').join(',')
-    const sections = this.db
-      .prepare(`SELECT * FROM kb_usage_sections WHERE query_id IN (${placeholders}) ORDER BY position ASC`)
-      .all(...rows.map((r) => r.id)) as KbUsageSectionRow[]
+    const sections = (await this.sql.all(`SELECT * FROM kb_usage_sections WHERE query_id IN (${placeholders}) ORDER BY position ASC`, [...rows.map((r) => r.id)])) as KbUsageSectionRow[]
     const byQuery = new Map<string, KbUsageSectionRef[]>()
     for (const item of sections) {
       const list = byQuery.get(item.query_id) ?? []
@@ -536,7 +497,7 @@ export class KbRepo extends BaseRepo {
   // фильтровать по ней обязан вызывающий.
 
   /** Статьи по фильтру принадлежности. Без фильтра — все (для сборки индекса). */
-  kbDocuments(filter: { scope?: KbScope; projectId?: string | null; ownerId?: string | null } = {}): KbStoredDocument[] {
+  async kbDocuments(filter: { scope?: KbScope; projectId?: string | null; ownerId?: string | null } = {}): Promise<KbStoredDocument[]> {
     const where: string[] = []
     const params: unknown[] = []
     if (filter.scope) {
@@ -551,14 +512,12 @@ export class KbRepo extends BaseRepo {
       where.push('owner_id = ?')
       params.push(filter.ownerId)
     }
-    const rows = this.db
-      .prepare(`SELECT * FROM kb_documents${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC`)
-      .all(...params) as KbDocumentRow[]
+    const rows = (await this.sql.all(`SELECT * FROM kb_documents${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC`, [...params])) as KbDocumentRow[]
     return rows.map(mapKbDocument)
   }
 
-  kbDocumentById(id: string): KbStoredDocument | null {
-    const row = this.db.prepare(`SELECT * FROM kb_documents WHERE id = ?`).get(id) as KbDocumentRow | undefined
+  async kbDocumentById(id: string): Promise<KbStoredDocument | null> {
+    const row = (await this.sql.get(`SELECT * FROM kb_documents WHERE id = ?`, [id])) as KbDocumentRow | undefined
     return row ? mapKbDocument(row) : null
   }
 
@@ -567,8 +526,8 @@ export class KbRepo extends BaseRepo {
    * памяти и пересобирается только при смене версии — иначе каждый поиск платил
    * бы за перечитывание всех статей.
    */
-  kbDocumentsVersion(): string {
-    const row = this.db.prepare(`SELECT COUNT(*) AS n, IFNULL(MAX(updated_at), 0) AS ts FROM kb_documents`).get() as {
+  async kbDocumentsVersion(): Promise<string> {
+    const row = (await this.sql.get(`SELECT COUNT(*) AS n, IFNULL(MAX(updated_at), 0) AS ts FROM kb_documents`)) as {
       n: number
       ts: number
     }
@@ -576,7 +535,7 @@ export class KbRepo extends BaseRepo {
   }
 
   /** Создать статью или переписать существующую (id задаёт вызывающий). */
-  saveKbDocument(args: {
+  async saveKbDocument(args: {
     id?: string | null
     scope: KbScope
     ownerId?: string | null
@@ -588,61 +547,26 @@ export class KbRepo extends BaseRepo {
     areas?: string[]
     checkedOn?: string | null
     createdBy?: string
-  }): KbStoredDocument {
+  }): Promise<KbStoredDocument> {
     const ts = this.now()
-    const existing = args.id ? this.kbDocumentById(args.id) : null
+    const existing = args.id ? await this.kbDocumentById(args.id) : null
     const id = existing?.id ?? args.id ?? this.newId()
     if (existing) {
-      this.db
-        .prepare(
-          `UPDATE kb_documents SET title = ?, body = ?, kind = ?, tags = ?, areas = ?, checked_on = ?, updated_at = ? WHERE id = ?`
-        )
-        .run(
-          args.title,
-          args.body,
-          args.kind ?? existing.kind,
-          JSON.stringify(args.tags ?? existing.tags),
-          JSON.stringify(args.areas ?? existing.areas),
-          args.checkedOn ?? existing.checkedOn,
-          ts,
-          id
-        )
+      await this.sql.run(`UPDATE kb_documents SET title = ?, body = ?, kind = ?, tags = ?, areas = ?, checked_on = ?, updated_at = ? WHERE id = ?`, [args.title, args.body, args.kind ?? existing.kind, JSON.stringify(args.tags ?? existing.tags), JSON.stringify(args.areas ?? existing.areas), args.checkedOn ?? existing.checkedOn, ts, id])
     } else {
-      this.db
-        .prepare(
-          `INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          id,
-          args.scope,
-          args.ownerId ?? null,
-          args.projectId ?? null,
-          args.title,
-          args.kind ?? 'subsystem',
-          JSON.stringify(args.tags ?? []),
-          JSON.stringify(args.areas ?? []),
-          args.body,
-          args.checkedOn ?? null,
-          args.createdBy ?? args.ownerId ?? '',
-          ts,
-          ts
-        )
+      await this.sql.run(`INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, args.scope, args.ownerId ?? null, args.projectId ?? null, args.title, args.kind ?? 'subsystem', JSON.stringify(args.tags ?? []), JSON.stringify(args.areas ?? []), args.body, args.checkedOn ?? null, args.createdBy ?? args.ownerId ?? '', ts, ts])
     }
-    return this.kbDocumentById(id) as KbStoredDocument
+    return (await this.kbDocumentById(id)) as KbStoredDocument
   }
 
-  deleteKbDocument(id: string): boolean {
-    return this.db.prepare(`DELETE FROM kb_documents WHERE id = ?`).run(id).changes > 0
+  async deleteKbDocument(id: string): Promise<boolean> {
+    return (await this.sql.run(`DELETE FROM kb_documents WHERE id = ?`, [id])).changes > 0
   }
 
   /** Обзорная статья-заготовка нового проекта; зовётся из projects.createProject внутри его транзакции. */
-  seedProjectOverview(args: { projectId: string; name: string; description: string; createdBy: string; ts: number }): void {
-    this.db
-      .prepare(
-        `INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
-         VALUES (?, 'project', NULL, ?, ?, 'subsystem', '[\"обзор\"]', '[]', ?, NULL, ?, ?, ?)`
-      )
-      .run(this.newId(), args.projectId, `Разработка: ${args.name}`, projectKbSkeleton(args.name, args.description), args.createdBy, args.ts, args.ts)
+  async seedProjectOverview(args: { projectId: string; name: string; description: string; createdBy: string; ts: number }): Promise<void> {
+    await this.sql.run(`INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
+         VALUES (?, 'project', NULL, ?, ?, 'subsystem', '[\"обзор\"]', '[]', ?, NULL, ?, ?, ?)`, [this.newId(), args.projectId, `Разработка: ${args.name}`, projectKbSkeleton(args.name, args.description), args.createdBy, args.ts, args.ts])
   }
 }

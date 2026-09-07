@@ -3,7 +3,7 @@
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
 import { type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, MAKE_KIND, isContextToggleable } from '@voicechat/shared'
 import { MESSAGES_FTS_SQL } from '../schema.js'
-import { toFtsMatchQuery } from '../fts.js'
+import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
 import { BaseRepo } from './base.js'
 import { parseJsonValue } from './support.js'
 
@@ -180,40 +180,63 @@ export class ChatRepo extends BaseRepo {
   /** Доступен ли FTS5 в этой сборке SQLite (иначе поиск по сообщениям пустой). */
   private ftsReady = false
 
+  /**
+   * JSON1 и strftime у SQLite против jsonb и to_char у Postgres — единственные различия диалектов,
+   * которые не переводятся текстом (`sql/dialect.ts`): SQLite отдаёт из JSON типизированное значение,
+   * Postgres — текст, и приведение зависит от того, число это или строка. Поэтому фрагменты
+   * собираются здесь, по движку.
+   */
+  private get j() {
+    const pg = this.sql.engine === 'postgres'
+    return {
+      /** Числовое поле meta (токены, цена). */
+      num: (col: string, key: string) => (pg ? `((${col})::jsonb->>'${key}')::double precision` : `json_extract(${col},'$.${key}')`),
+      /** Строковое поле meta (модель). */
+      text: (col: string, key: string) => (pg ? `((${col})::jsonb->>'${key}')` : `json_extract(${col},'$.${key}')`),
+      /** Поле — число (integer/real у SQLite, number у jsonb). */
+      isNumber: (col: string, key: string) => (pg ? `jsonb_typeof((${col})::jsonb->'${key}') = 'number'` : `json_type(${col}, '$.${key}') IN ('integer', 'real')`),
+      /** Поля нет или оно null. */
+      isMissing: (col: string, key: string) => (pg ? `((${col})::jsonb->'${key}') IS NULL OR jsonb_typeof((${col})::jsonb->'${key}') = 'null'` : `json_type(${col}, '$.${key}') IS NULL`),
+      /** Значение — валидный JSON; Postgres проверяет это самим приведением, поэтому там только NOT NULL. */
+      valid: (col: string) => (pg ? `${col} IS NOT NULL` : `json_valid(${col})`),
+      /** Истинность поля (флаг interrupted). */
+      truthy: (col: string, key: string) => (pg ? `COALESCE(((${col})::jsonb->>'${key}')::boolean, false)` : `json_extract(${col},'$.${key}')`),
+      /** Бакет времени из метки в мс (UTC). */
+      bucket: (col: string, unit: 'hour' | 'week' | 'day') => pg
+        ? `to_char(to_timestamp(${col}/1000.0) AT TIME ZONE 'UTC', '${unit === 'hour' ? 'YYYY-MM-DD HH24:00' : unit === 'week' ? 'IYYY-"W"IW' : 'YYYY-MM-DD'}')`
+        : `strftime('${unit === 'hour' ? '%Y-%m-%d %H:00' : unit === 'week' ? '%Y-W%W' : '%Y-%m-%d'}', ${col}/1000, 'unixepoch')`
+    }
+  }
+
   /** Таймер следующей порции бэкфилла индекса; null — порция не запланирована. */
   ftsTimer: ReturnType<typeof setTimeout> | null = null
 
   /** Владелец разговора по id без пользовательского scope — для серверных сервисов (MCP Make). */
-  conversationOwner(id: string): string | null {
-    const row = this.db.prepare(`SELECT user_id FROM conversations WHERE id = ?`).get(id) as { user_id: string } | undefined
+  async conversationOwner(id: string): Promise<string | null> {
+    const row = (await this.sql.get(`SELECT user_id FROM conversations WHERE id = ?`, [id])) as { user_id: string } | undefined
     return row?.user_id ?? null
   }
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' | null = null, projectId: string | null = null, requestedScope?: ConversationScope): Conversation {
+  async createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' | null = null, projectId: string | null = null, requestedScope?: ConversationScope): Promise<Conversation> {
     const scope = requestedScope ?? (assistantKind === 'make' ? 'make' : assistantKind === 'images' ? 'images' : assistantKind === 'console-reader' ? 'console' : assistantKind === 'playwright-reader' ? 'playwright-reader' : assistantKind === 'web-recorder' ? 'web-reader' : 'chat')
     if (scope === 'kanban' && !projectId) throw new Error('projectId is required for kanban')
-    const project = projectId ? this.repos.projects.getProject(userId, projectId) : null
+    const project = projectId ? await this.repos.projects.getProject(userId, projectId) : null
     if (projectId && !project) throw new Error('project not found')
     const skillNames = project?.skills ?? []
     const id = this.newId()
     const ts = this.now()
-    this.db
-      .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names, scope)
-         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`
-      )
-      .run(id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames), scope)
+    await this.sql.run(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, assistant_kind, project_id, skill_names, scope)
+         VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`, [id, title, ts, ts, userId, assistantKind, projectId, JSON.stringify(skillNames), scope])
     // Дефолтный пресет контекста: применяется сразу при создании, иначе
     // «минимальный контекст» действует только после того, как человек вспомнит
     // про кнопку. Пункты безопасности пресет не трогает — их фильтрует запись.
-    const settings = this.repos.settings.getSettings(userId)
+    const settings = await this.repos.settings.getSettings(userId)
     const preset = settings.defaultContextPresetId
       ? settings.contextPresets.find((entry) => entry.id === settings.defaultContextPresetId)
       : undefined
     const disabledContext = preset ? preset.disabled.filter(isContextToggleable) : []
     if (disabledContext.length) {
-      this.db.prepare(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`)
-        .run(JSON.stringify(disabledContext), id, userId)
+      await this.sql.run(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), id, userId])
     }
     return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
@@ -222,7 +245,7 @@ export class ChatRepo extends BaseRepo {
    * Единственная точка персистенции нового обычного чата: разговор, проектные
    * настройки и первая реплика фиксируются одной SQLite-транзакцией.
    */
-  createConversationDraft(
+  async createConversationDraft(
     userId: string,
     idempotencyKey: string,
     title: string,
@@ -236,21 +259,19 @@ export class ChatRepo extends BaseRepo {
       execTarget?: string | null
       attachments?: MessageAttachment[]
     }
-  ): { conversation: Conversation; messages: Message[] } {
-    const run = this.db.transaction(() => {
-      const replay = this.db.prepare(
-        `SELECT conversation_id FROM conversation_draft_requests WHERE user_id = ? AND idempotency_key = ?`
-      ).get(userId, idempotencyKey) as { conversation_id: string } | undefined
+  ): Promise<{ conversation: Conversation; messages: Message[] }> {
+    const run = () => this.sql.transaction(async () => {
+      const replay = (await this.sql.get(`SELECT conversation_id FROM conversation_draft_requests WHERE user_id = ? AND idempotency_key = ?`, [userId, idempotencyKey])) as { conversation_id: string } | undefined
       if (replay) {
-        const conversation = this.getConversation(userId, replay.conversation_id)
+        const conversation = await this.getConversation(userId, replay.conversation_id)
         if (!conversation) throw new Error('idempotent conversation not found')
-        return { conversation, messages: this.listMessages(userId, conversation.id) }
+        return { conversation, messages: await this.listMessages(userId, conversation.id) }
       }
 
-      const created = this.createConversation(userId, title)
-      const conversation = projectId ? this.setConversationProject(userId, created.id, projectId) : created
+      const created = await this.createConversation(userId, title)
+      const conversation = projectId ? await this.setConversationProject(userId, created.id, projectId) : created
       if (!conversation) throw new Error('project not found')
-      this.addMessage(
+      await this.addMessage(
         userId,
         conversation.id,
         message.role,
@@ -261,30 +282,24 @@ export class ChatRepo extends BaseRepo {
         conversation.execTarget,
         message.attachments
       )
-      this.db.prepare(
-        `INSERT INTO conversation_draft_requests (user_id, idempotency_key, conversation_id) VALUES (?, ?, ?)`
-      ).run(userId, idempotencyKey, conversation.id)
-      return { conversation: this.getConversation(userId, conversation.id)!, messages: this.listMessages(userId, conversation.id) }
+      await this.sql.run(`INSERT INTO conversation_draft_requests (user_id, idempotency_key, conversation_id) VALUES (?, ?, ?)`, [userId, idempotencyKey, conversation.id])
+      return { conversation: (await this.getConversation(userId, conversation.id))!, messages: await this.listMessages(userId, conversation.id) }
     })
-    return run()
+    return await run()
   }
 
   /** Один приватный сохраняемый чат канбан-ассистента на пользователя и проект. */
-  ensureKanbanAssistantConversation(userId: string, projectId: string): Conversation | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    const existing = this.db.prepare(
-      `SELECT id FROM conversations WHERE user_id = ? AND project_id = ? AND assistant_kind = 'kanban' LIMIT 1`
-    ).get(userId, projectId) as { id: string } | undefined
-    if (existing) return this.getConversation(userId, existing.id)
-    const project = this.repos.projects.getProject(userId, projectId)
+  async ensureKanbanAssistantConversation(userId: string, projectId: string): Promise<Conversation | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    const existing = (await this.sql.get(`SELECT id FROM conversations WHERE user_id = ? AND project_id = ? AND assistant_kind = 'kanban' LIMIT 1`, [userId, projectId])) as { id: string } | undefined
+    if (existing) return await this.getConversation(userId, existing.id)
+    const project = await this.repos.projects.getProject(userId, projectId)
     if (!project) return null
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(
-      `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind, scope)
-       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban', 'kanban')`
-    ).run(id, `Ассистент · ${project.name}`, ts, ts, userId, projectId)
-    return this.getConversation(userId, id)
+    await this.sql.run(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, project_id, assistant_kind, scope)
+       VALUES (?, ?, ?, ?, NULL, ?, 'none', ?, 'kanban', 'kanban')`, [id, `Ассистент · ${project.name}`, ts, ts, userId, projectId])
+    return await this.getConversation(userId, id)
   }
 
   /**
@@ -300,21 +315,19 @@ export class ChatRepo extends BaseRepo {
    * догружается секция «Более старые» порциями. Без окна отдаётся всё: этим
    * пользуются мосты и тесты.
    */
-  listConversations(userId: string, opts?: {
+  async listConversations(userId: string, opts?: {
     scope?: ConversationScope
     projectId?: string
     includeCompleted?: boolean
     since?: number
     before?: { updatedAt: number; id: string }
     limit?: number
-  }): Conversation[] {
+  }): Promise<Conversation[]> {
     const scope = opts?.scope ?? 'chat'
     if (scope === 'kanban' && !opts?.projectId) return []
     // Курсор — пара (updated_at, id): по одному времени страницы разъезжались бы
     // на беседах, обновлённых в одну миллисекунду.
-    const rows = this.db
-      .prepare(
-        `SELECT c.*,
+    const rows = (await this.sql.all(`SELECT c.*,
                 (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count,
                 (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
@@ -327,9 +340,7 @@ export class ChatRepo extends BaseRepo {
            AND (@since IS NULL OR c.updated_at >= @since)
            AND (@beforeAt IS NULL OR c.updated_at < @beforeAt OR (c.updated_at = @beforeAt AND c.id < @beforeId))
          ORDER BY c.updated_at DESC, c.id DESC
-         LIMIT @limit`
-      )
-      .all({
+         LIMIT @limit`, [{
         userId,
         scope,
         projectId: opts?.projectId ?? null,
@@ -338,33 +349,29 @@ export class ChatRepo extends BaseRepo {
         beforeAt: opts?.before?.updatedAt ?? null,
         beforeId: opts?.before?.id ?? null,
         limit: opts?.limit && opts.limit > 0 ? opts.limit : -1
-      }) as Array<ConversationRow & { message_count: number }>
-    const costs = this.conversationCosts(rows)
-    return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
+      }])) as Array<ConversationRow & { message_count: number }>
+    const costs = await this.conversationCosts(rows)
+    return await Promise.all(rows.map(async (r) => await this.mapConversation(r, r.message_count, costs.get(r.id))))
   }
 
-  getConversation(userId: string, id: string, context?: { scope: ConversationScope; projectId?: string }): Conversation | null {
-    const row = this.db
-      .prepare(`SELECT c.*,
+  async getConversation(userId: string, id: string, context?: { scope: ConversationScope; projectId?: string }): Promise<Conversation | null> {
+    const row = (await this.sql.get(`SELECT c.*,
                        (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
                         ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
-                FROM conversations c WHERE c.id = ? AND c.user_id = ?`)
-      .get(id, userId) as ConversationRow | undefined
+                FROM conversations c WHERE c.id = ? AND c.user_id = ?`, [id, userId])) as ConversationRow | undefined
     if (!row) return null
     if (context && (row.scope !== context.scope || (context.scope === 'kanban' && row.project_id !== context.projectId))) return null
     const count = (
-      this.db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?`).get(id) as {
+      (await this.sql.get(`SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?`, [id])) as {
         n: number
       }
     ).n
-    return this.mapConversation(row, count)
+    return await this.mapConversation(row, count)
   }
 
   /** Владеет ли пользователь разговором (для проверок при работе с сообщениями). */
-  ownsConversation(userId: string, conversationId: string): boolean {
-    const row = this.db
-      .prepare(`SELECT 1 FROM conversations WHERE id = ? AND user_id = ?`)
-      .get(conversationId, userId)
+  async ownsConversation(userId: string, conversationId: string): Promise<boolean> {
+    const row = await this.sql.get(`SELECT 1 FROM conversations WHERE id = ? AND user_id = ?`, [conversationId, userId])
     return row !== undefined
   }
 
@@ -374,15 +381,13 @@ export class ChatRepo extends BaseRepo {
    * только с `includeCompleted` — иначе выключенный фильтр возвращал бы их
    * через строку поиска.
    */
-  searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Conversation[] {
+  async searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean }): Promise<Conversation[]> {
     const scope = opts?.scope ?? 'chat'
     if (scope === 'kanban' && !opts?.projectId) return []
     const q = query.trim()
-    if (!q) return this.listConversations(userId, opts)
+    if (!q) return await this.listConversations(userId, opts)
     const like = `%${q.toLowerCase().replace(/[%_\\]/g, (ch) => `\\${ch}`)}%`
-    const rows = this.db
-      .prepare(
-        `SELECT c.*,
+    const rows = (await this.sql.all(`SELECT c.*,
                 (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count,
                 (SELECT m.exec_target FROM messages m WHERE m.conversation_id = c.id
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
@@ -395,20 +400,16 @@ export class ChatRepo extends BaseRepo {
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
                        WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\'))
-         ORDER BY c.updated_at DESC`
-      )
-      .all(userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0, like, like) as Array<ConversationRow & { message_count: number }>
-    const costs = this.conversationCosts(rows)
-    return rows.map((r) => this.mapConversation(r, r.message_count, costs.get(r.id)))
+         ORDER BY c.updated_at DESC`, [userId, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0, like, like])) as Array<ConversationRow & { message_count: number }>
+    const costs = await this.conversationCosts(rows)
+    return await Promise.all(rows.map(async (r) => await this.mapConversation(r, r.message_count, costs.get(r.id))))
   }
 
-  renameConversation(userId: string, id: string, title: string): void {
-    this.db
-      .prepare(`UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?`)
-      .run(title, this.now(), id, userId)
+  async renameConversation(userId: string, id: string, title: string): Promise<void> {
+    await this.sql.run(`UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?`, [title, this.now(), id, userId])
   }
 
-  setConversationExecTarget(
+  async setConversationExecTarget(
     userId: string,
     id: string,
     execTarget: string | null,
@@ -418,10 +419,10 @@ export class ChatRepo extends BaseRepo {
     llmModel?: string | null,
     permissionMode?: PermissionMode | null,
     llmEngineId?: string | null
-  ): Conversation | null {
+  ): Promise<Conversation | null> {
     // Make-чату машина не назначается: ход её всё равно игнорирует, а запись
     // в БД возвращала бы мусор, который чистит миграция. Явное «none» проходит.
-    const makeChat = (this.db.prepare(`SELECT assistant_kind FROM conversations WHERE id = ? AND user_id = ?`).get(id, userId) as { assistant_kind: string | null } | undefined)?.assistant_kind === 'make'
+    const makeChat = ((await this.sql.get(`SELECT assistant_kind FROM conversations WHERE id = ? AND user_id = ?`, [id, userId])) as { assistant_kind: string | null } | undefined)?.assistant_kind === 'make'
     const target = makeChat && execTarget !== 'none' ? null : execTarget
     const fields = ['exec_target = ?']
     const values: unknown[] = [target]
@@ -449,10 +450,8 @@ export class ChatRepo extends BaseRepo {
       fields.push('permission_mode = ?')
       values.push(permissionMode)
     }
-    this.db
-      .prepare(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`)
-      .run(...values, id, userId)
-    return this.getConversation(userId, id)
+    await this.sql.run(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, [...values, id, userId])
+    return await this.getConversation(userId, id)
   }
 
   /**
@@ -460,31 +459,31 @@ export class ChatRepo extends BaseRepo {
    * наследование персонального default пользователя; только наследование получает
    * безопасный online-fallback. Явный override не заменяется молча.
    */
-  resolveConversationMachine(
+  async resolveConversationMachine(
     userId: string,
     conversationId: string,
     options: { execTarget?: string | null; projectId?: string | null; isOnline?: (agentId: string) => boolean } = {}
-  ): {
+  ): Promise<{
     agentId: string | null
     source: 'explicit' | 'personal_default' | 'fallback' | 'disabled' | 'none'
     error: 'unavailable' | 'offline' | 'no_online_machine' | null
-  } | null {
-    const conversation = this.getConversation(userId, conversationId)
+  } | null> {
+    const conversation = await this.getConversation(userId, conversationId)
     if (!conversation) return null
     const explicitTarget = options.execTarget === undefined ? conversation.execTarget : options.execTarget
     const projectId = options.projectId === undefined ? conversation.projectId : options.projectId
     if (explicitTarget === 'none') return { agentId: null, source: 'disabled', error: null }
-    const usable = this.repos.machines.listUsableAgents(userId, projectId)
+    const usable = await this.repos.machines.listUsableAgents(userId, projectId)
     const isOnline = options.isOnline ?? (() => true)
     if (explicitTarget) {
-      if (!this.repos.machines.canUseAgent(userId, explicitTarget, projectId)) {
+      if (!(await this.repos.machines.canUseAgent(userId, explicitTarget, projectId))) {
         // Машины больше нет в реестре (удалена мимо UI, чистка) — ссылка
         // висячая, и чат залипал бы на «машина недоступна» до ручного
         // переключения. Забываем её и решаем заново, как для нового чата.
-        const gone = !this.db.prepare(`SELECT 1 FROM agents WHERE id = ?`).get(explicitTarget)
+        const gone = !(await this.sql.get(`SELECT 1 FROM agents WHERE id = ?`, [explicitTarget]))
         if (gone && options.execTarget === undefined) {
-          this.db.prepare(`UPDATE conversations SET exec_target = NULL WHERE id = ? AND user_id = ?`).run(conversationId, userId)
-          return this.resolveConversationMachine(userId, conversationId, { ...options, execTarget: null })
+          await this.sql.run(`UPDATE conversations SET exec_target = NULL WHERE id = ? AND user_id = ?`, [conversationId, userId])
+          return await this.resolveConversationMachine(userId, conversationId, { ...options, execTarget: null })
         }
         return { agentId: explicitTarget, source: 'explicit', error: 'unavailable' }
       }
@@ -495,8 +494,8 @@ export class ChatRepo extends BaseRepo {
       }
     }
     const personalDefault = projectId
-      ? this.repos.machines.getUserProjectDefaultMachine(userId, projectId)
-      : this.repos.settings.getSettings(userId).defaultAgentId
+      ? await this.repos.machines.getUserProjectDefaultMachine(userId, projectId)
+      : (await this.repos.settings.getSettings(userId)).defaultAgentId
     if (personalDefault && usable.some((agent) => agent.id === personalDefault) && isOnline(personalDefault)) {
       return { agentId: personalDefault, source: 'personal_default', error: null }
     }
@@ -506,14 +505,14 @@ export class ChatRepo extends BaseRepo {
   }
 
   /** Вернуть чат задачи к наследованию после удаления изолированного клона. */
-  restoreTaskChatWorkdir(userId: string, id: string, projectId: string): Conversation | null {
-    if (!this.repos.projects.getProject(userId, projectId)) return null
-    return this.setConversationExecTarget(userId, id, null, null)
+  async restoreTaskChatWorkdir(userId: string, id: string, projectId: string): Promise<Conversation | null> {
+    if (!(await this.repos.projects.getProject(userId, projectId))) return null
+    return await this.setConversationExecTarget(userId, id, null, null)
   }
 
-  setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
-    this.db.prepare(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`).run(mode, id, userId)
-    return this.getConversation(userId, id)
+  async setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Promise<Conversation | null> {
+    await this.sql.run(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`, [mode, id, userId])
+    return await this.getConversation(userId, id)
   }
 
   /**
@@ -527,20 +526,18 @@ export class ChatRepo extends BaseRepo {
    * не ответить. Повторное выставление того же значения событие не пишет —
    * журнал должен показывать изменения, а не нажатия.
    */
-  setConversationContextEnabled(userId: string, id: string, itemId: string, enabled: boolean, actor = userId): Conversation | null {
-    const conversation = this.getConversation(userId, id)
+  async setConversationContextEnabled(userId: string, id: string, itemId: string, enabled: boolean, actor = userId): Promise<Conversation | null> {
+    const conversation = await this.getConversation(userId, id)
     if (!conversation) return null
     if (!isContextToggleable(itemId)) return conversation // безопасность/информация не выключается
     const disabled = new Set(conversation.disabledContext ?? [])
     const was = !disabled.has(itemId)
     if (enabled) disabled.delete(itemId); else disabled.add(itemId)
-    this.db.prepare(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`).run(JSON.stringify([...disabled]), id, userId)
+    await this.sql.run(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`, [JSON.stringify([...disabled]), id, userId])
     if (was !== enabled) {
-      this.db
-        .prepare(`INSERT INTO conversation_context_events (at, conversation_id, user_id, actor, item_id, enabled) VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(this.now(), id, userId, actor, itemId, enabled ? 1 : 0)
+      await this.sql.run(`INSERT INTO conversation_context_events (at, conversation_id, user_id, actor, item_id, enabled) VALUES (?, ?, ?, ?, ?, ?)`, [this.now(), id, userId, actor, itemId, enabled ? 1 : 0])
     }
-    return this.getConversation(userId, id)
+    return await this.getConversation(userId, id)
   }
 
   /**
@@ -549,68 +546,56 @@ export class ChatRepo extends BaseRepo {
    * режим доступа, режим базы знаний, движок и модель, машина. Пишем только
    * фактическое изменение: повторное сохранение той же формы журнал не растит.
    */
-  recordConversationSettingEvent(userId: string, id: string, itemId: string, value: string, actor = userId): void {
-    const conversation = this.getConversation(userId, id)
+  async recordConversationSettingEvent(userId: string, id: string, itemId: string, value: string, actor = userId): Promise<void> {
+    const conversation = await this.getConversation(userId, id)
     if (!conversation) return
-    const last = this.db
-      .prepare(`SELECT value FROM conversation_context_events WHERE conversation_id = ? AND item_id = ? AND value IS NOT NULL ORDER BY id DESC LIMIT 1`)
-      .get(id, itemId) as { value: string } | undefined
+    const last = (await this.sql.get(`SELECT value FROM conversation_context_events WHERE conversation_id = ? AND item_id = ? AND value IS NOT NULL ORDER BY id DESC LIMIT 1`, [id, itemId])) as { value: string } | undefined
     if (last?.value === value) return
-    this.db
-      .prepare(`INSERT INTO conversation_context_events (at, conversation_id, user_id, actor, item_id, enabled, value) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(this.now(), id, userId, actor, itemId, 1, value)
+    await this.sql.run(`INSERT INTO conversation_context_events (at, conversation_id, user_id, actor, item_id, enabled, value) VALUES (?, ?, ?, ?, ?, ?, ?)`, [this.now(), id, userId, actor, itemId, 1, value])
   }
 
   /**
    * Журнал изменений контекста разговора, новые сверху. Читается через scope
    * владельца: чужой разговор просто не найдётся и журнал будет пуст.
    */
-  listConversationContextEvents(userId: string, id: string, limit = 50): ContextChangeEvent[] {
-    if (!this.getConversation(userId, id)) return []
-    const rows = this.db
-      .prepare(`SELECT at, actor, item_id, enabled, value FROM conversation_context_events WHERE conversation_id = ? ORDER BY id DESC LIMIT ?`)
-      .all(id, Math.max(1, Math.min(limit, 200))) as Array<{ at: number; actor: string; item_id: string; enabled: number; value: string | null }>
+  async listConversationContextEvents(userId: string, id: string, limit = 50): Promise<ContextChangeEvent[]> {
+    if (!(await this.getConversation(userId, id))) return []
+    const rows = (await this.sql.all(`SELECT at, actor, item_id, enabled, value FROM conversation_context_events WHERE conversation_id = ? ORDER BY id DESC LIMIT ?`, [id, Math.max(1, Math.min(limit, 200))])) as Array<{ at: number; actor: string; item_id: string; enabled: number; value: string | null }>
     return rows.map((row) => ({ at: row.at, actor: row.actor, itemId: row.item_id, enabled: row.enabled === 1, ...(row.value === null ? {} : { value: row.value }) }))
   }
 
-  setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null): Conversation | null {
-    this.db.prepare(`UPDATE conversations SET preview_url = ?, updated_at = ? WHERE id = ? AND user_id = ?`).run(previewUrl, this.now(), id, userId)
-    return this.getConversation(userId, id)
+  async setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null): Promise<Conversation | null> {
+    await this.sql.run(`UPDATE conversations SET preview_url = ?, updated_at = ? WHERE id = ? AND user_id = ?`, [previewUrl, this.now(), id, userId])
+    return await this.getConversation(userId, id)
   }
 
-  setConversationStatus(userId: string, id: string, status: ConversationStatus): Conversation | null {
-    this.db.prepare(`UPDATE conversations SET status = ? WHERE id = ? AND user_id = ?`).run(status, id, userId)
-    return this.getConversation(userId, id)
+  async setConversationStatus(userId: string, id: string, status: ConversationStatus): Promise<Conversation | null> {
+    await this.sql.run(`UPDATE conversations SET status = ? WHERE id = ? AND user_id = ?`, [status, id, userId])
+    return await this.getConversation(userId, id)
   }
 
-  clearConversationExecTargetForAgent(userId: string, agentId: string): void {
-    this.db
-      .prepare(`UPDATE conversations SET exec_target = NULL WHERE user_id = ? AND exec_target = ?`)
-      .run(userId, agentId)
+  async clearConversationExecTargetForAgent(userId: string, agentId: string): Promise<void> {
+    await this.sql.run(`UPDATE conversations SET exec_target = NULL WHERE user_id = ? AND exec_target = ?`, [userId, agentId])
   }
 
-  deleteConversation(userId: string, id: string): void {
+  async deleteConversation(userId: string, id: string): Promise<void> {
     // ON DELETE CASCADE удалит сообщения и спикеров. Никаких проверок «чат занят»:
     // Feature Run убран, а CI-раны с разговорами не связаны.
-    this.db.prepare(`DELETE FROM conversations WHERE id = ? AND user_id = ?`).run(id, userId)
+    await this.sql.run(`DELETE FROM conversations WHERE id = ? AND user_id = ?`, [id, userId])
   }
 
-  setClaudeSession(userId: string, id: string, sessionId: string | null): void {
-    this.db
-      .prepare(`UPDATE conversations SET claude_session_id = ? WHERE id = ? AND user_id = ?`)
-      .run(sessionId, id, userId)
+  async setClaudeSession(userId: string, id: string, sessionId: string | null): Promise<void> {
+    await this.sql.run(`UPDATE conversations SET claude_session_id = ? WHERE id = ? AND user_id = ?`, [sessionId, id, userId])
   }
 
-  listQueuedTurns(userId: string, conversationId: string): QueuedTurn[] {
-    if (!this.ownsConversation(userId, conversationId)) return []
-    const rows = this.db.prepare(
-      `SELECT q.id, q.conversation_id, q.message_id, q.payload, q.status, q.position,
+  async listQueuedTurns(userId: string, conversationId: string): Promise<QueuedTurn[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) return []
+    const rows = (await this.sql.all(`SELECT q.id, q.conversation_id, q.message_id, q.payload, q.status, q.position,
               q.created_at, m.text, m.attachments AS message_attachments
        FROM conversation_turn_queue q
        JOIN messages m ON m.id = q.message_id
        WHERE q.user_id = ? AND q.conversation_id = ? AND q.status IN ('queued','failed')
-       ORDER BY q.position, q.created_at`
-    ).all(userId, conversationId) as Array<{ id: string; conversation_id: string; message_id: string; payload: string; status: string; position: number; created_at: number; text: string; message_attachments: string | null }>
+       ORDER BY q.position, q.created_at`, [userId, conversationId])) as Array<{ id: string; conversation_id: string; message_id: string; payload: string; status: string; position: number; created_at: number; text: string; message_attachments: string | null }>
     return rows.map((row, index) => {
       let payload: QueueTurnPayload = { segments: [] }
       try { payload = JSON.parse(row.payload) as QueueTurnPayload } catch { /* keep recoverable row visible */ }
@@ -630,127 +615,100 @@ export class ChatRepo extends BaseRepo {
     })
   }
 
-  isTurnQueuePaused(userId: string, conversationId: string): boolean {
-    if (!this.ownsConversation(userId, conversationId)) return false
-    const row = this.db.prepare(`SELECT paused FROM conversation_turn_control WHERE conversation_id = ?`).get(conversationId) as { paused: number } | undefined
+  async isTurnQueuePaused(userId: string, conversationId: string): Promise<boolean> {
+    if (!(await this.ownsConversation(userId, conversationId))) return false
+    const row = (await this.sql.get(`SELECT paused FROM conversation_turn_control WHERE conversation_id = ?`, [conversationId])) as { paused: number } | undefined
     return Boolean(row?.paused)
   }
 
-  setTurnQueuePaused(userId: string, conversationId: string, paused: boolean): void {
-    if (!this.ownsConversation(userId, conversationId)) return
-    this.db.prepare(
-      `INSERT INTO conversation_turn_control (conversation_id, paused) VALUES (?, ?)
-       ON CONFLICT(conversation_id) DO UPDATE SET paused = excluded.paused`
-    ).run(conversationId, paused ? 1 : 0)
+  async setTurnQueuePaused(userId: string, conversationId: string, paused: boolean): Promise<void> {
+    if (!(await this.ownsConversation(userId, conversationId))) return
+    await this.sql.run(`INSERT INTO conversation_turn_control (conversation_id, paused) VALUES (?, ?)
+       ON CONFLICT(conversation_id) DO UPDATE SET paused = excluded.paused`, [conversationId, paused ? 1 : 0])
   }
 
-  enqueueTurn(userId: string, conversationId: string, messageId: string, payload: QueueTurnPayload, hideMessage = true): QueuedTurn[] {
-    if (!this.ownsConversation(userId, conversationId)) throw new Error('conversation not found')
+  async enqueueTurn(userId: string, conversationId: string, messageId: string, payload: QueueTurnPayload, hideMessage = true): Promise<QueuedTurn[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) throw new Error('conversation not found')
     const now = this.now()
-    this.db.transaction(() => {
-      const position = (this.db.prepare(
-        `SELECT COALESCE(MAX(position), 0) + 1 AS position FROM conversation_turn_queue WHERE conversation_id = ?`
-      ).get(conversationId) as { position: number }).position
-      const inserted = this.db.prepare(
-        `INSERT OR IGNORE INTO conversation_turn_queue
+    await this.sql.transaction(async () => {
+      const position = ((await this.sql.get(`SELECT COALESCE(MAX(position), 0) + 1 AS position FROM conversation_turn_queue WHERE conversation_id = ?`, [conversationId])) as { position: number }).position
+      const inserted = await this.sql.run(`INSERT OR IGNORE INTO conversation_turn_queue
           (id, conversation_id, user_id, message_id, payload, status, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)`
-      ).run(this.newId(), conversationId, userId, messageId, JSON.stringify(payload), position, now, now)
+         VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)`, [this.newId(), conversationId, userId, messageId, JSON.stringify(payload), position, now, now])
       if (inserted.changes && hideMessage) {
-        this.db.prepare(`UPDATE messages SET state = 'queued', history_position = NULL WHERE id = ? AND conversation_id = ?`).run(messageId, conversationId)
+        await this.sql.run(`UPDATE messages SET state = 'queued', history_position = NULL WHERE id = ? AND conversation_id = ?`, [messageId, conversationId])
       }
-    })()
-    return this.listQueuedTurns(userId, conversationId)
+    })
+    return await this.listQueuedTurns(userId, conversationId)
   }
 
-  queuedTurnPayload(userId: string, conversationId: string, id: string): QueueTurnPayload | null {
-    const row = this.db.prepare(
-      `SELECT payload FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
-    ).get(id, conversationId, userId) as { payload: string } | undefined
+  async queuedTurnPayload(userId: string, conversationId: string, id: string): Promise<QueueTurnPayload | null> {
+    const row = (await this.sql.get(`SELECT payload FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`, [id, conversationId, userId])) as { payload: string } | undefined
     if (!row) return null
     try { return JSON.parse(row.payload) as QueueTurnPayload } catch { return null }
   }
 
-  updateQueuedTurn(userId: string, conversationId: string, id: string, text: string, payload: QueueTurnPayload): QueuedTurn[] {
-    this.db.transaction(() => {
-      const row = this.db.prepare(
-        `SELECT message_id FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
-      ).get(id, conversationId, userId) as { message_id: string } | undefined
+  async updateQueuedTurn(userId: string, conversationId: string, id: string, text: string, payload: QueueTurnPayload): Promise<QueuedTurn[]> {
+    await this.sql.transaction(async () => {
+      const row = (await this.sql.get(`SELECT message_id FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`, [id, conversationId, userId])) as { message_id: string } | undefined
       if (!row) return
-      this.db.prepare(`UPDATE messages SET text = ? WHERE id = ? AND conversation_id = ?`).run(text, row.message_id, conversationId)
-      this.db.prepare(`UPDATE conversation_turn_queue SET payload = ?, status = 'queued', updated_at = ? WHERE id = ?`).run(JSON.stringify(payload), this.now(), id)
-    })()
-    return this.listQueuedTurns(userId, conversationId)
+      await this.sql.run(`UPDATE messages SET text = ? WHERE id = ? AND conversation_id = ?`, [text, row.message_id, conversationId])
+      await this.sql.run(`UPDATE conversation_turn_queue SET payload = ?, status = 'queued', updated_at = ? WHERE id = ?`, [JSON.stringify(payload), this.now(), id])
+    })
+    return await this.listQueuedTurns(userId, conversationId)
   }
 
-  deleteQueuedTurn(userId: string, conversationId: string, id: string): QueuedTurn[] {
-    this.db.transaction(() => {
-      const row = this.db.prepare(
-        `SELECT message_id FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
-      ).get(id, conversationId, userId) as { message_id: string } | undefined
+  async deleteQueuedTurn(userId: string, conversationId: string, id: string): Promise<QueuedTurn[]> {
+    await this.sql.transaction(async () => {
+      const row = (await this.sql.get(`SELECT message_id FROM conversation_turn_queue WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`, [id, conversationId, userId])) as { message_id: string } | undefined
       if (!row) return
-      this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(id)
-      this.db.prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`).run(row.message_id, conversationId)
-    })()
-    return this.listQueuedTurns(userId, conversationId)
+      await this.sql.run(`DELETE FROM conversation_turn_queue WHERE id = ?`, [id])
+      await this.sql.run(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`, [row.message_id, conversationId])
+    })
+    return await this.listQueuedTurns(userId, conversationId)
   }
 
   /** Идемпотентно повышает ожидающий элемент до первого места, не трогая активный ход. */
-  prioritizeQueuedTurn(userId: string, conversationId: string, id: string): QueuedTurn[] {
-    this.db.transaction(() => {
-      const selected = this.db.prepare(
-        `SELECT position FROM conversation_turn_queue
-         WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
-      ).get(id, conversationId, userId) as { position: number } | undefined
+  async prioritizeQueuedTurn(userId: string, conversationId: string, id: string): Promise<QueuedTurn[]> {
+    await this.sql.transaction(async () => {
+      const selected = (await this.sql.get(`SELECT position FROM conversation_turn_queue
+         WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`, [id, conversationId, userId])) as { position: number } | undefined
       if (!selected) return
-      const first = this.db.prepare(
-        `SELECT MIN(position) AS position FROM conversation_turn_queue
-         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
-      ).get(conversationId, userId) as { position: number | null }
+      const first = (await this.sql.get(`SELECT MIN(position) AS position FROM conversation_turn_queue
+         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`, [conversationId, userId])) as { position: number | null }
       if (first.position === null || selected.position === first.position) return
       // UNIQUE(conversation_id, position) проверяется SQLite после каждой строки,
       // поэтому переставляем через заведомо свободный отрицательный/временный диапазон.
-      this.db.prepare(`UPDATE conversation_turn_queue SET position = -1, updated_at = ? WHERE id = ?`)
-        .run(this.now(), id)
-      this.db.prepare(
-        `UPDATE conversation_turn_queue SET position = position + 1000000, updated_at = ?
-         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed') AND position < ? AND position >= 0`
-      ).run(this.now(), conversationId, userId, selected.position)
-      this.db.prepare(
-        `UPDATE conversation_turn_queue SET position = position - 999999
-         WHERE conversation_id = ? AND user_id = ? AND position >= 1000000`
-      ).run(conversationId, userId)
-      this.db.prepare(
-        `UPDATE conversation_turn_queue SET position = ?, status = 'queued', updated_at = ? WHERE id = ?`
-      ).run(first.position, this.now(), id)
-    })()
-    return this.listQueuedTurns(userId, conversationId)
+      await this.sql.run(`UPDATE conversation_turn_queue SET position = -1, updated_at = ? WHERE id = ?`, [this.now(), id])
+      await this.sql.run(`UPDATE conversation_turn_queue SET position = position + 1000000, updated_at = ?
+         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed') AND position < ? AND position >= 0`, [this.now(), conversationId, userId, selected.position])
+      await this.sql.run(`UPDATE conversation_turn_queue SET position = position - 999999
+         WHERE conversation_id = ? AND user_id = ? AND position >= 1000000`, [conversationId, userId])
+      await this.sql.run(`UPDATE conversation_turn_queue SET position = ?, status = 'queued', updated_at = ? WHERE id = ?`, [first.position, this.now(), id])
+    })
+    return await this.listQueuedTurns(userId, conversationId)
   }
 
   /** Атомарно применяет полный порядок, только если набор элементов не изменился. */
-  reorderQueuedTurns(userId: string, conversationId: string, ids: string[]): QueuedTurn[] {
-    this.db.transaction(() => {
-      if (!this.ownsConversation(userId, conversationId) || new Set(ids).size !== ids.length) return
-      const current = this.db.prepare(
-        `SELECT id FROM conversation_turn_queue
+  async reorderQueuedTurns(userId: string, conversationId: string, ids: string[]): Promise<QueuedTurn[]> {
+    await this.sql.transaction(async () => {
+      if (!(await this.ownsConversation(userId, conversationId)) || new Set(ids).size !== ids.length) return
+      const current = (await this.sql.all(`SELECT id FROM conversation_turn_queue
          WHERE user_id = ? AND conversation_id = ? AND status IN ('queued','failed')
-         ORDER BY position, created_at`
-      ).all(userId, conversationId) as Array<{ id: string }>
+         ORDER BY position, created_at`, [userId, conversationId])) as Array<{ id: string }>
       if (current.length !== ids.length || current.some((row) => !ids.includes(row.id))) return
       const now = this.now()
       // Уникальный индекс проверяется построчно, поэтому сначала переносим все
       // позиции во временный отрицательный диапазон, затем назначаем 1..N.
-      this.db.prepare(
-        `UPDATE conversation_turn_queue SET position = -(position + 1000000), updated_at = ?
-         WHERE user_id = ? AND conversation_id = ? AND status IN ('queued','failed')`
-      ).run(now, userId, conversationId)
-      const update = this.db.prepare(
+      await this.sql.run(`UPDATE conversation_turn_queue SET position = -(position + 1000000), updated_at = ?
+         WHERE user_id = ? AND conversation_id = ? AND status IN ('queued','failed')`, [now, userId, conversationId])
+      const update = this.sql.prepare(
         `UPDATE conversation_turn_queue SET position = ?, status = 'queued', updated_at = ?
          WHERE id = ? AND user_id = ? AND conversation_id = ?`
       )
-      ids.forEach((id, index) => update.run(index + 1, now, id, userId, conversationId))
-    })()
-    return this.listQueuedTurns(userId, conversationId)
+      for (const [index, id] of ids.entries()) await update.run(index + 1, now, id, userId, conversationId)
+    })
+    return await this.listQueuedTurns(userId, conversationId)
   }
 
   /**
@@ -758,26 +716,22 @@ export class ChatRepo extends BaseRepo {
    * реплике. Скрытое сообщение и строка очереди удаляются, активное сохраняет id
    * и позицию истории, а CLI-сессия сбрасывается для чистого перезапуска.
    */
-  mergeQueuedTurnIntoMessage(
+  async mergeQueuedTurnIntoMessage(
     userId: string,
     conversationId: string,
     id: string,
     activeMessageId: string,
     activePayload: QueueTurnPayload
-  ): { message: Message; payload: QueueTurnPayload; replacedMessageIds: [string, string] } | null {
-    return this.db.transaction(() => {
-      if (!this.ownsConversation(userId, conversationId)) return null
-      const queued = this.db.prepare(
-        `SELECT q.message_id, q.payload, m.text, m.attachments
+  ): Promise<{ message: Message; payload: QueueTurnPayload; replacedMessageIds: [string, string] } | null> {
+    return await this.sql.transaction(async () => {
+      if (!(await this.ownsConversation(userId, conversationId))) return null
+      const queued = (await this.sql.get(`SELECT q.message_id, q.payload, m.text, m.attachments
            FROM conversation_turn_queue q
            JOIN messages m ON m.id = q.message_id AND m.conversation_id = q.conversation_id
           WHERE q.id = ? AND q.conversation_id = ? AND q.user_id = ?
-            AND q.status IN ('queued','failed')`
-      ).get(id, conversationId, userId) as { message_id: string; payload: string; text: string; attachments: string | null } | undefined
-      const active = this.db.prepare(
-        `SELECT role, text, attachments, time, exec_target FROM messages
-          WHERE id = ? AND conversation_id = ? AND state = 'published' AND role <> 'ai'`
-      ).get(activeMessageId, conversationId) as { role: MessageRole; text: string; attachments: string | null; time: string; exec_target: string | null } | undefined
+            AND q.status IN ('queued','failed')`, [id, conversationId, userId])) as { message_id: string; payload: string; text: string; attachments: string | null } | undefined
+      const active = (await this.sql.get(`SELECT role, text, attachments, time, exec_target FROM messages
+          WHERE id = ? AND conversation_id = ? AND state = 'published' AND role <> 'ai'`, [activeMessageId, conversationId])) as { role: MessageRole; text: string; attachments: string | null; time: string; exec_target: string | null } | undefined
       if (!queued || !active || queued.message_id === activeMessageId) return null
 
       let queuedPayload: QueueTurnPayload
@@ -797,58 +751,44 @@ export class ChatRepo extends BaseRepo {
       const text = [active.text.trim(), queued.text.trim()].filter(Boolean).join('\n\n')
       const messageId = this.newId()
       const createdAt = this.now()
-      const historyPosition = (this.db.prepare(
-        `SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`
-      ).get(conversationId) as { position: number }).position
+      const historyPosition = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
 
-      this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(id)
-      this.db.prepare(`DELETE FROM messages WHERE id IN (?, ?) AND conversation_id = ?`)
-        .run(activeMessageId, queued.message_id, conversationId)
-      this.db.prepare(
-        `INSERT INTO messages (id, conversation_id, role, text, time, created_at, exec_target, attachments, state, history_position)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
-      ).run(messageId, conversationId, active.role, text, active.time, createdAt, active.exec_target,
-        details.length ? JSON.stringify(details) : null, historyPosition)
-      this.db.prepare(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
-        .run(createdAt, conversationId, userId)
+      await this.sql.run(`DELETE FROM conversation_turn_queue WHERE id = ?`, [id])
+      await this.sql.run(`DELETE FROM messages WHERE id IN (?, ?) AND conversation_id = ?`, [activeMessageId, queued.message_id, conversationId])
+      await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, exec_target, attachments, state, history_position)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`, [messageId, conversationId, active.role, text, active.time, createdAt, active.exec_target, details.length ? JSON.stringify(details) : null, historyPosition])
+      await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [createdAt, conversationId, userId])
 
-      const message = this.listMessages(userId, conversationId).find((item) => item.id === messageId)
+      const message = (await this.listMessages(userId, conversationId)).find((item) => item.id === messageId)
       if (!message) throw new Error('merged message not found')
       return { message, payload, replacedMessageIds: [activeMessageId, queued.message_id] as [string, string] }
-    })()
+    })
   }
 
-  takeQueuedTurn(userId: string, conversationId: string, id?: string, publish = true): { id: string; messageId: string; payload: QueueTurnPayload; message: Message } | null {
-    return this.db.transaction(() => {
-      const row = this.db.prepare(
-        `SELECT id, message_id, payload FROM conversation_turn_queue
+  async takeQueuedTurn(userId: string, conversationId: string, id?: string, publish = true): Promise<{ id: string; messageId: string; payload: QueueTurnPayload; message: Message } | null> {
+    return await this.sql.transaction(async () => {
+      const row = (await this.sql.get(`SELECT id, message_id, payload FROM conversation_turn_queue
          WHERE user_id = ? AND conversation_id = ? AND status = 'queued'
            AND (? IS NULL OR id = ?)
-         ORDER BY position LIMIT 1`
-      ).get(userId, conversationId, id ?? null, id ?? null) as { id: string; message_id: string; payload: string } | undefined
+         ORDER BY position LIMIT 1`, [userId, conversationId, id ?? null, id ?? null])) as { id: string; message_id: string; payload: string } | undefined
       if (!row) return null
-      const position = (this.db.prepare(
-        `SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`
-      ).get(conversationId) as { position: number }).position
-      this.db.prepare(`UPDATE messages SET state = 'published', history_position = ? WHERE id = ? AND conversation_id = ? AND state = 'queued'`)
-        .run(position, row.message_id, conversationId)
-      this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(row.id)
-      const message = this.listMessages(userId, conversationId).find((item) => item.id === row.message_id)
+      const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
+      await this.sql.run(`UPDATE messages SET state = 'published', history_position = ? WHERE id = ? AND conversation_id = ? AND state = 'queued'`, [position, row.message_id, conversationId])
+      await this.sql.run(`DELETE FROM conversation_turn_queue WHERE id = ?`, [row.id])
+      const message = (await this.listMessages(userId, conversationId)).find((item) => item.id === row.message_id)
       if (!message) throw new Error('queued message not found')
       if (!publish) {
-        this.db.prepare(`UPDATE messages SET state = 'queued', history_position = NULL WHERE id = ? AND conversation_id = ?`).run(row.message_id, conversationId)
+        await this.sql.run(`UPDATE messages SET state = 'queued', history_position = NULL WHERE id = ? AND conversation_id = ?`, [row.message_id, conversationId])
       }
       return { id: row.id, messageId: row.message_id, payload: JSON.parse(row.payload) as QueueTurnPayload, message }
-    })()
+    })
   }
 
-  markQueuedTurnFailed(userId: string, conversationId: string, messageId: string): void {
-    this.db.prepare(
-      `UPDATE conversation_turn_queue SET status = 'failed', updated_at = ? WHERE user_id = ? AND conversation_id = ? AND message_id = ?`
-    ).run(this.now(), userId, conversationId, messageId)
+  async markQueuedTurnFailed(userId: string, conversationId: string, messageId: string): Promise<void> {
+    await this.sql.run(`UPDATE conversation_turn_queue SET status = 'failed', updated_at = ? WHERE user_id = ? AND conversation_id = ? AND message_id = ?`, [this.now(), userId, conversationId, messageId])
   }
 
-  addMessage(
+  async addMessage(
     userId: string,
     conversationId: string,
     role: MessageRole,
@@ -859,13 +799,13 @@ export class ChatRepo extends BaseRepo {
     execTarget?: string | null,
     attachments?: MessageAttachment[],
     requestedId?: string
-  ): Message {
-    if (!this.ownsConversation(userId, conversationId)) {
+  ): Promise<Message> {
+    if (!(await this.ownsConversation(userId, conversationId))) {
       throw new Error(`Разговор ${conversationId} не принадлежит пользователю`)
     }
     const id = requestedId ?? this.newId()
     const existing = requestedId
-      ? this.db.prepare(`SELECT * FROM messages WHERE id = ? AND conversation_id = ?`).get(requestedId, conversationId) as MessageRow | undefined
+      ? (await this.sql.get(`SELECT * FROM messages WHERE id = ? AND conversation_id = ?`, [requestedId, conversationId])) as MessageRow | undefined
       : undefined
     if (existing) {
       return {
@@ -882,19 +822,17 @@ export class ChatRepo extends BaseRepo {
       }
     }
     const createdAt = this.now()
-    const insert = this.db.prepare(
+    const insert = this.sql.prepare(
       `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
     )
-    const touch = this.db.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
+    const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
-    this.db.transaction(() => {
-      const position = (this.db.prepare(
-        `SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`
-      ).get(conversationId) as { position: number }).position
-      insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position)
-      touch.run(createdAt, conversationId)
-    })()
+    await this.sql.transaction(async () => {
+      const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
+      await insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position)
+      await touch.run(createdAt, conversationId)
+    })
     return {
       id,
       conversationId,
@@ -910,32 +848,24 @@ export class ChatRepo extends BaseRepo {
   }
 
   /** Заменяет метаданные сообщения и возвращает актуальную запись. */
-  updateMessageMeta(userId: string, conversationId: string, messageId: string, meta: TurnMeta): Message {
-    if (!this.ownsConversation(userId, conversationId)) throw new Error('message not found')
-    const result = this.db
-      .prepare(`UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?`)
-      .run(Object.keys(meta).length ? JSON.stringify(meta) : null, messageId, conversationId)
+  async updateMessageMeta(userId: string, conversationId: string, messageId: string, meta: TurnMeta): Promise<Message> {
+    if (!(await this.ownsConversation(userId, conversationId))) throw new Error('message not found')
+    const result = await this.sql.run(`UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?`, [Object.keys(meta).length ? JSON.stringify(meta) : null, messageId, conversationId])
     if (!result.changes) throw new Error('message not found')
-    const message = this.listMessages(userId, conversationId).find((item) => item.id === messageId)
+    const message = (await this.listMessages(userId, conversationId)).find((item) => item.id === messageId)
     if (!message) throw new Error('message not found')
     return message
   }
 
   /** Удаляет одно сообщение по id (в рамках разговора пользователя). */
-  deleteMessage(userId: string, conversationId: string, messageId: string): void {
-    if (!this.ownsConversation(userId, conversationId)) return
-    this.db
-      .prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`)
-      .run(messageId, conversationId)
+  async deleteMessage(userId: string, conversationId: string, messageId: string): Promise<void> {
+    if (!(await this.ownsConversation(userId, conversationId))) return
+    await this.sql.run(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`, [messageId, conversationId])
   }
 
-  listMessages(userId: string, conversationId: string): Message[] {
-    if (!this.ownsConversation(userId, conversationId)) return []
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`
-      )
-      .all(conversationId) as MessageRow[]
+  async listMessages(userId: string, conversationId: string): Promise<Message[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) return []
+    const rows = (await this.sql.all(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`, [conversationId])) as MessageRow[]
     return rows.map((r) => ({
       id: r.id,
       conversationId: r.conversation_id,
@@ -962,13 +892,19 @@ export class ChatRepo extends BaseRepo {
    * Сообщения чатов отменённых задач исключаются до LIMIT/курсора; прямой поиск
    * внутри такого разговора намеренно не превращает его в стандартную выборку.
    */
-  searchMessages(userId: string, opts: MessageSearchOptions): MessageSearchResult {
-    const match = toFtsMatchQuery(opts.q ?? '')
+  async searchMessages(userId: string, opts: MessageSearchOptions): Promise<MessageSearchResult> {
+    const pg = this.sql.engine === 'postgres'
+    const match = pg ? toPgTsQuery(opts.q ?? '') : toFtsMatchQuery(opts.q ?? '')
     const limit = clampSearchLimit(opts.limit)
     // Индекса нет (сборка SQLite без FTS5) или искать нечего — пустая страница.
     if (!match || !this.ftsReady) return { hits: [], nextCursor: null, match }
 
-    const where = ['messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'", NOT_CANCELLED_TASK_CHAT]
+    // Релевантность: bm25 у FTS5 «меньше = лучше»; у Postgres ts_rank_cd «больше = лучше», поэтому
+    // берём её со знаком минус — порядок и курсор одни для обоих движков.
+    // ts_rank_cd отдаёт real (float4): приводим к double до знака минус, иначе значение, вернувшееся из
+    // курсора как float8, не равно исходному и страница теряет строки с тем же рангом.
+    const score = pg ? `(-(ts_rank_cd(m.text_tsv, to_tsquery('simple', ?))::double precision))` : 'bm25(messages_fts)'
+    const where = [pg ? `m.text_tsv @@ to_tsquery('simple', ?)` : 'messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'", NOT_CANCELLED_TASK_CHAT]
     const params: unknown[] = [match, userId]
     if (opts.projectId !== undefined) {
       if (opts.projectId === null) where.push('c.project_id IS NULL')
@@ -983,13 +919,16 @@ export class ChatRepo extends BaseRepo {
     }
     const cursor = decodeSearchCursor(opts.cursor)
     if (cursor) {
-      where.push('(bm25(messages_fts) > ? OR (bm25(messages_fts) = ? AND m.rowid > ?))')
-      params.push(cursor.score, cursor.score, cursor.rowid)
+      where.push(`(${score} > ? OR (${score} = ? AND m.rowid > ?))`)
+      params.push(...(pg ? [match, cursor.score, match, cursor.score, cursor.rowid] : [cursor.score, cursor.score, cursor.rowid]))
     }
+    const snippet = pg
+      ? `ts_headline('simple', m.text, to_tsquery('simple', ?), 'StartSel=<mark>, StopSel=</mark>, MaxWords=${SNIPPET_TOKENS}, MinWords=${Math.max(1, SNIPPET_TOKENS - 8)}, MaxFragments=1, FragmentDelimiter=…')`
+      : `snippet(messages_fts, 0, '<mark>', '</mark>', '…', ${SNIPPET_TOKENS})`
+    const from = pg ? 'FROM messages m' : 'FROM messages_fts\n           JOIN messages m      ON m.rowid = messages_fts.rowid'
+    const selectParams = pg ? [match, match] : []
 
-    const rows = this.db
-      .prepare(
-        `SELECT m.id            AS message_id,
+    const rows = (await this.sql.all(`SELECT m.id            AS message_id,
                 m.conversation_id,
                 m.role,
                 m.created_at,
@@ -997,16 +936,13 @@ export class ChatRepo extends BaseRepo {
                 m.rowid         AS rid,
                 c.title         AS conversation_title,
                 c.project_id,
-                bm25(messages_fts) AS score,
-                snippet(messages_fts, 0, '<mark>', '</mark>', '…', ${SNIPPET_TOKENS}) AS snippet
-           FROM messages_fts
-           JOIN messages m      ON m.rowid = messages_fts.rowid
+                ${score} AS score,
+                ${snippet} AS snippet
+           ${from}
            JOIN conversations c ON c.id = m.conversation_id
           WHERE ${where.join(' AND ')}
           ORDER BY score ASC, rid ASC
-          LIMIT ?`
-      )
-      .all(...params, limit) as MessageSearchRow[]
+          LIMIT ?`, [...selectParams, ...params, limit])) as MessageSearchRow[]
 
     const hits: MessageSearchHit[] = rows.map((r) => ({
       messageId: r.message_id,
@@ -1030,9 +966,11 @@ export class ChatRepo extends BaseRepo {
    * Подключает FTS5-индекс: DDL с триггерами + запуск бэкфилла истории.
    * Вызывается на каждом старте и обязана быть идемпотентной.
    */
-  setupMessagesFts(): void {
+  async setupMessagesFts(): Promise<void> {
+    // Postgres: индекс — вычисляемая tsvector-колонка messages.text_tsv (schemaPg.ts), бэкфилла нет.
+    if (this.sql.engine === 'postgres') { this.ftsReady = true; return }
     try {
-      this.db.exec(MESSAGES_FTS_SQL)
+      await this.sql.exec(MESSAGES_FTS_SQL)
       this.ftsReady = true
     } catch {
       // SQLite без FTS5: поиск по сообщениям недоступен, но сервер поднимается —
@@ -1040,34 +978,32 @@ export class ChatRepo extends BaseRepo {
       this.ftsReady = false
       return
     }
-    const state = this.ftsState()
+    const state = await this.ftsState()
     if (!state) {
       // Первый старт с индексом (новая БД или миграция боевой): историю
       // проиндексируем порциями, чтобы не держать старт на 100k сообщений.
-      this.db.prepare(`INSERT INTO fts_state (name, last_rowid, max_rowid, done) VALUES (?, 0, 0, 0)`).run(FTS_MESSAGES)
+      await this.sql.run(`INSERT INTO fts_state (name, last_rowid, max_rowid, done) VALUES (?, 0, 0, 0)`, [FTS_MESSAGES])
     }
-    this.scheduleFtsBackfill()
+    await this.scheduleFtsBackfill()
   }
 
-  private ftsState(): FtsStateRow | undefined {
-    return this.db
-      .prepare(`SELECT last_rowid AS lastRowid, max_rowid AS maxRowid, done, repairs FROM fts_state WHERE name = ?`)
-      .get(FTS_MESSAGES) as FtsStateRow | undefined
+  private async ftsState(): Promise<FtsStateRow | undefined> {
+    return (await this.sql.get(`SELECT last_rowid AS lastRowid, max_rowid AS maxRowid, done, repairs FROM fts_state WHERE name = ?`, [FTS_MESSAGES])) as FtsStateRow | undefined
   }
 
   /**
    * Ставит следующую порцию бэкфилла в очередь макротаска. Таймер `unref`-нут:
    * незаконченный бэкфилл не должен держать процесс живым (важно и в тестах).
    */
-  private scheduleFtsBackfill(): void {
+  private async scheduleFtsBackfill(): Promise<void> {
     if (this.closed || !this.ftsReady || this.ftsTimer) return
-    const state = this.ftsState()
+    const state = await this.ftsState()
     if (!state || state.done) return
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       this.ftsTimer = null
       try {
-        const res = this.backfillMessagesFts()
-        if (!res.done) this.scheduleFtsBackfill()
+        const res = await this.backfillMessagesFts()
+        if (!res.done) await this.scheduleFtsBackfill()
       } catch {
         // Бэкфилл — не критичный путь: недоиндексированная история просто не
         // находится. Сервер и запись сообщений при этом целы.
@@ -1085,38 +1021,34 @@ export class ChatRepo extends BaseRepo {
    * индекс дублями. Старт с нуля начинается с `delete-all`, поэтому повторный
    * запуск (или потерянное состояние) пересобирает индекс, а не удваивает его.
    */
-  backfillMessagesFts(chunk = FTS_BACKFILL_CHUNK): { indexed: number; done: boolean } {
+  async backfillMessagesFts(chunk = FTS_BACKFILL_CHUNK): Promise<{ indexed: number; done: boolean }> {
     if (this.closed || !this.ftsReady) return { indexed: 0, done: true }
-    const state = this.ftsState()
+    const state = await this.ftsState()
     if (!state || state.done) return { indexed: 0, done: true }
 
     let maxRowid = state.maxRowid
     if (state.lastRowid === 0) {
-      this.db.exec(`INSERT INTO messages_fts (messages_fts) VALUES ('delete-all')`)
-      maxRowid = (this.db.prepare(`SELECT COALESCE(MAX(rowid), 0) AS m FROM messages`).get() as { m: number }).m
-      this.db.prepare(`UPDATE fts_state SET max_rowid = ? WHERE name = ?`).run(maxRowid, FTS_MESSAGES)
+      await this.sql.exec(`INSERT INTO messages_fts (messages_fts) VALUES ('delete-all')`)
+      maxRowid = ((await this.sql.get(`SELECT COALESCE(MAX(rowid), 0) AS m FROM messages`)) as { m: number }).m
+      await this.sql.run(`UPDATE fts_state SET max_rowid = ? WHERE name = ?`, [maxRowid, FTS_MESSAGES])
     }
-    const rows = this.db
-      .prepare(`SELECT rowid AS rid, text FROM messages WHERE rowid > ? AND rowid <= ? ORDER BY rowid LIMIT ?`)
-      .all(state.lastRowid, maxRowid, chunk) as Array<{ rid: number; text: string }>
+    const rows = (await this.sql.all(`SELECT rowid AS rid, text FROM messages WHERE rowid > ? AND rowid <= ? ORDER BY rowid LIMIT ?`, [state.lastRowid, maxRowid, chunk])) as Array<{ rid: number; text: string }>
 
-    const insert = this.db.prepare(`INSERT INTO messages_fts (rowid, text) VALUES (?, ?)`)
+    const insert = this.sql.prepare(`INSERT INTO messages_fts (rowid, text) VALUES (?, ?)`)
     const done = rows.length < chunk
     const lastRowid = rows.length ? rows[rows.length - 1].rid : state.lastRowid
-    this.db.transaction(() => {
-      for (const r of rows) insert.run(r.rid, r.text)
-      this.db
-        .prepare(`UPDATE fts_state SET last_rowid = ?, done = ? WHERE name = ?`)
-        .run(lastRowid, done ? 1 : 0, FTS_MESSAGES)
-    })()
-    if (done && rows.length > 0) this.verifyMessagesFts()
+    await this.sql.transaction(async () => {
+      for (const r of rows) await insert.run(r.rid, r.text)
+      await this.sql.run(`UPDATE fts_state SET last_rowid = ?, done = ? WHERE name = ?`, [lastRowid, done ? 1 : 0, FTS_MESSAGES])
+    })
+    if (done && rows.length > 0) await this.verifyMessagesFts()
     return { indexed: rows.length, done }
   }
 
   /** Догоняет бэкфилл целиком (тесты и bench: им нужен готовый индекс). */
-  ensureMessagesIndexed(): void {
+  async ensureMessagesIndexed(): Promise<void> {
     for (let i = 0; i < FTS_BACKFILL_MAX_CHUNKS; i++) {
-      if (this.backfillMessagesFts().done) return
+      if ((await this.backfillMessagesFts()).done) return
     }
   }
 
@@ -1125,37 +1057,35 @@ export class ChatRepo extends BaseRepo {
    * оставить в индексе мусор (триггер удаляет то, чего там ещё нет), поэтому
    * один раз честно пересобираем — иначе поиск начнёт врать молча.
    */
-  private verifyMessagesFts(): void {
-    const state = this.ftsState()
+  private async verifyMessagesFts(): Promise<void> {
+    const state = await this.ftsState()
     if (!state) return
     try {
-      this.db.exec(`INSERT INTO messages_fts (messages_fts) VALUES ('integrity-check')`)
+      await this.sql.exec(`INSERT INTO messages_fts (messages_fts) VALUES ('integrity-check')`)
     } catch {
       if (state.repairs >= FTS_MAX_REPAIRS) return
-      this.db
-        .prepare(`UPDATE fts_state SET last_rowid = 0, max_rowid = 0, done = 0, repairs = repairs + 1 WHERE name = ?`)
-        .run(FTS_MESSAGES)
-      this.scheduleFtsBackfill()
+      await this.sql.run(`UPDATE fts_state SET last_rowid = 0, max_rowid = 0, done = 0, repairs = repairs + 1 WHERE name = ?`, [FTS_MESSAGES])
+      await this.scheduleFtsBackfill()
     }
   }
 
   /** Идемпотентно переносит legacy-разговоры desktop, сохраняя id и даты. */
-  importDesktopData(userId: string, bundle: DesktopMigrationBundle): DesktopMigrationResult {
-    const insertConversation = this.db.prepare(`INSERT OR IGNORE INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_provider, llm_model) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '[]', NULL, NULL)`)
-    const insertMessage = this.db.prepare(`INSERT OR IGNORE INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  async importDesktopData(userId: string, bundle: DesktopMigrationBundle): Promise<DesktopMigrationResult> {
+    const insertConversation = this.sql.prepare(`INSERT OR IGNORE INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_provider, llm_model) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '[]', NULL, NULL)`)
+    const insertMessage = this.sql.prepare(`INSERT OR IGNORE INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     let conversationsImported = 0
     let messagesImported = 0
-    this.db.transaction(() => {
+    await this.sql.transaction(async () => {
       for (const item of bundle.conversations) {
         const c = item.conversation
-        conversationsImported += Number(insertConversation.run(c.id, c.title, c.createdAt, c.updatedAt, c.claudeSessionId, userId, c.execTarget).changes)
-        if (!this.ownsConversation(userId, c.id)) continue
+        conversationsImported += Number((await insertConversation.run(c.id, c.title, c.createdAt, c.updatedAt, c.claudeSessionId, userId, c.execTarget)).changes)
+        if (!(await this.ownsConversation(userId, c.id))) continue
         for (const m of item.messages) {
           if (m.conversationId !== c.id) continue
-          messagesImported += Number(insertMessage.run(m.id, c.id, m.role, m.text, m.time, m.createdAt, m.engine ?? null, m.meta ? JSON.stringify(m.meta) : null, m.execTarget ?? null).changes)
+          messagesImported += Number((await insertMessage.run(m.id, c.id, m.role, m.text, m.time, m.createdAt, m.engine ?? null, m.meta ? JSON.stringify(m.meta) : null, m.execTarget ?? null)).changes)
         }
       }
-    })()
+    })
     return { conversationsImported, messagesImported }
   }
 
@@ -1164,11 +1094,11 @@ export class ChatRepo extends BaseRepo {
    * все беседы, включая чаты завершённых задач: их скрытие — фильтр сайдбара
    * владельца, а не свойство данных.
    */
-  conversationCounts(): Map<string, number> {
-    const rows = this.db.prepare(`SELECT c.user_id AS user, COUNT(*) AS total FROM conversations c
+  async conversationCounts(): Promise<Map<string, number>> {
+    const rows = (await this.sql.all(`SELECT c.user_id AS user, COUNT(*) AS total FROM conversations c
       WHERE (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader', 'make'))
         AND ${NOT_CANCELLED_TASK_CHAT}
-      GROUP BY c.user_id`).all() as { user: string; total: number }[]
+      GROUP BY c.user_id`)) as { user: string; total: number }[]
     return new Map(rows.map((row) => [row.user, row.total]))
   }
 
@@ -1177,45 +1107,46 @@ export class ChatRepo extends BaseRepo {
    * моделям + итог. Считается из meta ai-сообщений (JSON1 json_extract). Бакеты
    * времени — в UTC (created_at хранится в мс).
    */
-  usageReport(userId: string, unit: UsageUnit, from?: number, to?: number, conversationId?: string): UsageReport {
-    const fmt = unit === 'hour' ? '%Y-%m-%d %H:00' : unit === 'week' ? '%Y-W%W' : '%Y-%m-%d'
+  async usageReport(userId: string, unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<UsageReport> {
+    const j = this.j
     // Два независимых числа: CLI сообщает фактическую цену не для всех движков,
     // а редактируемый прайс пересчитывает все ответы с известной строкой.
+    const n = (key: string) => j.num('m.meta', key)
     const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
-      MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
-      COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+      MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+      COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
+      COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
+      COALESCE(${n('outputTokens')},0) * mp.output_per_million
     ) / 1000000.0 END`
     const sums = `
       COUNT(*) AS messages,
-      COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
+      COALESCE(SUM(${n('inputTokens')}),0) AS inputTokens,
+      COALESCE(SUM(${n('outputTokens')}),0) AS outputTokens,
+      COALESCE(SUM(${n('cacheReadTokens')}),0) AS cacheReadTokens,
+      COALESCE(SUM(${n('costUsd')}),0) AS costUsd,
       COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
-      COALESCE(SUM(CASE WHEN json_extract(m.meta,'$.interrupted') THEN 1 ELSE 0 END),0) AS interrupted,
-      MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
+      COALESCE(SUM(CASE WHEN ${j.truthy('m.meta', 'interrupted')} THEN 1 ELSE 0 END),0) AS interrupted,
+      MAX(CASE WHEN ${n('costUsd')} IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const dateWhere = `${from !== undefined ? 'AND m.created_at >= @from' : ''}
       ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}
       ${conversationId ? 'AND c.id = @conversationId' : ''}`
     const bind = { userId, ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), ...(conversationId ? { conversationId } : {}) }
     const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
-      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
+      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(${j.text('m.meta', 'model')}, c.llm_model)`
 
     type SqlUsage<T extends UsageTotals> = Omit<T, 'costIncomplete'> & { costIncomplete?: number }
     const complete = <T extends UsageTotals>(row: SqlUsage<T>): T => ({ ...row, costIncomplete: Boolean(row.costIncomplete) } as T)
-    const totals = complete(this.db.prepare(`SELECT ${sums} ${joins} WHERE ${where}`).get(bind) as SqlUsage<UsageTotals>)
-    const byBucket = (this.db.prepare(`SELECT strftime('${fmt}', m.created_at/1000, 'unixepoch') AS bucket, ${sums}
-      ${joins} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`).all(bind) as SqlUsage<UsageBucket>[]).map((row) => complete<UsageBucket>(row))
-    const byModel = (this.db.prepare(`SELECT COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums}
-      ${joins} WHERE ${where} GROUP BY COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') ORDER BY outputTokens DESC`).all(bind) as SqlUsage<UsageByModel>[]).map((row) => complete<UsageByModel>(row))
+    const totals = complete((await this.sql.get(`SELECT ${sums} ${joins} WHERE ${where}`, [bind])) as SqlUsage<UsageTotals>)
+    const byBucket = ((await this.sql.all(`SELECT ${j.bucket('m.created_at', unit)} AS bucket, ${sums}
+      ${joins} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`, [bind])) as SqlUsage<UsageBucket>[]).map((row) => complete<UsageBucket>(row))
+    const byModel = ((await this.sql.all(`SELECT COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums}
+      ${joins} WHERE ${where} GROUP BY COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as SqlUsage<UsageByModel>[]).map((row) => complete<UsageByModel>(row))
     // Фильтр разговоров всегда строится для всего выбранного периода, чтобы после
     // выбора одного разговора остальные варианты не исчезали из селекта.
     const conversationWhere = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}`
-    const byConversation = (this.db.prepare(`SELECT c.id AS conversationId, c.title, ${sums}
-      ${joins} WHERE ${conversationWhere} GROUP BY c.id, c.title ORDER BY costUsd DESC, c.updated_at DESC`).all(bind) as SqlUsage<UsageByConversation>[]).map((row) => complete<UsageByConversation>(row))
+    const byConversation = ((await this.sql.all(`SELECT c.id AS conversationId, c.title, ${sums}
+      ${joins} WHERE ${conversationWhere} GROUP BY c.id, c.title ORDER BY costUsd DESC, c.updated_at DESC`, [bind])) as SqlUsage<UsageByConversation>[]).map((row) => complete<UsageByConversation>(row))
     return { unit, conversationId: conversationId ?? null, totals, byBucket, byModel, byConversation }
   }
 
@@ -1223,31 +1154,33 @@ export class ChatRepo extends BaseRepo {
    * Один SQL-проход для дашборда: итоги и использованные модели всех пользователей.
    * В отличие от вызова usageReport на каждого пользователя не создаёт N запросов.
    */
-  usageSummary(from?: number, to?: number): import('@voicechat/shared').UserUsageSummary[] {
+  async usageSummary(from?: number, to?: number): Promise<import('@voicechat/shared').UserUsageSummary[]> {
+    const j = this.j
+    const n = (key: string) => j.num('m.meta', key)
     const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
-      MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
-      COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+      MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+      COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
+      COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
+      COALESCE(${n('outputTokens')},0) * mp.output_per_million
     ) / 1000000.0 END`
     const sums = `COUNT(*) AS messages,
-      COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
+      COALESCE(SUM(${n('inputTokens')}),0) AS inputTokens,
+      COALESCE(SUM(${n('outputTokens')}),0) AS outputTokens,
+      COALESCE(SUM(${n('cacheReadTokens')}),0) AS cacheReadTokens,
+      COALESCE(SUM(${n('costUsd')}),0) AS costUsd,
       COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
-      COALESCE(SUM(CASE WHEN json_extract(m.meta,'$.interrupted') THEN 1 ELSE 0 END),0) AS interrupted,
-      MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
+      COALESCE(SUM(CASE WHEN ${j.truthy('m.meta', 'interrupted')} THEN 1 ELSE 0 END),0) AS interrupted,
+      MAX(CASE WHEN ${n('costUsd')} IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const where = `m.role = 'ai' AND m.meta IS NOT NULL ${from !== undefined ? 'AND m.created_at >= @from' : ''} ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const bind = { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) }
     const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
-      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
+      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(${j.text('m.meta', 'model')}, c.llm_model)`
     type Row = UsageTotals & { name: string; model?: string; costIncomplete?: number }
     const complete = (row: Row): UsageTotals => ({ inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, costUsd: row.costUsd, costFromPrices: row.costFromPrices, messages: row.messages, interrupted: row.interrupted ?? 0, costIncomplete: Boolean(row.costIncomplete) })
-    const totals = this.db.prepare(`SELECT c.user_id AS name, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id`).all(bind) as Row[]
-    const models = this.db.prepare(`SELECT c.user_id AS name, COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id, model ORDER BY outputTokens DESC`).all(bind) as Row[]
+    const totals = (await this.sql.all(`SELECT c.user_id AS name, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id`, [bind])) as Row[]
+    const models = (await this.sql.all(`SELECT c.user_id AS name, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as Row[]
     const byName = new Map<string, import('@voicechat/shared').UserUsageSummary>()
-    for (const user of this.repos.identity.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 0, messages: 0, interrupted: 0, costIncomplete: false }, byModel: [] })
+    for (const user of await this.repos.identity.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 0, messages: 0, interrupted: 0, costIncomplete: false }, byModel: [] })
     // Строка расхода без учётки в users — след удалённого пользователя; такую
     // сводку показывать некому, но и падать на ней сводке дашборда нельзя.
     for (const row of totals) { const summary = byName.get(row.name); if (summary) summary.totals = complete(row) }
@@ -1255,9 +1188,9 @@ export class ChatRepo extends BaseRepo {
     return [...byName.values()]
   }
 
-  getConversationWorkspace(conversationId: string): WorkspaceView | null {
-    const row = this.db.prepare(`SELECT mode, base_sha, branch, repository_path, state, diagnostic
-      FROM conversation_workspaces WHERE conversation_id = ?`).get(conversationId) as {
+  async getConversationWorkspace(conversationId: string): Promise<WorkspaceView | null> {
+    const row = (await this.sql.get(`SELECT mode, base_sha, branch, repository_path, state, diagnostic
+      FROM conversation_workspaces WHERE conversation_id = ?`, [conversationId])) as {
         mode: WorkspaceView['mode']; base_sha: string; branch: string; repository_path: string
         state: WorkspaceView['state']; diagnostic: string | null
       } | undefined
@@ -1272,31 +1205,28 @@ export class ChatRepo extends BaseRepo {
     } : null
   }
 
-  saveConversationWorkspace(binding: {
+  async saveConversationWorkspace(binding: {
     conversationId: string; projectId: string; machineId: string; storageId: string
     mode: 'chat_workspace' | 'task_workspace'; baseSha: string; branch: string
     repositoryPath: string; state: WorkspaceView['state']; diagnostic?: string | null
-  }): WorkspaceView {
+  }): Promise<WorkspaceView> {
     if (!/^[0-9a-f]{40}$/i.test(binding.baseSha)) throw new Error('Некорректный baseSha workspace')
-    this.db.prepare(`INSERT INTO conversation_workspaces
+    await this.sql.run(`INSERT INTO conversation_workspaces
       (conversation_id,project_id,machine_id,storage_id,mode,base_sha,branch,repository_path,state,diagnostic,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(conversation_id) DO UPDATE SET
         project_id=excluded.project_id,machine_id=excluded.machine_id,storage_id=excluded.storage_id,
         mode=excluded.mode,base_sha=excluded.base_sha,branch=excluded.branch,
         repository_path=excluded.repository_path,state=excluded.state,
-        diagnostic=excluded.diagnostic,updated_at=excluded.updated_at`).run(
-          binding.conversationId,binding.projectId,binding.machineId,binding.storageId,binding.mode,
-          binding.baseSha,binding.branch,binding.repositoryPath,binding.state,binding.diagnostic ?? null,this.now()
-        )
-    return this.getConversationWorkspace(binding.conversationId)!
+        diagnostic=excluded.diagnostic,updated_at=excluded.updated_at`, [binding.conversationId, binding.projectId, binding.machineId, binding.storageId, binding.mode, binding.baseSha, binding.branch, binding.repositoryPath, binding.state, binding.diagnostic ?? null, this.now()])
+    return (await this.getConversationWorkspace(binding.conversationId))!
   }
 
-  clearConversationWorkspace(conversationId: string): boolean {
-    return this.db.prepare('DELETE FROM conversation_workspaces WHERE conversation_id = ?').run(conversationId).changes > 0
+  async clearConversationWorkspace(conversationId: string): Promise<boolean> {
+    return (await this.sql.run('DELETE FROM conversation_workspaces WHERE conversation_id = ?', [conversationId])).changes > 0
   }
 
-  private conversationCosts(rows: ConversationRow[]): Map<string, Pick<Conversation, 'costUsd' | 'costStatus'>> {
+  private async conversationCosts(rows: ConversationRow[]): Promise<Map<string, Pick<Conversation, 'costUsd' | 'costStatus'>>> {
     const unknown = (): Pick<Conversation, 'costUsd' | 'costStatus'> => ({ costUsd: null, costStatus: 'unknown' })
     const costs = new Map(rows.map((row) => [row.id, unknown()]))
     if (rows.length === 0) return costs
@@ -1304,7 +1234,7 @@ export class ChatRepo extends BaseRepo {
       // Считаем только протухшие беседы: у остальных берём кэш, посчитанный на
       // прошлом показе. Полный агрегат сканирует все AI-сообщения беседы и
       // разбирает JSON каждого — на списке это 95% его времени.
-      const stamp = this.repos.llm.modelPricesStamp()
+      const stamp = await this.repos.llm.modelPricesStamp()
       const stale: string[] = []
       for (const row of rows) {
         if (row.cost_dirty === 0 && row.cost_prices_stamp === stamp && row.cost_status) {
@@ -1314,36 +1244,35 @@ export class ChatRepo extends BaseRepo {
       if (stale.length === 0) return costs
       const ids = stale
       const placeholders = ids.map(() => '?').join(',')
-      const results = this.db.prepare(`SELECT
+      const j = this.j
+      const n = (key: string) => j.num('m.meta', key)
+      const numOrMissing = (key: string) => `(${j.isMissing('m.meta', key)} OR ${j.isNumber('m.meta', key)})`
+      const known = `${j.valid('m.meta')}
+          AND ${j.isNumber('m.meta', 'inputTokens')}
+          AND ${j.isNumber('m.meta', 'outputTokens')}
+          AND ${numOrMissing('cacheReadTokens')}
+          AND ${numOrMissing('cacheCreationTokens')}
+          AND mp.model IS NOT NULL`
+      const results = (await this.sql.all(`SELECT
         m.conversation_id AS conversation_id,
         COUNT(*) AS ai_count,
-        SUM(CASE WHEN json_valid(m.meta)
-          AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
-          AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
-          AND (json_type(m.meta, '$.cacheReadTokens') IS NULL OR json_type(m.meta, '$.cacheReadTokens') IN ('integer', 'real'))
-          AND (json_type(m.meta, '$.cacheCreationTokens') IS NULL OR json_type(m.meta, '$.cacheCreationTokens') IN ('integer', 'real'))
-          AND mp.model IS NOT NULL THEN 1 ELSE 0 END) AS known_count,
-        SUM(CASE WHEN json_valid(m.meta)
-          AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
-          AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
-          AND (json_type(m.meta, '$.cacheReadTokens') IS NULL OR json_type(m.meta, '$.cacheReadTokens') IN ('integer', 'real'))
-          AND (json_type(m.meta, '$.cacheCreationTokens') IS NULL OR json_type(m.meta, '$.cacheCreationTokens') IN ('integer', 'real'))
-          AND mp.model IS NOT NULL THEN (
-            MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
-            COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
-            COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
-            COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+        SUM(CASE WHEN ${known} THEN 1 ELSE 0 END) AS known_count,
+        SUM(CASE WHEN ${known} THEN (
+            MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+            COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
+            COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
+            COALESCE(${n('outputTokens')},0) * mp.output_per_million
           ) / 1000000.0 END) AS cost_usd
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN model_prices mp
           ON mp.provider = m.engine
-         AND mp.model = COALESCE(CASE WHEN json_valid(m.meta) THEN json_extract(m.meta,'$.model') END, c.llm_model)
+         AND mp.model = COALESCE(CASE WHEN ${j.valid('m.meta')} THEN ${j.text('m.meta', 'model')} END, c.llm_model)
         WHERE m.conversation_id IN (${placeholders}) AND m.role = 'ai'
-        GROUP BY m.conversation_id`).all(...ids) as Array<{
+        GROUP BY m.conversation_id`, [...ids])) as Array<{
           conversation_id: string; ai_count: number; known_count: number | null; cost_usd: number | null
         }>
-      const remember = this.db.prepare(
+      const remember = this.sql.prepare(
         `UPDATE conversations SET cost_usd = ?, cost_status = ?, cost_prices_stamp = ?, cost_dirty = 0 WHERE id = ?`
       )
       const computed = new Map(results.map((result) => [result.conversation_id, result]))
@@ -1358,7 +1287,7 @@ export class ChatRepo extends BaseRepo {
         costs.set(id, { costUsd, costStatus })
         // Беседы без единого AI-хода тоже кэшируем: иначе пустые чаты гоняли бы
         // агрегат на каждом показе списка.
-        remember.run(costUsd, costStatus, stamp, id)
+        await remember.run(costUsd, costStatus, stamp, id)
       }
     } catch {
       // Историческое повреждение meta или ошибка расчёта не ломают список бесед.
@@ -1366,12 +1295,12 @@ export class ChatRepo extends BaseRepo {
     return costs
   }
 
-  private conversationCost(row: ConversationRow): Pick<Conversation, 'costUsd' | 'costStatus'> {
-    return this.conversationCosts([row]).get(row.id)!
+  private async conversationCost(row: ConversationRow): Promise<Pick<Conversation, 'costUsd' | 'costStatus'>> {
+    return (await this.conversationCosts([row])).get(row.id)!
   }
 
-  private mapConversation(row: ConversationRow, messageCount: number, prefetchedCost?: Pick<Conversation, 'costUsd' | 'costStatus'>): Conversation {
-    const cost = prefetchedCost ?? this.conversationCost(row)
+  private async mapConversation(row: ConversationRow, messageCount: number, prefetchedCost?: Pick<Conversation, 'costUsd' | 'costStatus'>): Promise<Conversation> {
+    const cost = prefetchedCost ?? await this.conversationCost(row)
     return {
       id: row.id,
       title: row.title,
@@ -1381,7 +1310,7 @@ export class ChatRepo extends BaseRepo {
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
       workdir: row.workdir,
-      workspace: this.getConversationWorkspace(row.id),
+      workspace: await this.getConversationWorkspace(row.id),
       skillNames: (() => {
         try {
           const value = JSON.parse(row.skill_names ?? '[]') as unknown
@@ -1406,7 +1335,7 @@ export class ChatRepo extends BaseRepo {
       // Дефолт — полная автономия: ассистент задуман действующим, а не советующим.
       assistantAutonomy: row.assistant_autonomy === 'confirm' ? 'confirm' : 'auto',
       previewUrl: row.preview_url ?? null,
-      projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
+      projectPreviewUrl: row.project_id ? (((await this.sql.get(`SELECT preview_url FROM projects WHERE id = ?`, [row.project_id])) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
       status: normStatus(row.status),
       ...cost,
@@ -1415,28 +1344,24 @@ export class ChatRepo extends BaseRepo {
   }
 
   /** Режим применения мутаций канбан-ассистентом; тумблер «Автопилот» в шапке. */
-  setConversationAutonomy(userId: string, convId: string, autonomy: 'auto' | 'confirm'): Conversation | null {
-    const conversation = this.getConversation(userId, convId)
+  async setConversationAutonomy(userId: string, convId: string, autonomy: 'auto' | 'confirm'): Promise<Conversation | null> {
+    const conversation = await this.getConversation(userId, convId)
     if (!conversation) return null
-    this.db.prepare(`UPDATE conversations SET assistant_autonomy = ? WHERE id = ? AND user_id = ?`).run(autonomy, convId, userId)
-    return this.getConversation(userId, convId)
+    await this.sql.run(`UPDATE conversations SET assistant_autonomy = ? WHERE id = ? AND user_id = ?`, [autonomy, convId, userId])
+    return await this.getConversation(userId, convId)
   }
 
-  setConversationProject(userId: string, convId: string, projectId: string | null): Conversation | null {
-    const current = this.getConversation(userId, convId)
+  async setConversationProject(userId: string, convId: string, projectId: string | null): Promise<Conversation | null> {
+    const current = await this.getConversation(userId, convId)
     if (!current) return null
     if (projectId === null) {
-      this.db.prepare(`UPDATE conversations SET project_id = NULL WHERE id = ? AND user_id = ?`).run(convId, userId)
-      return this.getConversation(userId, convId)
+      await this.sql.run(`UPDATE conversations SET project_id = NULL WHERE id = ? AND user_id = ?`, [convId, userId])
+      return await this.getConversation(userId, convId)
     }
-    const project = this.repos.projects.getProject(userId, projectId)
+    const project = await this.repos.projects.getProject(userId, projectId)
     if (!project) return null // не участник / проект не найден
-    this.db
-      .prepare(
-        `UPDATE conversations SET project_id = ?, exec_target = NULL, workdir = NULL, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`
-      )
-      .run(projectId, JSON.stringify(project.skills), convId, userId)
-    return this.getConversation(userId, convId)
+    await this.sql.run(`UPDATE conversations SET project_id = ?, exec_target = NULL, workdir = NULL, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`, [projectId, JSON.stringify(project.skills), convId, userId])
+    return await this.getConversation(userId, convId)
   }
 
   /**
@@ -1447,31 +1372,23 @@ export class ChatRepo extends BaseRepo {
    * Имя по умолчанию — «Задача <заголовок>»: в общем списке чатов такой чат сразу
    * отличим от обычного разговора. Дальше его можно переименовать вручную.
    */
-  openOrCreateTaskChat(userId: string, projectId: string, taskId: string): Conversation | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    const task = this.repos.tasks.getTask(projectId, taskId)
+  async openOrCreateTaskChat(userId: string, projectId: string, taskId: string): Promise<Conversation | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    const task = await this.repos.tasks.getTask(projectId, taskId)
     if (!task) return null
     // Связанный чат хранит только собственное переопределение; null означает
     // динамическое наследование эффективной настройки проекта.
-    const existing = this.db
-      .prepare(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`)
-      .get(taskId, userId) as { id: string } | undefined
+    const existing = (await this.sql.get(`SELECT id FROM conversations WHERE task_id = ? AND user_id = ? ORDER BY created_at ASC LIMIT 1`, [taskId, userId])) as { id: string } | undefined
     if (existing) {
-      this.db
-        .prepare(`UPDATE conversations SET updated_at = ?, scope = 'kanban', project_id = ? WHERE id = ? AND user_id = ?`)
-        .run(this.now(), projectId, existing.id, userId)
-      return this.getConversation(userId, existing.id)
+      await this.sql.run(`UPDATE conversations SET updated_at = ?, scope = 'kanban', project_id = ? WHERE id = ? AND user_id = ?`, [this.now(), projectId, existing.id, userId])
+      return await this.getConversation(userId, existing.id)
     }
     const id = this.newId()
     const ts = this.now()
     const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
-    this.db
-      .prepare(
-        `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id, scope)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'kanban')`
-      )
-      .run(id, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId)
-    return this.getConversation(userId, id)
+    await this.sql.run(`INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id, scope)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'kanban')`, [id, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId])
+    return await this.getConversation(userId, id)
   }
 
   /**
@@ -1480,27 +1397,23 @@ export class ChatRepo extends BaseRepo {
    * иначе связанный с карточкой макет открывался бы только у своего автора.
    */
   /** Проект, к которому привязан Make-чат (роуты Make знают только conversationId). */
-  makeConversationProject(conversationId: string): string | null {
-    const conv = this.db
-      .prepare(`SELECT project_id FROM conversations WHERE id = ? AND assistant_kind = ?`)
-      .get(conversationId, MAKE_KIND) as { project_id: string | null } | undefined
+  async makeConversationProject(conversationId: string): Promise<string | null> {
+    const conv = (await this.sql.get(`SELECT project_id FROM conversations WHERE id = ? AND assistant_kind = ?`, [conversationId, MAKE_KIND])) as { project_id: string | null } | undefined
     return conv?.project_id ?? null
   }
 
-  isMakeProjectViewer(userId: string, conversationId: string): boolean {
-    const conv = this.db
-      .prepare(`SELECT project_id FROM conversations WHERE id = ? AND assistant_kind = ?`)
-      .get(conversationId, MAKE_KIND) as { project_id: string | null } | undefined
-    return Boolean(conv?.project_id && this.repos.projects.isProjectMember(userId, conv.project_id))
+  async isMakeProjectViewer(userId: string, conversationId: string): Promise<boolean> {
+    const conv = (await this.sql.get(`SELECT project_id FROM conversations WHERE id = ? AND assistant_kind = ?`, [conversationId, MAKE_KIND])) as { project_id: string | null } | undefined
+    return Boolean(conv?.project_id && await this.repos.projects.isProjectMember(userId, conv.project_id))
   }
 
   /** Каскад удаления аккаунта: все разговоры пользователя; messages/speakers уйдут по ON DELETE CASCADE. */
-  deleteConversationsOfUser(userId: string): void {
-    this.db.prepare(`DELETE FROM conversations WHERE user_id = ?`).run(userId)
+  async deleteConversationsOfUser(userId: string): Promise<void> {
+    await this.sql.run(`DELETE FROM conversations WHERE user_id = ?`, [userId])
   }
 
   /** Машина удаляется — её рабочие каталоги у разговоров больше не существуют (зовётся из machines.deleteAgent). */
-  clearConversationWorkspacesOfMachine(machineId: string): void {
-    this.db.prepare(`DELETE FROM conversation_workspaces WHERE machine_id = ?`).run(machineId)
+  async clearConversationWorkspacesOfMachine(machineId: string): Promise<void> {
+    await this.sql.run(`DELETE FROM conversation_workspaces WHERE machine_id = ?`, [machineId])
   }
 }

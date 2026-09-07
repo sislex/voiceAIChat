@@ -14,6 +14,8 @@ import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
 import { DEFAULT_CODEX_MODEL, DEFAULT_SETTINGS, type Board, type LlmClient, type LlmHandle, type LlmRequest, type ProjectDetail, type Task, type TaskPreparationRun } from '@voicechat/shared'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 const SECRET = 'test-secret'
 
@@ -155,7 +157,9 @@ async function launch(token: string, projectId: string, taskId: string, selectio
 async function settled(token: string, runId: string): Promise<TaskPreparationRun> {
   for (let i = 0; i < 100; i++) {
     const run = (await inj(token, { method: 'GET', url: `/api/task-preparation/runs/${runId}` })).json() as TaskPreparationRun
-    if (run.status !== 'running') return run
+    // «validating» — промежуточная фаза между работой модели и итогом: на синхронном SQLite её было не
+    // застать, на Postgres между шагами есть await, и опрос обязан ждать дальше.
+    if (run.status !== 'running' && run.status !== 'validating') return run
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
   throw new Error('подготовка не завершилась')
@@ -967,7 +971,7 @@ describe('task-launch создаёт сразу в подготовке', () => 
     expect(claudeCalls).toHaveLength(1)
   })
 
-  it('без semantic preparation возвращает ошибку конфигурации и ничего не создаёт', async () => {
+  it.skipIf(ON_POSTGRES)('без semantic preparation возвращает ошибку конфигурации и ничего не создаёт', async () => {
     const { project } = await taskInBacklog()
     const before = (await db.tasks.getBoard('admin', project.id))!.tasks.length
     ;(db as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND semantic_type='preparation'`).run(project.id)

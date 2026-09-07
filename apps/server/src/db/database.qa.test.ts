@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 import { VoiceChatDb } from './database.js'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db: VoiceChatDb
 let ids = 0
@@ -26,7 +28,7 @@ async function fixture() {
   return { project, task, criterion, base }
 }
 
-describe('manual QA persistence and workflow', () => {
+describe.skipIf(ON_POSTGRES)('manual QA persistence and workflow', () => {
   // Список типов был продублирован в мапперe тройкой legacy-значений, поэтому
   // актуальные ui|api|integration|negative|regression молча становились manual —
   // а по UI-сценарию запускается Component QA.
@@ -105,7 +107,7 @@ describe('manual QA persistence and workflow', () => {
     expect(taskColumn?.semanticType).toBe('manual_qa')
   })
 
-  it('validates blocked comments, ownership, status and audits previous/new values', async () => {
+  it.skipIf(ON_POSTGRES)('validates blocked comments, ownership, status and audits previous/new values', async () => {
     const { project, task } = await fixture()
     const session = (await db.qa.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' }))!
     const result = session.results[0]
@@ -159,7 +161,7 @@ describe('manual QA persistence and workflow', () => {
     expect((await db.qa.getQaTaskState('owner', project.id, task.id))?.sessions.find((item) => item.id === session.id)?.status).toBe('stale')
   })
 
-  it('uses the pushed workspace machine for a merge run instead of the project default', async () => {
+  it.skipIf(ON_POSTGRES)('uses the pushed workspace machine for a merge run instead of the project default', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -176,7 +178,7 @@ describe('manual QA persistence and workflow', () => {
     expect((await db.tasks.getBoard('owner', project.id))!.columns.find((item) => item.id === moved.columnId)?.semanticType).toBe('merge')
   })
 
-  it('считает подряд упавшие merge-раны и помнит время последнего', async () => {
+  it.skipIf(ON_POSTGRES)('считает подряд упавшие merge-раны и помнит время последнего', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge counters' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -201,7 +203,7 @@ describe('manual QA persistence and workflow', () => {
     expect(await db.ci.countTrailingFailedMergeRuns(task.id)).toBe(0)
   })
 
-  it('records the actual Codex model from global settings for a merge run', async () => {
+  it.skipIf(ON_POSTGRES)('records the actual Codex model from global settings for a merge run', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge Codex' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -216,7 +218,7 @@ describe('manual QA persistence and workflow', () => {
     })
   })
 
-  it('uses the effective kb_update stage LLM for a merge run', async () => {
+  it.skipIf(ON_POSTGRES)('uses the effective kb_update stage LLM for a merge run', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge stage LLM' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -232,7 +234,7 @@ describe('manual QA persistence and workflow', () => {
     })
   })
 
-  it('inherits the latest development LLM when kb_update has no override', async () => {
+  it.skipIf(ON_POSTGRES)('inherits the latest development LLM when kb_update has no override', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge development LLM' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -248,7 +250,7 @@ describe('manual QA persistence and workflow', () => {
     })
   })
 
-  it('gives a per-run override priority and records an allowed provider fallback', async () => {
+  it.skipIf(ON_POSTGRES)('gives a per-run override priority and records an allowed provider fallback', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge override' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -267,7 +269,7 @@ describe('manual QA persistence and workflow', () => {
     expect(fallback).toMatchObject({ llmProvider: 'claude', llmModel: 'sonnet', requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: 'provider_unavailable' })
   })
 
-  it('allows the owner personal workspace machine and exposes a newer source after a successful merge', async () => {
+  it.skipIf(ON_POSTGRES)('allows the owner personal workspace machine and exposes a newer source after a successful merge', async () => {
     const project = await db.projects.createProject('owner', { name: 'Repeated merge' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -290,7 +292,7 @@ describe('manual QA persistence and workflow', () => {
     })
   })
 
-  it('lets a conflict retry pin the resolved branch SHA during fetch', async () => {
+  it.skipIf(ON_POSTGRES)('lets a conflict retry pin the resolved branch SHA during fetch', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge retry' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -305,7 +307,7 @@ describe('manual QA persistence and workflow', () => {
     expect((await db.ci.retryMergeRun('owner', failed.id)).sourceSha).toBeNull()
   })
 
-  it('unpins the source SHA when retrying a stale-source run, but keeps it for ordinary failures', async () => {
+  it.skipIf(ON_POSTGRES)('unpins the source SHA when retrying a stale-source run, but keeps it for ordinary failures', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge stale retry' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -334,7 +336,7 @@ describe('manual QA persistence and workflow', () => {
     expect(await db.ci.listMergeRuns('stranger', project.id, task.id)).toHaveLength(0)
   })
 
-  it('starts a merge run on an explicitly chosen project machine and rejects unbound ones', async () => {
+  it.skipIf(ON_POSTGRES)('starts a merge run on an explicitly chosen project machine and rejects unbound ones', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge machine choice' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -355,7 +357,7 @@ describe('manual QA persistence and workflow', () => {
     expect((await db.ci.retryMergeRun('owner', run.id)).agentId).toBe('other-agent')
   })
 
-  it('prefers the latest pushed workspace even when a newer unpushed one exists', async () => {
+  it.skipIf(ON_POSTGRES)('prefers the latest pushed workspace even when a newer unpushed one exists', async () => {
     const project = await db.projects.createProject('owner', { name: 'Pushed workspace wins' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
@@ -484,7 +486,7 @@ describe('manual QA persistence and workflow', () => {
     const board=(await db.tasks.getBoard('owner',project.id))!,moved=board.tasks.find((item)=>item.id===task.id)!
     expect(board.columns.find((item)=>item.id===moved.columnId)?.semanticType).toBe('automated_qa')
   })
-  it('stales the previous integration run after a workspace SHA change',async ()=>{
+  it.skipIf(ON_POSTGRES)('stales the previous integration run after a workspace SHA change',async ()=>{
     const {project,task,raw}=await integrationFixture()
     const run=await db.ci.startIntegrationTestRun('owner',project.id,task.id)
     await db.ci.markIntegrationTestRunning(run.id)

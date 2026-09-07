@@ -84,12 +84,11 @@ export interface ServerConfig {
   /** Пароль пользователя admin при сиде новой БД (пусто — без пароля). */
   adminPassword: string
   /**
-   * Движок домена «релизы»: `sqlite` — общая БД (по умолчанию), `pglite` — встроенный
-   * Postgres в каталоге `dbReleasesDir`. Proof-of-concept замены движка одного домена за тем
-   * же портом (docs/plans/db-repositories.md, круг 4).
+   * База на Postgres вместо SQLite-файла (`VC_DB_URL=postgres://user:pass@host:5432/db`). Без переменной
+   * — `<dataDir>/voicechat.db`, как раньше. Перенос данных — `db/copyToPostgres.cli.ts`
+   * (docs/plans/db-postgres.md).
    */
-  dbReleasesEngine: 'sqlite' | 'pglite'
-  dbReleasesDir: string
+  dbUrl: string | null
   /** Порог памяти для распознавания речи (STT), байты; undefined — дефолт по модели. */
   minMemSttBytes?: number
   /** Порог памяти для озвучки (TTS), байты; undefined — дефолт. */
@@ -235,8 +234,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     browserPreviewBase: env.VC_BROWSER_PREVIEW_BASE,
     kbToolEnabled: env.VC_KB_TOOL !== 'off',
     adminPassword: env.VC_ADMIN_PASSWORD ?? '',
-    dbReleasesEngine: env.VC_DB_RELEASES === 'pglite' ? 'pglite' : 'sqlite',
-    dbReleasesDir: env.VC_DB_RELEASES_DIR ?? join(dataDir, 'pglite', 'releases'),
+    dbUrl: env.VC_DB_URL || null,
     minMemSttBytes: parseBytes(env.VC_MIN_MEM_STT),
     minMemTtsBytes: parseBytes(env.VC_MIN_MEM_TTS),
     githubToken: env.VC_GITHUB_TOKEN,

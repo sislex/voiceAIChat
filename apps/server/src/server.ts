@@ -11,8 +11,6 @@ import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllow
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
-import { createPgliteClient, type SqlClient } from './db/pg/sqlClient.js'
-import { ReleasesPgRepo } from './db/pg/releasesPg.js'
 import { registerRest } from './routes/rest.js'
 import { clearPreviewCookies, registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAgentRoutes } from './routes/agents.js'
@@ -388,22 +386,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   // Домен «релизы» может жить на встроенном Postgres (VC_DB_RELEASES=pglite): порт
   // подменяется фабрикой, остальные домены — в SQLite как раньше.
-  let releasesSql: SqlClient | null = null
-  const db =
-    opts.db ??
-    (await (async () => {
-      mkdirSync(opts.config.dataDir, { recursive: true })
-      if (opts.config.dbReleasesEngine !== 'pglite') return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'))
-      mkdirSync(opts.config.dbReleasesDir, { recursive: true })
-      releasesSql = await createPgliteClient(opts.config.dbReleasesDir)
-      let releasesPg: ReleasesPgRepo | null = null
-      const created = new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'), {
-        ports: { releases: (ports) => (releasesPg = new ReleasesPgRepo({ sql: releasesSql!, projects: ports.projects, newId: () => randomUUID(), now: () => Date.now() })) }
-      })
-      await releasesPg!.ensureSchema()
-      app.log.info({ dir: opts.config.dbReleasesDir }, 'домен releases — на встроенном Postgres (pglite)')
-      return created
-    })())
+  const db = opts.db ?? (() => {
+    mkdirSync(opts.config.dataDir, { recursive: true })
+    // Движок базы: Postgres по VC_DB_URL, иначе SQLite-файл в каталоге данных.
+    return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'), opts.config.dbUrl ? { postgres: { url: opts.config.dbUrl } } : {})
+  })()
+  // Схема и миграции применяются асинхронно; дальше сервер полагается на готовую базу.
+  await db.ready
+  app.log.info({ engine: db.engine }, 'база данных готова')
 
   // Аутентификация приложения (многопользовательский режим web): секрет подписи
   // токенов из dataDir (переживает рестарт); в тестах (opts.db) — эфемерный, без диска.
@@ -2527,12 +2517,20 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
       // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
       const token = (request.query as { token?: string } | undefined)?.token ?? cookieToken(request.headers.cookie)
+      // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
+      // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
+      // укладывалась в микрозадачи и окно было незаметно; с Postgres оно — миллисекунды сети.
+      const early: Array<[Buffer, boolean]> = []
+      const buffer = (data: Buffer, isBinary: boolean): void => { early.push([data, isBinary]) }
+      socket.on('message', buffer)
       const user = await resolveActiveUser(db, token, sessionSecret)
+      socket.off('message', buffer)
       if (!user) {
         socket.close()
         return
       }
       await attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null))
+      for (const [data, isBinary] of early) socket.emit('message', data, isBinary)
     })
     scoped.get('/agent', { websocket: true }, (socket, request) => {
       const fwd = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
@@ -2578,7 +2576,6 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   app.addHook('onClose', async () => {
     if (!opts.db) db.close() // закрываем только созданную нами БД
-    await releasesSql?.close()
   })
 
   return app

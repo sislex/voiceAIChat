@@ -46,6 +46,13 @@ export interface DbDeps {
   now?: () => number
   /** Домены на другом движке: порт из фабрики вместо обёртки над SQLite-репозиторием. */
   ports?: PortOverrides
+  /**
+   * Postgres вместо SQLite для всей базы (`VC_DB_URL`). `schema` — search_path (тесты изолируются
+   * отдельными схемами); `dropSchemaOnClose` — снести схему при закрытии (только тесты).
+   */
+  postgres?: { url: string; schema?: string; dropSchemaOnClose?: boolean }
+  /** Без полосы вызовов (sql/lane.ts): методы портов идут параллельно. Только когда все многошаговые методы под транзакциями. */
+  concurrent?: boolean
 }
 
 /** Ключ настроек per-user в key-value таблице settings (`app:<userId>`). */
