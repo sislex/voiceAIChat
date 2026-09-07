@@ -63,9 +63,9 @@ describe('resolveManagedChatStorage', () => {
 
   it('строит все каталоги только от актуальной привязки', async () => {
     const resolved = await resolveManagedChatStorage('u-1', 'c-1', {
-      getBinding: () => binding,
-      listStorages: () => [storage],
-      ownsMachine: () => true,
+      getBinding: async () => binding,
+      listStorages: async () => [storage],
+      ownsMachine: async () => true,
       isOnline: () => true,
       verifyRoot: vi.fn(async () => undefined)
     })
@@ -80,14 +80,14 @@ describe('resolveManagedChatStorage', () => {
 
   it('не откатывается в legacy при offline или отозванном storage', async () => {
     const base = {
-      getBinding: () => binding,
-      listStorages: () => [storage],
-      ownsMachine: () => true,
+      getBinding: async () => binding,
+      listStorages: async () => [storage],
+      ownsMachine: async () => true,
       isOnline: () => false,
       verifyRoot: vi.fn(async () => undefined)
     }
     await expect(resolveManagedChatStorage('u-1', 'c-1', base)).rejects.toThrow('не в сети')
-    await expect(resolveManagedChatStorage('u-1', 'c-1', { ...base, isOnline: () => true, listStorages: () => [] })).rejects.toThrow('недоступно')
+    await expect(resolveManagedChatStorage('u-1', 'c-1', { ...base, isOnline: () => true, listStorages: async () => [] })).rejects.toThrow('недоступно')
   })
 })
 

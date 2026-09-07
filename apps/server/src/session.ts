@@ -33,11 +33,11 @@ export interface SessionDeps {
   turns: TurnManager
   sttEngine?: SttEngine
   sttClient?: SttClient
-  getWhisperModel?: () => import('@voicechat/shared').WhisperModel
+  getWhisperModel?: () => Promise<import('@voicechat/shared').WhisperModel>
   ttsClient: TtsClient
   diarization?: DiarizationEngine
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
-  capabilities: () => SystemCapabilities
+  capabilities: () => Promise<SystemCapabilities>
   language?: string
   /** Процесс-глобальный менеджер скачивания модели Whisper (переживает переподключения). */
   modelDownload?: {
@@ -48,22 +48,22 @@ export interface SessionDeps {
   downloadVoice?: (id: string, onProgress: (percent: number) => void) => Promise<void>
   /** Живой список машин с онлайн-статусом + подписка на изменения (пуш веб-клиенту). */
   agentsFeed?: {
-    list(): AgentInfo[]
-    subscribe(cb: () => void): () => void
+    list(): Promise<AgentInfo[]>
+    subscribe(cb: () => Promise<void>): () => void
   }
   /** Живая канбан-доска проекта: снапшот (с проверкой членства) + подписка на изменения. */
   board?: {
-    getBoard(projectId: string, includeCompleted?: boolean): Board | null
+    getBoard(projectId: string, includeCompleted?: boolean): Promise<Board | null>
     subscribe(cb: (projectId: string) => void): () => void
     subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
-    subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => void): () => void
-    subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }) => void): () => void
+    subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => Promise<void>): () => void
+    subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }) => Promise<void>): () => void
     subscribeImprovements(cb: (projectId: string) => void): () => void
   }
   /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
   preparationNotifications?: {
-    canAccess(projectId: string): boolean
-    subscribe(cb: (event: { projectId: string; userId?: string; kind?: 'membership' }) => void): () => void
+    canAccess(projectId: string): Promise<boolean>
+    subscribe(cb: (event: { projectId: string; userId?: string; kind?: 'membership' }) => Promise<void>): () => void
   }
   /** Live-tail проводника CC/Codex: локальный fs.watch или SSE исполнителя. */
   observerTail?: {
@@ -141,7 +141,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   }
 
   return {
-    onOpen(ctx) {
+    async onOpen(ctx) {
       if (deps.authStatus) {
         let delivered = ''
         unsubAuthStatus = deps.authStatus.subscribe((status, userId) => {
@@ -158,7 +158,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
         if (ownerUserId === deps.user.name) ctx.send(m)
       })
       ctx.send({ t: 'claude.active', turns: deps.turns.active(deps.user.name) })
-      deps.turns.resumeQueues(deps.user.name)
+      await deps.turns.resumeQueues(deps.user.name)
       if (deps.ci) {
         unsubCi = deps.ci.subscribe((m, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(m)
@@ -179,14 +179,14 @@ export function createSession(deps: SessionDeps): WsHandlers {
         unsubWidgetUi = deps.widgetUi.subscribe(deps.user.name, (m) => ctx.send(m))
       }
       if (deps.agentsFeed) {
-        ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
-        unsubAgents = deps.agentsFeed.subscribe(() =>
-          ctx.send({ t: 'agents', agents: deps.agentsFeed!.list() })
+        ctx.send({ t: 'agents', agents: await deps.agentsFeed.list() })
+        unsubAgents = deps.agentsFeed.subscribe(async () =>
+          ctx.send({ t: 'agents', agents: await deps.agentsFeed!.list() })
         )
       }
       if (deps.preparationNotifications) {
-        unsubPreparationNotifications = deps.preparationNotifications.subscribe((event) => {
-          if (event.userId ? event.userId !== deps.user.name : !deps.preparationNotifications!.canAccess(event.projectId)) return
+        unsubPreparationNotifications = deps.preparationNotifications.subscribe(async (event) => {
+          if (event.userId ? event.userId !== deps.user.name : !await deps.preparationNotifications!.canAccess(event.projectId)) return
           // Смена состава участников меняет и доступные уведомления, и роль, поэтому
           // кадра нужно два: старый инвалидирует список уведомлений, новый говорит
           // перечитать сам проект. Обратной дороги нет — по кадру уведомлений
@@ -216,8 +216,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
           if (update.userId !== deps.user.name) return
           ctx.send({ t: 'preparation.run.updated', projectId: update.projectId, taskId: update.taskId, runId: update.runId })
         })
-        unsubTaskRepositories = deps.board.subscribeTaskRepositories((update) => {
-          if (!deps.board?.getBoard(update.projectId, false)) return
+        unsubTaskRepositories = deps.board.subscribeTaskRepositories(async (update) => {
+          if (!await deps.board?.getBoard(update.projectId, false)) return
           ctx.send({ t: 'task.repositories.updated', projectId: update.projectId, taskId: update.taskId })
         })
         // Улучшения смотрят на открытой доске — адресуем кадр её подписчику.
@@ -226,13 +226,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
           ctx.send({ t: 'project.improvements.updated', projectId })
         })
         // Гейт тот же, что у репозиториев: кадр уходит только тем, кому доска видна.
-        unsubQaStages = deps.board.subscribeQaStages((update) => {
-          if (!deps.board?.getBoard(update.projectId, false)) return
+        unsubQaStages = deps.board.subscribeQaStages(async (update) => {
+          if (!await deps.board?.getBoard(update.projectId, false)) return
           ctx.send({ t: 'qa.stage.updated', projectId: update.projectId, taskId: update.taskId, stage: update.stage })
         })
       }
     },
-    onMessage(msg, ctx) {
+    async onMessage(msg, ctx) {
       switch (msg.t) {
         case 'claude.send':
           void deps.turns.start({
@@ -248,23 +248,23 @@ export function createSession(deps: SessionDeps): WsHandlers {
           })
           break
         case 'claude.cancel':
-          deps.turns.cancel(msg.conversationId)
+          await deps.turns.cancel(msg.conversationId)
           break
         case 'claude.queue.edit':
-          deps.turns.editQueued(deps.user.name, msg.conversationId, msg.id, msg.text, msg.segments)
+          await deps.turns.editQueued(deps.user.name, msg.conversationId, msg.id, msg.text, msg.segments)
           break
         case 'claude.queue.delete':
-          deps.turns.deleteQueued(deps.user.name, msg.conversationId, msg.id)
+          await deps.turns.deleteQueued(deps.user.name, msg.conversationId, msg.id)
           break
         case 'claude.queue.reorder':
-          deps.turns.reorderQueued(deps.user.name, msg.conversationId, msg.ids)
+          await deps.turns.reorderQueued(deps.user.name, msg.conversationId, msg.ids)
           break
         case 'claude.queue.now':
-          deps.turns.sendQueuedNow(deps.user.name, msg.conversationId, msg.id)
+          await deps.turns.sendQueuedNow(deps.user.name, msg.conversationId, msg.id)
           break
 
         case 'audio.start': {
-          const sttCap = deps.capabilities().stt
+          const sttCap = (await deps.capabilities()).stt
           if (!sttCap.available) {
             ctx.send({ t: 'stt.error', message: sttCap.reason })
             break
@@ -277,9 +277,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
             send: ctx.send,
             language: deps.language,
             diarization: deps.diarization,
-            isDiarizationEnabled: () => deps.db.settings.getSettings(deps.user.name).diarization
+            isDiarizationEnabled: async () => (await deps.db.settings.getSettings(deps.user.name)).diarization
           })
-          stt.start(msg.sampleRate)
+          await stt.start(msg.sampleRate)
           break
         }
         case 'audio.stop':
@@ -291,7 +291,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'tts.speak': {
-          const ttsCap = deps.capabilities().tts
+          const ttsCap = (await deps.capabilities()).tts
           if (!ttsCap.available) {
             ctx.send({ t: 'tts.error', message: ttsCap.reason })
             break
@@ -352,13 +352,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'pty.start': {
-          const allowed = deps.db.machines.canUseAgent(deps.user.name, msg.agentId, msg.projectId)
+          const allowed = await deps.db.machines.canUseAgent(deps.user.name, msg.agentId, msg.projectId)
           if (!allowed) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина не найдена' })
             break
           }
           // Живой shell — это полный доступ: машине, предоставленной «только для чтения», терминал не открываем (п.18).
-          if (!deps.db.machines.canWriteAgent(deps.user.name, msg.agentId, msg.projectId)) {
+          if (!await deps.db.machines.canWriteAgent(deps.user.name, msg.agentId, msg.projectId)) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина предоставлена проекту только для чтения: терминал недоступен' })
             break
           }
@@ -379,7 +379,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
 
         case 'board.subscribe': {
           // getBoard сохраняет действующую проверку членства, но снапшот по WS не отправляется.
-          if (!deps.board?.getBoard(msg.projectId, false)) break
+          if (!await deps.board?.getBoard(msg.projectId, false)) break
           boardProjectId = msg.projectId
           break
         }
@@ -387,7 +387,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
           boardProjectId = null
           break
         case 'ci.subscribe': {
-          const snap = deps.ci?.snapshot(deps.user.name, msg.runId)
+          const snap = await deps.ci?.snapshot(deps.user.name, msg.runId)
           if (snap) ctx.send(snap)
           break
         }

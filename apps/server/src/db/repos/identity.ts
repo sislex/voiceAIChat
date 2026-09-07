@@ -6,7 +6,6 @@ import { type UserLlmAccess, type UserRole } from '@voicechat/shared'
 import { createHash } from 'node:crypto'
 import { hashPassword, verifyPassword } from '../../users/passwords.js'
 import { BaseRepo } from './base.js'
-import { settingsKey } from './support.js'
 
 /** Строка таблицы `sessions` со всеми метаданными устройства. */
 interface SessionRow {
@@ -555,30 +554,18 @@ export class IdentityRepo extends BaseRepo {
 
   /** Удаляет пользователя и ВСЕ его данные (разговоры/сообщения/агенты/настройки). */
   deleteUserData(userId: string): void {
+    // Каскад идёт по владельцам данных: identity знает только, ЧТО пользователь
+    // исчезает, а как это отражается в чатах, машинах, настройках и проектах —
+    // решает каждый домен сам. Порядок прежний: сначала чаты и машины
+    // (project_machines уйдут по CASCADE при удалении агентов и/или проектов),
+    // потом настройки, задачи, проекты, и последним — сама учётка.
     this.db.transaction(() => {
-      // messages/speakers уйдут по ON DELETE CASCADE.
-      this.db.prepare(`DELETE FROM conversations WHERE user_id = ?`).run(userId)
-      this.db.prepare(`DELETE FROM agents WHERE user_id = ?`).run(userId)
-      this.db.prepare(`DELETE FROM settings WHERE key = ?`).run(settingsKey(userId))
-      // Проекты: снять назначения, убрать членства и удалить осиротевшие проекты
-      // (project_machines уйдут по CASCADE при удалении агентов выше и/или проектов).
-      this.db.prepare(`UPDATE tasks SET assignee = NULL WHERE assignee = ?`).run(userId)
-      // Живые приглашения удалённого пользователя закрываем: иначе при повторной
-      // регистрации того же логина или адреса они снова к нему привяжутся.
       const deletedEmail = (this.getUser(userId)?.email ?? '').toLowerCase()
-      this.db.prepare(
-        `UPDATE project_invitations SET status='revoked', responded_at=?
-         WHERE status='pending' AND (invited_username = ? OR (? <> '' AND email = ?))`
-      ).run(this.now(), userId, deletedEmail, deletedEmail)
-      this.db.prepare(`DELETE FROM project_members WHERE username = ?`).run(userId)
-      this.db
-        .prepare(
-          `DELETE FROM projects WHERE id IN (
-             SELECT p.id FROM projects p
-             WHERE NOT EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = p.id AND m.role = 'owner')
-           )`
-        )
-        .run()
+      this.repos.chat.deleteConversationsOfUser(userId)
+      this.repos.machines.deleteAgentsOfUser(userId)
+      this.repos.settings.deleteUserSettings(userId)
+      this.repos.tasks.unassignUser(userId)
+      this.repos.projects.detachDeletedUser(userId, deletedEmail)
       this.db.prepare(`DELETE FROM users WHERE name = ?`).run(userId)
     })()
   }

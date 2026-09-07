@@ -12,6 +12,7 @@
     "test": "vitest run --silent"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@fastify/static": "^10.1.2",
     "@fastify/websocket": "^11.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",

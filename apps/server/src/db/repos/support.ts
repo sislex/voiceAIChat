@@ -1,6 +1,7 @@
 // Общие типы строк и чистые помощники слоя БД, нужные нескольким доменным репозиториям.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
+import type { PortOverrides } from './base.js'
 import type { AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
 import { EMPTY_AUTOMATED_QA_SCENARIO, isPreviewAction, type KanbanColumn, type KanbanColumnSemanticType, type KbContextMode, DEFAULT_CI_CLAUDE_MODEL, type CiRunMode, type CiClarifyLevel, CI_CLARIFY_MAX_LIMIT, type CiRun, type CiStatus, type CiSlotProgress, type CiFixDiagnosticContext } from '@voicechat/shared'
 
@@ -43,6 +44,8 @@ export interface DbDeps {
   newId?: () => string
   /** Источник текущего времени в мс (по умолчанию Date.now). */
   now?: () => number
+  /** Домены на другом движке: порт из фабрики вместо обёртки над SQLite-репозиторием. */
+  ports?: PortOverrides
 }
 
 /** Ключ настроек per-user в key-value таблице settings (`app:<userId>`). */

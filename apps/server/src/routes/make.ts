@@ -177,8 +177,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   const uid = (req: { user?: { name: string } | null }): string => req.user?.name ?? ''
 
   /** Разговор пользователя вида Make, иначе 404 (чужой и несуществующий неотличимы). */
-  const own = (userId: string, id: string, reply: FastifyReply): boolean => {
-    const conversation = db.chat.getConversation(userId, id)
+  const own = async (userId: string, id: string, reply: FastifyReply): Promise<boolean> => {
+    const conversation = await db.chat.getConversation(userId, id)
     if (!conversation || conversation.assistantKind !== 'make') {
       void reply.code(404).send({ error: 'conversation not found' })
       return false
@@ -189,15 +189,15 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
    * зритель — только чтение. Публикация, шаринг, очистка и удаление остаются за владельцем (`own`).
    */
   const access = async (userId: string, id: string, reply: FastifyReply, level: 'editor' | 'viewer'): Promise<boolean> => {
-    const mine = db.chat.getConversation(userId, id)
+    const mine = await db.chat.getConversation(userId, id)
     if (mine && mine.assistantKind === 'make') return true
-    const owner = db.chat.conversationOwner(id)
+    const owner = await db.chat.conversationOwner(id)
     if (owner) {
       const role = await workspaces.shareRole(id, userId)
       if (role === 'editor' || (role === 'viewer' && level === 'viewer')) return true
       // Make-проект, привязанный к проекту, читают все его участники: карточка
       // задачи ссылается на дизайн, и он обязан открываться у всей команды.
-      if (level === 'viewer' && db.chat.isMakeProjectViewer(userId, id)) return true
+      if (level === 'viewer' && await db.chat.isMakeProjectViewer(userId, id)) return true
     }
     void reply.code(404).send({ error: 'conversation not found' })
     return false
@@ -278,7 +278,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.post<{ Params: { id: string; snapshotId: string } }>('/api/make/:id/snapshots/:snapshotId/restore', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     try {
       const state = await workspaces.restore(req.params.id, req.params.snapshotId)
       hub.changed(userId, req.params.id, state.rev, state.files.map((f) => f.path))
@@ -287,18 +287,18 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string; snapshotId: string } }>('/api/make/:id/snapshots/:snapshotId/diff', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { return await workspaces.snapshotDiff(req.params.id, req.params.snapshotId) } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string; snapshotId: string }; Querystring: { path?: string } }>('/api/make/:id/snapshots/:snapshotId/file', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { return await workspaces.snapshotFile(req.params.id, req.params.snapshotId, req.query.path ?? '') } catch (error) { return sendError(reply, error) }
   })
 
   app.post<{ Params: { id: string; snapshotId: string }; Body: { path?: string } }>('/api/make/:id/snapshots/:snapshotId/restore-file', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     if (typeof req.body?.path !== 'string') return reply.code(400).send({ error: 'path обязателен' })
     try {
       const state = await workspaces.restoreFile(req.params.id, req.params.snapshotId, req.body.path)
@@ -322,7 +322,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   }
   app.post<{ Params: { id: string }; Body: { dataBase64?: string; mode?: string } }>('/api/make/:id/import', { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     if (limited(importLimiter, userId, reply)) return reply
     if (typeof req.body?.dataBase64 !== 'string') return reply.code(400).send({ error: 'dataBase64 обязателен' })
     const mode = req.body.mode === 'merge' ? 'merge' : 'replace'
@@ -339,7 +339,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.post<{ Params: { id: string }; Body: { url?: string; mode?: string } }>('/api/make/:id/import-url', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     if (limited(importUrlLimiter, userId, reply)) return reply
     if (typeof req.body?.url !== 'string') return reply.code(400).send({ error: 'url обязателен' })
     const mode = req.body.mode === 'merge' ? 'merge' : 'replace'
@@ -357,7 +357,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.post<{ Params: { id: string } }>('/api/make/:id/reset', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     try {
       await workspaces.ensure(req.params.id)
       const state = await workspaces.reset(req.params.id)
@@ -367,7 +367,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.post<{ Params: { id: string }; Body: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } | undefined }>('/api/make/:id/publish', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password, allowComments: typeof req.body?.allowComments === 'boolean' ? req.body.allowComments : undefined }) } catch (error) { return sendError(reply, error) }
   })
 
@@ -387,10 +387,10 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   }
 
   /** Машина проекта Make-чата: агент, корень и доступность. Ошибка — словами. */
-  const projectMachine = (userId: string, conversationId: string): { agentId: string; root: string } | { error: string } => {
-    const conversation = db.chat.getConversation(userId, conversationId)
+  const projectMachine = async (userId: string, conversationId: string): Promise<{ agentId: string; root: string } | { error: string }> => {
+    const conversation = await db.chat.getConversation(userId, conversationId)
     if (!conversation?.projectId) return { error: 'Чат не привязан к проекту — копировать не из чего.' }
-    const project = db.projects.getProject(userId, conversation.projectId)
+    const project = await db.projects.getProject(userId, conversation.projectId)
     if (!project) return { error: 'Проект недоступен.' }
     const machines = project.machines.filter((machine) => machine.canUse !== false && machine.path.trim())
     const machine = machines.find((candidate) => candidate.agentId === project.defaultAgentId) ?? machines[0]
@@ -430,8 +430,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/project-files', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
-    const machine = projectMachine(userId, req.params.id)
+    if (!await own(userId, req.params.id, reply)) return reply
+    const machine = await projectMachine(userId, req.params.id)
     if ('error' in machine) return reply.code(409).send({ error: machine.error })
     const rel = typeof req.query.path === 'string' && req.query.path ? safeRelPath(req.query.path) : ''
     if (rel === null) return reply.code(400).send({ error: 'Некорректный путь' })
@@ -451,16 +451,16 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.get<{ Params: { id: string } }>('/api/make/:id/project-links', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
-    const machine = projectMachine(userId, req.params.id)
+    if (!await own(userId, req.params.id, reply)) return reply
+    const machine = await projectMachine(userId, req.params.id)
     if ('error' in machine) return reply.code(409).send({ error: machine.error })
     return linkInfos(req.params.id, machine)
   })
 
   app.post<{ Params: { id: string }; Body: { paths?: string[] } }>('/api/make/:id/project-pull', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
-    const machine = projectMachine(userId, req.params.id)
+    if (!await own(userId, req.params.id, reply)) return reply
+    const machine = await projectMachine(userId, req.params.id)
     if ('error' in machine) return reply.code(409).send({ error: machine.error })
     const rawPaths = Array.isArray(req.body?.paths) ? req.body.paths : []
     if (!rawPaths.length) return reply.code(400).send({ error: 'Выберите файлы' })
@@ -500,50 +500,50 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/task-links', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     const path = typeof req.query.path === 'string' ? req.query.path : undefined
-    return db.tasks.makeTaskLinks(req.params.id, path)
+    return await db.tasks.makeTaskLinks(req.params.id, path)
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/task-links/tasks', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    return db.tasks.makeLinkableTasks(uid(req), req.params.id)
+    return await db.tasks.makeLinkableTasks(uid(req), req.params.id)
   })
 
   app.post<{ Params: { id: string }; Body: { taskId?: string; path?: string; label?: string } }>('/api/make/:id/task-links', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    const projectId = db.chat.makeConversationProject(req.params.id)
+    const projectId = await db.chat.makeConversationProject(req.params.id)
     const taskId = req.body?.taskId
     if (!taskId || !projectId) return reply.code(400).send({ error: 'Make-проект не привязан к проекту' })
     try {
-      db.tasks.linkTaskDesign(uid(req), projectId, taskId, { conversationId: req.params.id, path: req.body?.path, label: req.body?.label })
+      await db.tasks.linkTaskDesign(uid(req), projectId, taskId, { conversationId: req.params.id, path: req.body?.path, label: req.body?.label })
       deps.boardChanged?.(projectId)
-      return db.tasks.makeTaskLinks(req.params.id, typeof req.body?.path === 'string' ? req.body.path : undefined)
+      return await db.tasks.makeTaskLinks(req.params.id, typeof req.body?.path === 'string' ? req.body.path : undefined)
     } catch (error) { return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
   app.delete<{ Params: { id: string; linkId: string } }>('/api/make/:id/task-links/:linkId', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    const projectId = db.chat.makeConversationProject(req.params.id)
-    const link = db.tasks.makeTaskLinks(req.params.id).find((l) => l.id === req.params.linkId)
+    const projectId = await db.chat.makeConversationProject(req.params.id)
+    const link = (await db.tasks.makeTaskLinks(req.params.id)).find((l) => l.id === req.params.linkId)
     if (!projectId || !link) return reply.code(404).send({ error: 'Связь не найдена' })
-    db.tasks.unlinkTaskDesign(uid(req), projectId, link.taskId, link.id)
+    await db.tasks.unlinkTaskDesign(uid(req), projectId, link.taskId, link.id)
     deps.boardChanged?.(projectId)
-    return db.tasks.makeTaskLinks(req.params.id)
+    return await db.tasks.makeTaskLinks(req.params.id)
   })
 
   // Read-only ссылка внутри ChatAI (п.33): владелец создаёт/отзывает, любой вошедший читает по токену.
   app.post<{ Params: { id: string } }>('/api/make/:id/share', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.createShare(req.params.id) } catch (error) { return sendError(reply, error) }
   })
   app.post<{ Params: { id: string }; Body: { user?: string; role?: 'editor' | 'viewer' | null } | undefined }>('/api/make/:id/share/grants', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     const user = String(req.body?.user ?? '').trim()
-    if (user && !db.identity.getUser(user)) return reply.code(404).send({ error: `Пользователь «${user}» не найден` })
+    if (user && !await db.identity.getUser(user)) return reply.code(404).send({ error: `Пользователь «${user}» не найден` })
     const role = req.body?.role === 'editor' || req.body?.role === 'viewer' ? req.body.role : null
     try { await workspaces.ensure(req.params.id); return await workspaces.setShareGrant(req.params.id, user, role) } catch (error) { return sendError(reply, error) }
   })
   app.delete<{ Params: { id: string } }>('/api/make/:id/share', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { return await workspaces.revokeShare(req.params.id) } catch (error) { return sendError(reply, error) }
   })
   const sharedConv = async (token: string, reply: FastifyReply): Promise<string | null> => {
@@ -555,8 +555,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const conversationId = await sharedConv(req.params.token, reply)
     if (!conversationId) return reply
     try {
-      const owner = db.chat.conversationOwner(conversationId) ?? ''
-      const conv = owner ? db.chat.getConversation(owner, conversationId) : null
+      const owner = await db.chat.conversationOwner(conversationId) ?? ''
+      const conv = owner ? await db.chat.getConversation(owner, conversationId) : null
       const state = await workspaces.state(conversationId)
       const settings = await workspaces.notes(conversationId)
       return { token: req.params.token, stack: settings.stack, uiKit: settings.uiKit, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
@@ -633,7 +633,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
   app.delete<{ Params: { id: string; commentId: string } }>('/api/make/:id/comments/:commentId', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     try {
       const comments = await workspaces.removeComment(req.params.id, req.params.commentId)
       hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
@@ -642,12 +642,12 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/usage', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.usage(req.params.id) } catch (error) { return sendError(reply, error) }
   })
   app.post<{ Params: { id: string }; Body: { keepSnapshots?: number; shots?: boolean; unusedAssets?: boolean } | undefined }>('/api/make/:id/cleanup', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     try {
       await workspaces.ensure(req.params.id)
       const result = await workspaces.cleanup(req.params.id, { keepSnapshots: req.body?.keepSnapshots, shots: req.body?.shots, unusedAssets: req.body?.unusedAssets })
@@ -656,18 +656,18 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
   app.delete<{ Params: { id: string } }>('/api/make/:id/publish', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { return await workspaces.unpublish(req.params.id) } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/check', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return { issues: await workspaces.check(req.params.id) } } catch (error) { return sendError(reply, error) }
   })
 
   app.post<{ Params: { id: string }; Body: { templateId?: string } }>('/api/make/:id/template', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     if (typeof req.body?.templateId !== 'string') return reply.code(400).send({ error: 'templateId обязателен' })
     try {
       const state = await workspaces.applyTemplate(req.params.id, req.body.templateId)
@@ -677,13 +677,13 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string }; Querystring: { q?: string; regex?: string; matchCase?: string } }>('/api/make/:id/search', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return { matches: await workspaces.search(req.params.id, req.query.q ?? '', 200, { regex: req.query.regex === '1', matchCase: req.query.matchCase === '1' }) } } catch (error) { return sendError(reply, error) }
   })
 
   app.post<{ Params: { id: string }; Body: { query?: string; replacement?: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean } }>('/api/make/:id/replace', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     const { query, replacement, matchCase, regex, dryRun } = req.body ?? {}
     if (typeof query !== 'string' || typeof replacement !== 'string') return reply.code(400).send({ error: 'query и replacement обязательны' })
     try {
@@ -703,7 +703,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.post<{ Params: { id: string }; Body: { name?: string; paths?: string[] } }>('/api/make/:id/library', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     const { name, paths } = req.body ?? {}
     if (typeof name !== 'string' || !Array.isArray(paths) || paths.length === 0) return reply.code(400).send({ error: 'name и paths обязательны' })
     try {
@@ -718,7 +718,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.post<{ Params: { id: string; slug: string } }>('/api/make/:id/library/:slug/insert', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!await own(userId, req.params.id, reply)) return reply
     try {
       const files = await library.files(userId, req.params.slug)
       const { state, mergedTokens, autoImported } = await workspaces.insertLibraryFiles(req.params.id, files)
@@ -751,19 +751,19 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/shots', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { return { shots: await workspaces.shots(req.params.id) } } catch (error) { return sendError(reply, error) }
   })
 
   app.post<{ Params: { id: string }; Body: { file?: string; story?: string; dataBase64?: string } }>('/api/make/:id/shots', { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     const { file, story, dataBase64 } = req.body ?? {}
     if (typeof file !== 'string' || typeof story !== 'string' || typeof dataBase64 !== 'string') return reply.code(400).send({ error: 'file, story и dataBase64 обязательны' })
     try { return { shots: await workspaces.addShot(req.params.id, file, story, Buffer.from(dataBase64, 'base64')) } } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/stories', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return { files: await workspaces.stories(req.params.id) } } catch (error) { return sendError(reply, error) }
   })
 
@@ -834,7 +834,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       if (typeof b.text !== 'string' || !b.text.trim()) return reply.code(400).send({ error: 'Нужен текст комментария' })
       try {
         const item = await workspaces.addGuestComment(conversationId, { selector: String(b.selector ?? 'body').slice(0, 500), elementLabel: String(b.elementLabel ?? '').slice(0, 160), text: b.text, guestName: String(b.name ?? '').slice(0, 60) })
-        const owner = db.chat.conversationOwner(conversationId)
+        const owner = await db.chat.conversationOwner(conversationId)
         if (owner) hub.changed(owner, conversationId, 0, [COMMENTS_SYNC_PATH])
         return reply.code(201).send({ ok: true, id: item.id, pending: true })
       } catch (error) { return sendError(reply, error) }
@@ -932,7 +932,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   // ---- Превью и экспорт (cookie-аутентификация, см. users/auth.ts) ----------
 
   app.get<{ Params: { id: string }; Querystring: { vite?: string; pwa?: string; deploy?: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     try {
       await workspaces.ensure(req.params.id)
       const deploy = req.query.deploy === 'netlify' || req.query.deploy === 'vercel' ? req.query.deploy : null
@@ -1014,7 +1014,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string } }>('/api/preview/make/:id/', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!await own(uid(req), req.params.id, reply)) return reply
     return reply.redirect(`/api/preview/make/${encodeURIComponent(req.params.id)}/index.html`)
   })
 }

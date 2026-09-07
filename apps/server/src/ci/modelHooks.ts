@@ -228,18 +228,18 @@ function runTurn(
       finish({ ok: false, cancelled: true })
     }
     const handlers: LlmStreamHandlers = {
-      onDelta: (t) => {
+      onDelta: async (t) => {
         text += t
         onLog('stdout', t)
       },
-      onSession: (sid) => {
+      onSession: async (sid) => {
         sessionId = sid
       },
-      onDone: (_full, m) => {
+      onDone: async (_full, m) => {
         meta = m
         finish({ ok: true })
       },
-      onError: (m) => {
+      onError: async (m) => {
         onLog('system', `Ошибка модели: ${m}\n`)
         // Текст нужен вызывающему: обрыв канала до исполнителя — сбой транспорта,
         // и ран лечится повтором того же шага, а не сменой модели.
@@ -286,15 +286,15 @@ function makeSourcesOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<Llm
 }
 
 /** remote-часть запроса: если есть машина — прокинуть remote-bash MCP на рабочую папку. */
-function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmRequest> {
+async function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Promise<Partial<LlmRequest>> {
   const makeSources = (makeSourcesOf(deps, ctx).makeSources ?? [])
   const linked = makeSources.length ? { makeSources } : {}
   if (!ctx.agentId) return { executionDisabled: true, ...linked }
   // Ран видит и остальные машины проекта: query `project` включает в мосте
   // инструмент machines и параметр machine (адресация операции другой машине),
   // имена уходят в системный хинт CLI. Одна машина — прежнее поведение.
-  const others = deps.db
-    .machines.listProjectMachines(ctx.project.id)
+  const others = (await deps.db
+    .machines.listProjectMachines(ctx.project.id))
     .filter((m) => m.agentId !== ctx.agentId)
     .map((m) => m.name)
   const project = others.length ? `&project=${encodeURIComponent(ctx.project.id)}` : ''
@@ -378,9 +378,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   kbUpdateForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
 } {
   const now = deps.now ?? (() => Date.now())
-  const clientFor = (ctx: CiModelContext): LlmClient => {
-    const role = deps.db.identity.getUser(ctx.run.triggeredBy)?.role ?? 'developer'
-    const resolved = deps.db.llm.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
+  const clientFor = async (ctx: CiModelContext): Promise<LlmClient> => {
+    const role = (await deps.db.identity.getUser(ctx.run.triggeredBy))?.role ?? 'developer'
+    const resolved = await deps.db.llm.resolveLlmEngine(ctx.run.llmEngineId, ctx.run.llmProvider, role)
     return resolved.engine && deps.engineClient ? deps.engineClient(resolved.engine) : ctx.run.llmProvider === 'codex' ? deps.codex : deps.claude
   }
   /**
@@ -391,8 +391,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   const modelFor = (ctx: CiModelContext, _stage: CiUsageKind): string => ctx.run.llmModel
 
   /** Модель разработки — безопасный fallback, если модель вспомогательного этапа не стартовала. */
-  const runModelOf = (ctx: CiModelContext): string =>
-    deps.db.ci.resolveTaskStageLlmConfig(ctx.project.id, ctx.task.id, 'model_work').model
+  const runModelOf = async (ctx: CiModelContext): Promise<string> =>
+    (await deps.db.ci.resolveTaskStageLlmConfig(ctx.project.id, ctx.task.id, 'model_work')).model
 
   /**
    * Ходы одной стадии в одном вызове хука. Модель стадии берётся один раз, и
@@ -409,22 +409,22 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   function stageRunner(ctx: CiModelContext, stage: CiUsageKind, stepId: string | null) {
     let model: string | null = null
     return async (
-      build: (model: string) => LlmRequest,
+      build: (model: string) => Promise<LlmRequest>,
       onLog: (stream: 'stdout' | 'system', chunk: string) => void,
       signal: AbortSignal,
       abortNote?: string,
       allowModelFallback = true
     ): Promise<TurnResult> => {
-      const runModel = runModelOf(ctx)
+      const runModel = await runModelOf(ctx)
       const stageModel = (model ??= modelFor(ctx, stage))
-      const first = await runTurn(clientFor(ctx), build(stageModel), onLog, signal, abortNote, now)
-      recordUsage(ctx, stage, stepId, first, stageModel)
+      const first = await runTurn(await clientFor(ctx), await build(stageModel), onLog, signal, abortNote, now)
+      await recordUsage(ctx, stage, stepId, first, stageModel)
       const empty = !first.text.trim() && !first.meta && !first.usage
       if (first.ok || first.cancelled || signal.aborted || !allowModelFallback || stageModel === runModel || !empty) return first
       onLog('system', `Модель «${stageModel}» стадии «${CI_USAGE_KIND_LABELS[stage]}» не отработала — повторяю на модели рана «${runModel}».\n`)
       model = runModel
-      const second = await runTurn(clientFor(ctx), build(runModel), onLog, signal, abortNote, now)
-      recordUsage(ctx, stage, stepId, second, runModel)
+      const second = await runTurn(await clientFor(ctx), await build(runModel), onLog, signal, abortNote, now)
+      await recordUsage(ctx, stage, stepId, second, runModel)
       return second
     }
   }
@@ -443,10 +443,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * клиент без usage), строкой не становится — иначе отчёт считал бы запросы,
    * которых не было видно.
    */
-  function recordUsage(ctx: CiModelContext, kind: CiUsageKind, stepId: string | null, turn: TurnResult, model: string): void {
+  async function recordUsage(ctx: CiModelContext, kind: CiUsageKind, stepId: string | null, turn: TurnResult, model: string): Promise<void> {
     // Вызовы инструментов считаются отдельно от токенов: ход, о расходе которого
     // CLI промолчал, всё равно успевает что-то вызвать.
-    recordToolCalls(ctx, turn)
+    await recordToolCalls(ctx, turn)
     const u: TurnUsage = turn.meta ?? turn.usage ?? {}
     const tokens = (u.inputTokens ?? 0) + (u.outputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheCreationTokens ?? 0)
     if (!turn.meta && tokens === 0) return
@@ -458,7 +458,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // по прайсу считала кэш по полной цене входа и завышала её в разы.
     const inputTokens = ctx.run.llmProvider === 'codex' ? Math.max(0, rawInput - cacheReadTokens) : rawInput
     try {
-      deps.db.ci.addCiRunUsage({
+      await deps.db.ci.addCiRunUsage({
         runId: ctx.run.id,
         stepId,
         kind,
@@ -491,15 +491,15 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * ничего». Ход из одних отказов писать надо — иначе они снова не видны.
    * Не бросает никогда — это метрика.
    */
-  function recordToolCalls(ctx: CiModelContext, turn: TurnResult): void {
+  async function recordToolCalls(ctx: CiModelContext, turn: TurnResult): Promise<void> {
     const chars = ciToolCharsTotal(turn.toolChars)
     if (!ciToolCallsAny(turn.toolCalls) && chars === 0) return
     try {
-      deps.db.ci.addCiRunToolCalls(ctx.run.id, turn.toolCalls, turn.toolChars)
+      await deps.db.ci.addCiRunToolCalls(ctx.run.id, turn.toolCalls, turn.toolChars)
       // Тяжёлые ответы — отдельными строками: по ним видно, ЧТО раздуло контекст,
       // а не только сколько его было.
       for (const r of turn.toolResponses) {
-        deps.db.ci.addCiRunToolResponse({
+        await deps.db.ci.addCiRunToolResponse({
           runId: ctx.run.id,
           stepId: ctx.parentStepId,
           tool: r.tool,
@@ -523,11 +523,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * Не бросает: потерянный пробел — упущенная запись в базе, а не повод валить
    * ран. Дубли снимает само хранение (ключ «ран + вопрос»).
    */
-  function recordKbGaps(ctx: CiModelContext, stepId: string, text: string): void {
+  async function recordKbGaps(ctx: CiModelContext, stepId: string, text: string): Promise<void> {
     const gaps = parseKbGaps(text)
     if (!gaps.length) return
     try {
-      deps.db.ci.addCiRunKbGaps(ctx.run.id, stepId, gaps)
+      await deps.db.ci.addCiRunKbGaps(ctx.run.id, stepId, gaps)
     } catch {
       /* запись пробелов не имеет права уронить ран */
     }
@@ -541,12 +541,12 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * Названный пробел старше: у него уже есть ответ, повторять его вопросом
    * незачем.
    */
-  function collectKbGaps(ctx: CiModelContext): KbGapForPrompt[] {
+  async function collectKbGaps(ctx: CiModelContext): Promise<KbGapForPrompt[]> {
     try {
-      const reported = deps.db.ci.ciRunKbGaps(ctx.run.id)
+      const reported = await deps.db.ci.ciRunKbGaps(ctx.run.id)
       const named = new Set(reported.map((gap) => gap.question.trim().toLowerCase()))
-      const unanswered = deps.db
-        .kb.kbUsageRunGaps(ctx.run.id, MAX_PROMPT_GAPS)
+      const unanswered = (await deps.db
+        .kb.kbUsageRunGaps(ctx.run.id, MAX_PROMPT_GAPS))
         .filter((gap) => !named.has(gap.query.trim().toLowerCase()))
         .map((gap) => ({ question: gap.query, reason: gap.reason }))
       return [...reported, ...unanswered].slice(0, MAX_PROMPT_GAPS)
@@ -569,10 +569,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * она вообще единственный источник контекста). `VC_KB_TOOL=off` глушит их и
    * здесь — как в чате.
    */
-  function kbToolAvailable(mode: KbContextMode): boolean {
+  async function kbToolAvailable(mode: KbContextMode): Promise<boolean> {
     if (!deps.kb || !deps.kbMcpBaseUrl || mode === 'off' || deps.kbToolEnabled === false) return false
     try {
-      return deps.kb.status().available
+      return (await deps.kb.status()).available
     } catch {
       return false // сломанный индекс = инструмента нет, ран продолжается
     }
@@ -590,7 +590,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   ): Promise<T> {
     const mode = kbModeOf(ctx)
     const turnId = randomUUID()
-    if (!kbToolAvailable(mode)) return body({}, turnId)
+    if (!await kbToolAvailable(mode)) return body({}, turnId)
     const token = randomUUID()
     kbBroker.register(token, {
       userId: ctx.run.triggeredBy,
@@ -622,7 +622,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    */
   async function withBrowserTools<T>(ctx: CiModelContext, body: (fields: Partial<LlmRequest>) => Promise<T>): Promise<T> {
     const conversationId = ctx.run.conversationId
-    const check = deps.db.ci.getTaskBrowserCheck(ctx.task.id)
+    const check = await deps.db.ci.getTaskBrowserCheck(ctx.task.id)
     if (!deps.previewMcpBaseUrl || !deps.previewTool || !conversationId || check.mode === 'off') return body({})
     const token = randomUUID()
     deps.previewTool.register(token, { userId: ctx.run.triggeredBy, conversationId })
@@ -646,7 +646,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     if (!deps.kb || kbModeOf(ctx) !== 'auto') return ''
     const query = kbTaskQuery(ctx.task)
     if (!query.text && !query.paths.length && !query.symbols.length) return ''
-    const usage = deps.kbUsage?.begin(
+    const usage = await deps.kbUsage?.begin(
       {
         userId: ctx.run.triggeredBy,
         conversationId: ctx.run.conversationId,
@@ -661,7 +661,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     )
     try {
       const auto = await buildKbAutoContext(deps.kb, query, {
-        ...kbViewOf(deps.db, ctx.run.triggeredBy),
+        ...(await kbViewOf(deps.db, ctx.run.triggeredBy)),
         projectId: ctx.project.id
       }, CI_KB_AUTO_CONTEXT_BUDGET)
       if (!auto.text) {
@@ -689,9 +689,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // В том числе команды проверки: их доступность определяется только
     // availableToModel в справочнике проекта. Каждый вызов виден вложенным шагом.
     const token = randomUUID()
-    const settings = deps.db.ci.getCiSettings()
-    const available = deps.db
-      .ci.listCiCommands(ctx.run.triggeredBy, ctx.project.id)
+    const settings = await deps.db.ci.getCiSettings()
+    const available = (await deps.db
+      .ci.listCiCommands(ctx.run.triggeredBy, ctx.project.id))
       .filter((c) => c.availableToModel && !c.isCleanup)
     let calls = 0
     ciToolBroker.register(token, {
@@ -709,9 +709,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         return { output: trimmed.text, exitCode: r.exitCode }
       }
     })
-    const base = remoteOf(deps, ctx)
+    const base = await remoteOf(deps, ctx)
     if (ctx.agentId && base.remote) base.remote.ciMcpUrl = `${deps.ciMcpBaseUrl}&run=${token}`
-    const log = (stream: 'stdout' | 'system', chunk: string): void => ctx.log(ctx.parentStepId, stream, chunk)
+    const log = async (stream: 'stdout' | 'system', chunk: string): Promise<void> => await ctx.log(ctx.parentStepId, stream, chunk)
 
     // Шаг модели — это несколько ходов CLI в одной сессии: уточняющие вопросы и
     // одобрение плана ставят ран на паузу и продолжают тот же диалог по sessionId.
@@ -725,8 +725,8 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // «Сначала база знаний, потом код»: требование идёт в задании, а блок
         // контекста по теме задачи сервер подмешивает сам (режим `auto`).
         const kbMode = kbModeOf(ctx)
-        let prompt = taskPrompt(ctx, phase, deps.db.tasks.confirmedDevelopmentReadiness(ctx.task.id))
-        const qa = deps.db.qa.getQaTaskState(ctx.run.triggeredBy, ctx.task.projectId, ctx.task.id)
+        let prompt = taskPrompt(ctx, phase, await deps.db.tasks.confirmedDevelopmentReadiness(ctx.task.id))
+        const qa = await deps.db.qa.getQaTaskState(ctx.run.triggeredBy, ctx.task.projectId, ctx.task.id)
         const fixSession = qa?.sessions.find((session) => session.status === 'failed' && (session.linkedFixRunId === ctx.run.id || session.results.some((result) => result.issue?.linkedFixRunId === ctx.run.id)))
         if (fixSession) {
           const criteria = new Map(qa?.criteria.map((criterion) => [criterion.id, criterion]))
@@ -750,7 +750,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           // модели только через remote MCP — в плане она оказывалась слепой. Вместо этого
           // `default` с белым списком инструментов (правки файлов CLI отклонит сам) плюс
           // remote-bash в режиме только чтения (`ro=1`) и без команд CI-справочника.
-          const req = (model: string): LlmRequest => ({
+          const req = async (model: string): Promise<LlmRequest> => ({
             userId: ctx.run.triggeredBy,
             prompt,
             sessionId,
@@ -789,11 +789,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           if (!r.ok) return { ok: false }
           // Пробелы базы знаний снимаем с каждого хода: назвать их модель может
           // и в плане, и в ответе на уточнение, а не только в последнем ходе.
-          recordKbGaps(ctx, ctx.parentStepId, r.text)
+          await recordKbGaps(ctx, ctx.parentStepId, r.text)
           if (r.sessionId) {
             sessionId = r.sessionId
             // Тот же диалог продолжит fix-loop: он живёт в другом вызове хука.
-            ctx.setModelSessionId(sessionId)
+            await ctx.setModelSessionId(sessionId)
           }
 
           // 1) Уточняющие вопросы — пока есть бюджет.
@@ -803,7 +803,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             const answer = await ctx.askUser(ctx.parentStepId, parsed.questions)
             if (ctx.signal.aborted) return { ok: false, cancelled: true }
             if (answer === null) {
-              log('system', 'Продолжаю без уточнений.\n')
+              await log('system', 'Продолжаю без уточнений.\n')
               prompt = 'Ответа не будет — действуй по своему усмотрению и продолжай.'
             } else {
               prompt = answer.trim() || 'Ответа не будет — действуй по своему усмотрению и продолжай.'
@@ -816,17 +816,17 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           if (phase === 'plan') {
             const decision = await ctx.askPlanApproval(ctx.parentStepId, r.text)
             if (!decision) {
-              log('system', 'Решение по плану не получено — ран остановлен.\n')
+              await log('system', 'Решение по плану не получено — ран остановлен.\n')
               return { ok: false, cancelled: true }
             }
             if (decision.decision === 'rework') {
-              log('system', 'План отправлен на доработку.\n')
+              await log('system', 'План отправлен на доработку.\n')
               prompt = decision.comment.trim()
                 ? `Пользователь просит доработать план: ${decision.comment.trim()}\nПредложи исправленный план, файлы не меняй.`
                 : 'Пользователь просит доработать план. Предложи исправленный вариант, файлы не меняй.'
               continue
             }
-            log('system', 'План одобрен — перехожу к разработке.\n')
+            await log('system', 'План одобрен — перехожу к разработке.\n')
             phase = 'development'
             prompt = `План одобрен. Реализуй его в рабочей директории. Команды выполняй через доступный инструмент bash.\n${DEVELOPMENT_FAST_GATE_HINT}`
             continue
@@ -835,7 +835,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           // 3) Разработка закончена.
           return { ok: true }
         }
-        log('system', `Достигнут предел ходов модели (${MAX_MODEL_TURNS}).\n`)
+        await log('system', `Достигнут предел ходов модели (${MAX_MODEL_TURNS}).\n`)
         return { ok: false }
       }))
     } finally {
@@ -844,13 +844,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   const modelSummary: CiModelSummaryHook = async (ctx: CiModelContext) => {
-    const detail = deps.db.ci.getCiRun(ctx.run.triggeredBy, ctx.run.id)
+    const detail = await deps.db.ci.getCiRun(ctx.run.triggeredBy, ctx.run.id)
     const stepLines = (detail?.steps ?? []).map((s) => `- ${s.title}: ${s.status}${s.exitCode != null ? ` (код ${s.exitCode})` : ''}`).join('\n')
     // Инструменты БЗ есть и здесь: ход без машины и в режиме «план» — база
     // read-only, а сверить формулировки резюме с ней дешевле, чем угадывать.
     const turnOf = stageRunner(ctx, 'summary', ctx.parentStepId)
     return await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
-      const req = (model: string): LlmRequest => ({
+      const req = async (model: string): Promise<LlmRequest> => ({
         userId: ctx.run.triggeredBy,
         prompt: `Кратко резюмируй результат воркфлоу по задаче «${ctx.task.title}». Шаги:\n${stepLines}\nДай сжатое резюме: что сделано и в каком состоянии задача.`,
         sessionId: null,
@@ -866,7 +866,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   const attemptFix: CiFixHook = async (ctx: CiFixContext) => {
-    const settings = deps.db.ci.getCiSettings()
+    const settings = await deps.db.ci.getCiSettings()
     const startAll = now()
     const maxFixAttempts = Math.min(Math.max(0, settings.maxFixAttempts), 10)
     let sessionId = ctx.modelSessionId ?? ctx.run.modelSessionId ?? null
@@ -896,13 +896,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
           return result
         }
       })
-      ctx.setFixContext?.({ stepId: latestStepId, logTail: latestLogTail, failures, updatedAt: now() })
+      await ctx.setFixContext?.({ stepId: latestStepId, logTail: latestLogTail, failures, updatedAt: now() })
 
       let turn: TurnResult
       try {
         turn = await withKbTools(ctx, ctx.parentStepId, async (kbFields) => {
-          const req = (model: string): LlmRequest => {
-            const remote = remoteOf(deps, ctx)
+          const req = async (model: string): Promise<LlmRequest> => {
+            const remote = await remoteOf(deps, ctx)
             if (ctx.agentId && remote.remote) remote.remote.ciMcpUrl = `${deps.ciMcpBaseUrl}&run=${token}`
             return {
               userId: ctx.run.triggeredBy,
@@ -935,10 +935,10 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         ciToolBroker.unregister(token)
       }
 
-      recordKbGaps(ctx, ctx.parentStepId, turn.text)
+      await recordKbGaps(ctx, ctx.parentStepId, turn.text)
       if (turn.sessionId) {
         sessionId = turn.sessionId
-        ctx.setModelSessionId(sessionId)
+        await ctx.setModelSessionId(sessionId)
       }
       if (turn.cancelled || ctx.signal.aborted) return { fixed: false }
       const diagnosis = turn.text.split('\n').find((line) => line.trim())?.slice(0, 200) ?? ''
@@ -947,7 +947,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       const rerunStepId = rr.stepId ?? latestStepId
       const rerunOutput = rr.output ?? latestLogTail
       const fixed = rr.exitCode === 0
-      ctx.recordFix({
+      await ctx.recordFix({
         runStepId: ctx.failedStep.id,
         attemptNo: attempt,
         diagnosis,
@@ -960,13 +960,13 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         durationMs: now() - started
       })
       if (fixed) {
-        ctx.setFixContext?.(null)
+        await ctx.setFixContext?.(null)
         return { fixed: true }
       }
       latestStepId = rerunStepId
       latestLogTail = rerunOutput.slice(-tailLimit)
       failures = parseCiTestFailures(latestLogTail, ctx.failedStep.commandSnapshot)
-      ctx.setFixContext?.({ stepId: latestStepId, logTail: latestLogTail, failures, updatedAt: now() })
+      await ctx.setFixContext?.({ stepId: latestStepId, logTail: latestLogTail, failures, updatedAt: now() })
     }
     return { fixed: false }
   }
@@ -984,7 +984,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * то есть в предупреждение в ленте.
    */
   const kbUpdate: CiKbUpdateHook = async (ctx: CiModelContext) => {
-    const log = (chunk: string): void => ctx.log(ctx.parentStepId, 'system', chunk)
+    const log = async (chunk: string): Promise<void> => await ctx.log(ctx.parentStepId, 'system', chunk)
     const cancelled = { ok: true, message: 'Ран отменён — база знаний не обновлялась' }
     if (ctx.signal.aborted) return cancelled
 
@@ -997,7 +997,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       try {
         const check = await deps.executor.run(
           { agentId: ctx.agentId, script: KB_REPO_ROOT_CHECK_SCRIPT, workdir: repoDir, env: ctx.env, timeoutMs: 30_000 },
-          () => {},
+          async () => {},
           ctx.signal
         )
         if (check.exitCode !== 0) {
@@ -1015,12 +1015,12 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       try {
         await deps.executor.run(
           { agentId: ctx.agentId, script: KB_DIFF_SCRIPT, workdir: repoDir, env: ctx.env, timeoutMs: 120_000 },
-          (d) => chunks.push(d),
+          async (d) => { chunks.push(d) },
           ctx.signal
         )
         changes = parseDiffBundle(chunks.join(''))
       } catch (err) {
-        log(`Диф собрать не удалось: ${err instanceof Error ? err.message : String(err)}\n`)
+        await log(`Диф собрать не удалось: ${err instanceof Error ? err.message : String(err)}\n`)
       }
     }
     if (ctx.signal.aborted) return cancelled
@@ -1028,14 +1028,14 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // Пробелы базы знаний — вторая причина этого шага, наравне с дифом: ран без
     // правок кода мог быть исследованием, у которого база знаний не ответила, и
     // найденный в коде ответ обязан остаться в базе.
-    const gaps = collectKbGaps(ctx)
+    const gaps = await collectKbGaps(ctx)
     if (!changes.files.length && !gaps.length) return { ok: true, message: 'Нечего обновлять: изменений кода в ветке задачи нет' }
-    if (changes.files.length) log(`Изменённых файлов: ${changes.files.length}.\n`)
-    if (gaps.length) log(`Пробелов базы знаний за ран: ${gaps.length}.\n`)
+    if (changes.files.length) await log(`Изменённых файлов: ${changes.files.length}.\n`)
+    if (gaps.length) await log(`Пробелов базы знаний за ран: ${gaps.length}.\n`)
 
-    const projectDocs = deps.db.kb.kbDocuments({ scope: 'project', projectId: ctx.project.id })
+    const projectDocs = await deps.db.kb.kbDocuments({ scope: 'project', projectId: ctx.project.id })
     const affected = affectedProjectDocs(projectDocs, changes.files)
-    const req = (model: string): LlmRequest => ({
+    const req = async (model: string): Promise<LlmRequest> => ({
       userId: ctx.run.triggeredBy,
       prompt: kbUpdatePrompt({
         projectName: ctx.project.name,
@@ -1046,7 +1046,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         changes,
         affected,
         editFileTopics: !!ctx.agentId,
-        gaps
+        gaps: await gaps
       }),
       sessionId: null,
       model,
@@ -1078,7 +1078,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         try {
           await deps.executor.run(
             { agentId: ctx.agentId, script: KB_FILE_TOPICS_SCRIPT, workdir: repoDir, env: ctx.env, timeoutMs: 30_000 },
-            (chunk) => topics.push(...chunk.split('\n').map((p) => p.trim()).filter((p) => p.startsWith('docs/kb/'))),
+            async (chunk) => { topics.push(...chunk.split('\n').map((p) => p.trim()).filter((p) => p.startsWith('docs/kb/'))) },
             ctx.signal
           )
         } catch {
@@ -1117,25 +1117,25 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err)
         const code = err instanceof KbUpdateParseError ? err.code : 'unknown'
-        log(`Финальный ответ kb_update отклонён [${code}]: ${detail}\n`)
+        await log(`Финальный ответ kb_update отклонён [${code}]: ${detail}\n`)
         const repairable = err instanceof KbUpdateParseError
           && (err.code === 'json_not_found' || err.code === 'invalid_json' || err.code === 'invalid_contract')
         if (!repairable) {
           const message = err instanceof KbUpdateParseError && err.code === 'ambiguous_json'
             ? 'В ответе модели несколько JSON-кандидатов — статьи раздела проекта не сохранены'
             : 'Ответ модели неразборчив — статьи раздела проекта не сохранены'
-          log('Repair финального JSON не запускается; merge остановлен.\n')
+          await log('Repair финального JSON не запускается; merge остановлен.\n')
           return { ok: false, message }
         }
         if (!turn.sessionId) {
-          log('Repair финального JSON не запущен: sessionId отсутствует; merge остановлен.\n')
+          await log('Repair финального JSON не запущен: sessionId отсутствует; merge остановлен.\n')
           return { ok: false, message: 'Repair финального ответа не выполнен: сессия модели недоступна' }
         }
 
-        log(`Запускаю repair финального JSON; sessionId доступен.\n`)
+        await log(`Запускаю repair финального JSON; sessionId доступен.\n`)
         const repairStartedAt = now()
         const repaired = await runStageTurn(
-          (model) => ({
+          async (model) => ({
             userId: ctx.run.triggeredBy,
             prompt: KB_UPDATE_REPAIR_PROMPT,
             sessionId: turn.sessionId,
@@ -1143,23 +1143,23 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
             permissionMode: 'plan',
             executionDisabled: true
           }),
-          (stream, chunk) => {
+          async (stream, chunk) => {
             // Финальный текст не дублируем в пользовательскую ленту; системная
             // активность остаётся в техническом логе.
-            if (stream === 'system') ctx.log(ctx.parentStepId, stream, chunk)
+            if (stream === 'system') await ctx.log(ctx.parentStepId, stream, chunk)
           },
           ctl.signal,
           'Repair финального ответа остановлен.\n',
           false
         )
-        log(`Repair финального JSON завершил ход за ${Math.max(0, now() - repairStartedAt)} мс.\n`)
+        await log(`Repair финального JSON завершил ход за ${Math.max(0, now() - repairStartedAt)} мс.\n`)
         if (timedOut) {
-          log('Repair финального JSON не завершён до общего таймаута; merge остановлен.\n')
+          await log('Repair финального JSON не завершён до общего таймаута; merge остановлен.\n')
           return await timeoutResult(true)
         }
         if (ctx.signal.aborted) return cancelled
         if (!repaired.ok) {
-          log('Repair финального JSON завершился ошибкой транспорта; merge остановлен.\n')
+          await log('Repair финального JSON завершился ошибкой транспорта; merge остановлен.\n')
           return { ok: false, message: 'Модель повторно не вернула корректный JSON — статьи раздела проекта не сохранены' }
         }
         try {
@@ -1167,11 +1167,11 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         } catch (repairErr) {
           const repairDetail = repairErr instanceof Error ? repairErr.message : String(repairErr)
           const repairCode = repairErr instanceof KbUpdateParseError ? repairErr.code : 'unknown'
-          log(`Repair финального JSON отклонён [${repairCode}]: ${repairDetail}; merge остановлен.\n`)
+          await log(`Repair финального JSON отклонён [${repairCode}]: ${repairDetail}; merge остановлен.\n`)
           return { ok: false, message: 'Модель повторно не вернула корректный JSON — статьи раздела проекта не сохранены' }
         }
         repairRecovered = true
-        log('Repair финального JSON успешно восстановил ответ.\n')
+        await log('Repair финального JSON успешно восстановил ответ.\n')
       }
     } catch (err) {
       return { ok: false, message: `Шаг не выполнен: ${err instanceof Error ? err.message : String(err)}` }
@@ -1183,9 +1183,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // статьёй, раздел всегда `project` (видна только участникам проекта).
     const own = new Set(projectDocs.map((doc) => doc.id))
     const today = new Date(now()).toISOString().slice(0, 10)
-    const saved = out.documents.map((item) => {
+    const saved = await Promise.all(out.documents.map(async (item) => {
       const id = item.id && own.has(item.id) ? item.id : null
-      const doc = deps.db.kb.saveKbDocument({
+      const doc = await deps.db.kb.saveKbDocument({
         id,
         scope: 'project',
         projectId: ctx.project.id,
@@ -1198,15 +1198,15 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         createdBy: ctx.run.triggeredBy
       })
       return { title: doc.title, action: id ? ('updated' as const) : ('created' as const) }
-    })
+    }))
     const summary = formatKbUpdateSummary(out, saved)
     return { ok: true, message: repairRecovered ? `Финальный JSON восстановлен дополнительным запросом. ${summary}` : summary }
   }
 
   const conflictFixForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; conflicts: string[]; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
-    const project = deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
-    const task = deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
-    const development = deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const project = await deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = await deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = await deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
     const llm = { llmEngineId:args.run.llmEngineId, provider:args.run.llmProvider, model:args.run.llmModel }
     if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для исправления конфликтов недоступен', llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
     const noop = (): never => { throw new Error('Операция development CI недоступна в merge conflict_fix') }
@@ -1219,7 +1219,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
       run:{...development,llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model},
       task, project, parentStepId:'merge-conflict-fix'
     } as unknown as CiModelContext
-    const request=(model:string):LlmRequest=>({
+    const request=async (model:string):Promise<LlmRequest>=>({
       userId:args.run.triggeredBy,
       prompt:[
         'Дополнительный шаг CI: исправь Git-конфликты текущего merge в рабочей копии.',
@@ -1248,9 +1248,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
    * коммит, повторный гейт и решение о публикации остаются за сервером.
    */
   const testFixForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; check: import('@voicechat/shared').MergeCheck; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
-    const project = deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
-    const task = deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
-    const development = deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const project = await deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = await deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = await deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
     const llm = { llmEngineId:args.run.llmEngineId, provider:args.run.llmProvider, model:args.run.llmModel }
     if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для исправления проверок недоступен', llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
     const noop = (): never => { throw new Error('Операция development CI недоступна в merge test_fix') }
@@ -1266,7 +1266,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     // Хвост вывода: полный лог гейта может быть в мегабайтах, а причина почти
     // всегда в последних строках.
     const tail = args.check.output.split(/\r?\n/).slice(-120).join('\n')
-    const request=(model:string):LlmRequest=>({
+    const request=async (model:string):Promise<LlmRequest>=>({
       userId:args.run.triggeredBy,
       prompt:[
         'Дополнительный шаг merge: обязательные проверки слитого дерева упали. Исправь причину в этой рабочей копии.',
@@ -1292,9 +1292,9 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   }
 
   const kbUpdateForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
-    const project = deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
-    const task = deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
-    const development = deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const project = await deps.db.projects.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = await deps.db.tasks.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = await deps.db.ci.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
     if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для БЗ недоступен', llmEngineId:null, llmProvider:'claude', llmModel:'' }
     // Merge-ран получает разрешённую фактическую конфигурацию до создания записи.
     // Здесь используется именно этот неизменяемый снимок: повторное чтение настроек
