@@ -10,7 +10,10 @@ export interface ServerConfig {
   host: string
   /** Каталог данных (БД, модели). */
   dataDir: string
-  /** Регистрация с подтверждением email: SMTP (smtp://user:pass@host:587 | smtps://…:465), отправитель и публичный URL для ссылок. */
+  /** Регистрация с подтверждением email: выбранный транспорт, его credentials, отправитель и публичный URL. */
+  mailTransport: 'http' | 'smtp' | null
+  mailApiKey: string | null
+  mailApiUrl: string
   smtpUrl: string | null
   mailFrom: string | null
   publicUrl: string | null
@@ -177,10 +180,17 @@ function parsePositiveInt(raw: string | undefined): number | undefined {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
+  const mailTransport = env.VC_MAIL_TRANSPORT || null
+  if (mailTransport !== null && mailTransport !== 'http' && mailTransport !== 'smtp') {
+    throw new Error('VC_MAIL_TRANSPORT должен быть http или smtp')
+  }
   return {
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
     dataDir,
+    mailTransport,
+    mailApiKey: env.VC_MAIL_API_KEY ?? null,
+    mailApiUrl: env.VC_MAIL_API_URL ?? 'https://api.brevo.com/v3/smtp/email',
     smtpUrl: env.VC_SMTP_URL ?? null,
     mailFrom: env.VC_MAIL_FROM ?? null,
     publicUrl: env.VC_PUBLIC_URL ?? null,

@@ -797,7 +797,8 @@ describe('REST: аутентификация', () => {
     expect((await inj({ method: 'PATCH', url: '/api/admin/users/limited', payload: { llmLimitUsd: null } })).json().llmLimitUsd).toBeNull()
   })
 
-  it('открытая регистрация: выключена → 404; админ включает; заявка шлёт письмо со ссылкой; verify создаёт учётку с email и сессию; повтор токена мёртв', async () => {
+  // @testCase TC-08
+  it('открытая регистрация: signup и resend используют один мейлер; verify создаёт учётку и сессию', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/session/signup' })).json()).toEqual({ enabled: false })
     expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina', email: 'nina@example.com', password: 'first-strong-pass-1' } })).statusCode).toBe(404)
     const cfg = (await inj({ method: 'PUT', url: '/api/admin/signup', payload: { enabled: true, role: 'tester' } })).json()
@@ -827,6 +828,16 @@ describe('REST: аутентификация', () => {
     const link2 = /#\/verify\/([^\s"<]+)/.exec(sentMails[sentMails.length - 1]!.text)!
     expect((await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link2[1]!) } })).statusCode).toBe(200)
     await inj({ method: 'PUT', url: '/api/admin/signup', payload: { enabled: false } })
+  })
+
+  // @testCase TC-09
+  it('окончательная ошибка доставки signup сохраняет безопасный 502', async () => {
+    await inj({ method: 'PUT', url: '/api/admin/signup', payload: { enabled: true, role: 'tester' } })
+    harness.mailError = new Error('HTTP mail delivery failed (503)')
+    const response = await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'mailfail', email: 'private@example.com', password: 'strong-password-2026' } })
+    expect(response.statusCode).toBe(502)
+    expect(response.body).not.toContain('private@example.com')
+    expect(await db.identity.getUser('mailfail')).toBeNull()
   })
 
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
