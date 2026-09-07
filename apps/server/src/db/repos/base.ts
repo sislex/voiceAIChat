@@ -1,7 +1,8 @@
 // Основа доменных репозиториев: общее соединение, генераторы id/времени и доступ к соседям.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import type Database from 'better-sqlite3'
+import type { Sql } from '../sql/types.js'
+import type { Lane } from '../sql/lane.js'
 import type { IdentityRepo } from './identity.js'
 import type { SettingsRepo } from './settings.js'
 import type { LlmRepo } from './llm.js'
@@ -31,7 +32,8 @@ export interface Repos {
 
 /** Общее состояние одного соединения: репозитории не владеют им, а делят. */
 export interface RepoContext {
-  readonly db: Database.Database
+  /** Адаптер базы (SQLite или Postgres) — репозитории пишут SQL в диалекте SQLite, различия закрывает адаптер. */
+  readonly sql: Sql
   readonly newId: () => string
   readonly now: () => number
   /** Close-события WebSocket могут прийти после teardown; закрытую БД больше не трогаем. */
@@ -42,9 +44,9 @@ export interface RepoContext {
 /**
  * Асинхронный порт репозитория: те же методы, но каждый возвращает Promise. Сервер
  * говорит с данными только через порты (db.chat, db.tasks, …), поэтому реализацию
- * домена можно заменить на удалённую, не трогая вызывающих. Сегодня реализация —
- * синхронный better-sqlite3: тело метода выполняется сразу, откладывается лишь
- * продолжение вызывающего.
+ * домена можно заменить на удалённую, не трогая вызывающих. Репозитории и сами
+ * асинхронны (один код на SQLite и Postgres); порт добавляет к ним ожидание готовности
+ * базы — схема и миграции применяются после конструктора.
  */
 export type AsyncPort<T> = {
   [K in keyof T as T[K] extends (...args: never[]) => unknown ? K : never]: T[K] extends (...args: infer A) => infer R
@@ -58,7 +60,14 @@ export type AsyncPort<T> = {
  * руками. Присваивание в порт (моки в тестах, vi.spyOn) уходит в сам репозиторий,
  * поэтому подмена метода видна и через порт, и соседям через this.repos.
  */
-export function asyncPort<T extends object>(impl: T): AsyncPort<T> {
+export interface AsyncPortOptions {
+  /** Ожидание готовности базы (схема, миграции); undefined — уже готова, ждать нечего. */
+  ready?: () => Promise<void> | undefined
+  /** Полоса SQLite: методы по одному, в порядке вызова (см. sql/lane.ts). */
+  lane?: Lane
+}
+
+export function asyncPort<T extends object>(impl: T, opts: AsyncPortOptions = {}): AsyncPort<T> {
   const cache = new Map<PropertyKey, unknown>()
   return new Proxy(impl, {
     get(target, key) {
@@ -67,7 +76,9 @@ export function asyncPort<T extends object>(impl: T): AsyncPort<T> {
       let wrapped = cache.get(key)
       if (!wrapped || (wrapped as { impl?: unknown }).impl !== value) {
         const fn = value as (...args: unknown[]) => unknown
-        const w = async (...args: unknown[]) => fn.apply(target, args)
+        const call = (args: unknown[]) => (opts.lane ? opts.lane.run(() => fn.apply(target, args) as Promise<unknown>) : (async () => fn.apply(target, args))())
+        // Без ожидания, когда база готова: тело метода стартует синхронно, порядок вызовов — порядок выполнения.
+        const w = (...args: unknown[]) => { const r = opts.ready?.(); return r ? r.then(() => call(args)) : call(args) }
         ;(w as unknown as { impl: unknown }).impl = value
         wrapped = w
         cache.set(key, wrapped)
@@ -92,11 +103,11 @@ export type Ports = { [K in keyof Repos]: AsyncPort<Repos[K]> }
 export type PortOverrides = { [K in keyof Ports]?: (ports: Ports) => Ports[K] }
 
 export abstract class BaseRepo {
-  protected readonly db: Database.Database
+  protected readonly sql: Sql
   protected readonly newId: () => string
   protected readonly now: () => number
   constructor(private readonly ctx: RepoContext) {
-    this.db = ctx.db
+    this.sql = ctx.sql
     this.newId = ctx.newId
     this.now = ctx.now
   }

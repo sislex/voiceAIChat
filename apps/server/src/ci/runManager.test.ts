@@ -36,7 +36,7 @@ let dirtyWorkspace = false
 let syncFailure: 'status' | 'fetch' | 'checkout' | 'reset' | null = null
 let onModelSend: (() => void) | null = null
 /** Снять состояние доски ровно в момент шага (после ответа ран может успеть закончиться). */
-let onExec: ((script: string) => void) | null = null
+let onExec: ((script: string) => void | Promise<void>) | null = null
 /** Задержать ответ модели: нужно тестам, которым важен ран «в работе». */
 let modelGate: Promise<void> | null = null
 let codexModel = ''
@@ -86,7 +86,7 @@ const ciExecutor: CommandExecutor = {
     scripts.push(req.script)
     workdirs.push(req.workdir)
     executorEnvs.push(req.env)
-    onExec?.(req.script)
+    await onExec?.(req.script)
     const n = (counts.get(req.script) ?? 0) + 1
     counts.set(req.script, n)
     onChunk(`run:${req.script.slice(0, 20)}\n`)
@@ -416,7 +416,7 @@ describe('ci run manager', () => {
     // Карточку закрывает merge-ран уже после development-рана, поэтому здесь
     // подменяем сам признак: проверяем уборку, а не маршрут карточки по доске.
     const isTaskClosed = db.sync.tasks.isTaskClosed.bind(db.sync.tasks)
-    db.sync.tasks.isTaskClosed = () => true
+    db.sync.tasks.isTaskClosed = async () => true
 
     try {
       const runId = await run(project.id, task.id)
@@ -1049,7 +1049,7 @@ describe('ci run manager', () => {
     const { project, task } = await setup()
     const devCol = (await db.tasks.getBoard('admin', project.id))!.columns.find((c) => c.semanticType === 'development')!
     const real = db.sync.projects.getColumnIdBySemantic.bind(db.sync.projects)
-    const spy = vi.spyOn(db.sync.projects, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'done' ? null : real(pid, semantic)))
+    const spy = vi.spyOn(db.sync.projects, 'getColumnIdBySemantic').mockImplementation(async (pid, semantic) => (semantic === 'done' ? null : await real(pid, semantic)))
     const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
     await db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const d = await waitRun(await run(project.id, task.id))
@@ -1072,7 +1072,7 @@ describe('ci run manager', () => {
   it('нет колонки qa_preparation в проекте — ран success и карточка не двигается', async () => {
     const { project, task } = await setup()
     const real = db.sync.projects.getColumnIdBySemantic.bind(db.sync.projects)
-    const spy = vi.spyOn(db.sync.projects, 'getColumnIdBySemantic').mockImplementation((pid, semantic) => (semantic === 'component_qa' ? null : real(pid, semantic)))
+    const spy = vi.spyOn(db.sync.projects, 'getColumnIdBySemantic').mockImplementation(async (pid, semantic) => (semantic === 'component_qa' ? null : await real(pid, semantic)))
     const runId = await run(project.id, task.id)
     const d = await waitRun(runId)
     expect(d.run.status).toBe('success')

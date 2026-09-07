@@ -239,11 +239,12 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
-  it('старая база без новых колонок сессий и журнала открывается без ошибок', () => {
+  it('старая база без новых колонок сессий и журнала открывается без ошибок', async () => {
     // Сторож правила: индексы по колонкам, которые добавляет migrate(), нельзя
     // объявлять в schema.ts — схема выполняется раньше ALTER TABLE. Дважды
     // наступали, теперь проверяется.
     const old = new VoiceChatDb(':memory:')
+    await old.ready
     ;(old as unknown as { db: { exec(sql: string): void } }).db.exec(`
       DROP TABLE sessions;
       DROP TABLE security_events;
@@ -252,14 +253,15 @@ describe('REST: аутентификация', () => {
       CREATE TABLE security_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_name TEXT NOT NULL,
         type TEXT NOT NULL, ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '');
     `)
-    expect(() => (old as unknown as { migrate(): void }).migrate()).not.toThrow()
+    await expect((old as unknown as { migrate(): Promise<void> }).migrate()).resolves.toBeUndefined()
     // И повторное применение схемы поверх мигрированной базы тоже проходит.
     expect(() => (old as unknown as { db: { exec(sql: string): void } }).db.exec(SCHEMA_SQL)).not.toThrow()
-    old.close()
+    await old.close()
   })
 
   it('старая база без колонок устройства мигрирует и продолжает читать прежние сессии', async () => {
     const legacyDb = new VoiceChatDb(':memory:')
+    await legacyDb.ready
     // Воспроизводим таблицу такой, какой она была до метаданных устройства.
     ;(legacyDb as unknown as { db: { exec(sql: string): void } }).db.exec(`
       DROP TABLE sessions;
@@ -268,7 +270,7 @@ describe('REST: аутентификация', () => {
       INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent)
         VALUES ('old', 'someone', 1, 2, ${Date.now() + 86_400_000}, '10.0.0.1', 'legacy');
     `)
-    ;(legacyDb as unknown as { migrate(): void }).migrate()
+    await (legacyDb as unknown as { migrate(): Promise<void> }).migrate()
     const rows = await legacyDb.identity.listSessions('someone')
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ sid: 'old', userAgent: 'legacy', label: null, deviceKey: null, trustedAt: null, geo: null, requests: 0 })
@@ -276,7 +278,7 @@ describe('REST: аутентификация', () => {
     expect(await legacyDb.identity.updateSession('old', { label: 'Старый вход', trusted: true })).toBe(true)
     expect((await legacyDb.identity.listSessions('someone'))[0]).toMatchObject({ label: 'Старый вход' })
     expect((await legacyDb.identity.listSessions('someone'))[0]!.trustedAt).toBeGreaterThan(0)
-    legacyDb.close()
+    await legacyDb.close()
   })
 
   it('переименование и доверие: только своя сессия, пустое имя снимает метку, чужая — 404', async () => {

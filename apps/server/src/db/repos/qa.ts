@@ -78,18 +78,18 @@ export class QaRepo extends BaseRepo {
     } as AnyQaStageRun
   }
 
-  getQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
-    const row = this.db.prepare(`SELECT r.* FROM qa_stage_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`).get(runId, userId) as Record<string, unknown> | undefined
+  async getQaStageRun(userId: string, runId: string): Promise<AnyQaStageRun | null> {
+    const row = (await this.sql.get(`SELECT r.* FROM qa_stage_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`, [runId, userId])) as Record<string, unknown> | undefined
     return row ? this.mapQaStageRun(row) : null
   }
 
-  listQaStageRuns(userId: string, projectId: string, taskId: string, stage: QaRunStage): AnyQaStageRun[] {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return []
-    return (this.db.prepare(`SELECT * FROM qa_stage_runs WHERE project_id=? AND task_id=? AND stage=? ORDER BY attempt DESC`).all(projectId, taskId, stage) as Record<string, unknown>[]).map((row) => this.mapQaStageRun(row))
+  async listQaStageRuns(userId: string, projectId: string, taskId: string, stage: QaRunStage): Promise<AnyQaStageRun[]> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return []
+    return ((await this.sql.all(`SELECT * FROM qa_stage_runs WHERE project_id=? AND task_id=? AND stage=? ORDER BY attempt DESC`, [projectId, taskId, stage])) as Record<string, unknown>[]).map((row) => this.mapQaStageRun(row))
   }
 
-  recordAutoPilotEvent(projectId: string, taskId: string, action: string, payload: Record<string, unknown> = {}): void {
-    this.db.prepare(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`).run(this.newId(), projectId, taskId, action, 'automation', JSON.stringify(payload), this.now())
+  async recordAutoPilotEvent(projectId: string, taskId: string, action: string, payload: Record<string, unknown> = {}): Promise<void> {
+    await this.sql.run(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`, [this.newId(), projectId, taskId, action, 'automation', JSON.stringify(payload), this.now()])
   }
 
   /**
@@ -98,30 +98,28 @@ export class QaRepo extends BaseRepo {
    * именно он. `scenario` передаёт повтор — он воспроизводит упавший прогон, а
    * не читает настройку заново.
    */
-  startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage, scenarios?: AutomatedQaScenario[] | null): AnyQaStageRun {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
-    const task = this.repos.tasks.getTask(projectId, taskId)
+  async startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage, scenarios?: AutomatedQaScenario[] | null): Promise<AnyQaStageRun> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) throw new Error('Проект недоступен')
+    const task = await this.repos.tasks.getTask(projectId, taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
-    const current = this.repos.tasks.getBoard(userId, projectId)?.columns.find((column) => column.id === task.columnId)
+    const current = (await this.repos.tasks.getBoard(userId, projectId))?.columns.find((column) => column.id === task.columnId)
     if (current?.semanticType !== stage) throw new Error(`Этап ${stage} нельзя запустить из колонки ${current?.semanticType ?? 'unknown'}`)
-    const active = this.db.prepare(`SELECT * FROM qa_stage_runs WHERE task_id=? AND stage=? AND status IN ('queued','running','awaiting_input')`).get(taskId, stage) as Record<string, unknown> | undefined
+    const active = (await this.sql.get(`SELECT * FROM qa_stage_runs WHERE task_id=? AND stage=? AND status IN ('queued','running','awaiting_input')`, [taskId, stage])) as Record<string, unknown> | undefined
     if (active) return this.mapQaStageRun(active)
-    const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM qa_stage_runs WHERE task_id=? AND stage=?`).get(taskId, stage) as { n: number }).n)
+    const attempt = Number(((await this.sql.get(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM qa_stage_runs WHERE task_id=? AND stage=?`, [taskId, stage])) as { n: number }).n)
     const id = this.newId(), now = this.now()
-    const project = stage === 'automated_qa' ? this.db.prepare(`SELECT automated_qa_mode,automated_qa_scenario_json FROM projects WHERE id=?`).get(projectId) as { automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined : undefined
+    const project = stage === 'automated_qa' ? (await this.sql.get(`SELECT automated_qa_mode,automated_qa_scenario_json FROM projects WHERE id=?`, [projectId])) as { automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined : undefined
     const snapshot = stage === 'automated_qa' && project?.automated_qa_mode === 'playwright'
       ? (scenarios ?? parseAutomatedQaScenarios(parseJsonValue<unknown>(project.automated_qa_scenario_json ?? '', []))).map(normalizeAutomatedQaScenario)
       : null
-    this.db.prepare(`INSERT INTO qa_stage_runs
+    await this.sql.run(`INSERT INTO qa_stage_runs
       (id,project_id,task_id,stage,status,attempt,triggered_by,branch,commit_sha,current_step,scenario_json,created_at,started_at)
-      VALUES (?,?,?,?,'running',?,?,?,?, 'starting',?,?,?)`).run(
-        id, projectId, taskId, stage, attempt, userId, task.mergeSourceBranch ?? '', task.mergeSourceSha ?? '', snapshot ? JSON.stringify(snapshot) : '', now, now
-      )
-    return this.getQaStageRun(userId, id)!
+      VALUES (?,?,?,?,'running',?,?,?,?, 'starting',?,?,?)`, [id, projectId, taskId, stage, attempt, userId, task.mergeSourceBranch ?? '', task.mergeSourceSha ?? '', snapshot ? JSON.stringify(snapshot) : '', now, now])
+    return (await this.getQaStageRun(userId, id))!
   }
 
-  automatedQaExecutionContext(runId: string): AutomatedQaExecutionContext | null {
-    const row = this.db.prepare(`SELECT w.agent_id,w.path,q.scenario_json,p.automated_qa_command,p.automated_qa_mode,p.automated_qa_scenario_json FROM qa_stage_runs q JOIN ci_workspaces w ON w.task_id=q.task_id AND w.pushed=1 JOIN projects p ON p.id=q.project_id WHERE q.id=? AND q.stage='automated_qa' ORDER BY w.created_at DESC LIMIT 1`).get(runId) as { agent_id: string | null; path: string | null; scenario_json: string | null; automated_qa_command: string | null; automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined
+  async automatedQaExecutionContext(runId: string): Promise<AutomatedQaExecutionContext | null> {
+    const row = (await this.sql.get(`SELECT w.agent_id,w.path,q.scenario_json,p.automated_qa_command,p.automated_qa_mode,p.automated_qa_scenario_json FROM qa_stage_runs q JOIN ci_workspaces w ON w.task_id=q.task_id AND w.pushed=1 JOIN projects p ON p.id=q.project_id WHERE q.id=? AND q.stage='automated_qa' ORDER BY w.created_at DESC LIMIT 1`, [runId])) as { agent_id: string | null; path: string | null; scenario_json: string | null; automated_qa_command: string | null; automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined
     if (!row?.agent_id || !row.path) return null
     return {
       agentId: row.agent_id, workdir: row.path, command: row.automated_qa_command?.trim() || 'npm test',
@@ -137,37 +135,31 @@ export class QaRepo extends BaseRepo {
    * `startQaStageRun` вставляет строку сразу как `running`, поэтому шаг рана
    * навсегда оставался `starting`, и панель весь прогон показывала запуск.
    */
-  markAutomatedQaRunning(runId: string): void {
-    this.db.prepare(`UPDATE qa_stage_runs SET status='running',current_step='tests',started_at=COALESCE(started_at,?) WHERE id=? AND status IN ('queued','running')`).run(this.now(), runId)
+  async markAutomatedQaRunning(runId: string): Promise<void> {
+    await this.sql.run(`UPDATE qa_stage_runs SET status='running',current_step='tests',started_at=COALESCE(started_at,?) WHERE id=? AND status IN ('queued','running')`, [this.now(), runId])
   }
 
-  appendAutomatedQaLog(runId: string, stream: 'out' | 'err' | 'system', text: string): void {
-    const row = this.db.prepare(`SELECT log_json FROM qa_stage_runs WHERE id=?`).get(runId) as { log_json: string } | undefined
+  async appendAutomatedQaLog(runId: string, stream: 'out' | 'err' | 'system', text: string): Promise<void> {
+    const row = (await this.sql.get(`SELECT log_json FROM qa_stage_runs WHERE id=?`, [runId])) as { log_json: string } | undefined
     const log = parseJsonValue<Array<{ seq: number; at: number; stream: 'out'|'err'|'system'; text: string }>>(row?.log_json, [])
     log.push({ seq: (log.at(-1)?.seq ?? 0) + 1, at: this.now(), stream, text })
-    this.db.prepare(`UPDATE qa_stage_runs SET log_json=? WHERE id=? AND status IN ('queued','running')`).run(JSON.stringify(log.slice(-2000)), runId)
+    await this.sql.run(`UPDATE qa_stage_runs SET log_json=? WHERE id=? AND status IN ('queued','running')`, [JSON.stringify(log.slice(-2000)), runId])
   }
 
-  updateQaStageRun(runId: string, patch: {
+  async updateQaStageRun(runId: string, patch: {
     status?: QaStageRunStatus; currentStep?: string; progress?: { current: number; total: number; label: string }
     log?: Array<{ seq: number; at: number; stream: 'out'|'err'|'system'; text: string }>
     result?: Record<string, unknown> | null; gateReasons?: string[]; error?: string | null
-  }): void {
-    const current = this.db.prepare(`SELECT * FROM qa_stage_runs WHERE id=?`).get(runId) as Record<string, unknown> | undefined
+  }): Promise<void> {
+    const current = (await this.sql.get(`SELECT * FROM qa_stage_runs WHERE id=?`, [runId])) as Record<string, unknown> | undefined
     if (!current) return
     const status = patch.status ?? current.status as QaStageRunStatus
     const terminal = ['success','gate_failed','failed','cancelled','interrupted'].includes(status)
-    this.db.prepare(`UPDATE qa_stage_runs SET status=?,current_step=?,progress_json=?,log_json=?,result_json=?,gate_reasons_json=?,error=?,finished_at=? WHERE id=?`).run(
-      status, patch.currentStep ?? current.current_step, JSON.stringify(patch.progress ?? parseJsonValue(String(current.progress_json), {})),
-      JSON.stringify(patch.log ?? parseJsonValue(String(current.log_json), [])),
-      patch.result === undefined ? current.result_json : patch.result == null ? null : JSON.stringify(patch.result),
-      JSON.stringify(patch.gateReasons ?? parseStringArray(String(current.gate_reasons_json))),
-      patch.error === undefined ? current.error : patch.error, terminal ? this.now() : current.finished_at, runId
-    )
+    await this.sql.run(`UPDATE qa_stage_runs SET status=?,current_step=?,progress_json=?,log_json=?,result_json=?,gate_reasons_json=?,error=?,finished_at=? WHERE id=?`, [status, patch.currentStep ?? current.current_step, JSON.stringify(patch.progress ?? parseJsonValue(String(current.progress_json), {})), JSON.stringify(patch.log ?? parseJsonValue(String(current.log_json), [])), patch.result === undefined ? current.result_json : patch.result == null ? null : JSON.stringify(patch.result), JSON.stringify(patch.gateReasons ?? parseStringArray(String(current.gate_reasons_json))), patch.error === undefined ? current.error : patch.error, terminal ? this.now() : current.finished_at, runId])
   }
 
-  completeQaStageRun(userId: string, runId: string, result: Record<string, unknown>): AnyQaStageRun | null {
-    const run = this.getQaStageRun(userId, runId)
+  async completeQaStageRun(userId: string, runId: string, result: Record<string, unknown>): Promise<AnyQaStageRun | null> {
+    const run = await this.getQaStageRun(userId, runId)
     if (!run || !['running','awaiting_input'].includes(run.status)) return run
     let reasons: string[] = []
     if (run.stage === 'integration_tests') {
@@ -177,72 +169,72 @@ export class QaRepo extends BaseRepo {
       reasons = Array.isArray(result.gateReasons) ? result.gateReasons.filter((item): item is string => typeof item === 'string') : ['quality_gate_failed']
     }
     if (reasons.length) {
-      this.updateQaStageRun(runId, { status: 'gate_failed', result, gateReasons: reasons, currentStep: 'gate' })
-      return this.getQaStageRun(userId, runId)
+      await this.updateQaStageRun(runId, { status: 'gate_failed', result, gateReasons: reasons, currentStep: 'gate' })
+      return await this.getQaStageRun(userId, runId)
     }
     const next: Record<QaRunStage, KanbanColumnSemanticType> = { component_qa: 'integration_tests', integration_tests: 'automated_qa', automated_qa: 'manual_qa' }
     if (!canTransitionWorkflow(run.stage, next[run.stage], 'automation')) throw new Error(`Переход ${run.stage} → ${next[run.stage]} запрещён workflow`)
-    const target = this.repos.projects.getColumnIdBySemantic(run.projectId, next[run.stage])
+    const target = await this.repos.projects.getColumnIdBySemantic(run.projectId, next[run.stage])
     if (!target) throw new Error(`Следующая колонка ${next[run.stage]} не найдена`)
-    this.db.transaction(() => {
-      this.updateQaStageRun(runId, { status: 'success', result, gateReasons: [], currentStep: 'complete' })
-      this.repos.tasks.moveTask(userId, run.projectId, run.taskId, { columnId: target })
-    })()
-    return this.getQaStageRun(userId, runId)
+    await this.sql.transaction(async () => {
+      await this.updateQaStageRun(runId, { status: 'success', result, gateReasons: [], currentStep: 'complete' })
+      await this.repos.tasks.moveTask(userId, run.projectId, run.taskId, { columnId: target })
+    })
+    return await this.getQaStageRun(userId, runId)
   }
 
-  cancelQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
-    const run = this.getQaStageRun(userId, runId)
+  async cancelQaStageRun(userId: string, runId: string): Promise<AnyQaStageRun | null> {
+    const run = await this.getQaStageRun(userId, runId)
     if (!run) return null
-    if (run.canCancel) this.updateQaStageRun(runId, { status: 'cancelled', error: 'Ран отменён пользователем' })
-    return this.getQaStageRun(userId, runId)
+    if (run.canCancel) await this.updateQaStageRun(runId, { status: 'cancelled', error: 'Ран отменён пользователем' })
+    return await this.getQaStageRun(userId, runId)
   }
 
-  retryQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
-    const run = this.getQaStageRun(userId, runId)
+  async retryQaStageRun(userId: string, runId: string): Promise<AnyQaStageRun | null> {
+    const run = await this.getQaStageRun(userId, runId)
     if (!run) return null
     if (!run.canRetry) throw new Error('Повтор этого рана недоступен')
     // Повтор воспроизводит упавший прогон: берётся снимок сценария того рана, а
     // не текущая настройка проекта. Иначе повторяется не то, что упало.
-    return this.startQaStageRun(userId, run.projectId, run.taskId, run.stage, run.scenarios)
+    return await this.startQaStageRun(userId, run.projectId, run.taskId, run.stage, run.scenarios)
   }
 
-  answerQaStageRun(userId: string, runId: string, answer: string): AnyQaStageRun | null {
-    const run = this.getQaStageRun(userId, runId)
+  async answerQaStageRun(userId: string, runId: string, answer: string): Promise<AnyQaStageRun | null> {
+    const run = await this.getQaStageRun(userId, runId)
     if (!run || run.stage !== 'integration_tests' || run.status !== 'awaiting_input') throw new Error('Ран не ожидает ответа')
     if (!answer.trim()) throw new Error('Ответ не может быть пустым')
-    this.updateQaStageRun(runId, { status: 'running', currentStep: 'model_answered' })
-    return this.getQaStageRun(userId, runId)
+    await this.updateQaStageRun(runId, { status: 'running', currentStep: 'model_answered' })
+    return await this.getQaStageRun(userId, runId)
   }
 
-  failInterruptedQaStageRuns(): string[] {
-    const rows = this.db.prepare(`SELECT id FROM qa_stage_runs WHERE stage<>'automated_qa' AND status IN ('queued','running','awaiting_input')`).all() as Array<{ id: string }>
-    this.db.prepare(`UPDATE qa_stage_runs SET status='interrupted',error='Ран прерван перезапуском сервера',finished_at=? WHERE stage<>'automated_qa' AND status IN ('queued','running','awaiting_input')`).run(this.now())
+  async failInterruptedQaStageRuns(): Promise<string[]> {
+    const rows = (await this.sql.all(`SELECT id FROM qa_stage_runs WHERE stage<>'automated_qa' AND status IN ('queued','running','awaiting_input')`)) as Array<{ id: string }>
+    await this.sql.run(`UPDATE qa_stage_runs SET status='interrupted',error='Ран прерван перезапуском сервера',finished_at=? WHERE stage<>'automated_qa' AND status IN ('queued','running','awaiting_input')`, [this.now()])
     // Automated QA детерминирован одной командой: после рестарта безопасно
     // перезапустить ту же попытку, сохранив её id и накопленный лог.
-    this.db.prepare(`UPDATE qa_stage_runs SET status='queued',current_step='restarting',started_at=NULL,error=NULL WHERE stage='automated_qa' AND status IN ('running','awaiting_input')`).run()
+    await this.sql.run(`UPDATE qa_stage_runs SET status='queued',current_step='restarting',started_at=NULL,error=NULL WHERE stage='automated_qa' AND status IN ('running','awaiting_input')`)
     return rows.map((row) => row.id)
   }
 
   /** Идентификаторы всех ранов этапов — для уборки осиротевших снимков на диске. */
-  qaStageRunIds(): Set<string> {
-    return new Set((this.db.prepare(`SELECT id FROM qa_stage_runs`).all() as Array<{ id: string }>).map((row) => row.id))
+  async qaStageRunIds(): Promise<Set<string>> {
+    return new Set(((await this.sql.all(`SELECT id FROM qa_stage_runs`)) as Array<{ id: string }>).map((row) => row.id))
   }
 
-  recoverableAutomatedQaRuns(): Array<{ id: string; userId: string; projectId: string }> {
-    return this.db.prepare(`SELECT id,triggered_by AS userId,project_id AS projectId FROM qa_stage_runs WHERE stage='automated_qa' AND status='queued'`).all() as Array<{ id: string; userId: string; projectId: string }>
+  async recoverableAutomatedQaRuns(): Promise<Array<{ id: string; userId: string; projectId: string }>> {
+    return (await this.sql.all(`SELECT id,triggered_by AS userId,project_id AS projectId FROM qa_stage_runs WHERE stage='automated_qa' AND status='queued'`)) as Array<{ id: string; userId: string; projectId: string }>
   }
 
-  getQaTaskState(userId: string, projectId: string, taskId: string): QaTaskState | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    const task = this.db.prepare(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId)
+  async getQaTaskState(userId: string, projectId: string, taskId: string): Promise<QaTaskState | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    const task = await this.sql.get(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`, [taskId, projectId])
     if (!task) return null
-    const criteria = (this.db.prepare(`SELECT * FROM acceptance_criteria WHERE task_id = ? ORDER BY position`).all(taskId) as QaCriterionRow[]).map(mapQaCriterion)
-    const versions = criteria.flatMap((criterion) =>
-      (this.db.prepare(`SELECT * FROM acceptance_criterion_versions WHERE criterion_id = ? ORDER BY version DESC`).all(criterion.id) as QaCriterionVersionRow[]).map(mapQaCriterionVersion)
-    )
-    const sessions = (this.db.prepare(`SELECT * FROM qa_sessions WHERE task_id = ? ORDER BY started_at DESC`).all(taskId) as QaSessionRow[]).map((row) => this.mapQaSession(row))
-    const rawPreparation = this.db.prepare(`SELECT * FROM qa_preparation_runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
+    const criteria = ((await this.sql.all(`SELECT * FROM acceptance_criteria WHERE task_id = ? ORDER BY position`, [taskId])) as QaCriterionRow[]).map(mapQaCriterion)
+    const versions = (await Promise.all(criteria.map(async (criterion) =>
+      ((await this.sql.all(`SELECT * FROM acceptance_criterion_versions WHERE criterion_id = ? ORDER BY version DESC`, [criterion.id])) as QaCriterionVersionRow[]).map(mapQaCriterionVersion)
+    ))).flat()
+    const sessions = await Promise.all(((await this.sql.all(`SELECT * FROM qa_sessions WHERE task_id = ? ORDER BY started_at DESC`, [taskId])) as QaSessionRow[]).map(async (row) => await this.mapQaSession(row)))
+    const rawPreparation = (await this.sql.get(`SELECT * FROM qa_preparation_runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`, [taskId])) as Record<string, unknown> | undefined
     const preparation = rawPreparation ? {
       id: String(rawPreparation.id), taskId, branch: String(rawPreparation.branch), commitSha: String(rawPreparation.commit_sha),
       status: rawPreparation.status as 'running'|'success'|'failed', attempt: Number(rawPreparation.attempt), maxAttempts: 2,
@@ -250,133 +242,125 @@ export class QaRepo extends BaseRepo {
       createdAt: Number(rawPreparation.created_at), finishedAt: rawPreparation.finished_at == null ? null : Number(rawPreparation.finished_at),
       canRetry: rawPreparation.status === 'failed', log: String(rawPreparation.log ?? '')
     } : null
-    return { criteria, versions, sessions, activeSession: sessions.find((session) => session.status === 'active') ?? null, preparation, canEdit: this.repos.projects.canQa(userId, projectId) }
+    return { criteria, versions, sessions, activeSession: sessions.find((session) => session.status === 'active') ?? null, preparation, canEdit: await this.repos.projects.canQa(userId, projectId) }
   }
 
-  createAcceptanceCriterion(userId: string, projectId: string, taskId: string, input: AcceptanceCriterionSnapshot & { order?: number }): AcceptanceCriterion | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId)) return null
+  async createAcceptanceCriterion(userId: string, projectId: string, taskId: string, input: AcceptanceCriterionSnapshot & { order?: number }): Promise<AcceptanceCriterion | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    if (!(await this.sql.get(`SELECT 1 FROM tasks WHERE id = ? AND project_id = ?`, [taskId, projectId]))) return null
     const now = this.now(), id = this.newId()
-    const order = input.order ?? ((this.db.prepare(`SELECT COALESCE(MAX(position), 0) + 1 AS n FROM acceptance_criteria WHERE task_id = ?`).get(taskId) as { n: number }).n)
+    const order = input.order ?? (((await this.sql.get(`SELECT COALESCE(MAX(position), 0) + 1 AS n FROM acceptance_criteria WHERE task_id = ?`, [taskId])) as { n: number }).n)
     const snapshot = qaSnapshot(input)
-    this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO acceptance_criteria
+    await this.sql.transaction(async () => {
+      await this.sql.run(`INSERT INTO acceptance_criteria
         (id, task_id, position, title, description, preconditions, steps, test_data, expected_result, required, test_type, current_version, active, author, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)`).run(
-          id, taskId, order, snapshot.title, snapshot.description, snapshot.preconditions, snapshot.steps,
-          snapshot.testData, snapshot.expectedResult, snapshot.required ? 1 : 0, snapshot.testType, userId, now, now
-        )
-      this.db.prepare(`INSERT INTO acceptance_criterion_versions (criterion_id, version, snapshot_json, author, reason, created_at) VALUES (?, 1, ?, ?, 'initial', ?)`)
-        .run(id, JSON.stringify(snapshot), userId, now)
-      this.addQaAudit(projectId, taskId, userId, 'criterion.created', { criterionId: id, version: 1 })
-    })()
-    return mapQaCriterion(this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ?`).get(id) as QaCriterionRow)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)`, [id, taskId, order, snapshot.title, snapshot.description, snapshot.preconditions, snapshot.steps, snapshot.testData, snapshot.expectedResult, snapshot.required ? 1 : 0, snapshot.testType, userId, now, now])
+      await this.sql.run(`INSERT INTO acceptance_criterion_versions (criterion_id, version, snapshot_json, author, reason, created_at) VALUES (?, 1, ?, ?, 'initial', ?)`, [id, JSON.stringify(snapshot), userId, now])
+      await this.addQaAudit(projectId, taskId, userId, 'criterion.created', { criterionId: id, version: 1 })
+    })
+    return mapQaCriterion((await this.sql.get(`SELECT * FROM acceptance_criteria WHERE id = ?`, [id])) as QaCriterionRow)
   }
 
-  reviseAcceptanceCriterion(userId: string, projectId: string, taskId: string, criterionId: string, input: AcceptanceCriterionSnapshot & { reason: string; semanticChange?: boolean }): AcceptanceCriterion | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    const current = this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ? AND task_id = ?`).get(criterionId, taskId) as QaCriterionRow | undefined
+  async reviseAcceptanceCriterion(userId: string, projectId: string, taskId: string, criterionId: string, input: AcceptanceCriterionSnapshot & { reason: string; semanticChange?: boolean }): Promise<AcceptanceCriterion | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    const current = (await this.sql.get(`SELECT * FROM acceptance_criteria WHERE id = ? AND task_id = ?`, [criterionId, taskId])) as QaCriterionRow | undefined
     if (!current) return null
     const now = this.now(), snapshot = qaSnapshot(input)
     const version = current.current_version + (input.semanticChange === false ? 0 : 1)
-    this.db.transaction(() => {
+    await this.sql.transaction(async () => {
       if (version !== current.current_version) {
-        this.db.prepare(`UPDATE acceptance_criterion_versions SET superseded_by = ? WHERE criterion_id = ? AND version = ?`).run(version, criterionId, current.current_version)
-        this.db.prepare(`INSERT INTO acceptance_criterion_versions (criterion_id, version, snapshot_json, author, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
-          .run(criterionId, version, JSON.stringify(snapshot), userId, input.reason.trim(), now)
+        await this.sql.run(`UPDATE acceptance_criterion_versions SET superseded_by = ? WHERE criterion_id = ? AND version = ?`, [version, criterionId, current.current_version])
+        await this.sql.run(`INSERT INTO acceptance_criterion_versions (criterion_id, version, snapshot_json, author, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [criterionId, version, JSON.stringify(snapshot), userId, input.reason.trim(), now])
       }
-      this.db.prepare(`UPDATE acceptance_criteria SET title=?, description=?, preconditions=?, steps=?, test_data=?, expected_result=?, required=?, test_type=?, current_version=?, updated_at=? WHERE id=?`)
-        .run(snapshot.title, snapshot.description, snapshot.preconditions, snapshot.steps, snapshot.testData, snapshot.expectedResult, snapshot.required ? 1 : 0, snapshot.testType, version, now, criterionId)
+      await this.sql.run(`UPDATE acceptance_criteria SET title=?, description=?, preconditions=?, steps=?, test_data=?, expected_result=?, required=?, test_type=?, current_version=?, updated_at=? WHERE id=?`, [snapshot.title, snapshot.description, snapshot.preconditions, snapshot.steps, snapshot.testData, snapshot.expectedResult, snapshot.required ? 1 : 0, snapshot.testType, version, now, criterionId])
       if (version !== current.current_version) {
-        this.db.prepare(`UPDATE qa_sessions SET status='stale', stale_reason='criteria_snapshot_changed', finished_at=? WHERE task_id=? AND status='active'`).run(now, taskId)
+        await this.sql.run(`UPDATE qa_sessions SET status='stale', stale_reason='criteria_snapshot_changed', finished_at=? WHERE task_id=? AND status='active'`, [now, taskId])
       }
-      this.addQaAudit(projectId, taskId, userId, version === current.current_version ? 'criterion.edited' : 'criterion.versioned', { criterionId, version, reason: input.reason })
-    })()
-    return mapQaCriterion(this.db.prepare(`SELECT * FROM acceptance_criteria WHERE id = ?`).get(criterionId) as QaCriterionRow)
+      await this.addQaAudit(projectId, taskId, userId, version === current.current_version ? 'criterion.edited' : 'criterion.versioned', { criterionId, version, reason: input.reason })
+    })
+    return mapQaCriterion((await this.sql.get(`SELECT * FROM acceptance_criteria WHERE id = ?`, [criterionId])) as QaCriterionRow)
   }
 
-  startQaPreparationRun(projectId: string, taskId: string, branch: string, commitSha: string, retry = false): { id: string; status: string } | null {
-    const existing = this.db.prepare(`SELECT id,status FROM qa_preparation_runs WHERE task_id=? AND commit_sha=?`).get(taskId, commitSha) as { id:string; status:string } | undefined
+  async startQaPreparationRun(projectId: string, taskId: string, branch: string, commitSha: string, retry = false): Promise<{ id: string; status: string } | null> {
+    const existing = (await this.sql.get(`SELECT id,status FROM qa_preparation_runs WHERE task_id=? AND commit_sha=?`, [taskId, commitSha])) as { id:string; status:string } | undefined
     if (existing) {
       if (!retry || existing.status !== 'failed') return null
-      const changed = this.db.prepare(`UPDATE qa_preparation_runs SET status='running',error=NULL,attempt=1,diagnostics_json='[]',log='',created_at=?,finished_at=NULL WHERE id=? AND status='failed'`).run(this.now(), existing.id)
+      const changed = await this.sql.run(`UPDATE qa_preparation_runs SET status='running',error=NULL,attempt=1,diagnostics_json='[]',log='',created_at=?,finished_at=NULL WHERE id=? AND status='failed'`, [this.now(), existing.id])
       return changed.changes ? { id: existing.id, status: 'running' } : null
     }
     const id = this.newId()
-    this.db.prepare(`INSERT INTO qa_preparation_runs (id,project_id,task_id,branch,commit_sha,status,created_at) VALUES (?,?,?,?,?,'running',?)`).run(id,projectId,taskId,branch,commitSha,this.now())
-    const active = this.db.prepare(`SELECT commit_sha FROM qa_sessions WHERE project_id=? AND task_id=? AND status='active' LIMIT 1`).get(projectId,taskId) as { commit_sha:string } | undefined
-    if (active && active.commit_sha !== commitSha) this.markQaSessionStale(projectId, taskId, `Новый commit SHA: ${commitSha}`)
+    await this.sql.run(`INSERT INTO qa_preparation_runs (id,project_id,task_id,branch,commit_sha,status,created_at) VALUES (?,?,?,?,?,'running',?)`, [id, projectId, taskId, branch, commitSha, this.now()])
+    const active = (await this.sql.get(`SELECT commit_sha FROM qa_sessions WHERE project_id=? AND task_id=? AND status='active' LIMIT 1`, [projectId, taskId])) as { commit_sha:string } | undefined
+    if (active && active.commit_sha !== commitSha) await this.markQaSessionStale(projectId, taskId, `Новый commit SHA: ${commitSha}`)
     return { id, status: 'running' }
   }
 
-  appendQaPreparationLog(id: string, chunk: string): void {
-    this.db.prepare(`UPDATE qa_preparation_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`).run(chunk,id)
+  async appendQaPreparationLog(id: string, chunk: string): Promise<void> {
+    await this.sql.run(`UPDATE qa_preparation_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`, [chunk, id])
   }
 
-  recordQaPreparationAttempt(id: string, attempt: number, rawResponse: string, error: string | null): void {
-    const row = this.db.prepare(`SELECT diagnostics_json FROM qa_preparation_runs WHERE id=? AND status='running'`).get(id) as { diagnostics_json: string } | undefined
+  async recordQaPreparationAttempt(id: string, attempt: number, rawResponse: string, error: string | null): Promise<void> {
+    const row = (await this.sql.get(`SELECT diagnostics_json FROM qa_preparation_runs WHERE id=? AND status='running'`, [id])) as { diagnostics_json: string } | undefined
     if (!row) return
     const diagnostics = parseJsonValue<Array<Record<string, unknown>>>(row.diagnostics_json, [])
     diagnostics.push({ attempt, rawResponse: rawResponse.slice(-500000), error, status: error ? 'failed' : 'success' })
-    this.db.prepare(`UPDATE qa_preparation_runs SET attempt=?,diagnostics_json=? WHERE id=? AND status='running'`).run(attempt, JSON.stringify(diagnostics), id)
+    await this.sql.run(`UPDATE qa_preparation_runs SET attempt=?,diagnostics_json=? WHERE id=? AND status='running'`, [attempt, JSON.stringify(diagnostics), id])
   }
 
-  finishQaPreparationRun(id: string, status: 'success'|'failed', error: string | null = null): void {
-    this.db.prepare(`UPDATE qa_preparation_runs SET status=?,error=?,finished_at=? WHERE id=? AND status='running'`).run(status,error,this.now(),id)
+  async finishQaPreparationRun(id: string, status: 'success'|'failed', error: string | null = null): Promise<void> {
+    await this.sql.run(`UPDATE qa_preparation_runs SET status=?,error=?,finished_at=? WHERE id=? AND status='running'`, [status, error, this.now(), id])
   }
 
-  failInterruptedQaPreparationRuns(): string[] {
-    const rows = this.db.prepare(`SELECT id FROM qa_preparation_runs WHERE status='running'`).all() as Array<{ id: string }>
-    this.db.prepare(`UPDATE qa_preparation_runs SET status='failed',error='Подготовка прервана перезапуском сервера',finished_at=? WHERE status='running'`).run(this.now())
+  async failInterruptedQaPreparationRuns(): Promise<string[]> {
+    const rows = (await this.sql.all(`SELECT id FROM qa_preparation_runs WHERE status='running'`)) as Array<{ id: string }>
+    await this.sql.run(`UPDATE qa_preparation_runs SET status='failed',error='Подготовка прервана перезапуском сервера',finished_at=? WHERE status='running'`, [this.now()])
     return rows.map((row) => row.id)
   }
 
-  completeQaPreparation(userId: string, projectId: string, taskId: string): QaTaskState | null {
-    if (!this.repos.projects.isProjectMember(userId, projectId)) return null
-    const task = this.db.prepare(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`).get(taskId, projectId)
+  async completeQaPreparation(userId: string, projectId: string, taskId: string): Promise<QaTaskState | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    const task = await this.sql.get(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`, [taskId, projectId])
     if (!task) return null
-    const criteria = (this.db.prepare(`SELECT * FROM acceptance_criteria WHERE task_id=? AND active=1 ORDER BY position`).all(taskId) as QaCriterionRow[]).map(mapQaCriterion)
+    const criteria = ((await this.sql.all(`SELECT * FROM acceptance_criteria WHERE task_id=? AND active=1 ORDER BY position`, [taskId])) as QaCriterionRow[]).map(mapQaCriterion)
     if (!criteria.length) throw new Error('Добавьте хотя бы один сценарий ручного QA')
     const incomplete = criteria.filter((criterion) => !criterion.title.trim() || !criterion.steps.trim() || !criterion.expectedResult.trim())
     if (incomplete.length) throw new Error('Каждый сценарий должен содержать название, подробные шаги и ожидаемый результат')
-    const column = this.repos.projects.getColumnIdBySemantic(projectId, 'manual_qa')
+    const column = await this.repos.projects.getColumnIdBySemantic(projectId, 'manual_qa')
     if (!column) throw new Error('manual_qa column not found')
-    this.db.transaction(() => {
-      this.repos.tasks.moveTask(userId, projectId, taskId, { columnId: column })
-      this.addQaAudit(projectId, taskId, userId, 'preparation.completed', { criteria: criteria.map((criterion) => criterion.id) })
-    })()
-    return this.getQaTaskState(userId, projectId, taskId)
+    await this.sql.transaction(async () => {
+      await this.repos.tasks.moveTask(userId, projectId, taskId, { columnId: column })
+      await this.addQaAudit(projectId, taskId, userId, 'preparation.completed', { criteria: criteria.map((criterion) => criterion.id) })
+    })
+    return await this.getQaTaskState(userId, projectId, taskId)
   }
 
-  startQaSession(userId: string, args: { projectId: string; taskId: string; branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }, system = false): QaSession | null {
-    if (!system && !this.repos.projects.canQa(userId, args.projectId)) throw new Error('QA permission required')
-    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`).get(args.taskId, args.projectId)) return null
-    if (this.db.prepare(`SELECT 1 FROM qa_sessions WHERE task_id=? AND status='active'`).get(args.taskId)) throw new Error('active QA session already exists')
+  async startQaSession(userId: string, args: { projectId: string; taskId: string; branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }, system = false): Promise<QaSession | null> {
+    if (!system && !(await this.repos.projects.canQa(userId, args.projectId))) throw new Error('QA permission required')
+    if (!(await this.sql.get(`SELECT 1 FROM tasks WHERE id=? AND project_id=?`, [args.taskId, args.projectId]))) return null
+    if (await this.sql.get(`SELECT 1 FROM qa_sessions WHERE task_id=? AND status='active'`, [args.taskId])) throw new Error('active QA session already exists')
     if (args.previewId && args.previewSha !== args.commitSha) throw new Error('preview SHA does not match commit SHA')
-    const criteria = (this.db.prepare(`SELECT * FROM acceptance_criteria WHERE task_id=? AND active=1 ORDER BY position`).all(args.taskId) as QaCriterionRow[]).map(mapQaCriterion)
+    const criteria = ((await this.sql.all(`SELECT * FROM acceptance_criteria WHERE task_id=? AND active=1 ORDER BY position`, [args.taskId])) as QaCriterionRow[]).map(mapQaCriterion)
     if (!criteria.length) throw new Error('acceptance criteria required')
     const snapshot = criteria.map((criterion) => ({ criterionId: criterion.id, version: criterion.currentVersion, required: criterion.required }))
     const now = this.now(), sessionId = this.newId()
-    this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO qa_sessions
+    await this.sql.transaction(async () => {
+      await this.sql.run(`INSERT INTO qa_sessions
         (id,task_id,project_id,branch,commit_sha,test_run_id,preview_id,preview_sha,app_url,storybook_url,test_data_scenario,criteria_snapshot_json,status,tester_id,initiated_by,started_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'active',?,?,?)`).run(
-          sessionId,args.taskId,args.projectId,args.branch,args.commitSha,args.testRunId,args.previewId??null,args.previewSha??null,args.appUrl??null,args.storybookUrl??null,args.testDataScenario??'',JSON.stringify(snapshot),args.testerId??userId,userId,now
-        )
-      const insert = this.db.prepare(`INSERT INTO qa_criterion_results
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'active',?,?,?)`, [sessionId, args.taskId, args.projectId, args.branch, args.commitSha, args.testRunId, args.previewId??null, args.previewSha??null, args.appUrl??null, args.storybookUrl??null, args.testDataScenario??'', JSON.stringify(snapshot), args.testerId??userId, userId, now])
+      const insert = this.sql.prepare(`INSERT INTO qa_criterion_results
         (id,session_id,criterion_id,criterion_version,status,draft,branch,commit_sha,preview_id,preview_sha,app_url,storybook_url,test_data_scenario,expected_result,revision,updated_at)
         VALUES (?,?,?,?,'not_tested',0,?,?,?,?,?,?,?,?,1,?)`)
-      for (const criterion of criteria) insert.run(this.newId(),sessionId,criterion.id,criterion.currentVersion,args.branch,args.commitSha,args.previewId??null,args.previewSha??null,args.appUrl??null,args.storybookUrl??null,args.testDataScenario??'',criterion.expectedResult,now)
-      const column = this.repos.projects.getColumnIdBySemantic(args.projectId, 'manual_qa')
-      if (column) this.repos.tasks.moveTask(userId, args.projectId, args.taskId, { columnId: column })
-      this.addQaAudit(args.projectId,args.taskId,userId,'session.started',{sessionId,commitSha:args.commitSha})
-    })()
-    return this.mapQaSession(this.db.prepare(`SELECT * FROM qa_sessions WHERE id=?`).get(sessionId) as QaSessionRow)
+      for (const criterion of criteria) await insert.run(this.newId(),sessionId,criterion.id,criterion.currentVersion,args.branch,args.commitSha,args.previewId??null,args.previewSha??null,args.appUrl??null,args.storybookUrl??null,args.testDataScenario??'',criterion.expectedResult,now)
+      const column = await this.repos.projects.getColumnIdBySemantic(args.projectId, 'manual_qa')
+      if (column) await this.repos.tasks.moveTask(userId, args.projectId, args.taskId, { columnId: column })
+      await this.addQaAudit(args.projectId,args.taskId,userId,'session.started',{sessionId,commitSha:args.commitSha})
+    })
+    return await this.mapQaSession((await this.sql.get(`SELECT * FROM qa_sessions WHERE id=?`, [sessionId])) as QaSessionRow)
   }
 
-  saveQaResult(userId: string, projectId: string, taskId: string, resultId: string, expectedRevision: number, patch: Partial<Pick<QaCriterionResult, 'status'|'draft'|'executedSteps'|'actualResult'|'comment'|'environment'|'blockerReason'|'blockerType'|'blockerOwner'|'notApplicableReason'|'assigneeId'>> & { classification?: QaIssueClassification; severity?: QaSeverity; frequency?: QaFrequency; reproduction?: string; requirementProposal?: string }): QaCriterionResult {
-    if (!this.repos.projects.canQa(userId, projectId)) throw new Error('QA permission required')
-    const current = this.db.prepare(`SELECT r.*, s.project_id, s.task_id, s.status AS session_status, s.stale_reason FROM qa_criterion_results r JOIN qa_sessions s ON s.id=r.session_id WHERE r.id=? AND s.project_id=? AND s.task_id=?`).get(resultId,projectId,taskId) as (QaResultRow & { session_status:string; stale_reason:string|null }) | undefined
+  async saveQaResult(userId: string, projectId: string, taskId: string, resultId: string, expectedRevision: number, patch: Partial<Pick<QaCriterionResult, 'status'|'draft'|'executedSteps'|'actualResult'|'comment'|'environment'|'blockerReason'|'blockerType'|'blockerOwner'|'notApplicableReason'|'assigneeId'>> & { classification?: QaIssueClassification; severity?: QaSeverity; frequency?: QaFrequency; reproduction?: string; requirementProposal?: string }): Promise<QaCriterionResult> {
+    if (!(await this.repos.projects.canQa(userId, projectId))) throw new Error('QA permission required')
+    const current = (await this.sql.get(`SELECT r.*, s.project_id, s.task_id, s.status AS session_status, s.stale_reason FROM qa_criterion_results r JOIN qa_sessions s ON s.id=r.session_id WHERE r.id=? AND s.project_id=? AND s.task_id=?`, [resultId, projectId, taskId])) as (QaResultRow & { session_status:string; stale_reason:string|null }) | undefined
     if (!current) throw new Error('QA result not found')
     if (current.revision !== expectedRevision) throw new Error('QA result revision conflict')
     if (current.session_status !== 'active' || current.stale_reason) throw new Error('QA session is stale or closed')
@@ -388,107 +372,104 @@ export class QaRepo extends BaseRepo {
       const missing = validateQaResult(status, next)
       if (missing.length) throw new Error(`missing QA fields: ${missing.join(', ')}`)
     }
-    if ((status === 'passed' || status === 'not_applicable') && !this.repos.projects.canQa(userId, projectId)) throw new Error('QA permission required')
+    if ((status === 'passed' || status === 'not_applicable') && !(await this.repos.projects.canQa(userId, projectId))) throw new Error('QA permission required')
     const now=this.now(), finished = !patch.draft && ['passed','failed','blocked','not_applicable'].includes(status) ? now : null
-    this.db.transaction(() => {
-      const changed=this.db.prepare(`UPDATE qa_criterion_results SET status=?,draft=?,tester_id=?,started_at=COALESCE(started_at,?),finished_at=?,executed_steps=?,actual_result=?,comment=?,environment=?,blocker_reason=?,blocker_type=?,blocker_owner=?,not_applicable_reason=?,assignee_id=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`).run(
-        status,patch.draft?1:0,userId,now,finished,next.executedSteps,next.actualResult,next.comment,next.environment,next.blockerReason,next.blockerType,next.blockerOwner,next.notApplicableReason,next.assigneeId,now,resultId,expectedRevision
-      )
+    await this.sql.transaction(async () => {
+      const changed=await this.sql.run(`UPDATE qa_criterion_results SET status=?,draft=?,tester_id=?,started_at=COALESCE(started_at,?),finished_at=?,executed_steps=?,actual_result=?,comment=?,environment=?,blocker_reason=?,blocker_type=?,blocker_owner=?,not_applicable_reason=?,assignee_id=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`, [status, patch.draft?1:0, userId, now, finished, next.executedSteps, next.actualResult, next.comment, next.environment, next.blockerReason, next.blockerType, next.blockerOwner, next.notApplicableReason, next.assigneeId, now, resultId, expectedRevision])
       if (!changed.changes) throw new Error('QA result revision conflict')
       if (status === 'failed') {
         if (!patch.classification || !patch.severity || !patch.frequency || !patch.reproduction?.trim()) throw new Error('structured QA issue required')
         const route = patch.classification === 'implementation_defect' ? 'development' : patch.classification === 'requirement_change' ? 'ready' : patch.classification === 'needs_decision' ? 'decision_required' : 'manual_qa'
-        this.db.prepare(`INSERT INTO qa_issues (id,result_id,classification,severity,frequency,reproduction,proposed_route,requirement_proposal,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(result_id) DO UPDATE SET classification=excluded.classification,severity=excluded.severity,frequency=excluded.frequency,reproduction=excluded.reproduction,proposed_route=excluded.proposed_route,requirement_proposal=excluded.requirement_proposal`)
-          .run(this.newId(),resultId,patch.classification,patch.severity,patch.frequency,patch.reproduction,route,patch.requirementProposal??'',now)
+        await this.sql.run(`INSERT INTO qa_issues (id,result_id,classification,severity,frequency,reproduction,proposed_route,requirement_proposal,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(result_id) DO UPDATE SET classification=excluded.classification,severity=excluded.severity,frequency=excluded.frequency,reproduction=excluded.reproduction,proposed_route=excluded.proposed_route,requirement_proposal=excluded.requirement_proposal`, [this.newId(), resultId, patch.classification, patch.severity, patch.frequency, patch.reproduction, route, patch.requirementProposal??'', now])
       }
-      this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{
+      await this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{
         resultId, sessionId: current.session_id, criterionId: current.criterion_id, actor: userId, serverTime: now,
         previous: { status: previous.status, comment: previous.comment, revision: previous.revision },
         next: { status, comment: next.comment, revision: expectedRevision + 1 }
       })
-    })()
-    return this.qaResultById(resultId) as QaCriterionResult
+    })
+    return (await this.qaResultById(resultId)) as QaCriterionResult
   }
 
-  saveQaAdditionalIssues(userId: string, projectId: string, taskId: string, sessionId: string, value: string): QaSession {
-    if (!this.repos.projects.canQa(userId, projectId)) throw new Error('QA permission required')
-    const changed = this.db.prepare(`UPDATE qa_sessions SET additional_issues=? WHERE id=? AND project_id=? AND task_id=? AND status='active' AND stale_reason IS NULL`).run(value, sessionId, projectId, taskId)
+  async saveQaAdditionalIssues(userId: string, projectId: string, taskId: string, sessionId: string, value: string): Promise<QaSession> {
+    if (!(await this.repos.projects.canQa(userId, projectId))) throw new Error('QA permission required')
+    const changed = await this.sql.run(`UPDATE qa_sessions SET additional_issues=? WHERE id=? AND project_id=? AND task_id=? AND status='active' AND stale_reason IS NULL`, [value, sessionId, projectId, taskId])
     if (!changed.changes) throw new Error('QA session is stale or closed')
-    this.addQaAudit(projectId, taskId, userId, 'session.additional_issues_saved', { sessionId })
-    return this.mapQaSession(this.db.prepare(`SELECT * FROM qa_sessions WHERE id=?`).get(sessionId) as QaSessionRow)
+    await this.addQaAudit(projectId, taskId, userId, 'session.additional_issues_saved', { sessionId })
+    return await this.mapQaSession((await this.sql.get(`SELECT * FROM qa_sessions WHERE id=?`, [sessionId])) as QaSessionRow)
   }
 
-  linkQaFixRun(userId: string, projectId: string, taskId: string, sessionId: string, runId: string): void {
-    if (!this.repos.projects.canQa(userId, projectId)) throw new Error('QA permission required')
-    const session = this.db.prepare(`SELECT id FROM qa_sessions WHERE id=? AND project_id=? AND task_id=? AND status='active'`).get(sessionId, projectId, taskId)
+  async linkQaFixRun(userId: string, projectId: string, taskId: string, sessionId: string, runId: string): Promise<void> {
+    if (!(await this.repos.projects.canQa(userId, projectId))) throw new Error('QA permission required')
+    const session = await this.sql.get(`SELECT id FROM qa_sessions WHERE id=? AND project_id=? AND task_id=? AND status='active'`, [sessionId, projectId, taskId])
     if (!session) throw new Error('QA session is stale or closed')
     const now = this.now()
-    this.db.transaction(() => {
-      this.db.prepare(`UPDATE qa_issues SET linked_fix_run_id=? WHERE result_id IN (SELECT id FROM qa_criterion_results WHERE session_id=? AND status='failed')`).run(runId, sessionId)
-      this.db.prepare(`UPDATE qa_sessions SET status='failed',finished_at=?,summary=?,linked_fix_run_id=? WHERE id=? AND status='active'`).run(now, 'Передано на исправление', runId, sessionId)
-      this.addQaAudit(projectId, taskId, userId, 'session.fix_started', { sessionId, runId })
-    })()
+    await this.sql.transaction(async () => {
+      await this.sql.run(`UPDATE qa_issues SET linked_fix_run_id=? WHERE result_id IN (SELECT id FROM qa_criterion_results WHERE session_id=? AND status='failed')`, [runId, sessionId])
+      await this.sql.run(`UPDATE qa_sessions SET status='failed',finished_at=?,summary=?,linked_fix_run_id=? WHERE id=? AND status='active'`, [now, 'Передано на исправление', runId, sessionId])
+      await this.addQaAudit(projectId, taskId, userId, 'session.fix_started', { sessionId, runId })
+    })
   }
 
-  completeQaSession(userId: string, projectId: string, taskId: string, sessionId: string, summary: string): QaSession {
-    if (!this.repos.projects.canQa(userId,projectId)) throw new Error('QA permission required')
-    const row=this.db.prepare(`SELECT * FROM qa_sessions WHERE id=? AND project_id=? AND task_id=?`).get(sessionId,projectId,taskId) as QaSessionRow|undefined
+  async completeQaSession(userId: string, projectId: string, taskId: string, sessionId: string, summary: string): Promise<QaSession> {
+    if (!(await this.repos.projects.canQa(userId,projectId))) throw new Error('QA permission required')
+    const row=(await this.sql.get(`SELECT * FROM qa_sessions WHERE id=? AND project_id=? AND task_id=?`, [sessionId, projectId, taskId])) as QaSessionRow|undefined
     if (!row) throw new Error('QA session not found')
-    const session=this.mapQaSession(row), gate=canCompleteQa(session)
+    const session=await this.mapQaSession(row), gate=canCompleteQa(session)
     if (!gate.allowed) throw new Error(`QA is incomplete: ${gate.reasons.join(', ')}`)
     const now=this.now()
-    this.db.transaction(()=>{
-      this.db.prepare(`UPDATE qa_sessions SET status='passed',finished_at=?,summary=? WHERE id=? AND status='active'`).run(now,summary.trim(),sessionId)
-      const column=this.repos.projects.getColumnIdBySemantic(projectId,'awaiting_merge')
+    await this.sql.transaction(async ()=>{
+      await this.sql.run(`UPDATE qa_sessions SET status='passed',finished_at=?,summary=? WHERE id=? AND status='active'`, [now, summary.trim(), sessionId])
+      const column=await this.repos.projects.getColumnIdBySemantic(projectId,'awaiting_merge')
       if (!column) throw new Error('awaiting_merge column not found')
-      this.repos.tasks.moveTask(userId,projectId,taskId,{columnId:column})
-      this.addQaAudit(projectId,taskId,userId,'session.completed',{sessionId,summary})
-    })()
-    return this.mapQaSession(this.db.prepare(`SELECT * FROM qa_sessions WHERE id=?`).get(sessionId) as QaSessionRow)
+      await this.repos.tasks.moveTask(userId,projectId,taskId,{columnId:column})
+      await this.addQaAudit(projectId,taskId,userId,'session.completed',{sessionId,summary})
+    })
+    return await this.mapQaSession((await this.sql.get(`SELECT * FROM qa_sessions WHERE id=?`, [sessionId])) as QaSessionRow)
   }
 
-  markQaSessionStale(projectId: string, taskId: string, reason: string): void {
+  async markQaSessionStale(projectId: string, taskId: string, reason: string): Promise<void> {
     const now=this.now()
-    this.db.prepare(`UPDATE qa_sessions SET status='stale',stale_reason=?,finished_at=? WHERE project_id=? AND task_id=? AND status='active'`).run(reason,now,projectId,taskId)
-    this.db.prepare(`UPDATE qa_criterion_results SET status='stale',revision=revision+1,updated_at=? WHERE session_id IN (SELECT id FROM qa_sessions WHERE project_id=? AND task_id=? AND status='stale' AND stale_reason=?) AND status IN ('not_tested','in_progress')`).run(now,projectId,taskId,reason)
+    await this.sql.run(`UPDATE qa_sessions SET status='stale',stale_reason=?,finished_at=? WHERE project_id=? AND task_id=? AND status='active'`, [reason, now, projectId, taskId])
+    await this.sql.run(`UPDATE qa_criterion_results SET status='stale',revision=revision+1,updated_at=? WHERE session_id IN (SELECT id FROM qa_sessions WHERE project_id=? AND task_id=? AND status='stale' AND stale_reason=?) AND status IN ('not_tested','in_progress')`, [now, projectId, taskId, reason])
   }
 
-  addQaAttachment(userId:string,projectId:string,taskId:string,resultId:string,input:{uploadId:string;name:string;mimeType:'image/png'|'image/jpeg'|'image/webp';size:number;width?:number|null;height?:number|null;caption?:string}):QaAttachment {
-    if (!this.repos.projects.canQa(userId,projectId)) throw new Error('QA permission required')
-    const result=this.db.prepare(`SELECT r.commit_sha FROM qa_criterion_results r JOIN qa_sessions s ON s.id=r.session_id WHERE r.id=? AND s.project_id=? AND s.task_id=?`).get(resultId,projectId,taskId) as {commit_sha:string}|undefined
+  async addQaAttachment(userId:string,projectId:string,taskId:string,resultId:string,input:{uploadId:string;name:string;mimeType:'image/png'|'image/jpeg'|'image/webp';size:number;width?:number|null;height?:number|null;caption?:string}):Promise<QaAttachment> {
+    if (!(await this.repos.projects.canQa(userId,projectId))) throw new Error('QA permission required')
+    const result=(await this.sql.get(`SELECT r.commit_sha FROM qa_criterion_results r JOIN qa_sessions s ON s.id=r.session_id WHERE r.id=? AND s.project_id=? AND s.task_id=?`, [resultId, projectId, taskId])) as {commit_sha:string}|undefined
     if (!result) throw new Error('QA result not found')
-    const count=(this.db.prepare(`SELECT COUNT(*) AS n FROM qa_attachments WHERE result_id=?`).get(resultId) as {n:number}).n
+    const count=((await this.sql.get(`SELECT COUNT(*) AS n FROM qa_attachments WHERE result_id=?`, [resultId])) as {n:number}).n
     if (count>=10) throw new Error('QA attachment limit reached')
     const id=this.newId(),now=this.now(),safeName=input.name.split(/[\\/]/).pop() || 'screenshot'
-    this.db.prepare(`INSERT INTO qa_attachments (id,result_id,upload_id,name,mime_type,size,width,height,caption,author,created_at,commit_sha) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,resultId,input.uploadId,safeName,input.mimeType,input.size,input.width??null,input.height??null,input.caption?.trim()??'',userId,now,result.commit_sha)
-    this.addQaAudit(projectId,taskId,userId,'attachment.added',{attachmentId:id,resultId,uploadId:input.uploadId})
+    await this.sql.run(`INSERT INTO qa_attachments (id,result_id,upload_id,name,mime_type,size,width,height,caption,author,created_at,commit_sha) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [id, resultId, input.uploadId, safeName, input.mimeType, input.size, input.width??null, input.height??null, input.caption?.trim()??'', userId, now, result.commit_sha])
+    await this.addQaAudit(projectId,taskId,userId,'attachment.added',{attachmentId:id,resultId,uploadId:input.uploadId})
     return {id,resultId,uploadId:input.uploadId,name:safeName,mimeType:input.mimeType,size:input.size,width:input.width??null,height:input.height??null,caption:input.caption?.trim()??'',author:userId,createdAt:now,commitSha:result.commit_sha}
   }
 
-  getQaAttachment(userId:string,attachmentId:string):(QaAttachment&{projectId:string;taskId:string})|null {
-    const row=this.db.prepare(`SELECT a.*,s.project_id,s.task_id FROM qa_attachments a JOIN qa_criterion_results r ON r.id=a.result_id JOIN qa_sessions s ON s.id=r.session_id WHERE a.id=?`).get(attachmentId) as (QaAttachmentRow&{project_id:string;task_id:string})|undefined
-    if (!row||!this.repos.projects.isProjectMember(userId,row.project_id)) return null
+  async getQaAttachment(userId:string,attachmentId:string):Promise<(QaAttachment&{projectId:string;taskId:string})|null> {
+    const row=(await this.sql.get(`SELECT a.*,s.project_id,s.task_id FROM qa_attachments a JOIN qa_criterion_results r ON r.id=a.result_id JOIN qa_sessions s ON s.id=r.session_id WHERE a.id=?`, [attachmentId])) as (QaAttachmentRow&{project_id:string;task_id:string})|undefined
+    if (!row||!(await this.repos.projects.isProjectMember(userId,row.project_id))) return null
     return {id:row.id,resultId:row.result_id,uploadId:row.upload_id,name:row.name,mimeType:row.mime_type as QaAttachment['mimeType'],size:row.size,width:row.width,height:row.height,caption:row.caption,author:row.author,createdAt:row.created_at,commitSha:row.commit_sha,projectId:row.project_id,taskId:row.task_id}
   }
 
-  private qaResultById(id: string): QaCriterionResult | null {
-    const row=this.db.prepare(`SELECT * FROM qa_criterion_results WHERE id=?`).get(id) as QaResultRow|undefined
+  private async qaResultById(id: string): Promise<QaCriterionResult | null> {
+    const row=(await this.sql.get(`SELECT * FROM qa_criterion_results WHERE id=?`, [id])) as QaResultRow|undefined
     if (!row) return null
-    const issue=this.db.prepare(`SELECT * FROM qa_issues WHERE result_id=?`).get(id) as QaIssueRow|undefined
-    const attachments=this.db.prepare(`SELECT * FROM qa_attachments WHERE result_id=? ORDER BY created_at`).all(id) as QaAttachmentRow[]
+    const issue=(await this.sql.get(`SELECT * FROM qa_issues WHERE result_id=?`, [id])) as QaIssueRow|undefined
+    const attachments=(await this.sql.all(`SELECT * FROM qa_attachments WHERE result_id=? ORDER BY created_at`, [id])) as QaAttachmentRow[]
     return mapQaResult(row,attachments,issue??null)
   }
 
-  private mapQaSession(row: QaSessionRow): QaSession {
-    const results=(this.db.prepare(`SELECT * FROM qa_criterion_results WHERE session_id=? ORDER BY rowid`).all(row.id) as QaResultRow[]).map((result)=>this.qaResultById(result.id) as QaCriterionResult)
+  private async mapQaSession(row: QaSessionRow): Promise<QaSession> {
+    const results=await Promise.all(((await this.sql.all(`SELECT * FROM qa_criterion_results WHERE session_id=? ORDER BY rowid`, [row.id])) as QaResultRow[]).map(async (result)=>(await this.qaResultById(result.id)) as QaCriterionResult))
     return mapQaSession(row,results)
   }
 
-  addPreviewAudit(userId:string,projectId:string,taskId:string,action:string,payload:unknown):void {
-    this.addQaAudit(projectId, taskId, userId, action, payload)
+  async addPreviewAudit(userId:string,projectId:string,taskId:string,action:string,payload:unknown):Promise<void> {
+    await this.addQaAudit(projectId, taskId, userId, action, payload)
   }
 
-  private addQaAudit(projectId:string,taskId:string,actor:string,action:string,payload:unknown):void {
-    this.db.prepare(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`).run(this.newId(),projectId,taskId,action,actor,JSON.stringify(payload),this.now())
+  private async addQaAudit(projectId:string,taskId:string,actor:string,action:string,payload:unknown):Promise<void> {
+    await this.sql.run(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`, [this.newId(), projectId, taskId, action, actor, JSON.stringify(payload), this.now()])
   }
 }

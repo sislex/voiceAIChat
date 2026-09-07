@@ -235,24 +235,27 @@ describe('миграция существующей базы', () => {
     const file = join(dir, 'db.sqlite')
     try {
       const first = new VoiceChatDb(file)
+      await first.ready
       first.identity.createUser('alice', '', 'developer')
       const p = await first.projects.createProject('alice', { name: 'Старый' })
-      first.close()
+      await first.close()
       // Имитируем базу до появления типов: зануляем колонку в обход слоя.
       const raw = new Database(file)
       raw.prepare(`UPDATE projects SET project_type_id = NULL WHERE id = ?`).run(p.id)
-      raw.close()
-
+      await raw.close()
       const second = new VoiceChatDb(file)
+
+      await second.ready
       const migrated = (await second.projects.getProject('alice', p.id))!
       expect(migrated.typeId).toBe(BUILTIN_PROJECT_TYPE_IDS.software)
       expect(migrated.typeChain.features.ci).toBe(true)
       expect((await second.projects.allProjectTypes()).length).toBe(6)
-      second.close()
-
+      await second.close()
       const third = new VoiceChatDb(file)
+
+      await third.ready
       expect((await third.projects.allProjectTypes()).length).toBe(6)
-      third.close()
+      await third.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -266,18 +269,20 @@ describe('миграция существующей базы', () => {
     const file = join(dir, 'db.sqlite')
     try {
       const first = new VoiceChatDb(file)
+      await first.ready
       first.identity.createUser('alice', '', 'developer')
       const general = await first.projects.createProject('alice', { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general })
       const software = await first.projects.createProject('alice', { name: 'Разработка' })
       expect((await first.tasks.getBoard('alice', general.id))!.columns.length).toBe(5)
-      first.close()
-
+      await first.close()
       const second = new VoiceChatDb(file)
+
+      await second.ready
       const semantics = (await second.tasks.getBoard('alice', general.id))!.columns.map((c) => c.semanticType)
       expect(semantics).toEqual(['backlog', 'development', 'done', 'cancelled', 'decision_required'])
       // А dev-проекту канонизация по-прежнему гарантирует полный конвейер.
       expect((await second.tasks.getBoard('alice', software.id))!.columns.length).toBe(13)
-      second.close()
+      await second.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -291,6 +296,7 @@ describe('миграция существующей базы', () => {
     const file = join(dir, 'db.sqlite')
     try {
       const first = new VoiceChatDb(file)
+      await first.ready
       first.identity.createUser('alice', '', 'developer')
       const project = await first.projects.createProject('alice', { name: 'Настроенный' })
       const board = (await first.tasks.getBoard('alice', project.id))!
@@ -301,9 +307,10 @@ describe('миграция существующей базы', () => {
       first.projects.setColumnHidden('alice', project.id, board.columns.find((c) => c.semanticType === 'merge')!.id, true)
       const task = (await first.tasks.createTask('alice', project.id, { columnId: backlog.id, title: 'Задача' }))!
       const before = (await first.tasks.getBoard('alice', project.id))!
-      first.close()
-
+      await first.close()
       const second = new VoiceChatDb(file)
+
+      await second.ready
       const after = (await second.tasks.getBoard('alice', project.id, { includeCompleted: true }))!
       // Количество колонок не выросло: дубли системных не появились.
       expect(after.columns.length).toBe(before.columns.length)
@@ -314,7 +321,7 @@ describe('миграция существующей базы', () => {
       expect(after.columns.find((c) => c.semanticType === 'merge')?.hidden).toBe(true)
       // Карточка осталась в своей колонке.
       expect(after.tasks.find((t) => t.id === task.id)?.columnId).toBe(backlog.id)
-      second.close()
+      await second.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -325,17 +332,19 @@ describe('миграция существующей базы', () => {
     const file = join(dir, 'db.sqlite')
     try {
       const first = new VoiceChatDb(file)
+      await first.ready
       first.identity.createUser('alice', '', 'developer')
       const project = await first.projects.createProject('alice', { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general })
       const custom = (await first.projects.createColumn('alice', project.id, 'Закупка'))!
-      first.close()
-
+      await first.close()
       const second = new VoiceChatDb(file)
+
+      await second.ready
       const columns = (await second.tasks.getBoard('alice', project.id))!.columns
       // Тип задаёт минимум, а не потолок: добавленное человеком остаётся.
       expect(columns.some((c) => c.id === custom.id)).toBe(true)
       expect(columns.length).toBe(6)
-      second.close()
+      await second.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -346,17 +355,19 @@ describe('миграция существующей базы', () => {
     const file = join(dir, 'db.sqlite')
     try {
       const first = new VoiceChatDb(file)
+      await first.ready
       first.identity.createUser('alice', '', 'developer')
       const own = await first.projects.createProjectType('alice', { parentId: null, name: 'Мой', description: 'моё описание' })
-      first.close()
-
+      await first.close()
       const second = new VoiceChatDb(file)
+
+      await second.ready
       const same = (await second.projects.getProjectType(own.id))!
       expect(same.name).toBe('Мой')
       expect(same.description).toBe('моё описание')
       expect(same.builtin).toBe(false)
       expect(same.status).toBe('private')
-      second.close()
+      await second.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -367,16 +378,18 @@ describe('миграция существующей базы', () => {
     try {
       // Первое открытие уже проставило отметку о разовой нормализации.
       const first = new VoiceChatDb(file)
+      await first.ready
       first.identity.createUser('alice', '', 'developer')
       const project = await first.projects.createProject('alice', { name: 'Ветки' })
       // Человек осознанно выбирает исторический шаблон — он ничем не хуже нового.
       first.projects.updateProject('alice', project.id, { ciBranchTemplate: 'feature/{task_number}' })
       expect((await first.projects.getProject('alice', project.id))!.ciBranchTemplate).toBe('feature/{task_number}')
-      first.close()
-
+      await first.close()
       const second = new VoiceChatDb(file)
+
+      await second.ready
       expect((await second.projects.getProject('alice', project.id))!.ciBranchTemplate).toBe('feature/{task_number}')
-      second.close()
+      await second.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -386,20 +399,21 @@ describe('миграция существующей базы', () => {
     const file = join(dir, 'db.sqlite')
     try {
       const first = new VoiceChatDb(file)
+      await first.ready
       first.identity.createUser('alice', '', 'developer')
       const project = await first.projects.createProject('alice', { name: 'Старая' })
-      first.close()
-
+      await first.close()
       // Воспроизводим базу, созданную до нормализации: старый дефолт и нет отметки.
       const raw = new Database(file)
       raw.prepare(`UPDATE projects SET ci_branch_template='feature/{task_number}-{slug}' WHERE id=?`).run(project.id)
       raw.prepare(`DELETE FROM app_config WHERE key='migration.ciBranchTemplate.normalized'`).run()
-      raw.close()
-
+      await raw.close()
       const second = new VoiceChatDb(file)
+
+      await second.ready
       expect((await second.projects.getProject('alice', project.id))!.ciBranchTemplate).toBe('{task_number}')
       expect(await second.settings.getAppConfig('migration.ciBranchTemplate.normalized')).toBe('1')
-      second.close()
+      await second.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

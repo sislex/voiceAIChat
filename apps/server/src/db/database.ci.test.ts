@@ -74,21 +74,22 @@ describe('ci: справочник команд', () => {
     const file = join(dir, 'db.sqlite')
     let n = 0
     const first = new VoiceChatDb(file, { newId: () => `t-${++n}`, now: () => 1000 })
+    await first.ready
     first.identity.createUser('alice', '', 'developer')
     const gate = await first.ci.createCiCommand('alice', { scope: 'global', name: 'Тесты', script: 'npm run -w @voicechat/server test' })
     const install = await first.ci.createCiCommand('alice', { scope: 'global', name: 'Установка', script: 'npm ci' })
-    first.close()
-
+    await first.close()
     // Откатываем схему к состоянию до колонки: команда доступна модели, признака нет.
     const raw = new Database(file)
     raw.exec(`ALTER TABLE ci_commands DROP COLUMN is_test`)
     raw.exec(`UPDATE ci_commands SET available_to_model = 1`)
-    raw.close()
-
+    await raw.close()
     const second = new VoiceChatDb(file, { newId: () => `t2-${++n}`, now: () => 2000 })
+
+    await second.ready
     expect(await second.ci.getCiCommand('alice', gate.id)).toMatchObject({ isTest: true, availableToModel: false })
     expect(await second.ci.getCiCommand('alice', install.id)).toMatchObject({ isTest: false, availableToModel: true })
-    second.close()
+    await second.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -97,22 +98,24 @@ describe('ci: справочник команд', () => {
     const file = join(dir, 'db.sqlite')
     let n = 0
     const first = new VoiceChatDb(file, { newId: () => `a-${++n}`, now: () => 1000 })
+    await first.ready
     first.identity.createUser('alice', '', 'developer')
     const gate = await first.ci.createCiCommand('alice', {
       scope: 'global',
       name: 'Запустить проверки (typecheck + npm test)',
       script: 'npm run typecheck && npm test'
     })
-    first.close()
-
+    await first.close()
     const second = new VoiceChatDb(file, { newId: () => `a-${++n}`, now: () => 2000 })
+
+    await second.ready
     expect(await second.ci.getCiCommand('alice', gate.id)).toMatchObject({
       script: 'npm run affected-check',
       isTest: true,
       availableToModel: true,
       version: 2
     })
-    second.close()
+    await second.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -435,9 +438,10 @@ describe('VoiceChatDb — миграция существующей БД под 
     raw.prepare(`INSERT INTO ci_settings (id, max_fix_attempts, fix_time_limit_ms, fix_token_limit,
       default_step_timeout_sec, metrics_window, max_concurrent_runs, max_model_command_calls)
       VALUES (1,3,600000,200000,600,20,2,20)`).run()
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     const cols = (name: string): string[] =>
       ((migrated as unknown as { db: Database.Database }).db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>)
         .map((c) => c.name)
@@ -469,7 +473,7 @@ describe('VoiceChatDb — миграция существующей БД под 
     // модель, иначе экономия включалась бы только руками.
     expect((await migrated.ci.getCiSettings()).stageModels).toEqual(DEFAULT_CI_STAGE_MODELS)
 
-    migrated.close()
+    await migrated.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })
@@ -604,7 +608,7 @@ describe('ci: автозадача «Пересборка прода»', () => {
 
   it('нет колонки ready — карточку не заводим; чужой проект недоступен', async () => {
     const { p } = await project()
-    const spy = vi.spyOn(db.sync.projects, 'getColumnIdBySemantic').mockReturnValue(null)
+    const spy = vi.spyOn(db.sync.projects, 'getColumnIdBySemantic').mockResolvedValue(null)
     expect(await db.tasks.ensureProdRebuildTask('alice', p.id, '- P1-1: T1')).toBe(null)
     spy.mockRestore()
     // Не участник проекта карточку не заводит.
@@ -629,31 +633,33 @@ describe('встроенный шаг «Актуализировать базу 
     const file = join(dir, 'db.sqlite')
     let n = 0
     const first = new VoiceChatDb(file, { newId: () => `s-${++n}`, now: () => 1000 })
+    await first.ready
     first.identity.createUser('alice', '', 'developer')
     const p = await first.projects.createProject('alice', { name: 'P' })
     const test = await first.ci.createCiCommand('alice', { scope: 'global', name: 'Запустить тестирование (npm test)', script: 'npm test' })
     const commit = await first.ci.createCiCommand('alice', { scope: 'global', name: 'Закоммитить работу в ветку задачи', script: 'git add -A' })
     const merge = await first.ci.createCiCommand('alice', { scope: 'global', name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit' })
     first.ci.setCiSlotCommands('project', p.id, 'after_model', [test.id, commit.id, merge.id])
-    first.close()
-
+    await first.close()
     // Состояние «база от прошлой версии»: строки встроенного шага ещё нет.
     const raw = new Database(file)
     raw.exec(`DELETE FROM ci_slot_commands WHERE command_id = '${CI_KB_UPDATE_COMMAND_ID}'`)
     raw.exec(`DELETE FROM ci_commands WHERE id = '${CI_KB_UPDATE_COMMAND_ID}'`)
-    raw.close()
-
+    await raw.close()
     const second = new VoiceChatDb(file, { newId: () => `s2-${++n}`, now: () => 2000 })
+
+    await second.ready
     expect((await second.ci.getCiSlotConfig('project', p.id)).afterModel).toEqual([commit.id])
     expect(await second.ci.getCiCommand('alice', commit.id)).toMatchObject({ script: TASK_COMMIT_COMMAND_SCRIPT, version: 2 })
     expect(await second.ci.getCiCommand('alice', CI_KB_UPDATE_COMMAND_ID)).toBeTruthy()
     // Повторное открытие ничего не возвращает в development pipeline.
     second.ci.setCiSlotCommands('project', p.id, 'after_model', [test.id, commit.id])
-    second.close()
+    await second.close()
     const third = new VoiceChatDb(file, { newId: () => `s3-${++n}`, now: () => 3000 })
+    await third.ready
     expect((await third.ci.getCiSlotConfig('project', p.id)).afterModel).toEqual([commit.id])
     expect(await third.ci.getCiCommand('alice', commit.id)).toMatchObject({ script: TASK_COMMIT_COMMAND_SCRIPT, version: 2 })
-    third.close()
+    await third.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })

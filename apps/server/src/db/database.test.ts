@@ -30,10 +30,9 @@ describe('conversations: окно недели и курсорная догру�
   it('since отдаёт только свежие, before+limit — следующую порцию старых', async () => {
     const { db: d, at } = withClock()
     const week = 1_700_000_000_000
-    const ids = await Promise.all([
-      at(week + 3, 'Свежая 1'), at(week + 2, 'Свежая 2'), at(week + 1, 'Свежая 3'),
-      at(week - 1, 'Старая 1'), at(week - 2, 'Старая 2'), at(week - 3, 'Старая 3')
-    ])
+    // Последовательно: часы переставляются перед каждым созданием, параллельные вызовы прочитали бы одно время.
+    const ids: string[] = []
+    for (const [mark, title] of [[week + 3, 'Свежая 1'], [week + 2, 'Свежая 2'], [week + 1, 'Свежая 3'], [week - 1, 'Старая 1'], [week - 2, 'Старая 2'], [week - 3, 'Старая 3']] as Array<[number, string]>) ids.push(await at(mark, title))
 
     const fresh = await d.chat.listConversations('alice', { scope: 'chat', since: week })
     expect(fresh.map((c) => c.id)).toEqual(ids.slice(0, 3))
@@ -46,7 +45,7 @@ describe('conversations: окно недели и курсорная догру�
     const tail = await d.chat.listConversations('alice', { scope: 'chat', before: { updatedAt: last.updatedAt, id: last.id }, limit: 2 })
     // Порция короче лимита — дальше ничего нет.
     expect(tail.map((c) => c.id)).toEqual(ids.slice(5))
-    d.close()
+    await d.close()
   })
 
   it('курсор различает беседы, обновлённые в одну миллисекунду', async () => {
@@ -58,7 +57,7 @@ describe('conversations: окно недели и курсорная догру�
     const next = await d.chat.listConversations('alice', { scope: 'chat', before: { updatedAt: first[0]!.updatedAt, id: first[0]!.id }, limit: 5 })
     // Ни одна беседа не потерялась и не пришла дважды.
     expect([...first, ...next].map((c) => c.id).sort()).toEqual([...ids].sort())
-    d.close()
+    await d.close()
   })
 })
 
@@ -187,11 +186,12 @@ describe('VoiceChatDb — разговоры', () => {
   })
 
   it('восстанавливает агрегат после открытия БД и изолирует повреждённый meta', async () => {
-    db.close()
+    await db.close()
     const dir = mkdtempSync(join(tmpdir(), 'vc-conversation-cost-'))
     const file = join(dir, 'voicechat.db')
     try {
       db = new VoiceChatDb(file)
+      await db.ready
       const valid = await db.chat.createConversation(U, 'Валидный')
       const broken = await db.chat.createConversation(U, 'Повреждённый')
       await db.llm.upsertModelPrice({
@@ -206,19 +206,19 @@ describe('VoiceChatDb — разговоры', () => {
         model: 'priced', inputTokens: 1, outputTokens: 1
       })
       expect(await db.chat.getConversation(U, valid.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
-      db.close()
-
+      await db.close()
       const raw = new Database(file)
       raw.prepare(`UPDATE messages SET meta = '{' WHERE conversation_id = ?`).run(broken.id)
-      raw.close()
-
+      await raw.close()
       db = new VoiceChatDb(file)
+
+      await db.ready
       const restored = new Map((await db.chat.listConversations(U)).map((conversation) => [conversation.id, conversation]))
       expect(restored.get(valid.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
       expect(restored.get(broken.id)).toMatchObject({ costUsd: null, costStatus: 'unknown' })
       expect((await db.chat.searchConversations(U, 'Валидный'))[0]).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
     } finally {
-      db.close()
+      await db.close()
       rmSync(dir, { recursive: true, force: true })
       db = makeDb()
     }
@@ -419,23 +419,24 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-empty-drafts-'))
     const file = join(dir, 'data.db')
     const seed = new VoiceChatDb(file)
+    await seed.ready
     const abandoned = await seed.chat.createConversation(U)
     const renamed = await seed.chat.createConversation(U, 'Переименованный')
     const webReader = await seed.chat.createConversation(U, 'Новый разговор', 'web-recorder')
     const resumed = await seed.chat.createConversation(U)
     seed.chat.setClaudeSession(U, resumed.id, 'session-1')
-    seed.close()
-
+    await seed.close()
     const raw = new Database(file)
     raw.prepare(`DELETE FROM schema_migrations WHERE name = 'cleanup-empty-manual-drafts-v1'`).run()
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     expect(await migrated.chat.getConversation(U, abandoned.id)).toBeNull()
     expect(await migrated.chat.getConversation(U, renamed.id)).not.toBeNull()
     expect(await migrated.chat.getConversation(U, webReader.id)).not.toBeNull()
     expect(await migrated.chat.getConversation(U, resumed.id)).not.toBeNull()
-    migrated.close()
+    await migrated.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -443,9 +444,9 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-scope-check-'))
     const file = join(dir, 'data.db')
     const seed = new VoiceChatDb(file)
+    await seed.ready
     const kept = await seed.chat.createConversation(U, 'Обычный')
-    seed.close()
-
+    await seed.close()
     // Возвращаем таблице «старый» CHECK без 'images' — как в БД, созданных
     // из schema.ts до появления студии.
     const raw = new Database(file)
@@ -460,14 +461,15 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     raw.exec(`INSERT INTO conversations_old SELECT * FROM conversations`)
     raw.exec(`DROP TABLE conversations`)
     raw.exec(`ALTER TABLE conversations_old RENAME TO conversations`)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     const studio = await migrated.chat.createConversation(U, 'Картинки 1', 'images')
     expect(studio.scope).toBe('images')
     expect(studio.assistantKind).toBe('images')
     expect((await migrated.chat.getConversation(U, kept.id))?.title).toBe('Обычный')
-    migrated.close()
+    await migrated.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -493,9 +495,10 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     ).run('m1', 'c1', 'ai', 'старый ответ', '10:00', 1)
     raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`)
       .run('a1', 'oldbox', 'hash', 1)
-    raw.close()
+    await raw.close()
     // Открываем через VoiceChatDb → migrate() добавляет колонки и чистит legacy.
     const db = new VoiceChatDb(file)
+    await db.ready
     const cols = (db as unknown as { db: Database.Database }).db
       .prepare(`PRAGMA table_info(messages)`)
       .all() as Array<{ name: string }>
@@ -504,7 +507,7 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     expect(await db.chat.listConversations('admin')).toHaveLength(0)
     expect(await db.chat.listMessages('admin', 'c1')).toHaveLength(0)
     expect(await db.machines.listAgents('admin')).toHaveLength(0)
-    db.close()
+    await db.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })
@@ -698,7 +701,7 @@ describe('VoiceChatDb — импорт desktop', () => {
     expect(await db.chat.getConversation('alice', 'legacy-c')).toMatchObject({ title: 'Старый чат', createdAt: 100, updatedAt: 200 })
     expect((await db.chat.listMessages('alice', 'legacy-c'))[0]).toMatchObject({ id: 'legacy-m', createdAt: 150 })
     expect(await db.chat.getConversation('bob', 'legacy-c')).toBeNull()
-    db.close()
+    await db.close()
   })
 })
 
@@ -817,7 +820,7 @@ describe('VoiceChatDb — режим базы знаний разговора', 
     expect(conversation.kbContextMode).toBe('auto')
     expect((await db.chat.setConversationKbContextMode('kb-user', conversation.id, 'manual'))?.kbContextMode).toBe('manual')
     expect((await db.chat.setConversationKbContextMode('kb-user', conversation.id, 'off'))?.kbContextMode).toBe('off')
-    db.close()
+    await db.close()
   })
 })
 
@@ -830,7 +833,7 @@ describe('VoiceChatDb — резолв исполнителя LLM', () => {
     expect(await db.llm.resolveLlmEngine(personal.id, 'claude', 'admin')).toMatchObject({ engine: { id: personal.id }, substituted: false })
     expect(await db.llm.resolveLlmEngine(personal.id, 'claude', 'developer')).toMatchObject({ engine: { id: def.id }, substituted: true })
     expect((await db.llm.listLlmEnginesForRole('developer')).map((engine) => engine.id)).toEqual([def.id])
-    db.close()
+    await db.close()
   })
 })
 
@@ -904,8 +907,9 @@ describe('VoiceChatDb — миграции', () => {
     insert.run('c5', 'unknown', 'future-kind', null)
     insert.run('c6', 'kanban-invalid', 'kanban', null)
     insert.run('c7', 'kanban-valid', 'kanban', 'p1')
-    raw.close()
+    await raw.close()
     const db = new VoiceChatDb(file)
+    await db.ready
     try {
       expect(await db.chat.getConversation('admin', 'c1')).toMatchObject({ title: 'legacy', scope: 'chat' })
       expect((await db.chat.getConversation('admin', 'c2'))?.scope).toBe('make')
@@ -919,7 +923,7 @@ describe('VoiceChatDb — миграции', () => {
       expect(await db.chat.listConversations('admin', { scope: 'kanban', projectId: 'p2' })).toEqual([])
       expect(await db.llm.listLlmEngines()).toEqual([])
     } finally {
-      db.close()
+      await db.close()
       rmSync(dir, { recursive: true, force: true })
     }
   })
@@ -962,9 +966,10 @@ describe('VoiceChatDb — миграции', () => {
     insert.run('m1', 'make с машиной', 'make', 'agent-1', '/Users/dev/ChatAI/projects/p1/worktree')
     insert.run('m2', 'make без машины', 'make', 'none', null)
     insert.run('c1', 'обычный чат', null, 'agent-1', '/repo')
-    raw.close()
-
+    await raw.close()
     const db = new VoiceChatDb(file)
+
+    await db.ready
     try {
       // Привязка Make-чата снята: ход её всё равно игнорирует, а панель показывала
       // машину и каталог, которых нет в работе.
@@ -982,7 +987,7 @@ describe('VoiceChatDb — миграции', () => {
       await db.chat.setConversationExecTarget('admin', 'm1', machine.id, '/repo', undefined, undefined, undefined, 'plan')
       expect(await db.chat.getConversation('admin', 'm1')).toMatchObject({ execTarget: null, permissionMode: 'plan' })
     } finally {
-      db.close()
+      await db.close()
       rmSync(dir, { recursive: true, force: true })
     }
   })
@@ -1008,7 +1013,7 @@ describe('VoiceChatDb — хранилища машин', () => {
     expect(binding.relativePath).toBe('chats/chat-1')
     expect(await db.machines.getChatStorageBinding(U, conversation.id)).toEqual(binding)
     await expect(async () => await db.machines.saveChatStorageBinding(U, { ...binding, relativePath: '../outside' })).rejects.toThrow()
-    db.close()
+    await db.close()
   })
 
   it('атомарно удаляет машину с RESTRICT-связями и сбрасывает логические цели', async () => {
@@ -1046,7 +1051,7 @@ describe('VoiceChatDb — хранилища машин', () => {
     expect(await db.settings.getSettings(U)).toMatchObject({ execTarget: null, defaultAgentId: null })
     expect(raw.prepare(`SELECT 1 FROM conversation_workspaces WHERE conversation_id=?`).get(conversation.id)).toBeUndefined()
     expect(raw.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
-    db.close()
+    await db.close()
   })
 
   it('откатывает очистку связей, если финальное удаление машины падает', async () => {
@@ -1069,7 +1074,7 @@ describe('VoiceChatDb — хранилища машин', () => {
     expect(await db.machines.listMachineStorages(U, machine.id)).toHaveLength(1)
     expect(await db.machines.getChatStorageBinding(U, conversation.id)).not.toBeNull()
     expect(raw.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
-    db.close()
+    await db.close()
   })
 })
 
@@ -1087,9 +1092,10 @@ describe('VoiceChatDb — персистентная очередь ходов',
     await db.chat.enqueueTurn(U, conversation.id, second.id, { segments: [{ speakerId: 1, text: 'Второй' }] })
     expect((await db.chat.listQueuedTurns(U, conversation.id)).map((item) => item.text)).toEqual(['Первый', 'Второй'])
     expect(await db.chat.listMessages(U, conversation.id)).toEqual([])
-    db.close()
-
+    await db.close()
     db = new VoiceChatDb(file)
+
+    await db.ready
     expect(await db.chat.listQueuedTurns(U, conversation.id)).toMatchObject([
       { messageId: first.id, position: 1, attachments: ['a1'] },
       { messageId: second.id, position: 2 }
@@ -1098,7 +1104,7 @@ describe('VoiceChatDb — персистентная очередь ходов',
     const dispatched = await db.chat.takeQueuedTurn(U, conversation.id)
     expect(dispatched?.message.id).toBe(first.id)
     expect((await db.chat.listMessages(U, conversation.id)).map((message) => message.id)).toEqual([first.id])
-    db.close()
+    await db.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -1115,7 +1121,7 @@ describe('VoiceChatDb — персистентная очередь ходов',
     await db.chat.deleteQueuedTurn(U, conversation.id, queued.id)
     expect(await db.chat.takeQueuedTurn(U, conversation.id)).toBeNull()
     expect(await db.chat.listMessages(U, conversation.id)).toEqual([])
-    db.close()
+    await db.close()
   })
 
   it('повышает приоритет атомарно и сохраняет текст с вложениями', async () => {
@@ -1137,7 +1143,7 @@ describe('VoiceChatDb — персистентная очередь ходов',
       { id: queued.id, messageId: second.id, text: 'Исправленный', position: 1, attachments: ['a1'], attachmentDetails: [{ name: 'image.png', mimeType: 'image/png' }] },
       { messageId: first.id, position: 2 }
     ])
-    db.close()
+    await db.close()
   })
 })
 
@@ -1158,7 +1164,7 @@ describe('блокировка после неудачных входов (auth-
     await db.identity.setUserBlocked('locky', false)
     expect(await db.identity.getUser('locky')).toMatchObject({ blocked: false, failedLogins: 0, lockReason: null })
     expect(await db.identity.recordLoginFailure('ghost')).toBeNull()
-    db.close()
+    await db.close()
   })
 })
 
@@ -1177,7 +1183,7 @@ describe('обслуживание учёток (auth-roadmap п.18)', () => {
     await db.identity.createInvite({ token: 'alive', role: 'tester', createdBy: 'admin', ttlMs: 60_000, maxUses: 1 })
     expect(await db.identity.pruneInvites()).toBe(1)
     expect(await db.identity.getInvite('alive')).not.toBeNull()
-    db.close()
+    await db.close()
   })
 })
 
@@ -1189,6 +1195,7 @@ describe('VoiceChatDb — дефолты настроек фиксируются
     const dir = mkdtempSync(join(tmpdir(), 'vc-settings-defaults-'))
     const file = join(dir, 'settings.db')
     const db = new VoiceChatDb(file)
+    await db.ready
     const raw = new Database(file)
     // Запись «старого релиза»: только тема, остальных полей ещё не существовало.
     raw.prepare(`INSERT INTO settings (key, value) VALUES (?, ?)`).run('app:ann', JSON.stringify({ theme: 'dark' }))
@@ -1198,8 +1205,8 @@ describe('VoiceChatDb — дефолты настроек фиксируются
     expect(read.theme).toBe('dark')
     const stored = JSON.parse((raw.prepare(`SELECT value FROM settings WHERE key = ?`).get('app:ann') as { value: string }).value)
     expect(stored).toMatchObject({ theme: 'dark', llmProvider: 'claude', permissionMode: 'bypassPermissions' })
-    raw.close()
-    db.close()
+    await raw.close()
+    await db.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })
