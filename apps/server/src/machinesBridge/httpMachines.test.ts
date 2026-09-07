@@ -132,7 +132,8 @@ describe('HttpMachines', () => {
     fake.push({ kind: 'tunnelAuthorize', requestId: 'r2', id: 'unknown' })
     await tick()
     expect(authorize).toHaveBeenCalledTimes(1)
-    expect([...fake.clientMessages].sort((a, b) => a.requestId.localeCompare(b.requestId))).toEqual([{ kind: 'tunnelAuthorizeResult', requestId: 'r1', ok: true }, { kind: 'tunnelAuthorizeResult', requestId: 'r2', ok: false }])
+    // Чужой тоннель (r2) остаётся без ответа — его знает другой процесс; таймаут у процесса машин.
+    expect(fake.clientMessages).toEqual([{ kind: 'tunnelAuthorizeResult', requestId: 'r1', ok: true }])
     fake.push({ kind: 'tunnelClosed', id: 't1' })
     await tick()
     expect(onClose).toHaveBeenCalled()

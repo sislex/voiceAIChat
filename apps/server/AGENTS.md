@@ -35,7 +35,7 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `cc/` (наблюдатель сессий Claude Code),
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android), `machines/` (сборка модуля машин
 `createMachinesModule(deps)`, порт `MachinesService` для потребителей, контракт `internal.ts`, отдельный процесс `standalone/`,
-гейт границы — потребители не импортируют `AgentRegistry`), `machinesBridge/` (сторона ядра для `VC_MACHINES_MODE=remote`:
+гейт границы — потребители не импортируют `AgentRegistry`), `admin/` (контракт `internal.ts` и отдельный процесс админки `standalone/`), `machinesBridge/` (сторона ядра для `VC_MACHINES_MODE=remote`:
 `HttpMachines` с зеркалом по шине событий, прокси REST и WebSocket `/agent`), `internal/` (общее для соседних процессов:
 потоковый exec `execStream.ts`, пересылка авторизации `forwardedAuth.ts`), `chatStorage.ts` (хранилище разговора на машине),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),

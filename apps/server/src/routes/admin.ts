@@ -217,7 +217,7 @@ export function registerAdminRoutes(
   mailer?: Mailer,
   publicUrl?: string | null,
   /** Хаб сессий: отзыв админом должен доехать до владельца так же живо, как свой. */
-  sessionHub?: SessionHub
+  sessionHub?: Pick<SessionHub, 'emit'>
 ): void {
   const guard = { preHandler: requireAdmin }
   const baseUrl = (req: FastifyRequest): string =>

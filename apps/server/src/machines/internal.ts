@@ -6,10 +6,10 @@
 import type { AgentImageHost, AgentPolicy, AgentTelemetry, PtyContext, ServerMessage } from '@voicechat/shared'
 import type { MachineCommandReport, MachinesService, PtyEvent } from './service.js'
 
-/** У процесса машин. */
-export const MACHINES_INTERNAL_RPC_PATH = '/internal/rpc'
-export const MACHINES_INTERNAL_EXEC_STREAM_PATH = '/internal/exec-stream'
-export const MACHINES_INTERNAL_EVENTS_PATH = '/internal/events'
+/** У процесса, где живёт реестр: отдельного процесса машин или ядра во встроенном режиме (`machines/internalApi.ts`). */
+export const MACHINES_INTERNAL_RPC_PATH = '/internal/machines/rpc'
+export const MACHINES_INTERNAL_EXEC_STREAM_PATH = '/internal/machines/exec-stream'
+export const MACHINES_INTERNAL_EVENTS_PATH = '/internal/machines/events'
 export const MACHINES_HEALTH_PATH = '/v1/health'
 
 /** Онлайн-машина глазами зеркала: всё, что потребители читают синхронно. */

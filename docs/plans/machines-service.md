@@ -1,6 +1,6 @@
 # Машины и админка отдельными сервисами (этап 3 плана «части приложения на любом сервере»)
 
-Статус: круг 1 ☑, круг 2 ☑, круг 3 ☐ (2026-09-07). Ветка `feat/machines-service` поверх
+Статус: круг 1 ☑, круг 2 ☑, круг 3 ☑ (2026-09-07), прогон на прод-копии — см. журнал. Ветка `feat/machines-service` поверх
 `feat/kanban-service` (#113) и `feat/db-postgres` (#112).
 
 ## Зачем
@@ -83,11 +83,19 @@ dev-сервера); события `onChange`/`onCommand`/`onAgentReady` — о
    Решения: канбан и Make в remote получают машины у ядра под теми же портами (`HttpMachines` структурно —
    `MachinesService`); `ptyBufferText` у ядра — вывод с момента подписки (полный буфер — у процесса машин).
 
-### Круг 3 — админка отдельным процессом ☐
-1. ☐ `admin/standalone/`: `routes/admin.ts` + пересылка авторизации; порты — машины (`HttpMachines`), Make
-   (`createRemoteMake`), `deployTrigger` и `sessionHub` — RPC к ядру (`/internal/admin/*`), `mailer` локально.
-   Ядро проксирует `/api/admin/*`. Compose-профиль `admin`.
-2. ☐ Прогон на копии прод-БД (ядро + машины + канбан + админка отдельными процессами), browser-smoke, PR.
+### Круг 3 — админка отдельным процессом ☑ (2026-09-07)
+1. ☑ `admin/standalone/` (`buildAdminServer`): `routes/admin.ts` + пересылка авторизации; машины — `HttpMachines`
+   к процессу машин (`VC_MACHINES_URL`) или к ядру: внутренний API машин вынесен в `machines/internalApi.ts` и
+   поднимается **и в ядре** во встроенном режиме (при `VC_INTERNAL_TOKEN`), пути — `/internal/machines/*`;
+   Make — `createRemoteMake` (к Make или к ядру); деплой и `sessionHub.emit` — RPC к ядру `/internal/admin/rpc`
+   (`admin/internal.ts`); `mailer` локально. `HttpMachines` отвечает на авторизацию тоннеля только за свои
+   тоннели — к шине подключены несколько процессов.
+2. ☑ Ядро: `VC_ADMIN_MODE=remote` + `VC_ADMIN_URL` → прокси `/api/admin/*` (типы проектов остаются у канбана:
+   его роуты/прокси конкретнее и выигрывают), `registerAdminRoutes` не зовётся; `/internal/admin/rpc` — всегда
+   при внутреннем токене. Compose: сервис `admin` (профиль `admin`, порт 8794, образ `admin-runtime`).
+3. ☑ Тест `admin/standalone/adminRemote.integration.test.ts`: роль проверяет ядро до прокси, пользователи и
+   статистика машин через прокси, деплой уходит в ядро по RPC, типы проектов не в админке.
+4. ☐ Прогон на копии прод-БД (ядро + машины + канбан + админка отдельными процессами), browser-smoke, PR.
 
 ## Риски
 

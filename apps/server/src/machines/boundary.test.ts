@@ -13,7 +13,7 @@ const server = readFileSync(join(srcDir, 'server.ts'), 'utf8')
 const module = readFileSync(join(srcDir, 'machines', 'module.ts'), 'utf8')
 
 /** Кому положено знать реальный реестр: сам модуль машин и его части, порт (реэкспорт типов), тестовый harness. */
-const ALLOWED_REGISTRY_IMPORTERS = new Set(['machines/module.ts', 'machines/service.ts', 'machines/standalone/server.ts', 'agents/wsAgent.ts', 'routes/agents.ts', 'routes/restHarness.ts', 'server.ts', 'kanban/core.ts'])
+const ALLOWED_REGISTRY_IMPORTERS = new Set(['machines/module.ts', 'machines/service.ts', 'machines/standalone/server.ts', 'machines/internalApi.ts', 'agents/wsAgent.ts', 'routes/agents.ts', 'routes/restHarness.ts', 'server.ts', 'kanban/core.ts'])
 
 function listTs(dir: string): string[] {
   const out: string[] = []

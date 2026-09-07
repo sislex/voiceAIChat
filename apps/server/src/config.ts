@@ -83,6 +83,9 @@ export interface ServerConfig {
    */
   machinesMode: 'embedded' | 'remote'
   machinesUrl?: string
+  /** Админка: `remote` — `/api/admin/*` обслуживает отдельный процесс по адресу `adminUrl` (те же порты к ядру и машинам). */
+  adminMode: 'embedded' | 'remote'
+  adminUrl?: string
   /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
   coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
@@ -252,6 +255,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
     machinesMode: env.VC_MACHINES_MODE === 'remote' ? 'remote' : 'embedded',
     machinesUrl: env.VC_MACHINES_URL,
+    adminMode: env.VC_ADMIN_MODE === 'remote' ? 'remote' : 'embedded',
+    adminUrl: env.VC_ADMIN_URL,
     coreUrl: env.VC_CORE_URL,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,

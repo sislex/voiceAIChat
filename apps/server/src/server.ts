@@ -73,6 +73,8 @@ import type { AgentRegistry } from './agents/registry.js'
 import { createDbCommandGate, createMachinesModule } from './machines/module.js'
 import { HttpMachines } from './machinesBridge/httpMachines.js'
 import { registerAgentWsProxy, registerMachinesProxy } from './machinesBridge/proxy.js'
+import { registerMachinesInternalApi } from './machines/internalApi.js'
+import { registerServiceProxy } from './makeBridge/proxy.js'
 import type { MachinesService } from './machines/service.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
@@ -401,6 +403,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   const agentRegistry: MachinesService = remoteMachines ?? machinesModule!.machines
   const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
+  // Во встроенном режиме ядро само отдаёт машины соседям (админке) тем же внутренним API, что и процесс машин.
+  if (machinesModule && opts.config.internalToken) registerMachinesInternalApi(app, { registry: machinesModule.registry, token: opts.config.internalToken })
   if (remoteMachines) {
     remoteMachines.start()
     app.addHook('onClose', async () => remoteMachines.stop())
@@ -850,7 +854,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
+  // Админка отдельным процессом: ядро переправляет `/api/admin/*` (кроме типов проектов — они у канбана), а деплой и
+  // уведомления об отзыве сессий отдаёт по `/internal/admin/rpc`.
+  const adminRemote = opts.config.adminMode === 'remote'
+  if (adminRemote && !(opts.config.adminUrl && opts.config.internalToken && opts.config.mcpSecret)) throw new Error('VC_ADMIN_MODE=remote требует VC_ADMIN_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
+  if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'] })
+  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
@@ -1284,6 +1293,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     registerInternalRoutes(app, {
       token: opts.config.internalToken, makeCore, authenticate,
       ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
+      admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
       ...(remoteKanban ? { kanban: { core: kanbanCore, machinesSnapshot: () => machinesSnapshot(agentRegistry), tunnels: remoteKanban.tunnels, apply: (event) => remoteKanban.apply(event) } } : {})
     })
   }
