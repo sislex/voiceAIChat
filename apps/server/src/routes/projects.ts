@@ -796,7 +796,8 @@ export function registerProjectRoutes(
       const result = await db.tasks.createTaskFromProposalInPreparation(uid(req), req.params.id, proposalId, {
         title, description: b.description, acceptanceCriteria: b.acceptanceCriteria === undefined ? undefined : normalizeAcceptanceCriteria(b.acceptanceCriteria),
         type: b.type, parentId: b.parentId, priority: b.priority, assignee: b.assignee ?? null,
-        labels: b.labels, skills: b.skills, storyPoints: b.storyPoints, dueDate: b.dueDate
+        labels: b.labels, skills: b.skills, storyPoints: b.storyPoints, dueDate: b.dueDate,
+        source: 'task-launch'
       })
       // Связь с Make — до запуска подготовки: makeSources собираются при старте
       // рана, и связь, созданная позже, в этот ран уже не попадёт.

@@ -734,7 +734,13 @@ export class TasksRepo extends BaseRepo {
       const prior = this.db.prepare(
         `SELECT task_id FROM task_creation_requests WHERE actor = ? AND idempotency_key = ?`
       ).get(userId, key) as { task_id: string } | undefined
-      if (prior) return this.getTask(projectId, prior.task_id)
+      if (prior) {
+        const task = this.getTask(projectId, prior.task_id)
+        if (task?.type === 'task' && args.source !== undefined) {
+          this.repos.chat.openOrCreateTaskChat(userId, projectId, task.id)
+        }
+        return task
+      }
     }
     if (!this.repos.projects.columnInProject(projectId, args.columnId)) return null
 
@@ -795,7 +801,13 @@ export class TasksRepo extends BaseRepo {
       this.repos.projects.touchProject(projectId, ts)
       return id
     })()
-    return this.getTask(projectId, created)
+    const task = this.getTask(projectId, created)
+    // Пользовательский таск сразу получает приватный связанный чат автора.
+    // Эпики, стори и системные создания сохраняют ленивое поведение.
+    if (task?.type === 'task' && userCreation) {
+      this.repos.chat.openOrCreateTaskChat(userId, projectId, task.id)
+    }
+    return task
   }
 
   updateTask(

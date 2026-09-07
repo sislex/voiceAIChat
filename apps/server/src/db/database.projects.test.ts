@@ -314,8 +314,8 @@ describe('projects: две фазы доски', () => {
       const created = await d.ci.createCiRun({ projectId: p.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: dev.id, runColumnId: dev.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
       d.ci.updateCiRun(created.id, { status: 'success', durationMs: 100 })
     }
-    await run(onBoard.id)
-    await run(archived.id)
+    run(onBoard.id)
+    run(archived.id)
     d.tasks.moveTask('alice', p.id, archived.id, { columnId: done.id })
     clock = new Date(clock).setHours(24, 0, 0, 0)
 
@@ -792,6 +792,34 @@ describe('projects: навыки по умолчанию и связанный �
     expect(t.skills).toEqual(['ts', 'sql'])
     const upd = (await db.tasks.updateTask('alice', p.id, t.id, { skills: ['ts', 'redis'] }))!
     expect(upd.skills).toEqual(['ts', 'redis'])
+  })
+
+  it('createTask сразу создаёт чат автору только для пользовательского таска', async () => {
+    const p = await db.projects.createProject('alice', { name: 'P' })
+    const col = (await db.tasks.getBoard('alice', p.id))!.columns[0]
+    const task = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Пользовательская', source: 'rest' }))!
+    const chatId = (await db.tasks.getBoard('alice', p.id))!.tasks.find((item) => item.id === task.id)!.chatId
+    expect(chatId).toBeTruthy()
+    expect(await db.chat.getConversation('alice', chatId!)).toMatchObject({
+      title: 'Задача Пользовательская',
+      projectId: p.id,
+      taskId: task.id,
+      scope: 'kanban'
+    })
+
+    const replay = (await db.tasks.createTask('alice', p.id, {
+      columnId: col.id, title: 'Повтор', source: 'rest', idempotencyKey: 'create-1'
+    }))!
+    const replayed = (await db.tasks.createTask('alice', p.id, {
+      columnId: col.id, title: 'Повтор', source: 'rest', idempotencyKey: 'create-1'
+    }))!
+    expect(replayed.id).toBe(replay.id)
+    expect((await db.tasks.getBoard('alice', p.id))!.tasks.find((item) => item.id === replay.id)!.chatId).toBeTruthy()
+
+    const epic = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Эпик', type: 'epic', source: 'rest' }))!
+    const system = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Системная' }))!
+    expect((await db.tasks.getBoard('alice', p.id))!.tasks.find((item) => item.id === epic.id)!.chatId).toBeNull()
+    expect((await db.tasks.getBoard('alice', p.id))!.tasks.find((item) => item.id === system.id)!.chatId).toBeNull()
   })
 
   it('openOrCreateTaskChat: наследует LLM-настройки пользователя, привязывает задачу/проект/навыки и виден в board.chatId', async () => {
