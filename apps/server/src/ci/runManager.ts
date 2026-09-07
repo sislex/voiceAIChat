@@ -540,7 +540,21 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     return { run }
   }
 
+  /**
+   * Переходы одной задачи — строго по очереди: проверка «есть ли активный ран» и создание рана
+   * разделены обращениями к базе, и два одновременных перевода карточки (двойной клик, две вкладки)
+   * на асинхронной базе создавали два development-рана. На SQLite это скрывал синхронный быстрый путь.
+   */
+  const transitionLocks = new Map<string, Promise<unknown>>()
   async function startForDevelopmentTransition(userId: string, projectId: string, taskId: string, createIfMissing = true): Promise<{ run: CiRun; existing: boolean } | { error: string }> {
+    const previous = transitionLocks.get(taskId) ?? Promise.resolve()
+    const job = previous.then(() => startForDevelopmentTransitionUnlocked(userId, projectId, taskId, createIfMissing))
+    const tail = job.catch(() => undefined)
+    transitionLocks.set(taskId, tail)
+    try { return await job } finally { if (transitionLocks.get(taskId) === tail) transitionLocks.delete(taskId) }
+  }
+
+  async function startForDevelopmentTransitionUnlocked(userId: string, projectId: string, taskId: string, createIfMissing: boolean): Promise<{ run: CiRun; existing: boolean } | { error: string }> {
     const existing = await deps.db.ci.activeCiRunForTask(taskId)
     if (existing) return { run: existing, existing: true }
     if (!createIfMissing) return { error: 'Активный development-run для этого перехода не найден' }

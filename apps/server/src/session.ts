@@ -162,7 +162,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
         if (ownerUserId === deps.user.name) ctx.send(m)
       })
       ctx.send({ t: 'claude.active', turns: deps.turns.active(deps.user.name) })
-      await deps.turns.resumeQueues(deps.user.name)
+      // Подписки на ленты — до первого ожидания базы: кадр, пришедший пока resumeQueues ходит в Postgres,
+      // иначе потерялся бы (relay превью и kb.usage отвечали «клиент не подключён»).
       if (deps.ci) {
         unsubCi = deps.ci.subscribe((m, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(m)
@@ -187,6 +188,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       if (deps.widgetUi) {
         unsubWidgetUi = deps.widgetUi.subscribe(deps.user.name, (m) => ctx.send(m))
       }
+      await deps.turns.resumeQueues(deps.user.name)
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: await deps.agentsFeed.list() })
         unsubAgents = deps.agentsFeed.subscribe(async () =>
