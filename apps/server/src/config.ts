@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 export interface ServerConfig {
   port: number
   host: string
+  /** Origins Electron/web dev-клиентов, которым разрешены credentialed CORS-запросы. */
+  corsOrigins: string[]
   /** Каталог данных (БД, модели). */
   dataDir: string
   /** Регистрация с подтверждением email: SMTP (smtp://user:pass@host:587 | smtps://…:465), отправитель и публичный URL для ссылок. */
@@ -194,6 +196,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
     dataDir,
+    corsOrigins: [...new Set([
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      ...(env.VC_CORS_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean)
+    ])],
     smtpUrl: env.VC_SMTP_URL ?? null,
     mailFrom: env.VC_MAIL_FROM ?? null,
     publicUrl: env.VC_PUBLIC_URL ?? null,

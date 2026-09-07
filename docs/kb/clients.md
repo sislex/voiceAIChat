@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-03
-checked: 66b310c8
+updated: 2026-09-07
+checked: e671ba68
 areas:
   - apps/web
   - apps/desktop/src
@@ -9,6 +9,11 @@ areas:
   - apps/agent-tray/src
   - apps/agent-tray/electron-builder.yml
   - apps/login-application
+  - apps/server/src/config.ts
+  - apps/server/src/server.ts
+  - apps/server/src/users/auth.ts
+  - packages/ui/src/remote
+  - packages/ui/src/store/domains/sessionStore.ts
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
@@ -36,6 +41,8 @@ Desktop — Electron main/preload/renderer вокруг удалённого ser
 Main process создаёт основное окно, tray, external-link policy и хранит выбранный server URL в `remote.json`. Renderer использует тот же `installRemoteBridges`, что web; preload публикует только Electron-специфичные операции настройки URL, legacy migration и agent-mode windows. STT, TTS, LLM и новая БД не живут в desktop.
 
 При первом запуске экран `remote-setup` просит адрес backend, нормализует/проверяет health и сохраняет его. После этого основное окно загружает общий UI. Смена адреса относится к host config и требует пересоздания remote connection.
+
+Удалённый renderer использует credentialed REST (`credentials: include`) для всех мостов. `VC_CORS_ORIGINS` дополняет серверный allowlist обязательными dev-origin `http://localhost:5173` и `http://127.0.0.1:5173`; Fastify отвечает на `/api/*` preflight до auth и отражает только точный разрешённый origin, без wildcard. Для разрешённого cross-origin HTTPS входа session/CSRF cookie получают `SameSite=None; Secure`; `/api/session/me` возвращает CSRF только уже cookie-авторизованному клиенту, поэтому после перезапуска Electron renderer восстанавливает пользователя, CSRF-контекст и WebSocket, не читая HttpOnly token. Login до `fetch` запрещает пароль для удалённого HTTP; исключения — `localhost`, `[::1]` и `127.0.0.0/8`. HTTP-ответы входа сохраняют backend `error`, а rejected fetch показывается как отдельная сеть/CORS-недоступность.
 
 ### Legacy migration
 

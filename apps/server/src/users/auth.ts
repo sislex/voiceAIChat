@@ -63,6 +63,11 @@ function isHttps(req: FastifyRequest): boolean {
 function secureFlag(req: FastifyRequest): string {
   return isHttps(req) ? '; Secure' : ''
 }
+function sessionSameSite(req: FastifyRequest): 'Strict' | 'None' {
+  // Cross-origin credentialed cookies require SameSite=None and browsers accept
+  // that attribute only with Secure. Unknown origins never receive relaxed cookies.
+  return isHttps(req) && req.corsAllowed === true ? 'None' : 'Strict'
+}
 /** Имя cookie для схемы запроса: по https — с префиксом `__Secure-`, по http — обычное. */
 function cookieNameFor(req: FastifyRequest, base: string): string {
   return isHttps(req) ? SECURE_COOKIE_PREFIX + base : base
@@ -79,8 +84,8 @@ function readCookie(req: Pick<FastifyRequest, 'headers'>, base: string): string 
 export function sessionCookies(req: FastifyRequest, token: string, csrf: string, maxAgeSec: number | null): string[] {
   const age = maxAgeSec === null ? '' : `; Max-Age=${maxAgeSec}`
   return [
-    `${cookieNameFor(req, SESSION_COOKIE)}=${token}; Path=/; HttpOnly; SameSite=Strict${age}${secureFlag(req)}`,
-    `${cookieNameFor(req, CSRF_COOKIE)}=${csrf}; Path=/; SameSite=Strict${age}${secureFlag(req)}`
+    `${cookieNameFor(req, SESSION_COOKIE)}=${token}; Path=/; HttpOnly; SameSite=${sessionSameSite(req)}${age}${secureFlag(req)}`,
+    `${cookieNameFor(req, CSRF_COOKIE)}=${csrf}; Path=/; SameSite=${sessionSameSite(req)}${age}${secureFlag(req)}`
   ]
 }
 /**
@@ -125,6 +130,8 @@ function previewCookie(req: FastifyRequest, token: string, maxAge?: number): str
 
 declare module 'fastify' {
   interface FastifyRequest {
+    /** Origin прошёл явный CORS allowlist общего bootstrap. */
+    corsAllowed: boolean
     /** Пользователь сессии (устанавливается preHandler для защищённых путей). */
     user: SessionUser | null
   }
@@ -710,8 +717,12 @@ export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret
 
   app.get(REST.sessionMe, async (req) => {
     const user = await activeUser(tokenOf(req))
+    // CSRF возвращается только уже аутентифицированному клиенту. Это позволяет
+    // cross-origin Electron renderer восстановить контекст после перезапуска,
+    // не раскрывая HttpOnly session token и не отключая double-submit защиту.
     // Вместе с пользователем — непросмотренные уведомления безопасности (п.16): клиент покажет тостом и отметит.
-    return user ? { user, notices: await db.identity.unseenSecurityNotices(user.name) } : { user: null }
+    const csrf = user ? readCookie(req, CSRF_COOKIE) : undefined
+    return user ? { user, csrf, notices: await db.identity.unseenSecurityNotices(user.name) } : { user: null }
   })
   app.post(REST.sessionNoticesSeen, async (req, reply) => {
     const user = await activeUser(tokenOf(req))
