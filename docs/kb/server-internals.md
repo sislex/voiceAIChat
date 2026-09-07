@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: 9ff8fe71
+checked: c1ace3e4
 areas:
   - apps/server/src
 ---
@@ -292,6 +292,22 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 
 **Auth-мок (roadmap-4 п.32).** Файл мока с полем `$auth` обрабатывает `applyAuthMock` (`@shared/makeMock`): `{ users: [{ username|login|email, password, … }], cookie? }` — POST сравнивает учётные данные, отвечает 200 с `user` (без пароля, слитым в объектное `$body`) и заголовком `Set-Cookie: vc_mock_session=<login>; Path=/; SameSite=Lax`, иначе 401 (не POST — 405); `{ require: true }` — без cookie 401, с ней в объектное `$body` подставляется `user: { username }`; `{ logout: true }` — 204 с `Max-Age=0`. `resolveMock` получил параметр `cookieHeader`, все три маршрута моков (GET превью, не-GET превью, публикация) передают `req.headers.cookie`; `sendMock` пробрасывает `set-cookie` как любой заголовок ответа. Это учебная имитация входа для прототипов, не защита данных.
 
+
+## Канбан-кластер собирается в `kanban/module.ts` (2026-09-07)
+
+Проекты, доска, подготовка задач, раны CI (`ci/runManager.ts`, `ci/modelHooks.ts`), QA-стадии, релизы,
+мерж-раны, автопилот, запуск ранов из MCP канбана и оркестрация планов собираются одной функцией
+`createKanbanModule(deps)` (`apps/server/src/kanban/module.ts`); `buildServer` зовёт её один раз и
+получает `KanbanModule` (`ciRunManager`, `orchestrationManager`, `releaseManager`, `mergeRunManager`,
+`featurePreviews`, `automatedQaRunner`, `launchTaskPreparation`, `launchQaPreparation`, `runLaunchers`).
+Всё, что кластер берёт у ядра, перечислено в `KanbanDeps` (26 полей: `db`, `agentRegistry`, LLM-клиенты,
+`kb`/`kbUsage`, `uploads`, `make.service`, шины `boardHub`/`notificationHub`, исполнитель команд, адреса
+MCP, `browserRunner`, `mailer`, …) — снимок ключей держит гейт `kanban/boundary.test.ts`: новая зависимость
+— осознанное решение, потому что каждая станет методом порта `KanbanCore` или RPC к ядру
+(`docs/plans/kanban-service.md`). Чистые функции подготовки (`parseQaPreparationResponse`,
+`taskPreparationModel`, `taskPreparationFailure`) — `kanban/preparation.ts`, из `server.ts` реэкспорт.
+В `server.ts` из этого блока остались git-панель (`GitWorkspaceService`), Storybook/компоненты проекта и
+watchdog машин — они не канбан.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
