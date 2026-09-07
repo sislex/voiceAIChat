@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
 updated: 2026-09-07
-checked: f9f8ab4a
+checked: 7e11aced
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -128,6 +128,30 @@ npm run test                           # все воркспейсы
 замок на выборе рана из очереди (`takeNextWaiter`), `TurnManager.idle()` для хвостов хода.
 В тестах: `expect(() => f()).toThrow` → `await expect(async () => f()).rejects.toThrow`,
 после события дожидайся хвоста (`await turns.idle()`), не закрывай БД раньше.
+
+
+## Репозитории асинхронны внутри — правила слоя данных (2026-09-07)
+
+Репозитории `apps/server/src/db/repos/*` ходят в базу через адаптер `this.sql` (`db/sql/`), а не
+через `better-sqlite3`; SQL — в диалекте SQLite с `?`, различия движков закрывает адаптер
+(`docs/plans/db-postgres.md`). Отсюда правила:
+
+- **Новый метод репозитория — `async`**, каждая операция под `await`: `await this.sql.get(...)`,
+  `await this.repos.projects.isProjectMember(...)`. Промис как параметр запроса компилятор не
+  поймает (`SqlParam = unknown`) — гоняй аудит `promise-audit.mjs` из журнала круга или смотри
+  глазами: `[.., this.someAsync(...)]` без `await` уедет в базу строкой `[object Promise]`.
+- **Циклы вместо async-колбэков**: `rows.forEach(async …)` не ждёт тел, `filter(async …)` оставляет
+  всё (промис истинен), `find(async …)` берёт первый. Пиши `for (const [i, row] of rows.entries())`,
+  для параллельных чтений — `await Promise.all(rows.map(async …))`.
+- **Транзакция — `await this.sql.transaction(async () => …)`**; внутри не ждать внешних событий
+  (сеть, таймеры, колбэки сервера): у SQLite остальные запросы процесса стоят до её конца.
+- **Многошаговый метод атомарен только на SQLite** — благодаря полосе (`db/sql/lane.ts`),
+  методы через порты идут по одному. На Postgres этой гарантии нет: если метод читает, а потом
+  пишет на основании прочитанного, оборачивай в транзакцию или опирайся на ограничения базы.
+- **Тесты**: сырой драйвер (`(db as { db }).db`) и второй `VoiceChatDb` на том же файле — после
+  `await db.ready`; `await db.close()`; с изменяемыми часами (`now: () => clock`) каждый вызов
+  порта под `await`, иначе тело прочитает уже переставленные часы. Подмена метода —
+  `db.impl.<домен>.<метод> = async () => …` (алиас `db.sync` оставлен).
 
 ## Гейт шага
 

@@ -12,26 +12,24 @@ export class SettingsRepo extends BaseRepo {
    * значение» неотличимы: смена дефолта в следующем релизе молча переезжала бы
    * всем, кто ничего не менял. Дозаполнение — разовая запись на пользователя.
    */
-  getSettings(userId: string): Settings {
-    const settings = this.readSettings(userId)
-    const stored = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(settingsKey(userId)) as { value: string } | undefined
+  async getSettings(userId: string): Promise<Settings> {
+    const settings = await this.readSettings(userId)
+    const stored = (await this.sql.get(`SELECT value FROM settings WHERE key = ?`, [settingsKey(userId)])) as { value: string } | undefined
     if (!stored) return settings
     try {
       const parsed = JSON.parse(stored.value) as Partial<Settings>
       const missing = (Object.keys(DEFAULT_SETTINGS) as Array<keyof Settings>).filter((key) => parsed[key] === undefined)
-      if (missing.length) this.saveSettings(userId, settings)
+      if (missing.length) await this.saveSettings(userId, settings)
     } catch {
       // Повреждённую запись переписываем дефолтами: читать её всё равно нечем.
-      this.saveSettings(userId, settings)
+      await this.saveSettings(userId, settings)
     }
     return settings
   }
 
   /** Чистое чтение записи с мержем дефолтов — без побочной записи в БД. */
-  readSettings(userId: string): Settings {
-    const row = this.db
-      .prepare(`SELECT value FROM settings WHERE key = ?`)
-      .get(settingsKey(userId)) as { value: string } | undefined
+  async readSettings(userId: string): Promise<Settings> {
+    const row = (await this.sql.get(`SELECT value FROM settings WHERE key = ?`, [settingsKey(userId)])) as { value: string } | undefined
     if (!row) return { ...DEFAULT_SETTINGS }
     try {
       // Мержим с дефолтами, чтобы новые поля не ломали старый конфиг.
@@ -45,26 +43,22 @@ export class SettingsRepo extends BaseRepo {
     }
   }
 
-  saveSettings(userId: string, settings: Settings): void {
-    this.db
-      .prepare(
-        `INSERT INTO settings (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-      )
-      .run(settingsKey(userId), JSON.stringify(settings))
+  async saveSettings(userId: string, settings: Settings): Promise<void> {
+    await this.sql.run(`INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [settingsKey(userId), JSON.stringify(settings)])
   }
 
-  getAppConfig(key: string): string | null {
-    const r = this.db.prepare(`SELECT value FROM app_config WHERE key = ?`).get(key) as { value: string } | undefined
+  async getAppConfig(key: string): Promise<string | null> {
+    const r = (await this.sql.get(`SELECT value FROM app_config WHERE key = ?`, [key])) as { value: string } | undefined
     return r?.value ?? null
   }
 
-  setAppConfig(key: string, value: string): void {
-    this.db.prepare(`INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value)
+  async setAppConfig(key: string, value: string): Promise<void> {
+    await this.sql.run(`INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [key, value])
   }
 
   /** Каскад удаления аккаунта: запись настроек пользователя. */
-  deleteUserSettings(userId: string): void {
-    this.db.prepare(`DELETE FROM settings WHERE key = ?`).run(settingsKey(userId))
+  async deleteUserSettings(userId: string): Promise<void> {
+    await this.sql.run(`DELETE FROM settings WHERE key = ?`, [settingsKey(userId)])
   }
 }

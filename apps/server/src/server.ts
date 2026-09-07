@@ -11,8 +11,6 @@ import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllow
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
-import { createPgliteClient, type SqlClient } from './db/pg/sqlClient.js'
-import { ReleasesPgRepo } from './db/pg/releasesPg.js'
 import { registerRest } from './routes/rest.js'
 import { clearPreviewCookies, registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAgentRoutes } from './routes/agents.js'
@@ -388,22 +386,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   // Домен «релизы» может жить на встроенном Postgres (VC_DB_RELEASES=pglite): порт
   // подменяется фабрикой, остальные домены — в SQLite как раньше.
-  let releasesSql: SqlClient | null = null
-  const db =
-    opts.db ??
-    (await (async () => {
-      mkdirSync(opts.config.dataDir, { recursive: true })
-      if (opts.config.dbReleasesEngine !== 'pglite') return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'))
-      mkdirSync(opts.config.dbReleasesDir, { recursive: true })
-      releasesSql = await createPgliteClient(opts.config.dbReleasesDir)
-      let releasesPg: ReleasesPgRepo | null = null
-      const created = new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'), {
-        ports: { releases: (ports) => (releasesPg = new ReleasesPgRepo({ sql: releasesSql!, projects: ports.projects, newId: () => randomUUID(), now: () => Date.now() })) }
-      })
-      await releasesPg!.ensureSchema()
-      app.log.info({ dir: opts.config.dbReleasesDir }, 'домен releases — на встроенном Postgres (pglite)')
-      return created
-    })())
+  const db = opts.db ?? (() => { mkdirSync(opts.config.dataDir, { recursive: true }); return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db')) })()
+  // Схема и миграции применяются асинхронно; дальше сервер полагается на готовую базу.
+  await db.ready
 
   // Аутентификация приложения (многопользовательский режим web): секрет подписи
   // токенов из dataDir (переживает рестарт); в тестах (opts.db) — эфемерный, без диска.
@@ -2578,7 +2563,6 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
 
   app.addHook('onClose', async () => {
     if (!opts.db) db.close() // закрываем только созданную нами БД
-    await releasesSql?.close()
   })
 
   return app

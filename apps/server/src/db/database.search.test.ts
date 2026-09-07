@@ -197,17 +197,17 @@ describe('messages_fts — синхронизация триггерами', () 
     const dir = mkdtempSync(join(tmpdir(), 'vc-fts-upd-'))
     const file = join(dir, 'db.sqlite')
     const owner = new VoiceChatDb(file)
+    await owner.ready
     owner.identity.createUser('alice', '', 'developer')
     const c = await owner.chat.createConversation('alice', 'Беседа')
     const m = await owner.chat.addMessage('alice', c.id, 'u1', 'старое слово', '12:00')
 
     const raw = new Database(file)
     raw.prepare(`UPDATE messages SET text = ? WHERE id = ?`).run('новое слово', m.id)
-    raw.close()
-
+    await raw.close()
     expect((await owner.chat.searchMessages('alice', { q: 'старое ' })).hits).toHaveLength(0)
     expect((await owner.chat.searchMessages('alice', { q: 'новое ' })).hits).toHaveLength(1)
-    owner.close()
+    await owner.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -239,66 +239,69 @@ describe('messages_fts — миграция и бэкфилл', () => {
   it('старая база без индекса бэкфиллится порциями, повторный старт ничего не ломает', async () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
+    await first.ready
     first.identity.createUser('alice', '', 'developer')
     const c = await first.chat.createConversation('alice', 'История')
     for (let i = 0; i < 12; i++) first.chat.addMessage('alice', c.id, 'u1', `история про миграцию ${i}`, '12:00')
-    first.close()
-
+    await first.close()
     // Имитируем боевую базу до фичи: индекса и триггеров нет.
     const raw = new Database(file)
     raw.exec(`DROP TABLE messages_fts; DROP TRIGGER messages_fts_ai; DROP TRIGGER messages_fts_ad;
               DROP TRIGGER messages_fts_au; DELETE FROM fts_state`)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     // Порциями: за одну порцию индексируем не всё, старт не ждёт всю историю.
     const step = await migrated.chat.backfillMessagesFts(5)
     expect(step).toEqual({ indexed: 5, done: false })
     migrated.chat.ensureMessagesIndexed()
     expect((await migrated.chat.searchMessages('alice', { q: 'миграцию ', limit: 50 })).hits).toHaveLength(12)
-    migrated.close()
-
+    await migrated.close()
     // Повторный старт: индекс уже готов, бэкфилл не дублирует записи.
     const again = new VoiceChatDb(file)
+    await again.ready
     expect(await again.chat.backfillMessagesFts()).toEqual({ indexed: 0, done: true })
     const res = await again.chat.searchMessages('alice', { q: 'миграцию ', limit: 50 })
     expect(res.hits).toHaveLength(12)
     expect(new Set(res.hits.map((h) => h.messageId)).size).toBe(12)
-    again.close()
+    await again.close()
   })
 
   it('потерянное состояние бэкфилла пересобирает индекс, а не удваивает его', async () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
+    await first.ready
     first.identity.createUser('alice', '', 'developer')
     const c = await first.chat.createConversation('alice', 'История')
     first.chat.addMessage('alice', c.id, 'u1', 'единственная миграция', '12:00')
-    first.close()
-
+    await first.close()
     const raw = new Database(file)
     raw.exec(`DELETE FROM fts_state`) // индекс на месте, состояние потеряно
-    raw.close()
-
+    await raw.close()
     const again = new VoiceChatDb(file)
+
+    await again.ready
     again.chat.ensureMessagesIndexed()
     expect((await again.chat.searchMessages('alice', { q: 'миграция ' })).hits).toHaveLength(1)
-    again.close()
+    await again.close()
   })
 
   it('сообщения, добавленные во время бэкфилла, не дублируются в индексе', async () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
+    await first.ready
     first.identity.createUser('alice', '', 'developer')
     const c = await first.chat.createConversation('alice', 'История')
     for (let i = 0; i < 6; i++) first.chat.addMessage('alice', c.id, 'u1', `миграция ${i}`, '12:00')
-    first.close()
-
+    await first.close()
     const raw = new Database(file)
     raw.exec(`DROP TABLE messages_fts; DROP TRIGGER messages_fts_ai; DROP TRIGGER messages_fts_ad;
               DROP TRIGGER messages_fts_au; DELETE FROM fts_state`)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     migrated.chat.backfillMessagesFts(2) // бэкфилл начат, но не закончен
     migrated.chat.addMessage('alice', c.id, 'u1', 'миграция свежая', '12:01')
     migrated.chat.ensureMessagesIndexed()
@@ -306,6 +309,6 @@ describe('messages_fts — миграция и бэкфилл', () => {
     const res = await migrated.chat.searchMessages('alice', { q: 'миграция ', limit: 50 })
     expect(res.hits).toHaveLength(7)
     expect(new Set(res.hits.map((h) => h.messageId)).size).toBe(7)
-    migrated.close()
+    await migrated.close()
   })
 })

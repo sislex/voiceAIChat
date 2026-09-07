@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-07
-checked: a40ef0e5
+checked: 7e11aced
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -166,9 +166,7 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,
 `VC_WHISPER_CLI`, `VC_PIPER_*`, `VC_WEB_DIR`, `VC_WEB_RECORDER_DIR`); раздача сборок
-(`VC_AGENT_APP`, `VC_DESKTOP_APP`); первый админ (`VC_ADMIN_PASSWORD`); движок домена
-релизов (`VC_DB_RELEASES=sqlite|pglite`, `VC_DB_RELEASES_DIR` — PoC, по умолчанию SQLite,
-см. [data-auth.md](data-auth.md#схема)); пороги
+(`VC_AGENT_APP`, `VC_DESKTOP_APP`); первый админ (`VC_ADMIN_PASSWORD`); пороги
 памяти (`VC_MIN_MEM_STT`, `VC_MIN_MEM_TTS`); входящий gateway
 (`VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`,
 `VC_CLAUDE_UPSTREAM_API_KEY`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP`); GitHub PR merge (`VC_GITHUB_TOKEN`).

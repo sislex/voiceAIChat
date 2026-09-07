@@ -40,7 +40,8 @@ describe('projects: миграция имён связанных чатов', ()
     const dir = mkdtempSync(join(tmpdir(), 'vc-taskchat-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
-    first.identity.createUser('alice', '', 'developer')
+    await first.ready
+    await first.identity.createUser('alice', '', 'developer')
     const p = await first.projects.createProject('alice', { name: 'P' })
     const col = (await first.tasks.getBoard('alice', p.id))!.columns[0]
     const t1 = (await first.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Скролл' }))!
@@ -48,20 +49,21 @@ describe('projects: миграция имён связанных чатов', ()
     const old1 = (await first.chat.openOrCreateTaskChat('alice', p.id, t1.id))!
     const old2 = (await first.chat.openOrCreateTaskChat('alice', p.id, t2.id))!
     // Имитируем чаты, созданные до префикса: имя = заголовок задачи.
-    first.chat.renameConversation('alice', old1.id, 'Скролл')
-    first.chat.renameConversation('alice', old2.id, 'Мои заметки по пагинации')
-    first.close()
-
+    await first.chat.renameConversation('alice', old1.id, 'Скролл')
+    await first.chat.renameConversation('alice', old2.id, 'Мои заметки по пагинации')
+    await first.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     expect((await migrated.chat.getConversation('alice', old1.id))!.title).toBe('Задача Скролл')
     // Пользовательское имя не трогаем.
     expect((await migrated.chat.getConversation('alice', old2.id))!.title).toBe('Мои заметки по пагинации')
-    migrated.close()
-
+    await migrated.close()
     // Повторный старт не наращивает префикс.
     const again = new VoiceChatDb(file)
+    await again.ready
     expect((await again.chat.getConversation('alice', old1.id))!.title).toBe('Задача Скролл')
-    again.close()
+    await again.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })
@@ -71,22 +73,23 @@ describe('projects: миграция владельцев', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-project-owner-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
-    first.identity.createUser('alice', '', 'developer')
-    first.identity.createUser('bob', '', 'developer')
+    await first.ready
+    await first.identity.createUser('alice', '', 'developer')
+    await first.identity.createUser('bob', '', 'developer')
     const project = await first.projects.createProject('alice', { name: 'Legacy' })
-    first.projects.addMember('alice', project.id, 'bob')
-    first.close()
-
+    await first.projects.addMember('alice', project.id, 'bob')
+    await first.close()
     const raw = new Database(file)
     raw.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = 'alice'`).run(project.id)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     expect((await migrated.projects.getProject('alice', project.id))!.members).toEqual([
       expect.objectContaining({ username: 'alice', role: 'owner' }),
       expect.objectContaining({ username: 'bob', role: 'member' })
     ])
-    migrated.close()
+    await migrated.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })
@@ -98,49 +101,52 @@ describe('projects: миграция канонического workflow', () =>
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-missing-col-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
-    first.identity.createUser('alice', '', 'developer')
+    await first.ready
+    await first.identity.createUser('alice', '', 'developer')
     const project = await first.projects.createProject('alice', { name: 'Старый проект' })
-    first.close()
-
+    await first.close()
     const raw = new Database(file)
     raw.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND semantic_type='decision_required'`).run(project.id)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     const board = (await migrated.tasks.getBoard('alice', project.id))!
     expect(board.columns.some((item) => item.semanticType === 'decision_required')).toBe(true)
-    migrated.close()
+    await migrated.close()
   })
 
   it('назначает cancelled существующей колонке по семантике, а имя использует только без неё', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-cancelled-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
-    first.identity.createUser('alice', '', 'developer')
+    await first.ready
+    await first.identity.createUser('alice', '', 'developer')
     const project = await first.projects.createProject('alice', { name: 'Legacy cancelled' })
     const board = (await first.tasks.getBoard('alice', project.id))!
     const canonical = board.columns.find((item) => item.semanticType === 'cancelled')!
     const legacy = (await first.projects.createColumn('alice', project.id, 'Отменены'))!
     const taskA = (await first.tasks.createTask('alice', project.id, { columnId: legacy.id, title: 'Первая' }))!
     const taskB = (await first.tasks.createTask('alice', project.id, { columnId: legacy.id, title: 'Вторая' }))!
-    first.close()
-
+    await first.close()
     const raw = new Database(file)
     raw.prepare(`DELETE FROM kanban_columns WHERE id=?`).run(canonical.id)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     const migratedBoard = (await migrated.tasks.getBoard('alice', project.id))!
     const cancelled = migratedBoard.columns.find((item) => item.semanticType === 'cancelled')!
     expect(cancelled.id).toBe(legacy.id)
     expect(migratedBoard.tasks.filter((item) => item.columnId === legacy.id).map(({ id, position }) => ({ id, position })))
       .toEqual([{ id: taskA.id, position: taskA.position }, { id: taskB.id, position: taskB.position }])
-    migrated.close()
-
+    await migrated.close()
     const again = new VoiceChatDb(file)
+
+    await again.ready
     expect((await again.tasks.getBoard('alice', project.id))!.columns.filter((item) => item.semanticType === 'cancelled').map((item) => item.id))
       .toEqual([legacy.id])
-    again.close()
+    await again.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -148,7 +154,8 @@ describe('projects: миграция канонического workflow', () =>
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-workflow-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
-    first.identity.createUser('alice', '', 'developer')
+    await first.ready
+    await first.identity.createUser('alice', '', 'developer')
     const project = await first.projects.createProject('alice', { name: 'Legacy workflow' })
     const initial = (await first.tasks.getBoard('alice', project.id))!
     const column = (semantic: string) => initial.columns.find((item) => item.semanticType === semantic)!
@@ -156,23 +163,23 @@ describe('projects: миграция канонического workflow', () =>
     const preparation = (await first.projects.createColumn('alice', project.id, 'Старые сценарии'))!
     const readyDuplicate = (await first.projects.createColumn('alice', project.id, 'Дубликат Ready'))!
     const custom = (await first.projects.createColumn('alice', project.id, 'Пользовательская'))!
-    first.projects.setColumnHidden('alice', project.id, custom.id, true)
-    first.tasks.createTask('alice', project.id, { columnId: column('automated_qa').id, title: 'Уже Automated' })
-    first.tasks.createTask('alice', project.id, { columnId: testing.id, title: 'Из Testing' })
-    first.tasks.createTask('alice', project.id, { columnId: column('component_qa').id, title: 'Уже Component' })
-    first.tasks.createTask('alice', project.id, { columnId: preparation.id, title: 'Из QA Preparation' })
-    first.tasks.createTask('alice', project.id, { columnId: readyDuplicate.id, title: 'Из дубля Ready' })
-    first.close()
-
+    await first.projects.setColumnHidden('alice', project.id, custom.id, true)
+    await first.tasks.createTask('alice', project.id, { columnId: column('automated_qa').id, title: 'Уже Automated' })
+    await first.tasks.createTask('alice', project.id, { columnId: testing.id, title: 'Из Testing' })
+    await first.tasks.createTask('alice', project.id, { columnId: column('component_qa').id, title: 'Уже Component' })
+    await first.tasks.createTask('alice', project.id, { columnId: preparation.id, title: 'Из QA Preparation' })
+    await first.tasks.createTask('alice', project.id, { columnId: readyDuplicate.id, title: 'Из дубля Ready' })
+    await first.close()
     const raw = new Database(file)
     raw.prepare(`UPDATE kanban_columns SET semantic_type='testing' WHERE id=?`).run(testing.id)
     raw.prepare(`UPDATE kanban_columns SET semantic_type='qa_preparation' WHERE id=?`).run(preparation.id)
     raw.prepare(`UPDATE kanban_columns SET semantic_type='ready' WHERE id=?`).run(readyDuplicate.id)
     raw.prepare(`UPDATE kanban_columns SET position=-position WHERE project_id=?`).run(project.id)
     raw.prepare(`UPDATE kanban_columns SET name='Мой Ready', hidden=1, position=-999999 WHERE id=?`).run(column('ready').id)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file)
+
+    await migrated.ready
     const board = (await migrated.tasks.getBoard('alice', project.id))!
     expect(board.columns.map((item) => item.semanticType)).toEqual([
       'backlog', 'preparation', 'ready', 'development', 'component_qa',
@@ -197,15 +204,16 @@ describe('projects: миграция канонического workflow', () =>
       columns: board.columns.map(({ id, semanticType, position, hidden }) => ({ id, semanticType, position, hidden })),
       tasks: board.tasks.map(({ id, columnId, position }) => ({ id, columnId, position }))
     }
-    migrated.close()
-
+    await migrated.close()
     const again = new VoiceChatDb(file)
+
+    await again.ready
     const stable = (await again.tasks.getBoard('alice', project.id))!
     expect({
       columns: stable.columns.map(({ id, semanticType, position, hidden }) => ({ id, semanticType, position, hidden })),
       tasks: stable.tasks.map(({ id, columnId, position }) => ({ id, columnId, position }))
     }).toEqual(snapshot)
-    again.close()
+    await again.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })
@@ -275,13 +283,13 @@ describe('projects: две фазы доски', () => {
   it('обе фазы видят один и тот же набор задач, включая отсечку завершённых', async () => {
     let clock = 1_700_000_000_000
     const d = new VoiceChatDb(':memory:', { now: () => clock })
-    d.identity.createUser('alice', '', 'developer')
+    await d.identity.createUser('alice', '', 'developer')
     const p = await d.projects.createProject('alice', { name: 'Retention' })
     const cols = (await d.tasks.getBoardSkeleton('alice', p.id))!.columns
     const done = cols.find((c) => c.semanticType === 'done')!
     const task = (await d.tasks.createTask('alice', p.id, { columnId: cols[0]!.id, title: 'T' }))!
-    d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
-    d.tasks.moveTask('alice', p.id, task.id, { columnId: done.id })
+    await d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    await d.tasks.moveTask('alice', p.id, task.id, { columnId: done.id })
     const skeletonIds = async (opts?: { includeCompleted?: boolean }): Promise<string[]> => (await d.tasks.getBoardSkeleton('alice', p.id, opts))!.tasks.map((t) => t.id)
     const statusIds = async (opts?: { includeCompleted?: boolean }): Promise<string[]> => (await d.tasks.getBoardStatuses('alice', p.id, opts))!.tasks.map((t) => t.taskId)
 
@@ -296,15 +304,15 @@ describe('projects: две фазы доски', () => {
     expect(await statusIds()).not.toContain(task.id)
     expect(await skeletonIds({ includeCompleted: true })).toContain(task.id)
     expect(await statusIds({ includeCompleted: true })).toContain(task.id)
-    d.close()
+    await d.close()
   })
 
   it('сводки CI приходят только по карточкам доски, а не по всей истории проекта', async () => {
     let clock = 1_700_000_000_000
     const d = new VoiceChatDb(':memory:', { now: () => clock })
-    d.identity.createUser('alice', '', 'developer')
+    await d.identity.createUser('alice', '', 'developer')
     const p = await d.projects.createProject('alice', { name: 'CI scope' })
-    d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    await d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
     const cols = (await d.tasks.getBoardSkeleton('alice', p.id))!.columns
     const dev = cols[0]!
     const done = cols.find((c) => c.semanticType === 'done')!
@@ -312,11 +320,11 @@ describe('projects: две фазы доски', () => {
     const archived = (await d.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'Давно закрыта' }))!
     const run = async (taskId: string): Promise<void> => {
       const created = await d.ci.createCiRun({ projectId: p.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: dev.id, runColumnId: dev.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
-      d.ci.updateCiRun(created.id, { status: 'success', durationMs: 100 })
+      await d.ci.updateCiRun(created.id, { status: 'success', durationMs: 100 })
     }
-    run(onBoard.id)
-    run(archived.id)
-    d.tasks.moveTask('alice', p.id, archived.id, { columnId: done.id })
+    await run(onBoard.id)
+    await run(archived.id)
+    await d.tasks.moveTask('alice', p.id, archived.id, { columnId: done.id })
     clock = new Date(clock).setHours(24, 0, 0, 0)
 
     // Закрытая вчера карточка ушла с доски — её сводка не должна ехать с доской:
@@ -327,7 +335,7 @@ describe('projects: две фазы доски', () => {
     // С включённым «показывать завершённые» история доступна целиком.
     expect((await d.tasks.getBoardStatuses('alice', p.id, { includeCompleted: true }))!.ciRuns.map((r) => r.taskId).sort())
       .toEqual([onBoard.id, archived.id].sort())
-    d.close()
+    await d.close()
   })
 
   it('не участник проекта не получает ни скелета, ни статусов', async () => {
@@ -897,7 +905,7 @@ describe('доска: завершённые задачи уходят с дос
     set(1_700_000_200_000)
     expect((await d.tasks.moveTask('alice', p.id, task.id, { columnId: done.id }))!.doneAt).toBe(1_700_000_100_000)
     expect((await d.tasks.moveTask('alice', p.id, task.id, { columnId: dev.id }))!.doneAt).toBeNull()
-    d.close()
+    await d.close()
   })
 
   it('createTask сразу в «Готово» начинает отсчёт', async () => {
@@ -905,18 +913,18 @@ describe('доска: завершённые задачи уходят с дос
     const p = await d.projects.createProject('alice', { name: 'P' })
     const done = (await d.tasks.getBoard('alice', p.id))!.columns.find((c) => c.semanticType === 'done')!
     expect((await d.tasks.createTask('alice', p.id, { columnId: done.id, title: 'T' }))!.doneAt).toBe(1_700_000_000_000)
-    d.close()
+    await d.close()
   })
 
   it('порог 0 — карточка держится до конца дня завершения', async () => {
     const { db: d, set } = withClock()
     const p = await d.projects.createProject('alice', { name: 'P' })
-    d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    await d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
     const cols = (await d.tasks.getBoard('alice', p.id))!.columns
     const done = cols.find((c) => c.semanticType === 'done')!
     const dev = cols.find((c) => c.semanticType === 'development')!
     const task = (await d.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'T' }))!
-    d.tasks.moveTask('alice', p.id, task.id, { columnId: done.id })
+    await d.tasks.moveTask('alice', p.id, task.id, { columnId: done.id })
     // Автоперенос CI-рана не имеет права смахнуть карточку с доски в ту же секунду.
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.map((t) => t.id)).toContain(task.id)
     const endOfDay = new Date(1_700_000_000_000).setHours(24, 0, 0, 0)
@@ -925,7 +933,7 @@ describe('доска: завершённые задачи уходят с дос
     set(endOfDay)
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.map((t) => t.id)).not.toContain(task.id)
     expect((await d.tasks.getBoard('alice', p.id, { includeCompleted: true }))!.tasks.map((t) => t.id)).toContain(task.id)
-    d.close()
+    await d.close()
   })
 
   it('старше порога — нет на доске, includeCompleted возвращает', async () => {
@@ -936,9 +944,9 @@ describe('доска: завершённые задачи уходят с дос
     const dev = cols.find((c) => c.semanticType === 'development')!
     const old = (await d.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'Старая' }))!
     const fresh = (await d.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'Свежая' }))!
-    d.tasks.moveTask('alice', p.id, old.id, { columnId: done.id })
+    await d.tasks.moveTask('alice', p.id, old.id, { columnId: done.id })
     set(1_700_000_000_000 + 13 * DAY)
-    d.tasks.moveTask('alice', p.id, fresh.id, { columnId: done.id })
+    await d.tasks.moveTask('alice', p.id, fresh.id, { columnId: done.id })
     // Дефолт проекта — 14 дней: старая уже за порогом, свежая (1 день) нет.
     set(1_700_000_000_000 + 14 * DAY)
     const ids = (await d.tasks.getBoard('alice', p.id))!.tasks.map((t) => t.id)
@@ -948,9 +956,9 @@ describe('доска: завершённые задачи уходят с дос
     expect(all).toContain(old.id)
     expect(all).toContain(fresh.id)
     // Возврат в работу возвращает карточку на доску.
-    d.tasks.moveTask('alice', p.id, old.id, { columnId: dev.id })
+    await d.tasks.moveTask('alice', p.id, old.id, { columnId: dev.id })
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.map((t) => t.id)).toContain(old.id)
-    d.close()
+    await d.close()
   })
 
   it('порог 0 скрывает за полночью, пустой порог не скрывает никогда', async () => {
@@ -966,19 +974,19 @@ describe('доска: завершённые задачи уходят с дос
     expect((await d.projects.updateProject('alice', p.id, { doneRetentionDays: null }))!.doneRetentionDays).toBeNull()
     set(1_700_000_000_000 + 999 * DAY)
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.map((x) => x.id)).toContain(t.id)
-    d.close()
+    await d.close()
   })
 
   it('по умолчанию проект держит завершённые 14 дней', async () => {
     const { db: d } = withClock()
     expect((await d.projects.createProject('alice', { name: 'P' })).doneRetentionDays).toBe(14)
-    d.close()
+    await d.close()
   })
 
   it('сортирует «Готово» по последнему входу, а не по updatedAt', async () => {
     const { db: d, set } = withClock()
     const p = await d.projects.createProject('alice', { name: 'P' })
-    d.projects.updateProject('alice', p.id, { doneRetentionDays: null })
+    await d.projects.updateProject('alice', p.id, { doneRetentionDays: null })
     const columns = (await d.tasks.getBoard('alice', p.id))!.columns
     const done = columns.find((column) => column.semanticType === 'done')!
     const dev = columns.find((column) => column.semanticType === 'development')!
@@ -986,21 +994,21 @@ describe('доска: завершённые задачи уходят с дос
     const second = (await d.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'Вторая' }))!
 
     set(1_700_000_100_000)
-    d.tasks.moveTask('alice', p.id, first.id, { columnId: done.id })
+    await d.tasks.moveTask('alice', p.id, first.id, { columnId: done.id })
     set(1_700_000_200_000)
-    d.tasks.moveTask('alice', p.id, second.id, { columnId: done.id })
+    await d.tasks.moveTask('alice', p.id, second.id, { columnId: done.id })
     set(1_700_000_300_000)
-    d.tasks.updateTask('alice', p.id, second.id, { title: 'Вторая (исправлена)' })
+    await d.tasks.updateTask('alice', p.id, second.id, { title: 'Вторая (исправлена)' })
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
       .toEqual([second.id, first.id])
 
     set(1_700_000_400_000)
-    d.tasks.moveTask('alice', p.id, first.id, { columnId: dev.id })
+    await d.tasks.moveTask('alice', p.id, first.id, { columnId: dev.id })
     set(1_700_000_500_000)
-    d.tasks.moveTask('alice', p.id, first.id, { columnId: done.id })
+    await d.tasks.moveTask('alice', p.id, first.id, { columnId: done.id })
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
       .toEqual([first.id, second.id])
-    d.close()
+    await d.close()
   })
 
   it('порядок «Готово» переживает перезапуск БД', async () => {
@@ -1008,24 +1016,26 @@ describe('доска: завершённые задачи уходят с дос
     const file = join(dir, 'db.sqlite')
     let clock = 1_700_000_000_000
     const firstDb = new VoiceChatDb(file, { newId: (() => { let id = 0; return () => `task-${++id}` })(), now: () => clock })
-    firstDb.identity.createUser('alice', '', 'developer')
+    await firstDb.ready
+    await firstDb.identity.createUser('alice', '', 'developer')
     const p = await firstDb.projects.createProject('alice', { name: 'P' })
-    firstDb.projects.updateProject('alice', p.id, { doneRetentionDays: null })
+    await firstDb.projects.updateProject('alice', p.id, { doneRetentionDays: null })
     const columns = (await firstDb.tasks.getBoard('alice', p.id))!.columns
     const dev = columns.find((column) => column.semanticType === 'development')!
     const done = columns.find((column) => column.semanticType === 'done')!
     const older = (await firstDb.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'Старая' }))!
     const newer = (await firstDb.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'Новая' }))!
     clock += 1
-    firstDb.tasks.moveTask('alice', p.id, older.id, { columnId: done.id })
+    await firstDb.tasks.moveTask('alice', p.id, older.id, { columnId: done.id })
     clock += 1
-    firstDb.tasks.moveTask('alice', p.id, newer.id, { columnId: done.id })
-    firstDb.close()
-
+    await firstDb.tasks.moveTask('alice', p.id, newer.id, { columnId: done.id })
+    await firstDb.close()
     const restarted = new VoiceChatDb(file, { now: () => clock })
+
+    await restarted.ready
     expect((await restarted.tasks.getBoard('alice', p.id))!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
       .toEqual([newer.id, older.id])
-    restarted.close()
+    await restarted.close()
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -1033,22 +1043,24 @@ describe('доска: завершённые задачи уходят с дос
     const dir = mkdtempSync(join(tmpdir(), 'vc-doneat-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file, { now: () => 1_700_000_000_000 })
-    first.identity.createUser('alice', '', 'developer')
+    await first.ready
+    await first.identity.createUser('alice', '', 'developer')
     const p = await first.projects.createProject('alice', { name: 'P' })
     const done = (await first.tasks.getBoard('alice', p.id))!.columns.find((c) => c.semanticType === 'done')!
     const t = (await first.tasks.createTask('alice', p.id, { columnId: done.id, title: 'T' }))!
     // Имитируем БД до миграции: колонки done_at ещё нет.
-    first.close()
+    await first.close()
     const raw = new Database(file)
     raw.exec(`ALTER TABLE tasks DROP COLUMN done_at`)
-    raw.close()
-
+    await raw.close()
     const migrated = new VoiceChatDb(file, { now: () => 1_700_000_000_000 + 100 * 24 * 60 * 60 * 1000 })
+
+    await migrated.ready
     // doneAt взят из updated_at, порог 14 дней уже вышел — карточки на доске нет.
     expect((await migrated.tasks.getBoard('alice', p.id))!.tasks.map((x) => x.id)).not.toContain(t.id)
     expect((await migrated.tasks.getBoard('alice', p.id, { includeCompleted: true }))!.tasks.find((x) => x.id === t.id)!.doneAt)
       .toBe(1_700_000_000_000)
-    migrated.close()
+    await migrated.close()
     rmSync(dir, { recursive: true, force: true })
   })
 })
