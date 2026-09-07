@@ -31,6 +31,7 @@ services:
     ports:
       - "8787:8787"
     depends_on:
+      - make
       - runner-work
       - runner-personal
       - tts-runner
@@ -41,6 +42,14 @@ services:
       HOST: 0.0.0.0
       PORT: "8787"
       VC_DATA_DIR: /data
+      # Make — отдельный сервис (docs/plans/make-standalone.md): ядро переправляет
+      # ему /api/make/*, превью и публикации, а исполнителю отдаёт его адрес MCP.
+      # Токен и секрет общие с сервисом make; для прода задай случайные в .env.
+      VC_MAKE_MODE: remote
+      VC_MAKE_URL: http://make:8788
+      VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
+      VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
+      VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       # Метаданные релиза: номер приходит от публикации или строгого Git-тега;
       # пустое значение означает, что версия выпуска неизвестна.
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
@@ -90,6 +99,32 @@ services:
     # Дополнительная группа совпадает с владельцем host-side deploy-сокета.
     group_add:
       - "65532"
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
+  # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
+  make:
+    build:
+      context: .
+      target: make-runtime
+    image: voicechat-make
+    mem_limit: 512m
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8788"
+      VC_DATA_DIR: /data
+      VC_CORE_URL: http://voicechat:8787
+      VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
+      VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
+      VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+    volumes:
+      - vc-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     logging: *default-logging
     restart: unless-stopped
 

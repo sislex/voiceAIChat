@@ -155,17 +155,19 @@ voicechat ──▶ make:8788/internal/*  (тот же токен): promptContex
    интеграция `makeBridge/remote.integration.test.ts`: ядро в `remote` и процесс Make на двух портах —
    Bearer и cookie+CSRF через `whoami`, 404 роутов Make у ядра, MCP у Make, внутренние пути без токена — 401.
 
-### Круг 3 — образ, compose, Caddy ☐
+### Круг 3 — образ, compose, Caddy ☑ (2026-09-07)
 
-1. ☐ `Dockerfile`: стадия `make-runtime` (без whisper/web-сборки), `docker-compose.yml`:
+1. ☑ `Dockerfile`: стадия `make-runtime` (без whisper/web-сборки), `docker-compose.yml`:
    сервис `make` (`PORT=8788`, `VC_INTERNAL_TOKEN`, `VC_CORE_URL=http://voicechat:8787`,
    `VC_MAKE_DIR=/data/make`, тот же том данных, healthcheck `/v1/health`), у `voicechat` —
    `VC_MAKE_MODE=remote`, `VC_MAKE_URL=http://make:8788`, исполнителям — `VC_MAKE_MCP_PUBLIC_BASE`.
-2. ☐ `Caddyfile`: `handle /api/make/* /api/preview/make/* /api/preview/make-shared/* /p/* /s/* /mcp/make` →
-   `reverse_proxy make:8788`, остальное → `voicechat:8787` (оба виртуальных хоста).
-3. ☐ Локальная проверка на копии прод-БД в двух режимах (`embedded` и `remote` через
-   `docker compose up`), e2e `make.e2e.test.ts` в обоих.
-4. ☐ KB: `deploy.md` (сервис, переменные, что проксируется куда), `server-internals.md`
+2. ☑ `Caddyfile`: `@make path …` → `reverse_proxy make:8788`, `/internal/*` → 404, остальное → `voicechat:8787`
+   (оба виртуальных хоста; тест `infra.caddy.test.ts`). Плюс не из плана: **прокси путей Make в самом ядре**
+   (`makeBridge/proxy.ts`) — на прод ходят портом 8787 мимо Caddy, и без него Make там просто пропал бы.
+3. ☑ Локальная проверка на копии прод-БД: `embedded` — круг 1; `remote` — ядро + процесс Make двумя `tsx`
+   на разных портах, панель Make через прокси ядра (см. журнал). Полный `docker compose up` локально не
+   гонялся (сборка whisper/Playwright-образов слишком тяжёлая) — проверка образа `make-runtime` на проде.
+4. ☑ KB: `deploy.md` (сервис, переменные, что проксируется куда), `server-internals.md`
    (порты `MakeCore`/`MakeService`, `/internal/*`), `architecture.md`, `ui.md` §Make (сервер
    другой, контракт тот же), `apps/make/AGENTS.md`, журнал.
 

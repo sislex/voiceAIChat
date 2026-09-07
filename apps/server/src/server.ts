@@ -99,6 +99,7 @@ import { createOrchestrationManager } from './orchestration/runManager.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@voicechat/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
 import { createRemoteMake } from './makeBridge/remote.js'
+import { registerMakeProxy } from './makeBridge/proxy.js'
 import { registerInternalRoutes } from './routes/internal.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
@@ -640,6 +641,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? createRemoteMake({ makeUrl: opts.config.makeUrl!, token: opts.config.internalToken!, mcpSecret, mcpBaseUrl: makeMcpBaseUrl })
     : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
   make.register?.(app)
+  // Стенд доступен и напрямую портом ядра, минуя Caddy, — пути Make ядро переправляет в его процесс само.
+  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl! })
   // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
   if (opts.config.internalToken) {
     registerInternalRoutes(app, { token: opts.config.internalToken, makeCore, authenticate, ...(makeRemote ? { makeHub: make.hub } : {}) })

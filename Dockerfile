@@ -63,6 +63,19 @@ EXPOSE 8787
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/index.ts"]
 
+# ---- Runtime Make (отдельный сервис) -------------------------------------
+# Тот же образ-база, что у сервера, но процесс — apps/make/src/standalone: роуты Make,
+# превью, публикация и MCP. Данные — тот же том /data, что у сервера (мастерские в
+# /data/make), поэтому миграции файлов при выделении сервиса нет.
+FROM runtime-base AS make-runtime
+ENV PORT=8788
+RUN mkdir -p /data \
+  && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8788
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/make && exec node --import tsx src/standalone/index.ts"]
+
 # ---- Изолированный runtime распознавания речи ---------------------------
 FROM runtime-base AS stt-runner-runtime
 ENV PORT=8791 \

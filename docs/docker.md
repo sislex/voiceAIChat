@@ -70,8 +70,12 @@ docker compose exec -u node runner-personal claude setup-token
 | `PORT` | `voicechat` / `runner-*` | `8787` / `8790` | HTTP-порт сервера или исполнителя |
 | `VC_ADMIN_PASSWORD` | `voicechat` | пусто | пароль admin при первом создании БД |
 | `VC_CLAUDE_GATEWAY_*` | `voicechat` | см. compose | входящий Anthropic-compatible gateway |
+| `VC_MAKE_MODE` / `VC_MAKE_URL` / `VC_MAKE_MCP_PUBLIC_BASE` | `voicechat` | `remote` / `http://make:8788` | Make отдельным сервисом: ядро переправляет ему `/api/make/*`, превью и публикации, исполнителю отдаёт его MCP |
+| `VC_INTERNAL_TOKEN` | `voicechat`, `make` | `voicechat-internal-local-token` | Bearer внутреннего API `/internal/*` между сервисами; для прода — случайное значение в `.env` |
+| `VC_MCP_SECRET` | `voicechat`, `make` | `voicechat-mcp-local-secret` | секрет MCP-эндпоинтов `?k=`, общий у ядра и Make (им подписаны scope-токены рана) |
+| `VC_CORE_URL` | `make` | `http://voicechat:8787` | адрес ядра для RPC данных и проверки сессии |
 
-В проде `VC_LLM_RUNNER_TOKEN`, `VC_ADMIN_PASSWORD` и upstream-ключи держи в
+В проде `VC_LLM_RUNNER_TOKEN`, `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET`, `VC_ADMIN_PASSWORD` и upstream-ключи держи в
 shell/`.env` рядом с `docker-compose.yml`, не в репозитории.
 
 ## Подключение внешнего Claude Code к серверу

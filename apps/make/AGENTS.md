@@ -25,6 +25,8 @@
 - **События шины** (`MakeHub`, `src/hub.ts`): `changed`/`presence`/`turnSnapshot`. В standalone
   `setListener` шлёт их ядру пачками (`/internal/make/events`), ядро воспроизводит `apply` — сокеты
   пользователей живут у ядра, контракт WS не меняется.
+- **Две дороги к Make в `remote`:** Caddy направляет пути Make в `make:8788` напрямую, а при заходе
+  портом ядра (8787, так ходят на прод) их переправляет само ядро — `apps/server/src/makeBridge/proxy.ts`.
 - Не компилируется в JS: `tsx`, относительные импорты с `.js`. `@voicechat/shared` — единственная
   внутренняя зависимость.
 
