@@ -477,6 +477,13 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   let pendingDraftKey: string | null = null
   /** Открыта ли панель «Использование БЗ» (флагом владеет shellStore). */
   let kbUsagePanelOpen = false
+  /**
+   * Ленты неактивных разговоров не входят в публичный state, но realtime и
+   * асинхронные HTTP-ответы всё равно должны попасть в свой разговор. Снимок
+   * сервера при загрузке задаёт порядок известных ему сообщений, а кэш хранит
+   * события, пришедшие уже после начала этого запроса.
+   */
+  const messagesByConversation = new Map<string, Message[]>()
 
   core.onDispose(() => {
     if (conversationsRefreshTimer) clearTimeout(conversationsRefreshTimer)
@@ -493,6 +500,38 @@ export function createChatStore(deps: ChatDeps): ChatStore {
    */
   function chatScopedReset(): Pick<ChatState, 'messages' | 'taskChatContext'> {
     return { messages: [], taskChatContext: null }
+  }
+
+  function cacheMessages(conversationId: string, messages: Message[], serverSnapshot = false): Message[] {
+    const cached = messagesByConversation.get(conversationId) ?? []
+    const byId = new Map(cached.map((message) => [message.id, message]))
+    if (serverSnapshot) {
+      // История сервера задаёт порядок опубликованных сообщений; новые локальные
+      // и realtime-события, отсутствующие в снимке, остаются в конце.
+      const snapshotIds = new Set(messages.map((message) => message.id))
+      const merged = [...messages, ...cached.filter((message) => !snapshotIds.has(message.id))]
+      messagesByConversation.set(conversationId, merged)
+      return merged
+    }
+    const merged = [...cached]
+    for (const message of messages) {
+      const previous = byId.get(message.id)
+      if (previous) merged[merged.indexOf(previous)] = message
+      else merged.push(message)
+      byId.set(message.id, message)
+    }
+    messagesByConversation.set(conversationId, merged)
+    return merged
+  }
+
+  function applyCachedMessages(conversationId: string, messages: Message[], serverSnapshot = false): void {
+    const merged = cacheMessages(conversationId, messages, serverSnapshot)
+    if (getState().activeId === conversationId) setState({ messages: merged })
+  }
+
+  function replaceCachedMessages(conversationId: string, messages: Message[]): void {
+    messagesByConversation.set(conversationId, messages)
+    if (getState().activeId === conversationId) setState({ messages })
   }
 
   /**
@@ -853,13 +892,12 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       ...(execTarget !== undefined ? { execTarget } : {}),
       ...(attachments?.length ? { attachments } : {})
     })
-    setState({ messages: [...getState().messages, message] })
+    applyCachedMessages(conversationId, [message])
     return message
   }
 
   function appendPersisted(message: Message): void {
-    if (getState().messages.some((m) => m.id === message.id)) return
-    setState({ messages: [...getState().messages, message] })
+    applyCachedMessages(message.conversationId, [message])
   }
 
   /** Атомарно сохраняет локальный черновик вместе с первой репликой. */
@@ -875,10 +913,11 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       message: firstMessage
     })
     pendingDraftKey = null
+    cacheMessages(result.conversation.id, result.messages, true)
     setState({
       activeId: result.conversation.id,
       ...chatScopedReset(),
-      messages: result.messages,
+      messages: messagesByConversation.get(result.conversation.id)!,
       conversations: withConversation(getState().conversations, result.conversation)
     })
     await refreshConversations()
@@ -1143,7 +1182,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       if (token !== selectToken || core.disposed()) return false
       if (res) {
         opened = res.conversation
-        setState({ activeId: res.conversation.id, messages: res.messages })
+        const messages = cacheMessages(res.conversation.id, res.messages, true)
+        setState({ activeId: res.conversation.id, messages })
         restoreStreamIfActive()
       }
     } finally {
@@ -1530,7 +1570,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       })
     }
     if (convId !== getState().activeId) {
-      // Фоновый разговор: ответ уже сохранён сервером — обновляем только сайдбар.
+      // Фоновый разговор: финал уже сохранён сервером, сохраняем его и локально.
+      if (message) appendPersisted(message)
       await statusUpdate
       if (message) await refreshConversations()
       return
@@ -1653,6 +1694,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
+    if (conversationId === state.activeId && patch.messages) replaceCachedMessages(conversationId, patch.messages)
+    else if (published) applyCachedMessages(conversationId, [published])
   }
 
   function applyClaudeStart(target: TurnTarget, conversationId: string): void {
@@ -1685,14 +1728,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       clearPendingSubmit(pending.operationId)
       setState({ preparingReply: true })
     }
-    if (conversationId !== getState().activeId) {
-      scheduleConversationsRefresh()
-      return
-    }
-    const existing = getState().messages.some((item) => item.id === message.id)
-    if (existing) {
-      setState({ messages: getState().messages.map((item) => (item.id === message.id ? message : item)) })
-    } else appendPersisted(message)
+    applyCachedMessages(conversationId, [message])
+    if (conversationId !== getState().activeId) scheduleConversationsRefresh()
   }
 
   // --- Использование базы знаний -------------------------------------------
@@ -2014,7 +2051,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         const activeId = getState().activeId
         if (!activeId) return
         await client['messages:delete']({ conversationId: activeId, messageId: id })
-        setState({ messages: getState().messages.filter((m) => m.id !== id) })
+        replaceCachedMessages(activeId, getState().messages.filter((m) => m.id !== id))
         await refreshConversations()
       },
       async editMessage(id, newText) {
@@ -2034,7 +2071,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         for (const m of removed) {
           await client['messages:delete']({ conversationId: activeId, messageId: m.id })
         }
-        setState({ messages: getState().messages.slice(0, idx) })
+        replaceCachedMessages(activeId, getState().messages.slice(0, idx))
         setError(null)
         const sourceAttachments = source.attachments ?? []
         await persistMessage(role, text, undefined, source.meta, messageExecTarget, sourceAttachments)
@@ -2063,7 +2100,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           )
         }
         const updated = await client['messages:updateMeta']({ conversationId: activeId, messageId, meta })
-        setState({ messages: getState().messages.map((item) => (item.id === messageId ? updated : item)) })
+        replaceCachedMessages(activeId, getState().messages.map((item) => (item.id === messageId ? updated : item)))
         // Другие вкладки того же пользователя подхватят правку через storage-событие.
         deps.prefs.set(
           MESSAGE_META_UPDATE_KEY,
@@ -2135,7 +2172,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         const state = getState()
         const active = [...state.readerConversations, ...state.playwrightReaderConversations, ...state.consoleReaderConversations, ...state.makeConversations, ...state.conversations].find((item) => item.id === activeId)
         const res = await client['conversations:get']({ id: activeId, scope: active?.scope ?? 'chat', ...(active?.scope === 'kanban' && active.projectId ? { projectId: active.projectId } : {}) }).catch(() => null)
-        if (res && res.conversation.id === getState().activeId) setState({ messages: res.messages })
+        if (res && res.conversation.id === getState().activeId) {
+          setState({ messages: cacheMessages(res.conversation.id, res.messages, true) })
+        }
       },
       loadTaskChatContext,
       async adoptConversation(conversation, messages) {
@@ -2223,6 +2262,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         moreCursor = null
         selectToken++
         searchSeq++
+        messagesByConversation.clear()
         pendingDraftKey = null
         core.resetState(initialState({ selectedIds: getState().sidebarProjectIds, knownIds: getState().sidebarProjectKnownIds, initialized: getState().sidebarProjectsInitialized }, getState().showDoneTaskChats))
       }
