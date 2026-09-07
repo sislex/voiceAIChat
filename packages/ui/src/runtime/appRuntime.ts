@@ -321,7 +321,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       // грузит уже сам список, когда человек откроет вкладку «Чаты».
       const needsConversations = !options?.skipConversations || Boolean(preferredChatId)
       const conversationsLoad = needsConversations ? chat.actions.ensureConversationIndex().catch(() => []) : Promise.resolve([])
-      const [, conversations] = await Promise.all([settingsLoad, conversationsLoad])
+      await Promise.all([settingsLoad, conversationsLoad])
       if (disposed) return
       // 3) Необязательные домены — параллельно и без права уронить bootstrap.
       await Promise.all([
@@ -336,9 +336,14 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       if (!needsConversations) return
       const visible = chat.getState().conversations
       const wanted = preferredChatId ?? null
-      const target = (wanted && conversations.some((c) => c.id === wanted) ? wanted : null) ?? visible[0]?.id ?? null
-      if (wanted && target !== wanted) shell.actions.setError('Разговор не найден: возможно, он удалён.')
-      if (target) await chat.actions.selectConversation(target)
+      // Список — фильтруемый индекс сайдбара, а не реестр доступных разговоров:
+      // hidden/done/cancelled task-чат по прямому адресу проверяем через get.
+      if (wanted) {
+        const opened = await chat.actions.selectConversation(wanted)
+        if (!opened && visible[0]) await chat.actions.selectConversation(visible[0].id)
+      } else if (visible[0]) {
+        await chat.actions.selectConversation(visible[0].id)
+      }
     })()
     bootstrapping = run
     try {
