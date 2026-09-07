@@ -13,6 +13,8 @@ const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_0
 afterEach(() => {
   window.location.hash = ''
   delete window.desktopHost
+  Reflect.deleteProperty(window, 'api')
+  Reflect.deleteProperty(window, 'claude')
   vi.unstubAllGlobals()
 })
 
@@ -40,6 +42,23 @@ async function seededApi(): Promise<Seeded> {
   const lisbon = await api['conversations:create']({ title: 'Поездка в Лиссабон' })
   await api['messages:add']({ conversationId: lisbon.id, role: 'u1', text: 'Погода в июле?', time: '14:02' })
   return { api, gifts: gifts.id, lisbon: lisbon.id }
+}
+
+async function cancelledTaskApi(): Promise<{ api: FakeApi; conversationId: string }> {
+  const api = createFakeApi([])
+  const availableMachine: AgentInfo = { id: 'test-mac', name: 'Test Mac', online: true, createdAt: 1, lastSeen: 1, policy: DEFAULT_AGENT_POLICY }
+  api['agents:list'] = async () => [availableMachine]
+  await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+  await api['conversations:create']({ title: 'Обычный чат' })
+  const project = await api['projects:create']({ name: 'Проект отменённой задачи' })
+  const board = await api['board:get']({ id: project.id })
+  const development = board.columns.find((column) => column.semanticType === 'development')!
+  const cancelled = board.columns.find((column) => column.semanticType === 'cancelled')!
+  const task = await api['tasks:create']({ projectId: project.id, columnId: development.id, title: 'Отменённая задача' })
+  const conversation = await api['tasks:openChat']({ projectId: project.id, taskId: task.id })
+  await api['conversations:rename']({ id: conversation.id, title: 'Настройки отменённой задачи' })
+  await api['tasks:move']({ projectId: project.id, taskId: task.id, columnId: cancelled.id })
+  return { api, conversationId: conversation.id }
 }
 
 describe('App — пустая главная страница чатов', () => {
@@ -512,5 +531,149 @@ describe('App — отдельная страница Web Reader', () => {
     await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(second.id))
     window.location.hash = `#/web-reader/${first.id}`
     await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(first.id))
+  })
+})
+
+describe('App — настройки разговора привязаны к инициатору', () => {
+  // @testCase TC-UI-1
+  it('открывает настройки отменённого task-чата, отсутствующего в sidebar-индексе', async () => {
+    const { api, conversationId } = await cancelledTaskApi()
+    window.location.hash = `#/chat/${conversationId}`
+    render(<App api={api} delays={SLOW} />)
+
+    await waitFor(() => expect(window.location.hash).toBe(`#/chat/${conversationId}`))
+    expect(screen.queryByLabelText('Удалить разговор «Настройки отменённой задачи»')).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки разговора' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Настройки разговора' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Название разговора')).toHaveValue('Настройки отменённой задачи')
+  })
+
+  // @testCase TC-REG-2
+  it('завершает неуспешное открытие и не переносит его на следующий чат', async () => {
+    const { api, gifts, lisbon } = await seededApi()
+    window.location.hash = `#/chat/${lisbon}`
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Погода в июле?')
+    const realGet = api['conversations:get']
+    api['conversations:get'] = async (args) => args.id === lisbon ? null : realGet(args)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    expect(await screen.findByText('Настройки недоступны: разговор удалён или недоступен.')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Идеи для подарка'))
+    await waitFor(() => expect(window.location.hash).toBe(`#/chat/${gifts}`))
+
+    expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument()
+  })
+
+  // @testCase TC-NEG-3
+  it('игнорирует запоздалый ответ настроек после смены разговора', async () => {
+    const { api, gifts, lisbon } = await seededApi()
+    window.location.hash = `#/chat/${lisbon}`
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Погода в июле?')
+    const realGet = api['conversations:get']
+    const late = deferred<Awaited<ReturnType<FakeApi['conversations:get']>>>()
+    api['conversations:get'] = (args) => args.id === lisbon ? late.promise : realGet(args)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    await userEvent.click(screen.getByText('Идеи для подарка'))
+    await waitFor(() => expect(window.location.hash).toBe(`#/chat/${gifts}`))
+    late.resolve(await realGet({ id: lisbon, scope: 'chat' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument())
+  })
+
+  // @testCase TC-UI-5
+  it('прямой маршрут контекста открывает нужный разговор на вкладке контекста', async () => {
+    const { api, gifts } = await seededApi()
+    window.api = api
+    window.location.hash = `#/chat/${gifts}/context`
+    render(<App api={api} delays={SLOW} />)
+
+    expect(await screen.findByRole('dialog', { name: 'Настройки разговора' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Название разговора')).toHaveValue('Идеи для подарка')
+    expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // @testCase TC-REG-6
+  it('обычный чат сохраняет настройки строго по id показанного разговора', async () => {
+    const { api, lisbon } = await seededApi()
+    window.location.hash = `#/chat/${lisbon}`
+    const rename = vi.spyOn(api, 'conversations:rename')
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Погода в июле?')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    const title = await screen.findByLabelText('Название разговора')
+    await userEvent.clear(title)
+    await userEvent.type(title, 'Лиссабон — обновлено')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => expect(rename).toHaveBeenCalledWith({ id: lisbon, title: 'Лиссабон — обновлено' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument())
+  })
+})
+
+describe('App — режимы Make без машины', () => {
+  const FAST = { frame: 5, transcribe: 5, think: 5, speak: 5 }
+
+  function installClaude(): { finish: () => void } {
+    let conversationId = ''
+    let finishRequested = false
+    let done: ((message: { conversationId: string; text: string; message?: never }) => void) | undefined
+    const complete = (): void => done?.({ conversationId, text: 'Готово.', message: { id: 'ai-done', conversationId, role: 'ai', text: 'Готово.', time: '12:00', createdAt: Date.now() } as never })
+    window.claude = {
+      send: (payload) => { conversationId = payload.conversationId },
+      cancel: () => undefined,
+      onToken: () => () => undefined,
+      onDone: (callback) => { done = callback; if (finishRequested) queueMicrotask(complete); return () => { done = undefined } },
+      onError: () => () => undefined,
+      onLog: () => () => undefined
+    }
+    return { finish: () => { finishRequested = true; complete() } }
+  }
+
+  // @testCase TC-UI-01
+  it('сохраняет development до отправки, во время хода и после его завершения', async () => {
+    const api = createFakeApi([])
+    window.api = api
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true, permissionMode: 'acceptEdits' })
+    const make = await api['conversations:create']({ title: 'Make development', assistantKind: 'make' })
+    api._state.conversations.find((item) => item.id === make.id)!.permissionMode = 'acceptEdits'
+    const claude = installClaude()
+    window.location.hash = `#/make/${make.id}`
+    render(<App api={api} delays={FAST} />)
+
+    const mode = await screen.findByRole('button', { name: 'Режим работы' })
+    expect(mode).toHaveTextContent('Разработка')
+    const composer = screen.getByRole('textbox', { name: 'Поле ввода сообщения' })
+    await userEvent.type(composer, 'поправь кнопку{enter}')
+    expect(mode).toHaveTextContent('Разработка')
+    claude.finish()
+    await waitFor(() => expect(mode).not.toBeDisabled(), { timeout: 2_000 })
+    expect(mode).toHaveTextContent('Разработка')
+    expect(api._state.conversations.find((item) => item.id === make.id)?.permissionMode).toBe('acceptEdits')
+  })
+
+  // @testCase TC-UI-02
+  it('«Только спросить» временно включает plan и восстанавливает development после хода', async () => {
+    const api = createFakeApi([])
+    window.api = api
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true, permissionMode: 'acceptEdits' })
+    const make = await api['conversations:create']({ title: 'Make question', assistantKind: 'make' })
+    api._state.conversations.find((item) => item.id === make.id)!.permissionMode = 'acceptEdits'
+    const setMode = vi.spyOn(api, 'conversations:setExecTarget')
+    const claude = installClaude()
+    window.location.hash = `#/make/${make.id}`
+    render(<App api={api} delays={FAST} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Только спросить' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'почему кнопка красная?{enter}')
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith(expect.objectContaining({ id: make.id, permissionMode: 'plan' })))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Режим работы' })).toBeDisabled())
+    expect(api._state.conversations.find((item) => item.id === make.id)?.permissionMode).toBe('plan')
+    expect(screen.getByRole('button', { name: 'Только спросить' })).toHaveAttribute('aria-pressed', 'true')
+    claude.finish()
   })
 })

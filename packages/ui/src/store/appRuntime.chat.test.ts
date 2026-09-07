@@ -1908,6 +1908,128 @@ describe('voiceStore — ходы, переживающие обновление
     expect(store.getState().activeTurns['другой-разговор']).toBeUndefined()
   })
 
+  // @testCase TC-UI-1
+  // @testCase TC-REG-1
+  it('send → B → A сохраняет адресную реплику и ответ в исходном разговоре', async () => {
+    const { store, api } = makeStore(['A'])
+    await store.actions.init()
+    const a = store.getState().activeId!
+    const b = await api['conversations:create']({ title: 'B' })
+    const originalAdd = api['messages:add']
+    let release!: () => void
+    const delayed = new Promise<void>((resolve) => { release = resolve })
+    const add = vi.spyOn(api, 'messages:add').mockImplementation(async (args) => {
+      await delayed
+      return originalAdd(args)
+    })
+
+    store.actions.setDraft('реплика A')
+    const sending = store.actions.submitText()
+    await vi.advanceTimersByTimeAsync(0)
+    await store.actions.selectConversation(b.id)
+    expect(store.getState().activeId).toBe(b.id)
+    release()
+    await sending
+    expect(store.getState().messages.some((message) => message.text === 'реплика A')).toBe(false)
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ conversationId: a }))
+
+    store.actions.applyClaudeToken('часть', a)
+    const ai = { id: 'ai-a', conversationId: a, role: 'ai' as const, text: 'полный ответ', time: '12:00', createdAt: 2 }
+    await store.actions.applyClaudeDone('полный ответ', undefined, 'claude', ai, a)
+    await store.actions.selectConversation(a)
+    expect(store.getState().messages.map((message) => message.text)).toEqual(expect.arrayContaining(['реплика A', 'полный ответ']))
+    expect(store.getState().messages.filter((message) => message.id === ai.id)).toHaveLength(1)
+  })
+
+  // @testCase TC-REG-2
+  // @testCase TC-REG-4
+  it('объединяет устаревший снимок с realtime и дедуплицирует его с HTTP', async () => {
+    const { store, api } = makeStore(['A'])
+    await store.actions.init()
+    const a = store.getState().activeId!
+    const b = await api['conversations:create']({ title: 'B' })
+    await store.actions.selectConversation(b.id)
+    const originalGet = api['conversations:get']
+    let release!: () => void
+    const delayed = new Promise<void>((resolve) => { release = resolve })
+    vi.spyOn(api, 'conversations:get').mockImplementation(async (args) => {
+      if (args.id === a) await delayed
+      return originalGet(args)
+    })
+    const loading = store.actions.selectConversation(a)
+    const live = { id: 'live-a', conversationId: a, role: 'u1' as const, text: 'realtime', time: '12:00', createdAt: 2 }
+    store.actions.applyChatMessage(a, live)
+    store.actions.applyChatMessage(a, live)
+    release()
+    await loading
+    expect(store.getState().messages.filter((message) => message.id === live.id)).toHaveLength(1)
+  })
+
+  // @testCase TC-REG-3
+  it('игнорирует ответы A → B → A не в порядке запуска', async () => {
+    const { store, api } = makeStore(['A'])
+    await store.actions.init()
+    const a = store.getState().activeId!
+    const b = await api['conversations:create']({ title: 'B' })
+    const originalGet = api['conversations:get']
+    let releaseOld!: () => void
+    let releaseNew!: () => void
+    const old = new Promise<void>((resolve) => { releaseOld = resolve })
+    const fresh = new Promise<void>((resolve) => { releaseNew = resolve })
+    let aCalls = 0
+    vi.spyOn(api, 'conversations:get').mockImplementation(async (args) => {
+      if (args.id === a) {
+        aCalls += 1
+        await (aCalls === 1 ? old : fresh)
+      }
+      return originalGet(args)
+    })
+    const firstA = store.actions.selectConversation(a)
+    const selectB = store.actions.selectConversation(b.id)
+    const secondA = store.actions.selectConversation(a)
+    store.actions.applyChatMessage(a, { id: 'a-live', conversationId: a, role: 'u1', text: 'live', time: '12:00', createdAt: 3 })
+    releaseNew()
+    await secondA
+    releaseOld()
+    await Promise.all([firstA, selectB])
+    expect(store.getState().activeId).toBe(a)
+    expect(store.getState().messages.some((message) => message.id === 'a-live')).toBe(true)
+  })
+
+  // @testCase TC-INT-1
+  it('восстанавливает partial неактивного разговора и заменяет его финалом', async () => {
+    const { store, api } = makeStore(['A'])
+    await store.actions.init()
+    const a = store.getState().activeId!
+    const b = await api['conversations:create']({ title: 'B' })
+    await store.actions.selectConversation(b.id)
+    store.actions.applyClaudeToken('ча', a)
+    store.actions.applyClaudeToken('сть', a)
+    expect(store.getState().streamingReply).toBe('')
+    await store.actions.selectConversation(a)
+    expect(store.getState().streamingReply).toBe('часть')
+    await store.actions.applyClaudeDone('полный', undefined, 'claude', { id: 'ai-final', conversationId: a, role: 'ai', text: 'полный', time: '12:00', createdAt: 4 }, a)
+    expect(store.getState().messages.filter((message) => message.id === 'ai-final')).toHaveLength(1)
+  })
+
+  // @testCase TC-NEG-1
+  it('ошибка устаревшей загрузки не портит выбранный разговор', async () => {
+    const { store, api } = makeStore(['A'])
+    await store.actions.init()
+    const a = store.getState().activeId!
+    const b = await api['conversations:create']({ title: 'B' })
+    let rejectA!: (error: Error) => void
+    const delayed = new Promise<never>((_resolve, reject) => { rejectA = reject })
+    const originalGet = api['conversations:get']
+    vi.spyOn(api, 'conversations:get').mockImplementation((args) => args.id === a ? delayed : originalGet(args))
+    const loadingA = store.actions.selectConversation(a)
+    await store.actions.selectConversation(b.id)
+    rejectA(new Error('late A failure'))
+    await expect(loadingA).rejects.toThrow('late A failure')
+    expect(store.getState().activeId).toBe(b.id)
+    expect(store.getState().messages).toEqual([])
+  })
+
   it('переключение разговора не отменяет ход; явная отмена шлёт conversationId', async () => {
     const { store, api, cancelClaude } = makeClaudeStore()
     await store.actions.init()
@@ -2381,7 +2503,9 @@ describe('voiceStore — чаты завершённых задач', () => {
     expect(store.getState().conversations.map((c) => c.id)).toContain(chatId)
   })
 
-  it('cancelled скрыт даже при включённых done-чатах и возвращается без потери черновика', async () => {
+  // @testCase TC-INT-4
+  // @testCase TC-INT-7
+  it('cancelled скрыт из индекса, но полный снимок активного разговора сохраняется', async () => {
     const { store, api } = makeStore(['Обычный'])
     const p = await api['projects:create']({ name: 'P' })
     const board = await api['board:get']({ id: p.id })
@@ -2398,6 +2522,7 @@ describe('voiceStore — чаты завершённых задач', () => {
     await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: cancelled.id })
     await store.actions.retryConversations()
     expect(store.getState().activeId).toBe(chat.id)
+    expect(store.getState().activeConversation).toMatchObject({ id: chat.id, title: chat.title })
     expect(store.getState().draft).toBe('не потерять')
     expect(store.getState().conversations.map((c) => c.id)).not.toContain(chat.id)
 
