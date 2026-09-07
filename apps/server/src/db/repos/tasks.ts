@@ -734,7 +734,13 @@ export class TasksRepo extends BaseRepo {
       const prior = this.db.prepare(
         `SELECT task_id FROM task_creation_requests WHERE actor = ? AND idempotency_key = ?`
       ).get(userId, key) as { task_id: string } | undefined
-      if (prior) return this.getTask(projectId, prior.task_id)
+      if (prior) {
+        const task = this.getTask(projectId, prior.task_id)
+        if (task?.type === 'task' && args.source !== undefined) {
+          this.repos.chat.openOrCreateTaskChat(userId, projectId, task.id)
+        }
+        return task
+      }
     }
     if (!this.repos.projects.columnInProject(projectId, args.columnId)) return null
 
@@ -768,9 +774,7 @@ export class TasksRepo extends BaseRepo {
       const max = this.db.prepare(
         `SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`
       ).get(projectId, args.columnId) as { m: number | null }
-      const seq = (this.db.prepare(
-        `UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`
-      ).get(projectId) as { task_seq: number }).task_seq
+      const seq = this.repos.projects.nextTaskSeq(projectId)
       this.db.prepare(
         `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at, auto_pilot)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`
@@ -797,7 +801,13 @@ export class TasksRepo extends BaseRepo {
       this.repos.projects.touchProject(projectId, ts)
       return id
     })()
-    return this.getTask(projectId, created)
+    const task = this.getTask(projectId, created)
+    // Пользовательский таск сразу получает приватный связанный чат автора.
+    // Эпики, стори и системные создания сохраняют ленивое поведение.
+    if (task?.type === 'task' && userCreation) {
+      this.repos.chat.openOrCreateTaskChat(userId, projectId, task.id)
+    }
+    return task
   }
 
   updateTask(
@@ -1501,6 +1511,98 @@ export class TasksRepo extends BaseRepo {
     return row ? TasksRepo.toTaskRunResult(row) : null
   }
 
+  private mapTaskAttachment(row: Record<string, unknown>): TaskAttachment {
+    return {
+      id: String(row.id), taskId: String(row.task_id), scope: String(row.scope) as TaskAttachment['scope'],
+      name: String(row.name), size: Number(row.size), mimeType: String(row.mime_type),
+      checksum: String(row.checksum), status: row.status === 'missing' ? 'missing' : 'ready',
+      createdBy: String(row.created_by), createdAt: Number(row.created_at)
+    }
+  }
+
+  taskAttachments(userId: string, projectId: string, taskId: string, scope: 'source' | 'rework_draft' = 'source'): TaskAttachment[] | null {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    return (this.db.prepare('SELECT * FROM task_attachments WHERE task_id=? AND scope=? ORDER BY created_at,id').all(taskId, scope) as Array<Record<string, unknown>>)
+      .map((row) => this.mapTaskAttachment(row))
+  }
+
+  createTaskAttachment(userId: string, projectId: string, taskId: string, input: { name: string; mimeType?: string; dataBase64: string; scope?: 'source' | 'rework_draft' }): TaskAttachment {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) throw new Error('Задача не найдена')
+    const data = Buffer.from(input.dataBase64, 'base64')
+    if (!data.length || data.length > 20 * 1024 * 1024) throw new Error('Размер вложения должен быть от 1 байта до 20 МБ')
+    const name = input.name.replace(/\\/g, '/').split('/').pop()?.trim().slice(0, 255) || 'file'
+    const id = this.newId()
+    const createdAt = this.now()
+    this.db.prepare('INSERT INTO task_attachments (id,task_id,scope,name,size,mime_type,storage_key,checksum,data_base64,status,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, taskId, input.scope ?? 'source', name, data.length, input.mimeType || 'application/octet-stream', this.newId(), createHash('sha256').update(data).digest('hex'), input.dataBase64, 'ready', userId, createdAt)
+    return this.taskAttachments(userId, projectId, taskId, input.scope ?? 'source')!.find((item) => item.id === id)!
+  }
+
+  deleteTaskAttachment(userId: string, projectId: string, taskId: string, attachmentId: string): boolean {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return false
+    return this.db.prepare("DELETE FROM task_attachments WHERE id=? AND task_id=? AND scope IN ('source','rework_draft')").run(attachmentId, taskId).changes > 0
+  }
+
+  taskReworkCycles(userId: string, projectId: string, taskId: string): TaskReworkCycle[] | null {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    const cycles = this.listTaskReworkCycles(userId, projectId, taskId)
+    return cycles.map((cycle) => {
+      const persistent = (this.db.prepare('SELECT * FROM task_attachments WHERE rework_cycle_id=? ORDER BY created_at,id').all(cycle.id) as Array<Record<string, unknown>>).map((row) => this.mapTaskAttachment(row))
+      return { ...cycle, attachments: persistent.length ? persistent : cycle.attachments }
+    })
+  }
+
+  taskReworkCycleByIdempotencyKey(userId: string, projectId: string, taskId: string, key: string): TaskReworkCycle | null {
+    if (!this.repos.projects.isProjectMember(userId, projectId) || !this.getTask(projectId, taskId)) return null
+    const row = this.db.prepare('SELECT id FROM task_rework_cycles WHERE task_id=? AND idempotency_key=?').get(taskId, key) as { id: string } | undefined
+    return row ? this.taskReworkCycles(userId, projectId, taskId)!.find((item) => item.id === row.id) ?? null : null
+  }
+
+  createPersistentTaskReworkCycle(userId: string, projectId: string, taskId: string, key: string, input: { description: string; criteria: string[]; makeSources: Array<{ conversationId: string; mode: 'whole_project' | 'files'; paths: string[] }>; attachmentIds: string[] }): { cycle: TaskReworkCycle; task: Task; replayed: boolean } {
+    if (!key.trim()) throw new Error('Idempotency-Key required')
+    if (!input.description.trim()) throw new Error('Описание доработки обязательно')
+    return this.db.transaction(() => {
+      const task = this.getTask(projectId, taskId)
+      if (!this.repos.projects.isProjectMember(userId, projectId) || !task) throw new Error('Задача не найдена')
+      const replay = this.taskReworkCycleByIdempotencyKey(userId, projectId, taskId, key)
+      if (replay) return { cycle: replay, task, replayed: true }
+      if (this.latestTaskRunResult(taskId)?.outcome === 'active') throw new Error('TASK_ACTIVE_RUN')
+      const preparation = this.repos.projects.getColumnIdBySemantic(projectId, 'preparation')
+      if (!preparation) throw new Error('PREPARATION_COLUMN_MISSING')
+      const makeSources = input.makeSources.map((source) => {
+        this.assertTaskDesignSource(userId, projectId, taskId, source.conversationId)
+        const paths = [...new Set(source.paths.map((path) => {
+          const normalized = normalizeMakePath(path)
+          if (!normalized || normalized !== path) throw new Error('Неканонический путь Make-файла')
+          return normalized
+        }))].sort()
+        if (source.mode === 'whole_project' && paths.length) throw new Error('У всего Make-проекта paths должен быть пуст')
+        if (source.mode === 'files' && !paths.length) throw new Error('Выберите файлы Make-проекта')
+        const meta = this.projectDesignSources(userId, projectId)!.find((item) => item.conversationId === source.conversationId)!
+        return { conversationId: source.conversationId, title: meta.title, owner: meta.owner, mode: source.mode, paths }
+      }).sort((a, b) => a.conversationId.localeCompare(b.conversationId))
+      const attachmentIds = [...new Set(input.attachmentIds)]
+      if (attachmentIds.length) {
+        const placeholders = attachmentIds.map(() => '?').join(',')
+        const count = Number((this.db.prepare(`SELECT COUNT(*) n FROM task_attachments WHERE task_id=? AND scope='rework_draft' AND id IN (${placeholders})`).get(taskId, ...attachmentIds) as { n: number }).n)
+        if (count !== attachmentIds.length) throw new Error('Вложение черновика не найдено')
+      }
+      const sequence = Number((this.db.prepare('SELECT COALESCE(MAX(sequence),0)+1 n FROM task_rework_cycles WHERE task_id=?').get(taskId) as { n: number }).n)
+      const id = this.newId()
+      const createdAt = this.now()
+      const criteria = input.criteria.map((item) => item.trim()).filter(Boolean)
+      const payloadHash = createHash('sha256').update(JSON.stringify({ description: input.description.trim(), criteria, makeSources, attachmentIds })).digest('hex')
+      this.db.prepare('INSERT INTO task_rework_cycles (id,project_id,task_id,sequence,description,criteria_json,make_sources_json,created_by,created_at,idempotency_key,payload_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, projectId, taskId, sequence, input.description.trim(), JSON.stringify(criteria), JSON.stringify(makeSources), userId, createdAt, key, payloadHash)
+      if (attachmentIds.length) {
+        const placeholders = attachmentIds.map(() => '?').join(',')
+        this.db.prepare(`UPDATE task_attachments SET scope='rework_cycle',rework_cycle_id=? WHERE id IN (${placeholders})`).run(id, ...attachmentIds)
+      }
+      this.db.prepare('UPDATE tasks SET column_id=?,updated_at=? WHERE id=? AND project_id=?').run(preparation, this.now(), taskId, projectId)
+      return { cycle: this.taskReworkCycles(userId, projectId, taskId)!.find((item) => item.id === id)!, task: this.getTask(projectId, taskId)!, replayed: false }
+    })()
+  }
+
   listTaskReworkCycles(userId: string, projectId: string, taskId: string): TaskReworkCycle[] {
     if (!this.repos.projects.isProjectMember(userId, projectId)) return []
     const task = this.db.prepare('SELECT id FROM tasks WHERE id = ? AND project_id = ?').get(taskId, projectId)
@@ -1512,8 +1614,9 @@ export class TasksRepo extends BaseRepo {
       description: String(row.description), criteria: JSON.parse(String(row.criteria_json)),
       makeSources: JSON.parse(String(row.make_sources_json)),
       attachments: (attachments.all(row.id) as Array<Record<string, unknown>>).map((file) => ({
-        id: String(file.upload_id), name: String(file.name), mimeType: String(file.mime_type),
-        size: Number(file.size), status: 'ready' as const
+        id: String(file.upload_id), taskId: String(row.task_id), scope: 'rework_cycle' as const,
+        name: String(file.name), mimeType: String(file.mime_type), size: Number(file.size),
+        checksum: '', status: 'ready' as const, createdBy: String(row.created_by), createdAt: Number(row.created_at)
       })),
       ...(row.implemented_result ? { implementedResult: String(row.implemented_result) } : {}),
       createdBy: String(row.created_by), createdAt: Number(row.created_at),
@@ -1526,7 +1629,7 @@ export class TasksRepo extends BaseRepo {
     projectId: string,
     taskId: string,
     input: CreateTaskReworkCycleInput,
-    files: Array<TaskAttachment & { uploadId: string }>
+    files: Array<{ id: string; uploadId: string; name: string; mimeType: string; size: number; status: 'ready' }>
   ): TaskReworkCycle {
     const description = input.description.trim()
     if (!description) throw new Error('validation_error')
@@ -2053,5 +2156,35 @@ export class TasksRepo extends BaseRepo {
     this.transitionAutoPilotTask(projectId, taskId, 'development', 'autopilot.return_to_development')
     this.repos.qa.recordAutoPilotEvent(projectId, taskId, 'autopilot.failure', { stage, runId, reason, bugTaskId: bug.id, cycle: cycles + 1, limit })
     return { decisionRequired: false, bugTaskId: bug.id }
+  }
+
+  /** Каскад удаления аккаунта: снять исполнителя со всех задач (зовётся из identity). */
+  unassignUser(userId: string): void {
+    this.db.prepare(`UPDATE tasks SET assignee = NULL WHERE assignee = ?`).run(userId)
+  }
+
+  /** Участник вышел из проекта — его задачи остаются без исполнителя (зовётся из projects.removeMember). */
+  unassignUserInProject(projectId: string, username: string, ts: number): void {
+    this.db.prepare(`UPDATE tasks SET assignee = NULL, updated_at = ? WHERE project_id = ? AND assignee = ?`).run(ts, projectId, username)
+  }
+
+  /** Снимок готовности успешного preparation-рана; null — рана нет или он не успешен. */
+  preparationReadiness(runId: string | null): DevelopmentReadiness | null {
+    if (!runId) return null
+    const prep = this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE id=? AND status='success'`).get(runId) as { readiness_json: string } | undefined
+    return prep ? parseJsonValue<DevelopmentReadiness | null>(prep.readiness_json, null) : null
+  }
+
+  /** CI дописывает в снимок готовности ссылки на автотесты; сам снимок — данные подготовки задачи. */
+  savePreparationReadiness(runId: string, readiness: DevelopmentReadiness): void {
+    this.db.prepare(`UPDATE task_preparation_runs SET readiness_json=? WHERE id=?`).run(JSON.stringify(readiness), runId)
+  }
+
+  /**
+   * Перенос задачи в колонку по семантике без истории и проверок членства — для
+   * системных переходов (старт merge-рана), где решение уже принято вызывающим.
+   */
+  placeTaskInSemanticColumn(projectId: string, taskId: string, semantic: KanbanColumnSemanticType, ts: number): void {
+    this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type=?), updated_at=? WHERE id=?`).run(projectId, semantic, ts, taskId)
   }
 }

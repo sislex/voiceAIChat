@@ -81,7 +81,7 @@ describe('FeaturePreviewManager', () => {
     const { manager, executor } = setup()
     await manager.operate('u1', 'p1', 't1', 'start')
     await wait()
-    const run = manager.get('u1', 'p1', 't1')!.runs.at(-1)!
+    const run = (await manager.get('u1', 'p1', 't1'))!.runs.at(-1)!
     expect(run.status).toBe('succeeded')
     expect(run.steps.map((step) => step.id)).toEqual(['machine','workspace','configuration','image','build','container','port','health','connection','ready'])
     expect(run.steps.find((step) => step.id === 'image')).toMatchObject({ status: 'skipped' })
@@ -135,7 +135,7 @@ describe('FeaturePreviewManager', () => {
     await manager.operate('u1', 'p1', 't1', 'remove')
     await wait()
     expect(fsDelete).toHaveBeenCalledWith('a1', env.managed!.previewRoot)
-    expect(manager.get('u1', 'p1', 't1')?.state).toBe('removed')
+    expect((await manager.get('u1', 'p1', 't1'))?.state).toBe('removed')
   })
 
   it('rejects cleanup when environment.json identity conflicts', async () => {
@@ -147,14 +147,14 @@ describe('FeaturePreviewManager', () => {
     await manager.operate('u1', 'p1', 't1', 'remove')
     await wait()
     expect(fsDelete.mock.calls.slice(deletesBefore)).not.toContainEqual(['a1', env.managed!.previewRoot])
-    expect(manager.get('u1', 'p1', 't1')?.lastError?.message).toMatch(/environment.json конфликтует/)
+    expect((await manager.get('u1', 'p1', 't1'))?.lastError?.message).toMatch(/environment.json конфликтует/)
   })
 
   it('keeps persisted legacy workspace and never applies managed directory cleanup', async () => {
     const { manager, db, executor, storePath, fsDelete } = setup()
     await manager.operate('u1', 'p1', 't1', 'start')
     await wait()
-    const legacy = manager.get('u1', 'p1', 't1')!
+    const legacy = (await manager.get('u1', 'p1', 't1'))!
     delete legacy.managed
     legacy.workspacePath = '/repos/project/t1'
     legacy.state = 'stopped'
@@ -163,7 +163,7 @@ describe('FeaturePreviewManager', () => {
     const deletesBefore = fsDelete.mock.calls.length
     await restored.operate('u1', 'p1', 't1', 'remove')
     await wait()
-    expect(restored.get('u1', 'p1', 't1')?.workspacePath).toBe('/repos/project/t1')
+    expect((await restored.get('u1', 'p1', 't1'))?.workspacePath).toBe('/repos/project/t1')
     expect(fsDelete.mock.calls).toHaveLength(deletesBefore)
   })
 
@@ -171,7 +171,7 @@ describe('FeaturePreviewManager', () => {
     const { manager, executor } = setup()
     await manager.operate('u1', 'p1', 't1', 'docker_start')
     await wait()
-    expect(manager.get('u1', 'p1', 't1')?.state).toBe('stopped')
+    expect((await manager.get('u1', 'p1', 't1'))?.state).toBe('stopped')
     expect(executor.run).toHaveBeenCalledWith(expect.objectContaining({ script: expect.stringContaining('until docker info') }), expect.any(Function), expect.any(AbortSignal))
   })
 
@@ -179,7 +179,7 @@ describe('FeaturePreviewManager', () => {
     const { manager } = setup({ exitCode: 2, timedOut: false })
     await manager.operate('u1', 'p1', 't1', 'start')
     await wait()
-    const env = manager.get('u1', 'p1', 't1')!
+    const env = (await manager.get('u1', 'p1', 't1'))!
     expect(env.state).toBe('failed')
     expect(env.runs.at(-1)?.status).toBe('failed')
     expect(env.lastError?.type).toBe('docker_daemon_unavailable')
@@ -192,6 +192,6 @@ describe('FeaturePreviewManager', () => {
     expect(env.state).toBe('building')
     const restarted = new FeaturePreviewManager({ db, executor, storePath, isOnline: () => true })
     await restarted.reconcile()
-    expect(restarted.get('u1', 'p1', 't1')?.state).toBe('failed')
+    expect((await restarted.get('u1', 'p1', 't1'))?.state).toBe('failed')
   })
 })

@@ -14,14 +14,14 @@ export const DEFAULT_MACHINE_DIR = 'ChatAI'
 export interface DefaultStorageDeps {
   db: {
     machines: {
-      agentOwnerId(agentId: string): string | null
-      listMachineStorages(userId: string, machineId?: string): MachineStorage[]
-      saveMachineStorage(userId: string, machineId: string, rootPath: string, formatVersion: number, preferredId?: string): MachineStorage
-      getChatStorageBinding(userId: string, conversationId: string): ChatStorageBinding | null
-      saveChatStorageBinding(userId: string, binding: ChatStorageBinding): ChatStorageBinding
+      agentOwnerId(agentId: string): Promise<string | null>
+      listMachineStorages(userId: string, machineId?: string): Promise<MachineStorage[]>
+      saveMachineStorage(userId: string, machineId: string, rootPath: string, formatVersion: number, preferredId?: string): Promise<MachineStorage>
+      getChatStorageBinding(userId: string, conversationId: string): Promise<ChatStorageBinding | null>
+      saveChatStorageBinding(userId: string, binding: ChatStorageBinding): Promise<ChatStorageBinding>
     }
     chat: {
-      getConversation(userId: string, id: string): { id: string; projectId?: string | null; taskId?: string | null } | null
+      getConversation(userId: string, id: string): Promise<{ id: string; projectId?: string | null; taskId?: string | null } | null>
     }
   }
   registry: {
@@ -58,7 +58,7 @@ async function readMarker(deps: DefaultStorageDeps, machineId: string, rootPath:
  * телеметрии нет или путь вне allowedDirs политики (тогда пользователь заводит хранилище руками).
  */
 export async function ensureDefaultStorage(deps: DefaultStorageDeps, userId: string, machineId: string): Promise<MachineStorage | null> {
-  const existing = deps.db.machines.listMachineStorages(userId, machineId)
+  const existing = await deps.db.machines.listMachineStorages(userId, machineId)
   if (existing.length > 0) return existing[0]!
   if (!deps.registry.isOnline(machineId)) return null
   const platform = deps.registry.platformOf(machineId) ?? 'linux'
@@ -76,7 +76,7 @@ export async function ensureDefaultStorage(deps: DefaultStorageDeps, userId: str
       const marker = JSON.stringify({ id: storageId, formatVersion: MACHINE_STORAGE_FORMAT_VERSION }, null, 2) + '\n'
       await deps.registry.fsWrite(machineId, joinPath(rootPath, platform, '.voicechat/storage.json'), Buffer.from(marker).toString('base64'))
     }
-    const storage = deps.db.machines.saveMachineStorage(userId, machineId, rootPath, MACHINE_STORAGE_FORMAT_VERSION, storageId)
+    const storage = await deps.db.machines.saveMachineStorage(userId, machineId, rootPath, MACHINE_STORAGE_FORMAT_VERSION, storageId)
     deps.log?.('machine: создано хранилище ChatAI по умолчанию', { machineId, rootPath })
     return storage
   } catch (error) {
@@ -87,9 +87,9 @@ export async function ensureDefaultStorage(deps: DefaultStorageDeps, userId: str
 
 /** Привязка чата к хранилищу машины по умолчанию (если её нет): каталоги чата создаются сразу. */
 export async function ensureDefaultChatBinding(deps: DefaultStorageDeps, userId: string, conversationId: string, machineId: string): Promise<ChatStorageBinding | null> {
-  const current = deps.db.machines.getChatStorageBinding(userId, conversationId)
+  const current = await deps.db.machines.getChatStorageBinding(userId, conversationId)
   if (current) return current
-  const conversation = deps.db.chat.getConversation(userId, conversationId)
+  const conversation = await deps.db.chat.getConversation(userId, conversationId)
   if (!conversation) return null
   const storage = await ensureDefaultStorage(deps, userId, machineId)
   if (!storage) return null
@@ -103,7 +103,7 @@ export async function ensureDefaultChatBinding(deps: DefaultStorageDeps, userId:
     for (const d of [relativePath, managedChatAttachmentsPath(relativePath), managedChatArtifactsPath(relativePath), managedChatTemporaryPath(relativePath)]) {
       await deps.registry.fsMkdir(machineId, joinPath(storage.rootPath, platform, d))
     }
-    return deps.db.machines.saveChatStorageBinding(userId, { conversationId: conversation.id, machineId, storageId: storage.id, relativePath })
+    return await deps.db.machines.saveChatStorageBinding(userId, { conversationId: conversation.id, machineId, storageId: storage.id, relativePath })
   } catch (error) {
     deps.log?.('machine: не удалось привязать чат к хранилищу по умолчанию', { machineId, conversationId, error: error instanceof Error ? error.message : String(error) })
     return null

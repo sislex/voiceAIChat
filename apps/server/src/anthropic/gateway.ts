@@ -181,15 +181,15 @@ async function handleCodex(req: FastifyRequest, reply: import('fastify').Fastify
       type: 'message_start',
       message: { id, type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: tokenEstimate(body), output_tokens: 0 } }
     })
-    await new Promise<void>((resolve) => {
+    await new Promise<void>(async (resolve) => {
       let text = ''
-      const handle = codex.send(
+      const handle = await codex.send(
         { prompt, model: '', sessionId: null, permissionMode: 'plan' },
         {
-          onSession: () => {},
+          onSession: async () => {},
           // Буферизация нужна, чтобы отличить служебный JSON tool_use от обычного текста.
-          onDelta: (delta) => (text += delta),
-          onDone: () => {
+          onDelta: async (delta) => (text += delta),
+          onDone: async () => {
             const result = parseCodexResult(text, body)
             const stopReason = streamResult(reply.raw, result)
             sse(reply.raw, 'message_delta', { type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: tokenEstimate(text) } })
@@ -197,7 +197,7 @@ async function handleCodex(req: FastifyRequest, reply: import('fastify').Fastify
             reply.raw.end()
             resolve()
           },
-          onError: (message) => {
+          onError: async (message) => {
             sse(reply.raw, 'error', { type: 'error', error: { type: 'api_error', message } })
             reply.raw.end()
             resolve()
@@ -209,21 +209,21 @@ async function handleCodex(req: FastifyRequest, reply: import('fastify').Fastify
     return reply
   }
 
-  return await new Promise((resolve) => {
+  return await new Promise(async (resolve) => {
     let text = ''
-    const handle = codex.send(
+    const handle = await codex.send(
       { prompt, model: '', sessionId: null, permissionMode: 'plan' },
       {
-        onSession: () => {},
-        onDelta: (delta) => (text += delta),
-        onDone: () => {
+        onSession: async () => {},
+        onDelta: async (delta) => (text += delta),
+        onDone: async () => {
           const result = parseCodexResult(text, body)
           const content = result.type === 'tool_use'
             ? [{ type: 'tool_use', id: `toolu_${randomUUID().replaceAll('-', '')}`, name: result.name, input: result.input }]
             : [{ type: 'text', text: result.text }]
           resolve(reply.send({ id, type: 'message', role: 'assistant', model, content, stop_reason: result.type === 'tool_use' ? 'tool_use' : 'end_turn', stop_sequence: null, usage: { input_tokens: tokenEstimate(body), output_tokens: tokenEstimate(text) } }))
         },
-        onError: (message) => resolve(reply.code(502).send({ type: 'error', error: { type: 'api_error', message } }))
+        onError: async (message) => resolve(reply.code(502).send({ type: 'error', error: { type: 'api_error', message } }))
       }
     )
     req.raw.once('aborted', () => handle.cancel())

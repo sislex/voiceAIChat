@@ -129,14 +129,15 @@ export async function searchDocuments(documents: IndexedDocument[], request: KbS
 }
 
 /** Бандл контекста из готовой выдачи: полный текст разделов и оценка уверенности. */
-export function buildContext(
+export async function buildContext(
   query: string,
   results: KbSearchResult[],
-  textOf: (result: KbSearchResult) => string | undefined
-): KbContextBundle {
-  const sections: KbContextSection[] = results.slice(0, 5).flatMap((result) => {
-    const text = textOf(result)
-    return text === undefined ? [] : [{ ...result, text }]
-  })
+  textOf: (result: KbSearchResult) => Promise<string | undefined>
+): Promise<KbContextBundle> {
+  const sections: KbContextSection[] = []
+  for (const result of results.slice(0, 5)) {
+    const text = await textOf(result)
+    if (text !== undefined) sections.push({ ...result, text })
+  }
   const top=sections[0];const exact=top?.matchTypes.some(type=>['symbol','alias','path','protocol'].includes(type))??false;const gap=top&&sections[1]?top.score-sections[1].score:top?.score??0;const confidence:'high'|'medium'|'low'=!top?'low':exact||(top.score>=5&&gap>=1.5)?'high':top.score>=1?'medium':'low';return{query,confidence,autoInjectAllowed:confidence==='high',sections,relatedFiles:[...new Set(sections.flatMap(r=>r.relatedFiles))],relatedDocuments:[...new Set(sections.map(r=>r.documentId))],staleWarnings:sections.filter(r=>r.freshness==='stale').map(r=>`${r.title} требует сверки`),estimatedTokens:0}
 }

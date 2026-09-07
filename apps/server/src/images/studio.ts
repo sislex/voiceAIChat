@@ -62,7 +62,7 @@ export class ImageStudioStore {
   // фоновый счётчик просмотров воскрешал снятую публикацию (lost-update).
   private publishChains = new Map<string, Promise<unknown>>()
 
-  private withPublishLock<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
+  private async withPublishLock<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.publishChains.get(conversationId) ?? Promise.resolve()
     const next = prev.then(fn, fn)
     this.publishChains.set(conversationId, next.then(() => undefined, () => undefined))
@@ -186,7 +186,7 @@ export class ImageStudioStore {
    * не успевает. Тесты и диагностика дожидаются очереди явно, а не спят.
    */
   async publishSettled(conversationId: string): Promise<void> {
-    let current = this.publishChains.get(conversationId)
+    let current = await this.publishChains.get(conversationId)
     while (current) {
       await current
       const next = this.publishChains.get(conversationId)

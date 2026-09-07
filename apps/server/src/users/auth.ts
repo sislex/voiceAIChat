@@ -262,16 +262,16 @@ function previewSession(req: FastifyRequest, url: string): string | undefined {
  * Пользователь ключа Chromium: cookie читается только на точном пути прокси,
  * поэтому ключ не работает ни на одном другом маршруте API.
  */
-export function previewRunUser(
+export async function previewRunUser(
   db: VoiceChatDb,
   req: FastifyRequest,
   url: string,
   keys: NonNullable<AuthOptions['previewRunKeys']>
-): SessionUser | null {
+): Promise<SessionUser | null> {
   if (url !== PREVIEW_COOKIE_PATH) return null
   const name = keys.userOf(readCookie(req, PREVIEW_RUN_COOKIE) || undefined)
   if (!name) return null
-  const user = db.identity.getUser(name)
+  const user = await db.identity.getUser(name)
   if (!user || user.blocked) return null
   return { name: user.name, role: user.role }
 }
@@ -296,10 +296,10 @@ function isPublic(url: string): boolean {
 }
 
 /** Разрешает токен в актуального пользователя БД: null, если нет/заблокирован. */
-export function resolveUser(db: VoiceChatDb, token: string | undefined, secret: string): SessionUser | null {
+export async function resolveUser(db: VoiceChatDb, token: string | undefined, secret: string): Promise<SessionUser | null> {
   const name = verifyTokenName(token, secret)
   if (!name) return null
-  const u = db.identity.getUser(name)
+  const u = await db.identity.getUser(name)
   if (!u || u.blocked) return null
   return { name: u.name, role: u.role, ...(u.mustChangePassword ? { mustChangePassword: true } : {}) }
 }
@@ -308,13 +308,13 @@ export function resolveUser(db: VoiceChatDb, token: string | undefined, secret: 
  * Как `resolveUser`, но с учётом отзыва токена и таблицы сессий (auth-roadmap п.4) — для WS и любых мест вне preHandler.
  * Ленивую регистрацию старых токенов не делает: это забота HTTP-входа, WS всегда идёт после него.
  */
-export function resolveActiveUser(db: VoiceChatDb, token: string | undefined, secret: string): SessionUser | null {
-  if (!token || db.identity.isSessionRevoked(token)) return null
+export async function resolveActiveUser(db: VoiceChatDb, token: string | undefined, secret: string): Promise<SessionUser | null> {
+  if (!token || await db.identity.isSessionRevoked(token)) return null
   const parsed = verifyToken(token, secret)
   if (!parsed) return null
   if (parsed.sid) {
-    const s = db.identity.getSession(parsed.sid)
-    if (s ? s.expiresAt < Date.now() : db.identity.hasSessionRow(parsed.sid)) return null
+    const s = await db.identity.getSession(parsed.sid)
+    if (s ? s.expiresAt < Date.now() : await db.identity.hasSessionRow(parsed.sid)) return null
   }
   return resolveUser(db, token, secret)
 }
@@ -337,9 +337,9 @@ export interface AuthOptions {
 }
 
 /** Настройка открытой регистрации хранится в app_config: `signup.enabled` ('1'/'0') и `signup.role`. */
-export function readSignupConfig(db: VoiceChatDb): { enabled: boolean; role: UserRole } {
-  const role = db.settings.getAppConfig('signup.role')
-  return { enabled: db.settings.getAppConfig('signup.enabled') === '1', role: role === 'admin' || role === 'developer' || role === 'tester' || role === 'observer' ? role : 'developer' }
+export async function readSignupConfig(db: VoiceChatDb): Promise<{ enabled: boolean; role: UserRole }> {
+  const role = await db.settings.getAppConfig('signup.role')
+  return { enabled: await db.settings.getAppConfig('signup.enabled') === '1', role: role === 'admin' || role === 'developer' || role === 'tester' || role === 'observer' ? role : 'developer' }
 }
 
 /**
@@ -405,7 +405,7 @@ function clientVersionOf(req: FastifyRequest): string | null {
   return value ? String(value).slice(0, 32) : null
 }
 
-export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): void {
+export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): Promise<void> {
   const mailer = options.mailer ?? createMailer({}, (m, extra) => app.log.warn(extra ?? {}, m))
   const geo = options.geo ?? createGeoResolver({
     url: process.env.VC_GEOIP_URL ?? null,
@@ -415,15 +415,15 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   app.decorateRequest('user', null)
   // Сессии (auth-roadmap п.4): токен действителен, пока есть живая запись в `sessions` (не отозвана, не истекла).
   // Токены без записи (выданы до таблицы) регистрируются лениво — так старые входы не рвутся при обновлении.
-  const activeUser = (token: string | undefined, path?: string): SessionUser | null => {
-    if (!token || db.identity.isSessionRevoked(token)) return null
+  const activeUser = async (token: string | undefined, path?: string): Promise<SessionUser | null> => {
+    if (!token || await db.identity.isSessionRevoked(token)) return null
     const parsed = verifyToken(token, secret)
     if (!parsed) return null
     if (parsed.sid) {
-      const s = db.identity.getSession(parsed.sid)
-      if (s) { if (s.expiresAt < Date.now()) return null; db.identity.touchSession(parsed.sid, Math.max(SESSION_SHORT_TTL_MS, s.expiresAt - s.lastSeen), path) }
-      else if (db.identity.hasSessionRow(parsed.sid)) return null // отозвана или истекла
-      else if (db.identity.getUser(parsed.name)) db.identity.createSession(parsed.sid, parsed.name, { ip: '', userAgent: 'legacy', ttlMs: SESSION_TTL_MS })
+      const s = await db.identity.getSession(parsed.sid)
+      if (s) { if (s.expiresAt < Date.now()) return null; await db.identity.touchSession(parsed.sid, Math.max(SESSION_SHORT_TTL_MS, s.expiresAt - s.lastSeen), path) }
+      else if (await db.identity.hasSessionRow(parsed.sid)) return null // отозвана или истекла
+      else if (await db.identity.getUser(parsed.name)) await db.identity.createSession(parsed.sid, parsed.name, { ip: '', userAgent: 'legacy', ttlMs: SESSION_TTL_MS })
     }
     return resolveUser(db, token, secret)
   }
@@ -431,7 +431,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   /** Мутации сессионных роутов по cookie требуют CSRF (общий preHandler их не покрывает — префикс публичный). */
   const csrfOk = (req: FastifyRequest): boolean => Boolean(bearer(req)) || (Boolean(readCookie(req, CSRF_COOKIE)) && req.headers[CSRF_HEADER] === readCookie(req, CSRF_COOKIE))
   const sidOf = (req: FastifyRequest): string | null => verifyToken(tokenOf(req), secret)?.sid ?? null
-  db.identity.pruneSessions()
+  await db.identity.pruneSessions()
 
   app.addHook('preHandler', async (req, reply) => {
     const url = req.url.split('?')[0]
@@ -443,10 +443,10 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     let viaCookie = false
     if (!token) { token = readCookie(req, SESSION_COOKIE); viaCookie = Boolean(token) }
     if (!token) token = previewSession(req, url)
-    const runUser = token || !options.previewRunKeys ? null : previewRunUser(db, req, url, options.previewRunKeys)
+    const runUser = await (token || !options.previewRunKeys ? null : previewRunUser(db, req, url, options.previewRunKeys))
     // Путь запоминаем в сессии: в списке устройств он отвечает на вопрос «а что
     // это устройство вообще делает», когда вход выглядит подозрительно.
-    const user = runUser ?? activeUser(token, url)
+    const user = await (runUser ?? activeUser(token, url))
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
@@ -475,7 +475,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       // каждому владельцу критические операции независимо от глобальной роли и
       // не превращает глобального admin во владельца чужого проекта.
       const allowed = ownerPermission && projectId
-        ? db.projects.isProjectOwner(user.name, decodeURIComponent(projectId))
+        ? await db.projects.isProjectOwner(user.name, decodeURIComponent(projectId))
         : hasProjectPermission(user.role, permission)
       if (!allowed) {
         await reply.code(403).send({ error: 'forbidden', permission })
@@ -487,7 +487,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const feature = projectFeatureForRequest(req.method, url)
     if (feature) {
       const projectId = /^\/api\/projects\/([^/]+)/.exec(url)?.[1]
-      if (projectId && !db.projects.projectFeatures(decodeURIComponent(projectId))[feature]) {
+      if (projectId && !(await db.projects.projectFeatures(decodeURIComponent(projectId)))[feature]) {
         await reply.code(409).send({ error: 'feature_unavailable', feature })
         return reply
       }
@@ -512,7 +512,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number; remember: boolean }>()
   const pendingSetup = new Map<string, { secret: string; expires: number }>()
   const issueSession = async (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true, twoFactor = false): Promise<{ token: string; user: SessionUser; csrf: string }> => {
-    const row = db.identity.getUser(name)
+    const row = await db.identity.getUser(name)
     const user: SessionUser = { name, role, ...(row?.mustChangePassword ? { mustChangePassword: true } : {}) }
     const sid = newSessionId()
     const token = signToken(user, secret, sid)
@@ -525,12 +525,12 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // Новое устройство (п.16): решает ядро модуля сессий по ключу устройства —
     // тот не меняется от обновления браузера и от соседнего адреса провайдера,
     // поэтому предупреждение приходит на смену устройства, а не на смену версии.
-    const known = db.identity.listSessions(name)
+    const known = await db.identity.listSessions(name)
     const isNew = isNewDevice(known, { userAgent: ua, ip: req.ip })
     // Секрет устройства: из cookie, если браузер её уже носит, иначе новый.
     const deviceSecret = deviceSecretOf(req) ?? randomBytes(24).toString('base64url')
     const key = deviceKey({ userAgent: ua, ip: req.ip })
-    db.identity.createSession(sid, name, {
+    await db.identity.createSession(sid, name, {
       ip: req.ip,
       userAgent: ua,
       ttlMs: ttl,
@@ -543,14 +543,14 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     })
     // Имя устройства человек даёт один раз — новая сессия того же устройства
     // подхватывает его, иначе после каждого перелогина список полон безымянных.
-    const inherited = db.identity.deviceLabel(name, key)
-    if (inherited) db.identity.updateSession(sid, { label: inherited })
+    const inherited = await db.identity.deviceLabel(name, key)
+    if (inherited) await db.identity.updateSession(sid, { label: inherited })
     // Лимит одновременных сессий: превышение гасит самые давно неактивные, но
     // никогда — только что выданную. Ноль или отсутствие настройки — без лимита.
-    const limit = Number(db.settings.getAppConfig('sessions.maxPerUser')) || 0
-    for (const victim of overLimit(db.identity.listSessions(name), limit || null, sid)) {
-      db.identity.revokeSessionById(victim.sid, undefined, 'evicted')
-      db.identity.logSecurityEvent({ user: name, type: 'session_evicted', ip: victim.ip, userAgent: victim.userAgent, details: `лимит ${limit} сессий`, sid: victim.sid })
+    const limit = Number(await db.settings.getAppConfig('sessions.maxPerUser')) || 0
+    for (const victim of overLimit(await db.identity.listSessions(name), limit || null, sid)) {
+      await db.identity.revokeSessionById(victim.sid, undefined, 'evicted')
+      await db.identity.logSecurityEvent({ user: name, type: 'session_evicted', ip: victim.ip, userAgent: victim.userAgent, details: `лимит ${limit} сессий`, sid: victim.sid })
       options.sessions?.emit(name, victim.sid)
     }
     // Публичный адрес уточняем в фоне: вход не должен ждать внешний сервис, а
@@ -558,17 +558,17 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     if (!localGeo(req.ip)) {
       // Резолвер по контракту ядра может быть и синхронным — приводим к промису.
       void Promise.resolve(geo.resolve(req.ip))
-        .then((place) => { if (place) db.identity.updateSession(sid, { geo: place }) })
+        .then(async (place) => { if (place) await db.identity.updateSession(sid, { geo: place }) })
         .catch(() => undefined)
     }
-    db.identity.markLogin(name)
-    db.identity.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua, sid })
+    await db.identity.markLogin(name)
+    await db.identity.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua, sid })
     options.sessions?.emit(name)
     if (isNew) {
       const at = Date.now()
-      db.identity.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства', sid })
+      await db.identity.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства', sid })
       const email = row?.email
-      if (email && db.settings.getSettings(name).loginNewDeviceEmails && db.identity.reserveLoginDeviceEmail(name, req.ip, ua, at)) {
+      if (email && (await db.settings.getSettings(name)).loginNewDeviceEmails && await db.identity.reserveLoginDeviceEmail(name, req.ip, ua, at)) {
         const passwordLink = `${baseUrl(req)}/#/security/password`
         const sessionsLink = `${baseUrl(req)}/#/security/sessions`
         const when = `${new Date(at).toLocaleString('ru-RU', { timeZone: 'UTC' })} UTC`
@@ -599,31 +599,31 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
         return reply.code(429).header('retry-after', String(retry)).send({ error: `Слишком много попыток входа — подождите ${retry} с`, retryAfterSec: retry })
       }
       // Блокировка после неудач (auth-roadmap п.3): пока действует замок, пароль даже не проверяем — ответ одинаковый.
-      const existing = name ? db.identity.getUser(name) : null
+      const existing = name ? await db.identity.getUser(name) : null
       if (existing?.lockedUntil && existing.lockedUntil > Date.now()) {
         const retry = Math.max(1, Math.ceil((existing.lockedUntil - Date.now()) / 1000))
         return reply.code(423).header('retry-after', String(retry)).send({ error: `Вход временно закрыт после неудачных попыток — попробуйте через ${Math.ceil(retry / 60)} мин`, retryAfterSec: retry })
       }
-      const u = name ? db.identity.verifyUserPassword(name, password ?? '') : null
+      const u = name ? await db.identity.verifyUserPassword(name, password ?? '') : null
       if (!u) {
         if (existing) {
-          const state = db.identity.recordLoginFailure(existing.name)
-          db.identity.logSecurityEvent({ user: existing.name, type: state?.lockedUntil || state?.blocked ? 'login_locked' : 'login_failed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: state?.blocked ? 'блокировка после неудач' : state?.lockedUntil ? 'временный замок' : 'неверный пароль' })
+          const state = await db.identity.recordLoginFailure(existing.name)
+          await db.identity.logSecurityEvent({ user: existing.name, type: state?.lockedUntil || state?.blocked ? 'login_locked' : 'login_failed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: state?.blocked ? 'блокировка после неудач' : state?.lockedUntil ? 'временный замок' : 'неверный пароль' })
           if (state?.blocked && !existing.blocked) app.log.warn({ user: existing.name, ip: req.ip }, 'auth: аккаунт заблокирован автоматически после неудачных входов')
           else if (state?.lockedUntil) app.log.warn({ user: existing.name, ip: req.ip, until: state.lockedUntil }, 'auth: временный замок после неудачных входов')
         }
         return reply.code(401).send({ error: 'неверный логин или пароль' })
       }
       if (u.blocked) return reply.code(403).send({ error: u.lockReason === 'auto' ? 'учётная запись заблокирована после многократных неудачных входов — обратитесь к администратору' : 'учётная запись заблокирована' })
-      db.identity.resetLoginFailures(u.name)
+      await db.identity.resetLoginFailures(u.name)
       loginByName.forget(u.name.trim().toLowerCase())
       // 2FA (п.6): пароль верен, но сессию выдаём только после кода — клиенту уходит одноразовый тикет на 5 минут.
       // Исключение — устройство, которое пользователь сам пометил доверенным:
       // второй фактор защищает от входа с чужого устройства, а на своём он
       // превращается в ежедневный налог и подталкивает выключить 2FA совсем.
-      if (db.identity.getUserTotpSecret(u.name)) {
+      if (await db.identity.getUserTotpSecret(u.name)) {
         const secret = deviceSecretOf(req)
-        const trusted = findTrustedDevice(db.identity.listSessions(u.name), { deviceSecret: secret ? hashDeviceSecret(secret) : null })
+        const trusted = findTrustedDevice(await db.identity.listSessions(u.name), { deviceSecret: secret ? hashDeviceSecret(secret) : null })
         if (!trusted) {
           const ticket = newSessionId()
           pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
@@ -641,12 +641,12 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const { ticket, code } = req.body ?? {}
     const pending = ticket ? pendingTwoFactor.get(ticket) : undefined
     if (!pending || pending.expires < Date.now()) { if (ticket) pendingTwoFactor.delete(ticket); return reply.code(401).send({ error: 'сессия входа истекла — введите пароль ещё раз' }) }
-    const secret = db.identity.getUserTotpSecret(pending.name)
-    const u = db.identity.getUser(pending.name)
+    const secret = await db.identity.getUserTotpSecret(pending.name)
+    const u = await db.identity.getUser(pending.name)
     if (!secret || !u || u.blocked) { pendingTwoFactor.delete(ticket!); return reply.code(401).send({ error: 'unauthorized' }) }
     if (!verifyTotp(secret, String(code ?? ''))) {
       pending.attempts += 1
-      db.identity.logSecurityEvent({ user: pending.name, type: 'login_2fa_failed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+      await db.identity.logSecurityEvent({ user: pending.name, type: 'login_2fa_failed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
       if (pending.attempts >= 5) pendingTwoFactor.delete(ticket!)
       return reply.code(401).send({ error: 'неверный код подтверждения' })
     }
@@ -655,41 +655,41 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   })
   // Настройка 2FA: setup выдаёт секрет и otpauth-ссылку (ещё не включено), enable включает после верного кода, disable — по коду.
   app.post(REST.session2faSetup, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     const secretValue = newTotpSecret()
     pendingSetup.set(user.name, { secret: secretValue, expires: Date.now() + 10 * 60_000 })
-    return { secret: secretValue, otpauth: otpauthUrl(user.name, secretValue), enabled: Boolean(db.identity.getUserTotpSecret(user.name)) }
+    return { secret: secretValue, otpauth: otpauthUrl(user.name, secretValue), enabled: Boolean(await db.identity.getUserTotpSecret(user.name)) }
   })
   app.post<{ Body: { code?: string } }>(REST.session2faEnable, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const setup = pendingSetup.get(user.name)
     if (!setup || setup.expires < Date.now()) return reply.code(400).send({ error: 'сначала запросите новый секрет' })
     if (!verifyTotp(setup.secret, String(req.body?.code ?? ''))) return reply.code(400).send({ error: 'неверный код — проверьте время на устройстве и повторите' })
-    db.identity.setUserTotpSecret(user.name, setup.secret)
+    await db.identity.setUserTotpSecret(user.name, setup.secret)
     pendingSetup.delete(user.name)
-    db.identity.logSecurityEvent({ user: user.name, type: 'twofactor_enabled', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    await db.identity.logSecurityEvent({ user: user.name, type: 'twofactor_enabled', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
     app.log.info({ user: user.name }, 'auth: включён второй фактор')
     return { ok: true }
   })
   app.post<{ Body: { code?: string } }>(REST.session2faDisable, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
-    const secretValue = db.identity.getUserTotpSecret(user.name)
+    const secretValue = await db.identity.getUserTotpSecret(user.name)
     if (!secretValue) return { ok: true }
     if (!verifyTotp(secretValue, String(req.body?.code ?? ''))) return reply.code(400).send({ error: 'неверный код' })
-    db.identity.setUserTotpSecret(user.name, null)
-    db.identity.logSecurityEvent({ user: user.name, type: 'twofactor_disabled', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    await db.identity.setUserTotpSecret(user.name, null)
+    await db.identity.logSecurityEvent({ user: user.name, type: 'twofactor_disabled', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
     app.log.info({ user: user.name }, 'auth: второй фактор выключен')
     return { ok: true }
   })
   app.get(REST.session2fa, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
-    return { enabled: Boolean(db.identity.getUserTotpSecret(user.name)) }
+    return { enabled: Boolean(await db.identity.getUserTotpSecret(user.name)) }
   })
 
   // Выпускает preview-cookie из действующего Bearer-токена. Login покрывает только
@@ -697,31 +697,32 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   // сессионная) без этого роута остаются без cookie, и iframe получает 401.
   // Путь публичный (префикс /api/session/), поэтому Bearer проверяется здесь.
   app.post(REST.sessionPreview, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     reply.header('set-cookie', previewCookie(req, signToken(user, secret)))
     return { ok: true }
   })
 
   app.get(REST.sessionMe, async (req) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     // CSRF возвращается только уже аутентифицированному клиенту. Это позволяет
     // cross-origin Electron renderer восстановить контекст после перезапуска,
     // не раскрывая HttpOnly session token и не отключая double-submit защиту.
+    // Вместе с пользователем — непросмотренные уведомления безопасности (п.16): клиент покажет тостом и отметит.
     const csrf = user ? readCookie(req, CSRF_COOKIE) : undefined
-    return user ? { user, csrf, notices: db.identity.unseenSecurityNotices(user.name) } : { user: null }
+    return user ? { user, csrf, notices: await db.identity.unseenSecurityNotices(user.name) } : { user: null }
   })
   app.post(REST.sessionNoticesSeen, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
-    db.identity.markNoticesSeen(user.name)
+    await db.identity.markNoticesSeen(user.name)
     return { ok: true }
   })
 
   app.post(REST.sessionLogout, async (req, reply) => {
     const token = tokenOf(req)
-    const who = activeUser(token)
+    const who = await activeUser(token)
     if (!who) return reply.code(401).send({ error: 'unauthorized' })
     // Выход по cookie — только с CSRF-заголовком: иначе любой запрос с приложенными браузером cookie (в т.ч. старая вкладка
     // без Bearer или чужой сайт) отзовёт общую сессию. Сессионные роуты публичны и общим preHandler не проверяются.
@@ -729,33 +730,33 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       const csrf = readCookie(req, CSRF_COOKIE)
       if (!csrf || req.headers[CSRF_HEADER] !== csrf) return reply.code(403).send({ error: 'csrf' })
     }
-    db.identity.revokeSession(token!)
+    await db.identity.revokeSession(token!)
     const sid = sidOf(req)
-    if (sid) db.identity.revokeSessionById(sid)
-    db.identity.logSecurityEvent({ user: who.name, type: 'logout', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    if (sid) await db.identity.revokeSessionById(sid)
+    await db.identity.logSecurityEvent({ user: who.name, type: 'logout', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
     reply.header('set-cookie', [previewCookie(req, '', 0), ...clearSessionCookies(req)])
     return { ok: true }
   })
 
   // Саморегистрация по инвайту (auth-roadmap п.8): проверка ссылки и создание учётки с политикой пароля → сразу сессия.
   app.get<{ Params: { token: string } }>('/api/session/invite/:token', async (req, reply) => {
-    const inv = db.identity.inviteUsable(req.params.token)
+    const inv = await db.identity.inviteUsable(req.params.token)
     if (!inv) return reply.code(404).send({ error: 'Приглашение недействительно или истекло' })
     return { role: inv.role, expiresAt: inv.expiresAt, note: inv.note }
   })
   app.post<{ Body: { token?: string; name?: string; password?: string } }>(REST.sessionRegister, async (req, reply) => {
     const { token, name, password } = req.body ?? {}
     if (!registerLimiter.hit(req.ip).ok) return reply.code(429).send({ error: 'Слишком много регистраций — попробуйте позже' })
-    const inv = token ? db.identity.inviteUsable(token) : null
+    const inv = token ? await db.identity.inviteUsable(token) : null
     if (!inv) return reply.code(404).send({ error: 'Приглашение недействительно или истекло' })
     const login = (name ?? '').trim()
     if (!/^[a-zA-Z0-9._-]{3,32}$/.test(login)) return reply.code(400).send({ error: 'Логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание' })
-    if (db.identity.getUser(login)) return reply.code(409).send({ error: 'Такой логин уже занят' })
+    if (await db.identity.getUser(login)) return reply.code(409).send({ error: 'Такой логин уже занят' })
     const violation = checkPasswordPolicy(password ?? '', { name: login })
     if (violation) return reply.code(400).send({ error: violation })
-    const u = db.identity.createUser(login, password ?? '', inv.role)
-    db.identity.consumeInvite(inv.token)
-    db.identity.logSecurityEvent({ user: login, type: 'registered', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `по инвайту ${inv.createdBy}, роль ${inv.role}` })
+    const u = await db.identity.createUser(login, password ?? '', inv.role)
+    await db.identity.consumeInvite(inv.token)
+    await db.identity.logSecurityEvent({ user: login, type: 'registered', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `по инвайту ${inv.createdBy}, роль ${inv.role}` })
     return issueSession(req, reply, u.name, u.role)
   })
 
@@ -766,25 +767,25 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const login = (name ?? '').trim()
     const violation = checkPasswordPolicy(password ?? '', { name: login })
     if (violation) return reply.code(400).send({ error: violation })
-    if (!login || !code || !db.identity.redeemResetCode(login, String(code).trim(), password!)) return reply.code(401).send({ error: 'Неверный логин или код, либо код истёк' })
-    const u = db.identity.getUser(login)!
-    db.identity.revokeUserSessions(login)
-    db.identity.logSecurityEvent({ user: login, type: 'password_reset', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'по коду администратора' })
+    if (!login || !code || !await db.identity.redeemResetCode(login, String(code).trim(), password!)) return reply.code(401).send({ error: 'Неверный логин или код, либо код истёк' })
+    const u = (await db.identity.getUser(login))!
+    await db.identity.revokeUserSessions(login)
+    await db.identity.logSecurityEvent({ user: login, type: 'password_reset', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'по коду администратора' })
     return issueSession(req, reply, u.name, u.role)
   })
   // Смена своего пароля (пп.11–12): текущий пароль обязателен; остальные сессии отзываются.
   app.post<{ Body: { current?: string; next?: string } }>(REST.sessionPassword, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const { current, next } = req.body ?? {}
-    if (!db.identity.verifyUserPassword(user.name, current ?? '')) return reply.code(400).send({ error: 'Текущий пароль неверен' })
+    if (!await db.identity.verifyUserPassword(user.name, current ?? '')) return reply.code(400).send({ error: 'Текущий пароль неверен' })
     const violation = checkPasswordPolicy(next ?? '', { name: user.name })
     if (violation) return reply.code(400).send({ error: violation })
     if (current === next) return reply.code(400).send({ error: 'Новый пароль совпадает с текущим' })
-    db.identity.setUserPassword(user.name, next!)
-    db.identity.revokeUserSessions(user.name, sidOf(req))
-    db.identity.logSecurityEvent({ user: user.name, type: 'password_changed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    await db.identity.setUserPassword(user.name, next!)
+    await db.identity.revokeUserSessions(user.name, sidOf(req))
+    await db.identity.logSecurityEvent({ user: user.name, type: 'password_changed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
     return { ok: true }
   })
 
@@ -803,10 +804,10 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       const retry = Math.max(byIp.retryAfterSec, byEmail.retryAfterSec)
       return reply.code(429).header('retry-after', String(retry)).send({ error: `Слишком много запросов — попробуйте через ${retry} с`, retryAfterSec: retry })
     }
-    const user = email ? db.identity.getUserByEmail(email) : null
+    const user = email ? await db.identity.getUserByEmail(email) : null
     if (!user || user.blocked) return resetRequested
     const token = randomBytes(32).toString('base64url')
-    db.identity.createPasswordResetToken(user.name, token, 60 * 60_000)
+    await db.identity.createPasswordResetToken(user.name, token, 60 * 60_000)
     const link = `${baseUrl(req)}/#/reset/${encodeURIComponent(token)}`
     try {
       await mailer.send({
@@ -823,15 +824,15 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
 
   app.post<{ Body: { token?: string; password?: string } }>(REST.sessionResetEmail, async (req, reply) => {
     const token = String(req.body?.token ?? '')
-    const name = token ? db.identity.passwordResetTokenUser(token) : null
+    const name = token ? await db.identity.passwordResetTokenUser(token) : null
     if (!name) return reply.code(400).send({ error: 'Ссылка сброса недействительна или уже использована' })
     const violation = checkPasswordPolicy(String(req.body?.password ?? ''), { name })
     if (violation) return reply.code(400).send({ error: violation })
-    const result = db.identity.redeemPasswordResetToken(token, String(req.body?.password ?? ''))
+    const result = await db.identity.redeemPasswordResetToken(token, String(req.body?.password ?? ''))
     if (result === 'expired') return reply.code(410).send({ error: 'Ссылка сброса истекла. Запросите новое письмо.' })
     if (result !== 'ok') return reply.code(400).send({ error: 'Ссылка сброса недействительна или уже использована' })
-    db.identity.revokeUserSessions(name)
-    db.identity.logSecurityEvent({ user: name, type: 'password_reset', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'по подтверждённому email' })
+    await db.identity.revokeUserSessions(name)
+    await db.identity.logSecurityEvent({ user: name, type: 'password_reset', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'по подтверждённому email' })
     reply.header('set-cookie', [previewCookie(req, '', 0), ...clearSessionCookies(req)])
     return { ok: true }
   })
@@ -845,9 +846,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       html: `<p>Здравствуйте, <b>${name}</b>!</p><p>Чтобы завершить регистрацию, нажмите кнопку (ссылка действует 24 часа):</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#4f7cff;color:#fff;border-radius:8px;text-decoration:none">Подтвердить email</a></p><p style="color:#666;font-size:12px">Или скопируйте адрес: ${link}<br>Если вы не регистрировались — проигнорируйте письмо.</p>`
     })
   }
-  app.get(REST.sessionSignup, async () => ({ enabled: readSignupConfig(db).enabled }))
+  app.get(REST.sessionSignup, async () => ({ enabled: (await readSignupConfig(db)).enabled }))
   app.post<{ Body: { name?: string; email?: string; password?: string } }>(REST.sessionSignup, async (req, reply) => {
-    if (!readSignupConfig(db).enabled) return reply.code(404).send({ error: 'Регистрация закрыта — попросите приглашение у администратора' })
+    if (!(await readSignupConfig(db)).enabled) return reply.code(404).send({ error: 'Регистрация закрыта — попросите приглашение у администратора' })
     if (!signupLimiter.hit(req.ip).ok) return reply.code(429).send({ error: 'Слишком много регистраций — попробуйте позже' })
     const { name, email, password } = req.body ?? {}
     const login = (name ?? '').trim()
@@ -857,45 +858,45 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const violation = checkPasswordPolicy(password ?? '', { name: login })
     if (violation) return reply.code(400).send({ error: violation })
     // Занятый логин или email не раскрываем сразу пользователю? Логин — раскрываем (он публичен), email — отвечаем одинаково.
-    if (db.identity.getUser(login)) return reply.code(409).send({ error: 'Такой логин уже занят' })
-    if (!db.identity.getUserByEmail(mail)) {
+    if (await db.identity.getUser(login)) return reply.code(409).send({ error: 'Такой логин уже занят' })
+    if (!await db.identity.getUserByEmail(mail)) {
       const token = randomBytes(24).toString('base64url')
-      db.identity.createEmailVerification({ token, name: login, email: mail, password: password!, ttlMs: 24 * 60 * 60_000 })
-      db.identity.logSecurityEvent({ user: login, type: 'signup_requested', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: mail })
+      await db.identity.createEmailVerification({ token, name: login, email: mail, password: password!, ttlMs: 24 * 60 * 60_000 })
+      await db.identity.logSecurityEvent({ user: login, type: 'signup_requested', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: mail })
       try { await sendVerification(req, login, mail, token) } catch (error) { app.log.error({ error }, 'signup: письмо не отправлено'); return reply.code(502).send({ error: 'Не удалось отправить письмо — попробуйте позже или обратитесь к администратору' }) }
     }
     return { ok: true, mailSent: mailer.configured }
   })
   app.post<{ Body: { email?: string } }>(REST.sessionSignupResend, async (req, reply) => {
-    if (!readSignupConfig(db).enabled) return reply.code(404).send({ error: 'Регистрация закрыта' })
+    if (!(await readSignupConfig(db)).enabled) return reply.code(404).send({ error: 'Регистрация закрыта' })
     if (!signupLimiter.hit(`resend:${req.ip}`).ok) return reply.code(429).send({ error: 'Слишком часто — попробуйте позже' })
     const mail = (req.body?.email ?? '').trim().toLowerCase()
-    const pending = mail ? db.identity.pendingVerificationByEmail(mail) : null
+    const pending = mail ? await db.identity.pendingVerificationByEmail(mail) : null
     if (pending) {
       // Новый токен взамен старого: заявку пересоздать нельзя без пароля, поэтому продлеваем через новую ссылку на ту же запись.
       const token = randomBytes(24).toString('base64url')
-      const row = db.identity.getPendingVerificationRaw(mail)
-      if (row) db.identity.replaceVerificationToken(mail, token, 24 * 60 * 60_000)
+      const row = await db.identity.getPendingVerificationRaw(mail)
+      if (row) await db.identity.replaceVerificationToken(mail, token, 24 * 60 * 60_000)
       try { await sendVerification(req, pending.name, mail, token) } catch (error) { app.log.error({ error }, 'signup: письмо не отправлено') }
     }
     return { ok: true }
   })
   app.post<{ Body: { token?: string } }>(REST.sessionVerify, async (req, reply) => {
     const { token } = req.body ?? {}
-    const cfg = readSignupConfig(db)
-    const u = token ? db.identity.redeemEmailVerification(String(token), cfg.role) : null
+    const cfg = await readSignupConfig(db)
+    const u = token ? await db.identity.redeemEmailVerification(String(token), cfg.role) : null
     if (!u) return reply.code(400).send({ error: 'Ссылка недействительна или истекла — зарегистрируйтесь ещё раз' })
-    db.identity.logSecurityEvent({ user: u.name, type: 'signup_verified', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: u.email ?? '' })
+    await db.identity.logSecurityEvent({ user: u.name, type: 'signup_verified', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: u.email ?? '' })
     // Приглашения, отправленные на этот адрес до регистрации, теперь адресованы
     // конкретному пользователю. Автоприёма нет: вступление он подтверждает сам.
-    if (u.email) db.projects.attachInvitationsToNewUser(u.name, u.email)
+    if (u.email) await db.projects.attachInvitationsToNewUser(u.name, u.email)
     return issueSession(req, reply, u.name, u.role)
   })
 
   // Перенос старой localStorage-сессии в cookie (п.5): Bearer → HttpOnly cookie + CSRF, токен из localStorage клиент удаляет.
   app.post(REST.sessionCookie, async (req, reply) => {
     const token = bearer(req)
-    if (!activeUser(token)) return reply.code(401).send({ error: 'unauthorized' })
+    if (!await activeUser(token)) return reply.code(401).send({ error: 'unauthorized' })
     const csrf = newSessionId()
     reply.header('set-cookie', [previewCookie(req, token!), ...sessionCookies(req, token!, csrf, Math.floor(SESSION_TTL_MS / 1000)), ...clearLegacySessionCookies(req)])
     return { ok: true, csrf }
@@ -903,17 +904,17 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
 
   // Сессии пользователя (auth-roadmap п.4): список, «выйти везде» (кроме текущей), отзыв одной.
   app.get<{ Querystring: { ended?: string } }>(REST.sessionList, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     const current = sidOf(req)
-    const sessions = db.identity.listSessions(user.name).map((s) => publicSession({ ...s, current: s.sid === current }))
+    const sessions = (await db.identity.listSessions(user.name)).map((s) => publicSession({ ...s, current: s.sid === current }))
     // Завершённые отдаём только по запросу: обычному списку они не нужны, а
     // лишний запрос в БД на каждое открытие окна — тоже плата.
     if (req.query?.ended !== '1') return { sessions }
-    return { sessions, ended: db.identity.listEndedSessions(user.name).map(publicSession) }
+    return { sessions, ended: (await db.identity.listEndedSessions(user.name)).map(publicSession) }
   })
   app.post<{ Body: { includeCurrent?: boolean } | undefined }>(REST.sessionLogoutAll, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const limited = sessionOpsBlocked(req, user.name)
@@ -925,15 +926,15 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // Список берём до отзыва: каждой убитой вкладке нужен адресный кадр, иначе
     // «выйти везде» оставляет их выглядящими рабочими до следующего запроса —
     // ровно тот разрыв, который закрывает session.revoked в остальных местах.
-    const doomed = db.identity.listSessions(user.name).filter((s) => includeCurrent || s.sid !== current)
-    const revoked = db.identity.revokeUserSessions(user.name, includeCurrent ? null : current, undefined, 'logout_all')
+    const doomed = (await db.identity.listSessions(user.name)).filter((s) => includeCurrent || s.sid !== current)
+    const revoked = await db.identity.revokeUserSessions(user.name, includeCurrent ? null : current, undefined, 'logout_all')
     if (includeCurrent) {
       const token = tokenOf(req)
-      if (token) db.identity.revokeSession(token)
+      if (token) await db.identity.revokeSession(token)
       reply.header('set-cookie', clearSessionCookies(req))
     }
-    db.identity.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
-    if (revoked > 0) void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: db.identity.getUser(user.name)?.email, kind: 'logout_all', revoked, ip: req.ip })
+    await db.identity.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
+    if (revoked > 0) void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: (await db.identity.getUser(user.name))?.email, kind: 'logout_all', revoked, ip: req.ip })
     for (const session of doomed) options.sessions?.emit(user.name, session.sid)
     if (doomed.length === 0) options.sessions?.emit(user.name)
     return { revoked }
@@ -945,43 +946,43 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
    * у кого-то есть.
    */
   app.post(REST.sessionPanic, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const limited = sessionOpsBlocked(req, user.name)
     if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
-    const doomed = db.identity.listSessions(user.name)
-    const revoked = db.identity.revokeUserSessions(user.name, null, undefined, 'panic')
+    const doomed = await db.identity.listSessions(user.name)
+    const revoked = await db.identity.revokeUserSessions(user.name, null, undefined, 'panic')
     const token = tokenOf(req)
-    if (token) db.identity.revokeSession(token)
-    db.identity.setMustChangePassword(user.name, true)
+    if (token) await db.identity.revokeSession(token)
+    await db.identity.setMustChangePassword(user.name, true)
     reply.header('set-cookie', [previewCookie(req, '', 0), ...clearSessionCookies(req)])
-    db.identity.logSecurityEvent({ user: user.name, type: 'session_panic', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}, требуется смена пароля` })
-    void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: db.identity.getUser(user.name)?.email, kind: 'panic', revoked, ip: req.ip })
+    await db.identity.logSecurityEvent({ user: user.name, type: 'session_panic', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}, требуется смена пароля` })
+    void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: (await db.identity.getUser(user.name))?.email, kind: 'panic', revoked, ip: req.ip })
     for (const session of doomed) options.sessions?.emit(user.name, session.sid)
     return { revoked }
   })
   app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
-    const s = db.identity.getSession(req.params.sid)
+    const s = await db.identity.getSession(req.params.sid)
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
-    db.identity.revokeSessionById(s.sid, undefined, 'revoked')
-    db.identity.logSecurityEvent({ user: user.name, type: 'session_revoked', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '', sid: s.sid })
+    await db.identity.revokeSessionById(s.sid, undefined, 'revoked')
+    await db.identity.logSecurityEvent({ user: user.name, type: 'session_revoked', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '', sid: s.sid })
     options.sessions?.emit(user.name, s.sid)
     return { ok: true }
   })
   /** Снять доверие со всех своих устройств разом — «я не уверен ни в одном». */
   app.post(REST.sessionUntrustAll, async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const limited = sessionOpsBlocked(req, user.name)
     if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
-    const affected = db.identity.untrustAllSessions(user.name)
+    const affected = await db.identity.untrustAllSessions(user.name)
     if (affected > 0) {
-      db.identity.logSecurityEvent({ user: user.name, type: 'session_untrusted', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `снято доверие с устройств: ${affected}` })
+      await db.identity.logSecurityEvent({ user: user.name, type: 'session_untrusted', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `снято доверие с устройств: ${affected}` })
       options.sessions?.emit(user.name)
     }
     return { affected }
@@ -989,20 +990,20 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   // История устройства: что этот вход делал. Отвечает на вопрос «а точно ли это
   // я», когда подпись и место сами по себе ничего не проясняют.
   app.get<{ Params: { sid: string } }>(REST.sessionHistory(':sid').replace('%3Asid', ':sid'), async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
-    const s = db.identity.getSession(req.params.sid) ?? db.identity.listEndedSessions(user.name, 100).find((x) => x.sid === req.params.sid)
+    const s = await db.identity.getSession(req.params.sid) ?? (await db.identity.listEndedSessions(user.name, 100)).find((x) => x.sid === req.params.sid)
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
-    return { events: db.identity.listSessionHistory(user.name, { sid: s.sid, userAgent: s.userAgent, ip: s.ip }) }
+    return { events: await db.identity.listSessionHistory(user.name, { sid: s.sid, userAgent: s.userAgent, ip: s.ip }) }
   })
   // Имя устройства и отметка «доверенное» — только для своей сессии.
   app.patch<{ Params: { sid: string }; Body: { label?: string | null; trusted?: boolean; scope?: 'session' | 'device' } }>('/api/session/:sid', async (req, reply) => {
-    const user = activeUser(tokenOf(req))
+    const user = await activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const limited = sessionOpsBlocked(req, user.name)
     if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
-    const s = db.identity.getSession(req.params.sid)
+    const s = await db.identity.getSession(req.params.sid)
     // Чужая и несуществующая сессия отвечают одинаково: по ответу не должно быть
     // видно, существует ли сессия с таким sid у кого-то другого.
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
@@ -1014,28 +1015,28 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       // Имя относится к устройству, а не к вкладке: по умолчанию переименовываем
       // все его живые сессии, чтобы список не показывал одно устройство дважды
       // под разными именами.
-      if (req.body.scope !== 'session' && s.deviceKey) renamedDevice = db.identity.renameDevice(user.name, s.deviceKey, patch.label)
+      if (req.body.scope !== 'session' && s.deviceKey) renamedDevice = await db.identity.renameDevice(user.name, s.deviceKey, patch.label)
     }
     if (typeof req.body?.trusted === 'boolean') patch.trusted = req.body.trusted
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'нечего менять' })
     // Доверие пропускает второй фактор — значит выдавать его сессии, которая
     // сама его не проходила, бессмысленно: так проверка обходится навсегда.
-    if (patch.trusted === true && db.identity.getUserTotpSecret(user.name) && !s.twoFactor) {
+    if (patch.trusted === true && await db.identity.getUserTotpSecret(user.name) && !s.twoFactor) {
       return reply.code(409).send({ error: 'Сделать доверенным можно только устройство, вход с которого подтверждён кодом' })
     }
     // Доверенных устройств не может быть сколько угодно: каждое — это дырка в
     // втором факторе, и список из двадцати «своих» ноутбуков её обесценивает.
     if (patch.trusted === true && !isTrusted(s)) {
-      const trustedNow = db.identity.sessionStats(user.name).trusted
+      const trustedNow = (await db.identity.sessionStats(user.name)).trusted
       if (trustedNow >= TRUSTED_DEVICES_LIMIT) {
         return reply.code(409).send({ error: `Доверенных устройств не может быть больше ${TRUSTED_DEVICES_LIMIT} — снимите доверие с ненужного` })
       }
     }
-    db.identity.updateSession(s.sid, patch)
+    await db.identity.updateSession(s.sid, patch)
     const ua = String(req.headers['user-agent'] ?? '')
     void renamedDevice
-    if (patch.label !== undefined) db.identity.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято', sid: s.sid })
-    if (patch.trusted !== undefined) db.identity.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '', sid: s.sid })
+    if (patch.label !== undefined) await db.identity.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято', sid: s.sid })
+    if (patch.trusted !== undefined) await db.identity.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '', sid: s.sid })
     options.sessions?.emit(user.name)
     return { ok: true }
   })

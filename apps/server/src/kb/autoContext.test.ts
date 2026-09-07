@@ -16,9 +16,9 @@ function section(index: number, text: string) {
 
 function kb(bundle: KbContextBundle): KnowledgeBaseService {
   return {
-    status: () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'x', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
-    topics: () => [],
-    document: () => null,
+    status: async () => ({ available: true, mode: 'source', searchMode: 'lexical', version: 'x', createdAt: 'now', documents: 1, chunks: 1, staleDocuments: 0 }),
+    topics: async () => [],
+    document: async () => null,
     search: async () => [],
     context: async () => structuredClone(bundle)
   }

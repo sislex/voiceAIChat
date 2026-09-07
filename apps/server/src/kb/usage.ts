@@ -77,9 +77,9 @@ export interface KbUsageHandle {
 }
 
 export interface KbUsageTracker {
-  begin(ctx: KbUsageContext, query: string): KbUsageHandle
+  begin(ctx: KbUsageContext, query: string): Promise<KbUsageHandle>
   /** Итоги хода (id сообщения, размер промпта, вход) — во все его обращения. */
-  attachTurn(args: { turnId: string; messageId?: string | null; promptChars?: number | null; turnInputTokens?: number | null }): void
+  attachTurn(args: { turnId: string; messageId?: string | null; promptChars?: number | null; turnInputTokens?: number | null }): Promise<void>
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
 }
 
@@ -123,10 +123,10 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
     }
   }
 
-  function nextSeq(conversationId: string): number {
+  async function nextSeq(conversationId: string): Promise<number> {
     let stored = 0
     try {
-      stored = deps.db.kb.kbUsageLastSeq(conversationId)
+      stored = await deps.db.kb.kbUsageLastSeq(conversationId)
     } catch {
       stored = 0
     }
@@ -135,7 +135,7 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
     return seq
   }
 
-  function begin(ctx: KbUsageContext, query: string): KbUsageHandle {
+  async function begin(ctx: KbUsageContext, query: string): Promise<KbUsageHandle> {
     // Ран без связанного чата: телеметрию писать некуда, но БЗ уже отработала.
     if (!ctx.conversationId) return NOOP_HANDLE
     const conversationId = ctx.conversationId
@@ -177,13 +177,13 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
     // Кадр «запрашивает…» уходит сразу: панель должна показать обращение до того,
     // как БЗ ответит (поиск с reranker — это секунды).
     try {
-      frame({ seq: nextSeq(conversationId) })
+      frame({ seq: await nextSeq(conversationId) })
     } catch {
       /* метрика не мешает ходу */
     }
 
     /** Записать строку и разослать терминальный кадр. Ошибки — только в лог кадра. */
-    const finish = (args: {
+    const finish = async (args: {
       status: 'delivered' | 'empty' | 'error'
       chars: number
       sections?: KbUsageSectionInput[]
@@ -191,12 +191,12 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
       bundleTokens?: number | null
       confidence?: 'high' | 'medium' | 'low' | null
       error?: string | null
-    }): void => {
+    }): Promise<void> => {
       if (done) return
       done = true
       const durationMs = Math.max(0, now() - startedAt)
       try {
-        const saved = deps.db.kb.addKbUsage({
+        const saved = await deps.db.kb.addKbUsage({
           id,
           userId: ctx.userId,
           conversationId,
@@ -240,8 +240,8 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
 
     return {
       id,
-      complete(args) {
-        finish({
+      async complete(args) {
+        await finish({
           status: 'delivered',
           chars: Math.max(0, Math.round(args.deliveredChars)),
           sections: args.sections,
@@ -250,20 +250,20 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
           confidence: args.confidence ?? null
         })
       },
-      empty(reason, confidence) {
-        finish({ status: 'empty', chars: 0, error: EMPTY_REASON[reason], confidence: confidence ?? null })
+      async empty(reason, confidence) {
+        await finish({ status: 'empty', chars: 0, error: EMPTY_REASON[reason], confidence: confidence ?? null })
       },
-      fail(message) {
-        finish({ status: 'error', chars: 0, error: message })
+      async fail(message) {
+        await finish({ status: 'error', chars: 0, error: message })
       }
     }
   }
 
   return {
     begin,
-    attachTurn(args) {
+    async attachTurn(args) {
       try {
-        deps.db.kb.attachKbUsageTurn(args)
+        await deps.db.kb.attachKbUsageTurn(args)
       } catch {
         /* итоги хода — украшение метрики, а не сам ход */
       }

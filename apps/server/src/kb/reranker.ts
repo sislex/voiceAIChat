@@ -11,13 +11,13 @@ export class LlmKbReranker implements KbSemanticReranker {
       `Выбери до ${limit} наиболее релевантных ID из кандидатов. Верни только JSON: {"selected":["id"]}.`,
       JSON.stringify(candidates)
     ].join('\n\n')
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       let text = ''
       const timer = setTimeout(() => { handle.cancel(); reject(new Error('KB reranking timeout')) }, 20_000)
-      const handle = this.client.send({ prompt, sessionId: null, model: this.model, permissionMode: 'plan', executionDisabled: true }, {
-        onSession: () => {}, onDelta: (delta) => { text += delta },
-        onDone: (final) => { clearTimeout(timer); try { const raw = (final || text).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''); const parsed = JSON.parse(raw) as { selected?: unknown }; const selected = Array.isArray(parsed.selected) ? parsed.selected.filter((id): id is string => typeof id === 'string' && allowed.has(id)).slice(0, limit) : []; resolve(selected) } catch (error) { reject(error) } },
-        onError: (message) => { clearTimeout(timer); reject(new Error(message)) }
+      const handle = await this.client.send({ prompt, sessionId: null, model: this.model, permissionMode: 'plan', executionDisabled: true }, {
+        onSession: async () => {}, onDelta: async (delta) => { text += delta },
+        onDone: async (final) => { clearTimeout(timer); try { const raw = (final || text).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''); const parsed = JSON.parse(raw) as { selected?: unknown }; const selected = Array.isArray(parsed.selected) ? parsed.selected.filter((id): id is string => typeof id === 'string' && allowed.has(id)).slice(0, limit) : []; resolve(selected) } catch (error) { reject(error) } },
+        onError: async (message) => { clearTimeout(timer); reject(new Error(message)) }
       })
     })
   }

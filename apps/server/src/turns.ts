@@ -279,13 +279,13 @@ export interface TurnManager {
   /** Запустить ход в разговоре (прежний ход этого разговора отменяется). */
   start(req: StartTurnRequest): Promise<void>
   /** Отменить ход разговора; без conversationId — все активные ходы. */
-  cancel(conversationId?: string): void
-  editQueued(userId: string, conversationId: string, id: string, text: string, segments: SttSegmentWire[]): void
-  deleteQueued(userId: string, conversationId: string, id: string): void
-  reorderQueued(userId: string, conversationId: string, ids: string[]): void
-  sendQueuedNow(userId: string, conversationId: string, id: string): void
-  queueSnapshot(userId: string, conversationId: string): void
-  resumeQueues(userId: string): void
+  cancel(conversationId?: string): Promise<void>
+  editQueued(userId: string, conversationId: string, id: string, text: string, segments: SttSegmentWire[]): Promise<void>
+  deleteQueued(userId: string, conversationId: string, id: string): Promise<void>
+  reorderQueued(userId: string, conversationId: string, ids: string[]): Promise<void>
+  sendQueuedNow(userId: string, conversationId: string, id: string): Promise<void>
+  queueSnapshot(userId: string, conversationId: string): Promise<void>
+  resumeQueues(userId: string): Promise<void>
   /**
    * Подписка на события ходов (token/done/error/log). Слушатель получает id
    * владельца хода — сессия форвардит клиенту только события своего пользователя.
@@ -298,7 +298,13 @@ export interface TurnManager {
    * накопленный частичный текст в БД с пометкой interrupted — иначе рестарт
    * теряет уже набранную часть ответа.
    */
-  flushInterrupted(): void
+  flushInterrupted(): Promise<void>
+  /**
+   * Дождаться хвостов ходов: сохранения ответа и продвижения очереди после done.
+   * После круга 3 они асинхронны — тест (или остановка сервера) не должен закрывать
+   * БД, пока хвост пишет в неё.
+   */
+  idle(): Promise<void>
 }
 
 // Разбор сохранённого resume-id живёт в `@voicechat/shared` (`resumeSessionIdFor`):
@@ -384,18 +390,25 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   // при остановке сервера успел сохранить готовый ответ, если async-запись не
   // завершилась (иначе последнее сообщение модели теряется без следа).
   const pendingSaves = new Set<() => void>()
+  /** Незавершённые хвосты ходов (persist → dispatchNext) — для idle(). */
+  const inflight = new Set<Promise<unknown>>()
+  const track = (p: Promise<unknown>): void => {
+    const chain = p.catch(() => {})
+    inflight.add(chain)
+    void chain.finally(() => inflight.delete(chain))
+  }
   const now = deps.now ?? (() => Date.now())
 
   function broadcast(m: ServerMessage, ownerUserId: string): void {
     for (const l of listeners) l(m, ownerUserId)
   }
 
-  function emitQueue(userId: string, conversationId: string, published?: Message, removedMessageIds?: string[]): void {
+  async function emitQueue(userId: string, conversationId: string, published?: Message, removedMessageIds?: string[]): Promise<void> {
     broadcast({
       t: 'claude.queue',
       conversationId,
-      items: deps.db.chat.listQueuedTurns(userId, conversationId),
-      paused: deps.db.chat.isTurnQueuePaused(userId, conversationId),
+      items: await deps.db.chat.listQueuedTurns(userId, conversationId),
+      paused: await deps.db.chat.isTurnQueuePaused(userId, conversationId),
       ...(published ? { published } : {}),
       ...(removedMessageIds?.length ? { removedMessageIds } : {})
     }, userId)
@@ -411,7 +424,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const conversationId = req.conversationId
     const userId = req.userId
     // Заблокированный пользователь не может запускать ходы (страховка сверх WS-гейта).
-    const account = deps.db.identity.getUser(userId)
+    const account = await deps.db.identity.getUser(userId)
     if (!account || account.blocked) {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
@@ -424,46 +437,46 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Месячный лимит расхода LLM (п.17): суммируем стоимость ответов пользователя с начала календарного месяца.
     if (account.llmLimitUsd !== null && account.llmLimitUsd >= 0) {
       const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
-      const mine = deps.db.chat.usageSummary(monthStart.getTime()).find((u) => u.name === userId)
+      const mine = (await deps.db.chat.usageSummary(monthStart.getTime())).find((u) => u.name === userId)
       const spent = mine ? Math.max(mine.totals.costUsd, mine.totals.costFromPrices ?? 0) : 0
       if (spent >= account.llmLimitUsd) {
         broadcast({ t: 'claude.error', conversationId, message: `Достигнут месячный лимит расхода LLM: $${spent.toFixed(2)} из $${account.llmLimitUsd.toFixed(2)}. Лимит меняет администратор.` }, userId)
         return
       }
     }
-    req.messageId ??= [...deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+    req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
     if (turns.has(conversationId) || starting.has(conversationId)) {
-      const messageId = req.messageId ?? [...deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+      const messageId = req.messageId ?? [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
       if (!messageId) {
         broadcast({ t: 'claude.error', conversationId, message: 'Не удалось поставить вопрос в очередь.' }, userId)
         return
       }
-      deps.db.chat.enqueueTurn(userId, conversationId, messageId, {
+      await deps.db.chat.enqueueTurn(userId, conversationId, messageId, {
         segments: req.segments,
         attachments: req.attachments,
         verbose: req.verbose,
         execTarget: req.execTarget,
         assistantContext: req.assistantContext
       })
-      emitQueue(userId, conversationId)
+      await emitQueue(userId, conversationId)
       return
     }
     starting.add(conversationId)
     // Явная новая отправка/повтор — реакция пользователя, снимающая паузу после ошибки.
-    deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
+    await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
 
-    const conv = deps.db.chat.getConversation(userId, conversationId)
-    const settings = deps.db.settings.getSettings(userId)
+    const conv = await deps.db.chat.getConversation(userId, conversationId)
+    const settings = await deps.db.settings.getSettings(userId)
     // Связанный с проектом чат всегда работает на паре проекта (или на
     // пользовательском дефолте проекта). Для непривязанного чата остаётся
     // обычное переопределение разговора → пользователь.
     const projectLlm = conv?.projectId && conv.llmProvider === null
-      ? deps.db.ci.getCiLlmConfig('project', conv.projectId) ?? deps.db.ci.ciLlmDefaultsForUser(userId)
+      ? await deps.db.ci.getCiLlmConfig('project', conv.projectId) ?? await deps.db.ci.ciLlmDefaultsForUser(userId)
       : null
     const wantProvider = conv?.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
-    const access = deps.db.identity.getUserLlmAccess(userId)
+    const access = await deps.db.identity.getUserLlmAccess(userId)
     const fallbackProvider = firstAllowedProvider(access)
     if (!fallbackProvider) {
       starting.delete(conversationId)
@@ -474,7 +487,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const provider = permittedProvider === 'codex' && deps.codex ? 'codex' : 'claude'
     const role = account.role
     const wantedEngineId = conv?.llmEngineId ?? projectLlm?.llmEngineId ?? settings.llmEngineId
-    const resolvedEngine = deps.db.llm.resolveLlmEngine(wantedEngineId, provider, role)
+    const resolvedEngine = await deps.db.llm.resolveLlmEngine(wantedEngineId, provider, role)
     const client = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
@@ -527,7 +540,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let kbContext: TurnRequestInfo['kbContext']
     let basePrompt = sessionId
       ? buildPrompt(req.segments, attachmentPaths)
-      : buildConversationPrompt(deps.db.chat.listMessages(userId, conversationId), attachmentPaths)
+      : buildConversationPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths)
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -543,7 +556,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
       if (kbQuery) {
-        const usage = deps.kbUsage?.begin(
+        const usage = await deps.kbUsage?.begin(
           { userId, conversationId, projectId: conv?.projectId ?? null, turnId, source: 'auto' },
           kbQuery
         )
@@ -552,7 +565,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // проекта чата. Права считает kbViewOf (kb/access.ts), а не ход.
           // Сборку блоков делает kb/autoContext.ts — та же, что у CI-рана.
           const auto = await buildKbAutoContext(deps.kb, kbQuery, {
-            ...kbViewOf(deps.db, userId),
+            ...(await kbViewOf(deps.db, userId)),
             ...(conv?.projectId ? { projectId: conv.projectId } : {})
           })
           if (auto.text) {
@@ -577,7 +590,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Контекст проекта — явная часть каждого хода связанного чата, даже если
     // у проекта ещё нет описания или репозитория: модель не должна угадывать,
     // к какому проекту относится разговор.
-    const projectContext = conv?.projectId ? deps.db.projects.getProject(userId, conv.projectId) : null
+    const projectContext = conv?.projectId ? await deps.db.projects.getProject(userId, conv.projectId) : null
     if (conv?.projectId && !disabledContext.has('project-binding')) {
       // Тот же блок, что показывает инспектор контекста (`prompt/contextBlocks.ts`).
       const block = projectContextBlock(projectContext, conv.projectId)
@@ -588,9 +601,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Контекст задачи выключается отдельно от проекта: постановка бывает
     // длинной, и «убрать критерии приёмки, оставив проект» — законное желание.
     if (conv?.taskId && !disabledContext.has('project-binding') && !disabledContext.has('task-context')) {
-      const tc = deps.db.tasks.getTaskChatContext(userId, conversationId, deps.agents ? (agentId) => deps.agents!.isOnline(agentId) : undefined)
+      const tc = await deps.db.tasks.getTaskChatContext(userId, conversationId, deps.agents ? (agentId) => deps.agents!.isOnline(agentId) : undefined)
       if (tc) {
-        const task = conv.projectId ? deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
+        const task = conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
         // Текст строит `prompt/contextBlocks.ts` — тот же код, что и предпросмотр
         // инспектора. Дизайн из Make: макет — часть постановки, без ссылки
         // модель его не найдёт.
@@ -663,7 +676,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeChat = conv?.assistantKind === 'make'
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
-    const machine = makeChat ? null : deps.db.chat.resolveConversationMachine(userId, conversationId, {
+    const machine = makeChat ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
       ...(req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
       ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
     })
@@ -682,7 +695,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Пустой проект у admin сохраняет legacy server-side ход; если машины у
     // проекта есть, но ни одна не доступна online, это уже явная блокировка.
     // Make сюда не попадает: ему машина не нужна, и её отсутствие не блокировка.
-    if (!makeChat && !executionDisabled && !target && conv?.projectId && deps.db.machines.listUsableAgents(userId, conv.projectId).length > 0) {
+    if (!makeChat && !executionDisabled && !target && conv?.projectId && (await deps.db.machines.listUsableAgents(userId, conv.projectId)).length > 0) {
       starting.delete(conversationId)
       broadcast({ t: 'claude.error', conversationId, message: 'Нет доступной online-машины: запуск чата заблокирован' }, userId)
       return
@@ -696,7 +709,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // CI lifecycle: переключать его на main означало бы потерять контекст задачи.
     if (conv?.projectId && projectContext?.gitUrl && target && deps.ensureProjectMainCurrent
       && conv.assistantKind !== 'make' && conv.workspace?.mode !== 'task_workspace') {
-      const projectMachine = deps.db.machines.getProjectMachine(conv.projectId, target)
+      const projectMachine = await deps.db.machines.getProjectMachine(conv.projectId, target)
       const projectPath = projectMachine?.directories?.projectWorkdir.path || projectMachine?.path || ''
       // Машина хода унаследована чатом, но к проекту не привязана (свежий проект,
       // машина по умолчанию пользователя): проверять нечего — на ней нет общей копии
@@ -765,17 +778,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     broadcast({ t: 'claude.start', conversationId, provider, model, execTarget: requestedTarget }, userId)
     // Инструменты БЗ — ВНЕ ветки `remote`: база знаний read-only и нужна модели
     // и в ходе без машины (там она вообще единственный источник контекста).
-    const kbToolAvailable = (): boolean => {
+    const kbToolAvailable = async (): Promise<boolean> => {
       if (!deps.kb || !deps.kbMcpBaseUrl || kbMode === 'off' || deps.kbToolEnabled === false) return false
       try {
-        return deps.kb.status().available
+        return (await deps.kb.status()).available
       } catch {
         return false // сломанный индекс = инструмента нет, ход продолжается
       }
     }
     let kbToolToken: string | null = null
     let kbMcpUrl: string | undefined
-    if (kbToolAvailable()) {
+    if (await kbToolAvailable()) {
       kbToolToken = randomUUID()
       kbMcpUrl = `${deps.kbMcpBaseUrl}&turn=${encodeURIComponent(kbToolToken)}`
       deps.kbTool?.register(kbToolToken, {
@@ -854,7 +867,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       // Чат проекта видит и остальные машины проекта: query `project` включает в
       // мосте инструмент machines и параметр machine, а имена уходят в системный
       // хинт CLI. Без других машин (или вне проекта) ход остаётся прежним.
-      const projectMachines = conv?.projectId ? deps.db.machines.listProjectMachines(conv.projectId) : []
+      const projectMachines = conv?.projectId ? await deps.db.machines.listProjectMachines(conv.projectId) : []
       const otherMachines = projectMachines.filter((m) => m.agentId !== target).map((m) => m.name)
       remoteFileToken = attachments.length && deps.remoteFileTool ? randomUUID() : null
       if (remoteFileToken) {
@@ -907,8 +920,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (kanbanMcpOnly) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
-    const contextMessages = deps.db
-      .chat.listMessages(userId, conversationId)
+    const contextMessages = (await deps.db
+      .chat.listMessages(userId, conversationId))
       .map((m) => ({ role: m.role, text: m.text }))
     // Детали запроса для панели «Подробнее» (всё, что мы отправили модели).
     const requestInfo: TurnRequestInfo = {
@@ -960,7 +973,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const executionRemote = readOnlyRemote && remote
       ? { ...remote, mcpUrl: `${remote.mcpUrl}&ro=1` }
       : remote
-    const linkedTask = conv?.taskId && conv.projectId ? deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
+    const linkedTask = conv?.taskId && conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
     const makeSources = linkedTask && conv?.projectId
       ? buildTaskMakeSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id, baseUrl: deps.makeMcpBaseUrl, broker: deps.makeTaskScopes })
       : []
@@ -981,11 +994,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(kanbanMcpUrl ? { kanbanMcpUrl: kanbanExplicitPlan ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
       },
       {
-        onSession: (sid) => deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
+        onSession: async (sid) => await deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`),
         onInit: (info) => {
           initInfo = info
         },
-        onDelta: (delta) => {
+        onDelta: async (delta) => {
           if (turn.done) return
           turn.partial += delta
           broadcast({ t: 'claude.token', conversationId, delta }, userId)
@@ -997,7 +1010,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           turn.usage = usage
           broadcast({ t: 'claude.usage', conversationId, usage }, userId)
         },
-        onDone: (text, meta) => {
+        onDone: async (text, meta) => {
           if (turn.done) return
           finish()
           // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
@@ -1057,12 +1070,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // один раз (guard `saved`) — либо здесь после перекладки, либо из
           // flushInterrupted готовым текстом, если сервер останавливается раньше.
           let saved = false
-          const persist = (finalText: string): Message | undefined => {
+          const persist = async (finalText: string): Promise<Message | undefined> => {
             if (saved) return undefined
             saved = true
             pendingSaves.delete(finalize)
             if (!finalText.trim()) return undefined
-            const message = deps.db.chat.addMessage(
+            const message = await deps.db.chat.addMessage(
               userId,
               conversationId,
               'ai',
@@ -1074,7 +1087,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             )
             // Итоги хода — в его обращения к БЗ: id сообщения (панель ведёт на
             // ход) и размеры промпта/входа (доля БЗ в промпте).
-            deps.kbUsage?.attachTurn({
+            await deps.kbUsage?.attachTurn({
               turnId,
               messageId: message.id,
               promptChars: requestInfo.promptChars,
@@ -1103,16 +1116,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // Аварийное сохранение из flushInterrupted: ответ уже полный (модель
           // завершила ход), поэтому пишем как есть — без пометки interrupted и
           // без перекладки (картинки останутся серверными, но покажутся).
-          function finalize(): void {
+          async function finalize(): Promise<void> {
             if (saved) return
-            emitDone(taskLaunch.text, persist(taskLaunch.text))
+            emitDone(taskLaunch.text, await persist(taskLaunch.text))
           }
           pendingSaves.add(finalize)
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
             // Чат без привязки к хранилищу: перед первой записью файла привязываем его к ChatAI машины по умолчанию.
-            const binding = deps.db.machines.getChatStorageBinding(userId, conversationId)
+            const binding = await deps.db.machines.getChatStorageBinding(userId, conversationId)
               ?? (target && deps.ensureChatStorage ? await deps.ensureChatStorage(userId, conversationId, target) : null)
             const destinationAgentId = binding?.machineId ?? target
             if (!destinationAgentId || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
@@ -1121,9 +1134,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             }
             try {
               const managed = await resolveManagedChatStorage(userId, conversationId, {
-                getBinding: (uid, id) => deps.db.machines.getChatStorageBinding(uid, id),
-                listStorages: (uid, machineId) => deps.db.machines.listMachineStorages(uid, machineId),
-                ownsMachine: (uid, machineId) => deps.db.machines.listAgents(uid).some((agent) => agent.id === machineId),
+                getBinding: async (uid, id) => await deps.db.machines.getChatStorageBinding(uid, id),
+                listStorages: async (uid, machineId) => await deps.db.machines.listMachineStorages(uid, machineId),
+                ownsMachine: async (uid, machineId) => (await deps.db.machines.listAgents(uid)).some((agent) => agent.id === machineId),
                 isOnline: (machineId) => a.isOnline(machineId),
                 waitOnline: a.waitOnline ? (machineId) => a.waitOnline!(machineId) : undefined,
                 verifyRoot: async (machineId, rootPath) => {
@@ -1149,30 +1162,30 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             }
           })()
 
-          void prepared.then((finalText) => {
+          track(prepared.then(async (finalText) => {
             if (saved) return // flushInterrupted уже сохранил (сервер останавливается)
-            emitDone(finalText, persist(finalText))
-            dispatchNext(userId, conversationId)
-          })
+            emitDone(finalText, await persist(finalText))
+            await dispatchNext(userId, conversationId)
+          }))
         },
-        onError: (message) => {
+        onError: async (message) => {
           if (turn.done) return
           deps.onAuthError?.(userId, provider, message)
           finish()
           if (req.messageId) {
-            deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
+            await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
               segments: req.segments,
               attachments: req.attachments,
               verbose: req.verbose,
               execTarget: req.execTarget,
               assistantContext: req.assistantContext
             }, false)
-            deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
-            deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
-            emitQueue(userId, conversationId)
+            await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
+            await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
+            await emitQueue(userId, conversationId)
           }
           broadcast({ t: 'claude.error', conversationId, message }, userId)
-          dispatchNext(userId, conversationId)
+          await dispatchNext(userId, conversationId)
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
         // консоль (событие claude.log) шлём только если ход запрошен с verbose.
@@ -1213,26 +1226,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
   }
 
-  function dispatchNext(userId: string, conversationId: string): void {
-    if (deps.db.chat.isTurnQueuePaused(userId, conversationId) || turns.has(conversationId)) {
-      emitQueue(userId, conversationId)
+  async function dispatchNext(userId: string, conversationId: string): Promise<void> {
+    if (await deps.db.chat.isTurnQueuePaused(userId, conversationId) || turns.has(conversationId)) {
+      await emitQueue(userId, conversationId)
       return
     }
-    const next = deps.db.chat.takeQueuedTurn(userId, conversationId)
-    emitQueue(userId, conversationId, next?.message)
+    const next = await deps.db.chat.takeQueuedTurn(userId, conversationId)
+    await emitQueue(userId, conversationId, next?.message)
     if (!next) return
-    queueMicrotask(() => void start({ userId, conversationId, messageId: next.messageId, ...next.payload }))
+    queueMicrotask(() => track(start({ userId, conversationId, messageId: next.messageId, ...next.payload })))
   }
 
   /** Остановка сохраняет partial и затем автоматически продвигает очередь. */
-  function cancelTurn(conversationId: string, notify: boolean): TurnState | undefined {
+  async function cancelTurn(conversationId: string, notify: boolean): Promise<TurnState | undefined> {
     const turn = turns.get(conversationId)
     if (!turn) return undefined
     turns.delete(conversationId)
     turn.done = true
     releaseTurnTools(turn)
     turn.handle.cancel()
-    deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, false)
+    await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, false)
     const meta: TurnMeta = {
       ...turn.usage,
       durationMs: now() - turn.startedAt,
@@ -1242,57 +1255,57 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ...(turn.activity.length ? { activity: turn.activity } : {})
     }
     const message = turn.partial.trim()
-      ? deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
+      ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
       : undefined
     if (notify) broadcast({ t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }, turn.userId)
-    dispatchNext(turn.userId, conversationId)
+    await dispatchNext(turn.userId, conversationId)
     return turn
   }
 
-  function cancel(conversationId?: string): void {
-    if (conversationId) cancelTurn(conversationId, true)
-    else for (const id of [...turns.keys()]) cancelTurn(id, true)
+  async function cancel(conversationId?: string): Promise<void> {
+    if (conversationId) await cancelTurn(conversationId, true)
+    else for (const id of [...turns.keys()]) await cancelTurn(id, true)
   }
 
-  function queueSnapshot(userId: string, conversationId: string): void {
-    emitQueue(userId, conversationId)
+  async function queueSnapshot(userId: string, conversationId: string): Promise<void> {
+    await emitQueue(userId, conversationId)
   }
 
-  function editQueued(userId: string, conversationId: string, id: string, text: string, segments: SttSegmentWire[]): void {
-    const current = deps.db.chat.queuedTurnPayload(userId, conversationId, id)
+  async function editQueued(userId: string, conversationId: string, id: string, text: string, segments: SttSegmentWire[]): Promise<void> {
+    const current = await deps.db.chat.queuedTurnPayload(userId, conversationId, id)
     if (!current) return
-    deps.db.chat.updateQueuedTurn(userId, conversationId, id, text, { ...current, segments })
-    emitQueue(userId, conversationId)
+    await deps.db.chat.updateQueuedTurn(userId, conversationId, id, text, { ...current, segments })
+    await emitQueue(userId, conversationId)
   }
 
-  function deleteQueued(userId: string, conversationId: string, id: string): void {
-    deps.db.chat.deleteQueuedTurn(userId, conversationId, id)
-    emitQueue(userId, conversationId)
+  async function deleteQueued(userId: string, conversationId: string, id: string): Promise<void> {
+    await deps.db.chat.deleteQueuedTurn(userId, conversationId, id)
+    await emitQueue(userId, conversationId)
   }
 
-  function reorderQueued(userId: string, conversationId: string, ids: string[]): void {
-    deps.db.chat.reorderQueuedTurns(userId, conversationId, ids)
+  async function reorderQueued(userId: string, conversationId: string, ids: string[]): Promise<void> {
+    await deps.db.chat.reorderQueuedTurns(userId, conversationId, ids)
     // И успех, и конфликт возвращают авторитетный снимок: клиент либо подтверждает
     // оптимистичный порядок, либо откатывается без потери элементов.
-    emitQueue(userId, conversationId)
+    await emitQueue(userId, conversationId)
   }
 
-  function sendQueuedNow(userId: string, conversationId: string, id: string): void {
+  async function sendQueuedNow(userId: string, conversationId: string, id: string): Promise<void> {
     const turn = turns.get(conversationId)
     if (restarting.has(conversationId)) {
-      emitQueue(userId, conversationId)
+      await emitQueue(userId, conversationId)
       return
     }
     if (!turn || turn.userId !== userId || !turn.source.messageId) {
       // Без активного хода выбранный элемент становится первым и запускается
       // сразу, если очередь не удерживает ошибка.
-      deps.db.chat.prioritizeQueuedTurn(userId, conversationId, id)
-      deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
-      dispatchNext(userId, conversationId)
+      await deps.db.chat.prioritizeQueuedTurn(userId, conversationId, id)
+      await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
+      await dispatchNext(userId, conversationId)
       return
     }
 
-    const merged = deps.db.chat.mergeQueuedTurnIntoMessage(
+    const merged = await deps.db.chat.mergeQueuedTurnIntoMessage(
       userId,
       conversationId,
       id,
@@ -1306,7 +1319,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       }
     )
     if (!merged) {
-      emitQueue(userId, conversationId)
+      await emitQueue(userId, conversationId)
       return
     }
 
@@ -1320,16 +1333,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     } catch {
       // Не запускаем второй процесс, если отмену даже не удалось инициировать.
       // Объединённая реплика уже атомарно сохранена и остаётся recoverable.
-      deps.db.chat.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
-      deps.db.chat.markQueuedTurnFailed(userId, conversationId, merged.message.id)
-      deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
-      emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
+      await deps.db.chat.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
+      await deps.db.chat.markQueuedTurnFailed(userId, conversationId, merged.message.id)
+      await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+      await emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
       broadcast({ t: 'claude.error', conversationId, message: 'Не удалось остановить предыдущий запрос.' }, userId)
       return
     }
-    deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
+    await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
     restarting.add(conversationId)
-    emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
+    await emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
     queueMicrotask(() => {
       restarting.delete(conversationId)
       void start({
@@ -1337,21 +1350,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         conversationId,
         messageId: merged.message.id,
         ...merged.payload
-      }).catch((error: unknown) => {
-        deps.db.chat.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
-        deps.db.chat.markQueuedTurnFailed(userId, conversationId, merged.message.id)
-        deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
-        emitQueue(userId, conversationId)
+      }).catch(async (error: unknown) => {
+        await deps.db.chat.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
+        await deps.db.chat.markQueuedTurnFailed(userId, conversationId, merged.message.id)
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        await emitQueue(userId, conversationId)
         broadcast({ t: 'claude.error', conversationId, message: error instanceof Error ? error.message : String(error) }, userId)
       })
     })
   }
 
-  function resumeQueues(userId: string): void {
-    const conversations = deps.db.chat.listConversations(userId)
+  async function resumeQueues(userId: string): Promise<void> {
+    const conversations = await deps.db.chat.listConversations(userId)
     for (const conversation of conversations) {
-      if (!deps.db.chat.isTurnQueuePaused(userId, conversation.id)) dispatchNext(userId, conversation.id)
-      else emitQueue(userId, conversation.id)
+      if (!await deps.db.chat.isTurnQueuePaused(userId, conversation.id)) await dispatchNext(userId, conversation.id)
+      else await emitQueue(userId, conversation.id)
     }
   }
 
@@ -1360,7 +1373,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
    * частичный текст сохраняется в БД как ответ с пометкой interrupted (вместе с
    * активностью) — после рестарта пользователь видит уже набранную часть.
    */
-  function flushInterrupted(): void {
+  async function flushInterrupted(): Promise<void> {
     // Сперва — ходы, которые уже завершились, но не успели записаться в БД
     // (перекладка картинок в полёте): сохраняем готовый ответ целиком.
     for (const finalize of [...pendingSaves]) {
@@ -1374,7 +1387,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       turn.handle.cancel()
       // После restart очередь не должна неожиданно продолжиться вслед за
       // прерванным ответом: пользователь явно выберет дальнейшее действие.
-      deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, true)
+      await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, true)
       if (!turn.partial.trim()) continue
       const meta: TurnMeta = {
         // Usage до обрыва — result-событие CLI с итогами уже не придёт.
@@ -1385,7 +1398,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         request: turn.requestInfo,
         ...(turn.activity.length ? { activity: turn.activity } : {})
       }
-      const message = deps.db.chat.addMessage(
+      const message = await deps.db.chat.addMessage(
         turn.userId,
         conversationId,
         'ai',
@@ -1395,7 +1408,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         meta,
         turn.execTarget
       )
-      deps.kbUsage?.attachTurn({
+      await deps.kbUsage?.attachTurn({
         turnId: turn.turnId,
         messageId: message.id,
         promptChars: turn.requestInfo.promptChars,
@@ -1418,6 +1431,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     queueSnapshot,
     resumeQueues,
     flushInterrupted,
+    idle: async () => { while (inflight.size) await Promise.all([...inflight]) },
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)

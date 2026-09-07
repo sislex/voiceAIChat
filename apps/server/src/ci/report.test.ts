@@ -36,7 +36,7 @@ let turnDelayMs = 0
 
 const fakeClaude: LlmClient = {
   send: (_req, handlers) => {
-    setTimeout(() => {
+    setTimeout(async () => {
       for (const tool of turnTools) {
         handlers.onActivity?.({ kind: 'tool_use', summary: `${tool}: …`, raw: '{}', tool })
       }
@@ -52,8 +52,8 @@ const fakeClaude: LlmClient = {
           cacheCreationTokens: turnMeta.cacheCreationTokens
         })
       }
-      handlers.onDelta('готово')
-      handlers.onDone('готово', turnMeta ?? undefined)
+      void handlers.onDelta('готово')
+      void handlers.onDone('готово', turnMeta ?? undefined)
     }, turnDelayMs)
     return { cancel: () => {} }
   }
@@ -83,16 +83,16 @@ afterEach(async () => { await app.close(); db.close() })
 
 const inj = (token: string, url: string) => app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } })
 
-function setup() {
-  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.machines.createAgent('admin', 'M')
-  db.machines.linkMachine('admin', project.id, agent.id)
-  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.tasks.getBoard('admin', project.id)!
+async function setup() {
+  const project = await db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = await db.machines.createAgent('admin', 'M')
+  await db.machines.linkMachine('admin', project.id, agent.id)
+  await db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  await db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  await db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const board = (await db.tasks.getBoard('admin', project.id))!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
-  const task = db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
+  const task = (await db.tasks.createTask('admin', project.id, { columnId: ready.id, title: 'T1' }))!
   return { project, task }
 }
 
@@ -110,10 +110,10 @@ async function runTask(projectId: string, taskId: string): Promise<string> {
 
 describe('расход модели пишется по каждому ходу', () => {
   it('после рана в ci_run_usage есть строка на ход работы модели и на резюме', async () => {
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
-    const rows = db.ci.listCiRunUsage(runId)
+    const rows = await db.ci.listCiRunUsage(runId)
     expect(rows.map((r) => r.kind)).toEqual(['model_work', 'summary'])
     expect(rows[0]).toMatchObject({
       runId, provider: 'claude', model: 'claude-sonnet-5',
@@ -128,17 +128,17 @@ describe('расход модели пишется по каждому ходу'
 
   it('ход без метаданных CLI строкой расхода не становится', async () => {
     turnMeta = null
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
-    expect(db.ci.listCiRunUsage(runId)).toEqual([])
+    expect(await db.ci.listCiRunUsage(runId)).toEqual([])
   })
 })
 
 describe('GET /api/ci/runs/:runId/report', () => {
   it('отдаёт суммы токенов, стоимость, число запросов, время модели и все шаги', async () => {
-    const { project, task } = setup()
-    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Тесты', script: 'npm test' })
-    db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
+    const { project, task } = await setup()
+    const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Тесты', script: 'npm test' })
+    await db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
     const runId = await runTask(project.id, task.id)
 
     const res = await inj(admin, `/api/ci/runs/${runId}/report`)
@@ -168,15 +168,15 @@ describe('GET /api/ci/runs/:runId/report', () => {
   })
 
   it('показывает сохранённое попадание разделов БЗ в открытые файлы', async () => {
-    const { project, task } = setup()
-    const conv = db.chat.createConversation('admin', 'CI')
-    db.chat.setConversationProject('admin', conv.id, project.id)
-    const run = db.ci.createCiRun({
+    const { project, task } = await setup()
+    const conv = await db.chat.createConversation('admin', 'CI')
+    await db.chat.setConversationProject('admin', conv.id, project.id)
+    const run = await db.ci.createCiRun({
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin',
       prevColumnId: null, conversationId: conv.id, slotProgress: { done: 0, total: 0, phase: '' }
     })
-    const step = db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели' })
-    db.kb.addKbUsage({
+    const step = await db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели' })
+    await db.kb.addKbUsage({
       userId: 'admin', conversationId: conv.id, projectId: project.id, ciRunId: run.id, ciStepId: step.id,
       source: 'auto', query: 'ci', chars: 100,
       sections: [{
@@ -184,8 +184,8 @@ describe('GET /api/ci/runs/:runId/report', () => {
         relatedFiles: ['apps/server/src/routes/ci.ts'], chars: 100
       }]
     })
-    db.ci.appendCiLog(run.id, step.id, 'system', '[tool_use] Read: /repo/apps/server/src/routes/ci.ts')
-    expect(db.ci.calculateAndSaveCiKbHit(run.id)).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
+    await db.ci.appendCiLog(run.id, step.id, 'system', '[tool_use] Read: /repo/apps/server/src/routes/ci.ts')
+    expect(await db.ci.calculateAndSaveCiKbHit(run.id)).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
 
     const report = (await inj(admin, `/api/ci/runs/${run.id}/report`)).json() as CiRunReport
     expect(report.kbHit).toEqual({ sectionsDelivered: 1, sectionsHit: 1, hitRatio: 1 })
@@ -193,7 +193,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
 
   it('без стоимости от CLI считает оценку по прайсу и помечает её', async () => {
     turnMeta = { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, durationMs: 1000, model: 'sonnet' }
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -208,7 +208,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
     // CLI модель не назвал (штатное поведение codex) — в расход идёт та, которой
     // ход РЕАЛЬНО запускали: у резюме это дешёвая модель стадии.
     turnMeta = { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0, durationMs: 2000 }
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -222,7 +222,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
 
   it('показывает вызовы инструментов рана с разбивкой по видам', async () => {
     turnTools = ['mcp__remote__read', 'mcp__remote__read', 'mcp__remote__grep', 'mcp__remote__edit', 'mcp__remote__bash', 'mcp__kb__search']
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -233,7 +233,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
   // Цена хода — «размер контекста × число запросов к API». Ни один множитель по
   // сумме токенов не виден: ходов CLI единицы, а запросов сотни.
   it('показывает контекст на запрос: средний, максимальный и число запросов к API', async () => {
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -247,7 +247,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
   it('показывает объём ответов инструментов и три самых тяжёлых ответа', async () => {
     turnTools = ['mcp__remote__bash', 'mcp__remote__read']
     turnResults = ['B'.repeat(40_000), 'R'.repeat(3000)]
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -266,7 +266,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
   it('обрезанный ответ несёт исходный объём — видно, сколько лимит сэкономил', async () => {
     turnTools = ['mcp__remote__bash']
     turnResults = [trimToolOutput('Ш'.repeat(300_000), 20_000, 'сузь вывод').text]
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -278,7 +278,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
   it('мелкие ответы в тяжёлые не попадают, но в объём входят', async () => {
     turnTools = ['mcp__remote__read']
     turnResults = ['коротко']
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -293,7 +293,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
       'Отклонено: это чтение файла, а его делает инструмент read.',
       '[exit code: 1]' // обычная ошибка команды — не отказ
     ]
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
 
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -304,13 +304,13 @@ describe('GET /api/ci/runs/:runId/report', () => {
   it('ран через исполнителя: у codex время работы модели считает сервер, стоимость — прайс', async () => {
     // Так отвечает codex: usage без стоимости, длительности и num_turns.
     turnDelayMs = 5
-    const { project, task } = setup()
-    db.settings.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.4' })
+    const { project, task } = await setup()
+    await db.settings.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.4' })
     const codexUsage = { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 800_000, cacheCreationTokens: 0 }
     turnMeta = { ...codexUsage } // мок отдаёт только счётчики, без costUsd/durationMs
     const runId = await runTask(project.id, task.id)
 
-    const rows = db.ci.listCiRunUsage(runId)
+    const rows = await db.ci.listCiRunUsage(runId)
     // Вход приведён к «без кэша» на записи: 1M пришедших минус 800k из кэша.
     expect(rows[0]).toMatchObject({ provider: 'codex', model: 'gpt-5.4', inputTokens: 200_000, inputSemantics: 'no_cache' })
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
@@ -325,10 +325,10 @@ describe('GET /api/ci/runs/:runId/report', () => {
   })
 
   it('ран без строк расхода (старые раны) открывается: шаги и время есть, расход пуст', async () => {
-    const { project, task } = setup()
-    const run = db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
-    db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'success' })
-    db.ci.updateCiRun(run.id, { status: 'success', durationMs: 1234 })
+    const { project, task } = await setup()
+    const run = await db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
+    await db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'success' })
+    await db.ci.updateCiRun(run.id, { status: 'success', durationMs: 1234 })
 
     const report = (await inj(admin, `/api/ci/runs/${run.id}/report`)).json() as CiRunReport
     expect(report.durationMs).toBe(1234)
@@ -348,9 +348,9 @@ describe('GET /api/ci/runs/:runId/report', () => {
   })
 
   it('чужому пользователю — 404, а не пустой отчёт', async () => {
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const runId = await runTask(project.id, task.id)
-    db.identity.createUser('bob', '', 'developer')
+    await db.identity.createUser('bob', '', 'developer')
     const bob = signToken({ name: 'bob', role: 'developer' }, SECRET)
 
     expect((await inj(bob, `/api/ci/runs/${runId}/report`)).statusCode).toBe(404)
@@ -361,7 +361,7 @@ describe('GET /api/ci/runs/:runId/report', () => {
 
 describe('GET /api/projects/:id/tasks/:taskId/report', () => {
   it('складывает все раны задачи: повтор добавляет свой расход к итогу', async () => {
-    const { project, task } = setup()
+    const { project, task } = await setup()
     const first = await runTask(project.id, task.id)
     const second = await runTask(project.id, task.id)
 
@@ -374,7 +374,7 @@ describe('GET /api/projects/:id/tasks/:taskId/report', () => {
   })
 
   it('несуществующая задача — 404', async () => {
-    const { project } = setup()
+    const { project } = await setup()
     expect((await inj(admin, `/api/projects/${project.id}/tasks/нет-такой/report`)).statusCode).toBe(404)
   })
 })

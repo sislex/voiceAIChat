@@ -31,8 +31,8 @@ async function setup(owner: string | null = 'ann', taskAuth?: { broker: MakeTask
   hub.subscribe('ann', (m) => events.push(m))
   app = Fastify({ logger: false })
   registerMakeMcp(app, {
-    workspaces, hub, ownerOf: () => owner,
-    ...(taskAuth ? { taskScopes: taskAuth.broker, authorizeTaskSource: () => taskAuth.allowed } : {})
+    workspaces, hub, ownerOf: async () => owner,
+    ...(taskAuth ? { taskScopes: taskAuth.broker, authorizeTaskSource: async () => taskAuth.allowed } : {})
   }, SECRET)
   await app.ready()
 }

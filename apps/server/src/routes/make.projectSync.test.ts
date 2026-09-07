@@ -51,7 +51,7 @@ function fakeMachineFs() {
 beforeEach(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'make-sync-'))
   db = new VoiceChatDb(':memory:')
-  db.identity.createUser(U, '', 'admin')
+  await db.identity.createUser(U, '', 'admin')
   workspaces = new MakeWorkspaces(join(dataDir, 'make'))
   machineDisk = new Map([
     ['/repo/src/components/Button.jsx', 'export const Button = () => <button>Ok</button>'],
@@ -61,11 +61,11 @@ beforeEach(async () => {
   ])
   online = true
 
-  const project = db.projects.createProject(U, { name: 'Проект' })
-  const agent = db.machines.createAgent(U, 'Машина')
-  db.machines.linkMachine(U, project.id, agent.id)
-  db.machines.setProjectMachinePath(U, project.id, agent.id, '/repo')
-  convId = db.chat.createConversation(U, 'Витрина', 'make', project.id)!.id
+  const project = await db.projects.createProject(U, { name: 'Проект' })
+  const agent = await db.machines.createAgent(U, 'Машина')
+  await db.machines.linkMachine(U, project.id, agent.id)
+  await db.machines.setProjectMachinePath(U, project.id, agent.id, '/repo')
+  convId = (await db.chat.createConversation(U, 'Витрина', 'make', project.id))!.id
 
   app = Fastify()
   app.decorateRequest('user', null)
@@ -146,7 +146,7 @@ describe('make: обмен с репозиторием проекта', () => {
   })
 
   it('чат без проекта получает объяснение, а не 500', async () => {
-    const solo = db.chat.createConversation(U, 'Без проекта', 'make', null)!.id
+    const solo = (await db.chat.createConversation(U, 'Без проекта', 'make', null))!.id
     const res = await app.inject({ method: 'GET', url: `/api/make/${solo}/project-links` })
     expect(res.statusCode).toBe(409)
     expect(res.json().error).toContain('не привязан к проекту')

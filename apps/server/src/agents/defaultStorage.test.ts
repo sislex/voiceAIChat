@@ -10,18 +10,18 @@ function makeDeps(opts: { homePath?: string; platform?: string; storages?: Machi
   const deps: DefaultStorageDeps = {
     db: {
       machines: {
-        agentOwnerId: () => 'u1',
-        listMachineStorages: (_u, machineId) => storages.filter((s) => !machineId || s.machineId === machineId),
-        saveMachineStorage: (_u, machineId, rootPath, formatVersion, preferredId) => {
+        agentOwnerId: async () => 'u1',
+        listMachineStorages: async (_u, machineId) => storages.filter((s) => !machineId || s.machineId === machineId),
+        saveMachineStorage: async (_u, machineId, rootPath, formatVersion, preferredId) => {
         const s: MachineStorage = { id: preferredId ?? 'gen', machineId, rootPath, formatVersion, status: 'ready' as MachineStorage['status'] }
         storages.push(s)
         return s
       },
-        getChatStorageBinding: (_u, id) => bindings.get(id) ?? null,
-        saveChatStorageBinding: (_u, b) => { bindings.set(b.conversationId, b); return b }
+        getChatStorageBinding: async (_u, id) => bindings.get(id) ?? null,
+        saveChatStorageBinding: async (_u, b) => { bindings.set(b.conversationId, b); return b }
       },
       chat: {
-        getConversation: (_u, id) => (id === 'missing' ? null : { id, projectId: id === 'proj-chat' ? 'p1' : null, taskId: null })
+        getConversation: async (_u, id) => (id === 'missing' ? null : { id, projectId: id === 'proj-chat' ? 'p1' : null, taskId: null })
       }
     },
     registry: {

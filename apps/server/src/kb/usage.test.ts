@@ -21,14 +21,14 @@ function collector(): { frames: Array<{ m: ServerMessage; owner: string }>; list
 }
 
 describe('createKbUsageTracker', () => {
-  it('begin рассылает pending, complete — терминальный кадр с тем же id', () => {
+  it('begin рассылает pending, complete — терминальный кадр с тем же id', async () => {
     const db = makeDb()
-    const conv = db.chat.createConversation(U, 'Чат')
+    const conv = await db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     const sink = collector()
     tracker.subscribe(sink.listen)
 
-    const handle = tracker.begin({ userId: U, conversationId: conv.id, turnId: 't1', source: 'auto' }, 'как устроены ходы')
+    const handle = await tracker.begin({ userId: U, conversationId: conv.id, turnId: 't1', source: 'auto' }, 'как устроены ходы')
     expect(sink.frames).toHaveLength(1)
     const pending = sink.frames[0].m
     expect(pending.t).toBe('kb.usage')
@@ -37,7 +37,7 @@ describe('createKbUsageTracker', () => {
     expect(pending.query.seq).toBe(1) // курсор предсказан до записи строки
     expect(sink.frames[0].owner).toBe(U)
 
-    handle.complete({
+    await handle.complete({
       deliveredChars: 400,
       injected: true,
       confidence: 'high',
@@ -50,30 +50,30 @@ describe('createKbUsageTracker', () => {
     expect(done.query.estimatedTokens).toBe(estimateKbTokens(400))
     expect(done.query.sections).toHaveLength(1)
     // Строка появилась в БД один раз — pending в неё не писался.
-    const report = db.kb.kbUsageReport(U, conv.id)!
+    const report = (await db.kb.kbUsageReport(U, conv.id))!
     expect(report.recent).toHaveLength(1)
     expect(report.recent[0].id).toBe(handle.id)
     db.close()
   })
 
-  it('повторный терминальный вызов игнорируется (одна строка на обращение)', () => {
+  it('повторный терминальный вызов игнорируется (одна строка на обращение)', async () => {
     const db = makeDb()
-    const conv = db.chat.createConversation(U, 'Чат')
+    const conv = await db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
-    const handle = tracker.begin({ userId: U, conversationId: conv.id, source: 'tool_search' }, 'ws')
-    handle.complete({ deliveredChars: 10 })
-    handle.fail('поздняя ошибка')
-    expect(db.kb.kbUsageReport(U, conv.id)!.totals).toMatchObject({ queries: 1, delivered: 1, errors: 0 })
+    const handle = await tracker.begin({ userId: U, conversationId: conv.id, source: 'tool_search' }, 'ws')
+    await handle.complete({ deliveredChars: 10 })
+    await handle.fail('поздняя ошибка')
+    expect((await db.kb.kbUsageReport(U, conv.id))!.totals).toMatchObject({ queries: 1, delivered: 1, errors: 0 })
     db.close()
   })
 
-  it('empty и fail пишут статус и причину, но не текст', () => {
+  it('empty и fail пишут статус и причину, но не текст', async () => {
     const db = makeDb()
-    const conv = db.chat.createConversation(U, 'Чат')
+    const conv = await db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
-    tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').empty('low-confidence', 'medium')
-    tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').fail('kb.context упала')
-    const recent = db.kb.kbUsageReport(U, conv.id)!.recent
+    ;(await tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q')).empty('low-confidence', 'medium')
+    ;(await tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q')).fail('kb.context упала')
+    const recent = (await db.kb.kbUsageReport(U, conv.id))!.recent
     expect(recent.map((q) => q.status).sort()).toEqual(['empty', 'error'])
     expect(recent.every((q) => q.chars === 0 && q.error)).toBe(true)
     // Уверенность у пустой выдачи — такой же факт, как у доставленной: без неё
@@ -83,18 +83,18 @@ describe('createKbUsageTracker', () => {
     db.close()
   })
 
-  it('пустая выдача по бюджету называет свою причину', () => {
+  it('пустая выдача по бюджету называет свою причину', async () => {
     const db = makeDb()
-    const conv = db.chat.createConversation(U, 'Чат')
+    const conv = await db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
-    tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').empty('budget', 'high')
-    expect(db.kb.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({
+    ;(await tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q')).empty('budget', 'high')
+    expect((await db.kb.kbUsageReport(U, conv.id))!.recent[0]).toMatchObject({
       status: 'empty', confidence: 'high', error: 'найденное не поместилось в бюджет контекста'
     })
     db.close()
   })
 
-  it('НЕ выбрасывает при сломанной БД — БЗ не имеет права ронять ход', () => {
+  it('НЕ выбрасывает при сломанной БД — БЗ не имеет права ронять ход', async () => {
     const broken = {
       kb: {
         kbUsageLastSeq: () => { throw new Error('БД закрыта') },
@@ -105,50 +105,50 @@ describe('createKbUsageTracker', () => {
     const tracker = createKbUsageTracker({ db: broken })
     const sink = collector()
     tracker.subscribe(sink.listen)
-    expect(() => {
-      const handle = tracker.begin({ userId: U, conversationId: 'c1', source: 'auto' }, 'q')
-      handle.complete({ deliveredChars: 100 })
-      tracker.attachTurn({ turnId: 't1', messageId: 'm1' })
-    }).not.toThrow()
+    await (async () => {
+      const handle = await tracker.begin({ userId: U, conversationId: 'c1', source: 'auto' }, 'q')
+      await handle.complete({ deliveredChars: 100 })
+      await tracker.attachTurn({ turnId: 't1', messageId: 'm1' })
+    })()
     // Обращение всё равно видно в панели: иначе сбой записи читался бы как
     // «модель БЗ не спрашивала».
     expect(sink.frames.map((f) => (f.m.t === 'kb.usage' ? f.m.query.status : ''))).toEqual(['pending', 'delivered'])
   })
 
-  it('упавший слушатель не мешает записи обращения', () => {
+  it('упавший слушатель не мешает записи обращения', async () => {
     const db = makeDb()
-    const conv = db.chat.createConversation(U, 'Чат')
+    const conv = await db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
     tracker.subscribe(() => { throw new Error('сокет закрыт') })
     const ok = vi.fn()
     tracker.subscribe(ok)
-    expect(() => tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q').complete({ deliveredChars: 5 })).not.toThrow()
+    await (async () => (await tracker.begin({ userId: U, conversationId: conv.id, source: 'auto' }, 'q')).complete({ deliveredChars: 5 }))()
     expect(ok).toHaveBeenCalledTimes(2)
-    expect(db.kb.kbUsageReport(U, conv.id)!.totals.queries).toBe(1)
+    expect((await db.kb.kbUsageReport(U, conv.id))!.totals.queries).toBe(1)
     db.close()
   })
 
-  it('pending предсказывает seq за уже записанными обращениями', () => {
+  it('pending предсказывает seq за уже записанными обращениями', async () => {
     const db = makeDb()
-    const conv = db.chat.createConversation(U, 'Чат')
-    db.kb.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', query: 'старое', chars: 10 })
+    const conv = await db.chat.createConversation(U, 'Чат')
+    await db.kb.addKbUsage({ userId: U, conversationId: conv.id, source: 'auto', query: 'старое', chars: 10 })
     const tracker = createKbUsageTracker({ db })
     const sink = collector()
     tracker.subscribe(sink.listen)
-    tracker.begin({ userId: U, conversationId: conv.id, source: 'tool_search' }, 'новое')
+    await tracker.begin({ userId: U, conversationId: conv.id, source: 'tool_search' }, 'новое')
     const pending = sink.frames[0].m
     if (pending.t !== 'kb.usage') throw new Error('ожидался кадр kb.usage')
     expect(pending.query.seq).toBe(2)
     db.close()
   })
 
-  it('attachTurn дописывает итоги хода в его обращения', () => {
+  it('attachTurn дописывает итоги хода в его обращения', async () => {
     const db = makeDb()
-    const conv = db.chat.createConversation(U, 'Чат')
+    const conv = await db.chat.createConversation(U, 'Чат')
     const tracker = createKbUsageTracker({ db })
-    tracker.begin({ userId: U, conversationId: conv.id, turnId: 't1', source: 'auto' }, 'q').complete({ deliveredChars: 100 })
-    tracker.attachTurn({ turnId: 't1', messageId: 'm1', promptChars: 2000, turnInputTokens: 700 })
-    expect(db.kb.kbUsageReport(U, conv.id)!.recent[0]).toMatchObject({ messageId: 'm1', promptChars: 2000, turnInputTokens: 700 })
+    ;(await tracker.begin({ userId: U, conversationId: conv.id, turnId: 't1', source: 'auto' }, 'q')).complete({ deliveredChars: 100 })
+    await tracker.attachTurn({ turnId: 't1', messageId: 'm1', promptChars: 2000, turnInputTokens: 700 })
+    expect((await db.kb.kbUsageReport(U, conv.id))!.recent[0]).toMatchObject({ messageId: 'm1', promptChars: 2000, turnInputTokens: 700 })
     db.close()
   })
 })

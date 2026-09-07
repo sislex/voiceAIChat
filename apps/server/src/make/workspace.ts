@@ -77,14 +77,14 @@ export class MakeWorkspaces {
   constructor(private readonly rootDir: string, private readonly limits: { maxUserBytes: number } = { maxUserBytes: MAKE_LIMITS.maxUserBytes }) {}
 
   /** Все проекты владельца данного разговора (для квоты на пользователя); null — владелец неизвестен. */
-  private projectsOfOwner: ((conversationId: string) => string[] | null) | null = null
+  private projectsOfOwner: ((conversationId: string) => Promise<string[] | null>) | null = null
   private readonly userBytesCache = new Map<string, { bytes: number; at: number }>()
 
-  setProjectsOfOwner(fn: (conversationId: string) => string[] | null): void { this.projectsOfOwner = fn }
+  setProjectsOfOwner(fn: (conversationId: string) => Promise<string[] | null>): void { this.projectsOfOwner = fn }
 
   /** Сумма байт всех проектов владельца; кэш 60 с — обход каталогов на каждую запись слишком дорог. */
   async ownerBytes(conversationId: string): Promise<{ bytes: number; projects: number } | null> {
-    const ids = this.projectsOfOwner?.(conversationId)
+    const ids = await this.projectsOfOwner?.(conversationId)
     if (!ids) return null
     const key = [...ids].sort().join(',')
     const hit = this.userBytesCache.get(key)
@@ -482,7 +482,7 @@ export class MakeWorkspaces {
     } catch { return null }
   }
 
-  async adminStats(ownerOf: (conversationId: string) => string | null): Promise<AdminMakeStats> {
+  async adminStats(ownerOf: (conversationId: string) => Promise<string | null>): Promise<AdminMakeStats> {
     const root = join(this.rootDir, 'make')
     let ids: string[] = []
     try { ids = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name) } catch { ids = [] }
@@ -498,7 +498,7 @@ export class MakeWorkspaces {
         totals.filesBytes += filesBytes; totals.snapshotsBytes += snapshotsBytes; totals.shotsBytes += shotsBytes
         if (pub) { totals.published += 1; totals.views += pub.views ?? 0 }
         if (shared) totals.shared += 1
-        projects.push({ conversationId: id, owner: ownerOf(id), filesCount: files.length, bytes: filesBytes + snapshotsBytes + shotsBytes, snapshots: snapshots.length, published: Boolean(pub), shared: Boolean(shared), views: pub?.views ?? 0, updatedAt: files.reduce((m, f) => Math.max(m, f.updatedAt), 0) })
+        projects.push({ conversationId: id, owner: await ownerOf(id), filesCount: files.length, bytes: filesBytes + snapshotsBytes + shotsBytes, snapshots: snapshots.length, published: Boolean(pub), shared: Boolean(shared), views: pub?.views ?? 0, updatedAt: files.reduce((m, f) => Math.max(m, f.updatedAt), 0) })
       } catch { /* битый каталог — пропускаем */ }
     }
     const byUserMap = new Map<string, AdminMakeUserStat>()
@@ -977,7 +977,7 @@ export class MakeWorkspaces {
    */
   private publishChains = new Map<string, Promise<unknown>>()
 
-  private withPublishLock<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
+  private async withPublishLock<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.publishChains.get(conversationId) ?? Promise.resolve()
     const next = prev.then(fn, fn)
     this.publishChains.set(conversationId, next.then(() => undefined, () => undefined))

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: 33a7972d
+checked: f9f8ab4a
 areas:
   - apps/server/src
 ---
@@ -224,7 +224,7 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 ## SQLite и репозитории данных
 
-`VoiceChatDb` — синхронный адаптер `better-sqlite3`: ядро (`db/database.ts`) при создании выполняет идемпотентную DDL и миграции старых колонок и раздаёт доменные репозитории `db.chat`, `db.tasks`, `db.ci`, `db.machines`, `db.identity` и т.д. (`db/repos/<домен>.ts`, по одному владельцу на таблицу — `db/ownership.ts`). Маршруты и сервисы зовут методы адресно (`db.projects.getProject(...)`), а зависимости-интерфейсы в тестах описываются той же формой `{ projects: { getProject } }`. WAL разрешает читателям не блокировать обычную запись; foreign keys обеспечивают cascade для conversation/project children. Подробнее — [data-auth.md](data-auth.md#схема).
+`VoiceChatDb` — синхронный адаптер `better-sqlite3`: ядро (`db/database.ts`) при создании выполняет идемпотентную DDL и миграции старых колонок и раздаёт доменные репозитории `db.chat`, `db.tasks`, `db.ci`, `db.machines`, `db.identity` и т.д. (`db/repos/<домен>.ts`, по одному владельцу на таблицу — `db/ownership.ts`). Маршруты и сервисы зовут методы адресно и асинхронно (`await db.projects.getProject(...)` — поля `db.<домен>` это `AsyncPort<Repo>`), а зависимости-интерфейсы в тестах описываются той же формой `{ projects: { getProject: async () => … } }`. Сообщения одного WS-сокета обрабатываются строго по очереди (`ws.ts`): обработчики асинхронны, а порядок `audio.start → чанки → audio.stop` — часть контракта. WAL разрешает читателям не блокировать обычную запись; foreign keys обеспечивают cascade для conversation/project children. Подробнее — [data-auth.md](data-auth.md#схема).
 
 Таблицы: `users`, `settings`, `conversations`, `messages`, `speakers`, `agents`, `projects`, `project_members`, `project_machines`, `kanban_columns`, `tasks`. JSON-поля (`skills`, technologies, policy, message meta, settings) кодируются/декодируются на границе DB.
 
