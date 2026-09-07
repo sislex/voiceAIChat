@@ -1,6 +1,6 @@
 import { REST } from '@shared/protocol'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, ComponentQaRun, ComponentQaTaskState, IntegrationTestRun, IntegrationTestTaskState, QaCriterionResult, QaSession, QaTaskState } from '@shared/qa'
-import { authHeaders } from './session'
+import { authHeaders, credentialedFetch } from './session'
 
 type StartSessionInput = { branch: string; commitSha: string; testRunId: string; previewId?: string | null; previewSha?: string | null; appUrl?: string | null; storybookUrl?: string | null; testDataScenario?: string; testerId?: string | null }
 export interface RendererQaBridge {
@@ -38,7 +38,7 @@ export function createQaRest(httpBase: string): RendererQaBridge {
     // `x-vc-csrf`. Собственная сборка знала лишь про Bearer, а в вебе после
     // перезагрузки страницы токен живёт только в памяти и авторизует cookie —
     // поэтому каждый POST панелей QA отвечал 403 `csrf`.
-    const response = await fetch(httpBase + path, {
+    const response = await credentialedFetch(httpBase + path, {
       ...init,
       headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), ...authHeaders() }
     })

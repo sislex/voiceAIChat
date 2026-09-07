@@ -21,9 +21,16 @@ describe('LoginScreen', () => {
     expect(onLogin).toHaveBeenCalledWith('admin', '', true)
   })
 
-  it('показывает ошибку', () => {
-    render(<LoginScreen onLogin={vi.fn()} error="Неверный логин или пароль" />)
-    expect(screen.getByRole('alert').textContent).toContain('Неверный логин')
+  // @testCase TC-04
+  it.each([
+    'неверный логин или пароль',
+    'учётная запись заблокирована',
+    'Вход временно закрыт — попробуйте через 15 мин',
+    'Слишком много попыток входа — подождите 60 с'
+  ])('показывает точный backend login error: %s', (message) => {
+    const { unmount } = render(<LoginScreen onLogin={vi.fn()} error={message} />)
+    expect(screen.getByRole('alert')).toHaveTextContent(message)
+    unmount()
   })
 })
 

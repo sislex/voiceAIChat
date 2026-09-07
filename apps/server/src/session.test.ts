@@ -100,7 +100,8 @@ describe('WS: живые изменения списка сессий', () => {
   }
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50))
 
-  it('отзыв своей сессии доезжает адресно, соседняя получает только инвалидацию', async () => {
+  // @testCase TC-08
+  it('отзыв своей Bearer-сессии доезжает по WebSocket, соседняя получает только инвалидацию', async () => {
     await db.identity.createUser('wsuser', 'ws-user-pass-2026', 'developer')
     const login = async (ua: string): Promise<string> =>
       (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'wsuser', password: 'ws-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string

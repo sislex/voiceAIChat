@@ -4,6 +4,7 @@
 
 const TOKEN_KEY = 'vc.session.token'
 let memoryToken: string | null = null
+let memoryCsrf: string | null = null
 
 /** Токен для Authorization: из памяти (свежий вход) или из localStorage (унаследованный, до переноса в cookie). */
 export function getToken(): string | null {
@@ -39,6 +40,7 @@ export function dropLegacyToken(): void {
  * имя приоритетнее: если в браузере лежат оба, актуально то, что поставил https.
  */
 export function getCsrf(): string | null {
+  if (memoryCsrf) return memoryCsrf
   if (typeof document === 'undefined') return null
   let plain: string | null = null
   for (const part of document.cookie.split(';')) {
@@ -47,6 +49,16 @@ export function getCsrf(): string | null {
     if (k === 'vc_csrf') plain = decodeURIComponent(rest.join('='))
   }
   return plain
+}
+
+/** CSRF из login/me: нужен renderer удалённого origin, который не видит cookie сервера. */
+export function setCsrf(value: string | null): void {
+  memoryCsrf = value
+}
+
+/** Единый REST transport: cookie участвуют и в cross-origin Electron запросах. */
+export function credentialedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, credentials: 'include' })
 }
 
 /** Есть чем авторизоваться: Bearer в памяти/localStorage или cookie-сессия. */

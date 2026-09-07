@@ -309,7 +309,7 @@ if [ -n "$worktree_status" ]; then
   # отказ блокировал подготовку до ручного разбора; теперь ничего не выбрасывается —
   # правки уезжают в именованный stash, и синхронизация идёт дальше сама.
   dirty_count="$(printf '%s\n' "$worktree_status" | grep -c . || true)"
-  dirty_head="$(printf '%s\n' "$worktree_status" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
+  dirty_head="$(printf '%s\n' "$worktree_status" | awk 'NR<=5 { sub(/^ */, ""); gsub(/  */, " "); if (shown++) printf "; "; printf "%s", $0 }')"
   stash_name="vc-autosync-$(date -u +%Y%m%d-%H%M%S)"
   # Identity задаётся флагами: stash делает коммит, а на свежей машине агента
   # user.email может быть не настроен — иначе автолечение падало бы на нём.
@@ -319,7 +319,7 @@ if [ -n "$worktree_status" ]; then
   }
   left="$(git -C "$repo" status --porcelain --untracked-files=all)"
   test -z "$left" || {
-    left_head="$(printf '%s\n' "$left" | head -n 5 | sed -e 's/^ *//' -e 's/  */ /g' | tr '\n' ';' | sed -e 's/;$//' -e 's/;/; /g')"
+    left_head="$(printf '%s\n' "$left" | awk 'NR<=5 { sub(/^ */, ""); gsub(/  */, " "); if (shown++) printf "; "; printf "%s", $0 }')"
     echo "Рабочая копия проекта осталась с локальными изменениями после автоматического stash «\${stash_name}»; синхронизация с origin/$base остановлена. Копия: $repo. Осталось: $left_head. Уберите лишнее в этой копии и повторите." >&2
     exit 66
   }
@@ -346,6 +346,25 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
 
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
+  const corsOrigins = new Set(opts.config.corsOrigins)
+  const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version'
+  app.decorateRequest('corsAllowed', false)
+  // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
+  app.addHook('onRequest', async (req, reply) => {
+    const origin = req.headers.origin
+    if (origin && corsOrigins.has(origin)) {
+      req.corsAllowed = true
+      reply.header('access-control-allow-origin', origin)
+      reply.header('access-control-allow-credentials', 'true')
+      reply.header('vary', 'Origin')
+      if (req.method === 'OPTIONS') {
+        reply.header('access-control-allow-methods', corsMethods)
+        reply.header('access-control-allow-headers', corsHeaders)
+      }
+    }
+    if (req.method === 'OPTIONS' && req.url.startsWith('/api/')) await reply.code(204).send()
+  })
   // Толерантный JSON-парсер: пустое тело (напр. DELETE с Content-Type) → undefined,
   // а не 400. Делает REST устойчивым к любым клиентам.
   app.addContentTypeParser(
