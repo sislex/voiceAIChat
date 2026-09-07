@@ -92,8 +92,8 @@ interface ProjectMemberRow {
 
 export class ProjectsRepo extends BaseRepo {
   /** Вид доски человека в проекте; отсутствующая запись — вид по умолчанию. */
-  getBoardView(userId: string, projectId: string): BoardView {
-    const row = this.db.prepare(`SELECT value FROM board_views WHERE username = ? AND project_id = ?`).get(userId, projectId) as { value: string } | undefined
+  async getBoardView(userId: string, projectId: string): Promise<BoardView> {
+    const row = (await this.sql.get(`SELECT value FROM board_views WHERE username = ? AND project_id = ?`, [userId, projectId])) as { value: string } | undefined
     if (!row) return { ...DEFAULT_BOARD_VIEW }
     try {
       return { ...DEFAULT_BOARD_VIEW, ...sanitizeBoardView(JSON.parse(row.value)) }
@@ -103,72 +103,62 @@ export class ProjectsRepo extends BaseRepo {
   }
 
   /** Патч вида: как у настроек — присланные поля поверх сохранённых. */
-  saveBoardView(userId: string, projectId: string, patch: Partial<BoardView>): BoardView {
-    const next = { ...this.getBoardView(userId, projectId), ...sanitizeBoardView(patch) }
-    this.db.prepare(
-      `INSERT INTO board_views (username, project_id, value, updated_at) VALUES (?,?,?,?)
-       ON CONFLICT(username, project_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
-    ).run(userId, projectId, JSON.stringify(next), this.now())
+  async saveBoardView(userId: string, projectId: string, patch: Partial<BoardView>): Promise<BoardView> {
+    const next = { ...await this.getBoardView(userId, projectId), ...sanitizeBoardView(patch) }
+    await this.sql.run(`INSERT INTO board_views (username, project_id, value, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(username, project_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, [userId, projectId, JSON.stringify(next), this.now()])
     return next
   }
 
   /** Политика команд проекта (п.10); null — проекта нет. */
-  getProjectCommandPolicy(projectId: string): ProjectCommandPolicy | null {
-    const r = this.db.prepare(`SELECT command_policy FROM projects WHERE id = ?`).get(projectId) as { command_policy?: string | null } | undefined
+  async getProjectCommandPolicy(projectId: string): Promise<ProjectCommandPolicy | null> {
+    const r = (await this.sql.get(`SELECT command_policy FROM projects WHERE id = ?`, [projectId])) as { command_policy?: string | null } | undefined
     return r ? parseProjectCommandPolicy(r.command_policy) : null
   }
 
-  isProjectMember(userId: string, projectId: string): boolean {
+  async isProjectMember(userId: string, projectId: string): Promise<boolean> {
     return (
-      this.db
-        .prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`)
-        .get(projectId, userId) !== undefined
+      await this.sql.get(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`, [projectId, userId]) !== undefined
     )
   }
 
   /** Назначать задачи можно только незаблокированному участнику проекта. */
-  isActiveProjectMember(userId: string, projectId: string): boolean {
+  async isActiveProjectMember(userId: string, projectId: string): Promise<boolean> {
     return (
-      this.db
-        .prepare(`SELECT 1 FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? AND pm.username = ? AND u.blocked = 0`)
-        .get(projectId, userId) !== undefined
+      await this.sql.get(`SELECT 1 FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? AND pm.username = ? AND u.blocked = 0`, [projectId, userId]) !== undefined
     )
   }
 
   /** Единый серверный источник проектного права владельца. */
-  isProjectOwner(userId: string, projectId: string): boolean {
+  async isProjectOwner(userId: string, projectId: string): Promise<boolean> {
     return (
-      this.db
-        .prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`)
-        .get(projectId, userId) !== undefined
+      await this.sql.get(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`, [projectId, userId]) !== undefined
     )
   }
 
-  touchProject(projectId: string, ts: number = this.now()): void {
-    this.db.prepare(`UPDATE projects SET updated_at = ? WHERE id = ?`).run(ts, projectId)
+  async touchProject(projectId: string, ts: number = this.now()): Promise<void> {
+    await this.sql.run(`UPDATE projects SET updated_at = ? WHERE id = ?`, [ts, projectId])
   }
 
   /** Колонка «Готово»: попадание в неё запускает отсчёт скрытия карточки. */
-  isDoneColumn(columnId: string): boolean {
-    const r = this.db.prepare(`SELECT semantic_type FROM kanban_columns WHERE id = ?`).get(columnId) as
+  async isDoneColumn(columnId: string): Promise<boolean> {
+    const r = (await this.sql.get(`SELECT semantic_type FROM kanban_columns WHERE id = ?`, [columnId])) as
       | { semantic_type: string }
       | undefined
     return r?.semantic_type === 'done'
   }
 
   /** Порог проекта «сколько дней держать завершённые на доске» (null — не скрывать). */
-  doneRetentionDays(projectId: string): number | null {
-    const r = this.db.prepare(`SELECT done_retention_days AS d FROM projects WHERE id = ?`).get(projectId) as
+  async doneRetentionDays(projectId: string): Promise<number | null> {
+    const r = (await this.sql.get(`SELECT done_retention_days AS d FROM projects WHERE id = ?`, [projectId])) as
       | { d: number | null }
       | undefined
     return r?.d ?? null
   }
 
-  columnInProject(projectId: string, columnId: string): boolean {
+  async columnInProject(projectId: string, columnId: string): Promise<boolean> {
     return (
-      this.db
-        .prepare(`SELECT 1 FROM kanban_columns WHERE id = ? AND project_id = ?`)
-        .get(columnId, projectId) !== undefined
+      await this.sql.get(`SELECT 1 FROM kanban_columns WHERE id = ? AND project_id = ?`, [columnId, projectId]) !== undefined
     )
   }
 
@@ -203,24 +193,24 @@ export class ProjectsRepo extends BaseRepo {
    * известен, приглашение адресуется ему поимённо (и письмо уйдёт на его адрес).
    * Возвращает приглашение и токен — токен нужен ровно один раз, для письма.
    */
-  createProjectInvitation(
+  async createProjectInvitation(
     userId: string,
     projectId: string,
     invitee: string,
     opts: { role?: ProjectRole; ttlMs?: number } = {}
-  ): { invitation: ProjectInvitation; token: string; email: string | null } | null {
-    if (!this.isProjectOwner(userId, projectId)) return null
+  ): Promise<{ invitation: ProjectInvitation; token: string; email: string | null } | null> {
+    if (!(await this.isProjectOwner(userId, projectId))) return null
     const raw = invitee.trim()
     if (!raw) throw new Error('Укажите логин или email')
     const looksLikeEmail = raw.includes('@')
     const email = looksLikeEmail ? raw.toLowerCase() : null
     if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254)) throw new Error('Некорректный email')
 
-    const user = looksLikeEmail ? this.repos.identity.getUserByEmail(email!) : this.repos.identity.getUser(raw)
+    const user = looksLikeEmail ? await this.repos.identity.getUserByEmail(email!) : await this.repos.identity.getUser(raw)
     if (!looksLikeEmail && !user) throw new Error(`Пользователь ${raw} не найден`)
     const invitedUsername = user?.name ?? null
     if (invitedUsername) {
-      const already = this.db.prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, invitedUsername)
+      const already = await this.sql.get(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`, [projectId, invitedUsername])
       if (already) throw new Error('Этот пользователь уже участник проекта')
     }
     // Письмо уходит на явный адрес приглашения либо на подтверждённый адрес
@@ -233,74 +223,64 @@ export class ProjectsRepo extends BaseRepo {
     const expiresAt = ts + (opts.ttlMs ?? 7 * 24 * 60 * 60_000)
     // Повторное приглашение того же адресата заменяет прежнее живое: два
     // действующих токена на одного человека — лишняя поверхность.
-    this.db.transaction(() => {
+    await this.sql.transaction(async () => {
       if (invitedUsername) {
-        this.db.prepare(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND invited_username=? AND status='pending'`).run(ts, projectId, invitedUsername)
+        await this.sql.run(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND invited_username=? AND status='pending'`, [ts, projectId, invitedUsername])
       }
       if (email) {
-        this.db.prepare(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND email=? AND status='pending'`).run(ts, projectId, email)
+        await this.sql.run(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND email=? AND status='pending'`, [ts, projectId, email])
       }
-      this.db.prepare(
-        `INSERT INTO project_invitations (id, project_id, email, invited_username, role, token_hash, status, invited_by, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
-      ).run(id, projectId, email, invitedUsername, opts.role === 'owner' ? 'owner' : 'member', this.invitationTokenHash(token), userId, ts, expiresAt)
-    })()
-    return { invitation: this.mapInvitation(this.invitationRow(id)!), token, email: deliverTo }
+      await this.sql.run(`INSERT INTO project_invitations (id, project_id, email, invited_username, role, token_hash, status, invited_by, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`, [id, projectId, email, invitedUsername, opts.role === 'owner' ? 'owner' : 'member', this.invitationTokenHash(token), userId, ts, expiresAt])
+    })
+    return { invitation: this.mapInvitation((await this.invitationRow(id))!), token, email: deliverTo }
   }
 
-  private invitationRow(id: string): ProjectInvitationRow | null {
-    return (this.db.prepare(`SELECT * FROM project_invitations WHERE id = ?`).get(id) as ProjectInvitationRow | undefined) ?? null
+  private async invitationRow(id: string): Promise<ProjectInvitationRow | null> {
+    return ((await this.sql.get(`SELECT * FROM project_invitations WHERE id = ?`, [id])) as ProjectInvitationRow | undefined) ?? null
   }
 
   /** Живые приглашения проекта (для владельца). */
-  listProjectInvitations(userId: string, projectId: string): ProjectInvitation[] | null {
-    if (!this.isProjectOwner(userId, projectId)) return null
-    const rows = this.db.prepare(
-      `SELECT * FROM project_invitations WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC`
-    ).all(projectId) as ProjectInvitationRow[]
+  async listProjectInvitations(userId: string, projectId: string): Promise<ProjectInvitation[] | null> {
+    if (!(await this.isProjectOwner(userId, projectId))) return null
+    const rows = (await this.sql.all(`SELECT * FROM project_invitations WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC`, [projectId])) as ProjectInvitationRow[]
     return rows.map((r) => this.mapInvitation(r))
   }
 
-  revokeProjectInvitation(userId: string, projectId: string, invitationId: string): boolean {
-    if (!this.isProjectOwner(userId, projectId)) return false
-    const changed = this.db.prepare(
-      `UPDATE project_invitations SET status='revoked', responded_at=? WHERE id=? AND project_id=? AND status='pending'`
-    ).run(this.now(), invitationId, projectId)
+  async revokeProjectInvitation(userId: string, projectId: string, invitationId: string): Promise<boolean> {
+    if (!(await this.isProjectOwner(userId, projectId))) return false
+    const changed = await this.sql.run(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE id=? AND project_id=? AND status='pending'`, [this.now(), invitationId, projectId])
     return changed.changes > 0
   }
 
   /** Перевыпуск токена для повторной отправки письма: срок считается заново. */
-  refreshProjectInvitationToken(userId: string, projectId: string, invitationId: string, ttlMs = 7 * 24 * 60 * 60_000): { invitation: ProjectInvitation; token: string; email: string | null } | null {
-    if (!this.isProjectOwner(userId, projectId)) return null
-    const row = this.invitationRow(invitationId)
+  async refreshProjectInvitationToken(userId: string, projectId: string, invitationId: string, ttlMs = 7 * 24 * 60 * 60_000): Promise<{ invitation: ProjectInvitation; token: string; email: string | null } | null> {
+    if (!(await this.isProjectOwner(userId, projectId))) return null
+    const row = await this.invitationRow(invitationId)
     if (!row || row.project_id !== projectId || row.status !== 'pending') return null
     const token = randomBytes(24).toString('base64url')
     const ts = this.now()
-    this.db.prepare(`UPDATE project_invitations SET token_hash=?, expires_at=? WHERE id=?`).run(this.invitationTokenHash(token), ts + ttlMs, invitationId)
-    const user = row.invited_username ? this.repos.identity.getUser(row.invited_username) : null
-    return { invitation: this.mapInvitation(this.invitationRow(invitationId)!), token, email: row.email ?? user?.email ?? null }
+    await this.sql.run(`UPDATE project_invitations SET token_hash=?, expires_at=? WHERE id=?`, [this.invitationTokenHash(token), ts + ttlMs, invitationId])
+    const user = row.invited_username ? await this.repos.identity.getUser(row.invited_username) : null
+    return { invitation: this.mapInvitation((await this.invitationRow(invitationId))!), token, email: row.email ?? user?.email ?? null }
   }
 
   /** Живые приглашения пользователя — по логину и по подтверждённому адресу. */
-  listInvitationsForUser(username: string): ProjectInvitationForUser[] {
-    const user = this.repos.identity.getUser(username)
-    const rows = this.db.prepare(
-      `SELECT i.*, p.name AS project_name FROM project_invitations i
+  async listInvitationsForUser(username: string): Promise<ProjectInvitationForUser[]> {
+    const user = await this.repos.identity.getUser(username)
+    const rows = (await this.sql.all(`SELECT i.*, p.name AS project_name FROM project_invitations i
        JOIN projects p ON p.id = i.project_id
        WHERE i.status = 'pending' AND i.expires_at > ?
          AND (i.invited_username = ? OR (i.email IS NOT NULL AND i.email = ?))
-       ORDER BY i.created_at DESC`
-    ).all(this.now(), username, (user?.email ?? '').toLowerCase()) as Array<ProjectInvitationRow & { project_name: string }>
+       ORDER BY i.created_at DESC`, [this.now(), username, (user?.email ?? '').toLowerCase()])) as Array<ProjectInvitationRow & { project_name: string }>
     return rows.map((r) => ({ ...this.mapInvitation(r), projectName: r.project_name }))
   }
 
   /** Публичный превью по токену: только имя проекта, кто позвал и срок. */
-  projectInvitationPreview(token: string): ProjectInvitationPreview | null {
-    const row = this.db.prepare(
-      `SELECT i.*, p.name AS project_name FROM project_invitations i
+  async projectInvitationPreview(token: string): Promise<ProjectInvitationPreview | null> {
+    const row = (await this.sql.get(`SELECT i.*, p.name AS project_name FROM project_invitations i
        JOIN projects p ON p.id = i.project_id
-       WHERE i.token_hash = ? AND i.status = 'pending' AND i.expires_at > ?`
-    ).get(this.invitationTokenHash(token), this.now()) as (ProjectInvitationRow & { project_name: string }) | undefined
+       WHERE i.token_hash = ? AND i.status = 'pending' AND i.expires_at > ?`, [this.invitationTokenHash(token), this.now()])) as (ProjectInvitationRow & { project_name: string }) | undefined
     if (!row) return null
     return {
       projectId: row.project_id,
@@ -315,10 +295,10 @@ export class ProjectsRepo extends BaseRepo {
    * Приглашение адресовано этому пользователю? Единственное место, где решается
    * «чья это ссылка»: по логину либо по совпадению подтверждённого адреса.
    */
-  private invitationAddressedTo(row: ProjectInvitationRow, username: string): boolean {
+  private async invitationAddressedTo(row: ProjectInvitationRow, username: string): Promise<boolean> {
     if (row.invited_username) return row.invited_username === username
     if (!row.email) return false
-    const email = (this.repos.identity.getUser(username)?.email ?? '').toLowerCase()
+    const email = ((await this.repos.identity.getUser(username))?.email ?? '').toLowerCase()
     return Boolean(email) && email === row.email.toLowerCase()
   }
 
@@ -327,43 +307,42 @@ export class ProjectsRepo extends BaseRepo {
    * Id не секрет: доступ всё равно решает проверка адресата ниже, а приглашённому
    * по логину токен не приходит вовсе — иначе он не смог бы принять приглашение.
    */
-  private invitationByTokenOrId(tokenOrId: string): ProjectInvitationRow | undefined {
-    const byToken = this.db.prepare(`SELECT * FROM project_invitations WHERE token_hash = ?`).get(this.invitationTokenHash(tokenOrId)) as ProjectInvitationRow | undefined
-    return byToken ?? (this.db.prepare(`SELECT * FROM project_invitations WHERE id = ?`).get(tokenOrId) as ProjectInvitationRow | undefined)
+  private async invitationByTokenOrId(tokenOrId: string): Promise<ProjectInvitationRow | undefined> {
+    const byToken = (await this.sql.get(`SELECT * FROM project_invitations WHERE token_hash = ?`, [this.invitationTokenHash(tokenOrId)])) as ProjectInvitationRow | undefined
+    return byToken ?? ((await this.sql.get(`SELECT * FROM project_invitations WHERE id = ?`, [tokenOrId])) as ProjectInvitationRow | undefined)
   }
 
   /** Принять приглашение по токену или id. Возвращает id проекта. */
-  acceptProjectInvitation(username: string, tokenOrId: string): { projectId: string } {
+  async acceptProjectInvitation(username: string, tokenOrId: string): Promise<{ projectId: string }> {
     const ts = this.now()
-    return this.db.transaction(() => {
-      const row = this.invitationByTokenOrId(tokenOrId)
+    return await this.sql.transaction(async () => {
+      const row = await this.invitationByTokenOrId(tokenOrId)
       if (!row) throw new Error('Приглашение недействительно')
       // Повторный переход по той же ссылке — обычное дело: письмо остаётся в
       // почте, а вкладок может быть две. Если это приглашение уже принял тот же
       // человек и он в проекте, отвечаем как на успех: новых прав это не даёт,
       // зато он попадает в проект вместо отказа «Приглашение недействительно».
-      if (row.status === 'accepted' && this.invitationAddressedTo(row, username) && this.isProjectMember(username, row.project_id)) {
+      if (row.status === 'accepted' && await this.invitationAddressedTo(row, username) && await this.isProjectMember(username, row.project_id)) {
         return { projectId: row.project_id }
       }
       if (row.status !== 'pending') throw new Error('Приглашение недействительно')
       if (row.expires_at <= ts) throw new Error('Срок приглашения истёк — попросите отправить его заново')
-      if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
-      const user = this.repos.identity.getUser(username)
+      if (!(await this.invitationAddressedTo(row, username))) throw new Error('Это приглашение адресовано другому пользователю')
+      const user = await this.repos.identity.getUser(username)
       if (!user || user.blocked) throw new Error('Учётная запись недоступна')
 
-      this.db.prepare(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, ?, ?)`)
-        .run(row.project_id, username, row.role === 'owner' ? 'owner' : 'member', ts)
-      this.auditProjectMemberRole(row.project_id, row.invited_by, username, null, row.role === 'owner' ? 'owner' : 'member', 'add', ts)
-      this.db.prepare(`UPDATE project_invitations SET status='accepted', responded_at=?, invited_username=? WHERE id=?`).run(ts, username, row.id)
+      await this.sql.run(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, ?, ?)`, [row.project_id, username, row.role === 'owner' ? 'owner' : 'member', ts])
+      await this.auditProjectMemberRole(row.project_id, row.invited_by, username, null, row.role === 'owner' ? 'owner' : 'member', 'add', ts)
+      await this.sql.run(`UPDATE project_invitations SET status='accepted', responded_at=?, invited_username=? WHERE id=?`, [ts, username, row.id])
       return { projectId: row.project_id }
-    })()
+    })
   }
 
-  declineProjectInvitation(username: string, tokenOrId: string): boolean {
-    const row = this.invitationByTokenOrId(tokenOrId)
+  async declineProjectInvitation(username: string, tokenOrId: string): Promise<boolean> {
+    const row = await this.invitationByTokenOrId(tokenOrId)
     if (!row || row.status !== 'pending') return false
-    if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
-    this.db.prepare(`UPDATE project_invitations SET status='declined', responded_at=? WHERE id=?`).run(this.now(), row.id)
+    if (!(await this.invitationAddressedTo(row, username))) throw new Error('Это приглашение адресовано другому пользователю')
+    await this.sql.run(`UPDATE project_invitations SET status='declined', responded_at=? WHERE id=?`, [this.now(), row.id])
     return true
   }
 
@@ -371,10 +350,8 @@ export class ProjectsRepo extends BaseRepo {
    * Привязать приглашения «на адрес» к новому зарегистрированному пользователю.
    * Автоприёма нет: человек входит, видит приглашение и принимает явно.
    */
-  attachInvitationsToNewUser(username: string, email: string): number {
-    const changed = this.db.prepare(
-      `UPDATE project_invitations SET invited_username = ? WHERE status='pending' AND invited_username IS NULL AND email = ?`
-    ).run(username, email.toLowerCase())
+  async attachInvitationsToNewUser(username: string, email: string): Promise<number> {
+    const changed = await this.sql.run(`UPDATE project_invitations SET invited_username = ? WHERE status='pending' AND invited_username IS NULL AND email = ?`, [username, email.toLowerCase()])
     return changed.changes
   }
 
@@ -390,9 +367,9 @@ export class ProjectsRepo extends BaseRepo {
   }
 
   /** Идемпотентный посев встроенных узлов: пользовательские строки не трогает. */
-  seedBuiltinProjectTypes(): void {
+  async seedBuiltinProjectTypes(): Promise<void> {
     const ts = this.now()
-    const upsert = this.db.prepare(`
+    const upsert = this.sql.prepare(`
       INSERT INTO project_types (id, parent_id, name, description, features_json, defaults_json, builtin, owner_id, status, review_note, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, NULL, 'published', '', 'system', ?, ?)
       ON CONFLICT(id) DO UPDATE SET
@@ -406,11 +383,11 @@ export class ProjectsRepo extends BaseRepo {
         updated_at = excluded.updated_at
       WHERE project_types.builtin = 1
     `)
-    this.db.transaction(() => {
+    await this.sql.transaction(async () => {
       for (const node of BUILTIN_PROJECT_TYPES) {
-        upsert.run(node.id, node.parentId, node.name, node.description, JSON.stringify(node.features), JSON.stringify(node.defaults), ts, ts)
+        await upsert.run(node.id, node.parentId, node.name, node.description, JSON.stringify(node.features), JSON.stringify(node.defaults), ts, ts)
       }
-    })()
+    })
     this.invalidateProjectTypeCache()
   }
 
@@ -434,58 +411,58 @@ export class ProjectsRepo extends BaseRepo {
     }
   }
 
-  getProjectType(id: string): ProjectTypeNode | null {
-    const row = this.db.prepare(`SELECT * FROM project_types WHERE id = ?`).get(id) as ProjectTypeRow | undefined
+  async getProjectType(id: string): Promise<ProjectTypeNode | null> {
+    const row = (await this.sql.get(`SELECT * FROM project_types WHERE id = ?`, [id])) as ProjectTypeRow | undefined
     return row ? this.mapProjectTypeRow(row) : null
   }
 
   /** Все узлы дерева (каталог фильтруется отдельно — см. listProjectTypes). */
-  allProjectTypes(): ProjectTypeNode[] {
-    const rows = this.db.prepare(`SELECT * FROM project_types ORDER BY builtin DESC, name`).all() as ProjectTypeRow[]
+  async allProjectTypes(): Promise<ProjectTypeNode[]> {
+    const rows = (await this.sql.all(`SELECT * FROM project_types ORDER BY builtin DESC, name`)) as ProjectTypeRow[]
     return rows.map((r) => this.mapProjectTypeRow(r))
   }
 
   /** Каталог выбора: встроенные, опубликованные и собственные узлы пользователя. */
-  listProjectTypes(userId: string): ProjectTypeNode[] {
+  async listProjectTypes(userId: string): Promise<ProjectTypeNode[]> {
     // Счёт использования считаем одним запросом на весь каталог: по узлу их было
     // бы столько же, сколько узлов, а каталог читается на каждом открытии формы.
     const counts = new Map(
-      (this.db.prepare(`SELECT project_type_id AS id, COUNT(*) AS n FROM projects GROUP BY project_type_id`).all() as Array<{ id: string | null; n: number }>)
+      ((await this.sql.all(`SELECT project_type_id AS id, COUNT(*) AS n FROM projects GROUP BY project_type_id`)) as Array<{ id: string | null; n: number }>)
         .map((row) => [row.id ?? '', row.n])
     )
-    return this.allProjectTypes()
+    return (await this.allProjectTypes())
       .filter((node) => isProjectTypeVisible(node, userId))
       .map((node) => ({ ...node, usageCount: counts.get(node.id) ?? 0 }))
   }
 
   /** Все узлы, ожидающие решения администратора. */
-  listPendingProjectTypes(): ProjectTypeNode[] {
-    return this.allProjectTypes().filter((node) => node.status === 'pending')
+  async listPendingProjectTypes(): Promise<ProjectTypeNode[]> {
+    return (await this.allProjectTypes()).filter((node) => node.status === 'pending')
   }
 
   /** Путь от корня к узлу. Пустой массив — узла нет или цепочка разорвана. */
-  projectTypeAncestry(id: string): ProjectTypeNode[] {
+  async projectTypeAncestry(id: string): Promise<ProjectTypeNode[]> {
     const chain: ProjectTypeNode[] = []
     const seen = new Set<string>()
-    let current = this.getProjectType(id)
+    let current = await this.getProjectType(id)
     while (current) {
       // Цикл в данных не должен вешать сервер: обрываем и отдаём, что собрали.
       if (seen.has(current.id)) break
       seen.add(current.id)
       chain.unshift(current)
-      current = current.parentId ? this.getProjectType(current.parentId) : null
+      current = current.parentId ? await this.getProjectType(current.parentId) : null
     }
     return chain
   }
 
   /** Разрешённая цепочка типа: узлы + эффективные возможности + ярлык пути. */
-  projectTypeChain(id: string): ProjectTypeChain {
+  async projectTypeChain(id: string): Promise<ProjectTypeChain> {
     const cached = this.projectTypeChainCache.get(id)
     if (cached) return cached
-    let nodes = this.projectTypeAncestry(id)
+    let nodes = await this.projectTypeAncestry(id)
     // Неизвестный тип (например, узел удалили в обход RESTRICT) не должен
     // обесточивать проект: откатываемся на встроенный корень.
-    if (nodes.length === 0 && id !== DEFAULT_PROJECT_TYPE_ID) nodes = this.projectTypeAncestry(DEFAULT_PROJECT_TYPE_ID)
+    if (nodes.length === 0 && id !== DEFAULT_PROJECT_TYPE_ID) nodes = await this.projectTypeAncestry(DEFAULT_PROJECT_TYPE_ID)
     const chain: ProjectTypeChain = {
       nodes,
       features: resolveProjectTypeFeatures(nodes),
@@ -496,55 +473,55 @@ export class ProjectsRepo extends BaseRepo {
   }
 
   /** Эффективные возможности проекта — то, чем гейтятся защищённые операции. */
-  projectFeatures(projectId: string): ProjectFeatureSet {
-    const row = this.db.prepare(`SELECT project_type_id FROM projects WHERE id = ?`).get(projectId) as { project_type_id: string | null } | undefined
-    return this.projectTypeChain(row?.project_type_id || DEFAULT_PROJECT_TYPE_ID).features
+  async projectFeatures(projectId: string): Promise<ProjectFeatureSet> {
+    const row = (await this.sql.get(`SELECT project_type_id FROM projects WHERE id = ?`, [projectId])) as { project_type_id: string | null } | undefined
+    return (await this.projectTypeChain(row?.project_type_id || DEFAULT_PROJECT_TYPE_ID)).features
   }
 
   /** Заготовки типа, слитые от корня к листу. */
-  projectTypeDefaults(id: string): ProjectTypeDefaults {
-    return resolveProjectTypeDefaults(this.projectTypeChain(id).nodes)
+  async projectTypeDefaults(id: string): Promise<ProjectTypeDefaults> {
+    return resolveProjectTypeDefaults((await this.projectTypeChain(id)).nodes)
   }
 
   /** Есть ли у узла дети — нужно и для отказа при удалении, и для UI. */
-  projectTypeHasChildren(id: string): boolean {
-    const row = this.db.prepare(`SELECT 1 FROM project_types WHERE parent_id = ? LIMIT 1`).get(id)
+  async projectTypeHasChildren(id: string): Promise<boolean> {
+    const row = await this.sql.get(`SELECT 1 FROM project_types WHERE parent_id = ? LIMIT 1`, [id])
     return Boolean(row)
   }
 
-  projectTypeUsageCount(id: string): number {
-    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ?`).get(id) as { n: number }
+  async projectTypeUsageCount(id: string): Promise<number> {
+    const row = (await this.sql.get(`SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ?`, [id])) as { n: number }
     return row.n
   }
 
-  private assertProjectTypeParent(parentId: string | null, selfId?: string): void {
+  private async assertProjectTypeParent(parentId: string | null, selfId?: string): Promise<void> {
     if (!parentId) return
-    const parent = this.getProjectType(parentId)
+    const parent = await this.getProjectType(parentId)
     if (!parent) throw new Error('Родительский тип не найден')
-    const ancestry = this.projectTypeAncestry(parentId)
+    const ancestry = await this.projectTypeAncestry(parentId)
     if (selfId && ancestry.some((node) => node.id === selfId)) throw new Error('Тип не может быть потомком самого себя')
     if (ancestry.length + 1 > MAX_PROJECT_TYPE_DEPTH) throw new Error(`Слишком глубокая вложенность типов (максимум ${MAX_PROJECT_TYPE_DEPTH})`)
   }
 
-  createProjectType(userId: string, args: { parentId: string | null; name: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): ProjectTypeNode {
+  async createProjectType(userId: string, args: { parentId: string | null; name: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): Promise<ProjectTypeNode> {
     const name = args.name.trim()
     if (!name) throw new Error('Название типа обязательно')
-    this.assertProjectTypeParent(args.parentId)
+    await this.assertProjectTypeParent(args.parentId)
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`
+    await this.sql.run(`
       INSERT INTO project_types (id, parent_id, name, description, features_json, defaults_json, builtin, owner_id, status, review_note, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'private', '', ?, ?, ?)
-    `).run(id, args.parentId, name, args.description ?? '', JSON.stringify(args.features ?? {}), JSON.stringify(args.defaults ?? {}), userId, userId, ts, ts)
+    `, [id, args.parentId, name, args.description ?? '', JSON.stringify(args.features ?? {}), JSON.stringify(args.defaults ?? {}), userId, userId, ts, ts])
     this.invalidateProjectTypeCache()
-    return this.getProjectType(id)!
+    return (await this.getProjectType(id))!
   }
 
-  updateProjectType(id: string, fields: { parentId?: string | null; name?: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): ProjectTypeNode | null {
-    const current = this.getProjectType(id)
+  async updateProjectType(id: string, fields: { parentId?: string | null; name?: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): Promise<ProjectTypeNode | null> {
+    const current = await this.getProjectType(id)
     if (!current) return null
     if (current.builtin) throw new Error('Встроенный тип нельзя изменить')
-    if (fields.parentId !== undefined) this.assertProjectTypeParent(fields.parentId, id)
+    if (fields.parentId !== undefined) await this.assertProjectTypeParent(fields.parentId, id)
     const set: string[] = []
     const vals: unknown[] = []
     if (fields.parentId !== undefined) { set.push('parent_id = ?'); vals.push(fields.parentId) }
@@ -558,20 +535,20 @@ export class ProjectsRepo extends BaseRepo {
     if (fields.defaults !== undefined) { set.push('defaults_json = ?'); vals.push(JSON.stringify(fields.defaults)) }
     if (!set.length) return current
     set.push('updated_at = ?'); vals.push(this.now())
-    this.db.prepare(`UPDATE project_types SET ${set.join(', ')} WHERE id = ?`).run(...vals, id)
+    await this.sql.run(`UPDATE project_types SET ${set.join(', ')} WHERE id = ?`, [...vals, id])
     this.invalidateProjectTypeCache()
-    return this.getProjectType(id)
+    return await this.getProjectType(id)
   }
 
-  deleteProjectType(id: string): boolean {
-    const current = this.getProjectType(id)
+  async deleteProjectType(id: string): Promise<boolean> {
+    const current = await this.getProjectType(id)
     if (!current) return false
     if (current.builtin) throw new Error('Встроенный тип нельзя удалить')
     // Отказ вместо каскада: иначе удаление узла тихо осиротило бы чужие проекты.
-    if (this.projectTypeHasChildren(id)) throw new Error('У типа есть подтипы — сначала удалите или перенесите их')
-    const used = this.projectTypeUsageCount(id)
+    if (await this.projectTypeHasChildren(id)) throw new Error('У типа есть подтипы — сначала удалите или перенесите их')
+    const used = await this.projectTypeUsageCount(id)
     if (used > 0) throw new Error(`Тип используют проекты (${used}) — сначала переведите их на другой тип`)
-    this.db.prepare(`DELETE FROM project_types WHERE id = ?`).run(id)
+    await this.sql.run(`DELETE FROM project_types WHERE id = ?`, [id])
     this.invalidateProjectTypeCache()
     return true
   }
@@ -580,31 +557,27 @@ export class ProjectsRepo extends BaseRepo {
    * Смена статуса публикации с записью в аудит. Проверку прав делает роут;
    * здесь — инварианты самой модели.
    */
-  setProjectTypeStatus(actor: string, id: string, status: ProjectTypeStatus, note = ''): ProjectTypeNode | null {
-    const current = this.getProjectType(id)
+  async setProjectTypeStatus(actor: string, id: string, status: ProjectTypeStatus, note = ''): Promise<ProjectTypeNode | null> {
+    const current = await this.getProjectType(id)
     if (!current) return null
     if (current.builtin) throw new Error('Встроенный тип не участвует в публикации')
     if (status === 'pending' || status === 'published') {
-      if (!canPublishProjectType(this.projectTypeAncestry(id))) {
+      if (!canPublishProjectType(await this.projectTypeAncestry(id))) {
         throw new Error('Сначала опубликуйте родительские типы — иначе общий тип повиснет на личном')
       }
     }
     if (status === 'private' && current.status === 'published') {
-      const used = this.projectTypeUsageCount(id)
-      const foreign = this.db.prepare(
-        `SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ? AND created_by <> ?`
-      ).get(id, current.ownerId ?? '') as { n: number }
+      const used = await this.projectTypeUsageCount(id)
+      const foreign = (await this.sql.get(`SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ? AND created_by <> ?`, [id, current.ownerId ?? ''])) as { n: number }
       if (foreign.n > 0) throw new Error(`Тип используют чужие проекты (${foreign.n} из ${used}) — отозвать публикацию нельзя`)
     }
     const ts = this.now()
-    this.db.transaction(() => {
-      this.db.prepare(`UPDATE project_types SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`)
-        .run(status, note, actor, ts, ts, id)
-      this.db.prepare(`INSERT INTO project_type_review_audit (type_id, actor, old_status, new_status, note, at) VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(id, actor, current.status, status, note, ts)
-    })()
+    await this.sql.transaction(async () => {
+      await this.sql.run(`UPDATE project_types SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`, [status, note, actor, ts, ts, id])
+      await this.sql.run(`INSERT INTO project_type_review_audit (type_id, actor, old_status, new_status, note, at) VALUES (?, ?, ?, ?, ?, ?)`, [id, actor, current.status, status, note, ts])
+    })
     this.invalidateProjectTypeCache()
-    return this.getProjectType(id)
+    return await this.getProjectType(id)
   }
 
   /**
@@ -616,17 +589,15 @@ export class ProjectsRepo extends BaseRepo {
    * элементов и git/CI-настройки. Родитель — текущий тип проекта, поэтому узел
    * встаёт ровно на следующий уровень дерева.
    */
-  deriveProjectType(userId: string, projectId: string, name: string): ProjectTypeNode | null {
-    if (!this.isProjectOwner(userId, projectId)) return null
-    const project = this.getProject(userId, projectId)
+  async deriveProjectType(userId: string, projectId: string, name: string): Promise<ProjectTypeNode | null> {
+    if (!(await this.isProjectOwner(userId, projectId))) return null
+    const project = await this.getProject(userId, projectId)
     if (!project) return null
     const trimmed = name.trim()
     if (!trimmed) throw new Error('Название типа обязательно')
 
-    const features: ProjectFeatureOverride = { ...this.projectTypeChain(project.typeId).features }
-    const columns = this.db.prepare(
-      `SELECT name, semantic_type FROM kanban_columns WHERE project_id = ? AND hidden = 0 ORDER BY position, created_at, id`
-    ).all(projectId) as Array<{ name: string; semantic_type: string }>
+    const features: ProjectFeatureOverride = { ...(await this.projectTypeChain(project.typeId)).features }
+    const columns = (await this.sql.all(`SELECT name, semantic_type FROM kanban_columns WHERE project_id = ? AND hidden = 0 ORDER BY position, created_at, id`, [projectId])) as Array<{ name: string; semantic_type: string }>
 
     const defaults: ProjectTypeDefaults = {
       columns: columns.map((column) => ({ name: column.name, semanticType: column.semantic_type as ProjectTypeDefaults['columns'] extends Array<infer T> ? T extends { semanticType: infer S } ? S : never : never })),
@@ -642,21 +613,21 @@ export class ProjectsRepo extends BaseRepo {
       ...(project.testCommand ? { testCommand: project.testCommand } : {}),
       ...(project.doneRetentionDays !== undefined ? { doneRetentionDays: project.doneRetentionDays } : {})
     }
-    return this.createProjectType(userId, { parentId: project.typeId, name: trimmed, description: `Из проекта «${project.name}»`, features, defaults })
+    return await this.createProjectType(userId, { parentId: project.typeId, name: trimmed, description: `Из проекта «${project.name}»`, features, defaults })
   }
 
-  projectTypeReviewAudit(id: string): Array<{ actor: string; oldStatus: string; newStatus: string; note: string; at: number }> {
-    const rows = this.db.prepare(`SELECT actor, old_status, new_status, note, at FROM project_type_review_audit WHERE type_id = ? ORDER BY at, id`).all(id) as Array<{ actor: string; old_status: string; new_status: string; note: string; at: number }>
+  async projectTypeReviewAudit(id: string): Promise<Array<{ actor: string; oldStatus: string; newStatus: string; note: string; at: number }>> {
+    const rows = (await this.sql.all(`SELECT actor, old_status, new_status, note, at FROM project_type_review_audit WHERE type_id = ? ORDER BY at, id`, [id])) as Array<{ actor: string; old_status: string; new_status: string; note: string; at: number }>
     return rows.map((r) => ({ actor: r.actor, oldStatus: r.old_status, newStatus: r.new_status, note: r.note, at: r.at }))
   }
 
-  private mapProjectSummary(r: ProjectRow, myRole: string): ProjectSummary {
+  private async mapProjectSummary(r: ProjectRow, myRole: string): Promise<ProjectSummary> {
     return {
       id: r.id,
       name: r.name,
       description: r.description,
       typeId: r.project_type_id || DEFAULT_PROJECT_TYPE_ID,
-      typeChain: this.projectTypeChain(r.project_type_id || DEFAULT_PROJECT_TYPE_ID),
+      typeChain: await this.projectTypeChain(r.project_type_id || DEFAULT_PROJECT_TYPE_ID),
       gitUrl: r.git_url,
       previewUrl: r.preview_url ?? null,
       testUsers: parseJsonValue<import('@voicechat/shared').ProjectTestUser[]>(r.test_users_json ?? null, []),
@@ -702,53 +673,26 @@ export class ProjectsRepo extends BaseRepo {
   }
 
   /** Создаёт проект: владелец-участник + дефолтные колонки (в одной транзакции). */
-  createProject(
+  async createProject(
     userId: string,
     args: { name: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
-  ): ProjectDetail {
+  ): Promise<ProjectDetail> {
     const id = this.newId()
     const ts = this.now()
     // Заготовки типа — СНИМОК на момент создания: дальше проект живёт своей жизнью,
     // и правка типа не перекраивает работающую доску. Явный аргумент всегда важнее
     // заготовки: пользователь заполнил поле руками.
-    const typeId = args.typeId && this.getProjectType(args.typeId) ? args.typeId : DEFAULT_PROJECT_TYPE_ID
-    const seed = this.projectTypeDefaults(typeId)
-    this.db.transaction(() => {
-      this.db
-        .prepare(
-          `INSERT INTO projects (id, project_type_id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode, default_skills_epic, default_skills_story, default_skills_task, ci_base_branch, ci_branch_template, ci_reuse_strategy, test_command)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          id,
-          typeId,
-          args.name,
-          args.description ?? '',
-          args.gitUrl ?? null,
-          JSON.stringify(args.technologies ?? seed.technologies ?? []),
-          JSON.stringify(args.skills ?? seed.skills ?? []),
-          userId,
-          ts,
-          ts,
-          args.commitPolicy ?? seed.commitPolicy ?? 'agent_commits',
-          args.mergeTransport ?? seed.mergeTransport ?? 'local',
-          args.agentPlanApprovalMode ?? seed.agentPlanApprovalMode ?? 'manual',
-          JSON.stringify(args.defaultSkills?.epic ?? seed.defaultSkills?.epic ?? []),
-          JSON.stringify(args.defaultSkills?.story ?? seed.defaultSkills?.story ?? []),
-          JSON.stringify(args.defaultSkills?.task ?? seed.defaultSkills?.task ?? []),
-          seed.ciBaseBranch ?? 'main',
-          seed.ciBranchTemplate ?? '{task_number}',
-          seed.ciReuseStrategy ?? 'fail',
-          seed.testCommand ?? ''
-        )
+    const typeId = args.typeId && await this.getProjectType(args.typeId) ? args.typeId : DEFAULT_PROJECT_TYPE_ID
+    const seed = await this.projectTypeDefaults(typeId)
+    await this.sql.transaction(async () => {
+      await this.sql.run(`INSERT INTO projects (id, project_type_id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode, default_skills_epic, default_skills_story, default_skills_task, ci_base_branch, ci_branch_template, ci_reuse_strategy, test_command)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, typeId, args.name, args.description ?? '', args.gitUrl ?? null, JSON.stringify(args.technologies ?? seed.technologies ?? []), JSON.stringify(args.skills ?? seed.skills ?? []), userId, ts, ts, args.commitPolicy ?? seed.commitPolicy ?? 'agent_commits', args.mergeTransport ?? seed.mergeTransport ?? 'local', args.agentPlanApprovalMode ?? seed.agentPlanApprovalMode ?? 'manual', JSON.stringify(args.defaultSkills?.epic ?? seed.defaultSkills?.epic ?? []), JSON.stringify(args.defaultSkills?.story ?? seed.defaultSkills?.story ?? []), JSON.stringify(args.defaultSkills?.task ?? seed.defaultSkills?.task ?? []), seed.ciBaseBranch ?? 'main', seed.ciBranchTemplate ?? '{task_number}', seed.ciReuseStrategy ?? 'fail', seed.testCommand ?? ''])
 
-      this.db
-        .prepare(`INSERT INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'owner', ?)`)
-        .run(id, userId, ts)
+      await this.sql.run(`INSERT INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'owner', ?)`, [id, userId, ts])
       // Колонки берутся из заготовок типа; у «Разработки ПО» их нет, и остаётся
       // системный конвейер. Для «Общего проекта» тип отдаёт короткий нейтральный
       // набор — 13 колонок QA-конвейера там были бы бессмысленны.
-      ;(seed.columns?.length
+      for (const [i, [name, semantic]] of (seed.columns?.length
         ? seed.columns.map((column) => [column.name, column.semanticType] as [string, string])
         : [
         ['Бэклог', 'backlog'],
@@ -764,45 +708,35 @@ export class ProjectsRepo extends BaseRepo {
         ['Готово', 'done'],
         ['Отменено', 'cancelled'],
         ['Требуется решение', 'decision_required']
-      ] as [string, string][]).forEach(([name, semantic], i) =>
-        this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
-      )
+      ] as [string, string][]).entries()) {
+        await this.sql.run(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`, [this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts])
+      }
       // Скелет раздела «Разработка проекта» заводит владелец статей — kb. Без него
       // раздел пустой, и «Исследовать проект» нечего сверять с кодом.
-      this.repos.kb.seedProjectOverview({ projectId: id, name: args.name, description: args.description ?? '', createdBy: userId, ts })
-    })()
-    return this.getProject(userId, id) as ProjectDetail
+      await this.repos.kb.seedProjectOverview({ projectId: id, name: args.name, description: args.description ?? '', createdBy: userId, ts })
+    })
+    return (await this.getProject(userId, id)) as ProjectDetail
   }
 
-  countOwnedProjects(userId: string): number {
-    const row = this.db.prepare(`SELECT COUNT(*) AS count FROM project_members WHERE username = ? AND role = 'owner'`).get(userId) as { count: number }
+  async countOwnedProjects(userId: string): Promise<number> {
+    const row = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members WHERE username = ? AND role = 'owner'`, [userId])) as { count: number }
     return row.count
   }
 
-  listProjects(userId: string): ProjectSummary[] {
-    const rows = this.db
-      .prepare(
-        `SELECT p.*, m.role AS my_role FROM projects p
+  async listProjects(userId: string): Promise<ProjectSummary[]> {
+    const rows = (await this.sql.all(`SELECT p.*, m.role AS my_role FROM projects p
          JOIN project_members m ON m.project_id = p.id
-         WHERE m.username = ? ORDER BY p.updated_at DESC`
-      )
-      .all(userId) as Array<ProjectRow & { my_role: string }>
-    return rows.map((r) => this.mapProjectSummary(r, r.my_role))
+         WHERE m.username = ? ORDER BY p.updated_at DESC`, [userId])) as Array<ProjectRow & { my_role: string }>
+    return await Promise.all(rows.map(async (r) => await this.mapProjectSummary(r, r.my_role)))
   }
 
-  getProject(userId: string, id: string): ProjectDetail | null {
-    const row = this.db
-      .prepare(
-        `SELECT p.*, m.role AS my_role FROM projects p
+  async getProject(userId: string, id: string): Promise<ProjectDetail | null> {
+    const row = (await this.sql.get(`SELECT p.*, m.role AS my_role FROM projects p
          JOIN project_members m ON m.project_id = p.id
-         WHERE p.id = ? AND m.username = ?`
-      )
-      .get(id, userId) as (ProjectRow & { my_role: string }) | undefined
+         WHERE p.id = ? AND m.username = ?`, [id, userId])) as (ProjectRow & { my_role: string }) | undefined
     if (!row) return null
     const members = (
-      this.db
-        .prepare(`SELECT pm.username, pm.role, pm.added_at, u.blocked FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? ORDER BY pm.added_at ASC`)
-        .all(id) as Array<ProjectMemberRow & { blocked: number }>
+      (await this.sql.all(`SELECT pm.username, pm.role, pm.added_at, u.blocked FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? ORDER BY pm.added_at ASC`, [id])) as Array<ProjectMemberRow & { blocked: number }>
     ).map(
       (m): ProjectMember => ({
         username: m.username,
@@ -811,9 +745,8 @@ export class ProjectsRepo extends BaseRepo {
         active: m.blocked === 0
       })
     )
-    const machines = (
-      this.db.prepare(
-        `SELECT a.id AS agent_id,
+    const machines = await Promise.all((
+      (await this.sql.all(`SELECT a.id AS agent_id,
                 COALESCE(pm.path,'') AS path,
                 COALESCE(pm.repos_root,'') AS repos_root,
                 COALESCE(pm.ssh_host,'') AS ssh_host,
@@ -829,8 +762,7 @@ export class ProjectsRepo extends BaseRepo {
          LEFT JOIN machine_storages s ON s.id=pm.storage_id AND s.machine_id=a.id
          LEFT JOIN machine_project_shares share ON share.agent_id=a.id AND share.project_id=?
          WHERE a.user_id=? OR (share.shared=1 AND a.user_id<>?)
-         ORDER BY CASE WHEN a.user_id=? THEN 0 ELSE 1 END, a.name ASC`
-      ).all(id, id, userId, userId, userId) as Array<{
+         ORDER BY CASE WHEN a.user_id=? THEN 0 ELSE 1 END, a.name ASC`, [id, id, userId, userId, userId])) as Array<{
         agent_id: string
         path: string | null
         repos_root: string | null
@@ -846,7 +778,7 @@ export class ProjectsRepo extends BaseRepo {
         shared: number
         share_access: string
       }>
-    ).map((x) => {
+    ).map(async (x) => {
       let directories: ProjectMachineDirectoryAssignments | undefined
       try { directories = x.directories_json ? JSON.parse(x.directories_json) as ProjectMachineDirectoryAssignments : undefined } catch { directories = undefined }
       const storage = x.storage_id && x.storage_root_path ? {
@@ -868,29 +800,29 @@ export class ProjectsRepo extends BaseRepo {
         ownership: x.user_id === userId ? 'mine' as const : 'other' as const,
         sharedWithProject: !!x.shared,
         ...(x.shared ? { shareAccess: (x.share_access === 'read' ? 'read' : 'full') as MachineShareAccess } : {}),
-        isMyDefault: this.repos.machines.getUserProjectDefaultMachine(userId, id) === x.agent_id,
+        isMyDefault: await this.repos.machines.getUserProjectDefaultMachine(userId, id) === x.agent_id,
         canUse: x.user_id === userId || !!x.shared,
         unavailableReason: null,
-        load: this.repos.ci.countActiveCiRunsByAgent()[x.agent_id] ?? 0,
+        load: (await this.repos.ci.countActiveCiRunsByAgent())[x.agent_id] ?? 0,
         online: false,
         addedAt: x.added_at,
         path: x.path ?? '', reposRoot: x.repos_root ?? '',
         storageId: x.storage_id, storage,
-        availableStorages: x.user_id === userId ? this.repos.machines.listMachineStorages(userId, x.agent_id).map((item, index) => ({ ...item, primary: index === 0 })) : undefined,
+        availableStorages: x.user_id === userId ? (await this.repos.machines.listMachineStorages(userId, x.agent_id)).map((item, index) => ({ ...item, primary: index === 0 })) : undefined,
         directories, recommendations,
         readiness: { ready: readinessReasons.length === 0, reasons: readinessReasons },
         sshHost: x.ssh_host ?? '', sshUser: x.ssh_user ?? ''
       }
-    })
+    }))
     return {
-      ...this.mapProjectSummary(row, row.my_role),
+      ...await this.mapProjectSummary(row, row.my_role),
       members,
       machines,
       defaultAgentId: row.default_agent_id ?? null
     }
   }
 
-  updateProject(
+  async updateProject(
     userId: string,
     id: string,
     fields: {
@@ -930,14 +862,14 @@ export class ProjectsRepo extends BaseRepo {
       doneRetentionDays?: number | null
       typeId?: string
     }
-  ): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+  ): Promise<ProjectDetail | null> {
+    if (!(await this.isProjectOwner(userId, id))) return null
     const set: string[] = []
     const vals: unknown[] = []
     if (fields.typeId !== undefined) {
       // Меняются только ЖИВЫЕ возможности: доска, теги и CI-настройки проекта
       // остаются как есть — они были снимком заготовок на момент создания.
-      if (!this.getProjectType(fields.typeId)) throw new Error('Тип проекта не найден')
+      if (!(await this.getProjectType(fields.typeId))) throw new Error('Тип проекта не найден')
       set.push('project_type_id = ?')
       vals.push(fields.typeId)
     }
@@ -1017,18 +949,18 @@ export class ProjectsRepo extends BaseRepo {
     const ts = this.now()
     set.push('updated_at = ?')
     vals.push(ts)
-    this.db.prepare(`UPDATE projects SET ${set.join(', ')} WHERE id = ?`).run(...vals, id)
-    return this.getProject(userId, id)
+    await this.sql.run(`UPDATE projects SET ${set.join(', ')} WHERE id = ?`, [...vals, id])
+    return await this.getProject(userId, id)
   }
 
-  deleteProject(userId: string, id: string): boolean {
-    if (!this.isProjectOwner(userId, id)) return false
+  async deleteProject(userId: string, id: string): Promise<boolean> {
+    if (!(await this.isProjectOwner(userId, id))) return false
     // CASCADE удалит members/machines/columns/tasks.
-    this.db.prepare(`DELETE FROM projects WHERE id = ?`).run(id)
+    await this.sql.run(`DELETE FROM projects WHERE id = ?`, [id])
     return true
   }
 
-  private auditProjectMemberRole(
+  private async auditProjectMemberRole(
     projectId: string,
     actor: string,
     targetUser: string,
@@ -1036,98 +968,84 @@ export class ProjectsRepo extends BaseRepo {
     newRole: 'owner' | 'member' | null,
     action: 'add' | 'role_change' | 'remove',
     createdAt: number
-  ): void {
-    this.db.prepare(
-      `INSERT INTO project_member_role_audit
+  ): Promise<void> {
+    await this.sql.run(`INSERT INTO project_member_role_audit
        (id, project_id, target_user, actor, old_role, new_role, action, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(this.newId(), projectId, targetUser, actor, oldRole, newRole, action, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [this.newId(), projectId, targetUser, actor, oldRole, newRole, action, createdAt])
   }
 
-  addMember(userId: string, id: string, username: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
-    if (!this.db.prepare(`SELECT 1 FROM users WHERE name = ?`).get(username)) {
+  async addMember(userId: string, id: string, username: string): Promise<ProjectDetail | null> {
+    if (!(await this.isProjectOwner(userId, id))) return null
+    if (!(await this.sql.get(`SELECT 1 FROM users WHERE name = ?`, [username]))) {
       throw new Error(`Пользователь ${username} не найден`)
     }
     const ts = this.now()
-    const inserted = this.db
-      .prepare(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'member', ?)`)
-      .run(id, username, ts)
-    if (inserted.changes) this.auditProjectMemberRole(id, userId, username, null, 'member', 'add', ts)
-    return this.getProject(userId, id)
+    const inserted = await this.sql.run(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'member', ?)`, [id, username, ts])
+    if (inserted.changes) await this.auditProjectMemberRole(id, userId, username, null, 'member', 'add', ts)
+    return await this.getProject(userId, id)
   }
 
-  updateMemberRole(
+  async updateMemberRole(
     userId: string,
     id: string,
     username: string,
     role: 'owner' | 'member'
-  ): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
-    const change = this.db.transaction(() => {
-      const row = this.db
-        .prepare(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`)
-        .get(id, username) as { role: string } | undefined
+  ): Promise<ProjectDetail | null> {
+    if (!(await this.isProjectOwner(userId, id))) return null
+    const change = () => this.sql.transaction(async () => {
+      const row = (await this.sql.get(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`, [id, username])) as { role: string } | undefined
       if (!row) throw new Error('Сначала добавьте пользователя в участники проекта')
       const oldRole = row.role === 'owner' ? 'owner' : 'member'
       if (oldRole === role) return
       if (oldRole === 'owner') {
-        const owners = this.db
-          .prepare(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`)
-          .get(id) as { count: number }
+        const owners = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`, [id])) as { count: number }
         if (owners.count <= 1) {
           throw new Error('Нельзя понизить последнего владельца. Сначала назначьте другого владельца')
         }
       }
       const ts = this.now()
-      this.db.prepare(`UPDATE project_members SET role = ? WHERE project_id = ? AND username = ?`).run(role, id, username)
-      this.auditProjectMemberRole(id, userId, username, oldRole, role, 'role_change', ts)
-      this.touchProject(id, ts)
+      await this.sql.run(`UPDATE project_members SET role = ? WHERE project_id = ? AND username = ?`, [role, id, username])
+      await this.auditProjectMemberRole(id, userId, username, oldRole, role, 'role_change', ts)
+      await this.touchProject(id, ts)
     })
-    // IMMEDIATE получает write-lock до проверки количества владельцев: два
-    // параллельных понижения не могут оба увидеть устаревший count.
-    change.immediate()
-    return this.getProject(userId, id)
+    // Транзакции адаптера выполняются по одной: два параллельных понижения не могут
+    // оба увидеть устаревший count (раньше это обеспечивал BEGIN IMMEDIATE).
+    await change()
+    return await this.getProject(userId, id)
   }
 
-  removeMember(userId: string, id: string, username: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
-    const remove = this.db.transaction(() => {
-      const row = this.db
-        .prepare(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`)
-        .get(id, username) as { role: string } | undefined
+  async removeMember(userId: string, id: string, username: string): Promise<ProjectDetail | null> {
+    if (!(await this.isProjectOwner(userId, id))) return null
+    const remove = () => this.sql.transaction(async () => {
+      const row = (await this.sql.get(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`, [id, username])) as { role: string } | undefined
       if (!row) return
       const oldRole = row.role === 'owner' ? 'owner' : 'member'
       if (oldRole === 'owner') {
-        const owners = this.db
-          .prepare(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`)
-          .get(id) as { count: number }
+        const owners = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`, [id])) as { count: number }
         if (owners.count <= 1) {
           throw new Error('Нельзя удалить или вывести последнего владельца. Сначала назначьте другого владельца')
         }
       }
       const ts = this.now()
-      this.db.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = ?`).run(id, username)
-      this.repos.tasks.unassignUserInProject(id, username, ts)
-      this.auditProjectMemberRole(id, userId, username, oldRole, null, 'remove', ts)
-      this.touchProject(id, ts)
+      await this.sql.run(`DELETE FROM project_members WHERE project_id = ? AND username = ?`, [id, username])
+      await this.repos.tasks.unassignUserInProject(id, username, ts)
+      await this.auditProjectMemberRole(id, userId, username, oldRole, null, 'remove', ts)
+      await this.touchProject(id, ts)
     })
-    remove.immediate()
-    return this.getProject(userId, id)
+    await remove()
+    return await this.getProject(userId, id)
   }
 
-  listProjectMemberRoleAudit(projectId: string): Array<{
+  async listProjectMemberRoleAudit(projectId: string): Promise<Array<{
     targetUser: string
     actor: string
     oldRole: 'owner' | 'member' | null
     newRole: 'owner' | 'member' | null
     action: 'add' | 'role_change' | 'remove'
     createdAt: number
-  }> {
-    return (this.db.prepare(
-      `SELECT target_user, actor, old_role, new_role, action, created_at
-       FROM project_member_role_audit WHERE project_id = ? ORDER BY created_at, rowid`
-    ).all(projectId) as Array<Record<string, unknown>>).map((row) => ({
+  }>> {
+    return ((await this.sql.all(`SELECT target_user, actor, old_role, new_role, action, created_at
+       FROM project_member_role_audit WHERE project_id = ? ORDER BY created_at, rowid`, [projectId])) as Array<Record<string, unknown>>).map((row) => ({
       targetUser: String(row.target_user),
       actor: String(row.actor),
       oldRole: row.old_role === 'owner' ? 'owner' : row.old_role === 'member' ? 'member' : null,
@@ -1137,50 +1055,44 @@ export class ProjectsRepo extends BaseRepo {
     }))
   }
 
-  unlinkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
-    if (!this.isProjectMember(userId, id)) return null
-    this.repos.machines.setMachineSharedWithProject(userId, id, agentId, false)
-    this.db.prepare(`UPDATE projects SET default_agent_id=NULL WHERE id=? AND default_agent_id=?`).run(id, agentId)
-    return this.getProject(userId, id)
+  async unlinkMachine(userId: string, id: string, agentId: string): Promise<ProjectDetail | null> {
+    if (!(await this.isProjectMember(userId, id))) return null
+    await this.repos.machines.setMachineSharedWithProject(userId, id, agentId, false)
+    await this.sql.run(`UPDATE projects SET default_agent_id=NULL WHERE id=? AND default_agent_id=?`, [id, agentId])
+    return await this.getProject(userId, id)
   }
 
   /** Назначить машину проекта по умолчанию (только владелец; машина должна быть в проекте). */
-  setProjectDefaultMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
-    const inProject = this.db
-      .prepare(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`)
-      .get(id, agentId)
+  async setProjectDefaultMachine(userId: string, id: string, agentId: string): Promise<ProjectDetail | null> {
+    if (!(await this.isProjectOwner(userId, id))) return null
+    const inProject = await this.sql.get(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`, [id, agentId])
     if (!inProject) throw new Error('Машина не привязана к проекту')
-    this.db.prepare(`UPDATE projects SET default_agent_id = ? WHERE id = ?`).run(agentId, id)
-    this.touchProject(id)
-    return this.getProject(userId, id)
+    await this.sql.run(`UPDATE projects SET default_agent_id = ? WHERE id = ?`, [agentId, id])
+    await this.touchProject(id)
+    return await this.getProject(userId, id)
   }
 
-  createColumn(userId: string, projectId: string, name: string): KanbanColumn | null {
-    if (!this.isProjectMember(userId, projectId)) return null
+  async createColumn(userId: string, projectId: string, name: string): Promise<KanbanColumn | null> {
+    if (!(await this.isProjectMember(userId, projectId))) return null
     const id = this.newId()
     const ts = this.now()
     const max = (
-      this.db.prepare(`SELECT MAX(position) AS m FROM kanban_columns WHERE project_id = ?`).get(projectId) as {
+      (await this.sql.get(`SELECT MAX(position) AS m FROM kanban_columns WHERE project_id = ?`, [projectId])) as {
         m: number | null
       }
     ).m
     const position = (max ?? 0) + RANK_STEP
-    this.db
-      .prepare(
-        `INSERT INTO kanban_columns (id, project_id, name, position, hidden, created_at) VALUES (?, ?, ?, ?, 0, ?)`
-      )
-      .run(id, projectId, name, position, ts)
-    this.touchProject(projectId, ts)
+    await this.sql.run(`INSERT INTO kanban_columns (id, project_id, name, position, hidden, created_at) VALUES (?, ?, ?, ?, 0, ?)`, [id, projectId, name, position, ts])
+    await this.touchProject(projectId, ts)
     return mapColumn({ id, project_id: projectId, name, semantic_type: 'custom', position, hidden: 0, wip_limit: null, created_at: ts })
   }
 
-  renameColumn(userId: string, projectId: string, columnId: string, name: string): boolean {
-    return this.updateColumn(userId, projectId, columnId, { name })
+  async renameColumn(userId: string, projectId: string, columnId: string, name: string): Promise<boolean> {
+    return await this.updateColumn(userId, projectId, columnId, { name })
   }
 
-  updateColumn(userId: string, projectId: string, columnId: string, fields: { name?: string; wipLimit?: number | null }): boolean {
-    if (!this.isProjectMember(userId, projectId) || !this.columnInProject(projectId, columnId)) return false
+  async updateColumn(userId: string, projectId: string, columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<boolean> {
+    if (!(await this.isProjectMember(userId, projectId)) || !(await this.columnInProject(projectId, columnId))) return false
     const set: string[] = []
     const vals: unknown[] = []
     if (fields.name !== undefined) {
@@ -1192,50 +1104,46 @@ export class ProjectsRepo extends BaseRepo {
       vals.push(fields.wipLimit != null && fields.wipLimit > 0 ? Math.floor(fields.wipLimit) : null)
     }
     if (!set.length) return true
-    this.db.prepare(`UPDATE kanban_columns SET ${set.join(', ')} WHERE id = ? AND project_id = ?`).run(...vals, columnId, projectId)
-    this.touchProject(projectId)
+    await this.sql.run(`UPDATE kanban_columns SET ${set.join(', ')} WHERE id = ? AND project_id = ?`, [...vals, columnId, projectId])
+    await this.touchProject(projectId)
     return true
   }
 
-  setColumnHidden(userId: string, projectId: string, columnId: string, hidden: boolean): boolean {
-    if (!this.isProjectMember(userId, projectId) || !this.columnInProject(projectId, columnId)) return false
-    this.db
-      .prepare(`UPDATE kanban_columns SET hidden = ? WHERE id = ? AND project_id = ?`)
-      .run(hidden ? 1 : 0, columnId, projectId)
-    this.touchProject(projectId)
+  async setColumnHidden(userId: string, projectId: string, columnId: string, hidden: boolean): Promise<boolean> {
+    if (!(await this.isProjectMember(userId, projectId)) || !(await this.columnInProject(projectId, columnId))) return false
+    await this.sql.run(`UPDATE kanban_columns SET hidden = ? WHERE id = ? AND project_id = ?`, [hidden ? 1 : 0, columnId, projectId])
+    await this.touchProject(projectId)
     return true
   }
 
-  reorderColumns(userId: string, projectId: string, order: string[]): boolean {
-    if (!this.isProjectMember(userId, projectId)) return false
+  async reorderColumns(userId: string, projectId: string, order: string[]): Promise<boolean> {
+    if (!(await this.isProjectMember(userId, projectId))) return false
     const ids = (
-      this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ?`).all(projectId) as Array<{ id: string }>
+      (await this.sql.all(`SELECT id FROM kanban_columns WHERE project_id = ?`, [projectId])) as Array<{ id: string }>
     ).map((x) => x.id)
     const known = new Set(ids)
     if (order.length !== ids.length || !order.every((o) => known.has(o))) return false
-    const upd = this.db.prepare(`UPDATE kanban_columns SET position = ? WHERE id = ? AND project_id = ?`)
-    this.db.transaction(() => {
-      order.forEach((cid, i) => upd.run((i + 1) * RANK_STEP, cid, projectId))
-    })()
-    this.touchProject(projectId)
+    const upd = this.sql.prepare(`UPDATE kanban_columns SET position = ? WHERE id = ? AND project_id = ?`)
+    await this.sql.transaction(async () => {
+      for (const [i, cid] of order.entries()) await upd.run((i + 1) * RANK_STEP, cid, projectId)
+    })
+    await this.touchProject(projectId)
     return true
   }
 
-  deleteColumn(userId: string, projectId: string, columnId: string): boolean {
-    if (!this.isProjectMember(userId, projectId)) return false
-    const semantic = this.db.prepare(`SELECT semantic_type FROM kanban_columns WHERE id = ? AND project_id = ?`).get(columnId, projectId) as { semantic_type: string } | undefined
+  async deleteColumn(userId: string, projectId: string, columnId: string): Promise<boolean> {
+    if (!(await this.isProjectMember(userId, projectId))) return false
+    const semantic = (await this.sql.get(`SELECT semantic_type FROM kanban_columns WHERE id = ? AND project_id = ?`, [columnId, projectId])) as { semantic_type: string } | undefined
     if (!semantic || semantic.semantic_type !== 'custom') return false
     // CASCADE удалит задачи пользовательской колонки.
-    const info = this.db.prepare(`DELETE FROM kanban_columns WHERE id = ? AND project_id = ?`).run(columnId, projectId)
-    if (info.changes) this.touchProject(projectId)
+    const info = await this.sql.run(`DELETE FROM kanban_columns WHERE id = ? AND project_id = ?`, [columnId, projectId])
+    if (info.changes) await this.touchProject(projectId)
     return info.changes > 0
   }
 
   /** Навыки по умолчанию проекта для типа элемента (из настроек проекта). */
-  projectDefaultSkills(projectId: string, type: WorkItemType): string[] {
-    const row = this.db
-      .prepare(`SELECT default_skills_epic, default_skills_story, default_skills_task FROM projects WHERE id = ?`)
-      .get(projectId) as
+  async projectDefaultSkills(projectId: string, type: WorkItemType): Promise<string[]> {
+    const row = (await this.sql.get(`SELECT default_skills_epic, default_skills_story, default_skills_task FROM projects WHERE id = ?`, [projectId])) as
       | { default_skills_epic: string; default_skills_story: string; default_skills_task: string }
       | undefined
     if (!row) return []
@@ -1244,28 +1152,28 @@ export class ProjectsRepo extends BaseRepo {
   }
 
   /** Право редактировать чужую запись: автор, владелец проекта или админ. */
-  canModerateTaskEntry(userId: string, projectId: string, author: string): boolean {
+  async canModerateTaskEntry(userId: string, projectId: string, author: string): Promise<boolean> {
     if (userId === author) return true
-    if (this.repos.identity.getUser(userId)?.role === 'admin') return true
-    const owner = this.db.prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`).get(projectId, userId)
+    if ((await this.repos.identity.getUser(userId))?.role === 'admin') return true
+    const owner = await this.sql.get(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`, [projectId, userId])
     return Boolean(owner)
   }
 
   /** Найти системную колонку проекта для автоматического перехода CI. */
-  getColumnIdBySemantic(projectId: string, semanticType: KanbanColumnSemanticType): string | null {
-    const row = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = ? ORDER BY position LIMIT 1`).get(projectId, semanticType) as { id: string } | undefined
+  async getColumnIdBySemantic(projectId: string, semanticType: KanbanColumnSemanticType): Promise<string | null> {
+    const row = (await this.sql.get(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = ? ORDER BY position LIMIT 1`, [projectId, semanticType])) as { id: string } | undefined
     return row?.id ?? null
   }
 
   // ============== Структурированное ручное QA =================
-  canQa(userId: string, projectId: string): boolean {
-    const row = this.db.prepare(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, userId) as { role: string; qa_permission: number } | undefined
+  async canQa(userId: string, projectId: string): Promise<boolean> {
+    const row = (await this.sql.get(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`, [projectId, userId])) as { role: string; qa_permission: number } | undefined
     return !!row && (row.role === 'owner' || !!row.qa_permission)
   }
 
   /** Следующий номер задачи проекта (CHAT-N): счётчик живёт в projects, выдаёт его владелец. */
-  nextTaskSeq(projectId: string): number {
-    return (this.db.prepare(`UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`).get(projectId) as { task_seq: number }).task_seq
+  async nextTaskSeq(projectId: string): Promise<number> {
+    return ((await this.sql.get(`UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`, [projectId])) as { task_seq: number }).task_seq
   }
 
   /**
@@ -1274,25 +1182,19 @@ export class ProjectsRepo extends BaseRepo {
    * убираем, осиротевшие без владельца проекты удаляем. Зовётся из identity внутри
    * его транзакции.
    */
-  detachDeletedUser(userId: string, email: string): void {
-    this.db.prepare(
-      `UPDATE project_invitations SET status='revoked', responded_at=?
-       WHERE status='pending' AND (invited_username = ? OR (? <> '' AND email = ?))`
-    ).run(this.now(), userId, email, email)
-    this.db.prepare(`DELETE FROM project_members WHERE username = ?`).run(userId)
-    this.db
-      .prepare(
-        `DELETE FROM projects WHERE id IN (
+  async detachDeletedUser(userId: string, email: string): Promise<void> {
+    await this.sql.run(`UPDATE project_invitations SET status='revoked', responded_at=?
+       WHERE status='pending' AND (invited_username = ? OR (? <> '' AND email = ?))`, [this.now(), userId, email, email])
+    await this.sql.run(`DELETE FROM project_members WHERE username = ?`, [userId])
+    await this.sql.run(`DELETE FROM projects WHERE id IN (
            SELECT p.id FROM projects p
            WHERE NOT EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = p.id AND m.role = 'owner')
-         )`
-      )
-      .run()
+         )`)
   }
 
   /** Машина удаляется: проекты теряют её как машину по умолчанию и как прод-машину. */
-  detachAgent(agentId: string): void {
-    this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`).run(agentId)
-    this.db.prepare(`UPDATE projects SET production_agent_id = NULL WHERE production_agent_id = ?`).run(agentId)
+  async detachAgent(agentId: string): Promise<void> {
+    await this.sql.run(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`, [agentId])
+    await this.sql.run(`UPDATE projects SET production_agent_id = NULL WHERE production_agent_id = ?`, [agentId])
   }
 }

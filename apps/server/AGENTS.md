@@ -29,7 +29,7 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `config.ts` (env → артефакты репо → дефолты), `server.ts`, `index.ts`, `ws.ts`,
 `session.ts`, `turns.ts`, `uploads.ts`;
 `routes/` (`rest.ts`, `agents.ts`, `admin.ts`), `users/`,
-`db/` (ядро `database.ts`, схема, доменные репозитории `repos/<домен>.ts` с манифестом владения таблицами `ownership.ts`, `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
+`db/` (ядро `database.ts`, схема, доменные репозитории `repos/<домен>.ts` с манифестом владения таблицами `ownership.ts`; репозитории асинхронны и ходят в базу только через адаптер `sql/` (`types.ts`, `sqlite.ts`, `pg.ts`, транслятор `dialect.ts`, полоса `lane.ts`) — SQL в диалекте SQLite, один код на SQLite и Postgres (`VC_DB_URL`); `schemaPg.ts` выводит DDL Postgres из `schema.ts`, `copyToPostgres.ts` переносит данные; `fts.ts` — экранирование запроса для FTS5-поиска по сообщениям),
 `stt/` (whisper, модели, скачивание, wav), `tts/` (piper, say, каталог, голоса),
 `claude/`, `codex/`, `llm/` (`RemoteLlmClient`, `RunnerFsClient`, общий приёмник потока),
 `cc/` (наблюдатель сессий Claude Code),
@@ -45,7 +45,9 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 ## Тесты
 
 `vitest run`, файлы рядом. HTTP — через `app.inject()`, WS — ws-клиентом, движки и
-`spawn` — моками, БД — `:memory:`. Реальные `claude`/`codex`/`whisper-cli` в тестах
+`spawn` — моками, БД — `:memory:`. Тест, трогающий сырой драйвер (`(db as { db }).db`) или
+второй `VoiceChatDb` на том же файле, ждёт `await db.ready`/`await db.close()`; с изменяемыми
+часами каждый вызов порта — под `await` (см. `docs/kb/data-auth.md`). Реальные `claude`/`codex`/`whisper-cli` в тестах
 не запускаются. Помни про `AUTODISCOVER = !process.env.VITEST` в `config.ts`.
 
 Гейт: `npm run -w @voicechat/server typecheck && npm run -w @voicechat/server test`.

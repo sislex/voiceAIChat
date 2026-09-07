@@ -12,7 +12,6 @@
     "test": "vitest run --silent"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.8",
     "@fastify/static": "^10.1.2",
     "@fastify/websocket": "^11.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -23,12 +22,14 @@
     "better-sqlite3": "^11.10.0",
     "esbuild": "^0.21.5",
     "fastify": "^5.1.0",
+    "pg": "^8.23.0",
     "sharp": "^0.34.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.5.13",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

@@ -149,8 +149,8 @@ describe('KbResearchManager', () => {
     const first = busy.start('admin', project)
     const second = busy.start('admin', project)
     expect(second).toBe(first)
-    // Спавн CLI идёт после чтения БД — дожидаемся макротика, прежде чем считать запуски.
-    await new Promise((resolve) => setImmediate(resolve))
+    // Спавн CLI идёт после чтения БД — дожидаемся макротика (на Postgres — сетевого ответа), прежде чем считать запуски.
+    await new Promise((resolve) => (process.env.VC_TEST_DB_URL ? setTimeout(resolve, 100) : setImmediate(resolve)))
     expect(started).toBe(1)
   })
 })
