@@ -6,6 +6,8 @@ import { signToken } from '../users/accounts.js'
 import { totpCode } from '../users/totp'
 import type { FastifyInstance } from 'fastify'
 import { setupRestHarness } from './restHarness.js'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -239,7 +241,7 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
-  it('старая база без новых колонок сессий и журнала открывается без ошибок', async () => {
+  it.skipIf(ON_POSTGRES)('старая база без новых колонок сессий и журнала открывается без ошибок', async () => {
     // Сторож правила: индексы по колонкам, которые добавляет migrate(), нельзя
     // объявлять в schema.ts — схема выполняется раньше ALTER TABLE. Дважды
     // наступали, теперь проверяется.
@@ -259,7 +261,7 @@ describe('REST: аутентификация', () => {
     await old.close()
   })
 
-  it('старая база без колонок устройства мигрирует и продолжает читать прежние сессии', async () => {
+  it.skipIf(ON_POSTGRES)('старая база без колонок устройства мигрирует и продолжает читать прежние сессии', async () => {
     const legacyDb = new VoiceChatDb(':memory:')
     await legacyDb.ready
     // Воспроизводим таблицу такой, какой она была до метаданных устройства.

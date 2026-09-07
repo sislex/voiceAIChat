@@ -9,6 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { VoiceChatDb } from './database.js'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db: VoiceChatDb
 let ids = 0
@@ -59,7 +61,7 @@ async function componentFixture(uiImpact: 'none' | 'existing_components' = 'exis
 const logOf = (id: string): string =>
   (rawOf().prepare(`SELECT log FROM component_qa_runs WHERE id=?`).get(id) as { log: string }).log
 
-describe('Component QA: контекст исполнения', () => {
+describe.skipIf(ON_POSTGRES)('Component QA: контекст исполнения', () => {
   it('очередной ран отдаёт машину, каталог и команды', async () => {
     const { project, task } = await componentFixture()
     const run = await db.ci.startComponentQaRun('owner', project.id, task.id)
@@ -97,14 +99,14 @@ describe('Component QA: контекст исполнения', () => {
 
   // Рабочие директории, созданные до появления колонки, кэша не знают: стадия
   // ставит зависимости кэшем npm по умолчанию, а не падает без контекста.
-  it('у старой рабочей директории кэш пустой, но контекст выдаётся', async () => {
+  it.skipIf(ON_POSTGRES)('у старой рабочей директории кэш пустой, но контекст выдаётся', async () => {
     const { project, task, raw, suffix } = await componentFixture()
     raw.prepare(`UPDATE ci_workspaces SET npm_cache_dir=NULL WHERE id=?`).run('ws-component' + suffix)
     const run = await db.ci.startComponentQaRun('owner', project.id, task.id)
     expect((await db.ci.componentQaExecutionContext(run.id))?.npmCacheDir).toBeNull()
   })
 
-  it('контекст не выдаётся, если SHA workspace разошёлся с раном', async () => {
+  it.skipIf(ON_POSTGRES)('контекст не выдаётся, если SHA workspace разошёлся с раном', async () => {
     // Иначе Component QA гонялся бы на коде, отличном от зафиксированного в ране.
     const { project, task, raw, suffix } = await componentFixture()
     const run = await db.ci.startComponentQaRun('owner', project.id, task.id)
@@ -113,7 +115,7 @@ describe('Component QA: контекст исполнения', () => {
   })
 })
 
-describe('Component QA: журнал рана', () => {
+describe.skipIf(ON_POSTGRES)('Component QA: журнал рана', () => {
   it('вывод копится только у запущенного рана', async () => {
     const { project, task } = await componentFixture()
     const run = await db.ci.startComponentQaRun('owner', project.id, task.id)
@@ -145,7 +147,7 @@ describe('Component QA: журнал рана', () => {
   })
 })
 
-describe('Component QA: завершение и отмена', () => {
+describe.skipIf(ON_POSTGRES)('Component QA: завершение и отмена', () => {
   it('финиш возможен только из running', async () => {
     const { project, task } = await componentFixture()
     const run = await db.ci.startComponentQaRun('owner', project.id, task.id)
@@ -202,7 +204,7 @@ describe('Component QA: завершение и отмена', () => {
   })
 })
 
-describe('Integration QA: контекст и журнал', () => {
+describe.skipIf(ON_POSTGRES)('Integration QA: контекст и журнал', () => {
   /** Задача, доведённая до колонки integration_tests, с очередным раном. */
   async function integrationFixture() {
     // uiImpact 'existing_components' оставляет в снимке обязательный
@@ -213,7 +215,7 @@ describe('Integration QA: контекст и журнал', () => {
     return { project, task, raw }
   }
 
-  it('очередной ран отдаёт свои команды проверки', async () => {
+  it.skipIf(ON_POSTGRES)('очередной ран отдаёт свои команды проверки', async () => {
     const { project, task, raw } = await integrationFixture()
     raw.prepare(`UPDATE projects SET ci_base_branch='develop' WHERE id=?`).run(project.id)
     const run = await db.ci.startIntegrationTestRun('owner', project.id, task.id)
@@ -250,7 +252,7 @@ describe('Integration QA: контекст и журнал', () => {
     expect((await db.ci.findPassedGateResult(SHA, 'sig-1'))?.runId).toBe('run-1')
   })
 
-  it('вывод копится только у запущенного рана', async () => {
+  it.skipIf(ON_POSTGRES)('вывод копится только у запущенного рана', async () => {
     const { project, task, raw } = await integrationFixture()
     const run = await db.ci.startIntegrationTestRun('owner', project.id, task.id)
     const log = (): string => (raw.prepare(`SELECT log FROM integration_test_runs WHERE id=?`).get(run.id) as { log: string }).log

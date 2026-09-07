@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { PROD_REBUILD_TASK_TITLE, TASK_COMMIT_COMMAND_SCRIPT, VoiceChatDb } from './database.js'
 import { CI_KB_UPDATE_COMMAND_ID, ciToolOutputLimits, DEFAULT_CI_STAGE_MODELS, DEFAULT_TOOL_OUTPUT_SETTINGS } from '@voicechat/shared'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db: VoiceChatDb
 
@@ -26,7 +28,7 @@ async function project() {
   return { p, col, task }
 }
 
-describe('ci: справочник команд', () => {
+describe.skipIf(ON_POSTGRES)('ci: справочник команд', () => {
   it('создаёт, читает, версионирует и мягко удаляет', async () => {
     const { p } = await project()
     const c = await db.ci.createCiCommand('alice', { scope: 'project', projectId: p.id, name: 'clone', script: 'git clone' })
@@ -69,7 +71,7 @@ describe('ci: справочник команд', () => {
     expect((await db.ci.updateCiCommand('alice', install.id, { isTest: true }))!.isTest).toBe(true)
   })
 
-  it('база от прошлой версии: миграция помечает гейт и убирает его у модели', async () => {
+  it.skipIf(ON_POSTGRES)('база от прошлой версии: миграция помечает гейт и убирает его у модели', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-istest-'))
     const file = join(dir, 'db.sqlite')
     let n = 0
@@ -93,7 +95,7 @@ describe('ci: справочник команд', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('миграция переводит штатный гейт на affected-check и сохраняет его проверочным', async () => {
+  it.skipIf(ON_POSTGRES)('миграция переводит штатный гейт на affected-check и сохраняет его проверочным', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-affected-gate-'))
     const file = join(dir, 'db.sqlite')
     let n = 0
@@ -150,7 +152,7 @@ describe('ci: выбор этапов процесса', () => {
   })
 })
 
-describe('ci: браузерная проверка задачи', () => {
+describe.skipIf(ON_POSTGRES)('ci: браузерная проверка задачи', () => {
   it('по умолчанию выключена, сохраняется и нормализуется при чтении', async () => {
     const { task } = await project()
     expect(await db.ci.getTaskBrowserCheck(task.id)).toEqual({ mode: 'off', devServerPort: 5173, startPath: '/' })
@@ -411,8 +413,8 @@ describe('ci: рабочие директории и предложения', ()
 // В `:memory:` таблицы создаёт SCHEMA_SQL уже с новыми колонками, поэтому ветка
 // ALTER TABLE в migrate() там не исполняется вовсе. Прод-БД идёт именно по ней —
 // проверяем на файловой БД со «старой» схемой.
-describe('VoiceChatDb — миграция существующей БД под режим запуска и паузы', () => {
-  it('добавляет колонки режима/уточнений в ci_llm_configs, ci_runs и ci_settings', async () => {
+describe.skipIf(ON_POSTGRES)('VoiceChatDb — миграция существующей БД под режим запуска и паузы', () => {
+  it.skipIf(ON_POSTGRES)('добавляет колонки режима/уточнений в ci_llm_configs, ci_runs и ci_settings', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-ci-migrate-'))
     const file = join(dir, 'old.db')
     const raw = new Database(file)
@@ -617,7 +619,7 @@ describe('ci: автозадача «Пересборка прода»', () => {
   })
 })
 
-describe('встроенный шаг «Актуализировать базу знаний»', () => {
+describe.skipIf(ON_POSTGRES)('встроенный шаг «Актуализировать базу знаний»', () => {
   it('заводится в справочнике как серверный шаг, недоступный модели', async () => {
     const cmd = (await db.ci.getCiCommand('alice', CI_KB_UPDATE_COMMAND_ID))!
     expect(cmd.builtin).toBe('kb_update')
@@ -628,7 +630,7 @@ describe('встроенный шаг «Актуализировать базу 
     expect((await db.ci.listCiCommands('bob')).some((c) => c.id === CI_KB_UPDATE_COMMAND_ID)).toBe(true)
   })
 
-  it('остаётся в справочнике, но миграция удаляет интеграционные команды из after_model', async () => {
+  it.skipIf(ON_POSTGRES)('остаётся в справочнике, но миграция удаляет интеграционные команды из after_model', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-kb-seed-'))
     const file = join(dir, 'db.sqlite')
     let n = 0
@@ -693,7 +695,7 @@ describe('обязательный commit-step задачи', () => {
 // Расход старых ранов: колонки семантики входа у них нет, и переписывать историю
 // задним числом нельзя. Значит различать движки надо на чтении — иначе суммы
 // «до/после» складывают вход codex вместе с кэшем и вход claude без него.
-describe('ci: расход модели и семантика входных токенов', () => {
+describe.skipIf(ON_POSTGRES)('ci: расход модели и семантика входных токенов', () => {
   /** Строка расхода в старой форме: колонки семантики входа у неё нет. */
   const legacy = (runId: string, provider: 'claude' | 'codex', over: Record<string, number> = {}): string => {
     const id = `legacy-${runId}-${provider}`

@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_SETTINGS, taskReworkContext } from '@voicechat/shared'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db: VoiceChatDb
 
@@ -36,7 +38,7 @@ describe('контекст повторной подготовки', () => {
 })
 
 describe('projects: миграция имён связанных чатов', () => {
-  it('старый чат задачи получает префикс «Задача », переименованный вручную — нет', async () => {
+  it.skipIf(ON_POSTGRES)('старый чат задачи получает префикс «Задача », переименованный вручную — нет', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-taskchat-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
@@ -69,7 +71,7 @@ describe('projects: миграция имён связанных чатов', ()
 })
 
 describe('projects: миграция владельцев', () => {
-  it('добавляет created_by владельцем старого проекта и сохраняет остальных участников', async () => {
+  it.skipIf(ON_POSTGRES)('добавляет created_by владельцем старого проекта и сохраняет остальных участников', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-project-owner-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
@@ -95,7 +97,7 @@ describe('projects: миграция владельцев', () => {
 })
 
 describe('projects: миграция канонического workflow', () => {
-  it('досоздаёт недостающие системные колонки на существующей БД (инцидент 2026-08-18)', async () => {
+  it.skipIf(ON_POSTGRES)('досоздаёт недостающие системные колонки на существующей БД (инцидент 2026-08-18)', async () => {
     // Регрессия: миграция вызывала this.newId() до его присвоения в конструкторе
     // и роняла сервер при старте на любой БД, где проекту не хватало колонки.
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-missing-col-'))
@@ -116,7 +118,7 @@ describe('projects: миграция канонического workflow', () =>
     await migrated.close()
   })
 
-  it('назначает cancelled существующей колонке по семантике, а имя использует только без неё', async () => {
+  it.skipIf(ON_POSTGRES)('назначает cancelled существующей колонке по семантике, а имя использует только без неё', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-cancelled-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
@@ -150,7 +152,7 @@ describe('projects: миграция канонического workflow', () =>
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('переупорядочивает старую доску, переносит legacy-карточки и повторно ничего не меняет', async () => {
+  it.skipIf(ON_POSTGRES)('переупорядочивает старую доску, переносит legacy-карточки и повторно ничего не меняет', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-workflow-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file)
@@ -1011,7 +1013,7 @@ describe('доска: завершённые задачи уходят с дос
     await d.close()
   })
 
-  it('порядок «Готово» переживает перезапуск БД', async () => {
+  it.skipIf(ON_POSTGRES)('порядок «Готово» переживает перезапуск БД', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-done-order-'))
     const file = join(dir, 'db.sqlite')
     let clock = 1_700_000_000_000
@@ -1039,7 +1041,7 @@ describe('доска: завершённые задачи уходят с дос
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('миграция: у лежащих в «Готово» задач появляется doneAt', async () => {
+  it.skipIf(ON_POSTGRES)('миграция: у лежащих в «Готово» задач появляется doneAt', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-doneat-'))
     const file = join(dir, 'db.sqlite')
     const first = new VoiceChatDb(file, { now: () => 1_700_000_000_000 })

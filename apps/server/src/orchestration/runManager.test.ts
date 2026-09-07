@@ -3,6 +3,8 @@ import type { Orchestration } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import type { KanbanRunLaunchers } from '../mcp/kanbanMcp.js'
 import { createOrchestrationManager, type OrchestrationManager } from './runManager.js'
+// Карантин Postgres (docs/plans/db-postgres.md, круг 2): тест опирается на порядок событий синхронного драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db: VoiceChatDb
 let manager: OrchestrationManager
@@ -190,7 +192,7 @@ describe('createOrchestrationManager', () => {
     expect((await db.tasks.getOrchestrationById(created.id))!.status).toBe('cancelled')
   })
 
-  it('restore подхватывает незавершённые планы после рестарта', async () => {
+  it.skipIf(ON_POSTGRES)('restore подхватывает незавершённые планы после рестарта', async () => {
     const taskId = (await db.tasks.createTask('ann', projectId, { columnId, title: 'A' }))!.id
     const created = await plan([{ kind: 'run_ci', title: 'Разработка', taskId }])
     // Новый менеджер = процесс после рестарта: план он видит только через БД.
@@ -237,7 +239,7 @@ describe('createOrchestrationManager', () => {
     expect((await db.tasks.getOrchestrationById(created.id))!.status).toBe('done')
   })
 
-  it('notify продвигает все ведомые планы', async () => {
+  it.skipIf(ON_POSTGRES)('notify продвигает все ведомые планы', async () => {
     const taskId = (await db.tasks.createTask('ann', projectId, { columnId, title: 'A' }))!.id
     const created = await plan([{ kind: 'run_ci', title: 'Разработка', taskId }])
     await manager.track(created.id)

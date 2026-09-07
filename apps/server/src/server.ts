@@ -386,9 +386,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   // Домен «релизы» может жить на встроенном Postgres (VC_DB_RELEASES=pglite): порт
   // подменяется фабрикой, остальные домены — в SQLite как раньше.
-  const db = opts.db ?? (() => { mkdirSync(opts.config.dataDir, { recursive: true }); return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db')) })()
+  const db = opts.db ?? (() => {
+    mkdirSync(opts.config.dataDir, { recursive: true })
+    // Движок базы: Postgres по VC_DB_URL, иначе SQLite-файл в каталоге данных.
+    return new VoiceChatDb(join(opts.config.dataDir, 'voicechat.db'), opts.config.dbUrl ? { postgres: { url: opts.config.dbUrl } } : {})
+  })()
   // Схема и миграции применяются асинхронно; дальше сервер полагается на готовую базу.
   await db.ready
+  app.log.info({ engine: db.engine }, 'база данных готова')
 
   // Аутентификация приложения (многопользовательский режим web): секрет подписи
   // токенов из dataDir (переживает рестарт); в тестах (opts.db) — эфемерный, без диска.
@@ -2512,12 +2517,20 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
       // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
       const token = (request.query as { token?: string } | undefined)?.token ?? cookieToken(request.headers.cookie)
+      // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
+      // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
+      // укладывалась в микрозадачи и окно было незаметно; с Postgres оно — миллисекунды сети.
+      const early: Array<[Buffer, boolean]> = []
+      const buffer = (data: Buffer, isBinary: boolean): void => { early.push([data, isBinary]) }
+      socket.on('message', buffer)
       const user = await resolveActiveUser(db, token, sessionSecret)
+      socket.off('message', buffer)
       if (!user) {
         socket.close()
         return
       }
       await attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null))
+      for (const [data, isBinary] of early) socket.emit('message', data, isBinary)
     })
     scoped.get('/agent', { websocket: true }, (socket, request) => {
       const fwd = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()

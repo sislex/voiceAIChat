@@ -3,8 +3,11 @@
 // владельцу на таблицу (./ownership.ts); правила разреза — docs/plans/db-repositories.md.
 import { DEFAULT_PROJECT_TYPE_ID, type KanbanColumnSemanticType, DEFAULT_CI_CLAUDE_MODEL, CI_KB_UPDATE_COMMAND_ID, DEFAULT_DONE_RETENTION_DAYS, DEFAULT_CI_GLOBAL_SETTINGS, isVerificationCommand } from '@voicechat/shared'
 import Database from 'better-sqlite3'
-import { createSqliteSql, type SqliteSql } from './sql/sqlite.js'
+import { createSqliteSql } from './sql/sqlite.js'
+import { createPgSql } from './sql/pg.js'
+import type { Sql } from './sql/types.js'
 import { createLane, type Lane } from './sql/lane.js'
+import { PG_SCHEMA } from './schemaPg.js'
 import { randomUUID } from 'node:crypto'
 import { SCHEMA_SQL } from './schema.js'
 import { IdentityRepo } from './repos/identity.js'
@@ -36,9 +39,11 @@ export type { Repos, RepoContext, AsyncPort, Ports, PortOverrides } from './repo
 
 export class VoiceChatDb {
   /** Адаптер базы; репозитории пишут SQL в диалекте SQLite, различия движков закрывает адаптер. */
-  private readonly sql: SqliteSql
-  /** Сырой драйвер SQLite — тестам, которые проверяют схему и данные напрямую; они обязаны дождаться `ready`. */
-  protected readonly db: Database.Database
+  private readonly sql: Sql
+  readonly engine: 'sqlite' | 'postgres'
+  /** Сырой драйвер SQLite — тестам, которые проверяют схему и данные напрямую; они обязаны дождаться `ready`. На Postgres — undefined. */
+  protected readonly db: Database.Database | undefined
+  private readonly dropSchemaOnClose: string | null
   private readonly newId: () => string
   private readonly now: () => number
   private readonly ctx: RepoContext
@@ -47,8 +52,8 @@ export class VoiceChatDb {
    * слоя (`ctx.repos`) ожидания нет — миграции сами работают через репозитории.
    */
   readonly ready: Promise<void>
-  /** Полоса портов SQLite (sql/lane.ts): закрытие ждёт её опустошения. */
-  private readonly lane: Lane
+  /** Полоса портов (sql/lane.ts): закрытие ждёт её опустошения. Отключается `DbDeps.concurrent`. */
+  private readonly lane: Lane | null
   /**
    * Реализации доменов напрямую, минуя порты. Не для сервера — он ходит через порты; нужен
    * тестам, которые подменяют метод (`db.impl.tasks.isTaskClosed = async () => true`): подмена
@@ -73,13 +78,27 @@ export class VoiceChatDb {
   private set closed(value: boolean) { this.ctx.closed = value }
 
   constructor(filename: string, deps: DbDeps = {}) {
-    const raw = new Database(filename)
-    raw.pragma('journal_mode = WAL')
-    raw.pragma('foreign_keys = ON')
-    // Unicode-lower для регистронезависимого поиска (SQLite LIKE/lower() — только ASCII).
-    raw.function('ulower', (s: unknown) => (typeof s === 'string' ? s.toLowerCase() : ''))
-    this.sql = createSqliteSql(raw)
-    this.db = raw
+    // Матрица тестов на Postgres: `VC_TEST_DB_URL` заставляет каждую `:memory:`-базу открываться
+    // свежей схемой в Postgres — так весь набор тестов сервера гоняется на втором движке без правок.
+    if (!deps.postgres && filename === ':memory:' && process.env.VC_TEST_DB_URL) {
+      deps = { ...deps, postgres: { url: process.env.VC_TEST_DB_URL, schema: `t_${randomUUID().replace(/-/g, '').slice(0, 16)}`, dropSchemaOnClose: true } }
+    }
+    if (deps.postgres) {
+      this.engine = 'postgres'
+      this.sql = createPgSql({ connectionString: deps.postgres.url, ...(deps.postgres.schema ? { schema: deps.postgres.schema } : {}) })
+      this.db = undefined
+      this.dropSchemaOnClose = deps.postgres.dropSchemaOnClose && deps.postgres.schema ? deps.postgres.schema : null
+    } else {
+      this.engine = 'sqlite'
+      const raw = new Database(filename)
+      raw.pragma('journal_mode = WAL')
+      raw.pragma('foreign_keys = ON')
+      // Unicode-lower для регистронезависимого поиска (SQLite LIKE/lower() — только ASCII).
+      raw.function('ulower', (s: unknown) => (typeof s === 'string' ? s.toLowerCase() : ''))
+      this.sql = createSqliteSql(raw)
+      this.db = raw
+      this.dropSchemaOnClose = null
+    }
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
 
@@ -103,8 +122,12 @@ export class VoiceChatDb {
     // как при синхронном драйвере); домен на другом движке или удалённый сервис подставляется
     // фабрикой из deps.ports поверх уже собранных соседей.
     let readyDone = false
-    this.lane = createLane()
-    const portOptions = { ready: () => (readyDone ? undefined : this.ready), lane: this.lane }
+    // Полоса включена на обоих движках: сервер опирается на порядок вызовов и атомарность
+    // многошаговых методов внутри процесса (см. sql/lane.ts). На Postgres это ограничивает
+    // параллелизм внутри одного процесса — ровно как SQLite сегодня; параллелизм между
+    // сервисами остаётся. `concurrent: true` снимает полосу, когда методы станут транзакционными.
+    this.lane = deps.concurrent ? null : createLane()
+    const portOptions = { ready: () => (readyDone ? undefined : this.ready), ...(this.lane ? { lane: this.lane } : {}) }
     const gate = <K extends keyof Repos>(key: K): AsyncPort<Repos[K]> => asyncPort(this.ctx.repos[key], portOptions)
     const ports: Ports = {
       identity: gate('identity'), settings: gate('settings'), llm: gate('llm'), chat: gate('chat'), machines: gate('machines'),
@@ -134,8 +157,17 @@ export class VoiceChatDb {
 
   /** Схема, миграции и служебные строки — один раз при открытии; ошибка здесь роняет сервер на старте. */
   private async init(): Promise<void> {
-    await this.sql.exec(SCHEMA_SQL)
-    await this.migrate()
+    if (this.engine === 'postgres') {
+      // Postgres-база создаётся переносом из SQLite уже в актуальной схеме (или пустой), поэтому
+      // ей нужны только сама схема и сиды — миграции старых SQLite-файлов к ней не относятся.
+      const schema = (this.sql as { schema?: string | null }).schema
+      if (schema) await this.sql.exec(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
+      await this.sql.exec(PG_SCHEMA.sql)
+      await this.ctx.repos.projects.seedBuiltinProjectTypes()
+    } else {
+      await this.sql.exec(SCHEMA_SQL)
+      await this.migrate()
+    }
     await this.ctx.repos.ci.ensureKbUpdateCommand()
     await this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
     await this.ctx.repos.chat.setupMessagesFts()
@@ -909,11 +941,12 @@ export class VoiceChatDb {
     // Не закрывать соединение под ногами у миграций и вызовов, поставленных в полосу без await:
     // раньше они выполнялись синхронно при вызове, и код вокруг на это полагается.
     await this.ready.catch(() => {})
-    await this.lane.idle()
+    await this.lane?.idle()
     if (this.closed) return
     this.closed = true
     if (this.ctx.repos.chat.ftsTimer) clearTimeout(this.ctx.repos.chat.ftsTimer)
     this.ctx.repos.chat.ftsTimer = null
+    if (this.dropSchemaOnClose) await this.sql.exec(`DROP SCHEMA IF EXISTS ${this.dropSchemaOnClose} CASCADE`).catch(() => {})
     await this.sql.close()
   }
 }

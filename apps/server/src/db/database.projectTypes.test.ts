@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BUILTIN_PROJECT_TYPE_IDS, PROJECT_FEATURES } from '@voicechat/shared'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db: VoiceChatDb
 
@@ -230,7 +232,7 @@ describe('сохранить проект как подтип', () => {
 })
 
 describe('миграция существующей базы', () => {
-  it('старый проект получает корневой тип, повторное открытие не плодит узлы', async () => {
+  it.skipIf(ON_POSTGRES)('старый проект получает корневой тип, повторное открытие не плодит узлы', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-'))
     const file = join(dir, 'db.sqlite')
     try {
@@ -261,7 +263,7 @@ describe('миграция существующей базы', () => {
     }
   })
 
-  it('перезапуск не дописывает «Общему проекту» конвейер разработки', async () => {
+  it.skipIf(ON_POSTGRES)('перезапуск не дописывает «Общему проекту» конвейер разработки', async () => {
     // Канонизация workflow-колонок гарантирует конвейер dev-проектам; для типа,
     // который его выключил, она обязана молчать — иначе короткая доска не
     // переживает ни одного перезапуска сервера.
@@ -288,7 +290,7 @@ describe('миграция существующей базы', () => {
     }
   })
 
-  it('настроенная доска переживает перезапуск: имена, своя колонка и скрытие целы', async () => {
+  it.skipIf(ON_POSTGRES)('настроенная доска переживает перезапуск: имена, своя колонка и скрытие целы', async () => {
     // Канонизация системных колонок дописывает недостающие. Проверяем, что она не
     // трогает то, что человек настроил руками, — иначе каждый перезапуск сервера
     // возвращал бы доску к заводскому виду.
@@ -327,7 +329,7 @@ describe('миграция существующей базы', () => {
     }
   })
 
-  it('своя колонка в «Общем проекте» не удаляется канонизацией', async () => {
+  it.skipIf(ON_POSTGRES)('своя колонка в «Общем проекте» не удаляется канонизацией', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-general-col-'))
     const file = join(dir, 'db.sqlite')
     try {
@@ -350,7 +352,7 @@ describe('миграция существующей базы', () => {
     }
   })
 
-  it('посев не затирает пользовательские узлы', async () => {
+  it.skipIf(ON_POSTGRES)('посев не затирает пользовательские узлы', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-user-'))
     const file = join(dir, 'db.sqlite')
     try {
@@ -372,7 +374,7 @@ describe('миграция существующей базы', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
-  it('нормализация шаблона ветки разовая: осознанный feature/{task_number} переживает перезапуск', async () => {
+  it.skipIf(ON_POSTGRES)('нормализация шаблона ветки разовая: осознанный feature/{task_number} переживает перезапуск', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-branch-tpl-'))
     const file = join(dir, 'db.sqlite')
     try {
@@ -394,7 +396,7 @@ describe('миграция существующей базы', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
-  it('старая база нормализуется один раз: исторический дефолт заменяется, отметка ставится', async () => {
+  it.skipIf(ON_POSTGRES)('старая база нормализуется один раз: исторический дефолт заменяется, отметка ставится', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-branch-tpl-legacy-'))
     const file = join(dir, 'db.sqlite')
     try {

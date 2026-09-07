@@ -3,7 +3,7 @@
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
 import { type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, MAKE_KIND, isContextToggleable } from '@voicechat/shared'
 import { MESSAGES_FTS_SQL } from '../schema.js'
-import { toFtsMatchQuery } from '../fts.js'
+import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
 import { BaseRepo } from './base.js'
 import { parseJsonValue } from './support.js'
 
@@ -179,6 +179,34 @@ function decodeSearchCursor(cursor: string | null | undefined): { score: number;
 export class ChatRepo extends BaseRepo {
   /** Доступен ли FTS5 в этой сборке SQLite (иначе поиск по сообщениям пустой). */
   private ftsReady = false
+
+  /**
+   * JSON1 и strftime у SQLite против jsonb и to_char у Postgres — единственные различия диалектов,
+   * которые не переводятся текстом (`sql/dialect.ts`): SQLite отдаёт из JSON типизированное значение,
+   * Postgres — текст, и приведение зависит от того, число это или строка. Поэтому фрагменты
+   * собираются здесь, по движку.
+   */
+  private get j() {
+    const pg = this.sql.engine === 'postgres'
+    return {
+      /** Числовое поле meta (токены, цена). */
+      num: (col: string, key: string) => (pg ? `((${col})::jsonb->>'${key}')::double precision` : `json_extract(${col},'$.${key}')`),
+      /** Строковое поле meta (модель). */
+      text: (col: string, key: string) => (pg ? `((${col})::jsonb->>'${key}')` : `json_extract(${col},'$.${key}')`),
+      /** Поле — число (integer/real у SQLite, number у jsonb). */
+      isNumber: (col: string, key: string) => (pg ? `jsonb_typeof((${col})::jsonb->'${key}') = 'number'` : `json_type(${col}, '$.${key}') IN ('integer', 'real')`),
+      /** Поля нет или оно null. */
+      isMissing: (col: string, key: string) => (pg ? `((${col})::jsonb->'${key}') IS NULL OR jsonb_typeof((${col})::jsonb->'${key}') = 'null'` : `json_type(${col}, '$.${key}') IS NULL`),
+      /** Значение — валидный JSON; Postgres проверяет это самим приведением, поэтому там только NOT NULL. */
+      valid: (col: string) => (pg ? `${col} IS NOT NULL` : `json_valid(${col})`),
+      /** Истинность поля (флаг interrupted). */
+      truthy: (col: string, key: string) => (pg ? `COALESCE(((${col})::jsonb->>'${key}')::boolean, false)` : `json_extract(${col},'$.${key}')`),
+      /** Бакет времени из метки в мс (UTC). */
+      bucket: (col: string, unit: 'hour' | 'week' | 'day') => pg
+        ? `to_char(to_timestamp(${col}/1000.0) AT TIME ZONE 'UTC', '${unit === 'hour' ? 'YYYY-MM-DD HH24:00' : unit === 'week' ? 'IYYY-"W"IW' : 'YYYY-MM-DD'}')`
+        : `strftime('${unit === 'hour' ? '%Y-%m-%d %H:00' : unit === 'week' ? '%Y-W%W' : '%Y-%m-%d'}', ${col}/1000, 'unixepoch')`
+    }
+  }
 
   /** Таймер следующей порции бэкфилла индекса; null — порция не запланирована. */
   ftsTimer: ReturnType<typeof setTimeout> | null = null
@@ -865,12 +893,18 @@ export class ChatRepo extends BaseRepo {
    * внутри такого разговора намеренно не превращает его в стандартную выборку.
    */
   async searchMessages(userId: string, opts: MessageSearchOptions): Promise<MessageSearchResult> {
-    const match = toFtsMatchQuery(opts.q ?? '')
+    const pg = this.sql.engine === 'postgres'
+    const match = pg ? toPgTsQuery(opts.q ?? '') : toFtsMatchQuery(opts.q ?? '')
     const limit = clampSearchLimit(opts.limit)
     // Индекса нет (сборка SQLite без FTS5) или искать нечего — пустая страница.
     if (!match || !this.ftsReady) return { hits: [], nextCursor: null, match }
 
-    const where = ['messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'", NOT_CANCELLED_TASK_CHAT]
+    // Релевантность: bm25 у FTS5 «меньше = лучше»; у Postgres ts_rank_cd «больше = лучше», поэтому
+    // берём её со знаком минус — порядок и курсор одни для обоих движков.
+    // ts_rank_cd отдаёт real (float4): приводим к double до знака минус, иначе значение, вернувшееся из
+    // курсора как float8, не равно исходному и страница теряет строки с тем же рангом.
+    const score = pg ? `(-(ts_rank_cd(m.text_tsv, to_tsquery('simple', ?))::double precision))` : 'bm25(messages_fts)'
+    const where = [pg ? `m.text_tsv @@ to_tsquery('simple', ?)` : 'messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'", NOT_CANCELLED_TASK_CHAT]
     const params: unknown[] = [match, userId]
     if (opts.projectId !== undefined) {
       if (opts.projectId === null) where.push('c.project_id IS NULL')
@@ -885,9 +919,14 @@ export class ChatRepo extends BaseRepo {
     }
     const cursor = decodeSearchCursor(opts.cursor)
     if (cursor) {
-      where.push('(bm25(messages_fts) > ? OR (bm25(messages_fts) = ? AND m.rowid > ?))')
-      params.push(cursor.score, cursor.score, cursor.rowid)
+      where.push(`(${score} > ? OR (${score} = ? AND m.rowid > ?))`)
+      params.push(...(pg ? [match, cursor.score, match, cursor.score, cursor.rowid] : [cursor.score, cursor.score, cursor.rowid]))
     }
+    const snippet = pg
+      ? `ts_headline('simple', m.text, to_tsquery('simple', ?), 'StartSel=<mark>, StopSel=</mark>, MaxWords=${SNIPPET_TOKENS}, MinWords=${Math.max(1, SNIPPET_TOKENS - 8)}, MaxFragments=1, FragmentDelimiter=…')`
+      : `snippet(messages_fts, 0, '<mark>', '</mark>', '…', ${SNIPPET_TOKENS})`
+    const from = pg ? 'FROM messages m' : 'FROM messages_fts\n           JOIN messages m      ON m.rowid = messages_fts.rowid'
+    const selectParams = pg ? [match, match] : []
 
     const rows = (await this.sql.all(`SELECT m.id            AS message_id,
                 m.conversation_id,
@@ -897,14 +936,13 @@ export class ChatRepo extends BaseRepo {
                 m.rowid         AS rid,
                 c.title         AS conversation_title,
                 c.project_id,
-                bm25(messages_fts) AS score,
-                snippet(messages_fts, 0, '<mark>', '</mark>', '…', ${SNIPPET_TOKENS}) AS snippet
-           FROM messages_fts
-           JOIN messages m      ON m.rowid = messages_fts.rowid
+                ${score} AS score,
+                ${snippet} AS snippet
+           ${from}
            JOIN conversations c ON c.id = m.conversation_id
           WHERE ${where.join(' AND ')}
           ORDER BY score ASC, rid ASC
-          LIMIT ?`, [...params, limit])) as MessageSearchRow[]
+          LIMIT ?`, [...selectParams, ...params, limit])) as MessageSearchRow[]
 
     const hits: MessageSearchHit[] = rows.map((r) => ({
       messageId: r.message_id,
@@ -929,6 +967,8 @@ export class ChatRepo extends BaseRepo {
    * Вызывается на каждом старте и обязана быть идемпотентной.
    */
   async setupMessagesFts(): Promise<void> {
+    // Postgres: индекс — вычисляемая tsvector-колонка messages.text_tsv (schemaPg.ts), бэкфилла нет.
+    if (this.sql.engine === 'postgres') { this.ftsReady = true; return }
     try {
       await this.sql.exec(MESSAGES_FTS_SQL)
       this.ftsReady = true
@@ -1068,39 +1108,40 @@ export class ChatRepo extends BaseRepo {
    * времени — в UTC (created_at хранится в мс).
    */
   async usageReport(userId: string, unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<UsageReport> {
-    const fmt = unit === 'hour' ? '%Y-%m-%d %H:00' : unit === 'week' ? '%Y-W%W' : '%Y-%m-%d'
+    const j = this.j
     // Два независимых числа: CLI сообщает фактическую цену не для всех движков,
     // а редактируемый прайс пересчитывает все ответы с известной строкой.
+    const n = (key: string) => j.num('m.meta', key)
     const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
-      MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
-      COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+      MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+      COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
+      COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
+      COALESCE(${n('outputTokens')},0) * mp.output_per_million
     ) / 1000000.0 END`
     const sums = `
       COUNT(*) AS messages,
-      COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
+      COALESCE(SUM(${n('inputTokens')}),0) AS inputTokens,
+      COALESCE(SUM(${n('outputTokens')}),0) AS outputTokens,
+      COALESCE(SUM(${n('cacheReadTokens')}),0) AS cacheReadTokens,
+      COALESCE(SUM(${n('costUsd')}),0) AS costUsd,
       COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
-      COALESCE(SUM(CASE WHEN json_extract(m.meta,'$.interrupted') THEN 1 ELSE 0 END),0) AS interrupted,
-      MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
+      COALESCE(SUM(CASE WHEN ${j.truthy('m.meta', 'interrupted')} THEN 1 ELSE 0 END),0) AS interrupted,
+      MAX(CASE WHEN ${n('costUsd')} IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const dateWhere = `${from !== undefined ? 'AND m.created_at >= @from' : ''}
       ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}
       ${conversationId ? 'AND c.id = @conversationId' : ''}`
     const bind = { userId, ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), ...(conversationId ? { conversationId } : {}) }
     const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
-      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
+      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(${j.text('m.meta', 'model')}, c.llm_model)`
 
     type SqlUsage<T extends UsageTotals> = Omit<T, 'costIncomplete'> & { costIncomplete?: number }
     const complete = <T extends UsageTotals>(row: SqlUsage<T>): T => ({ ...row, costIncomplete: Boolean(row.costIncomplete) } as T)
     const totals = complete((await this.sql.get(`SELECT ${sums} ${joins} WHERE ${where}`, [bind])) as SqlUsage<UsageTotals>)
-    const byBucket = ((await this.sql.all(`SELECT strftime('${fmt}', m.created_at/1000, 'unixepoch') AS bucket, ${sums}
+    const byBucket = ((await this.sql.all(`SELECT ${j.bucket('m.created_at', unit)} AS bucket, ${sums}
       ${joins} WHERE ${where} GROUP BY bucket ORDER BY bucket ASC`, [bind])) as SqlUsage<UsageBucket>[]).map((row) => complete<UsageBucket>(row))
-    const byModel = ((await this.sql.all(`SELECT COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums}
-      ${joins} WHERE ${where} GROUP BY COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as SqlUsage<UsageByModel>[]).map((row) => complete<UsageByModel>(row))
+    const byModel = ((await this.sql.all(`SELECT COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums}
+      ${joins} WHERE ${where} GROUP BY COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as SqlUsage<UsageByModel>[]).map((row) => complete<UsageByModel>(row))
     // Фильтр разговоров всегда строится для всего выбранного периода, чтобы после
     // выбора одного разговора остальные варианты не исчезали из селекта.
     const conversationWhere = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}`
@@ -1114,28 +1155,30 @@ export class ChatRepo extends BaseRepo {
    * В отличие от вызова usageReport на каждого пользователя не создаёт N запросов.
    */
   async usageSummary(from?: number, to?: number): Promise<import('@voicechat/shared').UserUsageSummary[]> {
+    const j = this.j
+    const n = (key: string) => j.num('m.meta', key)
     const estimatedCost = `CASE WHEN mp.model IS NOT NULL THEN (
-      MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
-      COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
-      COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+      MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+      COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
+      COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
+      COALESCE(${n('outputTokens')},0) * mp.output_per_million
     ) / 1000000.0 END`
     const sums = `COUNT(*) AS messages,
-      COALESCE(SUM(json_extract(m.meta,'$.inputTokens')),0) AS inputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.outputTokens')),0) AS outputTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
-      COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
+      COALESCE(SUM(${n('inputTokens')}),0) AS inputTokens,
+      COALESCE(SUM(${n('outputTokens')}),0) AS outputTokens,
+      COALESCE(SUM(${n('cacheReadTokens')}),0) AS cacheReadTokens,
+      COALESCE(SUM(${n('costUsd')}),0) AS costUsd,
       COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
-      COALESCE(SUM(CASE WHEN json_extract(m.meta,'$.interrupted') THEN 1 ELSE 0 END),0) AS interrupted,
-      MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
+      COALESCE(SUM(CASE WHEN ${j.truthy('m.meta', 'interrupted')} THEN 1 ELSE 0 END),0) AS interrupted,
+      MAX(CASE WHEN ${n('costUsd')} IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const where = `m.role = 'ai' AND m.meta IS NOT NULL ${from !== undefined ? 'AND m.created_at >= @from' : ''} ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const bind = { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) }
     const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
-      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
+      LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(${j.text('m.meta', 'model')}, c.llm_model)`
     type Row = UsageTotals & { name: string; model?: string; costIncomplete?: number }
     const complete = (row: Row): UsageTotals => ({ inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, costUsd: row.costUsd, costFromPrices: row.costFromPrices, messages: row.messages, interrupted: row.interrupted ?? 0, costIncomplete: Boolean(row.costIncomplete) })
     const totals = (await this.sql.all(`SELECT c.user_id AS name, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id`, [bind])) as Row[]
-    const models = (await this.sql.all(`SELECT c.user_id AS name, COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id, model ORDER BY outputTokens DESC`, [bind])) as Row[]
+    const models = (await this.sql.all(`SELECT c.user_id AS name, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') AS model, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id, COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as Row[]
     const byName = new Map<string, import('@voicechat/shared').UserUsageSummary>()
     for (const user of await this.repos.identity.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 0, messages: 0, interrupted: 0, costIncomplete: false }, byModel: [] })
     // Строка расхода без учётки в users — след удалённого пользователя; такую
@@ -1201,31 +1244,30 @@ export class ChatRepo extends BaseRepo {
       if (stale.length === 0) return costs
       const ids = stale
       const placeholders = ids.map(() => '?').join(',')
+      const j = this.j
+      const n = (key: string) => j.num('m.meta', key)
+      const numOrMissing = (key: string) => `(${j.isMissing('m.meta', key)} OR ${j.isNumber('m.meta', key)})`
+      const known = `${j.valid('m.meta')}
+          AND ${j.isNumber('m.meta', 'inputTokens')}
+          AND ${j.isNumber('m.meta', 'outputTokens')}
+          AND ${numOrMissing('cacheReadTokens')}
+          AND ${numOrMissing('cacheCreationTokens')}
+          AND mp.model IS NOT NULL`
       const results = (await this.sql.all(`SELECT
         m.conversation_id AS conversation_id,
         COUNT(*) AS ai_count,
-        SUM(CASE WHEN json_valid(m.meta)
-          AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
-          AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
-          AND (json_type(m.meta, '$.cacheReadTokens') IS NULL OR json_type(m.meta, '$.cacheReadTokens') IN ('integer', 'real'))
-          AND (json_type(m.meta, '$.cacheCreationTokens') IS NULL OR json_type(m.meta, '$.cacheCreationTokens') IN ('integer', 'real'))
-          AND mp.model IS NOT NULL THEN 1 ELSE 0 END) AS known_count,
-        SUM(CASE WHEN json_valid(m.meta)
-          AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
-          AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
-          AND (json_type(m.meta, '$.cacheReadTokens') IS NULL OR json_type(m.meta, '$.cacheReadTokens') IN ('integer', 'real'))
-          AND (json_type(m.meta, '$.cacheCreationTokens') IS NULL OR json_type(m.meta, '$.cacheCreationTokens') IN ('integer', 'real'))
-          AND mp.model IS NOT NULL THEN (
-            MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
-            COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
-            COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
-            COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+        SUM(CASE WHEN ${known} THEN 1 ELSE 0 END) AS known_count,
+        SUM(CASE WHEN ${known} THEN (
+            MAX(COALESCE(${n('inputTokens')},0) - COALESCE(${n('cacheReadTokens')},0), 0) * mp.input_per_million +
+            COALESCE(${n('cacheReadTokens')},0) * mp.cached_input_per_million +
+            COALESCE(${n('cacheCreationTokens')},0) * mp.cache_write_per_million +
+            COALESCE(${n('outputTokens')},0) * mp.output_per_million
           ) / 1000000.0 END) AS cost_usd
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN model_prices mp
           ON mp.provider = m.engine
-         AND mp.model = COALESCE(CASE WHEN json_valid(m.meta) THEN json_extract(m.meta,'$.model') END, c.llm_model)
+         AND mp.model = COALESCE(CASE WHEN ${j.valid('m.meta')} THEN ${j.text('m.meta', 'model')} END, c.llm_model)
         WHERE m.conversation_id IN (${placeholders}) AND m.role = 'ai'
         GROUP BY m.conversation_id`, [...ids])) as Array<{
           conversation_id: string; ai_count: number; known_count: number | null; cost_usd: number | null

@@ -13,6 +13,7 @@ import type Database from 'better-sqlite3'
 import type { RunResult, Sql, SqlParam, Statement } from './types.js'
 
 interface TxStore { readonly id: number; depth: number }
+const TRACE = process.env.VC_SQL_TRACE === '1'
 
 /** better-sqlite3 не принимает undefined и boolean: первое — null, второе — 0/1, как SQLite их и хранит. */
 function bind(params: readonly SqlParam[] | undefined): unknown[] {
@@ -33,6 +34,7 @@ export function createSqliteSql(db: Database.Database): SqliteSql {
   const cache = new Map<string, Database.Statement>()
 
   const stmt = (sql: string): Database.Statement => {
+    if (TRACE) console.error(`[sql${als.getStore() ? ' tx' : ''}] ${sql.replace(/\s+/g, ' ').slice(0, 160)}`)
     let s = cache.get(sql)
     if (!s) {
       s = db.prepare(sql)
