@@ -76,7 +76,14 @@ export interface ServerConfig {
   kanbanUrl?: string
   /** База `/mcp/kanban` и `/mcp/ci-commands` глазами исполнителя LLM в режиме `remote`; без неё — `kanbanUrl`. */
   kanbanMcpPublicBase?: string
-  /** Адрес ядра для отдельного процесса канбана (`VC_CORE_URL`); самому ядру не нужен. */
+  /**
+   * Машины: `embedded` — реестр и WebSocket агентов в этом процессе; `remote` — отдельный процесс машин по
+   * адресу `machinesUrl` на той же базе (Postgres): ядро переправляет туда REST машин и WebSocket `/agent`,
+   * а состояние машин читает из зеркала по шине событий. См. docs/plans/machines-service.md.
+   */
+  machinesMode: 'embedded' | 'remote'
+  machinesUrl?: string
+  /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
   coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
   internalToken?: string
@@ -243,6 +250,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'embedded',
     kanbanUrl: env.VC_KANBAN_URL,
     kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
+    machinesMode: env.VC_MACHINES_MODE === 'remote' ? 'remote' : 'embedded',
+    machinesUrl: env.VC_MACHINES_URL,
     coreUrl: env.VC_CORE_URL,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,

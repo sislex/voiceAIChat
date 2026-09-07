@@ -12,6 +12,7 @@ import { AgentRegistry } from '../agents/registry.js'
 import { attachAgentWs } from '../agents/wsAgent.js'
 import { createCommandGate, type CommandGate } from '../agents/commandGate.js'
 import { ensureDefaultStorage } from '../agents/defaultStorage.js'
+import { createManagedChatStorage } from '../chatStorage.js'
 import { createAgentWatchdog } from '../agents/watchdog.js'
 import { registerAgentRoutes } from '../routes/agents.js'
 import { StorageMigrationManager } from '../storageMigration/manager.js'
@@ -24,11 +25,6 @@ export interface MachinesDeps {
   config: Pick<ServerConfig, 'agentOfflineGraceMs' | 'agentOfflineAlertMs' | 'longCommandMs' | 'dataDir' | 'agentAppPath' | 'desktopAppPath' | 'loginApplicationPath'>
   /** Кадры владельцу машины (журнал команд, тревоги watchdog) — шина кадров ядра. */
   publish: (message: ServerMessage, userId: string) => void
-  /**
-   * Куда положить полный лог долгой команды из чата: каталог artifacts привязанного хранилища разговора.
-   * Знание о хранилищах чата — у ядра; null — лог не сохраняем, только тост.
-   */
-  chatArtifacts?: (userId: string, conversationId: string) => Promise<{ machineId: string; artifacts: string } | null>
   /** Готовый реестр (тесты) вместо нового. */
   registry?: AgentRegistry
 }
@@ -38,17 +34,23 @@ export interface MachinesModule {
   commandGate: CommandGate
 }
 
-export async function createMachinesModule(deps: MachinesDeps): Promise<MachinesModule> {
-  const { app, db, config, publish } = deps
-  const registry = deps.registry ?? new AgentRegistry({ offlineGraceMs: config.agentOfflineGraceMs })
-  const log = (m: string, extra?: Record<string, unknown>): void => app.log.info(extra ?? {}, m)
-
-  // Гейт команд (п.10): политика проекта и роли поверх политики машины; опасные команды в чате — с подтверждением.
-  const commandGate = createCommandGate({
+/** Гейт команд (п.10): политика проекта и роли поверх политики машины — только данные базы, поэтому есть и у ядра в режиме `remote`. */
+export function createDbCommandGate(db: VoiceChatDb): CommandGate {
+  return createCommandGate({
     projectPolicy: async (projectId) => await db.projects.getProjectCommandPolicy(projectId),
     rolePolicies: async () => await db.machines.getRoleCommandPolicies(),
     userRole: async (userId) => (await db.identity.getUser(userId))?.role ?? null
   })
+}
+
+export async function createMachinesModule(deps: MachinesDeps): Promise<MachinesModule> {
+  const { app, db, config, publish } = deps
+  const registry = deps.registry ?? new AgentRegistry({ offlineGraceMs: config.agentOfflineGraceMs })
+  const log = (m: string, extra?: Record<string, unknown>): void => app.log.info(extra ?? {}, m)
+  // Полный лог долгой команды из чата — в artifacts привязанного хранилища разговора.
+  const chatStorage = createManagedChatStorage({ db, machines: registry, log })
+
+  const commandGate = createDbCommandGate(db)
   await registerAgentRoutes(app, db, registry, {
     agentApp: config.agentAppPath,
     desktopApp: config.desktopAppPath,
@@ -73,18 +75,18 @@ export async function createMachinesModule(deps: MachinesDeps): Promise<Machines
     if (!userId || record.source === 'system' || record.durationMs < config.longCommandMs) return
     void (async () => {
       let logPath: string | undefined
-      if (record.source === 'chat' && record.conversationId && deps.chatArtifacts) {
+      if (record.source === 'chat' && record.conversationId) {
         try {
-          const managed = await deps.chatArtifacts(userId, record.conversationId)
+          const managed = await chatStorage.managedChatStorage(userId, record.conversationId)
           if (managed) {
             const separator = managed.artifacts.includes('\\') && !managed.artifacts.includes('/') ? '\\' : '/'
             const dir = `${managed.artifacts}${separator}commands`
-            await registry.fsMkdir(managed.machineId, dir)
+            await registry.fsMkdir(managed.binding.machineId, dir)
             const stamp = new Date(record.startedAt).toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
             const slug = record.command.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'command'
             logPath = `${dir}${separator}${stamp}__${slug}.log`
             const header = `$ ${record.command}\n# exit ${record.exitCode ?? 'null'} · ${record.durationMs} ms · ${new Date(record.startedAt).toISOString()}\n\n`
-            await registry.fsWrite(managed.machineId, logPath, Buffer.from(header + output).toString('base64'))
+            await registry.fsWrite(managed.binding.machineId, logPath, Buffer.from(header + output).toString('base64'))
           }
         } catch (error) {
           app.log.warn({ error }, 'command log save failed')

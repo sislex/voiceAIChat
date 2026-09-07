@@ -41,7 +41,7 @@ import { syncProjectWithRetry } from './projectSync.js'
 import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { registerAuth, resolveActiveUser, uid } from './users/auth.js'
-import { ensureDefaultChatBinding } from './agents/defaultStorage.js'
+import { createManagedChatStorage } from './chatStorage.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
 import { registerProjectComponentsRoutes } from './routes/projectComponents.js'
@@ -70,7 +70,9 @@ function cookieToken(header: string | undefined): string | undefined {
 import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import type { AgentRegistry } from './agents/registry.js'
-import { createMachinesModule } from './machines/module.js'
+import { createDbCommandGate, createMachinesModule } from './machines/module.js'
+import { HttpMachines } from './machinesBridge/httpMachines.js'
+import { registerAgentWsProxy, registerMachinesProxy } from './machinesBridge/proxy.js'
 import type { MachinesService } from './machines/service.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
@@ -111,7 +113,7 @@ import type { SttClient } from './stt/client.js'
 import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { UploadStore, machineManagedFilePath, machineUploadDir, machineUploadPath, resolveManagedChatStorage } from './uploads.js'
+import { UploadStore, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
 import type { TtsClient } from './tts/client/types.js'
@@ -384,18 +386,27 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const frames = new UserFrameHub()
   // Машины: реестр, WS агентов `/agent`, роуты и установщики, политика команд, журнал команд, watchdog,
   // перенос хранилищ — отдельным модулем; ядро видит только порт `MachinesService` (docs/plans/machines-service.md).
-  const machinesModule = await createMachinesModule({
+  // В режиме `remote` реестр живёт в отдельном процессе машин: ядро читает зеркало по шине событий, зовёт
+  // RPC/потоковый exec и переправляет туда REST машин и WebSocket агентов.
+  const machinesRemote = opts.config.machinesMode === 'remote'
+  if (machinesRemote && !(opts.config.machinesUrl && opts.config.internalToken)) throw new Error('VC_MACHINES_MODE=remote требует VC_MACHINES_URL и VC_INTERNAL_TOKEN')
+  if (machinesRemote && !opts.config.dbUrl && !opts.db) throw new Error('VC_MACHINES_MODE=remote требует общую базу VC_DB_URL (Postgres)')
+  const remoteMachines = machinesRemote
+    ? new HttpMachines({ machinesUrl: opts.config.machinesUrl!, token: opts.config.internalToken!, publish: (message, userId) => frames.publish(message, userId), log: (level, message, extra) => app.log[level](extra ?? {}, message) })
+    : null
+  const machinesModule = remoteMachines ? null : await createMachinesModule({
     app, db, config: opts.config,
     publish: (message, userId) => frames.publish(message, userId),
-    // Полный лог долгой команды из чата — в artifacts привязанного хранилища разговора (знание о нём у ядра).
-    chatArtifacts: async (userId, conversationId) => {
-      const managed = await managedChatStorage(userId, conversationId)
-      return managed ? { machineId: managed.binding.machineId, artifacts: managed.artifacts } : null
-    },
     ...(opts.agentRegistry ? { registry: opts.agentRegistry } : {})
   })
-  const agentRegistry: MachinesService = machinesModule.machines
-  const commandGate = machinesModule.commandGate
+  const agentRegistry: MachinesService = remoteMachines ?? machinesModule!.machines
+  const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
+  if (remoteMachines) {
+    remoteMachines.start()
+    app.addHook('onClose', async () => remoteMachines.stop())
+    registerMachinesProxy(app, { machinesUrl: opts.config.machinesUrl! })
+    registerAgentWsProxy(app, { machinesUrl: opts.config.machinesUrl! })
+  }
   /**
    * Системная граница актуальности общей копии проекта. Модель не участвует:
    * чистая базовая ветка обновляется только fast-forward, а посторонние
@@ -899,29 +910,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // совместимый локальный режим.
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
   // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
-  const defaultStorageDeps = { db, registry: agentRegistry, log: (m: string, extra?: Record<string, unknown>) => app.log.info(extra ?? {}, m) }
-  const ensureChatStorage = async (userId: string, conversationId: string, machineId: string) => await ensureDefaultChatBinding(defaultStorageDeps, userId, conversationId, machineId)
-  // Вложения/ретушь/публикация: чат без привязки сначала привязывается к ChatAI машины разговора (если она в сети).
-  const managedChatStorage = async (userId: string, conversationId: string) => {
-    if (!await db.machines.getChatStorageBinding(userId, conversationId)) {
-      const machine = await db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
-      if (machine?.agentId && machine.source !== 'disabled') await ensureChatStorage(userId, conversationId, machine.agentId)
-    }
-    return resolveManagedChatStorage(userId, conversationId, {
-      getBinding: async (uid, id) => await db.machines.getChatStorageBinding(uid, id),
-      listStorages: async (uid, machineId) => await db.machines.listMachineStorages(uid, machineId),
-      ownsMachine: async (uid, machineId) => (await db.machines.listAgents(uid)).some((agent) => agent.id === machineId),
-      isOnline: (machineId) => agentRegistry.isOnline(machineId),
-      waitOnline: (machineId) => agentRegistry.waitForOnline(machineId),
-      verifyRoot: async (machineId, rootPath) => {
-        const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
-        const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
-        const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
-        const binding = await db.machines.getChatStorageBinding(userId, conversationId)
-        if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
-      }
-    })
-  }
+  // Хранилище разговора на машине — общий helper ядра и модуля машин (полный лог долгой команды из чата).
+  const { ensureChatStorage, managedChatStorage } = createManagedChatStorage({ db, machines: agentRegistry, log: (m, extra) => app.log.info(extra ?? {}, m) })
   const generatedCleanup = new GeneratedCleanupService({
     targets: async () => await db.machines.listGeneratedCleanupTargets(),
     ttlDays: async (userId) => (await db.settings.getSettings(userId)).generatedFilesTtlDays,

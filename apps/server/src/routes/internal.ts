@@ -14,8 +14,9 @@ import type { KanbanCore } from '../kanban/core.js'
 import { createKanbanCoreRpcDispatcher } from '../kanbanBridge/internal.js'
 import {
   INTERNAL_KANBAN_CORE_PATH, INTERNAL_KANBAN_EVENTS_PATH, INTERNAL_KANBAN_EXEC_STREAM_PATH,
-  type ExecStreamLine, type ExecStreamRequest, type KanbanEvent, type KanbanEventsRequest, type MachineSnapshot
+  type KanbanEvent, type KanbanEventsRequest, type MachineSnapshot
 } from '../kanban/internal.js'
+import { serveExecStream, type ExecStreamRequest } from '../internal/execStream.js'
 
 export interface InternalRoutesDeps {
   token: string
@@ -81,21 +82,6 @@ function registerKanbanInternal(scope: FastifyInstance, kanban: NonNullable<Inte
   scope.post<{ Body: ExecStreamRequest }>(INTERNAL_KANBAN_EXEC_STREAM_PATH, async (req, reply) => {
     const body = req.body
     if (!body || typeof body.agentId !== 'string' || typeof body.command !== 'string') return reply.code(400).send({ error: 'bad exec request' })
-    const controller = new AbortController()
-    reply.hijack()
-    const raw = reply.raw
-    raw.on('close', () => { if (!raw.writableFinished) controller.abort() })
-    raw.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache', 'x-accel-buffering': 'no' })
-    raw.flushHeaders()
-    const write = (line: ExecStreamLine): void => { if (!raw.writableEnded) raw.write(`${JSON.stringify(line)}\n`) }
-    try {
-      const result = body.stream
-        ? await kanban.core.machines.execStream(body.agentId, body.command, body.timeoutMs, (chunk) => write({ chunk }), controller.signal)
-        : await kanban.core.machines.exec(body.agentId, body.command, body.timeoutMs, controller.signal, body.meta)
-      write({ result })
-    } catch (error) {
-      write({ error: error instanceof Error ? error.message : String(error) })
-    }
-    raw.end()
+    await serveExecStream(reply, body, kanban.core.machines)
   })
 }
