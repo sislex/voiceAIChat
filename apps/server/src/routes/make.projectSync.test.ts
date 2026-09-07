@@ -8,11 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
-import { MakeWorkspaces } from '../make/workspace.js'
-import { MakeHub } from '../make/hub.js'
-import { MakeLibrary } from '../make/library.js'
+import { MakeHub, MakeLibrary, MakeWorkspaces, registerMakeRoutes } from '@voicechat/make'
 import { LocalMakeCore } from '../makeBridge/localCore.js'
-import { registerMakeRoutes } from './make.js'
 
 const U = 'admin'
 let app: FastifyInstance

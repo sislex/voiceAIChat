@@ -4,7 +4,7 @@
 // стили берём из index.html проекта, чтобы компонент выглядел как в приложении.
 
 import { MAKE_REACT_IMPORT_MAP, MAKE_STORIES_PAGE, type MakeStoryFile, type MakeTestFile } from '@voicechat/shared'
-import { parseStoryFile } from '../util/storyParse.js'
+import { parseStoryFile } from '@voicechat/shared'
 
 // Разбор сториз — общая утилита; реэкспорт сохраняет прежний адрес для витрины и тестов.
 export { parseStoryFile }

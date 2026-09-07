@@ -36,10 +36,11 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
 `auth/loginStatus.ts`, `diarization/` (заглушка);
-`make/` (Make: мастерские, порты `core.ts`/`service.ts`, сборка `module.ts`, гейт границы
-`boundary.test.ts` — код Make не импортирует `db/`, ядро зовёт Make только через `service`),
-`makeBridge/` (реализация `MakeCore` поверх `db.*` — единственная встреча Make со слоем данных),
-`util/` (общие утилиты без владельца: `rateLimit`, `publicHost`, `storyParse`).
+`makeBridge/` (Make живёт в пакете `@voicechat/make`; здесь — реализация его порта `MakeCore`
+поверх `db.*` (`localCore.ts`), `MakeService` для режима `remote` (`remote.ts`) и гейт границы
+`boundary.test.ts`: ядро импортирует из Make только типы и `createMakeModule`),
+`routes/internal.ts` (внутренний API `/internal/*` для соседних сервисов под `VC_INTERNAL_TOKEN`),
+`util/` (общие утилиты без владельца: `publicHost`).
 
 ## Тесты
 
