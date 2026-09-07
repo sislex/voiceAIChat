@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-05
-checked: 2ab335d8
+updated: 2026-09-06
+checked: 991a960a
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -82,6 +82,14 @@ packages:
 «В очередь» на карточке задачи: команды слота **до** → работа модели → команды
 слота **после** → резюме модели. Один **ран** с общим статусом, единой лентой,
 потоковым логом, метриками длительности, fix-loop и диагностической консолью.
+
+`GET /api/ci/runs/:runId/log` отдаёт **хвост** лога (`CI_RUN_LOG_TAIL_LINES` = 5000
+строк, потолок явного `?limit=` — 20 000). Прежде метод собирал в память все
+строки рана: у длинного рана это сотни тысяч записей, и сериализация ответа
+убивала процесс целиком — `FATAL ERROR: Reached heap limit` в
+`StreamBase::Writev`, контейнер уходил в цикл рестартов (прод, 2026-09-05).
+Лента показывает конец лога и дописывает новые строки по WS, поэтому хвост
+закрывает её потребность.
 
 ## Выбор этапов процесса InProgress
 
@@ -1049,8 +1057,12 @@ development-run временно недоступен». Оптимистичн�
 `settleTaskColumn` завершает ран одним переносом. Успешная разработка без
 legacy merge-шага всегда переходит в колонку с semantic type `component_qa`;
 интеграционные и ручные проверки больше не подменяются development-run.
-Development-run нельзя запустить из `backlog` или `preparation`. Наличие
-успешного legacy merge-шага по-прежнему переводит старый workflow в `done`.
+Development-run нельзя запустить из `backlog` или `preparation`. Это правило
+подтверждает текущая реализация `settleTaskColumn` в
+`apps/server/src/ci/runManager.ts`: целевой semantic type выбирается как
+`component_qa`, а `done` — только при найденном успешном legacy merge-шаге.
+Наличие успешного legacy merge-шага по-прежнему переводит старый workflow в
+`done`.
 Если целевой semantic type отсутствует в проекте, `settleTaskColumn` не двигает
 карточку; успешный перенос фиксируется событием `run.component_qa` или
 `run.task_done` (`apps/server/src/ci/runManager.ts`).

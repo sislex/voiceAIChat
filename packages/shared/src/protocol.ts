@@ -19,6 +19,7 @@ import type { CxItem } from './codexSessions'
 import type { AgentInfo, MachineCommandEvent, MachineStatusEvent } from './agentProtocol'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
+import type { QaRunStage } from './qa'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type { WidgetUiAction, WidgetUiActionResult } from './widgetAssistant'
 import type { LoginStatusMap } from './auth'
@@ -420,6 +421,13 @@ export const REST = {
   /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
   projectBoard: (id: string, includeCompleted?: boolean) =>
     `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,
+  /**
+   * Вторая фаза доски: состояние карточек (чат, merge, подготовка, последний
+   * ран) и сводки CI. Отдельный запрос — чтобы доска рисовалась по скелету, не
+   * дожидаясь обхода восьми таблиц ранов.
+   */
+  projectBoardStatuses: (id: string, includeCompleted?: boolean) =>
+    `/api/projects/${encodeURIComponent(id)}/board/statuses${includeCompleted ? '?includeCompleted=1' : ''}`,
   /** Вид доски текущего человека в проекте: фильтры, свимлейны, показ скрытых. */
   projectBoardView: (id: string) => `/api/projects/${encodeURIComponent(id)}/board/view`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
@@ -431,6 +439,7 @@ export const REST = {
   projectTasks: (id: string) => `/api/projects/${encodeURIComponent(id)}/tasks`,
   projectTask: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`,
+  projectTaskReworkCycles: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`,
   projectTaskMove: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
   projectTaskChat: (id: string, taskId: string) =>
@@ -527,6 +536,10 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/components/storybook?workspace=${encodeURIComponent(workspace)}`,
   projectStorybookAction: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/storybook`,
   projectComponentTicket: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/ticket`,
+  /** Как открыть кадр: прямой адрес, туннель локального агента или прокси машины. */
+  projectStorybookOpen: (id: string) => `/api/projects/${encodeURIComponent(id)}/components/storybook/open`,
+  projectStorybookTunnel: (id: string, tunnelId: string, workspace: string) =>
+    `/api/projects/${encodeURIComponent(id)}/components/storybook/tunnels/${encodeURIComponent(tunnelId)}?workspace=${encodeURIComponent(workspace)}`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',
@@ -591,7 +604,12 @@ export const REST = {
     `/api/ci/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}`,
   conversationTaskContext: (id: string) => `/api/conversations/${encodeURIComponent(id)}/task-context`,
   /** Метки всех чатов пользователя, привязанных к задачам (подсветка списка бесед). */
-  conversationTaskChats: '/api/conversations/task-chats'
+  /**
+   * Метки чатов задач. Сводки ранов по умолчанию не отдаются — они весили почти
+   * весь ответ; `withRuns` включает их для тех, кому состояние действительно нужно.
+   */
+  conversationTaskChats: (withRuns?: boolean) =>
+    `/api/conversations/task-chats${withRuns ? '?withRuns=1' : ''}`
 } as const
 
 // --- WebSocket -----------------------------------------------------------
@@ -781,6 +799,19 @@ export type ServerMessage =
   | { t: 'machine.status'; event: MachineStatusEvent }
   | { t: 'preparation.run.updated'; projectId: string; taskId: string; runId: string }
   | { t: 'task.repositories.updated'; projectId: string; taskId: string }
+  /**
+   * Адресная инвалидация состояния QA-этапа задачи (Component QA, интеграционные
+   * тесты, Automated QA). Панели держали это опросом раз в 1,5–2 с всё время, пока
+   * ран активен: на проде один открытый таск давал десятки запросов в минуту.
+   * Кадр несёт только адрес — снимок панель читает своим REST-запросом.
+   */
+  | { t: 'qa.stage.updated'; projectId: string; taskId: string; stage: QaRunStage }
+  /**
+   * Очередь «Улучшения» проекта изменилась. Отдельно от `board.changed`: доска
+   * инвалидируется на каждое движение любой задачи, и панель улучшений ходила за
+   * своим списком ровно столько же раз, хотя предложения меняются редко.
+   */
+  | { t: 'project.improvements.updated'; projectId: string }
   /** Снимок уведомлений подготовки изменился; содержимое читается только по HTTP. */
   | { t: 'task-preparation.notifications.invalidate'; v: 1; projectId: string }
   /**
@@ -904,6 +935,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'machine.command',
   'machine.status',
   'preparation.run.updated',
+  'qa.stage.updated',
+  'project.improvements.updated',
   'task.repositories.updated',
   'task-preparation.notifications.invalidate',
   'invitations.invalidate',

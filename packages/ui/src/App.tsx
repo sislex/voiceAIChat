@@ -27,7 +27,7 @@ import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
-import { IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY } from './store/contracts'
+import { IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY, workshopChatCollapsedKey, workshopChatWidthKey } from './store/contracts'
 import { Sidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -111,10 +111,13 @@ function deviceLabel(userAgent: string): string {
 }
 
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
-const CONSOLE_READER_DEFAULT_CHAT_WIDTH = 42
-const CONSOLE_READER_MIN_PERCENT = 25
-const CONSOLE_READER_MAX_PERCENT = 75
-const CONSOLE_READER_KEYBOARD_STEP = 2
+// Мастерская — общая обёртка «чат + рабочая панель»: консоль с ассистентом и
+// студия картинок делят одну геометрию, один разделитель и одни вкладки на
+// телефоне. Разъезжались они молча: у студии разделитель был декоративным.
+const WORKSHOP_DEFAULT_CHAT_WIDTH = 42
+const WORKSHOP_MIN_PERCENT = 25
+const WORKSHOP_MAX_PERCENT = 75
+const WORKSHOP_KEYBOARD_STEP = 2
 
 // Окно сессий открывают редко, а тянет оно весь модуль устройств — грузим по
 // требованию, чтобы основной бандл не рос из-за диалога в меню аккаунта.
@@ -315,11 +318,15 @@ function initialChatIdFromPath(path: string, segments: string[]): string | null 
 function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.Element {
   const { path, segments } = useHashRoute()
   const initialChatId = useRef(initialChatIdFromPath(path, segments))
+  // Стартуем на доске проекта — индекс чатов не нужен: сайдбар показывает
+  // проекты, а список чатов сам попросит индекс, когда его откроют.
+  const skipConversations = useRef(Boolean(parseProjectsRoute(path)) && initialChatId.current === null)
   const runtime = useCreateAppRuntime({
     api,
     ...(now ? { now } : {}),
     ...(delays ? { delays } : {}),
-    initialChatId: initialChatId.current
+    initialChatId: initialChatId.current,
+    skipConversations: skipConversations.current
   })
   return (
     <AppRuntimeProvider runtime={runtime}>
@@ -393,6 +400,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routeImageStudioChatId = inImageStudio ? (segments[1] ?? null) : null
   // Любой полноэкранный split-режим «чат | панель справа».
   const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake || inImageStudio
+  /** Поверхность мастерской: одна обёртка на консоль и студию картинок. */
+  const workshopSurface: 'console' | 'images' | null = inConsoleReader ? 'console' : inImageStudio ? 'images' : null
+  const inWorkshop = workshopSurface !== null
   // Console и Make сохраняют полноэкранную рабочую область, но используют общий
   // Sidebar. Reader-режимы по-прежнему изолированы от оболочки навигации.
   const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
@@ -512,11 +522,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [gitWorkspaces, setGitWorkspaces] = useState<{ items: GitWorkspaceRef[]; status: LoadStatus; error: string | null }>({ items: [], status: 'idle', error: null })
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
-  const [consoleChatWidth, setConsoleChatWidth] = useState(CONSOLE_READER_DEFAULT_CHAT_WIDTH)
-  const [consoleResizing, setConsoleResizing] = useState(false)
-  const consoleSplitRef = useRef<HTMLDivElement | null>(null)
-  const consoleDividerRef = useRef<HTMLDivElement | null>(null)
-  const consolePointerIdRef = useRef<number | null>(null)
+  const [workshopChatWidth, setWorkshopChatWidth] = useState(WORKSHOP_DEFAULT_CHAT_WIDTH)
+  const [workshopResizing, setWorkshopResizing] = useState(false)
+  const workshopSplitRef = useRef<HTMLDivElement | null>(null)
+  const workshopDividerRef = useRef<HTMLDivElement | null>(null)
+  const workshopPointerIdRef = useRef<number | null>(null)
+  /** Поверхность мастерской для колбэков ресайза: они живут дольше рендера. */
+  const workshopSurfaceRef = useRef<'console' | 'images' | null>(null)
+  /** Колонка чата свёрнута: галерее и терминалу иногда нужна вся ширина. */
+  const [workshopChatCollapsed, setWorkshopChatCollapsed] = useState(false)
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
   // Открытый файл/выделение в Make — уходит вместе с сообщением (п.21).
   const [makeEditorContext, setMakeEditorContext] = useState<EditorContextPayload | null>(null)
@@ -667,49 +681,70 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
   }
-  const clampConsoleChatWidth = useCallback((percent: number): number => {
-    const width = consoleSplitRef.current?.getBoundingClientRect().width ?? 0
-    const pixelMin = width > 0 ? (360 / width) * 100 : CONSOLE_READER_MIN_PERCENT
-    const pixelMax = width > 0 ? ((width - 320 - 12) / width) * 100 : CONSOLE_READER_MAX_PERCENT
-    const lower = Math.min(CONSOLE_READER_MAX_PERCENT, Math.max(CONSOLE_READER_MIN_PERCENT, pixelMin))
-    const upper = Math.max(lower, Math.min(CONSOLE_READER_MAX_PERCENT, pixelMax))
+  const clampWorkshopChatWidth = useCallback((percent: number): number => {
+    const width = workshopSplitRef.current?.getBoundingClientRect().width ?? 0
+    const pixelMin = width > 0 ? (360 / width) * 100 : WORKSHOP_MIN_PERCENT
+    const pixelMax = width > 0 ? ((width - 320 - 12) / width) * 100 : WORKSHOP_MAX_PERCENT
+    const lower = Math.min(WORKSHOP_MAX_PERCENT, Math.max(WORKSHOP_MIN_PERCENT, pixelMin))
+    const upper = Math.max(lower, Math.min(WORKSHOP_MAX_PERCENT, pixelMax))
     return Math.min(upper, Math.max(lower, percent))
   }, [])
-  const setConsoleChatPercent = useCallback((percent: number): void => {
-    setConsoleChatWidth(clampConsoleChatWidth(percent))
-  }, [clampConsoleChatWidth])
-  const stopConsoleResize = useCallback((): void => {
-    const pointerId = consolePointerIdRef.current
-    const divider = consoleDividerRef.current
-    consolePointerIdRef.current = null
-    setConsoleResizing(false)
+  const setWorkshopChatPercent = useCallback((percent: number): void => {
+    const next = clampWorkshopChatWidth(percent)
+    setWorkshopChatWidth(next)
+    // Ширину настраивают один раз и надолго: без записи она сбрасывалась на 42%
+    // при каждом заходе, и человек тянул разделитель заново.
+    const surface = workshopSurfaceRef.current
+    if (surface) globalThis.localStorage?.setItem(workshopChatWidthKey(surface), String(Math.round(next)))
+  }, [clampWorkshopChatWidth])
+  const stopWorkshopResize = useCallback((): void => {
+    const pointerId = workshopPointerIdRef.current
+    const divider = workshopDividerRef.current
+    workshopPointerIdRef.current = null
+    setWorkshopResizing(false)
     if (pointerId !== null && divider?.hasPointerCapture(pointerId)) divider.releasePointerCapture(pointerId)
   }, [])
   useEffect(() => {
-    if (!consoleResizing) return
+    if (!workshopResizing) return
     const move = (event: PointerEvent): void => {
-      const rect = consoleSplitRef.current?.getBoundingClientRect()
+      const rect = workshopSplitRef.current?.getBoundingClientRect()
       if (!rect?.width) return
       event.preventDefault()
-      setConsoleChatPercent(((event.clientX - rect.left) / rect.width) * 100)
+      setWorkshopChatPercent(((event.clientX - rect.left) / rect.width) * 100)
     }
-    const stopOnHidden = (): void => { if (document.hidden) stopConsoleResize() }
+    const stopOnHidden = (): void => { if (document.hidden) stopWorkshopResize() }
     window.addEventListener('pointermove', move, { passive: false })
-    window.addEventListener('pointerup', stopConsoleResize, true)
-    window.addEventListener('pointercancel', stopConsoleResize, true)
-    window.addEventListener('blur', stopConsoleResize)
+    window.addEventListener('pointerup', stopWorkshopResize, true)
+    window.addEventListener('pointercancel', stopWorkshopResize, true)
+    window.addEventListener('blur', stopWorkshopResize)
     document.addEventListener('visibilitychange', stopOnHidden)
     return () => {
       window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', stopConsoleResize, true)
-      window.removeEventListener('pointercancel', stopConsoleResize, true)
-      window.removeEventListener('blur', stopConsoleResize)
+      window.removeEventListener('pointerup', stopWorkshopResize, true)
+      window.removeEventListener('pointercancel', stopWorkshopResize, true)
+      window.removeEventListener('blur', stopWorkshopResize)
       document.removeEventListener('visibilitychange', stopOnHidden)
     }
-  }, [consoleResizing, setConsoleChatPercent, stopConsoleResize])
+  }, [workshopResizing, setWorkshopChatPercent, stopWorkshopResize])
   useEffect(() => {
-    if (!inConsoleReader) stopConsoleResize()
-  }, [inConsoleReader, stopConsoleResize])
+    if (!inWorkshop) stopWorkshopResize()
+  }, [inWorkshop, stopWorkshopResize])
+  useEffect(() => {
+    workshopSurfaceRef.current = workshopSurface
+    if (!workshopSurface) return
+    const saved = Number(globalThis.localStorage?.getItem(workshopChatWidthKey(workshopSurface)))
+    const valid = Number.isFinite(saved) && saved >= WORKSHOP_MIN_PERCENT && saved <= WORKSHOP_MAX_PERCENT
+    setWorkshopChatWidth(valid ? saved : WORKSHOP_DEFAULT_CHAT_WIDTH)
+    setWorkshopChatCollapsed(globalThis.localStorage?.getItem(workshopChatCollapsedKey(workshopSurface)) === '1')
+  }, [workshopSurface])
+  const toggleWorkshopChat = useCallback((): void => {
+    setWorkshopChatCollapsed((collapsed) => {
+      const next = !collapsed
+      const surface = workshopSurfaceRef.current
+      if (surface) globalThis.localStorage?.setItem(workshopChatCollapsedKey(surface), next ? '1' : '0')
+      return next
+    })
+  }, [])
   useEffect(() => {
     let active = true
     void api['app:ping']().then((value) => { if (active) setRelease(value) }).catch(() => undefined)
@@ -796,16 +831,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [chat.draft, chatActions, toast])
 
   const authed = !session.authRequired || Boolean(session.currentUser)
+  // Ошибки читаем через ref: с ними в зависимостях колбэк пересоздавался, а
+  // эффект ниже на каждое такое пересоздание переподписывался на realtime и
+  // заново дёргал список уведомлений. Он должен грузиться раз и дальше — по
+  // событиям вебсокета.
+  const clarificationErrorsRef = useRef(clarificationErrors)
+  useEffect(() => { clarificationErrorsRef.current = clarificationErrors }, [clarificationErrors])
   const refreshClarificationNotifications = useCallback(async (): Promise<PreparationClarificationNotification[]> => {
     if (!authed) { setClarificationNotifications([]); return [] }
     const snapshot = await api['tasks:listPreparationNotifications']()
     const visible = snapshot.filter((item) => item.dismissedAt == null)
+    const errors = clarificationErrorsRef.current
     setClarificationNotifications((previous) => [
       ...visible,
-      ...previous.filter((item) => clarificationErrors[item.questionId] && !visible.some((next) => next.questionId === item.questionId))
+      ...previous.filter((item) => errors[item.questionId] && !visible.some((next) => next.questionId === item.questionId))
     ])
     return snapshot
-  }, [api, authed, clarificationErrors])
+  }, [api, authed])
   useEffect(() => {
     if (!authed) { setClarificationNotifications([]); return }
     let active = true
@@ -1103,6 +1145,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next))
   }
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
+  // Индекс чатов грузится тем, кто его показывает. На доске сайдбар открыт на
+  // проектах, и шесть запросов списков там ни к чему; переключение на «Чаты»
+  // (или любой экран с беседами) просит индекс сам, один раз за сессию.
+  useEffect(() => {
+    if (!authed) return
+    if (sidebarMode !== 'chats' && inProjects) return
+    void chatActions.ensureConversationIndex().catch(() => {})
+  }, [authed, sidebarMode, inProjects, chatActions])
   useVoiceCues(voice.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
   // Канал уведомлений стора → тосты. Показанные сразу снимаем из очереди, а
@@ -1328,7 +1378,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { readerCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inReader || chat.conversationsStatus !== 'ready') return
+    if (!authed || !inReader) return
+    // Список раздела грузится при входе в него: на старте приложения его нет.
+    if (chat.scopeStatus['web-reader'] !== 'ready') { void chatActions.ensureSectionConversations('web-reader'); return }
     if (legacyReaderRoute) {
       navigate(`/web-reader${routeReaderChatId ? `/${routeReaderChatId}` : ''}`, { replace: true })
       return
@@ -1346,7 +1398,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (target) { navigate(`/web-reader/${target.id}`, { replace: true }); return }
     createReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, chat.activeId, chat.readerConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inReader, legacyReaderRoute, routeReaderChatId, chat.activeId, chat.readerConversations, chat.scopeStatus, chatActions, navigate])
 
   const playwrightReaderCreating = useRef(false)
   const createPlaywrightReaderChat = (replace = false): void => {
@@ -1358,7 +1410,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { playwrightReaderCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inPlaywrightReader || chat.conversationsStatus !== 'ready' || playwrightReaderCreating.current) return
+    if (!authed || !inPlaywrightReader || playwrightReaderCreating.current) return
+    if (chat.scopeStatus['playwright-reader'] !== 'ready') { void chatActions.ensureSectionConversations('playwright-reader'); return }
     const chats = chat.playwrightReaderConversations
     const routed = chats.find((item) => item.id === routePlaywrightReaderChatId)
     if (routed) {
@@ -1369,7 +1422,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/playwright-reader/${fallback.id}`, { replace: true }); return }
     createPlaywrightReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inPlaywrightReader, routePlaywrightReaderChatId, chat.activeId, chat.playwrightReaderConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inPlaywrightReader, routePlaywrightReaderChatId, chat.activeId, chat.playwrightReaderConversations, chat.scopeStatus, chatActions, navigate])
 
   const consoleReaderCreating = useRef(false)
   const createConsoleReaderChat = (replace = false): void => {
@@ -1381,7 +1434,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { consoleReaderCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inConsoleReader || chat.conversationsStatus !== 'ready' || consoleReaderCreating.current) return
+    if (!authed || !inConsoleReader || consoleReaderCreating.current) return
+    if (chat.scopeStatus.console !== 'ready') { void chatActions.ensureSectionConversations('console'); return }
     const chats = chat.consoleReaderConversations
     const routed = chats.find((item) => item.id === routeConsoleReaderChatId)
     if (routed) {
@@ -1392,7 +1446,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/console-reader/${fallback.id}`, { replace: true }); return }
     createConsoleReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inConsoleReader, routeConsoleReaderChatId, chat.activeId, chat.consoleReaderConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inConsoleReader, routeConsoleReaderChatId, chat.activeId, chat.consoleReaderConversations, chat.scopeStatus, chatActions, navigate])
   // Make: те же правила маршрутизации, что у Консоли (адрес → активный проект, иначе первый/новый).
   const makeCreating = useRef(false)
   const createMakeChat = (replace = false): void => {
@@ -1413,7 +1467,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       .finally(() => { imageStudioCreating.current = false })
   }
   useEffect(() => {
-    if (!authed || !inImageStudio || chat.conversationsStatus !== 'ready' || imageStudioCreating.current) return
+    if (!authed || !inImageStudio || imageStudioCreating.current) return
+    if (chat.scopeStatus.images !== 'ready') { void chatActions.ensureSectionConversations('images'); return }
     const chats = chat.imageStudioConversations
     const routed = chats.find((item) => item.id === routeImageStudioChatId)
     if (routed) {
@@ -1428,10 +1483,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/images/${fallback.id}`, { replace: true }); return }
     createImageStudioChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inImageStudio, routeImageStudioChatId, chat.activeId, chat.imageStudioConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inImageStudio, routeImageStudioChatId, chat.activeId, chat.imageStudioConversations, chat.scopeStatus, chatActions, navigate])
 
   useEffect(() => {
-    if (!authed || !inMake || chat.conversationsStatus !== 'ready' || makeCreating.current) return
+    if (!authed || !inMake || makeCreating.current) return
+    if (chat.scopeStatus.make !== 'ready') { void chatActions.ensureSectionConversations('make'); return }
     const chats = chat.makeConversations
     const routed = chats.find((item) => item.id === routeMakeChatId)
     if (routed) {
@@ -1442,7 +1498,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (fallback) { navigate(`/make/${fallback.id}`, { replace: true }); return }
     createMakeChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inMake, routeMakeChatId, chat.activeId, chat.makeConversations, chat.conversationsStatus, chatActions, navigate])
+  }, [authed, inMake, routeMakeChatId, chat.activeId, chat.makeConversations, chat.scopeStatus, chatActions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
@@ -1461,12 +1517,26 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     void chatActions.syncSidebarProjects(projects.projects.map((project) => project.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, projects.projectsLoaded, projects.projects])
+  // Загрузчик истории доработок отдаём карточке стабильной ссылкой: инлайн-
+  // стрелка меняется на каждом рендере App, и эффект внутри карточки перечитывал
+  // rework-cycles примерно раз в секунду, пока она открыта.
+  const loadReworkCycles = useCallback(
+    (taskId: string) => api['tasks:listReworkCycles']({ projectId: routeProjectId!, taskId }),
+    [api, routeProjectId]
+  )
+  // Релизы, настройки и панель кода доску не показывают, поэтому и не грузят:
+  // снимок доски, её вид и состояния карточек — это лишние запросы, а подписка
+  // на board.changed при работающем ране перечитывает доску каждые пару секунд.
+  const routeNeedsBoard = !(routeReleases || routeSettings || routeCode)
   useEffect(() => {
     if (!authed || !inProjects) return
-    if (routeProjectId) { if (projects.activeProjectId !== routeProjectId) void projectsActions.openBoard(routeProjectId) }
+    if (routeProjectId) {
+      if (projects.activeProjectId !== routeProjectId) void projectsActions.openProject(routeProjectId, { board: routeNeedsBoard })
+      else if (routeNeedsBoard) void projectsActions.ensureBoard(routeProjectId)
+    }
     else if (projects.activeProjectId) projectsActions.closeBoard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inProjects, routeProjectId])
+  }, [authed, inProjects, routeProjectId, routeNeedsBoard])
   // Прямая ссылка на завершённую задачу: сервер прячет с доски давно готовые
   // карточки, и открывать было бы нечего. Если задачи из URL в снапшоте нет —
   // один раз включаем «Показать завершённые» и доска приходит целиком.
@@ -2121,7 +2191,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         inConsoleReader && 'app--console-reader',
         inMake && 'app--make',
         // Студия картинок живёт в той же раскладке, что и Make: чат + панель.
-        inImageStudio && 'app--make app--image-studio'
+        inImageStudio && 'app--image-studio'
       ].filter(Boolean).join(' ')}
       data-theme={settingsState.settings.theme}
       style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
@@ -2200,6 +2270,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         conversationsStatus={chat.conversationsStatus}
         conversationsError={chat.conversationsError}
         onRetryConversations={() => void chatActions.retryConversations()}
+        moreStatus={chat.moreStatus}
+        hasMoreConversations={chat.hasMoreConversations}
+        onLoadMore={() => void chatActions.loadMoreConversations()}
         activeId={chat.activeId}
         taskBadges={chat.taskChatBadges}
         ciSummaries={projects.ciSummaries}
@@ -2459,19 +2532,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
       {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && !(inChat && !inSplit && chat.activeId === null && chat.conversationsStatus === 'ready' && chat.conversations.length === 0) && (
       <div
-        ref={inConsoleReader ? consoleSplitRef : undefined}
-        className={inSplit ? `chat-split chat-split--${chatView}${inConsoleReader ? ' console-reader-workshop' : ''}` : 'chat-page'}
-        data-resizing={inConsoleReader && consoleResizing ? 'true' : undefined}
-        style={inSplit ? (inConsoleReader
-          ? { '--console-chat-width': `${consoleChatWidth}%` } as CSSProperties
+        ref={inWorkshop ? workshopSplitRef : undefined}
+        className={inSplit ? `chat-split chat-split--${chatView}${inWorkshop ? ' workshop-split' : ''}${inWorkshop && workshopChatCollapsed ? ' workshop-split--collapsed' : ''}` : 'chat-page'}
+        data-workshop={workshopSurface ?? undefined}
+        data-resizing={inWorkshop && workshopResizing ? 'true' : undefined}
+        style={inSplit ? (inWorkshop
+          ? { '--workshop-chat-width': `${workshopChatWidth}%` } as CSSProperties
           : { '--preview-width': `${previewWidth}%` } as CSSProperties) : undefined}
       >
-      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inConsoleReader ? 'Панели мастерской' : undefined}><button id={inConsoleReader ? 'console-reader-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inConsoleReader ? 'console-reader-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат</button><button id={inConsoleReader ? 'console-reader-console-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inConsoleReader ? 'console-reader-console-pane' : undefined} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
-      <div id={inConsoleReader ? 'console-reader-chat-pane' : undefined} role={inConsoleReader ? 'tabpanel' : undefined} aria-labelledby={inConsoleReader ? 'console-reader-chat-tab' : undefined} className="chat-split-chat">
+      {/* Шапка мастерской — ребёнок обёртки, а не колонки чата: выбор разговора
+          относится ко всей поверхности и обязан пережить сворачивание чата. */}
+      {inConsoleReader && <header className="web-recorder-selector workshop-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
+      {inImageStudio && <header className="web-recorder-selector workshop-selector"><strong>Студия</strong><label><span className="vc-sr-only">Чат студии картинок</span><select aria-label="Чат студии картинок" value={imageStudioActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/images/${event.target.value}`) }}>{!imageStudioActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.imageStudioConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createImageStudioChat()}>+ Новый</button></header>}
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inWorkshop ? 'Панели мастерской' : undefined}><button id={inWorkshop ? 'workshop-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inWorkshop ? 'workshop-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат</button><button id={inWorkshop ? 'workshop-side-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inWorkshop ? 'workshop-side-pane' : undefined} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
+      <div id={inWorkshop ? 'workshop-chat-pane' : undefined} role={inWorkshop ? 'tabpanel' : undefined} aria-labelledby={inWorkshop ? 'workshop-chat-tab' : undefined} className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
-      {inConsoleReader && <header className="web-recorder-selector console-reader-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
-      {inImageStudio && <header className="web-recorder-selector make-selector image-studio-selector"><strong>Студия</strong><label><span className="vc-sr-only">Чат студии картинок</span><select aria-label="Чат студии картинок" value={imageStudioActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/images/${event.target.value}`) }}>{!imageStudioActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.imageStudioConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createImageStudioChat()}>+ Новый</button></header>}
       {inMake && <header className="web-recorder-selector make-selector"><strong>Make</strong><label><span className="vc-sr-only">Проект Make</span><select aria-label="Проект Make" value={makeActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/make/${event.target.value}`) }}>{!makeActiveListed && <option value="" disabled>Проект не выбран</option>}{chat.makeConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createMakeChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
@@ -2628,38 +2704,50 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         }
       /> : <div className="chat-route-loading" role="status">{inMake ? 'Открываем проект…' : 'Открываем выбранный Reader-разговор…'}</div>}
       </div>
-      {inSplit && readerSurfaceReady && (inConsoleReader ? <div
-        ref={consoleDividerRef}
-        className="console-reader-divider"
+      {inSplit && readerSurfaceReady && (inWorkshop ? <div
+        ref={workshopDividerRef}
+        className="workshop-divider"
         hidden={compactChat}
         role="separator"
         aria-label="Изменить ширину панелей"
         aria-orientation="vertical"
-        aria-valuemin={CONSOLE_READER_MIN_PERCENT}
-        aria-valuemax={CONSOLE_READER_MAX_PERCENT}
-        aria-valuenow={Math.round(consoleChatWidth)}
+        aria-valuemin={WORKSHOP_MIN_PERCENT}
+        aria-valuemax={WORKSHOP_MAX_PERCENT}
+        aria-valuenow={Math.round(workshopChatWidth)}
         tabIndex={0}
         onPointerDown={(event) => {
-          if (window.matchMedia('(max-width: 768px)').matches) return
+          if (workshopChatCollapsed || window.matchMedia('(max-width: 768px)').matches) return
           event.preventDefault()
-          consolePointerIdRef.current = event.pointerId
+          workshopPointerIdRef.current = event.pointerId
           event.currentTarget.setPointerCapture(event.pointerId)
-          setConsoleResizing(true)
-          const rect = consoleSplitRef.current?.getBoundingClientRect()
-          if (rect?.width) setConsoleChatPercent(((event.clientX - rect.left) / rect.width) * 100)
+          setWorkshopResizing(true)
+          const rect = workshopSplitRef.current?.getBoundingClientRect()
+          if (rect?.width) setWorkshopChatPercent(((event.clientX - rect.left) / rect.width) * 100)
         }}
-        onLostPointerCapture={stopConsoleResize}
-        onDoubleClick={() => setConsoleChatPercent(CONSOLE_READER_DEFAULT_CHAT_WIDTH)}
+        onLostPointerCapture={stopWorkshopResize}
+        onDoubleClick={() => { if (!workshopChatCollapsed) setWorkshopChatPercent(WORKSHOP_DEFAULT_CHAT_WIDTH) }}
         onKeyDown={(event) => {
-          const next = event.key === 'ArrowLeft' ? consoleChatWidth - CONSOLE_READER_KEYBOARD_STEP
-            : event.key === 'ArrowRight' ? consoleChatWidth + CONSOLE_READER_KEYBOARD_STEP
-              : event.key === 'Home' ? CONSOLE_READER_MIN_PERCENT
-                : event.key === 'End' ? CONSOLE_READER_MAX_PERCENT : null
+          if (workshopChatCollapsed) return
+          const next = event.key === 'ArrowLeft' ? workshopChatWidth - WORKSHOP_KEYBOARD_STEP
+            : event.key === 'ArrowRight' ? workshopChatWidth + WORKSHOP_KEYBOARD_STEP
+              : event.key === 'Home' ? WORKSHOP_MIN_PERCENT
+                : event.key === 'End' ? WORKSHOP_MAX_PERCENT : null
           if (next === null) return
           event.preventDefault()
-          setConsoleChatPercent(next)
+          setWorkshopChatPercent(next)
         }}
-      ><span className="console-reader-divider__handle" aria-hidden="true" /></div> : <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>)}
+      ><span className="workshop-divider__handle" aria-hidden="true" /><button
+        type="button"
+        className="workshop-divider__collapse"
+        aria-pressed={workshopChatCollapsed}
+        aria-label={workshopChatCollapsed ? 'Показать чат' : 'Свернуть чат'}
+        title={workshopChatCollapsed ? 'Показать чат' : 'Свернуть чат'}
+        // Кнопка живёт на разделителе — единственном месте, видимом и при
+        // свёрнутом чате; жест разделителя до неё доходить не должен.
+        onPointerDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onClick={toggleWorkshopChat}
+      >{workshopChatCollapsed ? '›' : '‹'}</button></div> : <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>)}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка панели сессии…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
         // Записанный сценарий добавляется в набор или заменяет одноимённый:
@@ -2672,10 +2760,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         },
         ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
       } : {})} /></Suspense>}
-      {inConsoleReader && readerSurfaceReady && chat.activeId && <div id="console-reader-console-pane" role="tabpanel" aria-labelledby="console-reader-console-tab" className="console-reader-console-host"><ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} /></div>}
-      {inConsoleReader && <div className="console-reader-drag-shield" aria-hidden="true" onPointerUp={stopConsoleResize} />}
+      {inConsoleReader && readerSurfaceReady && chat.activeId && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} /></div>}
+      {inWorkshop && <div className="workshop-drag-shield" aria-hidden="true" onPointerUp={stopWorkshopResize} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
-      {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense>}
+      {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense></div>}
       {inReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
@@ -2861,6 +2949,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
               loadPreparationRun={(runId) => api['tasks:getPreparationRun']({ runId })}
               loadFullTask={(taskId) => api['tasks:get']({ projectId: routeProjectId!, taskId })}
+              loadReworkCycles={loadReworkCycles}
+              createReworkCycle={(taskId, draft, idempotencyKey) => api['tasks:createReworkCycle']({
+                projectId: routeProjectId!, taskId,
+                input: {
+                  description: draft.description, criteria: draft.criteria, makeMode: draft.makeMode,
+                  makePaths: draft.makePaths, uploadIds: draft.attachments.filter((file) => file.status === 'ready').map((file) => file.id),
+                  idempotencyKey
+                }
+              })}
+              uploadReworkAttachment={async (file) => {
+                const dataBase64 = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader()
+                  reader.onerror = () => reject(new Error('Не удалось прочитать файл'))
+                  reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+                  reader.readAsDataURL(file)
+                })
+                return api['uploads:add']({ name: file.name, mimeType: file.type || 'application/octet-stream', dataBase64 })
+              }}
               onStartPreparation={(taskId, selection) => api['tasks:startPreparationRun']({ projectId: routeProjectId!, taskId, selection })}
               onRetryPreparation={(runId, selection) => api['tasks:retryPreparationRun']({ runId, selection })}
               onCancelPreparation={(runId) => api['tasks:cancelPreparationRun']({ runId })}

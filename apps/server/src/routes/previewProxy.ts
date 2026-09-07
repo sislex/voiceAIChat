@@ -6,7 +6,9 @@ import { request as httpsRequest } from 'node:https'
 import type { IncomingMessage } from 'node:http'
 import type { FastifyInstance } from 'fastify'
 import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
+import { createHash } from 'node:crypto'
 import { uid } from '../users/auth.js'
+import { MachineResponseCache, isCacheableMachineResponse } from './machineCache.js'
 
 const MAX_REDIRECTS = 5
 const MAX_BYTES = 5 * 1024 * 1024
@@ -1064,7 +1066,31 @@ export function clearPreviewCookies(userId: string, host?: string): number {
  * (etag/last-modified) описывают апстримное тело — после инъекций оно другое,
  * и ревалидация по ним оставляла бы в кэше браузера устаревшие шимы.
  */
+/**
+ * Ответы машины кэшируются на минуту: dev-сервер Storybook отдаёт сотни модулей, и
+ * каждый идёт до машины через мост агента. Кэш общий на процесс, ключ включает машину.
+ */
+const machineCache = new MachineResponseCache()
+/** Минута в браузере: столько же живёт серверная запись, дольше держать опасно. */
+const MACHINE_CACHE_CONTROL = 'private, max-age=60'
+
 const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'etag', 'last-modified'])
+
+/** Человеческая страница вместо JSON-ошибки: она открывается прямо в кадре. */
+export function previewErrorPage(message: string): string {
+  const safe = message.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch] ?? ch)
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Кадр не загрузился</title>
+<style>
+  :root { color-scheme: light dark }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 14px/1.5 system-ui, sans-serif; padding: 24px; text-align: center }
+  h1 { margin: 0 0 8px; font-size: 16px }
+  p { margin: 0 0 16px; max-width: 46ch; opacity: .8 }
+  button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid currentColor; background: transparent; cursor: pointer }
+</style></head>
+<body><div><h1>Кадр не загрузился</h1><p>${safe}</p>
+<p>Storybook на машине отвечает медленно или перестал работать. Проверьте состояние в шапке панели и повторите.</p>
+<button type="button" onclick="location.reload()">Повторить</button></div></body></html>`
+}
 
 export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
   // Сброс сессий окружений: удобно перелогиниться под другим тестовым
@@ -1100,8 +1126,26 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
         const userId = uid(req)
         const body = (typeof req.body === 'string' || Buffer.isBuffer(req.body)) && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
         // Тестовые окружения машин: доставка через компаньон-агента, не сетью.
-        if (machineAgentIdOf(url.hostname)) {
+        const machineAgent = machineAgentIdOf(url.hostname)
+        if (machineAgent) {
           if (!deps.machines) throw new PreviewProxyError(502, 'Мост машин недоступен на этом сервере')
+          const cacheUrl = url.toString()
+          const cached = req.method === 'GET' ? machineCache.get(machineAgent, cacheUrl) : null
+          // Браузер уже держит эту версию — отвечаем 304 и не идём на машину вовсе.
+          if (cached && String(req.headers['if-none-match'] ?? '') === cached.etag) {
+            reply.code(304)
+            reply.header('etag', cached.etag)
+            reply.header('cache-control', MACHINE_CACHE_CONTROL)
+            return reply.send()
+          }
+          if (cached) {
+            reply.code(cached.status)
+            for (const [name, value] of Object.entries(cached.headers)) reply.header(name, value)
+            reply.header('etag', cached.etag)
+            reply.header('cache-control', MACHINE_CACHE_CONTROL)
+            reply.header('content-length', String(cached.body.length))
+            return reply.send(cached.body)
+          }
           const machine = await loadViaMachine(deps.machines, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
           const machineType = headerValue(machine.headers, 'content-type') ?? 'application/octet-stream'
           // JS у машины переписывается тоже: dev-сервер отдаёт ESM с абсолютными
@@ -1109,12 +1153,21 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           const machineBody = /text\/(html|css)|application\/xhtml\+xml|javascript|ecmascript/i.test(machineType)
             ? rewritePreviewBody(machine.body, machineType, machine.finalUrl)
             : machine.body
-          reply.code(machine.status)
+          const headers: Record<string, string | string[]> = {}
           for (const [name, value] of Object.entries(machine.headers)) {
             if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase()) || name.toLowerCase() === 'location') continue
-            reply.header(name, value)
+            headers[name] = value
           }
-          reply.header('content-type', machineType)
+          headers['content-type'] = machineType
+          reply.code(machine.status)
+          for (const [name, value] of Object.entries(headers)) reply.header(name, value)
+          if (isCacheableMachineResponse(req.method, machine.status, machineType, machineBody.length)) {
+            // Валидатор считаем от переписанного тела: апстримовый etag ему не соответствует.
+            const etag = `W/"${createHash('sha1').update(machineBody).digest('base64url')}"`
+            machineCache.put(machineAgent, cacheUrl, { status: machine.status, headers, body: machineBody, etag })
+            reply.header('etag', etag)
+            reply.header('cache-control', MACHINE_CACHE_CONTROL)
+          }
           reply.header('content-length', String(machineBody.length))
           return reply.send(machineBody)
         }
@@ -1133,6 +1186,14 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
         return reply.send(rewritten)
       } catch (err) {
         const known = err instanceof PreviewProxyError ? err : new PreviewProxyError(502, 'Сайт недоступен')
+        // Документ в iframe отвечать JSON-ом нельзя: пользователь видел сырой
+        // `{"error":"preview_unavailable"}` вместо объяснения. Для кадров отдаём
+        // страницу с причиной и кнопкой повтора, для fetch/XHR — прежний JSON.
+        const wantsHtml = /document|iframe|frame/i.test(String(req.headers['sec-fetch-dest'] ?? ''))
+          || String(req.headers.accept ?? '').includes('text/html')
+        if (wantsHtml) {
+          return reply.code(known.status).type('text/html; charset=utf-8').send(previewErrorPage(known.message))
+        }
         return reply.code(known.status).send({ error: 'preview_unavailable', message: known.message })
       }
     })

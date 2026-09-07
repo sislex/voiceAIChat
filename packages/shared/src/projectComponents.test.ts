@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   isProjectStoryPath,
+  storyPathMatches,
+  storybookFrameUrlAt,
   machineOrigin,
   parseStorybookIndex,
   projectStorybookFrameUrl,
@@ -79,5 +81,33 @@ describe('isProjectStoryPath', () => {
     expect(isProjectStoryPath('src/Button.stories.js')).toBe(true)
     expect(isProjectStoryPath('src/Button.test.tsx')).toBe(false)
     expect(isProjectStoryPath('src/stories/readme.md')).toBe(false)
+  })
+})
+
+describe('storyPathMatches', () => {
+  const repo = ['packages/ui/src/components/VoiceBar.stories.tsx', 'packages/admin-app/src/AdminApp.stories.tsx']
+
+  it('узнаёт путь, относительный пакету: Storybook запускают из packages/ui', () => {
+    // Так отвечает живой индекс, поднятый командой `npm run -w @voicechat/ui storybook`.
+    expect(storyPathMatches('./src/components/VoiceBar.stories.tsx', repo)).toBe(true)
+    expect(storyPathMatches('src/components/VoiceBar.stories.tsx', repo)).toBe(true)
+  })
+
+  it('принимает точное совпадение и путь длиннее репозиторного', () => {
+    expect(storyPathMatches('packages/admin-app/src/AdminApp.stories.tsx', repo)).toBe(true)
+    expect(storyPathMatches('/abs/repo/packages/ui/src/components/VoiceBar.stories.tsx', repo)).toBe(true)
+  })
+
+  it('чужой индекс не считает своим', () => {
+    expect(storyPathMatches('src/components/Other.stories.tsx', repo)).toBe(false)
+    expect(storyPathMatches('', repo)).toBe(false)
+  })
+})
+
+describe('storybookFrameUrlAt', () => {
+  it('собирает прямой адрес кадра без прокси', () => {
+    expect(storybookFrameUrlAt('http://127.0.0.1:6006', 'ui-button--primary'))
+      .toBe('http://127.0.0.1:6006/iframe.html?viewMode=story&id=ui-button--primary')
+    expect(storybookFrameUrlAt('http://127.0.0.1:6006/', 'a--b')).toContain('6006/iframe.html')
   })
 })

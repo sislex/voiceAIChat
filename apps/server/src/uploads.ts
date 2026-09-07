@@ -66,6 +66,8 @@ export interface StoredUpload {
   size: number
   /** Машина, на которой постоянно хранится файл; undefined — старый серверный режим. */
   agentId?: string
+  /** Владелец upload; обязателен для новых записей и серверной привязки к задаче. */
+  ownerId?: string
 }
 
 export function machineUploadDir(root: string): string {
@@ -92,23 +94,23 @@ export class UploadStore {
   }
 
   /** Сохраняет файл, возвращает метаданные (id — для передачи в claude.send). */
-  save(name: string, data: Buffer, mimeType = 'application/octet-stream'): StoredUpload {
+  save(name: string, data: Buffer, mimeType = 'application/octet-stream', ownerId?: string): StoredUpload {
     const id = randomUUID()
     // Санитизируем имя, сохраняем расширение (важно для распознавания изображений).
     const safeBase = basename(name).replace(/[^\w.\- ]+/g, '_') || 'file'
     const ext = extname(safeBase)
     const path = join(this.dir, ext ? `${id}${ext}` : `${id}-${safeBase}`)
     writeFileSync(path, data)
-    const rec: StoredUpload = { id, name: basename(name) || safeBase, path, mimeType, size: data.byteLength }
+    const rec: StoredUpload = { id, name: basename(name) || safeBase, path, mimeType, size: data.byteLength, ...(ownerId ? { ownerId } : {}) }
     this.byId.set(id, rec)
     return rec
   }
 
   /** Регистрирует уже записанный на пользовательскую машину файл. */
-  saveRemote(name: string, path: string, agentId: string, size: number, mimeType = 'application/octet-stream'): StoredUpload {
+  saveRemote(name: string, path: string, agentId: string, size: number, mimeType = 'application/octet-stream', ownerId?: string): StoredUpload {
     const id = randomUUID()
     const safeName = basename(name) || 'file'
-    const rec: StoredUpload = { id, name: safeName, path, agentId, size, mimeType }
+    const rec: StoredUpload = { id, name: safeName, path, agentId, size, mimeType, ...(ownerId ? { ownerId } : {}) }
     this.byId.set(id, rec)
     return rec
   }

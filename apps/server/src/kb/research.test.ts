@@ -25,7 +25,7 @@ function memoryDb(): VoiceChatDb {
   let id = 0
   let clock = 1000
   const db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.ensureAdmin('x')
+  db.identity.ensureAdmin('x')
   return db
 }
 
@@ -50,10 +50,10 @@ function setup(reply: string | { error: string }): { db: VoiceChatDb; manager: K
 
 /** Проект с привязанной машиной и рабочей папкой — иначе исследовать нечего. */
 function projectWithMachine(db: VoiceChatDb): string {
-  const project = db.createProject('admin', { name: 'Магазин' })
-  const agent = db.createAgent('admin', 'Ноутбук')
-  db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachinePath('admin', project.id, agent.id, '/srv/shop')
+  const project = db.projects.createProject('admin', { name: 'Магазин' })
+  const agent = db.machines.createAgent('admin', 'Ноутбук')
+  db.machines.linkMachine('admin', project.id, agent.id)
+  db.machines.setProjectMachinePath('admin', project.id, agent.id, '/srv/shop')
   return project.id
 }
 
@@ -76,8 +76,8 @@ describe('researchPrompt / researchTarget', () => {
   it('в промпте есть каталог проекта и id существующих статей', () => {
     const { db } = setup('{}')
     const id = projectWithMachine(db)
-    const project = db.getProject('admin', id)!
-    const existing = db.kbDocuments({ scope: 'project', projectId: id }).map((d) => ({ id: d.id, title: d.title, updatedAt: d.updatedAt }))
+    const project = db.projects.getProject('admin', id)!
+    const existing = db.kb.kbDocuments({ scope: 'project', projectId: id }).map((d) => ({ id: d.id, title: d.title, updatedAt: d.updatedAt }))
     const prompt = researchPrompt(project, '/srv/shop', existing)
     expect(prompt).toContain('/srv/shop')
     expect(prompt).toContain(existing[0].id)
@@ -85,8 +85,8 @@ describe('researchPrompt / researchTarget', () => {
   })
   it('без машины исследовать негде', () => {
     const { db } = setup('{}')
-    const project = db.createProject('admin', { name: 'Без машины' })
-    expect(researchTarget(db.getProject('admin', project.id)!)).toBeNull()
+    const project = db.projects.createProject('admin', { name: 'Без машины' })
+    expect(researchTarget(db.projects.getProject('admin', project.id)!)).toBeNull()
   })
 })
 
@@ -94,7 +94,7 @@ describe('KbResearchManager', () => {
   it('обновляет существующую статью и заводит новую, оставаясь в разделе проекта', async () => {
     const db = memoryDb()
     const projectId = projectWithMachine(db)
-    const skeleton = db.kbDocuments({ scope: 'project', projectId })[0]
+    const skeleton = db.kb.kbDocuments({ scope: 'project', projectId })[0]
     const reply = JSON.stringify({
       note: 'сверил с кодом',
       documents: [
@@ -103,7 +103,7 @@ describe('KbResearchManager', () => {
       ]
     })
     const { manager } = makeManager(db, reply)
-    const run = manager.start('admin', db.getProject('admin', projectId)!)
+    const run = manager.start('admin', db.projects.getProject('admin', projectId)!)
     expect(run.state).toBe('running')
     await vi.waitFor(() => expect(manager.get(projectId)?.state).toBe('done'))
 
@@ -113,7 +113,7 @@ describe('KbResearchManager', () => {
       { id: skeleton.id, title: 'Разработка: Магазин', action: 'updated' },
       { id: expect.any(String), title: 'Оплата', action: 'created' }
     ])
-    const docs = db.kbDocuments({ scope: 'project', projectId })
+    const docs = db.kb.kbDocuments({ scope: 'project', projectId })
     expect(docs).toHaveLength(2)
     expect(docs.every((doc) => doc.scope === 'project' && doc.projectId === projectId)).toBe(true)
     expect(docs.find((doc) => doc.id === skeleton.id)?.body).toContain('Монорепо на pnpm')
@@ -122,7 +122,7 @@ describe('KbResearchManager', () => {
   it('проброшен remote-bash машины проекта в режиме чтения', async () => {
     const { db, manager, last } = setup('{"documents":[]}')
     const projectId = projectWithMachine(db)
-    manager.start('admin', db.getProject('admin', projectId)!)
+    manager.start('admin', db.projects.getProject('admin', projectId)!)
     await vi.waitFor(() => expect(manager.get(projectId)?.state).toBe('done'))
     const req = last()!
     expect(req.readOnlyRemote).toBe(true)
@@ -133,10 +133,10 @@ describe('KbResearchManager', () => {
   it('ошибка модели попадает в состояние прогона, а база не меняется', async () => {
     const { db, manager } = setup({ error: 'CLI не найден' })
     const projectId = projectWithMachine(db)
-    manager.start('admin', db.getProject('admin', projectId)!)
+    manager.start('admin', db.projects.getProject('admin', projectId)!)
     await vi.waitFor(() => expect(manager.get(projectId)?.state).toBe('error'))
     expect(manager.get(projectId)?.error).toBe('CLI не найден')
-    expect(db.kbDocuments({ scope: 'project', projectId })).toHaveLength(1)
+    expect(db.kb.kbDocuments({ scope: 'project', projectId })).toHaveLength(1)
   })
 
   it('второй запуск во время прогона не плодит параллельные CLI', () => {
@@ -145,7 +145,7 @@ describe('KbResearchManager', () => {
     let started = 0
     const client: LlmClient = { send: () => { started += 1; return { cancel: () => {} } } }
     const busy = new KbResearchManager({ db, claude: client, codex: client, mcpBaseUrl: 'http://x?k=1', agentNameOf: () => 'M' })
-    const project = db.getProject('admin', projectId)!
+    const project = db.projects.getProject('admin', projectId)!
     const first = busy.start('admin', project)
     const second = busy.start('admin', project)
     expect(second).toBe(first)
@@ -158,28 +158,28 @@ describe('режим «по изменениям с коммита»', () => {
     const db = memoryDb()
     const projectId = projectWithMachine(db)
     const { manager, last } = makeManager(db, '{"note":"мелочь","nothingToUpdate":true,"documents":[]}')
-    const run = manager.start('admin', db.getProject('admin', projectId)!, { sinceSha: 'abc1234' })
+    const run = manager.start('admin', db.projects.getProject('admin', projectId)!, { sinceSha: 'abc1234' })
     expect(run.sinceSha).toBe('abc1234')
     await vi.waitFor(() => expect(manager.get(projectId)?.state).toBe('done'))
     const prompt = last()!.prompt
     expect(prompt).toContain('git diff --stat abc1234')
     expect(prompt).toContain('Файлы репозитория не меняй')
     // Заготовка обзорной статьи проекта попадает в список задетых.
-    expect(prompt).toContain(db.kbDocuments({ scope: 'project', projectId })[0].id)
+    expect(prompt).toContain(db.kb.kbDocuments({ scope: 'project', projectId })[0].id)
   })
 
   it('мусор вместо sha отбивается до запуска модели', () => {
     const db = memoryDb()
     const projectId = projectWithMachine(db)
     const { manager } = makeManager(db, '{}')
-    expect(() => manager.start('admin', db.getProject('admin', projectId)!, { sinceSha: 'abc; rm -rf /' })).toThrow()
+    expect(() => manager.start('admin', db.projects.getProject('admin', projectId)!, { sinceSha: 'abc; rm -rf /' })).toThrow()
   })
 
   it('полный скан остаётся режимом по умолчанию', async () => {
     const db = memoryDb()
     const projectId = projectWithMachine(db)
     const { manager, last } = makeManager(db, '{"documents":[]}')
-    expect(manager.start('admin', db.getProject('admin', projectId)!).sinceSha).toBeNull()
+    expect(manager.start('admin', db.projects.getProject('admin', projectId)!).sinceSha).toBeNull()
     await vi.waitFor(() => expect(manager.get(projectId)?.state).toBe('done'))
     expect(last()!.prompt).toContain('просканировать репозиторий')
   })

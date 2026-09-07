@@ -100,11 +100,11 @@ function localClaude(lines: string[]): LlmClient {
 /** Ход в свежей БД: возвращает поток событий хода до claude.done/claude.error. */
 async function turnEvents(client: LlmClient): Promise<ServerMessage[]> {
   const db = new VoiceChatDb(':memory:')
-  db.createUser(U, '', 'admin')
-  const conv = db.createConversation(U, 'Чат')
+  db.identity.createUser(U, '', 'admin')
+  const conv = db.chat.createConversation(U, 'Чат')
   // В реальном потоке клиент сохраняет реплику пользователя до claude.send,
   // и TurnManager для нового разговора собирает prompt именно из истории БД.
-  db.addMessage(U, conv.id, 'u1', 'привет', '10:00')
+  db.chat.addMessage(U, conv.id, 'u1', 'привет', '10:00')
   const turns = createTurnManager({ db, claude: client })
   const events: ServerMessage[] = []
   await new Promise<void>((resolve) => {
@@ -176,8 +176,8 @@ describe('ход модели через исполнителя по HTTP', () =
     })
     try {
       const db = new VoiceChatDb(':memory:')
-      db.createUser(U, '', 'admin')
-      const conv = db.createConversation(U, 'Чат')
+      db.identity.createUser(U, '', 'admin')
+      const conv = db.chat.createConversation(U, 'Чат')
       const turns = createTurnManager({
         db,
         claude: new RemoteLlmClient({ kind: 'claude', baseUrl: runner.url })

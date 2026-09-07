@@ -23,8 +23,8 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('bob', '', 'developer')
-  db.createUser('carol', '', 'developer')
+  db.identity.createUser('bob', '', 'developer')
+  db.identity.createUser('carol', '', 'developer')
   app = await buildServer({
     config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-ptypes-${Date.now()}-${id}`) }),
     db,

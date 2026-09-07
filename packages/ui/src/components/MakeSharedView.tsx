@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { MakeSharedState } from '@shared/make'
-import { isMakeTextPath } from '@shared/make'
+import { isMakeTextPath, makeStackLabel } from '@shared/make'
 import { REST } from '@shared/protocol'
 import { Button, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import { CodeEditor } from './CodeEditor'
@@ -89,6 +89,7 @@ export function MakeSharedView({ token, api, ensurePreview, onBack }: Props): JS
       <header className="make-head make-shared-head" role="toolbar" aria-label="Проект (только чтение)">
         <Button size="sm" variant="ghost" onClick={onBack}>← Назад</Button>
         <strong className="make-shared-title">{state?.title ?? 'Проект'}</strong>
+        {state && <span className="make-stack-badge" aria-label="Стек проекта">{makeStackLabel(state.stack, state.uiKit)}</span>}
         <span className="make-shared-badge" title={canEdit ? 'Вы редактор: можно править файлы' : 'Ссылка только для чтения: правки недоступны'}>{canEdit ? 'редактор' : 'только чтение'}{state?.owner ? ` · ${state.owner}` : ''}</span>
         <span className="make-head-spacer" />
         <div className="make-tabs" role="tablist" aria-label="Режим просмотра">

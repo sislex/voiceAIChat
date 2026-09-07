@@ -9,7 +9,7 @@
 //   * файловые темы `docs/kb/*.md` — модель правит их сама в рабочей копии
 //     (у неё есть remote-bash), там же ставит свежесть и перегенерирует индекс;
 //   * статьи раздела проекта (`scope='project'`) — их пишет сервер через
-//     `db.saveKbDocument`, как в KbResearchManager: раздел и владелец статьи не
+//     `db.kb.saveKbDocument`, как в KbResearchManager: раздел и владелец статьи не
 //     должны зависеть от того, что модель себе придумала.
 
 import type { KbDocumentKind } from '@voicechat/shared'

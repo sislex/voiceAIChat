@@ -3,7 +3,7 @@ import { formatDateTime } from '../../lib/dateFormat'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
 import { AttemptHistory, Button, EmptyState, ErrorState, FeedItem, FeedLog, GateList, MetricGrid, PanelHeading, ProgressTrack, QaScore, ResultTable, StatusPill } from '@voicechat/ui-kit'
 import { qaRunTone, qaStepTone, stageRunTone } from './qaTone'
-import { usePolling } from '../../lib/usePolling'
+import { useQaStageUpdates } from './useQaStageUpdates'
 import { parseAutomatedQaVerdict, scenarioLabel, QA_RUN_STATUS_LABELS, QA_STAGE_RUN_STATUS_LABELS, QA_STEP_STATUS_LABELS } from '@shared/qa'
 import { Skeleton } from '@voicechat/ui-kit'
 
@@ -70,7 +70,7 @@ function IntegrationTestPanel(props:{projectId:string;taskId:string}):JSX.Elemen
   const [error,setError]=useState(''),[busy,setBusy]=useState(false)
   const load=useCallback(async()=>{if(!window.qa?.getIntegration)return;try{const next=await window.qa.getIntegration(props.projectId,props.taskId);setState((current)=>{if(!current||!next)return next;const a=current.latestRun?.finishedAt??current.latestRun?.startedAt??current.latestRun?.createdAt??0,b=next.latestRun?.finishedAt??next.latestRun?.startedAt??next.latestRun?.createdAt??0;return b>=a?next:current});setError('')}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}},[props.projectId,props.taskId])
   useEffect(()=>{void load()},[load])
-  usePolling(()=>void load(),{ enabled: Boolean(state?.activeRun), intervalMs: 2000 })
+  useQaStageUpdates({ projectId: props.projectId, taskId: props.taskId, stage: 'integration_tests', onUpdate: () => void load(), active: Boolean(state?.activeRun) })
   if(!window.qa?.getIntegration)return <section>
     <EmptyState compact icon="🧪" title="Стадия недоступна" description="Мост QA не подключён в этой сборке." testId="integration-unavailable" />
   </section>
@@ -160,7 +160,7 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
   }, [props.projectId, props.taskId, props.stage])
   useEffect(() => { void load() }, [load])
   const stageActive = ['running', 'queued', 'awaiting_input'].includes(runs[0]?.status ?? '')
-  usePolling(() => void load(), { enabled: stageActive, intervalMs: 1500 })
+  useQaStageUpdates({ projectId: props.projectId, taskId: props.taskId, stage: props.stage, onUpdate: () => void load(), active: stageActive, intervalMs: 1500 })
   const run = runs[0]
   const act = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true)

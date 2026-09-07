@@ -6,7 +6,7 @@
 // правило то же, что у прочих доменов: другие хранилища он не импортирует, а с
 // Chat разговаривает только через порт, который выдаёт AppRuntime.
 
-import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
+import type { Board, BoardStatuses, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type { LoadStatus } from '../../lib/loadState'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { ProjectInvitation, ProjectInvitationForUser } from '@shared/projects'
@@ -29,7 +29,7 @@ import type {
 } from '@shared/ci'
 import { isTerminalCiStatus } from '@shared/ci'
 import { BOARD_COMPLETED_KEY } from '../contracts'
-import { DEFAULT_BOARD_VIEW, type BoardView } from '@shared/projects'
+import { applyTaskStatuses, DEFAULT_BOARD_VIEW, type BoardView } from '@shared/projects'
 import type { ProjectsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 
@@ -151,7 +151,11 @@ export interface ProjectsActions {
   setProjectMachineSsh(id: string, agentId: string, sshHost: string, sshUser: string): Promise<void>
   setProjectDefaultMachine(id: string, agentId: string): Promise<void>
   fetchProjectDetail(id: string): Promise<ProjectDetail | null>
+  /** Открыть проект; `board: false` — без доски (релизы, настройки, код). */
+  openProject(id: string, options?: { board?: boolean }): Promise<void>
   openBoard(id: string): Promise<void>
+  /** Догрузить доску проекта, открытого без неё. */
+  ensureBoard(id: string): Promise<void>
   refreshMembership(projectId: string): Promise<void>
   closeBoard(): void
   openProjectSettings(): void
@@ -225,6 +229,8 @@ export type ProjectsStore = Store<ProjectsState, ProjectsActions>
 export interface ProjectsChatPort {
   scheduleConversationsRefresh(): void
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
+  /** Индекс бесед по требованию: доска его не грузит, а переход в чат — требует. */
+  ensureConversationIndex(): Promise<unknown>
   selectConversation(id: string): Promise<boolean>
   reloadActiveMessages(): Promise<void>
 }
@@ -302,7 +308,19 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     else if (run.status === 'failed') notify({ kind: 'error', text: `Merge ${run.sourceBranch} завершился с ошибкой: ${run.error ?? 'см. вкладку Merge задачи'}` })
   })
   if (unsubscribeMerge) core.onDispose(unsubscribeMerge)
-  const BOARD_CHANGE_DEBOUNCE_MS = 50
+  // Дебаунс с гарантией: активный ран шлёт board.changed непрерывно, и при 50 мс
+  // доска перезапрашивалась почти на каждое событие (8 раз за 6 секунд на стенде).
+  // Пауза в 400 мс склеивает поток, но одного дебаунса мало: пока события идут
+  // подряд, он откладывал бы обновление бесконечно и доска замерла бы до тишины.
+  // Поэтому есть потолок ожидания — раз в 2 секунды снимок берётся в любом случае.
+  const BOARD_CHANGE_DEBOUNCE_MS = 400
+  /** Не чаще одного снимка в этот интервал, пока события идут подряд. */
+  const BOARD_MIN_INTERVAL_MS = 1500
+  /** И не реже: событие не может ждать снимка дольше, иначе доска «замрёт». */
+  const BOARD_MAX_WAIT_MS = 2000
+  /** Время первого события, ещё не попавшего в снимок; 0 — все учтены. */
+  let boardDirtySince = 0
+  let lastBoardSyncAt = 0
   let boardGeneration = 0
   let boardTimer: ReturnType<typeof setTimeout> | null = null
   let boardFlight: { generation: number; promise: Promise<void> } | null = null
@@ -311,6 +329,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   function clearBoardSync(): void {
     boardGeneration++
     boardPending = false
+    boardDirtySince = 0
     if (boardTimer) clearTimeout(boardTimer)
     boardTimer = null
   }
@@ -331,11 +350,10 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       try {
         const board = await client['board:get']({ id, includeCompleted })
         if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
-        const ciSummaries = { ...getState().ciSummaries }
-        for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
         const prev = getState().board
-        setState({ board, ciSummaries, boardError: null })
+        setState({ board, boardError: null })
         if (prev && !sameTaskChatVisibility(prev, board)) deps.chat.scheduleConversationsRefresh()
+        await syncBoardStatuses(id, includeCompleted, generation)
       } catch (err) {
         if (generation !== boardGeneration || getState().activeProjectId !== id) {
           // фоновое обновление отменённой доски — молча
@@ -357,6 +375,29 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     return promise
   }
 
+  /**
+   * Вторая фаза доски: состояние карточек и сводки CI. Отдельный запрос — чтобы
+   * доска рисовалась по скелету, не дожидаясь обхода таблиц ранов на сервере.
+   * Накладывается на текущий стор, а не на снимок первой фазы: между фазами
+   * карточку могли перетащить, и оптимистичное перемещение терять нельзя.
+   */
+  async function syncBoardStatuses(id: string, includeCompleted: boolean, generation: number): Promise<void> {
+    let statuses: BoardStatuses
+    try {
+      statuses = await client['board:getStatuses']({ id, includeCompleted })
+    } catch (err) {
+      // Скелет уже на экране: без состояния доска работает, ронять её незачем.
+      console.warn('[projects] состояние карточек доски недоступно', err)
+      return
+    }
+    if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+    const board = getState().board
+    if (!board) return
+    const ciSummaries = { ...getState().ciSummaries }
+    for (const r of statuses.ciRuns) ciSummaries[r.taskId] = r
+    setState({ board: { ...board, tasks: applyTaskStatuses(board.tasks, statuses.tasks), ciRuns: statuses.ciRuns }, ciSummaries })
+  }
+
   function scheduleBoardSync(): void {
     if (!getState().activeProjectId) return
     if (getState().boardLoading) {
@@ -367,11 +408,20 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       boardPending = true
       return
     }
+    const now = Date.now()
+    if (!boardDirtySince) boardDirtySince = now
     if (boardTimer) clearTimeout(boardTimer)
+    // Пауза после последнего события, но не чаще минимального интервала и не позже
+    // потолка ожидания: поток событий рана склеивается, одиночное изменение приходит
+    // почти сразу, а непрерывный поток всё равно обновляет доску раз в ~1,5–2 с.
+    const throttled = Math.max(BOARD_CHANGE_DEBOUNCE_MS, BOARD_MIN_INTERVAL_MS - (now - lastBoardSyncAt))
+    const wait = Math.max(0, Math.min(throttled, boardDirtySince + BOARD_MAX_WAIT_MS - now))
     boardTimer = setTimeout(() => {
       boardTimer = null
+      boardDirtySince = 0
+      lastBoardSyncAt = Date.now()
       void syncBoard()
-    }, BOARD_CHANGE_DEBOUNCE_MS)
+    }, wait)
   }
 
   const unsubscribeBoardChanged = boardBridge?.onChanged(({ projectId }) => {
@@ -419,17 +469,31 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     void refreshProjects().catch(() => {})
   }
 
+  /**
+   * Список проектов запрашивают из нескольких мест сразу (bootstrap, открытие
+   * диалога чата, реакция на закрытый доступ). Параллельные вызовы схлопываем в
+   * один запрос: на старте их было два подряд, и оба возвращали одно и то же.
+   */
+  let projectsFlight: Promise<ProjectSummary[]> | null = null
+
   async function refreshProjects(): Promise<ProjectSummary[]> {
+    if (projectsFlight) return projectsFlight
     setState({ projectsStatus: 'loading', projectsError: null })
-    try {
-      const projects = await client['projects:list']()
-      setState({ projects, projectsLoaded: true, projectsStatus: 'ready', projectsError: null })
-      return projects
-    } catch (err) {
-      // Ошибку держим в сторе: пустой список и сломанное чтение — разные экраны.
-      setState({ projectsStatus: 'error', projectsError: err instanceof Error ? err.message : String(err) })
-      throw err
-    }
+    const flight = (async () => {
+      try {
+        const projects = await client['projects:list']()
+        setState({ projects, projectsLoaded: true, projectsStatus: 'ready', projectsError: null })
+        return projects
+      } catch (err) {
+        // Ошибку держим в сторе: пустой список и сломанное чтение — разные экраны.
+        setState({ projectsStatus: 'error', projectsError: err instanceof Error ? err.message : String(err) })
+        throw err
+      } finally {
+        projectsFlight = null
+      }
+    })()
+    projectsFlight = flight
+    return flight
   }
 
   async function refreshBoard(): Promise<void> {
@@ -446,6 +510,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       const board = await client['board:get']({ id, includeCompleted })
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
       setState({ board, boardLoading: false, boardError: null })
+      await syncBoardStatuses(id, includeCompleted, generation)
       if (boardPending) { boardPending = false; void syncBoard() }
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
@@ -454,17 +519,72 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     }
   }
 
-  async function openBoard(id: string): Promise<void> {
+  /**
+   * Открывает проект. `board: false` — для вкладок, где доски нет (релизы,
+   * настройки, код): им хватает деталей проекта, а доска стоит четырёх запросов
+   * (снимок, вид, состояния карточек, при включённом фильтре — второй снимок) и
+   * подписки на `board.changed`, которая при работающем ране перечитывает доску
+   * каждые пару секунд. На вкладку доски её догружает `ensureBoard`.
+   */
+  async function openProject(id: string, options: { board?: boolean } = {}): Promise<void> {
+    const withBoard = options.board !== false
     if (getState().activeProjectId) boardBridge?.unsubscribe()
     clearBoardSync()
     const generation = boardGeneration
-    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false })
+    // Первый запрос всегда в окне проекта, даже когда «показывать завершённые»
+    // включено: старые карточки «Готово» — это сотни лишних строк, а доска
+    // обязана появиться сразу. Включённый фильтр догружает их следом, поэтому и
+    // сам флаг на время старта честно стоит в «нет».
+    const wantsCompleted = getState().boardIncludeCompleted
+    setState({ activeProjectId: id, boardLoading: withBoard, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false, boardIncludeCompleted: false })
+    if (!withBoard) return loadProjectDetail(id, generation)
+    await loadBoard(id, generation, wantsCompleted)
+  }
+
+  async function openBoard(id: string): Promise<void> {
+    return openProject(id, { board: true })
+  }
+
+  /** Детали проекта без доски: этим живут вкладки релизов, настроек и кода. */
+  async function loadProjectDetail(id: string, generation: number): Promise<void> {
+    try {
+      const detail = await client['projects:get']({ id })
+      if (generation !== boardGeneration || getState().activeProjectId !== id) return
+      setState({ projectDetail: detail })
+    } catch (err) {
+      if (generation !== boardGeneration || getState().activeProjectId !== id) return
+      if (accessLost(err)) {
+        dropInaccessibleProject(id)
+        fail(new Error('Доступ к проекту закрыт: он удалён или вас исключили из участников.'))
+        return
+      }
+      fail(err, () => void loadProjectDetail(id, boardGeneration))
+    }
+  }
+
+  /**
+   * Догружает доску проекта, открытого без неё: переход «Релизы» → «Канбан» не
+   * должен перечитывать то, что уже в сторе.
+   */
+  async function ensureBoard(id: string): Promise<void> {
+    if (getState().activeProjectId !== id) return openProject(id, { board: true })
+    if (getState().board || getState().boardLoading) return
+    clearBoardSync()
+    const generation = boardGeneration
+    const wantsCompleted = getState().boardIncludeCompleted
+    setState({ boardLoading: true, boardError: null, boardIncludeCompleted: false })
+    await loadBoard(id, generation, wantsCompleted)
+  }
+
+  async function loadBoard(id: string, generation: number, wantsCompleted: boolean): Promise<void> {
     boardBridge?.subscribe(id)
     try {
-      const includeCompleted = getState().boardIncludeCompleted
+      const includeCompleted = false
+      const known = getState().projectDetail
       const [board, detail, view] = await Promise.all([
         client['board:get']({ id, includeCompleted }),
-        client['projects:get']({ id }),
+        // Детали могли приехать раньше — с вкладки, открытой без доски.
+        known?.id === id ? Promise.resolve(known) : client['projects:get']({ id }),
         // Вид доски — личная настройка на сервере; её отказ не должен ронять доску.
         client['board:getView']({ id }).catch((err: unknown) => {
           console.warn('[projects] вид доски недоступен', err)
@@ -472,11 +592,12 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         })
       ])
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
-      const ciSummaries = { ...getState().ciSummaries }
-      for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null, boardView: view })
-      // «Показывать завершённые» живёт в том же виде: приводим доску к нему.
-      if (view && view.showCompleted !== includeCompleted) void actions.setBoardIncludeCompleted(view.showCompleted)
+      setState({ board, projectDetail: detail, boardLoading: false, boardError: null, boardView: view })
+      // «Показывать завершённые» живёт в виде доски на сервере; локальный флаг
+      // приводим к нему, и он же решает, догружать ли старые завершённые.
+      const showCompleted = view?.showCompleted ?? wantsCompleted
+      if (showCompleted) void actions.setBoardIncludeCompleted(true)
+      else await syncBoardStatuses(id, includeCompleted, generation)
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id) return
       if (accessLost(err)) {
@@ -977,7 +1098,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           return null
         }
       },
+      openProject,
       openBoard,
+      ensureBoard,
       closeBoard,
       openProjectSettings() {
         setState({ projectSettingsOpen: true })
@@ -1180,7 +1303,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         if (!id) return null
         try {
           const conv = await client['tasks:openChat']({ projectId: id, taskId })
-          await Promise.all([deps.chat.refreshConversations(), refreshBoard()])
+          // Отсюда человек уходит в чат: индекс бесед нужен — на доске его могло
+          // и не быть, а `refreshConversations` молчит, пока список не открыт.
+          await Promise.all([deps.chat.ensureConversationIndex(), refreshBoard()])
           await deps.chat.selectConversation(conv.id)
           return conv.id
         } catch (err) {

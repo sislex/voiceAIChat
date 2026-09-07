@@ -61,15 +61,15 @@ beforeEach(() => {
   maxInShared = 0
   sharedOrder.length = 0
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => Date.now() })
-  const project = db.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.createAgent('admin', 'M')
-  db.linkMachine('admin', project.id, agent.id)
-  db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const ready = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'ready')!
+  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = db.machines.createAgent('admin', 'M')
+  db.machines.linkMachine('admin', project.id, agent.id)
+  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const ready = db.tasks.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'ready')!
   projectId = project.id
-  taskIds = ['T1', 'T2'].map((title) => db.createTask('admin', project.id, { columnId: ready.id, title })!.id)
+  taskIds = ['T1', 'T2'].map((title) => db.tasks.createTask('admin', project.id, { columnId: ready.id, title })!.id)
 })
 afterEach(() => db.close())
 
@@ -85,17 +85,17 @@ function startRun(ci: CiRunManager, taskId: string): string {
 
 async function waitStatus(runId: string, ms = 5000): Promise<string> {
   for (let i = 0; i < ms / 10; i++) {
-    const st = db.getCiRunRaw(runId)?.status
+    const st = db.ci.getCiRunRaw(runId)?.status
     if (st && ['success', 'failed', 'cancelled', 'timeout'].includes(st)) return st
     await new Promise((r) => setTimeout(r, 10))
   }
-  throw new Error(`ран ${runId} не завершился: ${db.getCiRunRaw(runId)?.status}`)
+  throw new Error(`ран ${runId} не завершился: ${db.ci.getCiRunRaw(runId)?.status}`)
 }
 
 /** Команда мержа в слот «после» для обеих задач. */
 function giveMergeStep(): void {
-  const cmd = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
-  db.setCiSlotCommands('project', projectId, 'after_model', [cmd.id])
+  const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Влить ветку задачи в прод-ветку', script: 'git merge --no-edit "$BRANCH"' })
+  db.ci.setCiSlotCommands('project', projectId, 'after_model', [cmd.id])
 }
 
 describe('параллельные раны разных задач', () => {
@@ -143,12 +143,12 @@ describe('параллельные раны разных задач', () => {
   })
 
   it('очередь берёт ожидающие раны в текущем порядке development при нескольких свободных слотах', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 2 })
-    const board = db.getBoard('admin', projectId)!
+    db.ci.updateCiSettings({ maxConcurrentRuns: 2 })
+    const board = db.tasks.getBoard('admin', projectId)!
     const ready = board.columns.find((column) => column.semanticType === 'ready')!
-    const third = db.createTask('admin', projectId, { columnId: ready.id, title: 'T3', priority: 'medium' })!
-    const fourth = db.createTask('admin', projectId, { columnId: ready.id, title: 'T4', priority: 'high' })!
-    const fifth = db.createTask('admin', projectId, { columnId: ready.id, title: 'T5', priority: 'urgent' })!
+    const third = db.tasks.createTask('admin', projectId, { columnId: ready.id, title: 'T3', priority: 'medium' })!
+    const fourth = db.tasks.createTask('admin', projectId, { columnId: ready.id, title: 'T4', priority: 'high' })!
+    const fifth = db.tasks.createTask('admin', projectId, { columnId: ready.id, title: 'T5', priority: 'urgent' })!
     const releases = new Map<string, () => void>()
     const started: string[] = []
     const ci = manager({
@@ -167,11 +167,11 @@ describe('параллельные раны разных задач', () => {
     const thirdRun = startRun(ci, third.id)
     const fourthRun = startRun(ci, fourth.id)
     const fifthRun = startRun(ci, fifth.id)
-    expect([thirdRun, fourthRun, fifthRun].map((id) => db.getCiRunRaw(id)!.status)).toEqual(['queued', 'queued', 'queued'])
+    expect([thirdRun, fourthRun, fifthRun].map((id) => db.ci.getCiRunRaw(id)!.status)).toEqual(['queued', 'queued', 'queued'])
 
     // T5 сначала urgent, но правка ожидающей T3 поднимает её в равный приоритет;
     // одинаковый приоритет сохраняет ручный порядок (T3 создана раньше T5).
-    db.updateTask('admin', projectId, third.id, { priority: 'urgent' })
+    db.tasks.updateTask('admin', projectId, third.id, { priority: 'urgent' })
     releases.get(taskIds[0])!()
     releases.get(taskIds[1])!()
 
@@ -214,7 +214,7 @@ describe.skip('legacy: merge/deploy внутри разработки испол
     expect(sharedOrder[0].startsWith('in:')).toBe(true)
     expect(sharedOrder[1].startsWith('out:')).toBe(true)
     // Ожидание видно в ленте того рана, который пришёл вторым.
-    const waited = [first, second].filter((id) => db.getCiRunLog('admin', id).some((l) => l.chunk.includes('жду, пока его освободит другой ран')))
+    const waited = [first, second].filter((id) => db.ci.getCiRunLog('admin', id).some((l) => l.chunk.includes('жду, пока его освободит другой ран')))
     expect(waited).toHaveLength(1)
   })
 
@@ -240,15 +240,15 @@ describe.skip('legacy: merge/deploy внутри разработки испол
 
 describe.skip('legacy: production rebuild внутри разработки дренировал очередь', () => {
   function giveProdRebuildStep(): void {
-    const cmd = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Обновить прод-контейнер', script: 'npm run docker' })
-    db.setCiSlotCommands('task', taskIds[0], 'after_model', [cmd.id])
+    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Обновить прод-контейнер', script: 'npm run docker' })
+    db.ci.setCiSlotCommands('task', taskIds[0], 'after_model', [cmd.id])
   }
 
   it('освобождает слот, ждёт queued ран и не пускает новый ран перед пересборкой при maxConcurrentRuns=1', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     giveProdRebuildStep()
-    const board = db.getBoard('admin', projectId)!
-    const third = db.createTask('admin', projectId, { columnId: board.columns[0].id, title: 'T3' })!
+    const board = db.tasks.getBoard('admin', projectId)!
+    const third = db.tasks.createTask('admin', projectId, { columnId: board.columns[0].id, title: 'T3' })!
     let releaseSecondModel: () => void = () => {}
     let secondModelEntered: () => void = () => {}
     const secondModelOpen = new Promise<void>((resolve) => { releaseSecondModel = resolve })
@@ -269,7 +269,7 @@ describe.skip('legacy: production rebuild внутри разработки др
     const second = startRun(ci, taskIds[1])
     await secondModelEnteredP
     const thirdRun = startRun(ci, third.id)
-    expect(db.getCiRunRaw(thirdRun)!.status).toBe('queued')
+    expect(db.ci.getCiRunRaw(thirdRun)!.status).toBe('queued')
     releaseSecondModel()
     await rebuild.entered
     expect(modelOrder).toContain('T2')
@@ -279,11 +279,11 @@ describe.skip('legacy: production rebuild внутри разработки др
     expect(await waitStatus(second)).toBe('success')
     expect(await waitStatus(thirdRun)).toBe('success')
     expect(modelOrder.indexOf('T3')).toBeGreaterThan(modelOrder.indexOf('T2'))
-    expect(db.getCiRunLog('admin', first).some((line) => line.chunk.includes('освобождаю слот и жду завершения'))).toBe(true)
+    expect(db.ci.getCiRunLog('admin', first).some((line) => line.chunk.includes('освобождаю слот и жду завершения'))).toBe(true)
   })
 
   it('failed ран из снимка дренирования не мешает пересборке', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     giveProdRebuildStep()
     const rebuild = gate('npm run docker')
     const ci = manager({ modelWork: async (ctx) => ({ ok: ctx.task.id !== taskIds[1] }) })
@@ -296,7 +296,7 @@ describe.skip('legacy: production rebuild внутри разработки др
   })
 
   it('awaiting_input учитывается в дренаже и отмена такого рана разблокирует пересборку', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     giveProdRebuildStep()
     const rebuild = gate('npm run docker')
     const ci = manager({
@@ -307,8 +307,8 @@ describe.skip('legacy: production rebuild внутри разработки др
     })
     const first = startRun(ci, taskIds[0])
     const second = startRun(ci, taskIds[1])
-    for (let i = 0; i < 200 && db.getCiRunRaw(second)?.status !== 'awaiting_input'; i++) await new Promise((r) => setTimeout(r, 5))
-    expect(db.getCiRunRaw(second)?.status).toBe('awaiting_input')
+    for (let i = 0; i < 200 && db.ci.getCiRunRaw(second)?.status !== 'awaiting_input'; i++) await new Promise((r) => setTimeout(r, 5))
+    expect(db.ci.getCiRunRaw(second)?.status).toBe('awaiting_input')
     expect(ci.cancel('admin', second)).toBe(true)
     await rebuild.entered
     rebuild.release()
@@ -317,7 +317,7 @@ describe.skip('legacy: production rebuild внутри разработки др
   })
 
   it('отмена ожидающей пересборки снимает барьер и не оставляет очередь заблокированной', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     giveProdRebuildStep()
     let releaseSecondModel: () => void = () => {}
     let secondModelEntered: () => void = () => {}
@@ -348,7 +348,7 @@ describe('один активный ран на задачу', () => {
     const hold = new Promise<void>((res) => { release = res })
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     const first = startRun(ci, taskIds[0])
-    for (let i = 0; i < 200 && db.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
+    for (let i = 0; i < 200 && db.ci.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
 
     const again = ci.start('admin', projectId, taskIds[0])
     expect('error' in again && again.error).toContain('уже выполняется')
@@ -362,7 +362,7 @@ describe('один активный ран на задачу', () => {
   })
 
   it('отмена освобождает слот: следующий ран из очереди стартует сам', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const ci = manager({
       modelWork: async (ctx) => {
         if (ctx.task.id !== taskIds[0]) return { ok: true }
@@ -375,8 +375,8 @@ describe('один активный ран на задачу', () => {
     })
     const first = startRun(ci, taskIds[0])
     const second = startRun(ci, taskIds[1])
-    for (let i = 0; i < 200 && db.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
-    expect(db.getCiRunRaw(second)!.status).toBe('queued')
+    for (let i = 0; i < 200 && db.ci.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
+    expect(db.ci.getCiRunRaw(second)!.status).toBe('queued')
     ci.cancel('admin', first)
     expect(await waitStatus(first)).toBe('cancelled')
     expect(await waitStatus(second)).toBe('success')
@@ -386,28 +386,28 @@ describe('один активный ран на задачу', () => {
 
 describe('маршрутизация production-команд', () => {
   it('команду с PROD_DIR запускает на машине production checkout, а обычную — на машине рана', async () => {
-    const productionAgent = db.createAgent('admin', 'Production')
-    db.linkMachine('admin', projectId, productionAgent.id)
-    db.setProjectMachinePath('admin', projectId, productionAgent.id, '/srv/voicechat')
-    const regular = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Обычная', script: 'echo regular' })
-    const production = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Прод', script: 'echo production', env: { PROD_DIR: '/srv/voicechat/' } })
-    db.setCiSlotCommands('project', projectId, 'after_model', [regular.id, production.id])
+    const productionAgent = db.machines.createAgent('admin', 'Production')
+    db.machines.linkMachine('admin', projectId, productionAgent.id)
+    db.machines.setProjectMachinePath('admin', projectId, productionAgent.id, '/srv/voicechat')
+    const regular = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Обычная', script: 'echo regular' })
+    const production = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Прод', script: 'echo production', env: { PROD_DIR: '/srv/voicechat/' } })
+    db.ci.setCiSlotCommands('project', projectId, 'after_model', [regular.id, production.id])
     const requests: Array<{ script: string; agentId: string; workdir: string }> = []
     const ci = manager({ executor: { run: async (req) => { requests.push(req); return { exitCode: 0, timedOut: false } } } })
 
     expect(await waitStatus(startRun(ci, taskIds[0]))).toBe('success')
-    expect(requests.find((req) => req.script === 'echo regular')).toMatchObject({ agentId: db.getProject('admin', projectId)!.defaultAgentId, workdir: '/repos/p' })
+    expect(requests.find((req) => req.script === 'echo regular')).toMatchObject({ agentId: db.projects.getProject('admin', projectId)!.defaultAgentId, workdir: '/repos/p' })
     expect(requests.find((req) => req.script === 'echo production')).toMatchObject({ agentId: productionAgent.id, workdir: '/srv/voicechat' })
   })
 
   it('останавливает production-команду с понятной ошибкой, если PROD_DIR не принадлежит машине проекта', async () => {
-    const production = db.createCiCommand('admin', { scope: 'project', projectId, name: 'Прод', script: 'echo production', env: { PROD_DIR: '/missing/prod' } })
-    db.setCiSlotCommands('project', projectId, 'after_model', [production.id])
+    const production = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'Прод', script: 'echo production', env: { PROD_DIR: '/missing/prod' } })
+    db.ci.setCiSlotCommands('project', projectId, 'after_model', [production.id])
     const ci = manager()
     const runId = startRun(ci, taskIds[0])
 
     expect(await waitStatus(runId)).toBe('failed')
-    expect(db.getCiRunLog('admin', runId).some((line) => line.chunk.includes('PROD_DIR=/missing/prod не совпадает с папкой ни одной машины проекта'))).toBe(true)
+    expect(db.ci.getCiRunLog('admin', runId).some((line) => line.chunk.includes('PROD_DIR=/missing/prod не совпадает с папкой ни одной машины проекта'))).toBe(true)
   })
 })
 
@@ -416,18 +416,18 @@ describe('инвариант изоляции', () => {
     // Две задачи с одинаковым номером в одном проекте штатно не создать, поэтому
     // ломаем инвариант так, как это может сделать конфигурация: шаблон ветки без
     // {task_number} и {slug} — тогда ветка у обеих задач одна и та же.
-    db.updateProject('admin', projectId, { ciBranchTemplate: 'feature/shared' })
+    db.projects.updateProject('admin', projectId, { ciBranchTemplate: 'feature/shared' })
     let release: () => void = () => {}
     const hold = new Promise<void>((res) => { release = res })
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     const first = startRun(ci, taskIds[0])
-    for (let i = 0; i < 200 && db.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
+    for (let i = 0; i < 200 && db.ci.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
     const second = startRun(ci, taskIds[1])
     expect(await waitStatus(second)).toBe('failed')
-    const steps = db.getCiRun('admin', second)!.steps
+    const steps = db.ci.getCiRun('admin', second)!.steps
     expect(steps).toHaveLength(1)
     expect(steps[0].title).toBe('Проверка изоляции рабочей директории')
-    expect(db.getCiRunLog('admin', second).some((l) => l.chunk.includes('в разных папках и разных ветках'))).toBe(true)
+    expect(db.ci.getCiRunLog('admin', second).some((l) => l.chunk.includes('в разных папках и разных ветках'))).toBe(true)
     release()
     expect(await waitStatus(first)).toBe('success')
   })
@@ -435,9 +435,9 @@ describe('инвариант изоляции', () => {
 
 /** Вторая машина проекта — для распределения параллельных запусков. */
 function linkSecondMachine(): string {
-  const agent = db.createAgent('admin', 'M2')
-  db.linkMachine('admin', projectId, agent.id)
-  db.setProjectMachineReposRoot('admin', projectId, agent.id, '/repos-b')
+  const agent = db.machines.createAgent('admin', 'M2')
+  db.machines.linkMachine('admin', projectId, agent.id)
+  db.machines.setProjectMachineReposRoot('admin', projectId, agent.id, '/repos-b')
   return agent.id
 }
 
@@ -449,13 +449,13 @@ function holdModel(): { hold: Promise<void>; release: () => void } {
 }
 
 async function waitRunning(runId: string): Promise<void> {
-  for (let i = 0; i < 400 && db.getCiRunRaw(runId)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
-  expect(db.getCiRunRaw(runId)?.status).toBe('running')
+  for (let i = 0; i < 400 && db.ci.getCiRunRaw(runId)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 5))
+  expect(db.ci.getCiRunRaw(runId)?.status).toBe('running')
 }
 
 describe('параллельный запуск мимо очереди', () => {
   it('при maxConcurrentRuns=1 параллельный ран не ждёт очередь', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const { hold, release } = holdModel()
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     const first = startRun(ci, taskIds[0])
@@ -464,7 +464,7 @@ describe('параллельный запуск мимо очереди', () => 
     if ('error' in res) throw new Error(res.error)
     // Второй ран закончился, пока первый всё ещё держит единственный слот.
     expect(await waitStatus(res.run.id)).toBe('success')
-    expect(db.getCiRunRaw(first)!.status).toBe('running')
+    expect(db.ci.getCiRunRaw(first)!.status).toBe('running')
     release()
     expect(await waitStatus(first)).toBe('success')
   })
@@ -474,13 +474,13 @@ describe('параллельный запуск мимо очереди', () => 
     const ci = manager()
     const res = ci.start('admin', projectId, taskIds[0], { launch: 'parallel' })
     if ('error' in res) throw new Error(res.error)
-    expect(res.run.agentId).toBe(db.getProject('admin', projectId)!.defaultAgentId)
+    expect(res.run.agentId).toBe(db.projects.getProject('admin', projectId)!.defaultAgentId)
     expect(await waitStatus(res.run.id)).toBe('success')
   })
 
   it('параллельный запуск выбирает свободную машину, когда project default загружена', async () => {
     const second = linkSecondMachine()
-    const defaultAgent = db.getProject('admin', projectId)!.defaultAgentId!
+    const defaultAgent = db.projects.getProject('admin', projectId)!.defaultAgentId!
     const { hold, release } = holdModel()
     const agents: string[] = []
     const spy: CommandExecutor = {
@@ -500,20 +500,20 @@ describe('параллельный запуск мимо очереди', () => 
   })
 
   it('свободных машин нет — берётся наименее загруженная, ран с NULL-машиной учитывается за машиной по умолчанию', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const second = linkSecondMachine()
-    const defaultAgent = db.getProject('admin', projectId)!.defaultAgentId!
-    const third = db.createTask('admin', projectId, { columnId: db.getColumnIdBySemantic(projectId, 'ready')!, title: 'T3' })!.id
+    const defaultAgent = db.projects.getProject('admin', projectId)!.defaultAgentId!
+    const third = db.tasks.createTask('admin', projectId, { columnId: db.projects.getColumnIdBySemantic(projectId, 'ready')!, title: 'T3' })!.id
     const { hold, release } = holdModel()
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     // Обе машины заняты: на умолчальной ран работает, вторая держит очередь
     // задачей с закреплённой машиной; плюс ран без машины — тоже за умолчальной.
     const first = startRun(ci, taskIds[0])
     await waitRunning(first)
-    db.updateTask('admin', projectId, taskIds[1], { agentId: second })
+    db.tasks.updateTask('admin', projectId, taskIds[1], { agentId: second })
     const queuedOnSecond = startRun(ci, taskIds[1])
-    db.updateCiRun(first, { agentId: null })
-    expect(db.countActiveCiRunsByAgent()).toEqual({ [defaultAgent]: 1, [second]: 1 })
+    db.ci.updateCiRun(first, { agentId: null })
+    expect(db.ci.countActiveCiRunsByAgent()).toEqual({ [defaultAgent]: 1, [second]: 1 })
     // Умолчальная — 1 активный ран (NULL учтён), вторая — 1: при равенстве
     // выбирается машина по умолчанию.
     const res = ci.start('admin', projectId, third, { launch: 'parallel' })
@@ -527,7 +527,7 @@ describe('параллельный запуск мимо очереди', () => 
 
   it('карточка с закреплённой машиной при параллельном запуске уходит на неё, а не в автоподбор', async () => {
     const second = linkSecondMachine()
-    db.updateTask('admin', projectId, taskIds[0], { agentId: second })
+    db.tasks.updateTask('admin', projectId, taskIds[0], { agentId: second })
     const ci = manager()
     const res = ci.start('admin', projectId, taskIds[0], { launch: 'parallel' })
     if ('error' in res) throw new Error(res.error)
@@ -536,14 +536,14 @@ describe('параллельный запуск мимо очереди', () => 
   })
 
   it('продвигает существующий queued-run с тем же id на автоматически выбранную машину', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const second = linkSecondMachine()
     const { hold, release } = holdModel()
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     const first = startRun(ci, taskIds[0])
     await waitRunning(first)
     const queued = startRun(ci, taskIds[1])
-    expect(db.getCiRunRaw(queued)?.status).toBe('queued')
+    expect(db.ci.getCiRunRaw(queued)?.status).toBe('queued')
 
     const promoted = ci.start('admin', projectId, taskIds[1], { launch: 'parallel' })
     if ('error' in promoted) throw new Error(promoted.error)
@@ -551,14 +551,14 @@ describe('параллельный запуск мимо очереди', () => 
     expect(promoted.run.agentId).toBe(second)
     expect(promoted.run.agentSelectionSource).toBe('fallback')
     expect(await waitStatus(queued)).toBe('success')
-    expect(db.activeCiRunForTask(taskIds[1])?.id).not.toBe(queued)
+    expect(db.ci.activeCiRunForTask(taskIds[1])?.id).not.toBe(queued)
 
     release()
     expect(await waitStatus(first)).toBe('success')
   })
 
   it('два parallel-запроса не создают дубль: второй видит уже запущенный ран', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     linkSecondMachine()
     const firstGate = holdModel()
     const promotedGate = holdModel()
@@ -584,7 +584,7 @@ describe('параллельный запуск мимо очереди', () => 
   })
 
   it('без доступной online-машины оставляет queued-run в FIFO', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const { hold, release } = holdModel()
     let online = true
     const ci = manager({
@@ -598,7 +598,7 @@ describe('параллельный запуск мимо очереди', () => 
 
     const result = ci.start('admin', projectId, taskIds[1], { launch: 'parallel' })
     expect('error' in result && result.error).toContain('Нет доступной online-машины')
-    expect(db.getCiRunRaw(queued)?.status).toBe('queued')
+    expect(db.ci.getCiRunRaw(queued)?.status).toBe('queued')
 
     online = true
     release()
@@ -607,18 +607,18 @@ describe('параллельный запуск мимо очереди', () => 
   })
 
   it.each(['running', 'awaiting_input'] as const)('не запускает второй ран при статусе %s', async (status) => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const { hold, release } = holdModel()
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     const activeRun = startRun(ci, taskIds[0])
     await waitRunning(activeRun)
-    if (status === 'awaiting_input') db.updateCiRun(activeRun, { status })
+    if (status === 'awaiting_input') db.ci.updateCiRun(activeRun, { status })
 
     const result = ci.start('admin', projectId, taskIds[0], { launch: 'parallel' })
     expect('error' in result && result.error).toContain('уже выполняется')
-    expect(db.activeCiRunForTask(taskIds[0])?.id).toBe(activeRun)
+    expect(db.ci.activeCiRunForTask(taskIds[0])?.id).toBe(activeRun)
 
-    db.updateCiRun(activeRun, { status: 'running' })
+    db.ci.updateCiRun(activeRun, { status: 'running' })
     release()
     expect(await waitStatus(activeRun)).toBe('success')
   })
@@ -626,7 +626,7 @@ describe('параллельный запуск мимо очереди', () => 
 
 describe('явный запуск на указанной машине через очередь', () => {
   it('при лимите 1 второй ран ждёт освобождения слота', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const secondMachine = linkSecondMachine()
     const { hold, release } = holdModel()
     const started: string[] = []
@@ -642,7 +642,7 @@ describe('явный запуск на указанной машине чере�
 
     expect(second.run.agentId).toBe(secondMachine)
     expect(second.run.agentSelectionSource).toBe('explicit')
-    expect(db.getCiRunRaw(second.run.id)!.status).toBe('queued')
+    expect(db.ci.getCiRunRaw(second.run.id)!.status).toBe('queued')
     expect(started).toEqual([taskIds[0]])
 
     release()
@@ -654,7 +654,7 @@ describe('явный запуск на указанной машине чере�
 
 describe('принудительный запуск на указанной машине', () => {
   it('простаивающая задача стартует сразу на указанной машине, мимо очереди', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const second = linkSecondMachine()
     const { hold, release } = holdModel()
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
@@ -670,14 +670,14 @@ describe('принудительный запуск на указанной ма
   })
 
   it('ран из очереди продвигается: тот же ран получает машину и уходит в работу', async () => {
-    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     const second = linkSecondMachine()
     const { hold, release } = holdModel()
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
     const first = startRun(ci, taskIds[0])
     await waitRunning(first)
     const queued = startRun(ci, taskIds[1])
-    expect(db.getCiRunRaw(queued)!.status).toBe('queued')
+    expect(db.ci.getCiRunRaw(queued)!.status).toBe('queued')
     const res = ci.forceStartOnMachine('admin', projectId, taskIds[1], second)
     if ('error' in res) throw new Error(res.error)
     // Продвинут именно ожидающий ран, а не создан новый.
@@ -686,7 +686,7 @@ describe('принудительный запуск на указанной ма
     expect(res.run.agentSelectionSource).toBe('explicit_bypass')
     expect(await waitStatus(queued)).toBe('success')
     // Первый ран всё ещё держит единственный слот — очередь не пострадала.
-    expect(db.getCiRunRaw(first)!.status).toBe('running')
+    expect(db.ci.getCiRunRaw(first)!.status).toBe('running')
     release()
     expect(await waitStatus(first)).toBe('success')
     expect(ci.activeRunIds()).toEqual([])

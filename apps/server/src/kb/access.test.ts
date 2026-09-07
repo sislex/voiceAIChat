@@ -45,7 +45,7 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  db.createUser('bob', '', 'developer')
+  db.identity.createUser('bob', '', 'developer')
   app = await buildServer({
     config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-kb-access-${Date.now()}-${id}`) }),
     db,
@@ -69,7 +69,7 @@ async function project(name = 'Секретный'): Promise<ProjectDetail> {
 describe('разделы базы знаний', () => {
   it('новый проект получает скелет раздела «Разработка»', async () => {
     const p = await project()
-    const docs = db.kbDocuments({ scope: 'project', projectId: p.id })
+    const docs = db.kb.kbDocuments({ scope: 'project', projectId: p.id })
     expect(docs).toHaveLength(1)
     expect(docs[0].title).toBe('Разработка: Секретный')
     expect(docs[0].body).toContain('Исследовать проект')
@@ -88,9 +88,9 @@ describe('разделы базы знаний', () => {
 
   it('не-участник не видит знания чужого проекта ни фильтром, ни по id, ни поиском', async () => {
     const p = await project()
-    const docId = db.kbDocuments({ scope: 'project', projectId: p.id })[0].id
+    const docId = db.kb.kbDocuments({ scope: 'project', projectId: p.id })[0].id
     // Модель уже дописала в раздел проекта статью с приметным словом.
-    db.saveKbDocument({ scope: 'project', projectId: p.id, title: 'Развёртывание', body: '# Развёртывание\n\nСекретный ключ деплоя лежит в vault и в репозиторий не попадает.', createdBy: 'admin' })
+    db.kb.saveKbDocument({ scope: 'project', projectId: p.id, title: 'Развёртывание', body: '# Развёртывание\n\nСекретный ключ деплоя лежит в vault и в репозиторий не попадает.', createdBy: 'admin' })
 
     expect((await inj(bobTok, { method: 'GET', url: `${REST.kbTopics}?scope=project&projectId=${p.id}` })).statusCode).toBe(403)
     expect((await inj(bobTok, { method: 'GET', url: `${REST.kbSearch}?q=vault&scope=project&projectId=${p.id}` })).statusCode).toBe(403)
@@ -100,7 +100,7 @@ describe('разделы базы знаний', () => {
     const wide = (await inj(bobTok, { method: 'GET', url: `${REST.kbSearch}?q=vault` })).json() as KbSearchResult[]
     expect(wide).toEqual([])
     const mine = (await inj(adminTok, { method: 'GET', url: `${REST.kbSearch}?q=vault` })).json() as KbSearchResult[]
-    expect(mine.map((r) => r.documentId)).toContain(db.kbDocuments({ scope: 'project', projectId: p.id }).find((d) => d.title === 'Развёртывание')?.id)
+    expect(mine.map((r) => r.documentId)).toContain(db.kb.kbDocuments({ scope: 'project', projectId: p.id }).find((d) => d.title === 'Развёртывание')?.id)
 
     // Участнику проекта то же самое доступно.
     expect((await inj(adminTok, { method: 'GET', url: REST.kbDocument(docId) })).statusCode).toBe(200)

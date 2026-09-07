@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
+import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, completedVisibilityCutoff, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
   sanitizeProjectTestUsers,
-  designPromptLines, taskMakeSources, type TaskDesignLink
+  designPromptLines, taskMakeSources, type TaskDesignLink, type Task, type TaskStatus
 } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
@@ -97,6 +97,60 @@ describe('isCompletedHidden — когда завершённая задача �
   it('мусорный порог читается как «не скрывать»', () => {
     expect(isCompletedHidden(T0, Number.NaN, T0 + 999 * DAY)).toBe(false)
     expect(isCompletedHidden(T0, -1, T0 + 999 * DAY)).toBe(false)
+  })
+})
+
+describe('completedVisibilityCutoff — то же правило, но границей для SQL', () => {
+  const visible = (doneAt: number | null, retention: number | null, now: number): boolean => {
+    const cutoff = completedVisibilityCutoff(retention, now)
+    return cutoff === null || doneAt === null || doneAt >= cutoff
+  }
+
+  it('пустой или мусорный порог — границы нет', () => {
+    expect(completedVisibilityCutoff(null, T0)).toBeNull()
+    expect(completedVisibilityCutoff(undefined, T0)).toBeNull()
+    expect(completedVisibilityCutoff(Number.NaN, T0)).toBeNull()
+    expect(completedVisibilityCutoff(-1, T0)).toBeNull()
+  })
+
+  it('совпадает с isCompletedHidden на границах порогов', () => {
+    const endOfDay = new Date(T0).setHours(24, 0, 0, 0)
+    const cases: Array<[number | null, number | null, number]> = [
+      [T0, 0, T0], [T0, 0, endOfDay - 1], [T0, 0, endOfDay],
+      [T0, 14, T0 + 13 * DAY], [T0, 14, T0 + 14 * DAY], [T0, 14, T0 + 14 * DAY - 1],
+      [T0, 1, T0], [T0, 1, T0 + DAY], [null, 14, T0 + 99 * DAY], [T0, null, T0 + 99 * DAY]
+    ]
+    for (const [doneAt, retention, now] of cases) {
+      expect([doneAt, retention, now, visible(doneAt, retention, now)])
+        .toEqual([doneAt, retention, now, !isCompletedHidden(doneAt, retention, now)])
+    }
+  })
+})
+
+describe('applyTaskStatuses — вторая фаза доски накладывается на скелет', () => {
+  const skeleton = (id: string): Task => ({
+    id, projectId: 'p', columnId: 'c', type: 'task', parentId: null, title: id, description: '',
+    acceptanceCriteria: '', priority: 'medium', assignee: null, labels: [], skills: [],
+    storyPoints: null, dueDate: null, flagged: false, seq: 1, position: 1024, createdAt: 1, updatedAt: 1
+  })
+  const status = (taskId: string): TaskStatus => ({
+    taskId, chatId: 'chat-1', mergeSourceBranch: 'feat/x', mergeSourceSha: 'abc', activeMergeRunId: null,
+    latestMergeRunId: 'm1', activeMergeStatus: null, mergePermitted: true, mergeMachineBound: true,
+    mergedSha: null, mergedSourceSha: null, taskPreparationRunId: null, taskPreparationStatus: null,
+    taskPreparationError: null, latestRunResult: null
+  })
+
+  it('накладывает состояние на свою карточку и не трогает чужие', () => {
+    const [withStatus, untouched] = applyTaskStatuses([skeleton('a'), skeleton('b')], [status('a')])
+    expect(withStatus.chatId).toBe('chat-1')
+    expect(withStatus.mergePermitted).toBe(true)
+    expect(withStatus.title).toBe('a')
+    expect(untouched.chatId).toBeUndefined()
+  })
+
+  it('пустая вторая фаза оставляет скелет как есть', () => {
+    const tasks = [skeleton('a')]
+    expect(applyTaskStatuses(tasks, [])).toBe(tasks)
   })
 })
 

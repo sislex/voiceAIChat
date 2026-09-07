@@ -56,12 +56,12 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
   // --- Управление со стороны проекта (владелец; гейтит общий hook) ---
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/invitations', async (req, reply) => {
-    const list = db.listProjectInvitations(uid(req), req.params.id)
+    const list = db.projects.listProjectInvitations(uid(req), req.params.id)
     if (list) return list
     // Чтение не попадает под owner-гейт глобального hook (тот пропускает GET),
     // поэтому различаем сами: участник видит понятный отказ, посторонний — 404,
     // чтобы существование чужого проекта не подтверждалось.
-    return db.getProject(uid(req), req.params.id)
+    return db.projects.getProject(uid(req), req.params.id)
       ? reply.code(403).send({ error: 'forbidden', permission: 'project:settings' })
       : notFound(reply)
   })
@@ -74,10 +74,10 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
       if (!byUser.hit(uid(req)).ok || !byIp.hit(req.ip).ok) {
         return reply.code(429).send({ error: 'Слишком много приглашений — попробуйте позже' })
       }
-      const project = db.getProject(uid(req), req.params.id)
+      const project = db.projects.getProject(uid(req), req.params.id)
       if (!project) return notFound(reply)
       try {
-        const created = db.createProjectInvitation(uid(req), req.params.id, invitee, { role: req.body?.role === 'owner' ? 'owner' : 'member' })
+        const created = db.projects.createProjectInvitation(uid(req), req.params.id, invitee, { role: req.body?.role === 'owner' ? 'owner' : 'member' })
         if (!created) return notFound(reply)
         // Письмо не должно ронять создание: приглашение уже существует, а
         // владелец увидит его в списке и сможет отправить повторно.
@@ -90,7 +90,7 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
             app.log.warn({ err: error }, 'не удалось отправить приглашение')
           }
         }
-        db.logSecurityEvent({ user: uid(req), type: 'project_invited', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `${req.params.id} → ${invitee}` })
+        db.identity.logSecurityEvent({ user: uid(req), type: 'project_invited', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `${req.params.id} → ${invitee}` })
         if (created.invitation.invitedUsername) options.membershipChanged?.(req.params.id, created.invitation.invitedUsername)
         // Ссылку отдаём владельцу ровно в ответ на создание: когда письма нет
         // (приглашение по логину), передать её иначе нечем. В списке ожидающих
@@ -105,9 +105,9 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
   app.post<{ Params: { id: string; invitationId: string } }>(
     '/api/projects/:id/invitations/:invitationId/resend',
     async (req, reply) => {
-      const project = db.getProject(uid(req), req.params.id)
+      const project = db.projects.getProject(uid(req), req.params.id)
       if (!project) return notFound(reply)
-      const refreshed = db.refreshProjectInvitationToken(uid(req), req.params.id, req.params.invitationId)
+      const refreshed = db.projects.refreshProjectInvitationToken(uid(req), req.params.id, req.params.invitationId)
       if (!refreshed) return notFound(reply)
       let mailed = false
       if (refreshed.email) {
@@ -125,22 +125,22 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
   app.delete<{ Params: { id: string; invitationId: string } }>(
     '/api/projects/:id/invitations/:invitationId',
     async (req, reply) => {
-      const ok = db.revokeProjectInvitation(uid(req), req.params.id, req.params.invitationId)
+      const ok = db.projects.revokeProjectInvitation(uid(req), req.params.id, req.params.invitationId)
       return ok ? { ok: true } : notFound(reply)
     }
   )
 
   // --- Сторона приглашённого (вне /api/projects/: он ещё не участник) ---
 
-  app.get('/api/invitations', async (req) => db.listInvitationsForUser(uid(req)))
+  app.get('/api/invitations', async (req) => db.projects.listInvitationsForUser(uid(req)))
 
   // Параметр — токен из письма ЛИБО id приглашения из списка в интерфейсе:
   // приглашённому по логину письма нет, и id — его единственный способ ответить.
   app.post<{ Params: { token: string } }>('/api/invitations/:token/accept', async (req, reply) => {
     try {
-      const { projectId } = db.acceptProjectInvitation(uid(req), decodeURIComponent(req.params.token))
+      const { projectId } = db.projects.acceptProjectInvitation(uid(req), decodeURIComponent(req.params.token))
       options.membershipChanged?.(projectId, uid(req))
-      db.logSecurityEvent({ user: uid(req), type: 'project_invite_accepted', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: projectId })
+      db.identity.logSecurityEvent({ user: uid(req), type: 'project_invite_accepted', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: projectId })
       return { projectId }
     } catch (error) {
       return badReq(reply, errMessage(error))
@@ -149,7 +149,7 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
 
   app.post<{ Params: { token: string } }>('/api/invitations/:token/decline', async (req, reply) => {
     try {
-      return { ok: db.declineProjectInvitation(uid(req), decodeURIComponent(req.params.token)) }
+      return { ok: db.projects.declineProjectInvitation(uid(req), decodeURIComponent(req.params.token)) }
     } catch (error) {
       return badReq(reply, errMessage(error))
     }
@@ -161,7 +161,7 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
   // понять, куда идёшь, и мало для разведки. Перебор токенов гасит лимит по IP.
   app.get<{ Params: { token: string } }>('/api/session/invitation/:token', async (req, reply) => {
     if (!previewByIp.hit(req.ip).ok) return reply.code(429).send({ error: 'Слишком много запросов' })
-    const preview = db.projectInvitationPreview(decodeURIComponent(req.params.token))
+    const preview = db.projects.projectInvitationPreview(decodeURIComponent(req.params.token))
     return preview ?? reply.code(404).send({ error: 'Приглашение недействительно или истекло' })
   })
 }

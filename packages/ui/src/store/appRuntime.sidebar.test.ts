@@ -57,8 +57,9 @@ const ids = (store: TestStore): string[] => store.getState().conversations.map((
 
 /** Проматывает окно склейки и даёт улететь отложенному `conversations:list`. */
 async function flushRefresh(): Promise<void> {
-  // board.changed сначала проходит 50-мс debounce доски, затем debounce списка.
-  await vi.advanceTimersByTimeAsync(CONVERSATIONS_REFRESH_DEBOUNCE_MS + 51)
+  // board.changed сначала проходит ритм доски (дебаунс 400 мс, а подряд идущие
+  // события — минимальный интервал 1,5 с), затем debounce списка бесед.
+  await vi.advanceTimersByTimeAsync(CONVERSATIONS_REFRESH_DEBOUNCE_MS + 1700)
   await Promise.resolve()
 }
 

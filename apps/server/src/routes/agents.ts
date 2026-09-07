@@ -147,12 +147,12 @@ export async function registerAgentRoutes(
   artifacts: AppArtifacts = {},
   commandGate?: CommandGate
 ): Promise<void> {
-  const withLiveStatus = (agents: ReturnType<VoiceChatDb['listAgents']>, userId?: string, projectId?: string | null): AgentInfo[] => {
+  const withLiveStatus = (agents: ReturnType<VoiceChatDb['machines']['listAgents']>, userId?: string, projectId?: string | null): AgentInfo[] => {
     const online = registry.onlineIds()
     return agents.map((a) => ({
       ...a,
       // Личная машина или предоставленная проектом, и права на неё (п.18).
-      ...(userId ? { ownership: (a.userId === userId ? 'personal' : 'project') as 'personal' | 'project', access: db.machineAccess(userId, a.id, projectId) ?? undefined } : {}),
+      ...(userId ? { ownership: (a.userId === userId ? 'personal' : 'project') as 'personal' | 'project', access: db.machines.machineAccess(userId, a.id, projectId) ?? undefined } : {}),
       online: online.has(a.id),
       version: registry.versionOf(a.id),
       telemetry: registry.telemetryOf(a.id),
@@ -161,7 +161,7 @@ export async function registerAgentRoutes(
   }
 
   app.get(REST.agents, async (req): Promise<AgentInfo[]> =>
-    withLiveStatus(db.listAgents(uid(req)), uid(req))
+    withLiveStatus(db.machines.listAgents(uid(req)), uid(req))
   )
 
   const storagePath = (rootPath: string, platform: string, name: string): string => {
@@ -199,7 +199,7 @@ export async function registerAgentRoutes(
     relativePath: string,
     conversation: { id: string; projectId?: string | null; taskId?: string | null }
   ): Promise<void> => {
-    const storage = db.listMachineStorages(userId, machineId).find((item) => item.id === storageId)
+    const storage = db.machines.listMachineStorages(userId, machineId).find((item) => item.id === storageId)
     if (!storage) throw new Error('Хранилище не найдено')
     if (!registry.isOnline(machineId)) throw new Error('Машина не в сети')
     const platform = registry.platformOf(machineId) ?? 'linux'
@@ -253,8 +253,8 @@ export async function registerAgentRoutes(
 
   app.get<{ Params: { id: string } }>('/api/agents/:id/storages', async (req, reply) => {
     const userId = uid(req)
-    if (!db.listAgents(userId).some((agent) => agent.id === req.params.id)) return reply.code(404).send({ error: 'not found' })
-    const storages = db.listMachineStorages(userId, req.params.id)
+    if (!db.machines.listAgents(userId).some((agent) => agent.id === req.params.id)) return reply.code(404).send({ error: 'not found' })
+    const storages = db.machines.listMachineStorages(userId, req.params.id)
     if (!registry.isOnline(req.params.id)) return storages.map((storage, index) => ({ ...storage, primary: index === 0, status: 'offline' as const }))
     const platform = registry.platformOf(req.params.id) ?? 'linux'
     return Promise.all(storages.map(async (storage, index) => {
@@ -285,7 +285,7 @@ export async function registerAgentRoutes(
     async (req, reply) => {
       const userId = uid(req)
       const machineId = req.params.id
-      const agent = db.listAgents(userId).find((item) => item.id === machineId)
+      const agent = db.machines.listAgents(userId).find((item) => item.id === machineId)
       if (!agent) return reply.code(404).send({ error: 'not found' })
       if (!registry.isOnline(machineId)) return reply.code(409).send({ error: 'Машина не в сети' })
       const platform = registry.platformOf(machineId) ?? 'linux'
@@ -298,7 +298,7 @@ export async function registerAgentRoutes(
       if (!isMachineStoragePathAllowed(rootPath, agent.policy.allowedDirs, platform)) {
         return reply.code(403).send({ error: 'Путь находится вне разрешённых директорий машины' })
       }
-      const existing = db.listMachineStorages(userId)
+      const existing = db.machines.listMachineStorages(userId)
       const registered = existing.find((storage) => storage.machineId === machineId && storage.rootPath === rootPath)
       const separator = platform === 'win32' ? '\\' : '/'
       const child = (name: string): string => rootPath + separator + name.replace(/[\\/]/g, separator)
@@ -327,7 +327,7 @@ export async function registerAgentRoutes(
           const verified = await markerAt(machineId, rootPath, platform)
           if (!verified || verified.id !== storageId) throw new Error('Не удалось проверить записанный marker хранилища')
         }
-        return db.saveMachineStorage(userId, machineId, rootPath, MACHINE_STORAGE_FORMAT_VERSION, storageId)
+        return db.machines.saveMachineStorage(userId, machineId, rootPath, MACHINE_STORAGE_FORMAT_VERSION, storageId)
       } catch (error) {
         return reply.code(400).send({ error: storageError(error) })
       }
@@ -336,10 +336,10 @@ export async function registerAgentRoutes(
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/storage', async (req, reply) => {
     const userId = uid(req)
-    const binding = db.getChatStorageBinding(userId, req.params.id)
+    const binding = db.machines.getChatStorageBinding(userId, req.params.id)
     if (!binding) return reply.code(404).send({ error: 'not found' })
     // Карточке чата нужны абсолютные каталоги и состояние хранилища, а не только id.
-    const storage = db.listMachineStorages(userId, binding.machineId).find((item) => item.id === binding.storageId)
+    const storage = db.machines.listMachineStorages(userId, binding.machineId).find((item) => item.id === binding.storageId)
     if (!storage) return binding satisfies ChatStorageView
     const status: ChatStorageView['status'] = registry.isOnline(binding.machineId) ? storage.status : 'offline'
     return { ...binding, rootPath: storage.rootPath, status, directories: chatStorageDirectories(storage.rootPath, binding.relativePath) } satisfies ChatStorageView
@@ -349,7 +349,7 @@ export async function registerAgentRoutes(
     '/api/conversations/:id/storage',
     async (req, reply) => {
       const userId = uid(req)
-      const conversation = db.getConversation(userId, req.params.id)
+      const conversation = db.chat.getConversation(userId, req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       const machineId = req.body?.machineId
       const storageId = req.body?.storageId
@@ -364,7 +364,7 @@ export async function registerAgentRoutes(
       }
       try {
         await ensureManagedChat(userId, machineId, storageId, relativePath, conversation)
-        return db.saveChatStorageBinding(userId, {
+        return db.machines.saveChatStorageBinding(userId, {
           conversationId: conversation.id,
           machineId,
           storageId,
@@ -380,16 +380,16 @@ export async function registerAgentRoutes(
     '/api/conversations/:id/machines',
     async (req, reply) => {
       const userId = uid(req)
-      const conversation = db.getConversation(userId, req.params.id)
+      const conversation = db.chat.getConversation(userId, req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       const projectId = req.query.projectId ?? conversation.projectId
-      const machines = withLiveStatus(db.listUsableAgents(userId, projectId), userId, projectId)
+      const machines = withLiveStatus(db.machines.listUsableAgents(userId, projectId), userId, projectId)
       const personalDefault = projectId
-        ? db.getUserProjectDefaultMachine(userId, projectId)
-        : db.getSettings(userId).defaultAgentId
+        ? db.machines.getUserProjectDefaultMachine(userId, projectId)
+        : db.settings.getSettings(userId).defaultAgentId
       // Каталог помечает effective именно для опции «наследовать»; явный
       // conversation.execTarget выбран самим <select> и не подменяет её подпись.
-      const resolution = db.resolveConversationMachine(userId, conversation.id, {
+      const resolution = db.chat.resolveConversationMachine(userId, conversation.id, {
         execTarget: null,
         projectId,
         isOnline: (agentId) => registry.isOnline(agentId)
@@ -408,9 +408,9 @@ export async function registerAgentRoutes(
   // Управление машиной — только владелец; использование может быть делегировано
   // проектом, но лишь при явном projectId в конкретной операции.
   const ownsAgent = (userId: string, id: string): boolean =>
-    db.listAgents(userId).some((a) => a.id === id)
+    db.machines.listAgents(userId).some((a) => a.id === id)
   const canUseAgent = (userId: string, id: string, projectId?: string): boolean =>
-    db.canUseAgent(userId, id, projectId)
+    db.machines.canUseAgent(userId, id, projectId)
 
   // Последняя доступная версия агента (публично — трей проверяет обновления).
   app.get(REST.agentLatestVersion, async () => ({ version: AGENT_VERSION }))
@@ -446,7 +446,7 @@ export async function registerAgentRoutes(
   })
 
   app.post(REST.loginEnrollmentIssue, async (req) => {
-    const enrollment = db.createLoginEnrollment(uid(req), LOGIN_ENROLLMENT_TTL_MS)
+    const enrollment = db.machines.createLoginEnrollment(uid(req), LOGIN_ENROLLMENT_TTL_MS)
     return {
       enrollmentToken: enrollment.token,
       statusId: enrollment.statusId,
@@ -457,14 +457,14 @@ export async function registerAgentRoutes(
     }
   })
   app.get<{ Params: { id: string } }>('/api/login-application/enrollments/:id', async (req, reply) => {
-    const status = db.getLoginEnrollmentStatus(uid(req), req.params.id)
+    const status = db.machines.getLoginEnrollmentStatus(uid(req), req.params.id)
     return status ?? reply.code(404).send({ error: 'not found' })
   })
   app.post<{ Body: { token?: string; name?: string } }>(REST.loginEnrollmentRedeem, async (req, reply) => {
     const token = req.body?.token?.trim() ?? ''
     const name = req.body?.name?.trim() ?? ''
     if (!token || !name) return reply.code(400).send({ error: 'token and name required' })
-    const result = db.redeemLoginEnrollment(token, name)
+    const result = db.machines.redeemLoginEnrollment(token, name)
     if (!result) return reply.code(409).send({ error: 'Enrollment недействителен, просрочен или уже использован' })
     return { agentId: result.id, name: result.name, machineToken: result.token, serverUrl: externalBase(req) }
   })
@@ -519,7 +519,7 @@ export async function registerAgentRoutes(
   app.post<{ Body: { name?: string } }>(REST.agents, async (req, reply) => {
     const name = req.body?.name?.trim()
     if (!name) return reply.code(400).send({ error: 'name required' })
-    return db.createAgent(uid(req), name)
+    return db.machines.createAgent(uid(req), name)
   })
 
   app.delete<{ Params: { id: string } }>('/api/agents/:id', async (req, reply) => {
@@ -527,7 +527,7 @@ export async function registerAgentRoutes(
     const id = req.params.id
     if (!ownsAgent(u, id)) return reply.code(404).send({ error: 'not found' })
     // DB сначала: при rollback живое соединение должно остаться пригодным.
-    if (!db.deleteAgent(u, id)) return reply.code(404).send({ error: 'not found' })
+    if (!db.machines.deleteAgent(u, id)) return reply.code(404).send({ error: 'not found' })
     registry.disconnect(id)
     return { ok: true }
   })
@@ -540,7 +540,7 @@ export async function registerAgentRoutes(
       const policy = req.body?.policy
       if (!policy) return reply.code(400).send({ error: 'policy required' })
       if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
-      db.setAgentPolicy(u, req.params.id, policy)
+      db.machines.setAgentPolicy(u, req.params.id, policy)
       registry.updatePolicy(req.params.id, policy)
       return { ok: true }
     }
@@ -571,9 +571,9 @@ export async function registerAgentRoutes(
     const u = uid(req)
     if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
     const ttlDays = typeof req.body?.ttlDays === 'number' && Number.isFinite(req.body.ttlDays) ? Math.max(0, Math.min(3650, req.body.ttlDays)) : undefined
-    const { token, expiresAt } = db.regenerateAgentToken(u, req.params.id, ttlDays ? ttlDays * 24 * 60 * 60_000 : undefined)
+    const { token, expiresAt } = db.machines.regenerateAgentToken(u, req.params.id, ttlDays ? ttlDays * 24 * 60 * 60_000 : undefined)
     registry.disconnect(req.params.id)
-    db.logSecurityEvent({ user: u, type: 'agent_token_rotated', details: `${registry.nameOf(req.params.id) ?? req.params.id}${expiresAt ? ` до ${new Date(expiresAt).toISOString()}` : ' (бессрочный)'}` })
+    db.identity.logSecurityEvent({ user: u, type: 'agent_token_rotated', details: `${registry.nameOf(req.params.id) ?? req.params.id}${expiresAt ? ` до ${new Date(expiresAt).toISOString()}` : ' (бессрочный)'}` })
     return { token, expiresAt }
   })
 
@@ -581,17 +581,17 @@ export async function registerAgentRoutes(
   app.delete<{ Params: { id: string } }>('/api/agents/:id/token', async (req, reply) => {
     const u = uid(req)
     if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
-    const name = db.listAgents(u).find((a) => a.id === req.params.id)?.name ?? req.params.id
-    db.revokeAgentToken(req.params.id)
+    const name = db.machines.listAgents(u).find((a) => a.id === req.params.id)?.name ?? req.params.id
+    db.machines.revokeAgentToken(req.params.id)
     registry.disconnect(req.params.id)
-    db.logSecurityEvent({ user: u, type: 'agent_token_revoked', details: name })
+    db.identity.logSecurityEvent({ user: u, type: 'agent_token_revoked', details: name })
     return { ok: true }
   })
 
   app.post<{ Params: { id: string }; Body: { pin?: boolean } | undefined }>(REST.agentPinIp(':id').replace('%3Aid', ':id'), async (req, reply) => {
     const u = uid(req)
     if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
-    db.setAgentPinIp(u, req.params.id, req.body?.pin === true)
+    db.machines.setAgentPinIp(u, req.params.id, req.body?.pin === true)
     return { ok: true }
   })
 
@@ -607,7 +607,7 @@ export async function registerAgentRoutes(
   ): Promise<unknown> => {
     const u = uid(req as never)
     if (!canUseAgent(u, req.params.id, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
-    if (mutates && !db.canWriteAgent(u, req.params.id, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
+    if (mutates && !db.machines.canWriteAgent(u, req.params.id, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
     try {
       return await run(req.params.id)
     } catch (err) {
@@ -651,7 +651,7 @@ export async function registerAgentRoutes(
       const { path, targetAgentId, targetDir } = req.body ?? {}
       if (!path || !targetAgentId) return reply.code(400).send({ error: 'нужны path и targetAgentId' })
       if (!canUseAgent(u, req.params.id, req.query?.projectId) || !canUseAgent(u, targetAgentId, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
-      if (!db.canWriteAgent(u, targetAgentId, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
+      if (!db.machines.canWriteAgent(u, targetAgentId, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
       if (targetAgentId === req.params.id) return reply.code(400).send({ error: 'Источник и цель — одна машина' })
       if (!registry.isOnline(targetAgentId)) return reply.code(409).send({ error: 'Целевая машина не в сети' })
       if (registry.policyOf(targetAgentId)?.allowWrite === false) return reply.code(403).send({ error: 'Запись на целевую машину запрещена политикой' })
@@ -717,10 +717,10 @@ export async function registerAgentRoutes(
       }
       const startedAt = Date.now()
       const items: BatchExecItem[] = await Promise.all(ids.map(async (machineId) => {
-        const machineName = registry.nameOf(machineId) ?? db.listAgents(u).find((a) => a.id === machineId)?.name ?? machineId
+        const machineName = registry.nameOf(machineId) ?? db.machines.listAgents(u).find((a) => a.id === machineId)?.name ?? machineId
         const base = { machineId, machineName, exitCode: null, timedOut: false, output: '', durationMs: 0 }
         if (!canUseAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Машина недоступна' }
-        if (!db.canWriteAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Только чтение: команды запрещены' }
+        if (!db.machines.canWriteAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Только чтение: команды запрещены' }
         const at = Date.now()
         try {
           const res = await registry.exec(machineId, command, EXEC_TIMEOUT_MS, undefined, { source: 'console', userId: u })
@@ -750,7 +750,7 @@ export async function registerAgentRoutes(
       if (!canUseAgent(u, req.params.id, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
       const source = req.query.source === 'console' || req.query.source === 'chat' || req.query.source === 'system' ? req.query.source : undefined
       const limit = req.query.limit ? Number(req.query.limit) : undefined
-      const rows = db.listMachineCommands(req.params.id, { limit: Number.isFinite(limit) ? limit : undefined, q: req.query.q, source })
+      const rows = db.machines.listMachineCommands(req.params.id, { limit: Number.isFinite(limit) ? limit : undefined, q: req.query.q, source })
       if (req.query.format === 'csv') {
         const cell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`
         const lines = ['startedAt,user,source,command,exitCode,timedOut,durationMs,conversationId,error']

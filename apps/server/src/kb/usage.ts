@@ -126,7 +126,7 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
   function nextSeq(conversationId: string): number {
     let stored = 0
     try {
-      stored = deps.db.kbUsageLastSeq(conversationId)
+      stored = deps.db.kb.kbUsageLastSeq(conversationId)
     } catch {
       stored = 0
     }
@@ -196,7 +196,7 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
       done = true
       const durationMs = Math.max(0, now() - startedAt)
       try {
-        const saved = deps.db.addKbUsage({
+        const saved = deps.db.kb.addKbUsage({
           id,
           userId: ctx.userId,
           conversationId,
@@ -263,7 +263,7 @@ export function createKbUsageTracker(deps: KbUsageTrackerDeps): KbUsageTracker {
     begin,
     attachTurn(args) {
       try {
-        deps.db.attachKbUsageTurn(args)
+        deps.db.kb.attachKbUsageTurn(args)
       } catch {
         /* итоги хода — украшение метрики, а не сам ход */
       }

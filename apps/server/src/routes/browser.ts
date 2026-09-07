@@ -48,7 +48,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
   if (deps.shotsRoot) {
     const shotsRoot = deps.shotsRoot
     app.get<{ Params: { runId: string; name: string } }>('/api/ci/runs/:runId/browser-shots/:name', async (req, reply) => {
-      if (!db.getCiRun(uid(req), req.params.runId)) return reply.code(404).send({ error: 'not_found' })
+      if (!db.ci.getCiRun(uid(req), req.params.runId)) return reply.code(404).send({ error: 'not_found' })
       const png = readBrowserShot(shotsRoot, req.params.runId, req.params.name)
       if (!png) return reply.code(404).send({ error: 'not_found' })
       return reply.type('image/png').header('cache-control', 'private, max-age=86400').send(png)
@@ -59,7 +59,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
   // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.
   const guard = (req: FastifyRequest, id: string): string => {
     if (!runner) throw new BrowserRunnerError(501, 'Browser Runner не настроен на этом сервере')
-    const conversation = db.getConversation(uid(req), id)
+    const conversation = db.chat.getConversation(uid(req), id)
     if (!conversation) throw new BrowserRunnerError(404, 'Разговор не найден')
     if (!isPlaywrightReaderConversation(conversation)) throw new BrowserRunnerError(403, 'Изолированный Chromium доступен только в Playwright Reader-разговоре')
     return id

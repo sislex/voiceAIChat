@@ -381,18 +381,18 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         }
       }, async ({ unit, from, to, conversationId }) => {
         if (!entry || !opts.db) return noContext
-        if (conversationId && !opts.db.getConversation(entry.userId, conversationId)) {
+        if (conversationId && !opts.db.chat.getConversation(entry.userId, conversationId)) {
           return { content: [{ type: 'text', text: 'Этот чат недоступен владельцу текущего хода.' }], isError: true }
         }
-        return { content: [{ type: 'text', text: JSON.stringify(opts.db.usageReport(entry.userId, unit, from, to, conversationId), null, 2) }] }
+        return { content: [{ type: 'text', text: JSON.stringify(opts.db.chat.usageReport(entry.userId, unit, from, to, conversationId), null, 2) }] }
       })
       server.registerTool('machines', {
         description: 'Подключённые машины владельца: статус, ОС, версия и политика команд. Токены машин не возвращаются.',
         inputSchema: {}
       }, async () => {
         if (!entry || !opts.db) return noContext
-        const settings = opts.db.getSettings(entry.userId)
-        const machines = opts.db.listAgents(entry.userId).map((agent) => ({
+        const settings = opts.db.settings.getSettings(entry.userId)
+        const machines = opts.db.machines.listAgents(entry.userId).map((agent) => ({
           id: agent.id, name: agent.name, online: opts.agents?.isOnline(agent.id) ?? false,
           version: opts.agents?.versionOf(agent.id) ?? null, os: opts.agents?.platformOf(agent.id) ?? null,
           policy: agent.policy, isDefault: settings.defaultAgentId === agent.id
@@ -406,7 +406,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         inputSchema: {}
       }, async () => {
         if (!entry || !opts.db) return noContext
-        const user = opts.db.getUser(entry.userId)
+        const user = opts.db.identity.getUser(entry.userId)
         if (!user || user.blocked || user.role !== 'admin') {
           return {
             content: [{ type: 'text', text: JSON.stringify({ error: { code: 'forbidden', message: 'Для запуска production-деплоя нужна актуальная роль admin.' } }) }],
@@ -436,8 +436,8 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         inputSchema: {}
       }, async () => {
         if (!entry || !opts.db) return noContext
-        const projects = opts.db.listProjects(entry.userId).map((summary) => {
-          const project = opts.db!.getProject(entry.userId, summary.id)
+        const projects = opts.db.projects.listProjects(entry.userId).map((summary) => {
+          const project = opts.db!.projects.getProject(entry.userId, summary.id)
           if (!project) return null
           const { ciExecAuthRef: _secret, ...safe } = project
           return safe

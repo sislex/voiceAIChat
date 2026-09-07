@@ -26,12 +26,18 @@ function harness(overrides: { push?: () => never; commit?: () => never } = {}) {
 
   const created: { branch?: string; sha?: string; pushed?: boolean } = {}
   const db = {
-    getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git', ciBaseBranch: 'main', ciBranchTemplate: undefined }),
-    getBoard: () => ({ columns: [{ id: 'col-wait', semanticType: 'awaiting_merge' }], tasks: [] }),
-    createTask: () => ({ id: 'task-1', seq: 42, title: 'Кнопка шире' }),
-    createCiWorkspace: () => ({ id: 'cw-1' }),
-    updateCiWorkspaceRevision: (_id: string, branch: string, sha: string, pushed: boolean) => {
+    projects: {
+      getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git', ciBaseBranch: 'main', ciBranchTemplate: undefined })
+    },
+    tasks: {
+      getBoard: () => ({ columns: [{ id: 'col-wait', semanticType: 'awaiting_merge' }], tasks: [] }),
+      createTask: () => ({ id: 'task-1', seq: 42, title: 'Кнопка шире' })
+    },
+    ci: {
+      createCiWorkspace: () => ({ id: 'cw-1' }),
+      updateCiWorkspaceRevision: (_id: string, branch: string, sha: string, pushed: boolean) => {
       created.branch = branch; created.sha = sha; created.pushed = pushed
+    }
     }
   } as unknown as VoiceChatDb
 
@@ -84,8 +90,12 @@ describe('ComponentTicketService', () => {
   it('без колонки «Ожидает слияния» задача не заводится', async () => {
     const patched = new ComponentTicketService({
       db: {
-        getBoard: () => ({ columns: [], tasks: [] }),
-        getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git' })
+        tasks: {
+          getBoard: () => ({ columns: [], tasks: [] })
+        },
+        projects: {
+          getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git' })
+        }
       } as never,
       git: { resolve: () => ({ agentId: 'a', path: '/repo' }) } as never
     })
@@ -95,7 +105,7 @@ describe('ComponentTicketService', () => {
 
   it('без адреса репозитория ветку отправлять некуда', async () => {
     const service = new ComponentTicketService({
-      db: { getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: null }) } as never,
+      db: {projects:{getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: null })}} as never,
       git: { resolve: () => ({ agentId: 'a', path: '/repo' }) } as never
     })
     await expect(service.create('admin', 'p1', { workspaceId: 'project:a', title: 'Правка', paths: ['a.tsx'] }))
@@ -107,7 +117,7 @@ describe('вызовы наружу', () => {
   it('создание задачи не идёт, пока не проверены права на копию', async () => {
     const createTask = vi.fn()
     const service = new ComponentTicketService({
-      db: { createTask } as never,
+      db: {tasks:{createTask}} as never,
       git: { resolve: () => { throw new GitError(403, 'read_only_machine', 'Машина только для чтения') } } as never
     })
     await expect(service.create('admin', 'p1', { workspaceId: 'project:a', title: 'Правка', paths: ['a.tsx'] }))

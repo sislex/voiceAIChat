@@ -80,7 +80,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
 
   /** Карточка стоит в нужной колонке: по семантике (`ready`, `development`…) или по id. */
   const inColumn = (plan: Orchestration, taskId: string, payload: WaitColumnPayload): boolean => {
-    const board = deps.db.getBoard(plan.owner, plan.projectId, { includeCompleted: true })
+    const board = deps.db.tasks.getBoard(plan.owner, plan.projectId, { includeCompleted: true })
     const task = board?.tasks.find((candidate) => candidate.id === taskId)
     if (!task) return false
     if (payload.columnId) return task.columnId === payload.columnId
@@ -90,20 +90,20 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
 
   /** Ветка задачи влита: merge-ран завершился успехом. */
   const merged = (plan: Orchestration, taskId: string): boolean =>
-    deps.db.listMergeRuns(plan.owner, plan.projectId, taskId, 10)
+    deps.db.ci.listMergeRuns(plan.owner, plan.projectId, taskId, 10)
       .some((run) => run.status === 'success')
 
   const startItem = async (plan: Orchestration, item: OrchestrationItem): Promise<void> => {
     const db = deps.db
-    const fail = (message: string): void => db.updateOrchestrationItem(item.id, { status: 'failed', error: message })
+    const fail = (message: string): void => db.tasks.updateOrchestrationItem(item.id, { status: 'failed', error: message })
 
     if (item.kind === 'create_task') {
       const payload = item.payload as { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; autoPilot?: boolean }
-      const board = db.getBoard(plan.owner, plan.projectId)
+      const board = db.tasks.getBoard(plan.owner, plan.projectId)
       const columnId = payload.columnId ?? board?.columns[0]?.id
       if (!columnId) { fail('На доске нет колонок'); return }
       try {
-        const created = db.createTask(plan.owner, plan.projectId, {
+        const created = db.tasks.createTask(plan.owner, plan.projectId, {
           columnId,
           title: payload.title ?? item.title,
           ...(payload.description ? { description: payload.description } : {}),
@@ -111,7 +111,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
           ...(payload.autoPilot !== undefined ? { autoPilot: payload.autoPilot } : {})
         })
         if (!created) { fail('Создать карточку не удалось'); return }
-        db.updateOrchestrationItem(item.id, { status: 'done', taskId: created.id })
+        db.tasks.updateOrchestrationItem(item.id, { status: 'done', taskId: created.id })
         deps.boardChanged?.(plan.projectId)
       } catch (error) { fail(error instanceof Error ? error.message : String(error)) }
       return
@@ -122,13 +122,13 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
 
     if (item.kind === 'wait_merge') {
       // Ожидание — не работа: шаг остаётся pending и проверяется каждый тик.
-      if (merged(plan, taskId)) db.updateOrchestrationItem(item.id, { status: 'done', taskId })
+      if (merged(plan, taskId)) db.tasks.updateOrchestrationItem(item.id, { status: 'done', taskId })
       return
     }
     if (item.kind === 'wait_column') {
       // Событие «карточка перешла в колонку»: доска шлёт notify при каждом
       // изменении, так что переход подхватывается сразу, а таймер — страховка.
-      if (inColumn(plan, taskId, item.payload as WaitColumnPayload)) db.updateOrchestrationItem(item.id, { status: 'done', taskId })
+      if (inColumn(plan, taskId, item.payload as WaitColumnPayload)) db.tasks.updateOrchestrationItem(item.id, { status: 'done', taskId })
       return
     }
 
@@ -138,7 +138,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
       if (item.kind === 'run_preparation') {
         if (!runner.startPreparation) { fail('Подготовка задач недоступна'); return }
         const run = runner.startPreparation(plan.owner, plan.projectId, taskId)
-        db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
+        db.tasks.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
         return
       }
       if (item.kind === 'run_ci') {
@@ -151,13 +151,13 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
           ...(payload.model ? { model: payload.model } : {})
         })
         if ('error' in started) { fail(started.error); return }
-        db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: started.run.id })
+        db.tasks.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: started.run.id })
         return
       }
       if (item.kind === 'run_qa') {
         const payload = item.payload as { stage?: 'component_qa' | 'integration_tests' | 'automated_qa' }
         const run = await runner.startQa(plan.owner, plan.projectId, taskId, payload.stage ?? 'automated_qa')
-        db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
+        db.tasks.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
         return
       }
       if (item.kind === 'run_preview') {
@@ -169,12 +169,12 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
           ...(payload.scenario ? { scenario: payload.scenario } : {}),
           ...(payload.agentId ? { agentId: payload.agentId } : {})
         })
-        db.updateOrchestrationItem(item.id, { status: 'done', taskId })
+        db.tasks.updateOrchestrationItem(item.id, { status: 'done', taskId })
         return
       }
       const payload = item.payload as { agentId?: string }
       const run = await runner.startMerge(plan.owner, plan.projectId, taskId, payload.agentId ?? null)
-      db.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
+      db.tasks.updateOrchestrationItem(item.id, { status: 'running', taskId, runId: run.id })
     } catch (error) { fail(error instanceof Error ? error.message : String(error)) }
   }
 
@@ -186,10 +186,10 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
   const failOrRetry = (item: OrchestrationItem, error: string): void => {
     const limit = orchestrationItemMaxAttempts(item)
     if (item.attempts < limit) {
-      deps.db.updateOrchestrationItem(item.id, { status: 'pending', runId: null, attempts: item.attempts + 1, error: `Попытка ${item.attempts + 1} из ${limit + 1}: ${error}` })
+      deps.db.tasks.updateOrchestrationItem(item.id, { status: 'pending', runId: null, attempts: item.attempts + 1, error: `Попытка ${item.attempts + 1} из ${limit + 1}: ${error}` })
       return
     }
-    deps.db.updateOrchestrationItem(item.id, { status: 'failed', error })
+    deps.db.tasks.updateOrchestrationItem(item.id, { status: 'failed', error })
   }
 
   /** Завершился ли запущенный шагом ран; ищем по его id среди ранов задачи. */
@@ -197,27 +197,27 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
     const db = deps.db
     if (!item.runId || !item.taskId) return
     if (item.kind === 'run_ci') {
-      const run = db.listCiRunsForTask(plan.owner, plan.projectId, item.taskId).find((candidate) => candidate.id === item.runId)
+      const run = db.ci.listCiRunsForTask(plan.owner, plan.projectId, item.taskId).find((candidate) => candidate.id === item.runId)
       if (!run) return
-      if (run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
+      if (run.status === 'success') db.tasks.updateOrchestrationItem(item.id, { status: 'done' })
       else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'timeout') {
         failOrRetry(item, run.error ?? `Ран завершился со статусом ${run.status}`)
       }
       return
     }
     if (item.kind === 'run_preparation') {
-      const run = db.listTaskPreparationRuns(plan.owner, plan.projectId, item.taskId).find((candidate) => candidate.id === item.runId)
+      const run = db.tasks.listTaskPreparationRuns(plan.owner, plan.projectId, item.taskId).find((candidate) => candidate.id === item.runId)
       if (!run) return
-      if (run.status === 'completed' || run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
+      if (run.status === 'completed' || run.status === 'success') db.tasks.updateOrchestrationItem(item.id, { status: 'done' })
       else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'blocked') {
         failOrRetry(item, run.error ?? `Подготовка завершилась со статусом ${run.status}`)
       }
       return
     }
     if (item.kind === 'run_merge') {
-      const run = db.listMergeRuns(plan.owner, plan.projectId, item.taskId, 10).find((candidate) => candidate.id === item.runId)
+      const run = db.ci.listMergeRuns(plan.owner, plan.projectId, item.taskId, 10).find((candidate) => candidate.id === item.runId)
       if (!run) return
-      if (run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
+      if (run.status === 'success') db.tasks.updateOrchestrationItem(item.id, { status: 'done' })
       else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'timeout') {
         failOrRetry(item, run.error ?? `Merge завершился со статусом ${run.status}`)
       }
@@ -225,9 +225,9 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
     }
     // QA-этапы: терминальные статусы у всех трёх исполнителей одинаковые.
     const stage = (item.payload as { stage?: 'component_qa' | 'integration_tests' | 'automated_qa' }).stage ?? 'automated_qa'
-    const run = db.listQaStageRuns(plan.owner, plan.projectId, item.taskId, stage).find((candidate) => candidate.id === item.runId)
+    const run = db.qa.listQaStageRuns(plan.owner, plan.projectId, item.taskId, stage).find((candidate) => candidate.id === item.runId)
     if (!run) return
-    if (run.status === 'success') db.updateOrchestrationItem(item.id, { status: 'done' })
+    if (run.status === 'success') db.tasks.updateOrchestrationItem(item.id, { status: 'done' })
     else if (run.status === 'failed' || run.status === 'cancelled' || run.status === 'gate_failed' || run.status === 'interrupted') {
       failOrRetry(item, `Этап ${stage} завершился со статусом ${run.status}`)
     }
@@ -237,7 +237,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
     if (ticking.has(planId)) return
     ticking.add(planId)
     try {
-      let plan = deps.db.getOrchestrationById(planId)
+      let plan = deps.db.tasks.getOrchestrationById(planId)
       if (!plan || plan.status !== 'running') { stop(planId); return }
       for (const item of plan.items.filter((candidate) => candidate.status === 'running')) settleRunning(plan, item)
       // Шаги запускаются волнами: create_task завершается мгновенно, и
@@ -246,24 +246,24 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
       // что-либо менять (например, wait_merge ещё ждёт), и ограничен числом
       // шагов — на случай неожиданного состояния в БД.
       for (let pass = 0; pass <= plan.items.length; pass += 1) {
-        const current = deps.db.getOrchestrationById(planId)!
+        const current = deps.db.tasks.getOrchestrationById(planId)!
         const ready = current.items.filter((item) => orchestrationItemReady(item, current.items))
         if (!ready.length) break
         const before = current.items.map((item) => `${item.id}:${item.status}`).join(',')
         for (const item of ready) await startItem(current, item)
-        const after = deps.db.getOrchestrationById(planId)!.items.map((item) => `${item.id}:${item.status}`).join(',')
+        const after = deps.db.tasks.getOrchestrationById(planId)!.items.map((item) => `${item.id}:${item.status}`).join(',')
         if (before === after) break
       }
-      const updated = deps.db.getOrchestrationById(planId)!
+      const updated = deps.db.tasks.getOrchestrationById(planId)!
       const status = orchestrationStatusOf(updated.items)
       if (status !== 'running') {
         const failed = updated.items.find((item) => item.status === 'failed')
-        deps.db.updateOrchestrationStatus(planId, status, failed?.error ?? null)
+        deps.db.tasks.updateOrchestrationStatus(planId, status, failed?.error ?? null)
         stop(planId)
         // Панель прогресса показывает только идущие планы, поэтому итог плана
         // уходит в тот чат, откуда его запустили: иначе пользователь узнаёт о
         // падении, только вернувшись на страницу.
-        const final = deps.db.getOrchestrationById(planId)!
+        const final = deps.db.tasks.getOrchestrationById(planId)!
         const done = final.items.filter((item) => item.status === 'done').length
         deps.report?.(final, status === 'done'
           ? `План «${final.title}» выполнен: ${done} из ${final.items.length} шагов.`
@@ -271,7 +271,7 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
             ? `План «${final.title}» остановлен на шаге ${done + 1} из ${final.items.length}.`
             : `План «${final.title}» остановлен: шаг «${failed?.title ?? '—'}» не прошёл (${failed?.error ?? 'без причины'}). Выполнено ${done} из ${final.items.length}.`)
       }
-      deps.publish?.(deps.db.getOrchestrationById(planId)!)
+      deps.publish?.(deps.db.tasks.getOrchestrationById(planId)!)
     } finally {
       ticking.delete(planId)
     }
@@ -293,13 +293,13 @@ export function createOrchestrationManager(deps: OrchestrationManagerDeps): Orch
     // завершился его ран, а не через интервал таймера.
     notify: () => { for (const planId of [...timers.keys()]) void tick(planId) },
     cancel: (owner, planId) => {
-      const cancelled = deps.db.cancelOrchestration(owner, planId)
+      const cancelled = deps.db.tasks.cancelOrchestration(owner, planId)
       stop(planId)
       if (cancelled) deps.publish?.(cancelled)
       return cancelled
     },
     restore: () => {
-      for (const plan of deps.db.listActiveOrchestrations()) void track(plan.id)
+      for (const plan of deps.db.tasks.listActiveOrchestrations()) void track(plan.id)
     },
     dispose: () => {
       for (const planId of [...timers.keys()]) stop(planId)

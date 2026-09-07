@@ -46,26 +46,35 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [stagesError, setStagesError] = useState<string | null>(null)
   const [forceStatus, setForceStatus] = useState<{ kind: 'idle' | 'started' | 'bypassed' | 'error'; text?: string }>({ kind: 'idle' })
 
+  // Компонент рендерится тремя экземплярами (machine, model, commands), и
+  // каждый грузил все четыре источника: карточка задачи открывалась четырьмя
+  // тройками запросов. Секция берёт только своё.
+  const section = props.section
   useEffect(() => {
     const bridge = window.ci
     if (!bridge) return
     let cancelled = false
-    void bridge.listCommands(props.projectId).then((value) => {
-      if (!cancelled) setCommands(value)
-    })
-    setStagesLoading(true)
-    void bridge.getTaskCi(props.projectId, props.taskId).then((r) => {
-      if (cancelled) return
-      setBefore(r.config.beforeModel); setAfter(r.config.afterModel); setOverridden(r.overridden)
-      setEnabledStages(r.enabledStages); setStagesLoading(false); setStagesError(null)
-      setBrowserCheck(r.browserCheck); setBrowserSaved(true); setBrowserError(null)
-    }).catch((error: unknown) => {
-      if (!cancelled) { setStagesLoading(false); setStagesError(error instanceof Error ? error.message : String(error)) }
-    })
-    void bridge.getTaskCiLlm(props.projectId, props.taskId).then((r) => {
-      if (cancelled) return
-      setLlm(r.config); setLlmOverridden(r.overridden)
-    })
+    if (section === 'commands') {
+      void bridge.listCommands(props.projectId).then((value) => {
+        if (!cancelled) setCommands(value)
+      })
+      setStagesLoading(true)
+      void bridge.getTaskCi(props.projectId, props.taskId).then((r) => {
+        if (cancelled) return
+        setBefore(r.config.beforeModel); setAfter(r.config.afterModel); setOverridden(r.overridden)
+        setEnabledStages(r.enabledStages); setStagesLoading(false); setStagesError(null)
+        setBrowserCheck(r.browserCheck); setBrowserSaved(true); setBrowserError(null)
+      }).catch((error: unknown) => {
+        if (!cancelled) { setStagesLoading(false); setStagesError(error instanceof Error ? error.message : String(error)) }
+      })
+    }
+    if (section === 'model') {
+      void bridge.getTaskCiLlm(props.projectId, props.taskId).then((r) => {
+        if (cancelled) return
+        setLlm(r.config); setLlmOverridden(r.overridden)
+      })
+    }
+    if (section !== 'machine') return () => { cancelled = true }
     const key = `${props.projectId}:${props.taskId}`
     setMachinesStatus('loading')
     setMachinesError(null)
@@ -91,7 +100,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       setMachinesError(error instanceof Error ? error.message : String(error))
     })
     return () => { cancelled = true }
-  }, [props.projectId, props.taskId, machinesReload])
+  }, [props.projectId, props.taskId, section, machinesReload])
 
   const machineDataReady = machinesStatus === 'ready' && machinesKey === `${props.projectId}:${props.taskId}`
   const selectedMachine = machineDataReady && agentId ? machines.find((machine) => machine.agentId === agentId) : undefined

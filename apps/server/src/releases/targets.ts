@@ -19,11 +19,11 @@ export function releaseCiTarget(
   userId: string,
   projectId: string
 ): ReleaseProjectTarget {
-  const value = db.getProject(userId, projectId)
+  const value = db.projects.getProject(userId, projectId)
   const agentId = value?.defaultAgentId
   if (!value || !agentId) throw new Error('В настройках проекта не выбрана машина по умолчанию')
   const machine = value.machines.find((item) => item.agentId === agentId)
-  if (!machine || !db.canUseAgent(userId, agentId, projectId)) throw new Error('Нет доступа к машине проекта по умолчанию или она не подключена к проекту')
+  if (!machine || !db.machines.canUseAgent(userId, agentId, projectId)) throw new Error('Нет доступа к машине проекта по умолчанию или она не подключена к проекту')
   if (!releases.isOnline(agentId)) throw new Error('Машина проекта по умолчанию offline')
   if (!value.gitUrl) throw new Error('Для проекта не задан gitUrl')
   const existingPath = machine.path?.trim()
@@ -48,7 +48,7 @@ export function releaseProductionTarget(
   userId: string,
   projectId: string
 ): ProductionTarget | null {
-  const value = db.getProject(userId, projectId)
+  const value = db.projects.getProject(userId, projectId)
   const agentId = value?.productionAgentId
   const linked = agentId ? value?.machines.some((item) => item.agentId === agentId) : false
   if (!value || !agentId || !linked || !value.productionDeployCommand || !value.productionHealthCheckCommand || !value.gitUrl) return null

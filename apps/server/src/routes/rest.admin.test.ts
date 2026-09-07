@@ -17,7 +17,7 @@ beforeEach(() => { ({ app, db } = harness) })
 
 describe('REST: админ-роуты (только admin)', () => {
   it('запуск деплоя доступен только admin и не принимает shell-параметры', async () => {
-    db.createUser('user', '', 'developer')
+    db.identity.createUser('user', '', 'developer')
     const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
     const denied = await app.inject({
       method: 'POST',
@@ -47,7 +47,7 @@ describe('REST: админ-роуты (только admin)', () => {
   })
 
   it('user → 403 на /api/admin/users', async () => {
-    db.createUser('user', '', 'developer')
+    db.identity.createUser('user', '', 'developer')
     const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
     const res = await app.inject({
       method: 'GET',
@@ -111,7 +111,7 @@ describe('REST: реестр LLM-исполнителей (только admin)',
   })
 
   it('user → 403 на /api/admin/llm-engines', async () => {
-    db.createUser('user', '', 'developer')
+    db.identity.createUser('user', '', 'developer')
     const userTok = signToken({ name: 'user', role: 'developer' }, SECRET)
     const res = await app.inject({
       method: 'GET',

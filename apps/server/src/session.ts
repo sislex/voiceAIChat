@@ -57,6 +57,8 @@ export interface SessionDeps {
     subscribe(cb: (projectId: string) => void): () => void
     subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
     subscribeTaskRepositories(cb: (update: { projectId: string; taskId: string }) => void): () => void
+    subscribeQaStages(cb: (update: { projectId: string; taskId: string; stage: import('@voicechat/shared').QaRunStage }) => void): () => void
+    subscribeImprovements(cb: (projectId: string) => void): () => void
   }
   /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
   preparationNotifications?: {
@@ -117,6 +119,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubSessions: (() => void) | null = null
   let unsubPreparationRuns: (() => void) | null = null
   let unsubTaskRepositories: (() => void) | null = null
+  let unsubQaStages: (() => void) | null = null
+  let unsubImprovements: (() => void) | null = null
   let unsubPreparationNotifications: (() => void) | null = null
   let boardProjectId: string | null = null
   /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
@@ -216,6 +220,16 @@ export function createSession(deps: SessionDeps): WsHandlers {
           if (!deps.board?.getBoard(update.projectId, false)) return
           ctx.send({ t: 'task.repositories.updated', projectId: update.projectId, taskId: update.taskId })
         })
+        // Улучшения смотрят на открытой доске — адресуем кадр её подписчику.
+        unsubImprovements = deps.board.subscribeImprovements((projectId) => {
+          if (projectId !== boardProjectId) return
+          ctx.send({ t: 'project.improvements.updated', projectId })
+        })
+        // Гейт тот же, что у репозиториев: кадр уходит только тем, кому доска видна.
+        unsubQaStages = deps.board.subscribeQaStages((update) => {
+          if (!deps.board?.getBoard(update.projectId, false)) return
+          ctx.send({ t: 'qa.stage.updated', projectId: update.projectId, taskId: update.taskId, stage: update.stage })
+        })
       }
     },
     onMessage(msg, ctx) {
@@ -263,7 +277,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
             send: ctx.send,
             language: deps.language,
             diarization: deps.diarization,
-            isDiarizationEnabled: () => deps.db.getSettings(deps.user.name).diarization
+            isDiarizationEnabled: () => deps.db.settings.getSettings(deps.user.name).diarization
           })
           stt.start(msg.sampleRate)
           break
@@ -338,13 +352,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'pty.start': {
-          const allowed = deps.db.canUseAgent(deps.user.name, msg.agentId, msg.projectId)
+          const allowed = deps.db.machines.canUseAgent(deps.user.name, msg.agentId, msg.projectId)
           if (!allowed) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина не найдена' })
             break
           }
           // Живой shell — это полный доступ: машине, предоставленной «только для чтения», терминал не открываем (п.18).
-          if (!deps.db.canWriteAgent(deps.user.name, msg.agentId, msg.projectId)) {
+          if (!deps.db.machines.canWriteAgent(deps.user.name, msg.agentId, msg.projectId)) {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина предоставлена проекту только для чтения: терминал недоступен' })
             break
           }
@@ -423,6 +437,10 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubPreparationRuns = null
       unsubTaskRepositories?.()
       unsubTaskRepositories = null
+      unsubQaStages?.()
+      unsubQaStages = null
+      unsubImprovements?.()
+      unsubImprovements = null
       unsubPreparationNotifications?.()
       unsubPreparationNotifications = null
       boardProjectId = null

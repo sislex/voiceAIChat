@@ -62,7 +62,7 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
     req: Parameters<typeof uid>[0],
     id: string
   ): { node: ProjectTypeNode } | { code: 404 | 409; error: string } => {
-    const node = db.getProjectType(id)
+    const node = db.projects.getProjectType(id)
     if (!node || !isProjectTypeVisible(node, uid(req))) return { code: 404, error: 'not found' }
     if (req.user?.role === 'admin') return { node }
     if (node.ownerId !== uid(req)) return { code: 404, error: 'not found' }
@@ -74,12 +74,12 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
     return { node }
   }
 
-  app.get('/api/project-types', async (req) => db.listProjectTypes(uid(req)))
+  app.get('/api/project-types', async (req) => db.projects.listProjectTypes(uid(req)))
 
   app.get<{ Params: { id: string } }>('/api/project-types/:id', async (req, reply) => {
-    const node = db.getProjectType(req.params.id)
+    const node = db.projects.getProjectType(req.params.id)
     if (!node || !isProjectTypeVisible(node, uid(req))) return notFound(reply)
-    return { node, chain: db.projectTypeChain(node.id), audit: db.projectTypeReviewAudit(node.id) }
+    return { node, chain: db.projects.projectTypeChain(node.id), audit: db.projects.projectTypeReviewAudit(node.id) }
   })
 
   app.post<{ Body: { parentId?: string | null; name?: string; description?: string; features?: unknown; defaults?: unknown } }>(
@@ -91,9 +91,9 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
       const parentId = b.parentId ?? null
       // Родителем может быть только видимый узел: иначе через чужой личный узел
       // можно было бы вслепую нащупать дерево другого пользователя.
-      if (parentId && !db.listProjectTypes(uid(req)).some((t) => t.id === parentId)) return badReq(reply, 'Родительский тип недоступен')
+      if (parentId && !db.projects.listProjectTypes(uid(req)).some((t) => t.id === parentId)) return badReq(reply, 'Родительский тип недоступен')
       try {
-        return db.createProjectType(uid(req), {
+        return db.projects.createProjectType(uid(req), {
           parentId,
           name,
           description: b.description ?? '',
@@ -112,11 +112,11 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
       const access = editableOrRefusal(req, req.params.id)
       if ('code' in access) return reply.code(access.code).send({ error: access.error })
       const b = req.body ?? {}
-      if (b.parentId !== undefined && b.parentId && !db.listProjectTypes(uid(req)).some((t) => t.id === b.parentId)) {
+      if (b.parentId !== undefined && b.parentId && !db.projects.listProjectTypes(uid(req)).some((t) => t.id === b.parentId)) {
         return badReq(reply, 'Родительский тип недоступен')
       }
       try {
-        return db.updateProjectType(req.params.id, {
+        return db.projects.updateProjectType(req.params.id, {
           ...(b.parentId !== undefined ? { parentId: b.parentId } : {}),
           ...(b.name !== undefined ? { name: b.name } : {}),
           ...(b.description !== undefined ? { description: b.description } : {}),
@@ -133,7 +133,7 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
     const access = editableOrRefusal(req, req.params.id)
     if ('code' in access) return reply.code(access.code).send({ error: access.error })
     try {
-      return { ok: db.deleteProjectType(req.params.id) }
+      return { ok: db.projects.deleteProjectType(req.params.id) }
     } catch (error) {
       // Отказ по инварианту (есть дети или проекты) — это 409, а не «плохой запрос».
       return reply.code(409).send({ error: errMessage(error) })
@@ -144,19 +144,19 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
     const access = editableOrRefusal(req, req.params.id)
     if ('code' in access) return reply.code(access.code).send({ error: access.error })
     try {
-      return db.setProjectTypeStatus(uid(req), req.params.id, 'pending') ?? notFound(reply)
+      return db.projects.setProjectTypeStatus(uid(req), req.params.id, 'pending') ?? notFound(reply)
     } catch (error) {
       return reply.code(409).send({ error: errMessage(error) })
     }
   })
 
   app.post<{ Params: { id: string } }>('/api/project-types/:id/unpublish', async (req, reply) => {
-    const node = db.getProjectType(req.params.id)
+    const node = db.projects.getProjectType(req.params.id)
     if (!node) return notFound(reply)
     if (node.builtin) return reply.code(409).send({ error: 'Встроенный тип не участвует в публикации' })
     if (req.user?.role !== 'admin' && node.ownerId !== uid(req)) return notFound(reply)
     try {
-      return db.setProjectTypeStatus(uid(req), req.params.id, 'private') ?? notFound(reply)
+      return db.projects.setProjectTypeStatus(uid(req), req.params.id, 'private') ?? notFound(reply)
     } catch (error) {
       return reply.code(409).send({ error: errMessage(error) })
     }
@@ -173,13 +173,13 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
     // Участник проект видит, но подтип из него делает только владелец. Без этой
     // ветки метод БД возвращал null и роут отвечал 404 — «Объект не найден» про
     // проект, открытый у человека на экране.
-    const project = db.getProject(uid(req), req.params.id)
+    const project = db.projects.getProject(uid(req), req.params.id)
     if (!project) return notFound(reply)
     if (project.role !== 'owner') {
       return reply.code(403).send({ error: 'Сохранить проект как подтип может только владелец проекта.' })
     }
     try {
-      return db.deriveProjectType(uid(req), req.params.id, name) ?? notFound(reply)
+      return db.projects.deriveProjectType(uid(req), req.params.id, name) ?? notFound(reply)
     } catch (error) {
       return badReq(reply, errMessage(error))
     }
@@ -187,17 +187,17 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
 
   // --- Очередь на утверждение (только admin: гейтит общий hook по /api/admin/) ---
 
-  app.get('/api/admin/project-types', async () => db.listPendingProjectTypes())
+  app.get('/api/admin/project-types', async () => db.projects.listPendingProjectTypes())
 
   app.post<{ Params: { id: string }; Body: { decision?: 'approve' | 'reject'; note?: string } }>(
     '/api/admin/project-types/:id/review',
     async (req, reply) => {
       const decision = req.body?.decision
       if (decision !== 'approve' && decision !== 'reject') return badReq(reply, 'decision must be approve or reject')
-      const node = db.getProjectType(req.params.id)
+      const node = db.projects.getProjectType(req.params.id)
       if (!node) return notFound(reply)
       try {
-        return db.setProjectTypeStatus(uid(req), req.params.id, decision === 'approve' ? 'published' : 'rejected', req.body?.note ?? '') ?? notFound(reply)
+        return db.projects.setProjectTypeStatus(uid(req), req.params.id, decision === 'approve' ? 'published' : 'rejected', req.body?.note ?? '') ?? notFound(reply)
       } catch (error) {
         return reply.code(409).send({ error: errMessage(error) })
       }

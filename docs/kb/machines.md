@@ -1,13 +1,14 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-09-04
-checked: 6679533e
+updated: 2026-09-07
+checked: 33a7972d
 areas:
   - apps/agent/src
   - apps/agent-tray/src
   - apps/login-application/src
   - apps/server/src/agents
   - apps/server/src/db/database.ts
+  - apps/server/src/db/repos
   - apps/server/src/db/schema.ts
   - apps/server/src/mcp
   - apps/server/src/manifests.ts
@@ -292,7 +293,7 @@ Android-установщик best-effort ставит CLI-пакет `termux-api
 
 ## Метрики машин (админка и Prometheus)
 
-`db.machineStatsRows(now)` агрегирует `machine_commands` (всего, за 24 ч, ошибок = ненулевой код/таймаут/отказ,
+`db.machines.machineStatsRows(now)` агрегирует `machine_commands` (всего, за 24 ч, ошибок = ненулевой код/таймаут/отказ,
 средняя длительность, последняя команда) и `machine_events` (тревоги watchdog и суммарный простой за 30 дней);
 `routes/admin.ts` дополняет их живыми online/версией/телеметрией реестра → `AdminMachineStats`
 (`GET /api/admin/machines/stats`, мост `admin:machineStats`, стор `adminMachineStats`, секция «Машины» на дашборде
@@ -358,7 +359,7 @@ PTY и preview-туннели не ждут — там обрыв виден п�
 (`machine_project_shares.shared = 1`; `linkMachine` в настройках проекта делает это с уровнем `full`). Уровень
 хранится в `machine_project_shares.access` (`'full' | 'read'`, machines-roadmap п.18) и меняется владельцем машины
 через `PUT /api/projects/:id/machines/:agentId/share {shared, access}` (мост `projects:setMachineShareAccess`).
-Права считает `db.machineAccess(userId, agentId, projectId)` → `'owner' | 'full' | 'read' | null`, удобная обёртка —
+Права считает `db.machines.machineAccess(userId, agentId, projectId)` → `'owner' | 'full' | 'read' | null`, удобная обёртка —
 `db.canWriteAgent`. Сервер запрещает мутации при `read`: `POST /api/agents/:id/exec`, `POST /api/agents/exec-batch`
 (машина уходит в `skipped` с «Только чтение»), запись/удаление/корзина/переименование/mkdir в проводнике,
 `fs/copy-to` (проверяется цель) и `pty.start` в `session.ts` — тексты вида «Машина предоставлена проекту только для
@@ -531,7 +532,7 @@ Remote-MCP кроме `bash` предоставляет модели специ�
 разговоре. Новый навык добавляется в общую политику выбранной машины, после чего
 его можно включить чекбоксом в разговоре.
 
-Единый `VoiceChatDb.resolveConversationMachine` выполняется перед каждым ходом и
+Единый `ChatRepo.resolveConversationMachine` выполняется перед каждым ходом и
 используется также каталогом настроек и task-chat context: явный
 `Conversation.execTarget` имеет приоритет, а `null` наследует персональный default
 текущего пользователя (для проекта — default пары user–project). Проектный default
@@ -802,14 +803,14 @@ fallback-textarea), что и в Make; путь машины абсолютны�
 
 С агента 0.13.0 сервер может выполнить HTTP-запрос к loopback машины: кадры `http.request` (сервер → агент, `AgentHttpRequest`: method/port/path/headers/bodyBase64) и `http.result`/`http.error` (агент → сервер) в `packages/shared/src/agentProtocol.ts`. Агент (`apps/agent/src/httpProxy.ts`) выполняет запрос строго к `127.0.0.1:<port>` — target host, как и в `tunnel.connect`, задать извне нельзя; тело ответа ограничено 5 MiB, таймаут 10 с, редиректам агент не следует (решает сервер). Серверная корреляция — `AgentRegistry.http()` по образцу fs-операций (таймаут ответа 15 с, гейт версии `http-proxy` ≥ 0.13.0, дисконнект отклоняет pending).
 
-Потребитель моста — `/api/preview` (Web Reader): виртуальный host `<agentId>.machine.internal:<port>` доставляется агентом, а не сетью; доступ проверяет `VoiceChatDb.canUseAgentForPreview` (владелец машины либо share машины в любом проекте, где пользователь — активный участник). Внутренние редиректы окружения на `127.0.0.1`/`localhost` возвращаются на мост той же машины; редирект наружу не следуется. Ответ проходит общий rewrite и cookie-контейнер превью, поэтому логин в окружение и относительные ссылки работают как на публичных сайтах. Детали Reader-стороны — [ui.md](ui.md), раздел «Тестовые окружения проекта в Web Reader».
+Потребитель моста — `/api/preview` (Web Reader): виртуальный host `<agentId>.machine.internal:<port>` доставляется агентом, а не сетью; доступ проверяет `MachinesRepo.canUseAgentForPreview` (владелец машины либо share машины в любом проекте, где пользователь — активный участник). Внутренние редиректы окружения на `127.0.0.1`/`localhost` возвращаются на мост той же машины; редирект наружу не следуется. Ответ проходит общий rewrite и cookie-контейнер превью, поэтому логин в окружение и относительные ссылки работают как на публичных сайтах. Детали Reader-стороны — [ui.md](ui.md), раздел «Тестовые окружения проекта в Web Reader».
 
 ChatAI можно открыть в его же Web Reader (проверено живьём): вложенный клиент требует отдельного входа — шимованный `localStorage` изолирован по контексту превью, токен верхней сессии внутрь не протекает, поэтому первое, что видно, — экран «Вход», и это норма, а не «не открылось». После входа работают REST-страницы (в том числе `#/machines` с живой телеметрией: WS вложенный клиент открывает мимо шима на реальный origin ChatAI, а это тот же сервер, и токен вложенной сессии валиден). Deep-link вида `…machine.internal:5273/#/machines` доезжает благодаря восстановлению hash context-шимом — см. [server-internals.md](server-internals.md).
 
 ## Watchdog агента
 
 `apps/server/src/agents/watchdog.ts` (`createAgentWatchdog`): раз в минуту (`server.ts`, таймер `unref`)
-проходит `db.listAllAgents()` и по машинам, у которых агент когда-то был (`lastSeen` не null), но сейчас
+проходит `db.machines.listAllAgents()` и по машинам, у которых агент когда-то был (`lastSeen` не null), но сейчас
 офлайн дольше `config.agentOfflineAlertMs` (`VC_AGENT_OFFLINE_ALERT_MIN`, по умолчанию 10 мин, 0 — выключить),
 один раз пишет `machine_events(state='offline')` и публикует владельцу WS `machine.status` (`MachineStatusEvent`)
 через `ciRunManager.publish`. Тревога держится в памяти до возврата машины: `registry.onChange` → событие

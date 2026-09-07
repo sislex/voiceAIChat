@@ -30,7 +30,7 @@ export function kbUsageFlags(kb: KnowledgeBaseService, toolEnabled: boolean): { 
 
 /** Гейт проекта: чужой (или несуществующий) проект — 403, а не пустая выдача. */
 function projectDenied(db: VoiceChatDb, req: FastifyRequest, projectId: string | undefined): boolean {
-  return !!projectId && !db.getProject(uid(req), projectId)
+  return !!projectId && !db.projects.getProject(uid(req), projectId)
 }
 
 export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService, usage?: KbUsageRoutesDeps): void {
@@ -88,12 +88,12 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
       // Правка существующей статьи проверяется по её собственной принадлежности:
       // подменить scope/projectId в теле и переписать чужую статью нельзя.
       if (b.id) {
-        const existing = db.kbDocumentById(b.id)
+        const existing = db.kb.kbDocumentById(b.id)
         if (!existing) return reply.code(404).send({ error: 'KB document not found' })
         const own = kbWriteDenial(db, user, { scope: existing.scope, projectId: existing.projectId })
         if (own || (existing.scope === 'user' && existing.ownerId !== user.name)) return reply.code(403).send({ error: own ?? 'чужая статья' })
       }
-      const saved = db.saveKbDocument({
+      const saved = db.kb.saveKbDocument({
         id: b.id ?? null,
         scope,
         ownerId: scope === 'user' ? user.name : null,
@@ -111,18 +111,18 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
 
   app.delete<{ Params: { id: string } }>('/api/kb/documents/:id', async (req, reply) => {
     const user = req.user as { name: string; role: string }
-    const existing = db.kbDocumentById(req.params.id)
+    const existing = db.kb.kbDocumentById(req.params.id)
     if (!existing) return reply.code(404).send({ error: 'KB document not found' })
     const denial = kbWriteDenial(db, user, { scope: existing.scope, projectId: existing.projectId })
     if (denial || (existing.scope === 'user' && existing.ownerId !== user.name)) return reply.code(403).send({ error: denial ?? 'чужая статья' })
-    db.deleteKbDocument(req.params.id)
+    db.kb.deleteKbDocument(req.params.id)
     return { ok: true }
   })
 
   if (!usage) return
   // Снапшот телеметрии чата: чужой чат → 404 (изоляция начинается с getConversation).
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>('/api/conversations/:id/kb-usage', async (req, reply) => {
-    const report = usage.db.kbUsageReport(uid(req), req.params.id, Number(req.query.limit) || undefined)
+    const report = usage.db.kb.kbUsageReport(uid(req), req.params.id, Number(req.query.limit) || undefined)
     if (!report) return reply.code(404).send({ error: 'conversation not found' })
     return { ...report, ...kbUsageFlags(kb, usage.toolEnabled) } satisfies KbUsageReport
   })
@@ -132,7 +132,7 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
   app.post<{ Params: { id: string }; Body: { lastSeq?: number } }>('/api/conversations/:id/kb-usage/viewed', async (req, reply) => {
     const lastSeq = req.body?.lastSeq
     if (!Number.isSafeInteger(lastSeq) || (lastSeq ?? -1) < 0) return reply.code(400).send({ error: 'lastSeq must be a non-negative integer' })
-    const result = usage.db.markKbUsageViewed(uid(req), req.params.id, lastSeq!)
+    const result = usage.db.kb.markKbUsageViewed(uid(req), req.params.id, lastSeq!)
     if (!result) return reply.code(404).send({ error: 'conversation not found' })
     return result
   })
@@ -140,11 +140,11 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
 
 /**
  * «Исследовать проект»: запуск сверки статей с кодом и состояние прогона.
- * Гейт — членство в проекте (тот же db.getProject, что и у остальных знаний).
+ * Гейт — членство в проекте (тот же db.projects.getProject, что и у остальных знаний).
  */
 export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, research: KbResearchManager): void {
   app.post<{ Params: { id: string }; Body: { sinceSha?: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
-    const project = db.getProject(uid(req), req.params.id)
+    const project = db.projects.getProject(uid(req), req.params.id)
     if (!project) return reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
     try {
       // `sinceSha` — режим «по изменениям с коммита <sha>»: ручной фолбэк шага
@@ -156,7 +156,7 @@ export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, 
   })
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
-    const project = db.getProject(uid(req), req.params.id)
+    const project = db.projects.getProject(uid(req), req.params.id)
     if (!project) return reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
     return research.get(req.params.id)
   })

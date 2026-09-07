@@ -100,8 +100,40 @@ describe('AppRuntime — bootstrap', () => {
     // второй параллельный start не удваивает граф.
     const afterParallel = list.mock.calls.length
     await runtime.start()
-    expect(list.mock.calls.length).toBeGreaterThan(afterParallel)
+    // Индекс грузится один раз за сессию: повторный старт его не перечитывает.
+    expect(list.mock.calls.length).toBe(afterParallel)
     expect(runtime.chat.getState().conversationsStatus).toBe('ready')
+    // Смена пользователя сбрасывает индекс — следующий старт читает список заново.
+    runtime.chat.actions.reset()
+    await runtime.start()
+    expect(list.mock.calls.length).toBeGreaterThan(afterParallel)
+    runtime.dispose()
+  })
+
+  it('старт на доске не грузит индекс чатов, а открытый список грузит его сам', async () => {
+    const { runtime, api } = makeRuntime()
+    const list = vi.spyOn(api, 'conversations:list')
+    const badges = vi.spyOn(api, 'conversations:taskChats')
+    await runtime.start(null, { skipConversations: true })
+    // Шесть списков и метки к ним — на доске это чистые накладные расходы.
+    expect(list).not.toHaveBeenCalled()
+    expect(badges).not.toHaveBeenCalled()
+
+    await runtime.chat.actions.ensureConversationIndex()
+    expect(list.mock.calls.length).toBeGreaterThan(0)
+    expect(runtime.chat.getState().conversationsStatus).toBe('ready')
+    runtime.dispose()
+  })
+
+  it('ссылка на чат грузит индекс даже при старте на доске', async () => {
+    const api = createFakeApi(['Первый'])
+    const { runtime } = makeRuntime({ api })
+    const list = vi.spyOn(api, 'conversations:list')
+    const wanted = (await api['conversations:list']({ scope: 'chat' }))[0]!.id
+    list.mockClear()
+    await runtime.start(wanted, { skipConversations: true })
+    expect(list.mock.calls.length).toBeGreaterThan(0)
+    expect(runtime.chat.getState().activeId).toBe(wanted)
     runtime.dispose()
   })
 

@@ -34,6 +34,7 @@ async function waitHealth(): Promise<void> {
 const api = async (path: string, init: RequestInit = {}): Promise<Response> =>
   fetch(`${BASE}${path}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...(init.headers ?? {}) } })
 
+// @testCase TC-14
 describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
   beforeAll(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-'))
@@ -50,6 +51,7 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     const conv = await api('/api/conversations', { method: 'POST', body: JSON.stringify({ title: 'E2E Make', assistantKind: 'make' }) })
     const created = (await conv.json()) as { id?: string; conversation?: { id: string } }
     conversationId = created.id ?? created.conversation!.id
+    await api(`/api/make/${conversationId}/notes`, { method: 'PUT', body: JSON.stringify({ stack: 'react', uiKit: 'none' }) })
     await api(`/api/make/${conversationId}/template`, { method: 'POST', body: JSON.stringify({ templateId: 'react-ts' }) })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
@@ -141,5 +143,14 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     const anon = await fetch(`${url}src/App.tsx`)
     expect(anon.status).toBe(200)
     expect(await anon.text()).toContain('jsx(')
+  })
+
+  // @testCase TC-07
+  it('Angular standalone JIT загружается в same-origin iframe', async () => {
+    expect((await api(`/api/make/${conversationId}/notes`, { method: 'PUT', body: JSON.stringify({ stack: 'angular', uiKit: 'none' }) })).ok).toBe(true)
+    expect((await api(`/api/make/${conversationId}/template`, { method: 'POST', body: JSON.stringify({ templateId: 'angular' }) })).ok).toBe(true)
+    await page.goto(`${BASE}/#/make/${conversationId}`)
+    const frame = page.frameLocator('.make-frame')
+    await expect.poll(() => frame.locator('h1').textContent().catch(() => null), { timeout: 60_000 }).toBe('Angular работает')
   })
 })

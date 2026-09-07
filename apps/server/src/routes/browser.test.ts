@@ -36,8 +36,12 @@ async function makeApp(opts: {
   const app = fastify()
   app.addHook('onRequest', async (req) => { (req as unknown as { user: { name: string; role: string } }).user = { name: 'admin', role: 'admin' } })
   const db = {
-    getConversation: vi.fn(() => (opts.conv === undefined ? conversation() : opts.conv)),
-    getCiRun: vi.fn(() => opts.run ?? null)
+    chat: {
+      getConversation: vi.fn(() => (opts.conv === undefined ? conversation() : opts.conv))
+    },
+    ci: {
+      getCiRun: vi.fn(() => opts.run ?? null)
+    }
   } as never
   registerBrowserRoutes(app, {
     db,

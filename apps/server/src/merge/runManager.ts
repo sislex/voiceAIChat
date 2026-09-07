@@ -69,33 +69,33 @@ export class MergeRunManager {
   start(run:MergeRun):void {
     if(this.active.has(run.id)||terminal.has(run.status)||this.active.size>0)return
     const ctl=new AbortController(); this.active.set(run.id,ctl)
-    setTimeout(()=>{ void this.execute(run.id,ctl).catch(()=>{}).finally(()=>{ this.active.delete(run.id); try { const next=this.deps.db.listActiveMergeRuns().find(item=>item.status==='queued'); if(next)this.start(next) } catch { /* server/database already closed */ } }) },25)
+    setTimeout(()=>{ void this.execute(run.id,ctl).catch(()=>{}).finally(()=>{ this.active.delete(run.id); try { const next=this.deps.db.ci.listActiveMergeRuns().find(item=>item.status==='queued'); if(next)this.start(next) } catch { /* server/database already closed */ } }) },25)
   }
-  reconcile():void { for(const run of this.deps.db.listActiveMergeRuns()) this.start(run) }
+  reconcile():void { for(const run of this.deps.db.ci.listActiveMergeRuns()) this.start(run) }
   cancel(id:string,userId:string):MergeRun|null {
-    const run=this.deps.db.getMergeRun(userId,id); if(!run)return null
+    const run=this.deps.db.ci.getMergeRun(userId,id); if(!run)return null
     if(run.pushStartedAt)throw new Error('push уже начался; требуется reconcile')
     this.active.get(id)?.abort()
     this.finish(id,'cancelled','Отменено пользователем','Можно безопасно повторить merge.','merge')
-    return this.deps.db.getMergeRun(userId,id)
+    return this.deps.db.ci.getMergeRun(userId,id)
   }
-  private emit(id:string):void { const run=this.deps.db.getMergeRunRaw(id); if(run)this.deps.broadcast({t:'merge.snapshot',runId:id,run},run.triggeredBy) }
+  private emit(id:string):void { const run=this.deps.db.ci.getMergeRunRaw(id); if(run)this.deps.broadcast({t:'merge.snapshot',runId:id,run},run.triggeredBy) }
   private log(id:string,text:string):void {
     const safe=text.replace(/(authorization|token|password)\s*[:=]\s*\S+/gi,'$1=***')
     const line=`[${new Date(this.now()).toISOString()}] ${safe}\n`
-    const run=this.deps.db.getMergeRunRaw(id)
+    const run=this.deps.db.ci.getMergeRunRaw(id)
     if(run){
       const stages=run.stages.map(stage=>stage.stage===run.stage?{...stage,log:stage.log+line}:stage)
-      this.deps.db.updateMergeRun(id,{stages})
+      this.deps.db.ci.updateMergeRun(id,{stages})
     }
-    this.deps.db.appendMergeLog(id,line); this.emit(id)
+    this.deps.db.ci.appendMergeLog(id,line); this.emit(id)
   }
   private stage(id:string,stage:MergeStage,status:MergeStageRecord['status'],message:string):void {
-    const run=this.deps.db.getMergeRunRaw(id); if(!run)return
+    const run=this.deps.db.ci.getMergeRunRaw(id); if(!run)return
     const at=this.now(), stages=[...run.stages], old=stages.find(v=>v.stage===stage)
     if(old)Object.assign(old,{status,message,...(status==='running'?{startedAt:old.startedAt??at}:{finishedAt:at,durationMs:old.startedAt?at-old.startedAt:0})})
     else stages.push({stage,status,startedAt:status==='running'?at:null,finishedAt:status==='running'?null:at,durationMs:null,exitCode:null,timedOut:false,message,log:''})
-    this.deps.db.updateMergeRun(id,{status:stage,stage,stages,...(run.startedAt?{}:{startedAt:at})}); this.log(id,message)
+    this.deps.db.ci.updateMergeRun(id,{status:stage,stage,stages,...(run.startedAt?{}:{startedAt:at})}); this.log(id,message)
   }
   private async cmd(run:MergeRun,script:string,workdir:string,timeoutMs=300000):Promise<{exitCode:number|null;timedOut:boolean;output:string}> {
     let output=''; const result=await this.deps.executor.run({agentId:run.agentId,script,workdir,env:{},timeoutMs,secrets:[]},chunk=>{output+=chunk;this.log(run.id,chunk.trimEnd())},this.active.get(run.id)?.signal)
@@ -173,10 +173,10 @@ git add -- ${q}`,repo,30000)
   /** Общий preflight для селектора и POST. Не создаёт merge-клон. */
   async checkReadiness(userId:string,projectId:string,taskId:string,agentId:string):Promise<MergeMachineReadiness> {
     if(!this.deps.isOnline(agentId))return this.blocked('machine_offline','Машина не в сети')
-    const project=this.deps.db.getProject(userId,projectId)
-    const ws=this.deps.db.findLatestPushedCiWorkspace(projectId,taskId)
+    const project=this.deps.db.projects.getProject(userId,projectId)
+    const ws=this.deps.db.ci.findLatestPushedCiWorkspace(projectId,taskId)
     if(!project?.gitUrl||!ws?.path||!ws.pushed)return this.blocked('git_unavailable','Подготовленный workspace или Git origin недоступен')
-    const machine=this.deps.db.getProjectMachine(projectId,agentId)
+    const machine=this.deps.db.machines.getProjectMachine(projectId,agentId)
     if(!machine)return this.blocked('storage_missing','У машины не настроены каталоги проекта')
     let repo:string,parent:string,workdir:string,mode:'managed'|'legacy'
     const platform=this.deps.platformOf?.(agentId)??(/^(?:[A-Za-z]:[\\/]|\\\\)/.test(machine.storageRoot??'')?'win32':'linux')
@@ -236,12 +236,12 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
     if(!readiness.ready||!readiness.clonePath)throw new Error(readiness.message)
     const repo=readiness.clonePath
     const parent=this.workspaceParent(repo)
-    const machine=this.deps.db.getProjectMachine(run.projectId,run.agentId)
+    const machine=this.deps.db.machines.getProjectMachine(run.projectId,run.agentId)
     const managed=readiness.mode==='managed'
     return {repo,parent,workdir:managed?(machine?.storageRoot??parent):(ws.agentId===run.agentId?parent:this.workspaceParent(parent)),cacheDir:managed?`${parent}/npm-cache`:`${parent}/.merge-npm-cache`}
   }
   private async execute(id:string,ctl:AbortController):Promise<void> {
-    let run=this.deps.db.getMergeRunRaw(id); if(!run)return
+    let run=this.deps.db.ci.getMergeRunRaw(id); if(!run)return
     const temporaryWorktrees:string[]=[]
     let worktreeRepo:string|null=null
     const cleanupWorktrees=async():Promise<void>=>{
@@ -257,7 +257,7 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
     }
     try {
       if(run.pushStartedAt&&run.mergeSha){
-        const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestPushedCiWorkspace(run.projectId,run.taskId)
+        const project=this.deps.db.projects.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.ci.findLatestPushedCiWorkspace(run.projectId,run.taskId)
         if(!project?.gitUrl||!ws?.path)throw new Error('Push начат, но данные проекта недоступны; требуется reconcile')
         const remote=await this.cmd(run,`git ls-remote ${shellQuote(project.gitUrl)} refs/heads/main`,(await this.mergeBase(run,ws)).workdir,30000)
         if(remote.output.toLowerCase().startsWith(run.mergeSha.toLowerCase())){
@@ -268,9 +268,9 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
         this.finish(id,'decision_required','Push был начат, но origin/main не совпадает с merge SHA','Проверьте удалённый main вручную; автоматический повтор push запрещён.','decision_required'); return
       }
       this.stage(id,'checking','running','Проверяю задачу, проект, workspace и машину')
-      const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestPushedCiWorkspace(run.projectId,run.taskId)
+      const project=this.deps.db.projects.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.ci.findLatestPushedCiWorkspace(run.projectId,run.taskId)
       if(!project||!project.gitUrl||!ws?.pushed||!ws.path)throw new Error('Подготовленный CI-workspace или Git origin недоступен')
-      if(ws.agentId!==run.agentId&&!this.deps.db.getProjectMachine(run.projectId,run.agentId))throw new Error('У выбранной машины не настроены каталоги проекта')
+      if(ws.agentId!==run.agentId&&!this.deps.db.machines.getProjectMachine(run.projectId,run.agentId))throw new Error('У выбранной машины не настроены каталоги проекта')
       if(!this.deps.isOnline(run.agentId))throw new Error('Выбранная машина не в сети')
       if(run.targetBranch!=='main'||!validBranch.test(run.sourceBranch)||(run.sourceSha!==null&&!validSha.test(run.sourceSha)))throw new Error('Некорректный серверный снимок ветки')
       const {repo,parent,workdir,cacheDir}=await this.mergeBase(run,ws)
@@ -282,7 +282,7 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
       const cloned=await this.cmd(run,`mkdir -p ${shellQuote(parent)}\nif [ -d ${shellQuote(`${repo}/.git`)} ]; then echo "постоянный merge-клон уже создан"; else git clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}; fi`,workdir)
       if(cloned.exitCode)throw new Error('Не удалось подготовить постоянный merge-клон')
       if(ws.agentId){
-        this.deps.db.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
+        this.deps.db.tasks.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
         this.deps.repositoriesChanged?.(run.projectId,run.taskId)
       }
       const origin=await this.cmd(run,'git remote get-url origin && git rev-parse --is-inside-work-tree',repo,30000)
@@ -295,13 +295,13 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
       const fetched=await this.cmd(run,`git fetch --no-tags origin +${shellQuote(run.sourceBranch)}:${shellQuote(sourceRef)} +refs/heads/main:${shellQuote(targetRef)}\nprintf 'SOURCE=%s\\nTARGET=%s\\n' "$(git rev-parse ${shellQuote(sourceRef)})" "$(git rev-parse ${shellQuote(targetRef)})"`,repo)
       const source=fetched.output.match(/SOURCE=([0-9a-f]{40})/i)?.[1],target=fetched.output.match(/TARGET=([0-9a-f]{40})/i)?.[1]
       if(fetched.exitCode||!source||!target)throw new Error('Не удалось получить ветки из origin')
-      this.deps.db.updateMergeRun(id,{sourceSha:source,targetSha:target}); this.stage(id,'fetching','passed',`Source ${source.slice(0,8)}, main ${target.slice(0,8)}`)
+      this.deps.db.ci.updateMergeRun(id,{sourceSha:source,targetSha:target}); this.stage(id,'fetching','passed',`Source ${source.slice(0,8)}, main ${target.slice(0,8)}`)
 
       // Уже влитая ветка — мгновенный успех до stale-сверки: закрытие задачи,
       // а не полный гейт с холостым push.
       const contained=await this.cmd(run,`git merge-base --is-ancestor ${shellQuote(sourceRef)} ${shellQuote(targetRef)} && echo MERGED || echo PENDING`,repo,30000)
       if(/(^|\n)MERGED/.test(contained.output)){
-        this.deps.db.updateMergeRun(id,{mergeSha:target})
+        this.deps.db.ci.updateMergeRun(id,{mergeSha:target})
         this.stage(id,'merging','passed','Ветка уже вмержена в main')
         this.finish(id,'success',null,null,'done')
         await this.releaseTaskRepositories(run)
@@ -320,7 +320,7 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
       const merged=await this.cmd(run,`git -c user.name=voiceAIChat -c user.email=merge@voicechat.local merge --no-ff ${shellQuote(targetRef)} -m ${shellQuote(`Merge main into ${run.sourceBranch} (task ${run.taskId})`)}`,repo)
       if(merged.exitCode){
         const found=await this.cmd(run,'git diff --name-only --diff-filter=U',repo,30000), files=found.output.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)
-        this.deps.db.updateMergeRun(id,{conflicts:files})
+        this.deps.db.ci.updateMergeRun(id,{conflicts:files})
         // README — производный индекс. Берём версию ветки (`--ours`, теперь это
         // feature) только временно: после kb_update индекс безусловно строится
         // из итогового merge-дерева.
@@ -331,7 +331,7 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
           const deferred=await this.cmd(run,'git checkout --ours -- docs/kb/README.md\ngit add -- docs/kb/README.md',repo,30000)
           if(deferred.exitCode||deferred.timedOut)throw new Error('Не удалось отложить генерацию индекса БЗ')
           unresolved=files.filter(f=>f!=='docs/kb/README.md')
-          this.deps.db.updateMergeRun(id,{conflicts:unresolved})
+          this.deps.db.ci.updateMergeRun(id,{conflicts:unresolved})
         }
         const textCandidates=unresolved.filter(f=>!/^docs\/kb\/.+\.md$/.test(f))
         for(const path of textCandidates) await this.autoResolveTextConflict(run,repo,path)
@@ -339,7 +339,7 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
           const remaining=await this.cmd(run,'git diff --name-only --diff-filter=U',repo,30000)
           if(remaining.exitCode||remaining.timedOut)throw new Error('Не удалось проверить остаток конфликтов после авторазрешения')
           unresolved=remaining.output.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)
-          this.deps.db.updateMergeRun(id,{conflicts:unresolved})
+          this.deps.db.ci.updateMergeRun(id,{conflicts:unresolved})
         }
         if(unresolved.length===0){
           const resolved=await this.cmd(run,'git -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit',repo,30000)
@@ -368,7 +368,7 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
             this.log(id,`Детерминированное разрешение тем БЗ не удалось; передаю дополнительному шагу: ${unresolved.join(', ')}`)
           } else {
             unresolved=[]
-            this.deps.db.updateMergeRun(id,{conflicts:[]})
+            this.deps.db.ci.updateMergeRun(id,{conflicts:[]})
             this.stage(id,'resolving_conflicts','passed','Метаданные тем нормализованы; индекс будет перегенерирован после актуализации БЗ')
           }
         }
@@ -378,8 +378,8 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
             this.stage(id,'resolving_conflicts','failed','Обработчик исправления конфликтов не подключён')
             this.finish(id,'failed','Автоматическое исправление конфликтов недоступно','Подключите модель исправления конфликтов и повторите merge.','merge'); return
           }
-          const fixed=await this.deps.conflictFix({run:this.deps.db.getMergeRunRaw(id)??run,repo,conflicts:unresolved,signal:ctl.signal,log:chunk=>this.log(id,chunk)})
-          this.deps.db.updateMergeRun(id,{
+          const fixed=await this.deps.conflictFix({run:this.deps.db.ci.getMergeRunRaw(id)??run,repo,conflicts:unresolved,signal:ctl.signal,log:chunk=>this.log(id,chunk)})
+          this.deps.db.ci.updateMergeRun(id,{
             ...(fixed.llmEngineId!==undefined?{llmEngineId:fixed.llmEngineId}:{}),
             ...(fixed.llmProvider?{llmProvider:fixed.llmProvider}:{}),
             ...(fixed.llmModel!==undefined?{llmModel:fixed.llmModel}:{})
@@ -395,13 +395,13 @@ if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)( |$)' -- . ':!docs/kb/README.md'; 
 exit 0`,repo,30000)
           const remainingFiles=remaining.output.split(/\r?\n/).map(v=>v.trim()).filter(v=>v&&!v.includes(':<<<<<<<')&&!v.includes(':=======')&&!v.includes(':>>>>>>>'))
           if(remaining.exitCode||remaining.timedOut||remainingFiles.length){
-            this.deps.db.updateMergeRun(id,{conflicts:remainingFiles.length?remainingFiles:unresolved})
+            this.deps.db.ci.updateMergeRun(id,{conflicts:remainingFiles.length?remainingFiles:unresolved})
             this.stage(id,'resolving_conflicts','failed',`После дополнительного шага остались конфликты: ${remainingFiles.join(', ')||unresolved.join(', ')}`)
             this.finish(id,'failed','Автоматическое исправление конфликтов не прошло серверную проверку','Рабочая копия сохранена; исправьте причину и повторите merge.','merge'); return
           }
           const committed=await this.cmd(run,'git add -A\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit',repo,30000)
           if(committed.exitCode||committed.timedOut)throw new Error('Не удалось создать merge-коммит после исправления конфликтов')
-          this.deps.db.updateMergeRun(id,{conflicts:[]})
+          this.deps.db.ci.updateMergeRun(id,{conflicts:[]})
           this.stage(id,'resolving_conflicts','passed',fixed.message)
         }
       }
@@ -411,7 +411,7 @@ exit 0`,repo,30000)
       // pinned main как вторым родителем, отдельный KB-коммит становится его
       // потомком там же. В main публикуется ровно итоговый feature SHA, то есть
       // main всегда догоняет ветку fast-forward.
-      this.deps.db.updateMergeRun(id,{mergeSha:checkedSha}); this.stage(id,'merging','passed',`Проверяемый SHA ${checkedSha.slice(0,8)} (feature + main)`)
+      this.deps.db.ci.updateMergeRun(id,{mergeSha:checkedSha}); this.stage(id,'merging','passed',`Проверяемый SHA ${checkedSha.slice(0,8)} (feature + main)`)
 
       if (!this.deps.kbUpdate) throw new Error('Обязательный обработчик актуализации базы знаний не подключён')
       worktreeRepo=repo
@@ -463,12 +463,12 @@ exit 0`,repo,30000)
         const branchCtl=new AbortController()
         ctl.signal.addEventListener('abort',()=>branchCtl.abort(),{once:true})
         const testsPromise=runGate(testsRepo,commands,'Проверки проекта').then(result=>{if(result.status==='failed')branchCtl.abort();return result})
-        const kbPromise=this.deps.kbUpdate({run:this.deps.db.getMergeRunRaw(id)??run,repo:kbRepo,targetRef,signal:branchCtl.signal,log:chunk=>this.log(id,chunk)}).then(result=>{if(!result.ok)branchCtl.abort();return result})
+        const kbPromise=this.deps.kbUpdate({run:this.deps.db.ci.getMergeRunRaw(id)??run,repo:kbRepo,targetRef,signal:branchCtl.signal,log:chunk=>this.log(id,chunk)}).then(result=>{if(!result.ok)branchCtl.abort();return result})
         const [testsSettled,kbSettled]=await Promise.allSettled([testsPromise,kbPromise])
         parallelDuration=this.now()-parallelStarted
         if(testsSettled.status==='rejected')throw testsSettled.reason
         check=testsSettled.value
-        this.deps.db.updateMergeRun(id,{checks:[check]})
+        this.deps.db.ci.updateMergeRun(id,{checks:[check]})
         this.stage(id,'testing',check.status==='passed'?'passed':'failed',`Проверки ${check.status==='passed'?'прошли':'не прошли'} за ${check.durationMs} мс; параллельный участок ${parallelDuration} мс`)
         if(check.status==='failed'){
           // Параллельный шаг БЗ снят тем же abort, что и проверки: закрываем его
@@ -480,14 +480,14 @@ exit 0`,repo,30000)
           const repairedSha=await this.repairChecks(id,run,testsRepo,attemptSha,check,ctl)
           if(!repairedSha)throw new Error(`${failure}; автоисправление не помогло`)
           attemptSha=repairedSha
-          this.deps.db.updateMergeRun(id,{mergeSha:attemptSha})
+          this.deps.db.ci.updateMergeRun(id,{mergeSha:attemptSha})
           continue
         }
         if(kbSettled.status==='rejected')throw kbSettled.reason
         kbResult=kbSettled.value
         break
       }
-      this.deps.db.updateMergeRun(id,{
+      this.deps.db.ci.updateMergeRun(id,{
         ...(kbResult.llmEngineId!==undefined?{llmEngineId:kbResult.llmEngineId}:{}),
         ...(kbResult.llmProvider?{llmProvider:kbResult.llmProvider}:{}),
         ...(kbResult.llmModel!==undefined?{llmModel:kbResult.llmModel}:{})
@@ -499,7 +499,7 @@ exit 0`,repo,30000)
       if(kbCommitted.exitCode||!finalSha)throw new Error('Не удалось создать отдельный коммит файловой БЗ')
       const changed=kbCommitted.output.split(/CHANGED\r?\n/)[1]?.split(/\r?\n/).map(v=>v.trim()).filter(Boolean)??[]
       const kbChanged=finalSha.toLowerCase()!==attemptSha.toLowerCase()
-      this.deps.db.updateMergeRun(id,{mergeSha:finalSha})
+      this.deps.db.ci.updateMergeRun(id,{mergeSha:finalSha})
       this.stage(id,'kb_update','passed',`${kbResult.message}; ${kbChanged?`отдельный KB-коммит ${finalSha.slice(0,8)}`:'дерево не изменилось, пустой коммит не создан'}; ${parallelDuration} мс`)
 
       if(kbChanged){
@@ -510,7 +510,7 @@ exit 0`,repo,30000)
         for(;;){
           this.stage(id,'testing','running',docsOnly?'Запускаю сокращённый документальный гейт после KB-коммита':'Изменения влияют на сборку; повторяю полный гейт')
           const repeated=await runGate(kbRepo,repeatCommands,docsOnly?'Документальный гейт после БЗ':'Полный повторный гейт после БЗ')
-          this.deps.db.updateMergeRun(id,{checks:[check,repeated]})
+          this.deps.db.ci.updateMergeRun(id,{checks:[check,repeated]})
           this.stage(id,'testing',repeated.status==='passed'?'passed':'failed',`${repeated.name}: ${repeated.status}, ${repeated.durationMs} мс`)
           if(repeated.status==='passed')break
           if(!fixAllowed)throw new Error(`${repeated.name} не пройден`)
@@ -518,7 +518,7 @@ exit 0`,repo,30000)
           const repairedSha=await this.repairChecks(id,run,kbRepo,finalSha,repeated,ctl)
           if(!repairedSha)throw new Error(`${repeated.name} не пройден; автоисправление не помогло`)
           finalSha=repairedSha
-          this.deps.db.updateMergeRun(id,{mergeSha:finalSha})
+          this.deps.db.ci.updateMergeRun(id,{mergeSha:finalSha})
         }
       }
 
@@ -532,7 +532,7 @@ exit 0`,repo,30000)
         return await this.execute(id,ctl)
       }
       if(!latestSource||latestSource.toLowerCase()!==source.toLowerCase())throw new Error('stale source: ветка изменилась перед push')
-      this.deps.db.updateMergeRun(id,{pushStartedAt:this.now()})
+      this.deps.db.ci.updateMergeRun(id,{pushStartedAt:this.now()})
       const featurePushed=await this.cmd(run,`git push --porcelain --force-with-lease=refs/heads/${run.sourceBranch}:${source} origin ${finalSha}:refs/heads/${run.sourceBranch}`,repo)
       if(featurePushed.exitCode)throw new Error('Push feature-ветки отклонён; main не изменён')
       const mainPushed=await this.cmd(run,`git push --porcelain --force-with-lease=refs/heads/main:${target} origin ${finalSha}:refs/heads/main`,repo)
@@ -549,7 +549,7 @@ exit 0`,repo,30000)
       this.finish(id,decision?'decision_required':'failed',message,decision?'Обновите ветку или main и повторите merge.':'Исправьте причину и повторите merge.',decision?'decision_required':'merge')
     } finally {
       await cleanupWorktrees()
-      const current=this.deps.db.getMergeRunRaw(id)
+      const current=this.deps.db.ci.getMergeRunRaw(id)
       if(current?.startedAt&&current.finishedAt)this.log(id,`Общая длительность merge: ${current.finishedAt-current.startedAt} мс`)
     }
   }
@@ -564,12 +564,12 @@ exit 0`,repo,30000)
     this.stage(id,'testing','running','Проверки упали — запускаю дополнительный модельный шаг исправления в проверочном worktree')
     let outcome
     try {
-      outcome=await this.deps.testFix({run:this.deps.db.getMergeRunRaw(id)??run,repo:workdir,check,signal:ctl.signal,log:chunk=>this.log(id,chunk)})
+      outcome=await this.deps.testFix({run:this.deps.db.ci.getMergeRunRaw(id)??run,repo:workdir,check,signal:ctl.signal,log:chunk=>this.log(id,chunk)})
     } catch(error) {
       this.log(id,`Шаг автоисправления не выполнен: ${error instanceof Error?error.message:String(error)}`)
       return null
     }
-    this.deps.db.updateMergeRun(id,{
+    this.deps.db.ci.updateMergeRun(id,{
       ...(outcome.llmEngineId!==undefined?{llmEngineId:outcome.llmEngineId}:{}),
       ...(outcome.llmProvider?{llmProvider:outcome.llmProvider}:{}),
       ...(outcome.llmModel!==undefined?{llmModel:outcome.llmModel}:{})
@@ -598,7 +598,7 @@ exit 0`,repo,30000)
   }
 
   private finish(id:string,status:'success'|'failed'|'cancelled'|'decision_required',error:string|null,action:string|null,column:'done'|'merge'|'decision_required'):void {
-    const run=this.deps.db.getMergeRunRaw(id); if(!run||terminal.has(run.status))return
+    const run=this.deps.db.ci.getMergeRunRaw(id); if(!run||terminal.has(run.status))return
     const at=this.now()
     // Незакрытые этапы закрываем здесь — в единственной точке терминального
     // исхода. Лента считает длительность незавершённого этапа от `startedAt` до
@@ -611,7 +611,7 @@ exit 0`,repo,30000)
       const note=status==='cancelled'?'этап снят вместе с отменённым раном':'этап остановлен вместе с раном'
       return {...item,status:closing,finishedAt:at,durationMs:item.startedAt?at-item.startedAt:0,message:item.message?`${item.message} — ${note}`:note}
     })
-    this.deps.db.updateMergeRun(id,{status,stage:status,stages,finishedAt:at,error,recommendedAction:action}); this.deps.db.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
+    this.deps.db.ci.updateMergeRun(id,{status,stage:status,stages,finishedAt:at,error,recommendedAction:action}); this.deps.db.tasks.moveMergeTask(run.projectId,run.taskId,column); this.emit(id); this.deps.boardChanged(run.projectId)
   }
   /** Закрытие задачи: удаляет все активные копии её репозиториев на доступных
    *  машинах; недоступная машина оставляет запись до следующей очистки.
@@ -619,11 +619,11 @@ exit 0`,repo,30000)
    *  Публичный: вызывается и при ручном переносе карточки в Done. */
   async releaseTaskRepositories(run:{projectId:string;taskId:string}):Promise<void> {
     let changed=false
-    for(const repo of this.deps.db.listActiveTaskRepositories(run.taskId)){
+    for(const repo of this.deps.db.tasks.listActiveTaskRepositories(run.taskId)){
       if(!this.deps.isOnline(repo.agentId))continue
       try {
         const result=await this.deps.executor.run({agentId:repo.agentId,script:`rm -rf -- ${shellQuote(repo.path)}`,workdir:this.workspaceParent(repo.path),env:{},timeoutMs:60000,secrets:[]},()=>{})
-        if(!result.exitCode){ this.deps.db.markTaskRepositoryDeleted(repo.taskId,repo.agentId,repo.path); changed=true }
+        if(!result.exitCode){ this.deps.db.tasks.markTaskRepositoryDeleted(repo.taskId,repo.agentId,repo.path); changed=true }
       } catch { /* машина отвалилась в момент очистки — запись остаётся */ }
     }
     if(changed)this.deps.repositoriesChanged?.(run.projectId,run.taskId)
