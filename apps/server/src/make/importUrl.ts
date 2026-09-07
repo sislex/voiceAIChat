@@ -2,7 +2,7 @@
 // файлы проекта с переписанными ссылками. Не «зеркало сайта», а стартовая точка для редизайна:
 // ограничено числом и размером файлов, хосты проверяются тем же SSRF-гардом, что у Web Reader.
 
-import { assertPublicHost } from '../routes/previewProxy.js'
+import { assertPublicHost } from '../util/publicHost.js'
 import { githubArchiveUrls, parseGithubUrl } from '@voicechat/shared'
 import { readZip, stripCommonRoot } from './zipRead.js'
 

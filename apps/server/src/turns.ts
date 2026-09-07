@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { personalizationPromptBlock, projectContextBlock, taskContextBlock } from './prompt/contextBlocks.js'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
-import { buildTaskMakeSources, type MakeTaskScopeBroker } from './mcp/makeMcp.js'
+import type { MakeService } from './make/service.js'
 import {
   type ChatStorageBinding,
   appendChatInstructionHints,
@@ -98,15 +98,12 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
-  makeTaskScopes?: MakeTaskScopeBroker
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
   kanbanMcpBaseUrl?: string
   /** Снимок «что открыто» для инструментов канбана: пишется на старте хода. */
   widgetContexts?: { remember(conversationId: string, turnId: string, context: WidgetAssistantContext): void }
-  /** Реестр снимков «До правок» по id хода — для meta.makeSnapshotId. */
-  makeHub?: { turnSnapshot(turn: string): string | undefined }
-  /** Контекст проекта Make для промпта: дизайн-токены и открытые комментарии (roadmap-2 п.9). */
-  makeContext?: (conversationId: string) => Promise<string>
+  /** Make глазами хода: контекст проекта в промпт, снимок «До правок» для meta, scope-источники рана (make/service.ts). */
+  make?: Pick<MakeService, 'promptContext' | 'turnSnapshot' | 'taskSources'>
   /** Контекст студии картинок: список галереи + правило показа результата. */
   studioContext?: (conversationId: string) => Promise<string>
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
@@ -648,8 +645,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
     // показывает, значит ход обязан его слушать.
-    const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext && !disabledContext.has('make-context')
-      ? await deps.makeContext(conversationId).catch(() => '')
+    const makeContextBlock = conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
+      ? await deps.make.promptContext(conversationId).catch(() => '')
       : ''
     // Чат студии картинок: модель должна знать, что уже лежит в галерее, и
     // что нарисованное надо показать fenced-блоком — иначе оно туда не попадёт.
@@ -975,7 +972,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       : remote
     const linkedTask = conv?.taskId && conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
     const makeSources = linkedTask && conv?.projectId
-      ? buildTaskMakeSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id, baseUrl: deps.makeMcpBaseUrl, broker: deps.makeTaskScopes })
+      ? deps.make?.taskSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id }) ?? []
       : []
     turn.handle = client.send(
       {
@@ -1031,7 +1028,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             // live-снапшот: так счётчики не теряются при различиях форматов CLI.
             ...turn.usage,
             ...meta,
-            ...(deps.makeHub?.turnSnapshot(turnId) ? { makeSnapshotId: deps.makeHub.turnSnapshot(turnId) } : {}),
+            ...(deps.make?.turnSnapshot(turnId) ? { makeSnapshotId: deps.make.turnSnapshot(turnId) } : {}),
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
             model: resolvedModel,

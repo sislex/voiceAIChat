@@ -8,39 +8,27 @@
 import { createHash } from 'node:crypto'
 import type { MakeProjectFileEntry, MakeProjectLinkInfo, MakeProjectLinkStatus, MakeProjectNotes, MakeProjectPullResult } from '@voicechat/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { SlidingWindowLimiter } from '../make/rateLimit.js'
+import { SlidingWindowLimiter } from '../util/rateLimit.js'
 import { MAKE_PROJECT_SYNC_MAX_FILES, MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_COMMENTS_PAGE, MAKE_SNAPSHOT_PREVIEW, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
 import { renderGalleryPage, renderStoriesPage, renderTestsPage, storyUsageSnippets } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
 import { importFromUrl, ImportUrlError } from '../make/importUrl.js'
-import type { VoiceChatDb } from '../db/database.js'
+import type { MakeCore } from '../make/core.js'
 import { MakeError, MakeWorkspaces } from '../make/workspace.js'
 import type { MakeLibrary } from '../make/library.js'
 import type { MakeHub } from '../make/hub.js'
 
 export interface MakeRoutesDeps {
-  db: VoiceChatDb
+  /** Всё, что Make знает о чате, канбане и машинах, — через этот порт (см. make/core.ts). */
+  core: MakeCore
   workspaces: MakeWorkspaces
   hub: MakeHub
   library: MakeLibrary
-  /** Живая доска после связывания карточки с дизайном из панели Make. */
-  boardChanged?: (projectId: string) => void
   /** Ограничители импорта — подменяются в тестах. */
   importLimiter?: SlidingWindowLimiter
   importUrlLimiter?: SlidingWindowLimiter
   passwordLimiter?: SlidingWindowLimiter
-  /**
-   * Файловая система машины проекта, только чтение (реестр агентов живёт в
-   * server.ts). Пути абсолютные на машине. Записи здесь намеренно нет: Make
-   * копирует файлы репозитория к себе, но обратно в общую копию проекта не
-   * пишет — она принадлежит git-потоку, а файл мимо коммита оставлял её dirty.
-   */
-  machineFs?: {
-    list(agentId: string, path: string): Promise<import('@voicechat/shared').FsResult>
-    read(agentId: string, path: string): Promise<import('@voicechat/shared').FsResult>
-    isOnline(agentId: string): boolean
-  }
 }
 
 /** Скрипт «выбрать элемент» для превью: по сообщению родителя подсвечивает элементы и отдаёт выбранный. */
@@ -173,12 +161,12 @@ export function sendError(reply: FastifyReply, error: unknown): FastifyReply {
 }
 
 export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): void {
-  const { db, workspaces, hub, library } = deps
+  const { core, workspaces, hub, library } = deps
   const uid = (req: { user?: { name: string } | null }): string => req.user?.name ?? ''
 
   /** Разговор пользователя вида Make, иначе 404 (чужой и несуществующий неотличимы). */
   const own = async (userId: string, id: string, reply: FastifyReply): Promise<boolean> => {
-    const conversation = await db.chat.getConversation(userId, id)
+    const conversation = await core.conversation(userId, id)
     if (!conversation || conversation.assistantKind !== 'make') {
       void reply.code(404).send({ error: 'conversation not found' })
       return false
@@ -189,15 +177,15 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
    * зритель — только чтение. Публикация, шаринг, очистка и удаление остаются за владельцем (`own`).
    */
   const access = async (userId: string, id: string, reply: FastifyReply, level: 'editor' | 'viewer'): Promise<boolean> => {
-    const mine = await db.chat.getConversation(userId, id)
+    const mine = await core.conversation(userId, id)
     if (mine && mine.assistantKind === 'make') return true
-    const owner = await db.chat.conversationOwner(id)
+    const owner = await core.conversationOwner(id)
     if (owner) {
       const role = await workspaces.shareRole(id, userId)
       if (role === 'editor' || (role === 'viewer' && level === 'viewer')) return true
       // Make-проект, привязанный к проекту, читают все его участники: карточка
       // задачи ссылается на дизайн, и он обязан открываться у всей команды.
-      if (level === 'viewer' && await db.chat.isMakeProjectViewer(userId, id)) return true
+      if (level === 'viewer' && await core.isProjectViewer(userId, id)) return true
     }
     void reply.code(404).send({ error: 'conversation not found' })
     return false
@@ -388,15 +376,15 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   /** Машина проекта Make-чата: агент, корень и доступность. Ошибка — словами. */
   const projectMachine = async (userId: string, conversationId: string): Promise<{ agentId: string; root: string } | { error: string }> => {
-    const conversation = await db.chat.getConversation(userId, conversationId)
+    const conversation = await core.conversation(userId, conversationId)
     if (!conversation?.projectId) return { error: 'Чат не привязан к проекту — копировать не из чего.' }
-    const project = await db.projects.getProject(userId, conversation.projectId)
+    const project = await core.project(userId, conversation.projectId)
     if (!project) return { error: 'Проект недоступен.' }
     const machines = project.machines.filter((machine) => machine.canUse !== false && machine.path.trim())
     const machine = machines.find((candidate) => candidate.agentId === project.defaultAgentId) ?? machines[0]
     if (!machine) return { error: 'У проекта нет машины с рабочей директорией.' }
-    if (!deps.machineFs) return { error: 'Файловый мост машин недоступен в этой конфигурации.' }
-    if (!deps.machineFs.isOnline(machine.agentId)) return { error: `Машина «${machine.name ?? machine.agentId}» offline.` }
+    if (!core.machineFs) return { error: 'Файловый мост машин недоступен в этой конфигурации.' }
+    if (!core.machineFs.isOnline(machine.agentId)) return { error: `Машина «${machine.name ?? machine.agentId}» offline.` }
     return { agentId: machine.agentId, root: machine.path.replace(/\/+$/, '') }
   }
 
@@ -409,7 +397,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const localHash = local ? sha256(local.data) : null
       let remoteHash: string | null = null
       try {
-        const result = await deps.machineFs!.read(machine.agentId, `${machine.root}/${link.path}`)
+        const result = await core.machineFs!.read(machine.agentId, `${machine.root}/${link.path}`)
         remoteHash = result.dataBase64 !== undefined ? sha256(Buffer.from(result.dataBase64, 'base64')) : null
       } catch { remoteHash = null }
       const status: MakeProjectLinkStatus = localHash === null
@@ -436,7 +424,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const rel = typeof req.query.path === 'string' && req.query.path ? safeRelPath(req.query.path) : ''
     if (rel === null) return reply.code(400).send({ error: 'Некорректный путь' })
     try {
-      const result = await deps.machineFs!.list(machine.agentId, rel ? `${machine.root}/${rel}` : machine.root)
+      const result = await core.machineFs!.list(machine.agentId, rel ? `${machine.root}/${rel}` : machine.root)
       const entries: MakeProjectFileEntry[] = (result.entries ?? [])
         // Служебные каталоги репозитория в Make не носят: скрытое и node_modules
         // — не компоненты, а листинг с ними нечитаем.
@@ -475,7 +463,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       await workspaces.ensure(req.params.id)
       const files: Array<{ path: string; data: Buffer }> = []
       for (const path of paths) {
-        const result = await deps.machineFs!.read(machine.agentId, `${machine.root}/${path}`)
+        const result = await core.machineFs!.read(machine.agentId, `${machine.root}/${path}`)
         if (result.dataBase64 === undefined) return reply.code(404).send({ error: `«${path}» — не файл или не читается` })
         files.push({ path, data: Buffer.from(result.dataBase64, 'base64') })
       }
@@ -500,34 +488,34 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/task-links', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     const path = typeof req.query.path === 'string' ? req.query.path : undefined
-    return await db.tasks.makeTaskLinks(req.params.id, path)
+    return await core.taskLinks(req.params.id, path)
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/task-links/tasks', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    return await db.tasks.makeLinkableTasks(uid(req), req.params.id)
+    return await core.linkableTasks(uid(req), req.params.id)
   })
 
   app.post<{ Params: { id: string }; Body: { taskId?: string; path?: string; label?: string } }>('/api/make/:id/task-links', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    const projectId = await db.chat.makeConversationProject(req.params.id)
+    const projectId = await core.conversationProject(req.params.id)
     const taskId = req.body?.taskId
     if (!taskId || !projectId) return reply.code(400).send({ error: 'Make-проект не привязан к проекту' })
     try {
-      await db.tasks.linkTaskDesign(uid(req), projectId, taskId, { conversationId: req.params.id, path: req.body?.path, label: req.body?.label })
-      deps.boardChanged?.(projectId)
-      return await db.tasks.makeTaskLinks(req.params.id, typeof req.body?.path === 'string' ? req.body.path : undefined)
+      await core.linkTaskDesign(uid(req), projectId, taskId, { conversationId: req.params.id, path: req.body?.path, label: req.body?.label })
+      core.boardChanged(projectId)
+      return await core.taskLinks(req.params.id, typeof req.body?.path === 'string' ? req.body.path : undefined)
     } catch (error) { return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
   app.delete<{ Params: { id: string; linkId: string } }>('/api/make/:id/task-links/:linkId', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
-    const projectId = await db.chat.makeConversationProject(req.params.id)
-    const link = (await db.tasks.makeTaskLinks(req.params.id)).find((l) => l.id === req.params.linkId)
+    const projectId = await core.conversationProject(req.params.id)
+    const link = (await core.taskLinks(req.params.id)).find((l) => l.id === req.params.linkId)
     if (!projectId || !link) return reply.code(404).send({ error: 'Связь не найдена' })
-    await db.tasks.unlinkTaskDesign(uid(req), projectId, link.taskId, link.id)
-    deps.boardChanged?.(projectId)
-    return await db.tasks.makeTaskLinks(req.params.id)
+    await core.unlinkTaskDesign(uid(req), projectId, link.taskId, link.id)
+    core.boardChanged(projectId)
+    return await core.taskLinks(req.params.id)
   })
 
   // Read-only ссылка внутри ChatAI (п.33): владелец создаёт/отзывает, любой вошедший читает по токену.
@@ -538,7 +526,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.post<{ Params: { id: string }; Body: { user?: string; role?: 'editor' | 'viewer' | null } | undefined }>('/api/make/:id/share/grants', async (req, reply) => {
     if (!await own(uid(req), req.params.id, reply)) return reply
     const user = String(req.body?.user ?? '').trim()
-    if (user && !await db.identity.getUser(user)) return reply.code(404).send({ error: `Пользователь «${user}» не найден` })
+    if (user && !await core.userExists(user)) return reply.code(404).send({ error: `Пользователь «${user}» не найден` })
     const role = req.body?.role === 'editor' || req.body?.role === 'viewer' ? req.body.role : null
     try { await workspaces.ensure(req.params.id); return await workspaces.setShareGrant(req.params.id, user, role) } catch (error) { return sendError(reply, error) }
   })
@@ -555,8 +543,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const conversationId = await sharedConv(req.params.token, reply)
     if (!conversationId) return reply
     try {
-      const owner = await db.chat.conversationOwner(conversationId) ?? ''
-      const conv = owner ? await db.chat.getConversation(owner, conversationId) : null
+      const owner = await core.conversationOwner(conversationId) ?? ''
+      const conv = owner ? await core.conversation(owner, conversationId) : null
       const state = await workspaces.state(conversationId)
       const settings = await workspaces.notes(conversationId)
       return { token: req.params.token, stack: settings.stack, uiKit: settings.uiKit, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
@@ -834,7 +822,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       if (typeof b.text !== 'string' || !b.text.trim()) return reply.code(400).send({ error: 'Нужен текст комментария' })
       try {
         const item = await workspaces.addGuestComment(conversationId, { selector: String(b.selector ?? 'body').slice(0, 500), elementLabel: String(b.elementLabel ?? '').slice(0, 160), text: b.text, guestName: String(b.name ?? '').slice(0, 60) })
-        const owner = await db.chat.conversationOwner(conversationId)
+        const owner = await core.conversationOwner(conversationId)
         if (owner) hub.changed(owner, conversationId, 0, [COMMENTS_SYNC_PATH])
         return reply.code(201).send({ ok: true, id: item.id, pending: true })
       } catch (error) { return sendError(reply, error) }

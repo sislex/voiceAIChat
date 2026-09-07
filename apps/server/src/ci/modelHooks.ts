@@ -19,7 +19,7 @@ import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import type { KbUsageTracker } from '../kb/usage.js'
 import type { VoiceChatDb } from '../db/database.js'
-import { buildTaskMakeSources, type MakeTaskScopeBroker } from '../mcp/makeMcp.js'
+import type { MakeService } from '../make/service.js'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
   EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_FILE_TOPICS_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
@@ -66,8 +66,8 @@ export interface CiModelHooksDeps {
    */
   previewMcpBaseUrl?: string
   previewTool?: { register(token: string, entry: { userId: string; conversationId: string }): void; unregister(token: string): void }
-  makeMcpBaseUrl?: string
-  makeTaskScopes?: MakeTaskScopeBroker
+  /** Scope-источники Make для рана: дизайны задачи читаются моделью через MCP Make (make/service.ts). */
+  make?: Pick<MakeService, 'taskSources'>
 }
 
 /**
@@ -278,10 +278,9 @@ function runTurn(
 }
 
 function makeSourcesOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmRequest> {
-  const makeSources = buildTaskMakeSources({
-    designs: ctx.task.designs ?? [], userId: ctx.run.triggeredBy, projectId: ctx.project.id,
-    taskId: ctx.task.id, baseUrl: deps.makeMcpBaseUrl, broker: deps.makeTaskScopes
-  })
+  const makeSources = deps.make?.taskSources({
+    designs: ctx.task.designs ?? [], userId: ctx.run.triggeredBy, projectId: ctx.project.id, taskId: ctx.task.id
+  }) ?? []
   return makeSources.length ? { makeSources } : {}
 }
 

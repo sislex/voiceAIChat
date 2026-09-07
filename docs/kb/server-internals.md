@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: f9f8ab4a
+checked: 4dcc3998
 areas:
   - apps/server/src
 ---
@@ -51,14 +51,14 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 глубина ≤ 8; символические ссылки внутри проекта отвергаются; лимиты `MAKE_LIMITS`
 (2 МБ/файл, 400 файлов, 50 снимков). `rev` — счётчик изменений в памяти процесса.
 REST (`routes/make.ts`): `GET/PUT/DELETE /api/make/:id[/file]`, `/rename`, `/snapshots`,
-`/snapshots/:sid/restore`, `/reset`; все проверяют `db.chat.getConversation(uid, id)` и
+`/snapshots/:sid/restore`, `/reset`; все проверяют `core.conversation(uid, id)` (порт `MakeCore`, см. ниже) и
 `assistantKind === 'make'`. Превью и ZIP — `/api/preview/make/:id/*` и `…/export.zip`: под
 префиксом `/api/preview/` действует preview-cookie (`users/auth.ts`, `previewSession` принимает
 `startsWith('/api/preview/make/')`). HTML отдаётся с CSP `default-src 'self' 'unsafe-inline'
 'unsafe-eval' data: blob: https:; frame-ancestors 'self'` и инъекцией `MAKE_INSPECTOR_SCRIPT`.
 ZIP — собственный писатель без сжатия (`make/zip.ts`). События — `MakeHub` (`make/hub.ts`),
 сессия подписывается через `deps.make.subscribe` (как relay превью); владельца разговора для
-MCP даёт `db.chat.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
+MCP даёт `core.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
 `/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен). Фоновая очистка (roadmap-2 п.16): `MakeWorkspaces.sweep(maxAgeMs = 30 дней)` обходит все проекты и удаляет снимки старше срока (кроме закреплённого в публикации и самого свежего) и PNG-снимки стори того же возраста; `server.ts` запускает её после старта и каждые 6 часов рядом с `GeneratedCleanupService` (не в VITEST), результат — в лог `make_sweep`.
 **`.publish.json` пишется через временный файл и `rename`.** Счётчик просмотров
@@ -292,6 +292,39 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 
 **Auth-мок (roadmap-4 п.32).** Файл мока с полем `$auth` обрабатывает `applyAuthMock` (`@shared/makeMock`): `{ users: [{ username|login|email, password, … }], cookie? }` — POST сравнивает учётные данные, отвечает 200 с `user` (без пароля, слитым в объектное `$body`) и заголовком `Set-Cookie: vc_mock_session=<login>; Path=/; SameSite=Lax`, иначе 401 (не POST — 405); `{ require: true }` — без cookie 401, с ней в объектное `$body` подставляется `user: { username }`; `{ logout: true }` — 204 с `Max-Age=0`. `resolveMock` получил параметр `cookieHeader`, все три маршрута моков (GET превью, не-GET превью, публикация) передают `req.headers.cookie`; `sendMock` пробрасывает `set-cookie` как любой заголовок ответа. Это учебная имитация входа для прототипов, не защита данных.
 
+
+## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
+
+Make готовится стать отдельным сервисом (`docs/plans/make-standalone.md`), поэтому внутри
+монолита между ним и ядром проведена граница, которую держит гейт `make/boundary.test.ts`:
+
+- **`make/core.ts` — `MakeCore`, «что Make нужно от ядра»**: разговор и его владелец, проект
+  Make-разговора и членство (`isProjectViewer`), Make-разговоры владельца (квота), связи
+  «дизайн ↔ карточка» (`taskLinks`, `linkTaskDesign`, `unlinkTaskDesign`, `linkableTasks`,
+  `taskDesigns`), `project`, `userExists`, `boardChanged`, файловый мост машины только на чтение
+  (`machineFs`). Единственная реализация сегодня — `makeBridge/localCore.ts` поверх `db.*`,
+  реестра машин и `BoardHub`. `routes/make.ts` и `mcp/makeMcp.ts` принимают `core`, а не `db`,
+  и **не импортируют** `db/`, `users/`, `agents/`, `turns` — гейт это проверяет по тексту импортов.
+- **`make/service.ts` — `MakeService`, «что ядру нужно от Make»**: `promptContext` (блок промпта
+  Make-чата), `turnSnapshot` (id снимка «До правок» для `meta.makeSnapshotId`), `listFiles`
+  (проверка путей `makeSources` цикла доработки в `routes/projects.ts`), `taskSources`
+  (Make-источники рана CI и подготовки задачи), `adminStats`/`metrics` (админка), `sweep`,
+  `subscribe` (кадры `make.changed`/`make.presence` для WS-сессии). `turns.ts`,
+  `ci/modelHooks.ts`, `routes/projects.ts`, `routes/admin.ts` получают `make?: Pick<MakeService, …>`
+  и ничего больше о Make не знают. Ядро может импортировать из Make только `core.js`, `service.js`,
+  `module.js`, `taskScope.js`; композиция — `server.ts` и `makeBridge/`.
+- **`make/module.ts` — `createMakeModule({ dataDir, core, mcpSecret, mcpBaseUrl })`** собирает
+  мастерские, шину, библиотеку, роуты и MCP и отдаёт `service`; `server.ts` создаёт его один раз.
+- **Scope-токены рана (`make/taskScope.ts`)** — HMAC-SHA256 над JSON `{ userId, projectId, taskId,
+  sources, expiresAt }` секретом MCP (`?k=`), TTL 30 мин, вместо прежнего `MakeTaskScopeBroker` в
+  памяти процесса: токен выдаёт ядро (`MakeService.taskSources`), проверяет MCP Make
+  (`verifyTaskScope`), и завтра это разные процессы. Содержимое — заявка: MCP сверяет его с
+  актуальными `taskDesigns`, проектом разговора и членством (`authorizeTaskSource`).
+- Общие утилиты, исторически лежавшие в `make/`, переехали: `util/rateLimit.ts`
+  (`SlidingWindowLimiter` — вход, приглашения, студия картинок, импорт Make),
+  `util/publicHost.ts` (SSRF-гард `assertPublicHost`/`isPublicAddress`; `routes/previewProxy.ts`
+  оборачивает его в `PreviewProxyError(403)`), `util/storyParse.ts` (`parseStoryFile` для
+  компонентов репозитория и витрины Make).
 
 ## Публикация Make: сериализация мутаций файла (2026-09-03)
 

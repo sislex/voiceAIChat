@@ -88,7 +88,7 @@ import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
-import { registerMakeMcp, MAKE_MCP_PATH, MakeTaskScopeBroker, buildTaskMakeSources } from './mcp/makeMcp.js'
+import { MAKE_MCP_PATH } from './mcp/makeMcp.js'
 import { ImageStudioStore } from './images/studio.js'
 import { registerImageStudioRoutes } from './routes/imageStudio.js'
 import { llmImageStudioGenerator } from './llm/imageStudioGenerator.js'
@@ -97,10 +97,8 @@ import { registerKanbanMcp, KANBAN_MCP_PATH, type KanbanRunLaunchers } from './m
 import { WidgetContextStore } from './mcp/widgetContext.js'
 import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
 import { createOrchestrationManager } from './orchestration/runManager.js'
-import { registerMakeRoutes } from './routes/make.js'
-import { MakeLibrary } from './make/library.js'
-import { MakeWorkspaces } from './make/workspace.js'
-import { MakeHub } from './make/hub.js'
+import { createMakeModule } from './make/module.js'
+import { LocalMakeCore } from './makeBridge/localCore.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
@@ -464,7 +462,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // что и в разделе «Машины»: реестр знает версию и телеметрию только пока агент подключён.
     // Тот же контекст Make, что уходит в ход: инспектор обязан показывать его,
     // а не «здесь ещё что-то будет».
-    makeContext: (id) => makeWorkspaces.promptContext(id),
+    makeContext: (id) => make.service.promptContext(id),
     liveAgents: (agents) => agents.map((agent) => ({
       ...agent,
       online: agentRegistry.isOnline(agent.id),
@@ -613,31 +611,28 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
   registerConsoleMcp(app, agentRegistry, mcpSecret)
   // Make (mcp__make__*): файлы проекта разговора в <dataDir>/make/<conv>; изменения
-  // уходят владельцу кадром make.changed через MakeHub.
-  const makeWorkspaces = new MakeWorkspaces(opts.config.dataDir)
-  const makeHub = new MakeHub()
-  // Квота на пользователя (roadmap-2 п.15): все проекты Make владельца разговора.
-  makeWorkspaces.setProjectsOfOwner(async (id) => {
-    const owner = await db.chat.conversationOwner(id)
-    return owner ? (await db.chat.listConversations(owner, { includeCompleted: true })).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
+  // уходят владельцу кадром make.changed. Ядро и Make видят друг друга только через
+  // порты MakeCore / MakeService (docs/plans/make-standalone.md): здесь — единственная
+  // точка, где Make получает доступ к данным чата, канбана и машин.
+  const makeMcpBaseUrl = buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
+  const make = createMakeModule({
+    dataDir: opts.config.dataDir,
+    mcpSecret,
+    mcpBaseUrl: makeMcpBaseUrl,
+    core: new LocalMakeCore({
+      db,
+      // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
+      boardChanged: (projectId) => boardHub.emit(projectId),
+      // Чтение репозитория проекта: файловый мост машины только на чтение —
+      // Make копирует файлы к себе, но в общую копию проекта не пишет.
+      machineFs: {
+        list: (agentId, path) => agentRegistry.fsList(agentId, path),
+        read: (agentId, path) => agentRegistry.fsRead(agentId, path),
+        isOnline: (agentId) => agentRegistry.isOnline(agentId)
+      }
+    })
   })
-  const makeTaskScopes = new MakeTaskScopeBroker()
-  registerMakeMcp(app, {
-    workspaces: makeWorkspaces,
-    hub: makeHub,
-    ownerOf: async (id) => await db.chat.conversationOwner(id),
-    taskScopes: makeTaskScopes,
-    authorizeTaskSource: async (scope, conversationId) => {
-      const task = await db.tasks.getCiTask(scope.userId, scope.projectId, scope.taskId)
-      const scopedSource = scope.sources.find((source) => source.conversationId === conversationId)
-      const current = task?.designs?.find((design) => design.conversationId === conversationId)
-      return Boolean(task && scopedSource && current
-        && await db.chat.makeConversationProject(conversationId) === scope.projectId
-        && await db.chat.isMakeProjectViewer(scope.userId, conversationId)
-        && current.mode === scopedSource.mode
-        && JSON.stringify(current.paths) === JSON.stringify(scopedSource.paths))
-    }
-  }, mcpSecret)
+  make.register(app)
   // Канбан (mcp__kanban__*): доска, карточки, настройки, машины и раны проекта
   // того разговора, в котором идёт ход. Снимок «что открыто» кладёт сюда turns.ts.
   const widgetContexts = new WidgetContextStore()
@@ -653,7 +648,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // момент вызова инструмента они уже есть.
     runs: async () => kanbanRunLaunchers
   }, mcpSecret)
-  // boardChanged — ленивая ссылка: BoardHub создаётся ниже, а зовут её уже в запросе.
   // Студия картинок: галерея на разговор + генерация/правка через LLM — тем же
   // способом, что ретушь (модель сохраняет PNG и показывает fenced-блоком).
   const imageStudioStore = new ImageStudioStore(join(opts.config.dataDir, 'image-studio'))
@@ -673,17 +667,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   })
 
-  registerMakeRoutes(app, {
-    db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir),
-    boardChanged: (projectId) => boardHub.emit(projectId),
-    // Чтение репозитория проекта: файловый мост машины только на чтение —
-    // Make копирует файлы к себе, но в общую копию проекта не пишет.
-    machineFs: {
-      list: (agentId, path) => agentRegistry.fsList(agentId, path),
-      read: (agentId, path) => agentRegistry.fsRead(agentId, path),
-      isOnline: (agentId) => agentRegistry.isOnline(agentId)
-    }
-  })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
   registerKbMcp(app, {
@@ -890,7 +873,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
   const previewMcpBaseUrl = buildPublicMcpUrl(opts.config, PREVIEW_MCP_PATH, mcpSecret)
   const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
-  const makeMcpBaseUrl = buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
   const kanbanMcpBaseUrl = buildPublicMcpUrl(opts.config, KANBAN_MCP_PATH, mcpSecret)
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
@@ -909,7 +891,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats(async (id) => await db.chat.conversationOwner(id)), mailer, opts.config.publicUrl, sessionHub)
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
@@ -1067,7 +1049,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (!process.env.VITEST) {
     // Фоновая очистка Make (roadmap-2 п.16): снимки и PNG стори старше 30 дней, раз в 6 часов и при старте.
     const makeSweep = async (): Promise<void> => {
-      try { const r = await makeWorkspaces.sweep(); if (r.snapshots || r.shots) app.log.info({ event: 'make_sweep', ...r }) } catch (error) { app.log.warn({ event: 'make_sweep_failed', error: String(error) }) }
+      try { const r = await make.service.sweep(); if (r.snapshots || r.shots) app.log.info({ event: 'make_sweep', ...r }) } catch (error) { app.log.warn({ event: 'make_sweep_failed', error: String(error) }) }
     }
     const makeSweepTimer = setInterval(() => { void makeSweep() }, 6 * 60 * 60 * 1000)
     makeSweepTimer.unref()
@@ -1383,11 +1365,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,
-    makeTaskScopes,
     kanbanMcpBaseUrl,
     widgetContexts,
-    makeHub,
-    makeContext: (id) => makeWorkspaces.promptContext(id),
+    make: make.service,
     previewTool: previewToolBroker,
     remoteFileTool: remoteFileBroker,
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }
@@ -1419,8 +1399,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // выбранном режиме проверки задачи (см. `withBrowserTools`).
     previewMcpBaseUrl,
     previewTool: previewToolBroker,
-    makeMcpBaseUrl,
-    makeTaskScopes
+    make: make.service
   })
   // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:
   // UI разбирает блок ```questions тем же парсером, что и вопросы в чате.
@@ -1649,7 +1628,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (run.status !== 'running' && run.status !== 'queued') return run
     if (run.status === 'running' && run.log) return run
     const task = await db.tasks.getCiTask(userId, projectId, taskId)
-    const preparationMakeSources = task ? buildTaskMakeSources({ designs: task.designs ?? [], userId, projectId, taskId, baseUrl: makeMcpBaseUrl, broker: makeTaskScopes }) : []
+    const preparationMakeSources = task ? make.service.taskSources({ designs: task.designs ?? [], userId, projectId, taskId }) : []
     // Любое продолжение использует снимок попытки, а не текущие настройки проекта.
     const provider: LlmProvider = run.provider ?? 'claude'
     const model = taskPreparationModel(provider, run.model ?? '')
@@ -2104,7 +2083,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         })
       : undefined,
     { cancel: async (owner, planId) => await orchestrationManager.cancel(owner, planId) },
-    makeWorkspaces,
+    make.service,
     uploads)
   await mergeRunManager.reconcile()
   const onAutoPilotFailure = async (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): Promise<void> => {
@@ -2491,7 +2470,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
         resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
       },
-      make: { subscribe: (userId, sink) => makeHub.subscribe(userId, sink) },
+      make: { subscribe: (userId, sink) => make.service.subscribe(userId, sink) },
       widgetUi: {
         subscribe: (userId, sink) => widgetUiRelay.subscribe(userId, sink),
         resolve: (userId, requestId, outcome, conversationId) => widgetUiRelay.resolve(userId, requestId, outcome, conversationId),
