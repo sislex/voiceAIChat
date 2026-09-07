@@ -74,6 +74,7 @@ docker compose exec -u node runner-personal claude setup-token
 | `VC_INTERNAL_TOKEN` | `voicechat`, `make` | `voicechat-internal-local-token` | Bearer внутреннего API `/internal/*` между сервисами; для прода — случайное значение в `.env` |
 | `VC_MCP_SECRET` | `voicechat`, `make` | `voicechat-mcp-local-secret` | секрет MCP-эндпоинтов `?k=`, общий у ядра и Make (им подписаны scope-токены рана) |
 | `VC_CORE_URL` | `make` | `http://voicechat:8787` | адрес ядра для RPC данных и проверки сессии |
+| `VC_DB_URL` | `voicechat` | пусто (SQLite) | база на Postgres: `postgres://voicechat:<пароль>@postgres:5432/voicechat`; сервис `postgres` — профиль `--profile postgres`, пароль `VC_PG_PASSWORD` в `.env`; перенос данных — `npx tsx apps/server/src/db/copyToPostgres.cli.ts --sqlite /data/voicechat.db --url …` |
 
 В проде `VC_LLM_RUNNER_TOKEN`, `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET`, `VC_ADMIN_PASSWORD` и upstream-ключи держи в
 shell/`.env` рядом с `docker-compose.yml`, не в репозитории.

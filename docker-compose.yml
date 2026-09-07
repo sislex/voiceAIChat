@@ -45,6 +45,11 @@ services:
       # Make — отдельный сервис (docs/plans/make-standalone.md): ядро переправляет
       # ему /api/make/*, превью и публикации, а исполнителю отдаёт его адрес MCP.
       # Токен и секрет общие с сервисом make; для прода задай случайные в .env.
+      # База на Postgres вместо SQLite-файла: задай VC_DB_URL в .env (например,
+      # postgres://voicechat:${VC_PG_PASSWORD}@postgres:5432/voicechat при поднятом
+      # профиле `postgres` ниже) и перенеси данные: docs/kb/data-auth.md#схема.
+      # Пусто — SQLite в /data/voicechat.db, как раньше.
+      VC_DB_URL: ${VC_DB_URL:-}
       VC_MAKE_MODE: remote
       VC_MAKE_URL: http://make:8788
       VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
@@ -99,6 +104,27 @@ services:
     # Дополнительная группа совпадает с владельцем host-side deploy-сокета.
     group_add:
       - "65532"
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Postgres для базы приложения — опционально (профиль `postgres`): по умолчанию сервер
+  # работает на SQLite. Включение: `docker compose --profile postgres up -d postgres`,
+  # затем VC_DB_URL у voicechat (см. выше) и перенос данных copyToPostgres.cli.ts.
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    command: ["postgres", "-c", "max_locks_per_transaction=1024"]
+    environment:
+      POSTGRES_DB: voicechat
+      POSTGRES_USER: voicechat
+      POSTGRES_PASSWORD: ${VC_PG_PASSWORD:?нужен VC_PG_PASSWORD в .env для профиля postgres}
+    volumes:
+      - vc-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voicechat -d voicechat"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     logging: *default-logging
     restart: unless-stopped
 
@@ -304,6 +330,7 @@ services:
 volumes:
   vc-data:
     name: voicechat-server-data
+  vc-postgres:
   vc-automation-data:
   vc-browser-data:
   vc-claude:

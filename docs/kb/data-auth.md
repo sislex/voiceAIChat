@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-07
-checked: 7e11aced
+checked: f7925b34
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -54,6 +54,30 @@ areas:
 - тест, который трогает сырой драйвер (`(db as { db }).db.prepare(...)`) или открывает второй
   `VoiceChatDb` на том же файле, обязан `await db.ready` / `await db.close()`; тест с изменяемыми
   часами (`now: () => clock`) обязан ждать каждый вызов — иначе тело прочитает уже переставленные часы.
+
+**Postgres как движок всей базы (`VC_DB_URL`, 2026-09-07, `docs/plans/db-postgres.md`).** Тот же
+`VoiceChatDb`, тот же код репозиториев: `new VoiceChatDb(path, { postgres: { url } })` открывает
+`db/sql/pg.ts` (node-postgres) вместо SQLite. SQL репозиториев остаётся в диалекте SQLite —
+`db/sql/dialect.ts` переводит его на каждом запросе (`?`/`@name` → `$n`, `INSERT OR IGNORE` →
+`ON CONFLICT DO NOTHING`, `IFNULL`, скалярные `MAX/MIN` → `GREATEST/LEAST`, `LIKE` → `ILIKE`,
+`ulower` → `lower`, camelCase-алиасы в кавычки, числовые параметры с явным типом, `? IS NULL` в
+литерал, `LIMIT -1` → `LIMIT ALL`, `CASE WHEN $n` → `<> 0`, `substr(x, -N)` → `right`, голые колонки в
+`DO UPDATE SET` → `таблица.колонка`). Что текстом не переводится — JSON1 (`json_extract`, `json_type`)
+и `strftime` — репозиторий собирает по движку сам (`ChatRepo.j`: `num/text/isNumber/isMissing/valid/
+truthy/bucket`). Схема Postgres выводится из `schema.ts` генератором `db/schemaPg.ts` (INTEGER →
+BIGINT, REAL → DOUBLE PRECISION, AUTOINCREMENT → BIGSERIAL, у каждой таблицы явный `rowid`, FK
+отдельными `ALTER` после всех таблиц, сиды через транслятор) плюс `PG_EXTRA_SQL`: полнотекстовый
+индекс `messages.text_tsv` (tsvector, GIN; `toPgTsQuery` в `fts.ts`) вместо FTS5 и plpgsql-триггеры
+`cost_dirty`. Поэтому **новая колонка объявляется в `CREATE TABLE` в `schema.ts`**, а ALTER в
+`migrate()` — только для старых SQLite-файлов; гейт `schemaPg.test.ts` требует и то и другое.
+Миграции `migrate()` на Postgres не выполняются: база создаётся переносом
+(`db/copyToPostgres.ts`, CLI `npx tsx apps/server/src/db/copyToPostgres.cli.ts --sqlite <файл> --url <postgres://…>`)
+уже в актуальной схеме. Тесты: `VC_TEST_DB_URL=postgres://…` заставляет каждую `:memory:`-базу
+открываться свежей схемой `t_<id>` в Postgres и удалять её в `close()` — так гоняется вся матрица
+сервера; контейнеру нужен `-c max_locks_per_transaction=1024` (схемы с сотней таблиц дропаются
+одной транзакцией). Тесты сырого драйвера и файловых баз помечены `ON_POSTGRES`; 21 тест
+менеджеров — в карантине до аудита параллелизма (см. план). `VC_SQL_TRACE=1` печатает каждый
+запрос обоих движков и вход/выход методов портов — так ищутся зависания.
 
 `DbDeps.ports` по-прежнему принимает фабрики `(ports) => AsyncPort<Repo>` для домена на другой
 реализации (удалённый сервис); PoC pglite для `releases` (`VC_DB_RELEASES`) снят — переход на

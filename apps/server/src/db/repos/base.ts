@@ -3,6 +3,8 @@
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
 import type { Sql } from '../sql/types.js'
 import type { Lane } from '../sql/lane.js'
+
+const TRACE = process.env.VC_SQL_TRACE === '1'
 import type { IdentityRepo } from './identity.js'
 import type { SettingsRepo } from './settings.js'
 import type { LlmRepo } from './llm.js'
@@ -76,7 +78,13 @@ export function asyncPort<T extends object>(impl: T, opts: AsyncPortOptions = {}
       let wrapped = cache.get(key)
       if (!wrapped || (wrapped as { impl?: unknown }).impl !== value) {
         const fn = value as (...args: unknown[]) => unknown
-        const call = (args: unknown[]) => (opts.lane ? opts.lane.run(() => fn.apply(target, args) as Promise<unknown>) : (async () => fn.apply(target, args))())
+        const invoke = async (args: unknown[]): Promise<unknown> => {
+          if (!TRACE) return fn.apply(target, args)
+          // VC_SQL_TRACE=1: вход/выход метода порта — искать зависший вызов или очередь полосы.
+          console.error(`[port →] ${String(key)} pending=${opts.lane?.pending ?? 0}`)
+          try { return await fn.apply(target, args) } finally { console.error(`[port ←] ${String(key)}`) }
+        }
+        const call = (args: unknown[]) => (opts.lane ? opts.lane.run(() => invoke(args)) : invoke(args))
         // Без ожидания, когда база готова: тело метода стартует синхронно, порядок вызовов — порядок выполнения.
         const w = (...args: unknown[]) => { const r = opts.ready?.(); return r ? r.then(() => call(args)) : call(args) }
         ;(w as unknown as { impl: unknown }).impl = value

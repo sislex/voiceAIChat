@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   cost_usd          REAL,
   cost_status       TEXT,
   cost_prices_stamp INTEGER,
-  cost_dirty        INTEGER NOT NULL DEFAULT 1
+  cost_dirty        INTEGER NOT NULL DEFAULT 1,
+  permission_mode TEXT
 );
 
 
@@ -155,7 +156,11 @@ CREATE TABLE IF NOT EXISTS agents (
   created_at INTEGER NOT NULL,
   last_seen  INTEGER,
   policy     TEXT,
-  user_id    TEXT
+  user_id    TEXT,
+  token_expires_at INTEGER,
+  token_issued_at INTEGER,
+  last_ip TEXT,
+  pin_ip INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS login_enrollments (
@@ -227,7 +232,18 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role          TEXT NOT NULL,
   blocked       INTEGER NOT NULL DEFAULT 0,
-  created_at    INTEGER NOT NULL
+  created_at    INTEGER NOT NULL,
+  failed_logins INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER,
+  lock_reason TEXT,
+  totp_secret TEXT,
+  reset_code_hash TEXT,
+  reset_code_expires INTEGER,
+  must_change_password INTEGER NOT NULL DEFAULT 0,
+  last_login INTEGER,
+  notices_seen_at INTEGER NOT NULL DEFAULT 0,
+  llm_limit_usd REAL,
+  email TEXT
 );
 
 CREATE TABLE IF NOT EXISTS app_config (
@@ -516,7 +532,14 @@ CREATE TABLE IF NOT EXISTS projects (
   -- Через сколько дней завершённая задача уходит с доски (NULL — не скрывать).
   done_retention_days INTEGER DEFAULT 14,
   -- Максимум автоматических возвратов testing → development; 0 запрещает auto-fix.
-  ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10
+  ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10,
+  test_users_json TEXT,
+  command_policy TEXT NOT NULL DEFAULT '',
+  ci_base_branch TEXT NOT NULL DEFAULT 'main',
+  ci_branch_template TEXT NOT NULL DEFAULT '{task_number}',
+  ci_reuse_strategy TEXT NOT NULL DEFAULT 'fail',
+  ci_exec_auth_ref TEXT NOT NULL DEFAULT '',
+  ci_kb_context_mode TEXT NOT NULL DEFAULT 'auto'
 );
 
 
@@ -574,6 +597,7 @@ CREATE TABLE IF NOT EXISTS machine_project_shares (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   updated_by TEXT NOT NULL,
+  access TEXT NOT NULL DEFAULT 'full',
   PRIMARY KEY (project_id, agent_id),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE

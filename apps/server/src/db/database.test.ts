@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VoiceChatDb, hashAgentToken } from './database'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 /** Владелец данных по умолчанию в тестах. */
 const U = 'admin'
@@ -185,7 +187,7 @@ describe('VoiceChatDb — разговоры', () => {
     expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
   })
 
-  it('восстанавливает агрегат после открытия БД и изолирует повреждённый meta', async () => {
+  it.skipIf(ON_POSTGRES)('восстанавливает агрегат после открытия БД и изолирует повреждённый meta', async () => {
     await db.close()
     const dir = mkdtempSync(join(tmpdir(), 'vc-conversation-cost-'))
     const file = join(dir, 'voicechat.db')
@@ -415,7 +417,7 @@ describe('VoiceChatDb — сообщения', () => {
 })
 
 describe('VoiceChatDb — миграция и очистка legacy', () => {
-  it('одноразовая очистка удаляет только однозначный пустой ручной черновик', async () => {
+  it.skipIf(ON_POSTGRES)('одноразовая очистка удаляет только однозначный пустой ручной черновик', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-empty-drafts-'))
     const file = join(dir, 'data.db')
     const seed = new VoiceChatDb(file)
@@ -440,7 +442,7 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('CHECK по scope без images пересобирается и пускает студию картинок', async () => {
+  it.skipIf(ON_POSTGRES)('CHECK по scope без images пересобирается и пускает студию картинок', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-scope-check-'))
     const file = join(dir, 'data.db')
     const seed = new VoiceChatDb(file)
@@ -473,7 +475,7 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('ALTER добавляет engine/user_id и удаляет строки без владельца', async () => {
+  it.skipIf(ON_POSTGRES)('ALTER добавляет engine/user_id и удаляет строки без владельца', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-mig-'))
     const file = join(dir, 'legacy.db')
     // Готовим «старую» однопользовательскую БД: без engine и без user_id.
@@ -839,7 +841,7 @@ describe('VoiceChatDb — резолв исполнителя LLM', () => {
 
 
 describe('VoiceChatDb — миграции', () => {
-  it('добавляет llm_engines в существующую БД без потери разговоров', async () => {
+  it.skipIf(ON_POSTGRES)('добавляет llm_engines в существующую БД без потери разговоров', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-db-migrate-'))
     const file = join(dir, 'voicechat.db')
     const raw = new Database(file)
@@ -928,7 +930,7 @@ describe('VoiceChatDb — миграции', () => {
     }
   })
 
-  it('снимает с Make-чатов привязку к машине и каталог, а «none» и чужие чаты не трогает', async () => {
+  it.skipIf(ON_POSTGRES)('снимает с Make-чатов привязку к машине и каталог, а «none» и чужие чаты не трогает', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-db-make-machine-'))
     const file = join(dir, 'voicechat.db')
     const raw = new Database(file)
@@ -1016,7 +1018,7 @@ describe('VoiceChatDb — хранилища машин', () => {
     await db.close()
   })
 
-  it('атомарно удаляет машину с RESTRICT-связями и сбрасывает логические цели', async () => {
+  it.skipIf(ON_POSTGRES)('атомарно удаляет машину с RESTRICT-связями и сбрасывает логические цели', async () => {
     const db = makeDb()
     await db.identity.createUser(U, '', 'admin')
     const machine = await db.machines.createAgent(U, 'MacBook')
@@ -1054,7 +1056,7 @@ describe('VoiceChatDb — хранилища машин', () => {
     await db.close()
   })
 
-  it('откатывает очистку связей, если финальное удаление машины падает', async () => {
+  it.skipIf(ON_POSTGRES)('откатывает очистку связей, если финальное удаление машины падает', async () => {
     const db = makeDb()
     await db.identity.createUser(U, '', 'admin')
     const machine = await db.machines.createAgent(U, 'MacBook')
@@ -1079,7 +1081,7 @@ describe('VoiceChatDb — хранилища машин', () => {
 })
 
 describe('VoiceChatDb — персистентная очередь ходов', () => {
-  it('дедуплицирует повторную доставку, сохраняет порядок и переживает restart', async () => {
+  it.skipIf(ON_POSTGRES)('дедуплицирует повторную доставку, сохраняет порядок и переживает restart', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'voicechat-queue-'))
     const file = join(dir, 'db.sqlite')
     let db = new VoiceChatDb(file)
@@ -1191,7 +1193,7 @@ describe('обслуживание учёток (auth-roadmap п.18)', () => {
 // различимы: иначе смена дефолта в следующем релизе молча переедет всем, кто
 // ничего не менял. Поэтому чтение дозаполняет запись один раз.
 describe('VoiceChatDb — дефолты настроек фиксируются в записи', () => {
-  it('дозаполняет отсутствующие поля и не трогает выбранные', async () => {
+  it.skipIf(ON_POSTGRES)('дозаполняет отсутствующие поля и не трогает выбранные', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-settings-defaults-'))
     const file = join(dir, 'settings.db')
     const db = new VoiceChatDb(file)

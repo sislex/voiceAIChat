@@ -7,6 +7,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VoiceChatDb } from './database.js'
+// Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
+const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db: VoiceChatDb
 
@@ -42,7 +44,7 @@ describe('searchMessages — находит и ранжирует', () => {
     expect(hit.projectId).toBeNull()
     expect(hit.snippet).toContain('<mark>миграцию</mark>')
     expect(res.nextCursor).toBeNull()
-    expect(res.match).toBe('"миграцию"*')
+    expect(res.match).toBe(ON_POSTGRES ? "'миграцию':*" : '"миграцию"*')
   })
 
   it('регистр не мешает, слова ищутся через И', async () => {
@@ -191,7 +193,7 @@ describe('messages_fts — синхронизация триггерами', () 
     expect((await db.chat.searchMessages('alice', { q: 'добавленное ' })).hits).toHaveLength(1)
   })
 
-  it('изменённый текст находится по новому слову и не находится по старому', async () => {
+  it.skipIf(ON_POSTGRES)('изменённый текст находится по новому слову и не находится по старому', async () => {
     // Сервер сам сообщения не правит (правка = удаление + новое), но триггер на
     // UPDATE обязан работать: иначе прямая правка текста тихо разошлась бы с индексом.
     const dir = mkdtempSync(join(tmpdir(), 'vc-fts-upd-'))
@@ -236,7 +238,7 @@ describe('messages_fts — миграция и бэкфилл', () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   })
 
-  it('старая база без индекса бэкфиллится порциями, повторный старт ничего не ломает', async () => {
+  it.skipIf(ON_POSTGRES)('старая база без индекса бэкфиллится порциями, повторный старт ничего не ломает', async () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
     await first.ready
@@ -268,7 +270,7 @@ describe('messages_fts — миграция и бэкфилл', () => {
     await again.close()
   })
 
-  it('потерянное состояние бэкфилла пересобирает индекс, а не удваивает его', async () => {
+  it.skipIf(ON_POSTGRES)('потерянное состояние бэкфилла пересобирает индекс, а не удваивает его', async () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
     await first.ready
@@ -287,7 +289,7 @@ describe('messages_fts — миграция и бэкфилл', () => {
     await again.close()
   })
 
-  it('сообщения, добавленные во время бэкфилла, не дублируются в индексе', async () => {
+  it.skipIf(ON_POSTGRES)('сообщения, добавленные во время бэкфилла, не дублируются в индексе', async () => {
     const file = tmpDb()
     const first = new VoiceChatDb(file)
     await first.ready

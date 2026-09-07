@@ -373,7 +373,7 @@ export class KbRepo extends BaseRepo {
                 SUM(q.est_tokens) AS est_tokens, MAX(q.created_at) AS last_at
            FROM kb_usage_queries q LEFT JOIN conversations c ON c.id = q.conversation_id
           WHERE q.project_id = ?
-          GROUP BY q.conversation_id
+          GROUP BY q.conversation_id, c.title
           ORDER BY last_at DESC`, [projectId])) as Array<{ conversation_id: string; title: string; queries: number; chars: number; est_tokens: number; last_at: number }>)
       .map((r) => ({ conversationId: r.conversation_id, title: r.title, queries: r.queries, chars: r.chars, estimatedTokens: r.est_tokens, lastAt: r.last_at }))
     return { projectId, totals, sections, recent: await this.kbUsageQueries('q.project_id = ?', [projectId], limit), conversations }

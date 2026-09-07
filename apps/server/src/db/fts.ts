@@ -37,3 +37,21 @@ export function toFtsMatchQuery(raw: string): string {
     })
     .join(' AND ')
 }
+
+/**
+ * Тот же запрос для Postgres (`to_tsquery('simple', …)`): слова — лексемы в кавычках через `&`,
+ * открытый хвост — префикс `:*`. Смысл совпадает с FTS5-вариантом: всё AND, синтаксис пользователя
+ * не проходит (кавычки внутри токенов невозможны — их не пропускает TOKEN_RE).
+ */
+export function toPgTsQuery(raw: string): string {
+  const tokens = (raw.match(TOKEN_RE) ?? []).slice(0, MAX_TOKENS).map((t) => t.slice(0, MAX_TOKEN_LEN))
+  if (tokens.length === 0) return ''
+  const openTail = OPEN_TAIL_RE.test(raw)
+  return tokens
+    .map((token, i) => {
+      const lexeme = `'${token.toLowerCase()}'`
+      const isLast = i === tokens.length - 1
+      return isLast && openTail && token.length >= MIN_PREFIX_LEN ? `${lexeme}:*` : lexeme
+    })
+    .join(' & ')
+}
