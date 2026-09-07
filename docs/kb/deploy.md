@@ -504,24 +504,43 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 
 **Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
 
-**Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с
-compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
+**Почта для регистрации.** `docker-compose.yml` передаёт переменные из
+`$PROD/.env` (`VC_REPO_DIR`), а не из каталога данных. Транспорт выбирается
+`VC_MAIL_TRANSPORT=http|smtp`. Без явного значения действует совместимый приоритет:
+непустой `VC_MAIL_API_KEY` → HTTP, затем `VC_SMTP_URL` → SMTP, иначе console.
+Явно выбранный transport без соответствующего ключа/URL является ошибкой
+конфигурации и не переключается на console.
 
-## Почта на проде (настроено 29.08.2026)
+## Почта на проде
 
-Прод-`.env` (`$PROD/.env`, то есть `VC_REPO_DIR`) получил три переменные:
-`VC_SMTP_URL=smtps://<логин>:<пароль-приложения>@smtp.yandex.ru:465`,
-`VC_MAIL_FROM=ChatAI <логин>`, `VC_PUBLIC_URL=https://89.125.68.35`. Рядом
-лежит резервная копия `.env.bak-<дата>`. **Переменные начинают действовать только
-после пересоздания контейнера** — то есть на ближайшем `voicechat-deploy`; до
-этого письма по-прежнему уходят в лог.
+Для production через HTTPS задаются
+`VC_MAIL_TRANSPORT=http`, `VC_MAIL_API_KEY=<secret>`,
+`VC_MAIL_FROM='ChatAI <verified@example.com>'` и
+`VC_PUBLIC_URL=https://89.125.68.35`. Ключ хранится только в `$PROD/.env`:
+его нельзя помещать в репозиторий, образ или логи. Необязательный
+`VC_MAIL_API_URL` по умолчанию равен
+`https://api.brevo.com/v3/smtp/email`. SMTP остаётся доступен через
+`VC_MAIL_TRANSPORT=smtp` и `VC_SMTP_URL=smtp(s)://…`.
 
-Публичный origin отдаёт Caddy (`voiceaichat-caddy-1`) — `https://89.125.68.35`.
-`VC_PUBLIC_URL` обязан точно совпадать с актуальным production origin: сервер
-использует его при формировании внешних ссылок, включая
-`https://89.125.68.35/#/verify/<token>`. Если переменная не задана, `baseUrl(req)`
-может собрать адрес из `X-Forwarded-Proto`/`X-Forwarded-Host`, но явное значение
-не даёт ссылкам зависеть от конфигурации прокси.
+HTTP-мейлер делает `POST` с `api-key`, `accept: application/json` и
+`content-type: application/json`; тело содержит `sender`, нормализованный
+`to`, `subject`, `textContent` и только при наличии HTML — `htmlContent`.
+Успех — `201` с непустым `messageId`. На `429` и `5xx` выполняется одна
+повторная попытка; остальные `4xx` не повторяются. Каждый запрос ограничен
+20 секундами. Ошибки и журналы не содержат API key, SMTP credentials, полный
+email, тело письма или verification token.
+
+Диагностика Brevo: `401/403` означает проверить наличие/права API key без вывода
+его значения; provider rejection отправителя — проверить, что адрес из
+`VC_MAIL_FROM` верифицирован; `429` и `5xx` после автоматического retry
+передаются signup/resend как ошибка доставки; timeout указывает на недоступность
+HTTPS endpoint. Production при explicit `http` никогда не откатывается к console.
+
+Переменные начинают действовать только после пересоздания контейнера штатным
+`voicechat-deploy`. Публичный origin отдаёт Caddy — `https://89.125.68.35`;
+сервер строит ссылку `https://89.125.68.35/#/verify/<token>`. Если
+`VC_PUBLIC_URL` не задан, `baseUrl(req)` использует proxy headers, но production
+фиксирует origin явно.
 
 ### Что проверено живьём про Яндекс
 
