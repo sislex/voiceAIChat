@@ -102,7 +102,10 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
       async login(name, password, remember = true) {
         if (!client) return null
         setState({ authError: null })
-        const result = await client.login({ name, password, remember }).catch(() => null)
+        const result = await client.login({ name, password, remember }).catch((error: unknown) => {
+          if (!core.disposed()) setState({ authError: error instanceof Error ? error.message : 'Не удалось выполнить вход' })
+          return null
+        })
         if (core.disposed()) return null
         if (result && 'requires2fa' in result) {
           setState({ twoFactorTicket: result.ticket, authError: null })
@@ -110,7 +113,7 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
         }
         const user = result
         if (!user) {
-          setState({ authError: 'Неверный логин или пароль' })
+          if (!getState().authError) setState({ authError: 'Неверный логин или пароль' })
           return null
         }
         apply(user)

@@ -18,6 +18,56 @@ beforeEach(() => { ({ app, db } = harness) })
 
 
 describe('REST: аутентификация', () => {
+  // @testCase TC-01
+  it('отвечает credentialed CORS preflight для разрешённых Electron dev origins', async () => {
+    db.identity.createUser('electron', 'electron-pass-2026', 'developer')
+    for (const origin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
+      const response = await app.inject({
+        method: 'OPTIONS',
+        url: '/api/session/login',
+        headers: {
+          origin,
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'content-type,authorization,x-vc-csrf,x-vc-client-version'
+        }
+      })
+      expect(response.statusCode).toBe(204)
+      expect(response.headers['access-control-allow-origin']).toBe(origin)
+      expect(response.headers['access-control-allow-credentials']).toBe('true')
+      expect(response.headers['access-control-allow-methods']).toContain('POST')
+      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version')
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/session/login',
+        headers: { origin, 'x-forwarded-proto': 'https' },
+        payload: { name: 'electron', password: 'electron-pass-2026', remember: true }
+      })
+      expect(login.headers['access-control-allow-origin']).toBe(origin)
+      const cookies = ([] as string[]).concat(login.headers['set-cookie'] as string[])
+      expect(cookies.find((cookie) => cookie.startsWith('__Secure-vc_session='))).toMatch(/SameSite=None.*Max-Age=.*Secure/)
+    }
+  })
+
+  // @testCase TC-02
+  it('не выдаёт разрешающие CORS-заголовки неизвестному origin и не ломает запрос без Origin', async () => {
+    const preflight = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/session/login',
+      headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' }
+    })
+    expect(preflight.statusCode).toBe(204)
+    expect(preflight.headers['access-control-allow-origin']).toBeUndefined()
+    expect(preflight.headers['access-control-allow-credentials']).toBeUndefined()
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      headers: { origin: 'https://evil.example' },
+      payload: { name: 'nobody', password: 'wrong' }
+    })
+    expect(login.headers['access-control-allow-origin']).toBeUndefined()
+    expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200)
+  })
+
   it('без токена защищённый роут → 401, health и login — открыты', async () => {
     db.identity.createUser('user', '', 'developer') // пользователь теперь заводится в БД
     expect((await app.inject({ method: 'GET', url: '/api/conversations' })).statusCode).toBe(401)
