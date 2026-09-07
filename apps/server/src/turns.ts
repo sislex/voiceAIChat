@@ -892,13 +892,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    // Make (roadmap-3 п.2): инструменты make_* не требуют машины и безопасны, а нативный
-    // plan-режим CLI их глушит. Для Claude запускаем default, но запрещаем все встроенные инструменты
-    // (shell/файлы сервера) — остаются только MCP. Codex в read-only sandbox блокирует HTTP-MCP, поэтому
-    // там остаётся план (ограничение задокументировано в KB). Роль здесь не важна:
+    // Make (roadmap-3 п.2): инструменты make_* не требуют машины. Неплановый ход
+    // любого провайдера сохраняет выбранный режим, но получает запрет всех встроенных
+    // инструментов (shell/файлы сервера) — остаются только MCP. Роль здесь не важна:
     // админ в Make-чате раньше получал встроенные Bash/Write и мог править
     // репозиторий сервера — для мастерской это лишние права, а не удобство.
-    const makeOnlyExecution = makeChat && provider === 'claude' && permissionMode !== 'plan'
+    const makeOnlyExecution = makeChat && permissionMode !== 'plan'
     // Канбан-ассистент: «План» для его инструментов — только явный выбор
     // пользователя в этом разговоре. Ход панели идёт без машины, и принудительный
     // plan ниже раньше делал канбан read-only (ro=1): ассистент не мог ни создать
@@ -906,9 +905,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // (автопилот / подтверждения). Инцидент 2026-09-02.
     const kanbanExplicitPlan = conv?.permissionMode === 'plan'
     if (executionDisabled || (role !== 'admin' && !remote && !makeOnlyExecution)) permissionMode = 'plan'
-    // Codex-ход Make остаётся в плане при любой роли: его MCP в read-only sandbox
-    // всё равно недоступен, а default дал бы модели встроенные инструменты.
-    if (makeChat && provider === 'codex') permissionMode = 'plan'
     // Встроенные инструменты Make запрещены всегда, а не только в MCP-режиме:
     // мастерская правится через make_*, и ни shell, ни файлы сервера ей не нужны.
     if (makeChat || makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
