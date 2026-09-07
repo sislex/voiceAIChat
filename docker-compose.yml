@@ -117,7 +117,9 @@ services:
     environment:
       POSTGRES_DB: voicechat
       POSTGRES_USER: voicechat
-      POSTGRES_PASSWORD: ${VC_PG_PASSWORD:?нужен VC_PG_PASSWORD в .env для профиля postgres}
+      # Не `:?` — compose подставляет переменные всех сервисов даже при выключенном профиле, и обязательная
+      # переменная ломала бы `docker compose up` без Postgres. Пустой пароль остановит только сам контейнер.
+      POSTGRES_PASSWORD: ${VC_PG_PASSWORD:-}
     volumes:
       - vc-postgres:/var/lib/postgresql/data
     healthcheck:
