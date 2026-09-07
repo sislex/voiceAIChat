@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { consolePtyId } from '@voicechat/shared'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { MachinesService } from '../machines/service.js'
 
 export const CONSOLE_MCP_PATH = '/mcp/console'
 
@@ -43,7 +43,7 @@ const DESTRUCTIVE_RE = /(^|[\s;&|])(rm\s+-[a-z]*f|rm\s+-[a-z]*r|shred|mkfs|dd\s|
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-export function registerConsoleMcp(app: FastifyInstance, registry: AgentRegistry, secret: string): void {
+export function registerConsoleMcp(app: FastifyInstance, registry: MachinesService, secret: string): void {
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined))

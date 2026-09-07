@@ -89,6 +89,28 @@ EXPOSE 8789
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/kanban/standalone/index.ts"]
 
+# ---- Runtime машин (отдельный сервис, профиль compose `machines`) ----------
+# Тот же код сервера, процесс — apps/server/src/machines/standalone: реестр компаньон-агентов,
+# их WebSocket, REST машин и установщики на общей базе Postgres; ядру отдаёт зеркало и RPC по /internal/*.
+FROM runtime-base AS machines-runtime
+ENV PORT=8793
+RUN mkdir -p /data \
+  && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8793
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/machines/standalone/index.ts"]
+
+# ---- Runtime админки (отдельный сервис, профиль compose `admin`) ------------
+FROM runtime-base AS admin-runtime
+ENV PORT=8794
+RUN mkdir -p /data \
+  && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8794
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/admin/standalone/index.ts"]
+
 # ---- Изолированный runtime распознавания речи ---------------------------
 FROM runtime-base AS stt-runner-runtime
 ENV PORT=8791 \

@@ -10,12 +10,16 @@ import {
   type MakeCore, type MakeEventsRequest, type MakeHub, type MakeService, type RpcRequest, type WhoamiRequest, type WhoamiResponse
 } from '@voicechat/make'
 import type { AuthenticateFn } from '../users/auth.js'
+import type { SessionHub } from '../users/sessionHub.js'
+import type { DeployTrigger } from './admin.js'
+import { ADMIN_RPC_METHODS, INTERNAL_ADMIN_RPC_PATH, type AdminRpcMethod } from '../admin/internal.js'
 import type { KanbanCore } from '../kanban/core.js'
 import { createKanbanCoreRpcDispatcher } from '../kanbanBridge/internal.js'
 import {
   INTERNAL_KANBAN_CORE_PATH, INTERNAL_KANBAN_EVENTS_PATH, INTERNAL_KANBAN_EXEC_STREAM_PATH,
-  type ExecStreamLine, type ExecStreamRequest, type KanbanEvent, type KanbanEventsRequest, type MachineSnapshot
+  type KanbanEvent, type KanbanEventsRequest, type MachineSnapshot
 } from '../kanban/internal.js'
+import { serveExecStream, type ExecStreamRequest } from '../internal/execStream.js'
 
 export interface InternalRoutesDeps {
   token: string
@@ -26,6 +30,8 @@ export interface InternalRoutesDeps {
   /** Make встроен в ядро: его `MakeService` отдаём по RPC соседям (отдельному канбану нужны источники дизайна задачи). */
   makeService?: MakeService
   authenticate: AuthenticateFn
+  /** Для отдельного процесса админки: деплой (сокет на хосте ядра) и живое уведомление об отзыве сессии. */
+  admin?: { deployTrigger?: DeployTrigger; sessionHub: Pick<SessionHub, 'emit'> }
   /** Канбан — отдельный процесс: состояние ядра ему по RPC, его события — на ленты ядра. */
   kanban?: {
     core: KanbanCore
@@ -64,6 +70,22 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
       return verdict.ok ? { ok: true, user: verdict.user } : verdict
     })
     if (deps.kanban) registerKanbanInternal(scope, deps.kanban, sendRpcError)
+    if (deps.admin) {
+      const admin = deps.admin
+      scope.post<{ Body: RpcRequest }>(INTERNAL_ADMIN_RPC_PATH, async (req, reply) => {
+        const { method, args } = req.body ?? { method: '', args: [] }
+        if (!Array.isArray(args) || !(ADMIN_RPC_METHODS as readonly string[]).includes(method)) return sendRpcError(reply, new RpcError(400, `неизвестный метод ${method}`))
+        try {
+          switch (method as AdminRpcMethod) {
+            case 'deploy': {
+              if (!admin.deployTrigger) return reply.code(503).send({ error: 'deploy API недоступен: сокет host-side API не настроен' })
+              return { result: await admin.deployTrigger.trigger() }
+            }
+            case 'sessionsChanged': admin.sessionHub.emit(args[0] as string, args[1] as string | undefined); return { result: null }
+          }
+        } catch (error) { return sendRpcError(reply, error) }
+      })
+    }
   })
 }
 
@@ -81,21 +103,6 @@ function registerKanbanInternal(scope: FastifyInstance, kanban: NonNullable<Inte
   scope.post<{ Body: ExecStreamRequest }>(INTERNAL_KANBAN_EXEC_STREAM_PATH, async (req, reply) => {
     const body = req.body
     if (!body || typeof body.agentId !== 'string' || typeof body.command !== 'string') return reply.code(400).send({ error: 'bad exec request' })
-    const controller = new AbortController()
-    reply.hijack()
-    const raw = reply.raw
-    raw.on('close', () => { if (!raw.writableFinished) controller.abort() })
-    raw.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache', 'x-accel-buffering': 'no' })
-    raw.flushHeaders()
-    const write = (line: ExecStreamLine): void => { if (!raw.writableEnded) raw.write(`${JSON.stringify(line)}\n`) }
-    try {
-      const result = body.stream
-        ? await kanban.core.machines.execStream(body.agentId, body.command, body.timeoutMs, (chunk) => write({ chunk }), controller.signal)
-        : await kanban.core.machines.exec(body.agentId, body.command, body.timeoutMs, controller.signal, body.meta)
-      write({ result })
-    } catch (error) {
-      write({ error: error instanceof Error ? error.message : String(error) })
-    }
-    raw.end()
+    await serveExecStream(reply, body, kanban.core.machines)
   })
 }

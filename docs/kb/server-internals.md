@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-07
-checked: a994f3ac
+checked: b3091e19
 areas:
   - apps/server/src
 ---
@@ -342,6 +342,45 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 общий с Make — `@voicechat/shared` (`internalRpc.ts`). Интеграционный тест границы —
 `kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
 идут через `UserFrameHub`.
+
+## Машины: модуль `machines/module.ts` и порт `MachinesService` (2026-09-07)
+
+Реестр онлайн-подключений (`agents/registry.ts`), WebSocket компаньон-агентов `/agent`, REST машин и
+установщиков (`routes/agents.ts`), политика команд, каталог ChatAI по умолчанию, журнал команд, watchdog и
+перенос хранилищ собираются одной функцией `createMachinesModule(deps)` (`apps/server/src/machines/module.ts`);
+наружу модуль отдаёт `{ machines, commandGate }`. Потребители — сессия, ходы, `mcp/remoteBashMcp`,
+`mcp/consoleMcp`, git-панель, storybook-сессии, превью, админка, канбан (через `KanbanMachines`), Make (через
+`MakeCore.machineFs`) — типизированы портом **`MachinesService`** (`machines/service.ts`): публичная
+поверхность реестра без `register`/`unregister`; `AgentRegistry` удовлетворяет ему структурно. Синхронные
+чтения (`isOnline`, `nameOf`, `versionOf`, `telemetryOf`, `ptyLive`, …) остаются синхронными — в режиме
+отдельного процесса машин их будет отдавать зеркало. Полный лог долгой команды из чата модуль пишет в
+artifacts привязанного хранилища через обратный вызов ядра `chatArtifacts` (хранилища разговора — знание
+ядра). Гейт `machines/boundary.test.ts`: `server.ts` не собирает машины сам, `AgentRegistry` импортируют
+только модуль машин и его части. План выделения в отдельный процесс — `docs/plans/machines-service.md`.
+
+**Режим `VC_MACHINES_MODE=remote` (2026-09-07).** Реестр живёт в отдельном процессе машин
+(`machines/standalone/index.ts`, `buildMachinesServer`, порт 8793, compose-профиль `machines`), а ядро
+получает порт как `HttpMachines` (`machinesBridge/httpMachines.ts`): синхронные чтения — из зеркала, которое
+процесс машин наполняет по постоянному WebSocket событий `/internal/events` (снимки машин и PTY-сессий,
+события PTY, кадры владельцам, `agentReady`, журнал команд, запросы авторизации тоннелей); вызовы — RPC
+`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`). Ошибки
+файловых операций возвращаются с кодом и восстанавливаются как `AgentFsError`. При обрыве шины все машины
+считаются offline до переподключения. Ядро переправляет в процесс машин REST машин и установщики
+(`MACHINES_PROXY_PREFIXES`, `machinesBridge/proxy.ts`) и **WebSocket компаньон-агентов `/agent`** — кадр в
+кадр, с исходным IP в `x-forwarded-for` (Caddy остаётся без изменений). Авторизация REST у процесса машин —
+пересылкой в `/internal/whoami` ядра (`internal/forwardedAuth.ts`, общая с канбаном). Канбан и Make в этом
+режиме ничего не замечают: под фасадами `KanbanMachines`/`MakeCore.machineFs` стоит тот же порт. Контракт —
+`machines/internal.ts`; интеграционный тест — `machinesBridge/machinesRemote.integration.test.ts`.
+Внутренний API машин (`machines/internalApi.ts`) ядро поднимает и во встроенном режиме при заданном
+`VC_INTERNAL_TOKEN` — так соседи (админка) берут машины у того процесса, где живёт реестр, одним клиентом.
+
+**Админка отдельным процессом (`VC_ADMIN_MODE=remote`, 2026-09-07).** `admin/standalone/index.ts`
+(`buildAdminServer`, порт 8794, compose-профиль `admin`): `routes/admin.ts` на общей базе, авторизация —
+пересылкой в ядро, машины — `HttpMachines` к `VC_MACHINES_URL` или к ядру, Make — по RPC, деплой и живое
+уведомление об отзыве сессии — RPC к ядру `/internal/admin/rpc` (`admin/internal.ts`). Ядро проксирует
+`/api/admin/*` (типы проектов `/api/admin/project-types*` остаются у канбана — его роуты конкретнее);
+проверку роли `users:manage` делает preHandler ядра до прокси. Тест —
+`admin/standalone/adminRemote.integration.test.ts`.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 

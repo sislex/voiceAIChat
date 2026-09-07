@@ -9,7 +9,6 @@
 // и приём снимка машин: онлайн-статус, имя, платформа, политика и телеметрия читаются кластером
 // синхронно, поэтому в отдельном процессе их даёт зеркало, которое ядро обновляет пушем.
 import type { AgentPolicy, AgentTelemetry, QaRunStage, ServerMessage } from '@voicechat/shared'
-import type { ExecMeta, ExecResult } from './core.js'
 
 /** У ядра. */
 export const INTERNAL_KANBAN_CORE_PATH = '/internal/kanban/core'
@@ -41,16 +40,8 @@ export interface MachineSnapshot {
 }
 export interface MachinesSnapshotRequest { machines: MachineSnapshot[] }
 
-/** Тело потокового exec; ответ — NDJSON: строки `{ chunk }`, затем одна `{ result }` или `{ error }`. */
-export interface ExecStreamRequest {
-  agentId: string
-  command: string
-  timeoutMs: number
-  /** false — обычный `exec` с журналом команд (meta), вывод приходит одним `result.output`. */
-  stream: boolean
-  meta?: ExecMeta
-}
-export type ExecStreamLine = { chunk: string } | { result: ExecResult } | { error: string }
+/** Потоковый exec — общий формат `internal/execStream.ts`. */
+export type { ExecStreamLine, ExecStreamRequest } from '../internal/execStream.js'
 
 /** Методы `KanbanService`, которые ядро зовёт у процесса канбана. */
 export const KANBAN_SERVICE_RPC_METHODS = ['snapshot', 'boardChanged', 'authorizeTunnel', 'tunnelClosed'] as const
