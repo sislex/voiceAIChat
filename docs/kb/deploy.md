@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-07
-checked: d4710360
+checked: a40ef0e5
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -147,6 +147,21 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 запуска health check; для `stt-runner` установлен лимит `cpus: 2`.
 
 ## Переменные окружения
+
+**Make отдельным сервисом (`docs/plans/make-standalone.md`, 2026-09-07).** В compose Make — сервис
+`make` (образ `voicechat-make`, стадия `make-runtime`, порт 8788, `mem_limit 512m`, healthcheck
+`/v1/health`), ядро работает в `VC_MAKE_MODE=remote`. Общие переменные обоих сервисов —
+`VC_INTERNAL_TOKEN` (Bearer `/internal/*`) и `VC_MCP_SECRET` (секрет `/mcp/*`): дефолты локальные,
+для прода задай случайные в `.env`. У ядра ещё `VC_MAKE_URL=http://make:8788` и
+`VC_MAKE_MCP_PUBLIC_BASE` (адрес Make глазами контейнера исполнителя, по умолчанию `VC_MAKE_URL`);
+у Make — `VC_CORE_URL=http://voicechat:8787` и `VC_DATA_DIR` на **тот же том** `vc-data`
+(мастерские лежат в `/data/make`, ядро в них не пишет — миграции данных нет). Пути Make доходят
+двумя дорогами: Caddy направляет `/api/make*`, `/api/preview/make*`, `/p/*`, `/s/*` в `make:8788`
+напрямую, а при заходе портом 8787 мимо Caddy их переправляет само ядро (`makeBridge/proxy.ts`).
+`/internal/*` Caddy отвечает 404, ядро без токена — 401. Перекатить один Make:
+`docker compose up -d --build make` — ядро при этом не трогается (Release Center пока пересобирает
+всё; отдельный профиль — круг 4 плана). Без compose (dev, desktop) `VC_MAKE_MODE` не задан → Make
+встроен в процесс ядра, как раньше.
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,

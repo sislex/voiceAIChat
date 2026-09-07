@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from 'vitest'
 import type { FastifyReply } from 'fastify'
-import { MakeError, type MakeErrorCode } from '../make/workspace.js'
-import { sendError } from './make.js'
+import { MakeError, type MakeErrorCode } from './workspace.js'
+import { sendError } from './routes.js'
 
 function fakeReply() {
   const sent: Array<{ status: number; body: unknown }> = []

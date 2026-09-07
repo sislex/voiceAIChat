@@ -1,6 +1,5 @@
 import { lookup } from 'node:dns/promises'
 import type { LookupAddress } from 'node:dns'
-import { isIP } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { IncomingMessage } from 'node:http'
@@ -8,6 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
 import { createHash } from 'node:crypto'
 import { uid } from '../users/auth.js'
+import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../util/publicHost.js'
 import { MachineResponseCache, isCacheableMachineResponse } from './machineCache.js'
 
 const MAX_REDIRECTS = 5
@@ -101,15 +101,8 @@ function headerValue(headers: Record<string, string | string[]>, name: string): 
   return Array.isArray(value) ? value[0] : value
 }
 
-export function isPublicAddress(address: string): boolean {
-  const v = address.toLowerCase().replace(/^::ffff:/, '')
-  if (isIP(v) === 4) {
-    const [a, b] = v.split('.').map(Number)
-    return !(a === 0 || a === 10 || a === 127 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 || a >= 224)
-  }
-  if (isIP(v) === 6) return !(v === '::1' || v === '::' || v.startsWith('fe80:') || /^(fc|fd)[0-9a-f]{2}:/.test(v))
-  return false
-}
+/** Гард публичных адресов общий с импортом Make (`util/publicHost.ts`); здесь — только перевод в ответ 403. */
+export { isPublicAddress } from '../util/publicHost.js'
 
 type ResolvedAddress = LookupAddress
 
@@ -122,13 +115,10 @@ export function publicLookupResult(addresses: ResolvedAddress[], all: boolean): 
 }
 
 export async function assertPublicHost(hostname: string): Promise<void> {
-  const literal = hostname.replace(/^\[|\]$/g, '')
-  if (isIP(literal)) {
-    if (!isPublicAddress(literal)) throw new PreviewProxyError(403, 'Адрес сайта недоступен для превью')
-    return
+  try { await assertPublicHostUtil(hostname) } catch (error) {
+    if (error instanceof PublicHostError) throw new PreviewProxyError(403, error.message)
+    throw error
   }
-  const addresses = await lookup(hostname, { all: true, verbatim: true })
-  if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) throw new PreviewProxyError(403, 'Адрес сайта недоступен для превью')
 }
 
 function proxyUrl(value: string, base: URL): string {

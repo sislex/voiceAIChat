@@ -1,0 +1,15 @@
+// Публичная поверхность пакета для ядра: порты, сборка модуля и то, что нужно тестам ядра.
+// Всё остальное (мастерские, витрина, импорт) — внутреннее дело Make.
+export type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from './core.js'
+export type { MakeService } from './service.js'
+export { createMakeModule, type MakeModule, type MakeModuleOptions } from './module.js'
+export { buildTaskMakeSources, signTaskScope, verifyTaskScope, TASK_SCOPE_TTL_MS, type MakeTaskScope, type TaskMakeSourcesArgs } from './taskScope.js'
+export { MAKE_MCP_PATH, registerMakeMcp, type MakeMcpDeps } from './mcp.js'
+export { registerMakeRoutes, type MakeRoutesDeps } from './routes.js'
+export { MakeHub, PRESENCE_TTL_MS } from './hub.js'
+export { MakeWorkspaces, MakeError } from './workspace.js'
+export { MakeLibrary } from './library.js'
+export { formatMakeMetrics } from './metrics.js'
+export * from './internal.js'
+export { HttpMakeCore, type HttpMakeCoreOptions } from './standalone/httpCore.js'
+export type { MakeHubEvent } from './hub.js'
