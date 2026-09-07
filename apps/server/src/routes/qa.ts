@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { QA_RUN_STAGES, type AcceptanceCriterionSnapshot, type QaRunStage } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import type { UploadStore } from '../uploads.js'
+import type { KanbanUploads } from '../kanban/core.js'
 import type { CiRunManager } from '../ci/runManager.js'
 import { uid } from '../users/auth.js'
 
@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => Promise<boolean>, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage)=>void): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: KanbanUploads, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => Promise<boolean>, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string, qaStageChanged?: (projectId:string, taskId:string, stage: QaRunStage)=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = await db.qa.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -179,7 +179,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     `${base}/results/:resultId/attachments`,
     async (req, reply) => {
       try {
-        const upload = req.body?.uploadId ? uploads.get(req.body.uploadId) : undefined
+        const upload = req.body?.uploadId ? await uploads.get(req.body.uploadId) : undefined
         if (!upload || upload.agentId) return reply.code(400).send({ error: 'local upload not found' })
         if (upload.size > 10 * 1024 * 1024) return reply.code(413).send({ error: 'QA screenshot too large' })
         const bytes = readFileSync(upload.path)
@@ -196,7 +196,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
   app.get<{ Params: { attachmentId: string } }>('/api/qa/attachments/:attachmentId', async (req, reply) => {
     const attachment = await db.qa.getQaAttachment(uid(req), req.params.attachmentId)
     if (!attachment) return reply.code(404).send({ error: 'attachment not found' })
-    const upload = uploads.get(attachment.uploadId)
+    const upload = await uploads.get(attachment.uploadId)
     if (!upload || upload.agentId) return reply.code(404).send({ error: 'attachment file not found' })
     reply.header('content-disposition', `inline; filename="${basename(attachment.name).replace(/["\\]/g, '_')}"`)
     return reply.type(attachment.mimeType).send(readFileSync(upload.path))
