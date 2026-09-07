@@ -25,7 +25,7 @@ export interface CommandExecResult {
 export interface CommandExecutor {
   run(
     req: CommandExecRequest,
-    onChunk: (data: string) => void,
+    onChunk: (data: string) => Promise<void>,
     signal?: AbortSignal
   ): Promise<CommandExecResult>
 }
@@ -56,11 +56,11 @@ export interface CiRunPrimitives {
     commandId?: string | null
     commandSnapshot?: string | null
     workdir?: string | null
-  }): CiRunStep
+  }): Promise<CiRunStep>
   /** Пометить статус/итог шага (+ broadcast). */
-  finishStep(stepId: string, status: CiStatus, exitCode?: number | null): void
+  finishStep(stepId: string, status: CiStatus, exitCode?: number | null): Promise<void>
   /** Дописать строку лога шага (+ broadcast, + персист). */
-  log(stepId: string, stream: 'stdout' | 'stderr' | 'system', chunk: string): void
+  log(stepId: string, stream: 'stdout' | 'stderr' | 'system', chunk: string): Promise<void>
   /** Выполнить команду справочника на машине как инструмент модели. */
   runCommandById(commandId: string, parentStepId: string): Promise<{ exitCode: number | null; timedOut: boolean; output: string }>
   /**
@@ -68,11 +68,11 @@ export interface CiRunPrimitives {
    * (`--resume`), поэтому модель помнит, что она делала в шаге «работа модели»
    * и что уже пробовала на прошлой попытке.
    */
-  setModelSessionId(sessionId: string | null): void
+  setModelSessionId(sessionId: string | null): Promise<void>
   /** Зафиксировать итерацию fix-loop (персист + broadcast ci.fix). */
-  recordFix(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: 'fixed' | 'retrying' | 'gave_up'; diff?: string | null; changedFiles?: string[]; targetedTests?: CiTargetedTestRun[]; fullRerun?: CiFixAttempt['fullRerun']; failures?: CiTestFailure[]; durationMs?: number | null; tokensUsed?: number | null }): void
+  recordFix(args: { runStepId: string; attemptNo: number; diagnosis: string; action: string; result: 'fixed' | 'retrying' | 'gave_up'; diff?: string | null; changedFiles?: string[]; targetedTests?: CiTargetedTestRun[]; fullRerun?: CiFixAttempt['fullRerun']; failures?: CiTestFailure[]; durationMs?: number | null; tokensUsed?: number | null }): Promise<void>
   /** Предложить правку скрипта команды (Исход A: рекомендация). */
-  suggest(commandId: string, runStepId: string | null, reason: string, proposedScript: string): void
+  suggest(commandId: string, runStepId: string | null, reason: string, proposedScript: string): Promise<void>
   /**
    * Задать уточняющие вопросы и дождаться ответа: ран встаёт в `awaiting_input`,
    * вопрос дублируется в связанный чат. `null` — ответа не дождались (таймаут или
@@ -107,7 +107,7 @@ export interface CiFixContext extends CiModelContext {
   /** Упал шаг-проверка (тесты/typecheck/линт) — хвост лога нужен подлиннее. */
   isTestStep: boolean
   /** Сохранить свежую диагностику для повторов и восстановления после рестарта. */
-  setFixContext?(context: CiFixDiagnosticContext | null): void
+  setFixContext?(context: CiFixDiagnosticContext | null): Promise<void>
   /** Запустить одну ограниченную точечную проверку внутри fix-loop. */
   runTargetedTest?(command: string): Promise<CiTargetedTestRun>
   /** Получить список изменённых файлов для UI попытки. */

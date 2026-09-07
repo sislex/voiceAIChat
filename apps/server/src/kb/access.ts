@@ -9,22 +9,22 @@ import { uid } from '../users/auth.js'
 import type { KbView } from './types.js'
 
 /** Вид пользователя: его проекты + необязательные фильтры вкладки UI. */
-export function kbViewOf(db: VoiceChatDb, userId: string, filter: { scope?: string | null; projectId?: string | null } = {}): KbView {
+export async function kbViewOf(db: VoiceChatDb, userId: string, filter: { scope?: string | null; projectId?: string | null } = {}): Promise<KbView> {
   const scope = isKbScope(filter.scope) ? filter.scope : undefined
   return {
     userId,
-    projectIds: db.projects.listProjects(userId).map((project) => project.id),
+    projectIds: (await db.projects.listProjects(userId)).map((project) => project.id),
     ...(scope ? { scope } : {}),
     ...(filter.projectId ? { projectId: filter.projectId } : {})
   }
 }
 
-export function kbViewOfRequest(db: VoiceChatDb, req: FastifyRequest, filter: { scope?: string | null; projectId?: string | null } = {}): KbView {
+export async function kbViewOfRequest(db: VoiceChatDb, req: FastifyRequest, filter: { scope?: string | null; projectId?: string | null } = {}): Promise<KbView> {
   return kbViewOf(db, uid(req), filter)
 }
 
 /** Вид для хода модели: проекты владельца чата (чат может быть и без проекта). */
-export function kbViewOfTurn(db: VoiceChatDb, userId: string): KbView {
+export async function kbViewOfTurn(db: VoiceChatDb, userId: string): Promise<KbView> {
   return kbViewOf(db, userId)
 }
 
@@ -33,13 +33,13 @@ export function kbViewOfTurn(db: VoiceChatDb, userId: string): KbView {
  * персональное — сам пользователь, проектное — участник проекта. Возвращает
  * причину отказа или null, если можно.
  */
-export function kbWriteDenial(
+export async function kbWriteDenial(
   db: VoiceChatDb,
   user: { name: string; role: string },
   target: { scope: KbScope; projectId?: string | null }
-): string | null {
+): Promise<string | null> {
   if (target.scope === 'usage') return user.role === 'admin' ? null : 'раздел «Использование» правит только администратор'
   if (target.scope === 'user') return null
   if (!target.projectId) return 'для проектной статьи нужен projectId'
-  return db.projects.getProject(user.name, target.projectId) ? null : 'нет доступа к проекту'
+  return await db.projects.getProject(user.name, target.projectId) ? null : 'нет доступа к проекту'
 }

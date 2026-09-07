@@ -16,7 +16,7 @@ export class AuthStatusState {
   async get(userId: string, refresh = false): Promise<LoginStatusMap> {
     const cached = this.statuses.get(userId)
     if (cached && !refresh) return cached
-    const active = this.pending.get(userId)
+    const active = await this.pending.get(userId)
     if (active) return active
     const request = this.load(userId).then((status) => {
       this.set(userId, status)

@@ -119,9 +119,9 @@ export class KbResearchManager {
 
   private async execute(userId: string, project: ProjectDetail, target: { agentId: string; workdir: string }, run: KbResearchRun): Promise<void> {
     const { db } = this.deps
-    const existingDocs = db.kb.kbDocuments({ scope: 'project', projectId: project.id })
+    const existingDocs = await db.kb.kbDocuments({ scope: 'project', projectId: project.id })
     const existing = existingDocs.map((doc) => ({ id: doc.id, title: doc.title, updatedAt: doc.updatedAt }))
-    const config = db.ci.getCiLlmConfig('project', project.id)
+    const config = await db.ci.getCiLlmConfig('project', project.id)
     const client = config?.provider === 'codex' ? this.deps.codex : this.deps.claude
     const model = config?.provider === 'codex' ? config.model : config?.model || DEFAULT_CI_CLAUDE_MODEL
     // Режим «по изменениям с коммита» переиспользует промпт шага CI-рана
@@ -139,7 +139,7 @@ export class KbResearchManager {
         })
       : researchPrompt(project, target.workdir, existing)
     let text = ''
-    const answer = await new Promise<{ ok: boolean; text: string; error?: string }>((resolve) => {
+    const answer = await new Promise<{ ok: boolean; text: string; error?: string }>(async (resolve) => {
       let settled = false
       const done = (result: { ok: boolean; text: string; error?: string }): void => {
         if (settled) return
@@ -155,7 +155,7 @@ export class KbResearchManager {
         }
         done({ ok: false, text, error: 'Исследование не уложилось в отведённое время' })
       }, this.timeoutMs)
-      const handle = client.send(
+      const handle = await client.send(
         {
           userId,
           prompt,
@@ -169,12 +169,12 @@ export class KbResearchManager {
           }
         },
         {
-          onSession: () => {},
-          onDelta: (delta) => {
+          onSession: async () => {},
+          onDelta: async (delta) => {
             text += delta
           },
-          onDone: (final) => done({ ok: true, text: final || text }),
-          onError: (message) => done({ ok: false, text, error: message })
+          onDone: async (final) => done({ ok: true, text: final || text }),
+          onError: async (message) => done({ ok: false, text, error: message })
         }
       )
       this.handles.set(run.projectId, handle)
@@ -186,19 +186,19 @@ export class KbResearchManager {
     }
     try {
       const parsed = parseResearchOutput(answer.text)
-      this.finish(run, { state: 'done', note: parsed.note, documents: this.apply(project.id, userId, parsed.documents) })
+      this.finish(run, { state: 'done', note: parsed.note, documents: await this.apply(project.id, userId, parsed.documents) })
     } catch (err) {
       this.finish(run, { state: 'error', error: err instanceof Error ? err.message : String(err) })
     }
   }
 
   /** Записывает статьи в раздел проекта. Чужой id молча превращается в новую статью. */
-  private apply(projectId: string, userId: string, documents: ResearchDocument[]): KbResearchRun['documents'] {
-    const own = new Set(this.deps.db.kb.kbDocuments({ scope: 'project', projectId }).map((doc) => doc.id))
+  private async apply(projectId: string, userId: string, documents: ResearchDocument[]): Promise<KbResearchRun['documents']> {
+    const own = new Set((await this.deps.db.kb.kbDocuments({ scope: 'project', projectId })).map((doc) => doc.id))
     const today = new Date(this.now()).toISOString().slice(0, 10)
-    return documents.map((item) => {
+    return await Promise.all(documents.map(async (item) => {
       const id = item.id && own.has(item.id) ? item.id : null
-      const saved = this.deps.db.kb.saveKbDocument({
+      const saved = await this.deps.db.kb.saveKbDocument({
         id,
         scope: 'project',
         projectId,
@@ -211,6 +211,6 @@ export class KbResearchManager {
         createdBy: userId
       })
       return { id: saved.id, title: saved.title, action: id ? ('updated' as const) : ('created' as const) }
-    })
+    }))
   }
 }

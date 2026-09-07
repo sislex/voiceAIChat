@@ -31,20 +31,20 @@ export class PromptSuggester {
       `Черновик запроса:\n${draft}`
     ].join('\n\n')
 
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       let acc = ''
       const timer = setTimeout(() => {
         handle.cancel()
         reject(new Error('Помощник промптов не ответил вовремя'))
       }, TIMEOUT_MS)
-      const handle = this.client.send(
+      const handle = await this.client.send(
         { prompt, sessionId: null, model: this.model, permissionMode: 'plan', executionDisabled: true, userId },
         {
-          onSession: () => {},
-          onDelta: (delta) => {
+          onSession: async () => {},
+          onDelta: async (delta) => {
             acc += delta
           },
-          onDone: (final) => {
+          onDone: async (final) => {
             clearTimeout(timer)
             try {
               resolve(parseVariants(final || acc))
@@ -52,7 +52,7 @@ export class PromptSuggester {
               reject(error)
             }
           },
-          onError: (message) => {
+          onError: async (message) => {
             clearTimeout(timer)
             reject(new Error(message))
           }

@@ -40,16 +40,16 @@ beforeEach(() => {
 })
 afterEach(() => db.close())
 
-function setup(): { projectId: string; taskIds: string[]; prevColumnId: string } {
-  const project = db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
-  const agent = db.machines.createAgent('admin', 'M')
-  db.machines.linkMachine('admin', project.id, agent.id)
-  db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
-  db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
-  db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
-  const board = db.tasks.getBoard('admin', project.id)!
+async function setup(): Promise<{ projectId: string; taskIds: string[]; prevColumnId: string }> {
+  const project = await db.projects.createProject('admin', { name: 'P', gitUrl: 'git@github.com:x/y.git' })
+  const agent = await db.machines.createAgent('admin', 'M')
+  await db.machines.linkMachine('admin', project.id, agent.id)
+  await db.machines.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  await db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  await db.machines.setUserProjectDefaultMachine('admin', project.id, agent.id)
+  const board = (await db.tasks.getBoard('admin', project.id))!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
-  const taskIds = ['T1', 'T2'].map((title) => db.tasks.createTask('admin', project.id, { columnId: ready.id, title })!.id)
+  const taskIds = await Promise.all(['T1', 'T2'].map(async (title) => (await db.tasks.createTask('admin', project.id, { columnId: ready.id, title }))!.id))
   return { projectId: project.id, taskIds, prevColumnId: ready.id }
 }
 
@@ -60,23 +60,23 @@ function manager(over: Partial<CiRunManagerDeps> = {}): CiRunManager {
 /** Дождаться терминального статуса рана (или упасть по таймауту). */
 async function waitStatus(runId: string, ms = 3000): Promise<string> {
   for (let i = 0; i < ms / 10; i++) {
-    const st = db.ci.getCiRunRaw(runId)?.status
+    const st = (await db.ci.getCiRunRaw(runId))?.status
     if (st && ['success', 'failed', 'cancelled', 'timeout'].includes(st)) return st
     await new Promise((r) => setTimeout(r, 10))
   }
-  throw new Error(`ран ${runId} не завершился: ${db.ci.getCiRunRaw(runId)?.status}`)
+  throw new Error(`ран ${runId} не завершился: ${(await db.ci.getCiRunRaw(runId))?.status}`)
 }
 
-function startRun(ci: CiRunManager, projectId: string, taskId: string): string {
-  const r = ci.start('admin', projectId, taskId)
+async function startRun(ci: CiRunManager, projectId: string, taskId: string): Promise<string> {
+  const r = await ci.start('admin', projectId, taskId)
   if ('error' in r) throw new Error(r.error)
   return r.run.id
 }
 
 describe('отмена рана в фазе модели', () => {
   it('останавливает работу модели и пропускает следующий ран из очереди', async () => {
-    const { projectId, taskIds, prevColumnId } = setup()
-    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
+    const { projectId, taskIds, prevColumnId } = await setup()
+    await db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     let sawAbort = false
     let firstStarted: () => void = () => {}
     const started = new Promise<void>((res) => { firstStarted = res })
@@ -92,26 +92,26 @@ describe('отмена рана в фазе модели', () => {
       return { ok: false, cancelled: true }
     }
     const ci = manager({ modelWork })
-    const first = startRun(ci, projectId, taskIds[0])
-    const second = startRun(ci, projectId, taskIds[1])
+    const first = await startRun(ci, projectId, taskIds[0])
+    const second = await startRun(ci, projectId, taskIds[1])
     await started
 
-    expect(ci.cancel('admin', first)).toBe(true)
+    expect(await ci.cancel('admin', first)).toBe(true)
     expect(await waitStatus(first)).toBe('cancelled')
     expect(sawAbort).toBe(true)
     // Шаг модели закрыт как cancelled, слот «после» и резюме не запускались.
-    const steps = db.ci.getCiRun('admin', first)!.steps
+    const steps = (await db.ci.getCiRun('admin', first))!.steps
     expect(steps.find((s) => s.kind === 'model_work')!.status).toBe('cancelled')
     expect(steps.some((s) => s.kind === 'model_summary')).toBe(false)
     // Карточка вернулась в колонку, где была до рана.
-    expect(db.tasks.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(prevColumnId)
+    expect((await db.tasks.getBoard('admin', projectId))!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(prevColumnId)
     // Главное: очередь не залипла — следующий ран доехал сам.
     expect(await waitStatus(second)).toBe('success')
     expect(ci.activeRunIds()).toEqual([])
   })
 
   it('отмена посередине работы очищает checkout, и следующий ран проходит подготовку', async () => {
-    const { projectId, taskIds } = setup()
+    const { projectId, taskIds } = await setup()
     let dirty = false
     let modelStarted: () => void = () => {}
     const started = new Promise<void>((resolve) => { modelStarted = resolve })
@@ -140,20 +140,20 @@ describe('отмена рана в фазе модели', () => {
         return { ok: false, cancelled: true }
       }
     })
-    const first = startRun(ci, projectId, taskIds[0])
+    const first = await startRun(ci, projectId, taskIds[0])
     await started
-    expect(ci.cancel('admin', first)).toBe(true)
+    expect(await ci.cancel('admin', first)).toBe(true)
     expect(await waitStatus(first)).toBe('cancelled')
 
-    const second = startRun(ci, projectId, taskIds[0])
+    const second = await startRun(ci, projectId, taskIds[0])
     expect(await waitStatus(second, 5000)).toBe('success')
     expect(dirty).toBe(false)
     expect(execs.some((entry) => entry.script.includes('reset --hard HEAD') && entry.script.includes('clean -fdx'))).toBe(true)
   })
 
   it('исполнитель проигнорировал отмену → слот очереди освобождается по сторожевому таймауту', async () => {
-    const { projectId, taskIds } = setup()
-    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
+    const { projectId, taskIds } = await setup()
+    await db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     // Хук намеренно глухой к ctx.signal — так вёл себя modelWork до этой задачи.
     const modelWork: CiModelWorkHook = async (ctx) => {
       if (ctx.task.id !== taskIds[0]) return { ok: true }
@@ -161,20 +161,22 @@ describe('отмена рана в фазе модели', () => {
       return { ok: true }
     }
     const ci = manager({ modelWork })
-    const first = startRun(ci, projectId, taskIds[0])
-    const second = startRun(ci, projectId, taskIds[1])
-    for (let i = 0; i < 100 && db.ci.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
+    const first = await startRun(ci, projectId, taskIds[0])
+    const second = await startRun(ci, projectId, taskIds[1])
+    // Ждём сам шаг модели, а не статус running: между ними теперь есть await, и отмена
+    // до появления шага проверяла бы не то, что заявлено в названии теста.
+    for (let i = 0; i < 100 && !(await db.ci.getCiRun('admin', first))?.steps.some((s) => s.kind === 'model_work'); i++) await new Promise((r) => setTimeout(r, 10))
 
-    ci.cancel('admin', first)
+    await ci.cancel('admin', first)
     expect(await waitStatus(first)).toBe('cancelled')
     // Незавершённый шаг тоже закрыт, в логе видно, что это принудительное закрытие.
-    expect(db.ci.getCiRun('admin', first)!.steps.find((s) => s.kind === 'model_work')!.status).toBe('cancelled')
-    expect(db.ci.getCiRunLog('admin', first).some((l) => l.chunk.includes('закрыт принудительно'))).toBe(true)
+    expect((await db.ci.getCiRun('admin', first))!.steps.find((s) => s.kind === 'model_work')!.status).toBe('cancelled')
+    expect((await db.ci.getCiRunLog('admin', first)).some((l) => l.chunk.includes('закрыт принудительно'))).toBe(true)
     expect(await waitStatus(second)).toBe('success')
   })
 
   it('повторный «Выполнить» сразу после отмены проходит: задача не считается занятой', async () => {
-    const { projectId, taskIds } = setup()
+    const { projectId, taskIds } = await setup()
     let firstStarted: () => void = () => {}
     const started = new Promise<void>((res) => { firstStarted = res })
     let hangs = true
@@ -188,75 +190,75 @@ describe('отмена рана в фазе модели', () => {
       return { ok: true }
     }
     const ci = manager({ modelWork })
-    const first = startRun(ci, projectId, taskIds[0])
+    const first = await startRun(ci, projectId, taskIds[0])
     await started
 
-    expect(ci.cancel('admin', first)).toBe(true)
+    expect(await ci.cancel('admin', first)).toBe(true)
     // Ровно то, что делает пользователь: нажимает «Выполнить» сразу после отмены.
-    const second = ci.start('admin', projectId, taskIds[0])
+    const second = await ci.start('admin', projectId, taskIds[0])
     expect('error' in second).toBe(false)
     const secondId = (second as { run: { id: string } }).run.id
 
     expect(await waitStatus(first)).toBe('cancelled')
     expect(await waitStatus(secondId, 5000)).toBe('success')
     // Конечное состояние — как у обычного успешного рана без мержа.
-    const preparation = db.tasks.getBoard('admin', projectId)!.columns.find((c) => c.semanticType === 'component_qa')!
-    expect(db.tasks.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(preparation.id)
-    expect(db.ci.latestCiRunSummary(taskIds[0])!.id).toBe(secondId)
+    const preparation = (await db.tasks.getBoard('admin', projectId))!.columns.find((c) => c.semanticType === 'component_qa')!
+    expect((await db.tasks.getBoard('admin', projectId))!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(preparation.id)
+    expect((await db.ci.latestCiRunSummary(taskIds[0]))!.id).toBe(secondId)
   })
 
   it('отменённый ран из очереди закрывается сразу, не дожидаясь слота сервера', async () => {
-    const { projectId, taskIds, prevColumnId } = setup()
-    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
+    const { projectId, taskIds, prevColumnId } = await setup()
+    await db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     let release: () => void = () => {}
     const hold = new Promise<void>((res) => { release = res })
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
-    const first = startRun(ci, projectId, taskIds[0])
-    const second = startRun(ci, projectId, taskIds[1])
-    for (let i = 0; i < 100 && db.ci.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
+    const first = await startRun(ci, projectId, taskIds[0])
+    const second = await startRun(ci, projectId, taskIds[1])
+    for (let i = 0; i < 100 && (await db.ci.getCiRunRaw(first))?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
 
-    ci.cancel('admin', second)
+    await ci.cancel('admin', second)
     // Статус честный сразу, а не «в очереди» до освобождения слота.
-    expect(db.ci.getCiRunRaw(second)!.status).toBe('cancelled')
-    expect(db.tasks.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(prevColumnId)
+    expect((await db.ci.getCiRunRaw(second))!.status).toBe('cancelled')
+    expect((await db.tasks.getBoard('admin', projectId))!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(prevColumnId)
     release()
     expect(await waitStatus(first)).toBe('success')
-    expect(db.ci.getCiRun('admin', second)!.steps).toEqual([])
+    expect((await db.ci.getCiRun('admin', second))!.steps).toEqual([])
   })
 
   it('ручное исключение из очереди переносит карточку в backlog и идемпотентно', async () => {
-    const { projectId, taskIds } = setup()
-    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
+    const { projectId, taskIds } = await setup()
+    await db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     let release: () => void = () => {}
     const hold = new Promise<void>((res) => { release = res })
     const ci = manager({ modelWork: async (ctx) => { if (ctx.task.id === taskIds[0]) await hold; return { ok: true } } })
-    const first = startRun(ci, projectId, taskIds[0])
-    const queued = startRun(ci, projectId, taskIds[1])
-    for (let i = 0; i < 100 && db.ci.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
+    const first = await startRun(ci, projectId, taskIds[0])
+    const queued = await startRun(ci, projectId, taskIds[1])
+    for (let i = 0; i < 100 && (await db.ci.getCiRunRaw(first))?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
 
-    expect(ci.dequeue('admin', queued)).toMatchObject({ status: 'removed', run: { id: queued, status: 'cancelled' } })
-    const backlog = db.tasks.getBoard('admin', projectId)!.columns.find((c) => c.semanticType === 'backlog')!
-    expect(db.tasks.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(backlog.id)
+    expect(await ci.dequeue('admin', queued)).toMatchObject({ status: 'removed', run: { id: queued, status: 'cancelled' } })
+    const backlog = (await db.tasks.getBoard('admin', projectId))!.columns.find((c) => c.semanticType === 'backlog')!
+    expect((await db.tasks.getBoard('admin', projectId))!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(backlog.id)
     // Повтор не возвращает ложную ошибку и не запускает ран снова.
-    expect(ci.dequeue('admin', queued)).toMatchObject({ status: 'removed', run: { id: queued, status: 'cancelled' } })
-    expect(db.ci.getCiRun('admin', queued)!.steps).toEqual([])
+    expect(await ci.dequeue('admin', queued)).toMatchObject({ status: 'removed', run: { id: queued, status: 'cancelled' } })
+    expect((await db.ci.getCiRun('admin', queued))!.steps).toEqual([])
     release()
     await waitStatus(first)
   })
 
   it('ручное исключение сообщает running, если ран уже успел стартовать', async () => {
-    const { projectId, taskIds } = setup()
+    const { projectId, taskIds } = await setup()
     const ci = manager({ modelWork: async () => ({ ok: true }) })
-    const runId = startRun(ci, projectId, taskIds[0])
+    const runId = await startRun(ci, projectId, taskIds[0])
     // Моделируем границу между нажатием в UI и обработкой запроса: статус уже
     // сменился в execute, поэтому dequeue не должен отменять ран как queued.
-    const live = db.ci.updateCiRun(runId, { status: 'running' })!
-    expect(ci.dequeue('admin', runId)).toEqual({ status: 'running', run: live })
+    const live = (await db.ci.updateCiRun(runId, { status: 'running' }))!
+    expect(await ci.dequeue('admin', runId)).toEqual({ status: 'running', run: live })
   })
 
   it('отмена рана из очереди закрывает его как cancelled, не начиная работу', async () => {
-    const { projectId, taskIds, prevColumnId } = setup()
-    db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
+    const { projectId, taskIds, prevColumnId } = await setup()
+    await db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     let release: () => void = () => {}
     const hold = new Promise<void>((res) => { release = res })
     const ci = manager({
@@ -265,24 +267,24 @@ describe('отмена рана в фазе модели', () => {
         return { ok: true }
       }
     })
-    const first = startRun(ci, projectId, taskIds[0])
-    const second = startRun(ci, projectId, taskIds[1])
-    for (let i = 0; i < 100 && db.ci.getCiRunRaw(first)?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
+    const first = await startRun(ci, projectId, taskIds[0])
+    const second = await startRun(ci, projectId, taskIds[1])
+    for (let i = 0; i < 100 && (await db.ci.getCiRunRaw(first))?.status !== 'running'; i++) await new Promise((r) => setTimeout(r, 10))
     // Второй ещё стоит в очереди сервера — отменяем именно его.
-    expect(db.ci.getCiRunRaw(second)!.status).toBe('queued')
-    expect(ci.cancel('admin', second)).toBe(true)
+    expect((await db.ci.getCiRunRaw(second))!.status).toBe('queued')
+    expect(await ci.cancel('admin', second)).toBe(true)
     release()
     expect(await waitStatus(first)).toBe('success')
     expect(await waitStatus(second)).toBe('cancelled')
     // Ни одного шага: ран не начинался.
-    expect(db.ci.getCiRun('admin', second)!.steps).toEqual([])
-    expect(db.tasks.getBoard('admin', projectId)!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(prevColumnId)
+    expect((await db.ci.getCiRun('admin', second))!.steps).toEqual([])
+    expect((await db.tasks.getBoard('admin', projectId))!.tasks.find((t) => t.id === taskIds[1])!.columnId).toBe(prevColumnId)
   })
 
   it('отмена в слоте команд закрывает ран как cancelled, а не failed', async () => {
-    const { projectId, taskIds } = setup()
-    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'clone', script: 'git clone' })
-    db.ci.setCiSlotCommands('task', taskIds[0], 'before_model', [cmd.id])
+    const { projectId, taskIds } = await setup()
+    const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'clone', script: 'git clone' })
+    await db.ci.setCiSlotCommands('task', taskIds[0], 'before_model', [cmd.id])
     let cancelHere: () => void = () => {}
     const hold = new Promise<void>((res) => { cancelHere = res })
     const slowExecutor: CommandExecutor = {
@@ -294,22 +296,22 @@ describe('отмена рана в фазе модели', () => {
       }
     }
     const ci = manager({ executor: slowExecutor, modelWork: async () => ({ ok: true }) })
-    const runId = startRun(ci, projectId, taskIds[0])
+    const runId = await startRun(ci, projectId, taskIds[0])
     await hold
-    ci.cancel('admin', runId)
+    await ci.cancel('admin', runId)
     expect(await waitStatus(runId)).toBe('cancelled')
-    expect(db.ci.getCiRun('admin', runId)!.steps.some((s) => s.kind === 'model_work')).toBe(false)
+    expect((await db.ci.getCiRun('admin', runId))!.steps.some((s) => s.kind === 'model_work')).toBe(false)
   })
 })
 
 describe('изолированный кэш npm', () => {
   it('шаг получает свой npm_config_cache рядом с рабочими копиями', async () => {
-    const { projectId, taskIds } = setup()
-    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'npm ci', script: 'npm ci' })
-    db.ci.setCiSlotCommands('project', projectId, 'before_model', [cmd.id])
+    const { projectId, taskIds } = await setup()
+    const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'npm ci', script: 'npm ci' })
+    await db.ci.setCiSlotCommands('project', projectId, 'before_model', [cmd.id])
     const ci = manager({ modelWork: async () => ({ ok: true }) })
-    expect(await waitStatus(startRun(ci, projectId, taskIds[0]))).toBe('success')
-    expect(await waitStatus(startRun(ci, projectId, taskIds[1]))).toBe('success')
+    expect(await waitStatus(await startRun(ci, projectId, taskIds[0]))).toBe('success')
+    expect(await waitStatus(await startRun(ci, projectId, taskIds[1]))).toBe('success')
 
     const npmSteps = execs.filter((e) => e.script === 'npm ci')
     expect(npmSteps).toHaveLength(2)
@@ -328,27 +330,27 @@ describe('изолированный кэш npm', () => {
 
 describe('инфраструктурные ошибки шага', () => {
   it('повреждённый кэш npm не уходит в fix-loop — ран падает сразу с объяснением', async () => {
-    const { projectId, taskIds } = setup()
-    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'npm ci', script: 'npm ci NPM_CACHE_BROKEN' })
-    db.ci.setCiSlotCommands('task', taskIds[0], 'before_model', [cmd.id])
+    const { projectId, taskIds } = await setup()
+    const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'npm ci', script: 'npm ci NPM_CACHE_BROKEN' })
+    await db.ci.setCiSlotCommands('task', taskIds[0], 'before_model', [cmd.id])
     let fixCalls = 0
     const attemptFix: CiFixHook = async () => { fixCalls++; return { fixed: false } }
     const ci = manager({ modelWork: async () => ({ ok: true }), attemptFix })
-    const runId = startRun(ci, projectId, taskIds[0])
+    const runId = await startRun(ci, projectId, taskIds[0])
     expect(await waitStatus(runId)).toBe('failed')
     expect(fixCalls).toBe(0)
-    const log = db.ci.getCiRunLog('admin', runId).map((l) => l.chunk).join('')
+    const log = (await db.ci.getCiRunLog('admin', runId)).map((l) => l.chunk).join('')
     expect(log).toContain('Повреждён кэш npm')
     expect(log).toContain('npm cache clean --force')
     // Модель не запускалась: слот «до» упал.
-    expect(db.ci.getCiRun('admin', runId)!.steps.some((s) => s.kind === 'model_work')).toBe(false)
+    expect((await db.ci.getCiRun('admin', runId))!.steps.some((s) => s.kind === 'model_work')).toBe(false)
     // Фаза рана называет причину: это машина, а не задача.
-    expect(db.ci.getCiRunRaw(runId)!.slotProgress.phase).toContain('повреждён кэш npm')
+    expect((await db.ci.getCiRunRaw(runId))!.slotProgress.phase).toContain('повреждён кэш npm')
   })
 
   it('обычное падение шага по-прежнему идёт в fix-loop', async () => {
-    const { projectId, taskIds } = setup()
-    const cmd = db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'test', script: 'FAILING npm test' })
+    const { projectId, taskIds } = await setup()
+    const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId, name: 'test', script: 'FAILING npm test' })
     const failing: CommandExecutor = {
       run: async (req, onChunk) => {
         execs.push({ script: req.script, env: req.env })
@@ -356,17 +358,17 @@ describe('инфраструктурные ошибки шага', () => {
         return { exitCode: req.script.includes('FAILING') ? 1 : 0, timedOut: false }
       }
     }
-    db.ci.setCiSlotCommands('task', taskIds[0], 'before_model', [cmd.id])
+    await db.ci.setCiSlotCommands('task', taskIds[0], 'before_model', [cmd.id])
     let fixCalls = 0
     const ci = manager({ executor: failing, modelWork: async () => ({ ok: true }), attemptFix: async () => { fixCalls++; return { fixed: false } } })
-    expect(await waitStatus(startRun(ci, projectId, taskIds[0]))).toBe('failed')
+    expect(await waitStatus(await startRun(ci, projectId, taskIds[0]))).toBe('failed')
     expect(fixCalls).toBe(1)
   })
 })
 
 describe('хук работы модели слушает отмену', () => {
   it('abort гасит процесс CLI и закрывает ход как cancelled', async () => {
-    const { projectId, taskIds } = setup()
+    const { projectId, taskIds } = await setup()
     const ctl = new AbortController()
     let cancelled = 0
     // Клиент, который «думает» бесконечно: без реакции на signal ход не закрылся бы.
@@ -379,27 +381,27 @@ describe('хук работы модели слушает отмену', () => {
       ciMcpBaseUrl: 'http://x/ci?k=1',
       agentNameOf: () => 'M'
     })
-    const task = db.tasks.getCiTask('admin', projectId, taskIds[0])!
-    const project = db.projects.getProject('admin', projectId)!
-    const run = db.ci.createCiRun({
+    const task = (await db.tasks.getCiTask('admin', projectId, taskIds[0]))!
+    const project = (await db.projects.getProject('admin', projectId))!
+    const run = await db.ci.createCiRun({
       projectId, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null,
       llmProvider: 'claude', llmModel: 'sonnet', mode: 'development', clarifyLevel: 'none', clarifyMax: 0,
       conversationId: null, slotProgress: { done: 0, total: 2, phase: 'Модель работает' }
     })
-    const step = db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'running' })
+    const step = await db.ci.addCiRunStep({ runId: run.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'running' })
     const ctx: CiModelContext = {
       runId: run.id,
       agentId: null,
       workspacePath: '/repos/p/1',
       env: {},
       signal: ctl.signal,
-      addStep: () => step,
-      finishStep: () => {},
-      log: () => {},
+      addStep: async () => step,
+      finishStep: async () => {},
+      log: async () => {},
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' }),
-      setModelSessionId: () => {},
-      recordFix: () => {},
-      suggest: () => {},
+      setModelSessionId: async () => {},
+      recordFix: async () => {},
+      suggest: async () => {},
       askUser: async () => null,
       askPlanApproval: async () => null,
       run,

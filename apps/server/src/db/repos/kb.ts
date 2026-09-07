@@ -128,6 +128,34 @@ function mapKbDocument(r: KbDocumentRow): KbStoredDocument {
     updatedAt: r.updated_at
   }
 }
+/**
+ * Заготовка обзорной статьи раздела «Разработка проекта». Пишется при создании
+ * проекта, чтобы разделу было куда расти: дальше её переписывает операция
+ * «Исследовать проект» (kb/research.ts) или человек руками.
+ */
+export function projectKbSkeleton(name: string, description: string): string {
+  return [
+    `# Разработка: ${name}`,
+    '',
+    description.trim() || 'Описание проекта пока не заполнено.',
+    '',
+    '## Что это',
+    '',
+    'Заготовка обзорной статьи. Здесь держим то, что верно в коде сейчас: из чего',
+    'состоит проект, где что лежит, как его собирать и проверять.',
+    '',
+    '## Устройство',
+    '',
+    'Пока не описано. Запустите «Исследовать проект» — модель просканирует',
+    'репозиторий на машине проекта и заполнит раздел по коду.',
+    '',
+    '## Как запускать и проверять',
+    '',
+    'Пока не описано.',
+    ''
+  ].join('\n')
+}
+
 export class KbRepo extends BaseRepo {
   /**
    * Вопросы рана, на которые база знаний не ответила вовсе (`empty`/`error`) —
@@ -606,5 +634,15 @@ export class KbRepo extends BaseRepo {
 
   deleteKbDocument(id: string): boolean {
     return this.db.prepare(`DELETE FROM kb_documents WHERE id = ?`).run(id).changes > 0
+  }
+
+  /** Обзорная статья-заготовка нового проекта; зовётся из projects.createProject внутри его транзакции. */
+  seedProjectOverview(args: { projectId: string; name: string; description: string; createdBy: string; ts: number }): void {
+    this.db
+      .prepare(
+        `INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
+         VALUES (?, 'project', NULL, ?, ?, 'subsystem', '[\"обзор\"]', '[]', ?, NULL, ?, ?, ?)`
+      )
+      .run(this.newId(), args.projectId, `Разработка: ${args.name}`, projectKbSkeleton(args.name, args.description), args.createdBy, args.ts, args.ts)
   }
 }

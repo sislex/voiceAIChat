@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-07
-checked: 33a7972d
+checked: d4710360
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -24,14 +24,32 @@ areas:
 (`apps/server/src/db/database.ts`) — только ядро: открывает соединение, применяет
 схему и `migrate()`, и раздаёт репозитории `db.identity`, `db.settings`, `db.llm`,
 `db.chat`, `db.machines`, `db.projects`, `db.tasks`, `db.ci`, `db.qa`, `db.releases`,
-`db.kb` (`apps/server/src/db/repos/<домен>.ts`). Вызов на сервере всегда адресный:
-`db.tasks.getBoard(...)`, `db.chat.addMessage(...)` — по префиксу видно, в чей домен
-идёт обращение. У каждой таблицы ровно один репозиторий-владелец, и только он в неё
+`db.kb` (`apps/server/src/db/repos/<домен>.ts`). Вызов на сервере всегда адресный и
+асинхронный: `await db.tasks.getBoard(...)`, `await db.chat.addMessage(...)` — по префиксу
+видно, в чей домен идёт обращение. Поля `db.<домен>` — это `AsyncPort<Repo>`: прокси
+(`asyncPort()` в `repos/base.ts`), у которого каждый метод возвращает `Promise`, а тело
+выполняется сразу на синхронном `better-sqlite3`. Так реализацию домена можно заменить на
+удалённую или другой движок, не трогая вызывающих. Внутри слоя соседи синхронны
+(`this.repos.<домен>`), поэтому транзакция живёт целиком внутри одного метода репозитория.
+Тестам, подменяющим метод (`db.sync.tasks.isTaskClosed = () => true`, `vi.spyOn(db.sync.kb, …)`),
+оставлен синхронный доступ `db.sync.<домен>`: подмена через порт сделала бы метод
+асинхронным и для соседей внутри слоя.
+
+**Домен можно перевести на другой движок, не трогая вызывающих.** `DbDeps.ports` принимает
+фабрики `(ports) => AsyncPort<Repo>`; первый и пока единственный такой домен — `releases`:
+`VC_DB_RELEASES=pglite` (+ `VC_DB_RELEASES_DIR`, по умолчанию `<dataDir>/pglite/releases`)
+поднимает встроенный Postgres (`@electric-sql/pglite`) с реализацией `db/pg/releasesPg.ts` за
+узким `SqlClient` (`db/pg/sqlClient.ts`). Членство в проекте она спрашивает через порт
+соседа (`ports.projects`), FK на `projects(id)` у неё нет — каскад удаления проекта до таблиц
+релизов на другом движке не доходит. Контракт обоих движков держит один тест
+`db/pg/releases.contract.test.ts`; гейт владения запрещает pg-реализации трогать чужие
+таблицы. По умолчанию всё в SQLite; переключатель — proof-of-concept круга 4
+(`docs/plans/db-repositories.md`). У каждой таблицы ровно один репозиторий-владелец, и только он в неё
 пишет; манифест — `apps/server/src/db/ownership.ts`, проверяет `ownership.test.ts`:
 все таблицы схемы имеют владельца, репозитории не импортируют друг друга (соседи —
-только через `this.repos.<домен>`), записи в чужие таблицы перечислены поимённо в
-`KNOWN_CROSS_WRITES` (трещотка — список может только уменьшаться), чужие чтения через
-`JOIN` не превышают `CROSS_READ_BUDGET`. **Новая таблица без строки в `ownership.ts`
+только через `this.repos.<домен>`), записей в чужие таблицы нет вовсе — каскады
+(`identity.deleteUserData`, `machines.deleteAgent`) идут вызовами методов владельцев внутри
+одной транзакции инициатора, — чужие чтения через `JOIN` не превышают `CROSS_READ_BUDGET`. **Новая таблица без строки в `ownership.ts`
 гейт не пройдёт.** Общие типы строк и чистые помощники нескольких доменов — в
 `repos/support.ts`; экспортируемые снаружи имена (`hashAgentToken`, `UserRow`,
 `LOGIN_LOCK_*`, `DbDeps`…) по-прежнему импортируются из `db/database.js` через

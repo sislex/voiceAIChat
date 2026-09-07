@@ -90,33 +90,6 @@ interface ProjectMemberRow {
   added_at: number
 }
 
-/**
- * Заготовка обзорной статьи раздела «Разработка проекта». Пишется при создании
- * проекта, чтобы разделу было куда расти: дальше её переписывает операция
- * «Исследовать проект» (kb/research.ts) или человек руками.
- */
-export function projectKbSkeleton(name: string, description: string): string {
-  return [
-    `# Разработка: ${name}`,
-    '',
-    description.trim() || 'Описание проекта пока не заполнено.',
-    '',
-    '## Что это',
-    '',
-    'Заготовка обзорной статьи. Здесь держим то, что верно в коде сейчас: из чего',
-    'состоит проект, где что лежит, как его собирать и проверять.',
-    '',
-    '## Устройство',
-    '',
-    'Пока не описано. Запустите «Исследовать проект» — модель просканирует',
-    'репозиторий на машине проекта и заполнит раздел по коду.',
-    '',
-    '## Как запускать и проверять',
-    '',
-    'Пока не описано.',
-    ''
-  ].join('\n')
-}
 export class ProjectsRepo extends BaseRepo {
   /** Вид доски человека в проекте; отсутствующая запись — вид по умолчанию. */
   getBoardView(userId: string, projectId: string): BoardView {
@@ -794,14 +767,9 @@ export class ProjectsRepo extends BaseRepo {
       ] as [string, string][]).forEach(([name, semantic], i) =>
         this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
       )
-      // Скелет раздела «Разработка проекта»: обзорная статья-заготовка. Без неё
+      // Скелет раздела «Разработка проекта» заводит владелец статей — kb. Без него
       // раздел пустой, и «Исследовать проект» нечего сверять с кодом.
-      this.db
-        .prepare(
-          `INSERT INTO kb_documents (id, scope, owner_id, project_id, title, kind, tags, areas, body, checked_on, created_by, created_at, updated_at)
-           VALUES (?, 'project', NULL, ?, ?, 'subsystem', '[\"обзор\"]', '[]', ?, NULL, ?, ?, ?)`
-        )
-        .run(this.newId(), id, `Разработка: ${args.name}`, projectKbSkeleton(args.name, args.description ?? ''), userId, ts, ts)
+      this.repos.kb.seedProjectOverview({ projectId: id, name: args.name, description: args.description ?? '', createdBy: userId, ts })
     })()
     return this.getProject(userId, id) as ProjectDetail
   }
@@ -1140,9 +1108,7 @@ export class ProjectsRepo extends BaseRepo {
       }
       const ts = this.now()
       this.db.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = ?`).run(id, username)
-      this.db
-        .prepare(`UPDATE tasks SET assignee = NULL, updated_at = ? WHERE project_id = ? AND assignee = ?`)
-        .run(ts, id, username)
+      this.repos.tasks.unassignUserInProject(id, username, ts)
       this.auditProjectMemberRole(id, userId, username, oldRole, null, 'remove', ts)
       this.touchProject(id, ts)
     })
@@ -1295,5 +1261,38 @@ export class ProjectsRepo extends BaseRepo {
   canQa(userId: string, projectId: string): boolean {
     const row = this.db.prepare(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, userId) as { role: string; qa_permission: number } | undefined
     return !!row && (row.role === 'owner' || !!row.qa_permission)
+  }
+
+  /** Следующий номер задачи проекта (CHAT-N): счётчик живёт в projects, выдаёт его владелец. */
+  nextTaskSeq(projectId: string): number {
+    return (this.db.prepare(`UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`).get(projectId) as { task_seq: number }).task_seq
+  }
+
+  /**
+   * Часть каскада удаления аккаунта: живые приглашения закрываем (иначе при повторной
+   * регистрации того же логина или адреса они снова к нему привяжутся), членства
+   * убираем, осиротевшие без владельца проекты удаляем. Зовётся из identity внутри
+   * его транзакции.
+   */
+  detachDeletedUser(userId: string, email: string): void {
+    this.db.prepare(
+      `UPDATE project_invitations SET status='revoked', responded_at=?
+       WHERE status='pending' AND (invited_username = ? OR (? <> '' AND email = ?))`
+    ).run(this.now(), userId, email, email)
+    this.db.prepare(`DELETE FROM project_members WHERE username = ?`).run(userId)
+    this.db
+      .prepare(
+        `DELETE FROM projects WHERE id IN (
+           SELECT p.id FROM projects p
+           WHERE NOT EXISTS (SELECT 1 FROM project_members m WHERE m.project_id = p.id AND m.role = 'owner')
+         )`
+      )
+      .run()
+  }
+
+  /** Машина удаляется: проекты теряют её как машину по умолчанию и как прод-машину. */
+  detachAgent(agentId: string): void {
+    this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE default_agent_id = ?`).run(agentId)
+    this.db.prepare(`UPDATE projects SET production_agent_id = NULL WHERE production_agent_id = ?`).run(agentId)
   }
 }

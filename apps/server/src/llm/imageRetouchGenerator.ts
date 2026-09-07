@@ -14,8 +14,8 @@ export function llmRetouchGenerator(opts: {
       { serverPath: '/retouch/mask.png', runnerName: 'mask.png', dataBase64: mask.toString('base64') },
       ...references.map((data, index) => ({ serverPath: `/retouch/reference-${index + 1}.png`, runnerName: `reference-${index + 1}.png`, dataBase64: data.toString('base64') }))
     ]
-    const fullText = await new Promise<string>((resolve, reject) => {
-      opts.client.send({
+    const fullText = await new Promise<string>(async (resolve, reject) => {
+      await opts.client.send({
         userId: opts.userId,
         prompt: [
           'Выполни локальную ретушь изображения crop.png строго по промпту ниже.',
@@ -30,8 +30,8 @@ export function llmRetouchGenerator(opts: {
         executionDisabled: true,
         attachments
       }, {
-        onDelta: () => {},
-        onSession: () => {},
+        onDelta: async () => {},
+        onSession: async () => {},
         onDone: resolve,
         onError: reject
       })

@@ -19,9 +19,9 @@ function message(text: string): Message {
 
 function deps(overrides: Partial<GeneratedCleanupDeps> = {}): GeneratedCleanupDeps {
   return {
-    targets: () => [target],
-    ttlDays: () => 30,
-    messages: () => [],
+    targets: async () => [target],
+    ttlDays: async () => 30,
+    messages: async () => [],
     resolve: async () => storage,
     list: async () => ({ entries: [] }),
     deleteFile: vi.fn(async () => undefined),
@@ -54,7 +54,7 @@ describe('GeneratedCleanupService', () => {
   it('сохраняет файл, упомянутый актуальным image-блоком', async () => {
     const path = '/store/chats/c/.generated/live.png'
     const d = deps({
-      messages: () => [message(imageBlock({ path, agentId: 'm' }))],
+      messages: async () => [message(imageBlock({ path, agentId: 'm' }))],
       list: async () => ({ entries: [{ name: 'live.png', kind: 'file', mtime: 0 }] })
     })
     expect(await new GeneratedCleanupService(d).run()).toMatchObject({ deleted: 0, skipped: 1 })

@@ -10,7 +10,7 @@ import { createIntegrationTestRunner, type IntegrationTestFinishInput } from './
 type Outcome = CommandExecResult & { output?: string }
 
 /** Раннер начинает с разбора коммита, поэтому `git`-команды отвечают заранее. */
-function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: string | null; cached?: boolean; testCases?: IntegrationTestRun['testCases']; baseBranch?: string; mergeBase?: Outcome; diff?: string; fallbackDiff?: string; markers?: string } = {}) {
+async function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: string | null; cached?: boolean; testCases?: IntegrationTestRun['testCases']; baseBranch?: string; mergeBase?: Outcome; diff?: string; fallbackDiff?: string; markers?: string } = {}) {
   const run = { id: 'run1', status: 'queued', projectId: 'p1', taskId: 't1', commitSha: 'c'.repeat(40), testCases: opts.testCases ?? [] } as unknown as IntegrationTestRun
   const finished: IntegrationTestFinishInput[] = []
   const calls: CommandExecRequest[] = []
@@ -19,17 +19,17 @@ function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: st
   const gateResults: Array<{ commitSha: string; signature: string }> = []
   const db = {
     ci: {
-      integrationTestExecutionContext: () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: opts.baseBranch ?? 'main' }),
-      findPassedGateResult: (commitSha: string, signature: string) => {
+      integrationTestExecutionContext: async () => ({ agentId: 'agent', workdir: '/ws', npmCacheDir: 'npmCacheDir' in opts ? opts.npmCacheDir ?? null : '/cache/task', commands, ciBaseBranch: opts.baseBranch ?? 'main' }),
+      findPassedGateResult: async (commitSha: string, signature: string) => {
       if (opts.cached) return { runKind: 'component_qa', runId: 'previous-run', createdAt: 0 }
       return gateResults.some((item) => item.commitSha === commitSha && item.signature === signature) ? { runKind: 'integration_tests', runId: 'run1', createdAt: 0 } : null
     },
-      recordPassedGateResult: (args: { commitSha: string; signature: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature }) },
-      getIntegrationTestRun: () => run,
-      markIntegrationTestRunning: () => { run.status = 'running' },
-      appendIntegrationTestLog: (_runId: string, chunk: string) => { logs.push(chunk) },
-      recordIntegrationAutomationLinks: (_userId: string, _runId: string, covered: Array<{ testId: string; path: string }>) => { links.push(...covered); return run },
-      finishIntegrationTestRun: (_userId: string, _runId: string, input: IntegrationTestFinishInput) => { finished.push(input); run.status = input.status; return run }
+      recordPassedGateResult: async (args: { commitSha: string; signature: string }) => { gateResults.push({ commitSha: args.commitSha, signature: args.signature }) },
+      getIntegrationTestRun: async () => run,
+      markIntegrationTestRunning: async () => { run.status = 'running' },
+      appendIntegrationTestLog: async (_runId: string, chunk: string) => { logs.push(chunk) },
+      recordIntegrationAutomationLinks: async (_userId: string, _runId: string, covered: Array<{ testId: string; path: string }>) => { links.push(...covered); return run },
+      finishIntegrationTestRun: async (_userId: string, _runId: string, input: IntegrationTestFinishInput) => { finished.push(input); run.status = input.status; return run }
     }
   }
   let stage = 0
@@ -56,7 +56,7 @@ function setup(commands: string[], outcomes: Outcome[], opts: { npmCacheDir?: st
   const runner = createIntegrationTestRunner({
     db, executor, now: () => 0,
     qaStageChanged: (projectId, taskId) => { stageEvents.push({ projectId, taskId }) },
-    completed: (_runId, _userId, passed, reason, classification) => { completions.push({ passed, reason, classification }) }
+    completed: async (_runId, _userId, passed, reason, classification) => { completions.push({ passed, reason, classification }) }
   })
   return { runner, finished, calls, links, logs, gateResults, stageEvents, completions }
 }
@@ -65,7 +65,7 @@ describe('createIntegrationTestRunner', () => {
   // @testCase TC-MERGE-1
   it('merge-коммит обрабатывает полным diff относительно merge-base', async () => {
     const testCases = [{ id: 'TC-A', required: true, automatable: true }] as unknown as IntegrationTestRun['testCases']
-    const s = setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], {
+    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], {
       baseBranch: 'develop',
       testCases,
       diff: 'tests/a.test.ts\n',
@@ -84,7 +84,7 @@ describe('createIntegrationTestRunner', () => {
   // @testCase TC-MERGE-2
   it('при ошибке merge-base использует first-parent fallback', async () => {
     const testCases = [{ id: 'TC-A', required: true, automatable: true }] as unknown as IntegrationTestRun['testCases']
-    const s = setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], {
+    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], {
       mergeBase: { exitCode: 128, timedOut: false },
       fallbackDiff: 'tests/a.test.ts\n',
       markers: 'tests/a.test.ts:@testCase TC-A\n',
@@ -102,7 +102,7 @@ describe('createIntegrationTestRunner', () => {
 
   // @testCase TC-MERGE-3
   it('блокирует ран, если основной и fallback diff пусты', async () => {
-    const s = setup(['npm run test'], [], { diff: '', fallbackDiff: '' })
+    const s = await setup(['npm run test'], [], { diff: '', fallbackDiff: '' })
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.finished[0]).toMatchObject({
@@ -121,7 +121,7 @@ describe('createIntegrationTestRunner', () => {
       { id: 'TC-A', required: true, automatable: true },
       { id: 'TC-B', required: true, automatable: true }
     ] as unknown as IntegrationTestRun['testCases']
-    const s = setup(['npm run test'], [], {
+    const s = await setup(['npm run test'], [], {
       cached: true,
       testCases,
       diff: 'tests/a.test.ts\n',
@@ -141,7 +141,7 @@ describe('createIntegrationTestRunner', () => {
 
   // @testCase TC-NORMAL-COMMIT
   it('ставит зависимости перед стадиями тем же кэшем задачи', async () => {
-    const s = setup(['npm run affected-check'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
+    const s = await setup(['npm run affected-check'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     // git-разбор коммита и grep маркеров идут до установки — сравниваем хвост.
@@ -154,7 +154,7 @@ describe('createIntegrationTestRunner', () => {
 
   it('нет бинаря из node_modules (127) → blocked/infrastructure, а не дефект', async () => {
     const output = 'sh: vitest: command not found\nnpm error code 127\n'
-    const s = setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 127, timedOut: false, output }])
+    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 127, timedOut: false, output }])
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     const input = s.finished[0]
@@ -171,7 +171,7 @@ describe('createIntegrationTestRunner', () => {
   // валидацию одной склейкой, и коммит разработки проезжал проверку.
   // @testCase TC-REG-1
   it('нетестовые файлы в коммите блокируют ран', async () => {
-    const s = setup(['npm run test'], [{ exitCode: 0, timedOut: false }], { diff: 'apps/server/src/db/database.ts\napps/server/src/db/schema.ts\npackages/ui/src/test/fakeApi.ts\n' })
+    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }], { diff: 'apps/server/src/db/database.ts\napps/server/src/db/schema.ts\npackages/ui/src/test/fakeApi.ts\n' })
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     const input = s.finished[0]
@@ -191,7 +191,7 @@ describe('createIntegrationTestRunner', () => {
       { id: 'TC-1', required: true, automatable: true },
       { id: 'TC-2', required: true, automatable: true }
     ] as unknown as IntegrationTestRun['testCases']
-    const s = setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], {
+    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], {
       testCases,
       diff: 'packages/ui/src/test/fakeApi.ts\npackages/ui/src/components/kanban/NewTaskCardView.dom.test.tsx\n',
       markers: 'packages/ui/src/test/fakeApi.ts:@testCase TC-1\npackages/ui/src/components/kanban/NewTaskCardView.dom.test.tsx:@testCase TC-2\npackages/ui/src/test/fakeApi.ts:@testCase TC-IGNORED\n'
@@ -207,7 +207,7 @@ describe('createIntegrationTestRunner', () => {
   // @testCase TC-FALLBACK-MARKERS
   it('без маркеров покрытие синтезируется из диффа, как раньше', async () => {
     const testCases = [{ id: 'TC-1', required: true, automatable: true }] as unknown as IntegrationTestRun['testCases']
-    const s = setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], { testCases, diff: 'packages/ui/src/test/fakeApi.ts\n' })
+    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }], { testCases, diff: 'packages/ui/src/test/fakeApi.ts\n' })
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.links).toEqual([{ testId: 'TC-1', path: 'packages/ui/src/test/fakeApi.ts' }])
@@ -215,13 +215,13 @@ describe('createIntegrationTestRunner', () => {
   })
 
   it('зелёный прогон запоминается, а готовый результат того же коммита переиспользуется', async () => {
-    const first = setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
+    const first = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
     first.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(first.finished).toHaveLength(1))
     expect(first.finished[0].status).toBe('passed')
     expect(first.gateResults).toHaveLength(1)
 
-    const reuse = setup(['npm run test'], [], { cached: true })
+    const reuse = await setup(['npm run test'], [], { cached: true })
     reuse.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(reuse.finished).toHaveLength(1))
     const input = reuse.finished[0]
@@ -233,7 +233,7 @@ describe('createIntegrationTestRunner', () => {
   })
 
   it('провал стадии остаётся дефектом реализации', async () => {
-    const s = setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 1, timedOut: false, output: '1 test failed\n' }])
+    const s = await setup(['npm run test'], [{ exitCode: 0, timedOut: false }, { exitCode: 1, timedOut: false, output: '1 test failed\n' }])
     s.runner.launch('run1', 'user')
     await vi.waitFor(() => expect(s.finished).toHaveLength(1))
     expect(s.finished[0]).toMatchObject({ status: 'failed', failureClassification: 'implementation_defect' })
@@ -241,7 +241,7 @@ describe('createIntegrationTestRunner', () => {
 })
 
 it('шлёт адресное событие этапа на старте и на завершении — панель живёт без опроса', async () => {
-  const s = setup(['npm run affected-check'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
+  const s = await setup(['npm run affected-check'], [{ exitCode: 0, timedOut: false }, { exitCode: 0, timedOut: false }])
   s.runner.launch('run1', 'bob')
   await vi.waitFor(() => expect(s.finished).toHaveLength(1))
   // Первое событие — переход в running, последнее — завершение рана.

@@ -238,22 +238,22 @@ export function registerAdminRoutes(
   // Метрики Make (п.38): место, публикации, просмотры — по системе и по пользователям.
   // Сессии пользователей (auth-roadmap п.4): список и отзыв администратором.
   app.get<{ Params: { name: string } }>(REST.adminSessions(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
-    if (!db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
     // Хеш секрета устройства — серверная деталь: админу он не нужен, а в ответе
     // стал бы способом выдать себя за доверенное устройство пользователя.
     return {
-      sessions: db.identity.listSessions(req.params.name).map(({ deviceSecret: _hidden, ...rest }) => rest),
+      sessions: (await db.identity.listSessions(req.params.name)).map(({ deviceSecret: _hidden, ...rest }) => rest),
       // Сводка отвечает на вопрос админа «сколько у него всего и сколько
       // доверенных» без пересчёта списка на клиенте.
-      stats: db.identity.sessionStats(req.params.name)
+      stats: await db.identity.sessionStats(req.params.name)
     }
   })
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     // Владельца берём до отзыва: после него getSession уже ничего не отдаст.
-    const owner = db.identity.getSession(req.params.sid)?.user
-    if (!db.identity.revokeSessionById(req.params.sid, undefined, 'admin')) return reply.code(404).send({ error: 'not found' })
+    const owner = (await db.identity.getSession(req.params.sid))?.user
+    if (!await db.identity.revokeSessionById(req.params.sid, undefined, 'admin')) return reply.code(404).send({ error: 'not found' })
     if (owner) {
-      db.identity.logSecurityEvent({ user: owner, type: 'session_revoked', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'отозвана администратором', sid: req.params.sid })
+      await db.identity.logSecurityEvent({ user: owner, type: 'session_revoked', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'отозвана администратором', sid: req.params.sid })
       sessionHub?.emit(owner, req.params.sid)
     }
     return { ok: true }
@@ -261,21 +261,21 @@ export function registerAdminRoutes(
   // Снять доверие с устройства пользователя. Обратной операции у админа нет
   // намеренно: доверие выдаёт только сам владелец со своего устройства.
   app.delete<{ Params: { sid: string } }>(REST.adminSessionUntrust(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
-    const session = db.identity.getSession(req.params.sid)
+    const session = await db.identity.getSession(req.params.sid)
     if (!session) return reply.code(404).send({ error: 'not found' })
-    db.identity.updateSession(session.sid, { trusted: false })
-    db.identity.logSecurityEvent({ user: session.user, type: 'session_untrusted', ip: req.ip, userAgent: session.userAgent, details: 'снято администратором', sid: session.sid })
+    await db.identity.updateSession(session.sid, { trusted: false })
+    await db.identity.logSecurityEvent({ user: session.user, type: 'session_untrusted', ip: req.ip, userAgent: session.userAgent, details: 'снято администратором', sid: session.sid })
     sessionHub?.emit(session.user)
     return { ok: true }
   })
 
   // Открытая регистрация и общая квота собственных проектов.
-  const adminConfig = () => ({
-    ...readSignupConfig(db),
+  const adminConfig = async () => ({
+    ...await readSignupConfig(db),
     mailConfigured: Boolean(mailer?.configured),
-    ownedProjectLimit: Number(db.settings.getAppConfig('projects.ownedLimit')) || DEFAULT_OWNED_PROJECT_LIMIT,
+    ownedProjectLimit: Number(await db.settings.getAppConfig('projects.ownedLimit')) || DEFAULT_OWNED_PROJECT_LIMIT,
     // 0 — без ограничения: политика по умолчанию, менять её должен человек осознанно.
-    sessionLimit: Number(db.settings.getAppConfig('sessions.maxPerUser')) || 0
+    sessionLimit: Number(await db.settings.getAppConfig('sessions.maxPerUser')) || 0
   })
   app.get(REST.adminSignup, guard, async () => adminConfig())
   app.put<{ Body: { enabled?: boolean; role?: string; ownedProjectLimit?: number; sessionLimit?: number } | undefined }>(REST.adminSignup, guard, async (req, reply) => {
@@ -286,23 +286,23 @@ export function registerAdminRoutes(
     const sessionLimit = req.body?.sessionLimit
     // 0 разрешён и означает «без лимита»; верхняя граница — от опечатки в поле.
     if (sessionLimit !== undefined && (!Number.isInteger(sessionLimit) || sessionLimit < 0 || sessionLimit > 100)) return reply.code(400).send({ error: 'session limit must be an integer from 0 to 100' })
-    if (typeof req.body?.enabled === 'boolean') db.settings.setAppConfig('signup.enabled', req.body.enabled ? '1' : '0')
-    if (role) db.settings.setAppConfig('signup.role', role)
-    if (limit !== undefined) db.settings.setAppConfig('projects.ownedLimit', String(limit))
-    if (sessionLimit !== undefined) db.settings.setAppConfig('sessions.maxPerUser', String(sessionLimit))
+    if (typeof req.body?.enabled === 'boolean') await db.settings.setAppConfig('signup.enabled', req.body.enabled ? '1' : '0')
+    if (role) await db.settings.setAppConfig('signup.role', role)
+    if (limit !== undefined) await db.settings.setAppConfig('projects.ownedLimit', String(limit))
+    if (sessionLimit !== undefined) await db.settings.setAppConfig('sessions.maxPerUser', String(sessionLimit))
     return adminConfig()
   })
   // Код сброса пароля (auth-roadmap п.10): администратор выдаёт одноразовый код на 24 часа, пользователь вводит его на экране входа.
   app.post<{ Params: { name: string } }>(REST.adminUserResetCode(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
-    if (!db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
     const code = randomBytes(6).toString('base64url').replace(/[-_]/g, 'x').slice(0, 8).toUpperCase()
     const ttl = 24 * 60 * 60_000
-    db.identity.setResetCode(req.params.name, code, ttl)
-    db.identity.logSecurityEvent({ user: req.params.name, type: 'reset_code_issued', ip: req.ip, details: `администратор ${uid(req)}` })
+    await db.identity.setResetCode(req.params.name, code, ttl)
+    await db.identity.logSecurityEvent({ user: req.params.name, type: 'reset_code_issued', ip: req.ip, details: `администратор ${uid(req)}` })
     return { code, expiresAt: Date.now() + ttl }
   })
   // Инвайты на саморегистрацию (auth-roadmap п.8): создать (роль, срок, лимит), список, отозвать.
-  app.get(REST.adminInvites, guard, async () => ({ invites: db.identity.listInvites() }))
+  app.get(REST.adminInvites, guard, async () => ({ invites: await db.identity.listInvites() }))
   app.post<{ Body: { role?: string; ttlHours?: number; maxUses?: number; note?: string; email?: string } | undefined }>(REST.adminInvites, guard, async (req, reply) => {
     const role = req.body?.role
     if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
@@ -310,25 +310,25 @@ export function registerAdminRoutes(
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'bad email' })
     const ttlHours = Math.min(Math.max(Number(req.body?.ttlHours ?? 72), 1), 24 * 30)
     const maxUses = Math.min(Math.max(Number(req.body?.maxUses ?? 1), 1), 100)
-    let invite = db.identity.createInvite({ token: randomBytes(18).toString('base64url'), role, createdBy: uid(req), ttlMs: ttlHours * 60 * 60_000, maxUses, note: req.body?.note, email })
+    let invite = await db.identity.createInvite({ token: randomBytes(18).toString('base64url'), role, createdBy: uid(req), ttlMs: ttlHours * 60 * 60_000, maxUses, note: req.body?.note, email })
     if (email) {
       try {
         await sendInvitation(req, email, invite.token)
-        invite = db.identity.markInviteEmailed(invite.token) ?? invite
+        invite = await db.identity.markInviteEmailed(invite.token) ?? invite
       } catch (error) {
         app.log.warn({ err: error }, 'не удалось отправить системный инвайт')
       }
     }
-    db.identity.logSecurityEvent({ user: uid(req), type: 'invite_created', ip: req.ip, details: `роль ${role}, ${maxUses} исп., ${ttlHours} ч${email ? `, email ${email}` : ''}` })
+    await db.identity.logSecurityEvent({ user: uid(req), type: 'invite_created', ip: req.ip, details: `роль ${role}, ${maxUses} исп., ${ttlHours} ч${email ? `, email ${email}` : ''}` })
     return invite
   })
   app.delete<{ Params: { token: string } }>(REST.adminInvite(':token').replace('%3Atoken', ':token'), guard, async (req, reply) => {
-    return db.identity.deleteInvite(req.params.token) ? { ok: true } : reply.code(404).send({ error: 'not found' })
+    return await db.identity.deleteInvite(req.params.token) ? { ok: true } : reply.code(404).send({ error: 'not found' })
   })
   // Журнал безопасности (auth-roadmap п.7).
   app.get<{ Querystring: { user?: string; limit?: string; group?: string } }>(REST.adminSecurity, guard, async (req) => ({
     events: filterSecurityGroup(
-      db.identity.listSecurityEvents({ user: req.query.user || undefined, limit: req.query.limit ? Number(req.query.limit) : undefined }),
+      await db.identity.listSecurityEvents({ user: req.query.user || undefined, limit: req.query.limit ? Number(req.query.limit) : undefined }),
       req.query.group
     )
   }))
@@ -348,19 +348,20 @@ export function registerAdminRoutes(
    * разговоры и машины на каждого пользователя, и список из двухсот учёток
    * стоил четырёхсот запросов к базе.
    */
-  const usersBulk = (): { online: Set<string>; agentsByUser: Map<string, AgentRecord[]>; conversations: Map<string, number>; activity: Map<string, { lastSeen: number; live: number }> } => {
+  const usersBulk = async (): Promise<{ online: Set<string>; agentsByUser: Map<string, AgentRecord[]>; conversations: Map<string, number>; activity: Map<string, { lastSeen: number; live: number }> }> => {
     const agentsByUser = new Map<string, AgentRecord[]>()
-    for (const agent of db.machines.listAllAgents()) {
+    for (const agent of await db.machines.listAllAgents()) {
       if (!agent.userId) continue
       const list = agentsByUser.get(agent.userId)
       if (list) list.push(agent)
       else agentsByUser.set(agent.userId, [agent])
     }
-    return { online: registry.onlineIds(), agentsByUser, conversations: db.chat.conversationCounts(), activity: db.identity.sessionActivity() }
+    return { online: registry.onlineIds(), agentsByUser, conversations: await db.chat.conversationCounts(), activity: await db.identity.sessionActivity() }
   }
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}, bulk = usersBulk(), withAgents = true): AdminUserInfo => {
+  const toInfo = async (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}, bulk?: Awaited<ReturnType<typeof usersBulk>>, withAgents = true): Promise<AdminUserInfo> => {
+    bulk ??= await usersBulk()
     const online = bulk.online
     // Версия и телеметрия нужны админке для «обновить до актуальной» (п.16) и для
     // строки «Онлайн · macOS 15.6»; у офлайн-машины ни того, ни другого нет —
@@ -388,23 +389,23 @@ export function registerAdminRoutes(
   }
 
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> => {
-    const bulk = usersBulk()
-    return db.identity.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u, bulk, false))
+    const bulk = await usersBulk()
+    return Promise.all((await db.identity.listUsers()).map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u, bulk, false)))
   })
 
   /** Машины одного человека: их грузит карточка, когда её открыли. */
   app.get<{ Params: { name: string } }>(REST.adminUserMachines(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
-    const user = db.identity.getUser(req.params.name)
+    const user = await db.identity.getUser(req.params.name)
     if (!user) return reply.code(404).send({ error: 'not found' })
-    return toInfo(user.name, user.role, user.blocked, user.createdAt, user).agents ?? []
+    return (await toInfo(user.name, user.role, user.blocked, user.createdAt, user)).agents ?? []
   })
 
   // Метрики машин (п.5): агрегаты БД + живые online/версия/телеметрия реестра.
-  const machineStats = (): AdminMachineStats => {
+  const machineStats = async (): Promise<AdminMachineStats> => {
     const now = Date.now()
-    const rows = new Map(db.machines.machineStatsRows(now).map((r) => [r.machineId, r]))
-    const owners = new Map(db.identity.listUsers().map((u) => [u.name, u]))
-    const machines: AdminMachineStat[] = db.machines.listAllAgents().filter((a) => a.userId && owners.has(a.userId)).map((a) => {
+    const rows = new Map((await db.machines.machineStatsRows(now)).map((r) => [r.machineId, r]))
+    const owners = new Map((await db.identity.listUsers()).map((u) => [u.name, u]))
+    const machines: AdminMachineStat[] = (await db.machines.listAllAgents()).filter((a) => a.userId && owners.has(a.userId)).map((a) => {
       const r = rows.get(a.id)
       const t = registry.telemetryOf(a.id)
       const disk = t?.disk.work ?? t?.disk.root
@@ -420,30 +421,30 @@ export function registerAdminRoutes(
     return { generatedAt: now, machines, totals: { machines: machines.length, online: machines.filter((m) => m.online).length, commands24h: machines.reduce((s, m) => s + m.commands24h, 0), errors24h: machines.reduce((s, m) => s + m.errors24h, 0) } }
   }
   app.get(REST.adminMachineStats, guard, async () => machineStats())
-  app.get(REST.adminMachineMetrics, guard, async (_req, reply) => reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMachineMetrics(machineStats())))
+  app.get(REST.adminMachineMetrics, guard, async (_req, reply) => reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMachineMetrics(await machineStats())))
 
   // Ролевые правила команд (п.10): deny/allow-паттерны на роль поверх политики машины и проекта.
-  app.get(REST.adminCommandPolicy, guard, async () => ({ roles: db.machines.getRoleCommandPolicies() }))
+  app.get(REST.adminCommandPolicy, guard, async () => ({ roles: await db.machines.getRoleCommandPolicies() }))
   app.put<{ Body: { roles?: RoleCommandPolicies } | undefined }>(REST.adminCommandPolicy, guard, async (req) => {
     const roles = parseRoleCommandPolicies(JSON.stringify(req.body?.roles ?? {}))
-    db.machines.setRoleCommandPolicies(roles)
+    await db.machines.setRoleCommandPolicies(roles)
     return { roles }
   })
 
   // Отзыв токена любой машины из админки (п.11).
   app.post<{ Params: { id: string } }>(REST.adminMachineTokenRevoke(':id').replace('%3Aid', ':id'), guard, async (req, reply) => {
-    const owner = db.machines.agentOwnerId(req.params.id)
+    const owner = await db.machines.agentOwnerId(req.params.id)
     if (!owner) return reply.code(404).send({ error: 'not found' })
-    const name = db.machines.listAgents(owner).find((a) => a.id === req.params.id)?.name ?? req.params.id
-    db.machines.revokeAgentToken(req.params.id)
+    const name = (await db.machines.listAgents(owner)).find((a) => a.id === req.params.id)?.name ?? req.params.id
+    await db.machines.revokeAgentToken(req.params.id)
     registry.disconnect(req.params.id)
-    db.identity.logSecurityEvent({ user: owner, type: 'agent_token_revoked', details: `${name} (админ ${uid(req)})` })
+    await db.identity.logSecurityEvent({ user: owner, type: 'agent_token_revoked', details: `${name} (админ ${uid(req)})` })
     return { ok: true }
   })
 
   // Обновление агента на любой машине (machines-roadmap п.16): владение не требуется — админ.
   app.post<{ Params: { id: string } }>(REST.adminMachineUpdate(':id').replace('%3Aid', ':id'), guard, async (req, reply) => {
-    if (!db.machines.agentOwnerId(req.params.id)) return reply.code(404).send({ error: 'not found' })
+    if (!await db.machines.agentOwnerId(req.params.id)) return reply.code(404).send({ error: 'not found' })
     const result = await updateAgentOnMachine(registry, req.params.id, req)
     if ('status' in result) return reply.code(result.status).send({ error: result.error })
     return result
@@ -471,7 +472,7 @@ export function registerAdminRoutes(
     // Список имён сужает ответ до тех, кого видно на экране: полная сводка на
     // установке с сотнями учёток считается ради четырёх строк метрик.
     const only = (req.query.users ?? '').split(',').map((name) => name.trim()).filter(Boolean)
-    const summary = db.chat.usageSummary(from, to)
+    const summary = await db.chat.usageSummary(from, to)
     return only.length > 0 ? summary.filter((row) => only.includes(row.name)) : summary
   })
 
@@ -483,7 +484,7 @@ export function registerAdminRoutes(
       const role = req.body?.role
       if (!name) return reply.code(400).send({ error: 'name required' })
       if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
-      if (db.identity.getUser(name)) return reply.code(409).send({ error: 'пользователь уже существует' })
+      if (await db.identity.getUser(name)) return reply.code(409).send({ error: 'пользователь уже существует' })
       // Политика пароля (auth-roadmap п.2): пустые и слабые пароли не принимаем; HIBP — только при VC_HIBP_CHECK=1, fail-open.
       const password = req.body?.password ?? ''
       const violation = checkPasswordPolicy(password, { name })
@@ -492,9 +493,9 @@ export function registerAdminRoutes(
         const count = await pwnedCount(password)
         if (count && count > 0) return reply.code(400).send({ error: `Этот пароль встречался в утечках (${count}) — выберите другой` })
       }
-      const u = db.identity.createUser(name, password, role)
-      if (req.body?.mustChangePassword) db.identity.setMustChangePassword(name, true)
-      db.identity.logSecurityEvent({ user: name, type: 'password_set', ip: req.ip, details: `учётка создана администратором ${uid(req)}${req.body?.mustChangePassword ? ', временный пароль' : ''}` })
+      const u = await db.identity.createUser(name, password, role)
+      if (req.body?.mustChangePassword) await db.identity.setMustChangePassword(name, true)
+      await db.identity.logSecurityEvent({ user: name, type: 'password_set', ip: req.ip, details: `учётка создана администратором ${uid(req)}${req.body?.mustChangePassword ? ', временный пароль' : ''}` })
       return toInfo(u.name, u.role, u.blocked, u.createdAt, u)
     }
   )
@@ -505,15 +506,15 @@ export function registerAdminRoutes(
     async (req, reply) => {
       // Лимит расхода LLM (п.17) можно менять отдельно от роли: тело только с llmLimitUsd.
       if ('llmLimitUsd' in (req.body ?? {}) && req.body?.role === undefined) {
-        if (!db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+        if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
         const v = req.body?.llmLimitUsd
-        db.identity.setUserLlmLimit(req.params.name, v === null || v === undefined ? null : Math.max(0, Number(v)))
-        const u = db.identity.getUser(req.params.name)!
+        await db.identity.setUserLlmLimit(req.params.name, v === null || v === undefined ? null : Math.max(0, Number(v)))
+        const u = (await db.identity.getUser(req.params.name))!
         return toInfo(u.name, u.role, u.blocked, u.createdAt, u)
       }
       const role = req.body?.role
       if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
-      const user = db.identity.setUserRole(req.params.name, role)
+      const user = await db.identity.setUserRole(req.params.name, role)
       return user ? toInfo(user.name, user.role, user.blocked, user.createdAt, user) : reply.code(404).send({ error: 'not found' })
     }
   )
@@ -524,13 +525,13 @@ export function registerAdminRoutes(
     async (req, reply) => {
       const target = req.params.name
       if (target === 'admin') return reply.code(400).send({ error: 'нельзя изменить admin' })
-      if (!db.identity.getUser(target)) return reply.code(404).send({ error: 'not found' })
-      db.identity.setUserBlocked(target, Boolean(req.body?.blocked))
+      if (!await db.identity.getUser(target)) return reply.code(404).send({ error: 'not found' })
+      await db.identity.setUserBlocked(target, Boolean(req.body?.blocked))
       // Причина идёт в журнал событий, а не в users.lock_reason: та колонка
       // хранит машинный повод авто-замка ('auto'/'inactive'), и человеческий
       // текст в ней сломал бы подпись «заблокирован автоматически».
       const reason = String(req.body?.reason ?? '').trim().slice(0, 200)
-      db.identity.logSecurityEvent({ user: target, type: req.body?.blocked ? 'user_blocked' : 'user_unblocked', ip: req.ip, details: `администратор ${uid(req)}${reason ? ` · ${reason}` : ''}` })
+      await db.identity.logSecurityEvent({ user: target, type: req.body?.blocked ? 'user_blocked' : 'user_unblocked', ip: req.ip, details: `администратор ${uid(req)}${reason ? ` · ${reason}` : ''}` })
       return { ok: true }
     }
   )
@@ -539,10 +540,10 @@ export function registerAdminRoutes(
     const target = req.params.name
     if (target === 'admin') return reply.code(400).send({ error: 'нельзя удалить admin' })
     if (target === uid(req)) return reply.code(400).send({ error: 'нельзя удалить себя' })
-    if (!db.identity.getUser(target)) return reply.code(404).send({ error: 'not found' })
+    if (!await db.identity.getUser(target)) return reply.code(404).send({ error: 'not found' })
     // Рвём соединения его онлайн-машин, затем удаляем все данные + учётку.
-    for (const a of db.machines.listAgents(target)) registry.disconnect(a.id)
-    db.identity.deleteUserData(target)
+    for (const a of await db.machines.listAgents(target)) registry.disconnect(a.id)
+    await db.identity.deleteUserData(target)
     return { ok: true }
   })
 
@@ -555,66 +556,66 @@ export function registerAdminRoutes(
         : 'day'
       const from = req.query.from ? Number(req.query.from) : undefined
       const to = req.query.to ? Number(req.query.to) : undefined
-      return db.chat.usageReport(req.params.name, unit, from, to, req.query.conversationId || undefined)
+      return await db.chat.usageReport(req.params.name, unit, from, to, req.query.conversationId || undefined)
     }
   )
 
   app.get<{ Params: { name: string } }>(
     REST.adminUserConversations(':name').replace('%3Aname', ':name'),
     guard,
-    async (req) => db.chat.listConversations(req.params.name, { includeCompleted: true })
+    async (req) => await db.chat.listConversations(req.params.name, { includeCompleted: true })
   )
 
   app.get<{ Params: { name: string }; Querystring: { conversationId?: string } }>(
     REST.adminUserMessages(':name').replace('%3Aname', ':name'),
     guard,
-    async (req) => db.chat.listMessages(req.params.name, req.query.conversationId ?? '')
+    async (req) => await db.chat.listMessages(req.params.name, req.query.conversationId ?? '')
   )
 
   app.get<{ Params: { name: string } }>(REST.adminUserLlmAccess(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
-    if (!db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
-    return db.identity.getUserLlmAccess(req.params.name)
+    if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    return await db.identity.getUserLlmAccess(req.params.name)
   })
 
   app.put<{ Params: { name: string }; Body: unknown }>(REST.adminUserLlmAccess(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
-    if (!db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
     const access = validateLlmAccess(req.body)
     if (!access) return reply.code(400).send({ error: 'bad llm access' })
-    db.identity.setUserLlmAccess(req.params.name, access)
-    return db.identity.getUserLlmAccess(req.params.name)
+    await db.identity.setUserLlmAccess(req.params.name, access)
+    return await db.identity.getUserLlmAccess(req.params.name)
   })
 
-  app.get(REST.adminModelPrices, guard, async () => db.llm.listModelPrices())
+  app.get(REST.adminModelPrices, guard, async () => await db.llm.listModelPrices())
 
   app.put<{ Body: Partial<ModelPriceInput> }>(REST.adminModelPrices, guard, async (req, reply) => {
     const parsed = validateModelPrice(req.body)
     if (!parsed.ok) return reply.code(400).send({ error: parsed.error })
-    return db.llm.upsertModelPrice(parsed.value)
+    return await db.llm.upsertModelPrice(parsed.value)
   })
 
   app.delete<{ Params: { provider: string; model: string } }>(
     '/api/admin/model-prices/:provider/:model', guard, async (req, reply) => {
-      if (!db.llm.deleteModelPrice(req.params.provider, req.params.model)) return reply.code(404).send({ error: 'not found' })
+      if (!await db.llm.deleteModelPrice(req.params.provider, req.params.model)) return reply.code(404).send({ error: 'not found' })
       return { ok: true }
     }
   )
 
-  app.get(REST.adminLlmEngines, guard, async () => db.llm.listLlmEngines())
+  app.get(REST.adminLlmEngines, guard, async () => await db.llm.listLlmEngines())
 
   app.post<{ Body: Partial<AdminLlmEngineInput> }>(REST.adminLlmEngines, guard, async (req, reply) => {
     const parsed = validateEngineInput(req.body)
     if (!parsed.ok) return reply.code(400).send({ error: parsed.error })
-    return db.llm.createLlmEngine(parsed.value)
+    return await db.llm.createLlmEngine(parsed.value)
   })
 
   app.patch<{ Params: { id: string }; Body: Partial<AdminLlmEngineInput> }>(
     REST.adminLlmEngine(':id').replace('%3Aid', ':id'),
     guard,
     async (req, reply) => {
-      if (!db.llm.getLlmEngine(req.params.id)) return reply.code(404).send({ error: 'not found' })
+      if (!await db.llm.getLlmEngine(req.params.id)) return reply.code(404).send({ error: 'not found' })
       const parsed = validateEngineInput(req.body)
       if (!parsed.ok) return reply.code(400).send({ error: parsed.error })
-      return db.llm.updateLlmEngine(req.params.id, parsed.value)
+      return await db.llm.updateLlmEngine(req.params.id, parsed.value)
     }
   )
 
@@ -622,8 +623,8 @@ export function registerAdminRoutes(
     REST.adminLlmEngine(':id').replace('%3Aid', ':id'),
     guard,
     async (req, reply) => {
-      if (!db.llm.getLlmEngine(req.params.id)) return reply.code(404).send({ error: 'not found' })
-      db.llm.deleteLlmEngine(req.params.id)
+      if (!await db.llm.getLlmEngine(req.params.id)) return reply.code(404).send({ error: 'not found' })
+      await db.llm.deleteLlmEngine(req.params.id)
       return { ok: true }
     }
   )
@@ -632,7 +633,7 @@ export function registerAdminRoutes(
     REST.adminLlmEngineHealth(':id').replace('%3Aid', ':id'),
     guard,
     async (req, reply) => {
-      const engine = db.llm.getLlmEngine(req.params.id)
+      const engine = await db.llm.getLlmEngine(req.params.id)
       if (!engine) return reply.code(404).send({ error: 'not found' })
       return probeEngineHealth(engine)
     }

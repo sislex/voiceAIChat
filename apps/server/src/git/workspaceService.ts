@@ -109,8 +109,8 @@ export class GitWorkspaceService {
    * плюс общая папка проекта на машине. Ни одного обращения к машине — только БД,
    * поэтому список открывается мгновенно даже там, где машины офлайн.
    */
-  listWorkspaces(userId: string, projectId: string): GitWorkspaceRef[] {
-    const project = this.deps.db.projects.getProject(userId, projectId)
+  async listWorkspaces(userId: string, projectId: string): Promise<GitWorkspaceRef[]> {
+    const project = await this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new GitError(404, 'not_found', 'Проект не найден')
     const refs: GitWorkspaceRef[] = []
     const seen = new Set<string>()
@@ -121,18 +121,18 @@ export class GitWorkspaceService {
       seen.add(key)
       refs.push(ref)
     }
-    for (const workspace of this.deps.db.ci.listCiWorkspaceReport(userId, projectId)) {
+    for (const workspace of await this.deps.db.ci.listCiWorkspaceReport(userId, projectId)) {
       if (!workspace.agentId) continue
-      add(this.refFromCiWorkspace(userId, project, workspace.id))
+      add(await this.refFromCiWorkspace(userId, project, workspace.id))
     }
-    for (const task of this.deps.db.tasks.getBoard(userId, projectId)?.tasks ?? []) {
-      for (const repository of this.deps.db.tasks.listTaskRepositories(userId, projectId, task.id)) {
+    for (const task of (await this.deps.db.tasks.getBoard(userId, projectId))?.tasks ?? []) {
+      for (const repository of await this.deps.db.tasks.listTaskRepositories(userId, projectId, task.id)) {
         if (repository.state !== 'active') continue
-        add(this.refFromTaskRepository(userId, project, repository.id))
+        add(await this.refFromTaskRepository(userId, project, repository.id))
       }
     }
     const defaultAgent = project.defaultAgentId
-    if (defaultAgent) add(this.refFromProjectMachine(userId, project, defaultAgent))
+    if (defaultAgent) add(await this.refFromProjectMachine(userId, project, defaultAgent))
     return refs
   }
 
@@ -140,18 +140,18 @@ export class GitWorkspaceService {
    * Резолвер цели. `write: true` дополнительно требует, чтобы каталог был свободен и
    * машина позволяла запись: иначе операция отклоняется до похода на машину.
    */
-  resolve(userId: string, projectId: string, workspaceId: string, opts: { write: boolean }): GitWorkspaceRef {
-    const project = this.deps.db.projects.getProject(userId, projectId)
+  async resolve(userId: string, projectId: string, workspaceId: string, opts: { write: boolean }): Promise<GitWorkspaceRef> {
+    const project = await this.deps.db.projects.getProject(userId, projectId)
     if (!project) throw new GitError(404, 'not_found', 'Проект не найден')
     const parsed = parseGitWorkspaceId(workspaceId)
     if (!parsed) throw new GitError(404, 'workspace_not_found', 'Рабочая копия не найдена')
-    const ref = parsed.kind === 'ci-workspace'
+    const ref = await (parsed.kind === 'ci-workspace'
       ? this.refFromCiWorkspace(userId, project, parsed.ciWorkspaceId)
       : parsed.kind === 'task-repository'
         ? this.refFromTaskRepository(userId, project, parsed.taskRepositoryId)
         : parsed.kind === 'conversation'
           ? this.refFromConversation(userId, project, parsed.conversationId)
-          : this.refFromProjectMachine(userId, project, parsed.agentId)
+          : this.refFromProjectMachine(userId, project, parsed.agentId))
     if (!ref) throw new GitError(404, 'workspace_not_found', 'Рабочая копия не найдена')
     if (!ref.path) throw new GitError(409, 'path_missing', 'У рабочей копии не задан каталог')
     if (!ref.online) throw new GitError(409, 'machine_offline', 'Машина не в сети')
@@ -171,15 +171,15 @@ export class GitWorkspaceService {
   async status(userId: string, projectId: string, workspaceId: string, changesLimit: number = GIT_MAX_CHANGES): Promise<GitWorkspaceStatus> {
     let ref: GitWorkspaceRef
     try {
-      ref = this.resolve(userId, projectId, workspaceId, { write: false })
+      ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     } catch (error) {
       if (error instanceof GitError && error.status === 409) {
-        return this.emptyStatus(userId, projectId, null, error.code as GitWorkspaceProblem, error.message)
+        return await this.emptyStatus(userId, projectId, null, error.code as GitWorkspaceProblem, error.message)
       }
       throw error
     }
     if (ref.released) return this.emptyStatus(userId, projectId, ref, 'workspace_released', null)
-    const baseBranch = this.deps.db.projects.getProject(userId, projectId)?.ciBaseBranch ?? 'main'
+    const baseBranch = (await this.deps.db.projects.getProject(userId, projectId))?.ciBaseBranch ?? 'main'
     const result = await this.run(userId, projectId, ref, statusScript(baseBranch), READ_TIMEOUT_MS)
     const sections = splitGitSections(result.output)
     if (!sections.repo || !/true/.test(sections.repo)) {
@@ -199,7 +199,7 @@ export class GitWorkspaceService {
       ref,
       problem: null,
       detail: null,
-      gitUrl: this.deps.db.projects.getProject(userId, projectId)?.gitUrl ?? null,
+      gitUrl: (await this.deps.db.projects.getProject(userId, projectId))?.gitUrl ?? null,
       baseBranch,
       branch: parsed.head.branch,
       detached: parsed.head.detached || (!parsed.head.branch && head !== null),
@@ -216,7 +216,7 @@ export class GitWorkspaceService {
 
   /** Локальные и удалённые ветки; `refresh` — с обращением к origin. */
   async branches(userId: string, projectId: string, workspaceId: string, refresh: boolean): Promise<GitBranchList> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     const result = await this.run(
       userId, projectId, ref, branchesScript(refresh), refresh ? NETWORK_TIMEOUT_MS : READ_TIMEOUT_MS
     )
@@ -233,7 +233,7 @@ export class GitWorkspaceService {
 
   /** Один уровень дерева файлов ревизии. */
   async tree(userId: string, projectId: string, workspaceId: string, dir: string, refName?: string): Promise<GitTreeListing> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     const revision = refName ?? 'HEAD'
     if (!isValidGitRef(revision)) throw new GitError(400, 'invalid_ref', 'Недопустимая ревизия')
     if (dir && !isSafeRepoRelativePath(dir)) throw new GitError(400, 'invalid_path', 'Недопустимый путь каталога')
@@ -251,7 +251,7 @@ export class GitWorkspaceService {
    * Отдаётся base64: канал текстовый, и «просто отдать содержимое» его бы испортило.
    */
   async fileBytes(userId: string, projectId: string, workspaceId: string, path: string): Promise<{ path: string; dataBase64: string; size: number }> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
     const absolute = joinMachinePath(ref.path, path, this.deps.runtime.platformOf(ref.agentId))
     const result = await this.deps.runtime.fsRead(ref.agentId, absolute)
@@ -261,7 +261,7 @@ export class GitWorkspaceService {
 
   /** Содержимое файла: из ревизии (`ref`) или из рабочей копии (`ref` не задан). */
   async file(userId: string, projectId: string, workspaceId: string, path: string, refName?: string): Promise<GitFileContent> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
     if (refName && !isValidGitRef(refName)) throw new GitError(400, 'invalid_ref', 'Недопустимая ревизия')
     return refName
@@ -296,13 +296,13 @@ export class GitWorkspaceService {
    * внутри репозитория. Прямой `window.fs.write` из UI всех трёх проверок не проходит.
    */
   async saveFile(userId: string, projectId: string, workspaceId: string, path: string, content: string): Promise<GitSaveFileResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
     const absolute = joinMachinePath(ref.path, path, this.deps.runtime.platformOf(ref.agentId))
     const data = Buffer.from(content, 'utf8')
     if (data.byteLength > GIT_TEXT_MAX_BYTES) throw new GitError(400, 'file_too_large', 'Файл больше допустимого размера для правки')
     await this.deps.runtime.fsWrite(ref.agentId, absolute, data.toString('base64'))
-    this.audit(userId, projectId, ref, 'git.save_file', { path })
+    await this.audit(userId, projectId, ref, 'git.save_file', { path })
     const status = await this.status(userId, projectId, workspaceId)
     return {
       file: { path, ref: null, content, size: data.byteLength, truncated: false, binary: false },
@@ -315,7 +315,7 @@ export class GitWorkspaceService {
    * увидеть, что именно у него не закоммичено, а не узнать об этом из вывода git.
    */
   async checkout(userId: string, projectId: string, workspaceId: string, branch: string, confirmDirty: boolean): Promise<GitCheckoutResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     if (!isValidGitBranchName(branch)) throw new GitError(400, 'invalid_branch', 'Недопустимое имя ветки')
     const before = await this.status(userId, projectId, workspaceId)
     if (before.changes.length > 0 && !confirmDirty) {
@@ -323,7 +323,7 @@ export class GitWorkspaceService {
     }
     const result = await this.runMutation(userId, projectId, ref, checkoutScript(branch), MUTATE_TIMEOUT_MS, 'Не удалось переключить ветку')
     const sections = splitGitSections(result.output)
-    this.audit(userId, projectId, ref, 'git.checkout', { branch })
+    await this.audit(userId, projectId, ref, 'git.checkout', { branch })
     return {
       status: await this.status(userId, projectId, workspaceId),
       createdLocal: /remote/.test(sections.mode ?? '')
@@ -332,12 +332,12 @@ export class GitWorkspaceService {
 
   /** Новая ветка от текущего HEAD (или от указанной точки). */
   async createBranch(userId: string, projectId: string, workspaceId: string, name: string, from?: string): Promise<GitCheckoutResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     if (!isValidGitBranchName(name)) throw new GitError(400, 'invalid_branch', 'Недопустимое имя ветки')
     const point = from ?? 'HEAD'
     if (!isValidGitRef(point)) throw new GitError(400, 'invalid_ref', 'Недопустимая точка ветвления')
     await this.runMutation(userId, projectId, ref, createBranchScript(name, point), MUTATE_TIMEOUT_MS, 'Не удалось создать ветку')
-    this.audit(userId, projectId, ref, 'git.branch', { branch: name, from: point })
+    await this.audit(userId, projectId, ref, 'git.branch', { branch: name, from: point })
     return { status: await this.status(userId, projectId, workspaceId), createdLocal: true }
   }
 
@@ -349,7 +349,7 @@ export class GitWorkspaceService {
     userId: string, projectId: string, workspaceId: string,
     input: { message: string; paths?: string[]; all?: boolean }
   ): Promise<GitCommitResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     const message = normalizeCommitMessage(input.message)
     if (!message) throw new GitError(400, 'invalid_message', 'Сообщение коммита пустое или слишком длинное')
     const all = input.all === true
@@ -360,7 +360,7 @@ export class GitWorkspaceService {
     }
     const before = await this.status(userId, projectId, workspaceId)
     if (before.changes.length === 0) throw new GitError(409, 'nothing_to_commit', 'В рабочей копии нет изменений')
-    const user = this.deps.db.identity.getUser(userId)
+    const user = await this.deps.db.identity.getUser(userId)
     const script = commitScript({
       message, paths, all,
       user: userId,
@@ -371,8 +371,8 @@ export class GitWorkspaceService {
     const sha = /^[0-9a-f]{7,40}$/.exec(lastLine(sections.sha ?? ''))?.[0]
     if (!sha) throw new GitError(409, 'git_failed', lastLine(result.output) || 'Коммит не создан')
     const status = await this.status(userId, projectId, workspaceId)
-    this.recordRevision(ref, status.branch, sha, false)
-    this.audit(userId, projectId, ref, 'git.commit', { sha, files: all ? before.changes.length : paths.length })
+    await this.recordRevision(ref, status.branch, sha, false)
+    await this.audit(userId, projectId, ref, 'git.commit', { sha, files: all ? before.changes.length : paths.length })
     return { status, sha, staged: all ? before.changes.length : paths.length }
   }
 
@@ -381,7 +381,7 @@ export class GitWorkspaceService {
    * merge-ран и релизы со своими гейтами, и дублировать их здесь — значит обойти их.
    */
   async push(userId: string, projectId: string, workspaceId: string, branchInput?: string): Promise<GitPushResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     const before = await this.status(userId, projectId, workspaceId)
     const branch = branchInput ?? before.branch
     if (!branch) throw new GitError(409, 'detached_head', 'HEAD не на ветке: сначала переключитесь на ветку')
@@ -396,9 +396,9 @@ export class GitWorkspaceService {
     if (!head || !remote || head !== remote) {
       throw new GitError(409, 'push_not_confirmed', 'В origin не оказалось отправленного коммита: повторите отправку')
     }
-    this.recordRevision(ref, branch, head, true)
-    this.registerRepository(ref)
-    this.audit(userId, projectId, ref, 'git.push', { branch, sha: head })
+    await this.recordRevision(ref, branch, head, true)
+    await this.registerRepository(ref)
+    await this.audit(userId, projectId, ref, 'git.push', { branch, sha: head })
     return { status: await this.status(userId, projectId, workspaceId), branch, sha: head }
   }
 
@@ -410,7 +410,7 @@ export class GitWorkspaceService {
    * потребует stash — и то и другое человек должен решить сам, видя список файлов.
    */
   async pull(userId: string, projectId: string, workspaceId: string, mode: GitPullMode = 'rebase'): Promise<GitPullResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     const before = await this.status(userId, projectId, workspaceId)
     if (!before.branch) throw new GitError(409, 'detached_head', 'HEAD не на ветке: сначала переключитесь на ветку')
     if (before.changes.length > 0) {
@@ -424,7 +424,7 @@ export class GitWorkspaceService {
       throw new GitError(409, 'unknown_ref', `Ветки ${before.branch} нет в origin — сначала отправьте её`)
     }
     const status = await this.status(userId, projectId, workspaceId)
-    this.audit(userId, projectId, ref, 'git.pull', { branch: before.branch, mode })
+    await this.audit(userId, projectId, ref, 'git.pull', { branch: before.branch, mode })
     return { status, mode, pulled: Math.max(0, before.behind) }
   }
 
@@ -437,7 +437,7 @@ export class GitWorkspaceService {
   async discard(
     userId: string, projectId: string, workspaceId: string, paths: string[], confirmText: string
   ): Promise<GitDiscardResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     const before = await this.status(userId, projectId, workspaceId)
     const expected = before.branch ?? before.head?.slice(0, 8) ?? ''
     if (!expected || confirmText.trim() !== expected) {
@@ -453,7 +453,7 @@ export class GitWorkspaceService {
     }
     const untracked = chosen.filter((path) => before.changes.find((change) => change.path === path)?.state === 'untracked')
     await this.runMutation(userId, projectId, ref, discardScript(chosen), MUTATE_TIMEOUT_MS, 'Не удалось отбросить правки')
-    this.audit(userId, projectId, ref, 'git.discard', { files: chosen.length, untracked: untracked.length })
+    await this.audit(userId, projectId, ref, 'git.discard', { files: chosen.length, untracked: untracked.length })
     return {
       status: await this.status(userId, projectId, workspaceId),
       reverted: chosen.length - untracked.length,
@@ -479,20 +479,20 @@ export class GitWorkspaceService {
 
   /** Индексация и снятие с индекса: коммит выбранного не должен зависеть от чужого индекса. */
   async stage(userId: string, projectId: string, workspaceId: string, paths: string[], unstage: boolean): Promise<GitWorkspaceStatus> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     const chosen = paths.filter((path) => path.length > 0)
     if (chosen.length === 0) throw new GitError(400, 'bad_request', 'Не выбрано ни одного файла')
     for (const path of chosen) {
       if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', `Недопустимый путь: ${path}`)
     }
     await this.runMutation(userId, projectId, ref, stageScript(chosen, unstage), MUTATE_TIMEOUT_MS, 'Не удалось изменить индекс')
-    this.audit(userId, projectId, ref, unstage ? 'git.unstage' : 'git.stage', { files: chosen.length })
+    await this.audit(userId, projectId, ref, unstage ? 'git.unstage' : 'git.stage', { files: chosen.length })
     return await this.status(userId, projectId, workspaceId)
   }
 
   /** История ветки или одного файла. */
   async log(userId: string, projectId: string, workspaceId: string, path?: string, limit: number = GIT_MAX_LOG): Promise<{ commits: ReturnType<typeof parseGitLog> }> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     if (path && !isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
     const bounded = Math.max(1, Math.min(limit, GIT_MAX_LOG))
     const result = await this.run(userId, projectId, ref, logScript(bounded, path ?? ''), READ_TIMEOUT_MS)
@@ -501,7 +501,7 @@ export class GitWorkspaceService {
 
   /** Что в коммите: метаданные и список файлов. */
   async commitDetail(userId: string, projectId: string, workspaceId: string, sha: string): Promise<GitCommitDetail> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     if (!isValidGitRef(sha)) throw new GitError(400, 'invalid_ref', 'Недопустимая ревизия')
     const result = await this.run(userId, projectId, ref, commitDetailScript(sha), READ_TIMEOUT_MS)
     const sections = splitGitSections(result.output)
@@ -513,7 +513,7 @@ export class GitWorkspaceService {
 
   /** Поиск по содержимому рабочей копии. */
   async grep(userId: string, projectId: string, workspaceId: string, query: string, limit: number = GIT_MAX_GREP): Promise<GitGrepResult> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     const needle = query.trim()
     if (needle.length < 2) throw new GitError(400, 'bad_request', 'Запрос короче двух символов')
     if (needle.length > 200) throw new GitError(400, 'bad_request', 'Запрос слишком длинный')
@@ -530,7 +530,7 @@ export class GitWorkspaceService {
    * появится после запуска.
    */
   async storyFiles(userId: string, projectId: string, workspaceId: string, maxBytes: number = STORY_FILES_MAX_BYTES): Promise<{ paths: string[]; truncated: boolean }> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     const bounded = Math.max(1024, Math.min(maxBytes, STORY_FILES_MAX_BYTES))
     const result = await this.run(userId, projectId, ref, storyFilesScript(bounded), READ_TIMEOUT_MS)
     const raw = decodeBase64Section(splitGitSections(result.output).stories_b64)
@@ -542,7 +542,7 @@ export class GitWorkspaceService {
 
   /** Три стадии конфликта для трёхстороннего просмотра. */
   async conflict(userId: string, projectId: string, workspaceId: string, path: string): Promise<GitConflictStages> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
     if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
     const result = await this.run(userId, projectId, ref, conflictStagesScript(path), READ_TIMEOUT_MS)
     const sections = splitGitSections(result.output)
@@ -566,10 +566,10 @@ export class GitWorkspaceService {
 
   /** Оставить одну сторону конфликта. */
   async resolveConflict(userId: string, projectId: string, workspaceId: string, path: string, side: GitConflictSide): Promise<GitWorkspaceStatus> {
-    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
     if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
     await this.runMutation(userId, projectId, ref, resolveConflictScript(path, side), MUTATE_TIMEOUT_MS, 'Не удалось разрешить конфликт')
-    this.audit(userId, projectId, ref, 'git.resolve', { path, side })
+    await this.audit(userId, projectId, ref, 'git.resolve', { path, side })
     return await this.status(userId, projectId, workspaceId)
   }
 
@@ -617,7 +617,7 @@ export class GitWorkspaceService {
     userId: string, projectId: string, ref: GitWorkspaceRef, script: GitScript, timeoutMs: number
   ): Promise<{ output: string; exitCode: number | null; timedOut: boolean }> {
     const command = buildShellCommand(script.script, ref.path, { ...gitBaseEnv(), ...script.env })
-    const verdict = this.deps.gate?.({ command, userId, projectId, source: 'console' })
+    const verdict = await this.deps.gate?.({ command, userId, projectId, source: 'console' })
     if (verdict && !verdict.allowed) {
       throw new GitError(403, 'command_denied', `Запрещено политикой команд: ${verdict.reason ?? 'нет доступа'}`)
     }
@@ -625,9 +625,9 @@ export class GitWorkspaceService {
     // а сервер может перезапуститься посреди push — тогда два git-процесса встретятся
     // в одном каталоге на index.lock, и вторая операция упадёт непонятной ошибкой.
     const holder = `${userId}:${process.pid}:${this.now()}`
-    const lock = this.deps.db.machines.acquireGitWorkspaceLock(ref.agentId, ref.path, holder, script.script.slice(0, 40), LOCK_TTL_MS)
+    const lock = await this.deps.db.machines.acquireGitWorkspaceLock(ref.agentId, ref.path, holder, script.script.slice(0, 40), LOCK_TTL_MS)
     if (!lock) {
-      const busy = this.deps.db.machines.gitWorkspaceLockHolder(ref.agentId, ref.path)
+      const busy = await this.deps.db.machines.gitWorkspaceLockHolder(ref.agentId, ref.path)
       throw new GitError(409, 'git_busy', busy
         ? `В этой рабочей копии уже идёт операция (${busy.holder.split(':')[0]}) — дождитесь её окончания`
         : 'Другая операция в этой рабочей копии ещё выполняется')
@@ -640,7 +640,7 @@ export class GitWorkspaceService {
       if (error instanceof GitError) throw error
       throw new GitError(409, 'machine_error', error instanceof Error ? error.message : String(error))
     } finally {
-      this.deps.db.machines.releaseGitWorkspaceLock(ref.agentId, ref.path, holder)
+      await this.deps.db.machines.releaseGitWorkspaceLock(ref.agentId, ref.path, holder)
     }
   }
 
@@ -661,10 +661,10 @@ export class GitWorkspaceService {
     throw new GitError(409, 'git_failed', message)
   }
 
-  private emptyStatus(
+  private async emptyStatus(
     userId: string, projectId: string, ref: GitWorkspaceRef | null, problem: GitWorkspaceProblem, detail: string | null
-  ): GitWorkspaceStatus {
-    const project = this.deps.db.projects.getProject(userId, projectId)
+  ): Promise<GitWorkspaceStatus> {
+    const project = await this.deps.db.projects.getProject(userId, projectId)
     return {
       ref, problem, detail,
       gitUrl: project?.gitUrl ?? null,
@@ -675,19 +675,19 @@ export class GitWorkspaceService {
   }
 
   /** Ветка и SHA рабочей копии в БД: их читает merge-ран, поэтому запись обязательна. */
-  private recordRevision(ref: GitWorkspaceRef, branch: string | null, sha: string, pushed: boolean): void {
+  private async recordRevision(ref: GitWorkspaceRef, branch: string | null, sha: string, pushed: boolean): Promise<void> {
     if (ref.kind !== 'task-workspace' || !ref.id.startsWith('ws:') || !branch) return
-    this.deps.db.ci.updateCiWorkspaceRevision(ref.id.slice(3), branch, sha, pushed)
+    await this.deps.db.ci.updateCiWorkspaceRevision(ref.id.slice(3), branch, sha, pushed)
   }
 
   /** Регистрируем копию как dev-workspace задачи — то же делает merge-ран. */
-  private registerRepository(ref: GitWorkspaceRef): void {
+  private async registerRepository(ref: GitWorkspaceRef): Promise<void> {
     if (!ref.taskId) return
-    this.deps.db.tasks.upsertTaskRepository(ref.projectId, ref.taskId, ref.agentId, ref.path, 'dev-workspace')
+    await this.deps.db.tasks.upsertTaskRepository(ref.projectId, ref.taskId, ref.agentId, ref.path, 'dev-workspace')
   }
 
-  private audit(userId: string, projectId: string, ref: GitWorkspaceRef, type: string, payload: Record<string, unknown>): void {
-    this.deps.db.ci.addCiEvent({
+  private async audit(userId: string, projectId: string, ref: GitWorkspaceRef, type: string, payload: Record<string, unknown>): Promise<void> {
+    await this.deps.db.ci.addCiEvent({
       projectId, type, actorType: 'user', actorId: userId,
       payload: { ...payload, workspace: ref.id, path: ref.path, agentId: ref.agentId }
     })
@@ -695,22 +695,22 @@ export class GitWorkspaceService {
     // хосте, и владелец машины должен видеть её там же, где входы и подключения
     // агентов, а не только в событиях проекта.
     const details = [type, ref.path, ...Object.entries(payload).map(([key, value]) => `${key}=${String(value)}`)].join(' · ')
-    this.deps.db.identity.logSecurityEvent({ user: userId, type: 'git_workspace_mutation', details })
+    await this.deps.db.identity.logSecurityEvent({ user: userId, type: 'git_workspace_mutation', details })
   }
 
-  private machineAccess(userId: string, project: { id: string; machines: { agentId: string; ownership?: string; sharedWithProject?: boolean }[] }, agentId: string):
-    { online: boolean; writable: boolean; readOnlyReason: string | null; machineName: string | null } | null {
+  private async machineAccess(userId: string, project: { id: string; machines: { agentId: string; ownership?: string; sharedWithProject?: boolean }[] }, agentId: string):
+    Promise<{ online: boolean; writable: boolean; readOnlyReason: string | null; machineName: string | null } | null> {
     const linked = project.machines.some((machine) => machine.agentId === agentId)
-    if (!linked && !this.deps.db.machines.canUseAgent(userId, agentId, project.id)) return null
-    if (!this.deps.db.machines.canUseAgent(userId, agentId, project.id)) return null
+    if (!linked && !await this.deps.db.machines.canUseAgent(userId, agentId, project.id)) return null
+    if (!await this.deps.db.machines.canUseAgent(userId, agentId, project.id)) return null
     const policy = this.deps.runtime.policyOf(agentId)
     // Три независимых условия, и ни одно не перекрывает другое: полномочие роли,
     // режим доступа машины проекту и её собственная политика записи. UI получает
     // готовый флаг с причиной — иначе он показывал бы активную кнопку, а отказ
     // приходил бы тостом уже после клика.
-    const role = this.deps.db.identity.getUser(userId)?.role
+    const role = (await this.deps.db.identity.getUser(userId))?.role
     const permitted = role ? hasProjectPermission(role, 'repository:write') : false
-    const shared = this.deps.db.machines.canWriteAgent(userId, agentId, project.id)
+    const shared = await this.deps.db.machines.canWriteAgent(userId, agentId, project.id)
     const policyAllows = policy?.allowWrite !== false
     return {
       online: this.deps.runtime.isOnline(agentId),
@@ -726,21 +726,21 @@ export class GitWorkspaceService {
     }
   }
 
-  private busyFor(userId: string, projectId: string, taskId: string | null): GitWorkspaceRef['busy'] {
+  private async busyFor(userId: string, projectId: string, taskId: string | null): Promise<GitWorkspaceRef['busy']> {
     if (!taskId) return null
-    const ci = this.deps.db.ci.activeCiRunForTask(taskId)
+    const ci = await this.deps.db.ci.activeCiRunForTask(taskId)
     if (ci) return { kind: 'ci', runId: ci.id, status: ci.status }
-    const task = this.deps.db.tasks.getTaskDetail(userId, projectId, taskId)
+    const task = await this.deps.db.tasks.getTaskDetail(userId, projectId, taskId)
     const mergeRunId = task?.activeMergeRunId ?? null
     return mergeRunId ? { kind: 'merge', runId: mergeRunId, status: 'running' } : null
   }
 
-  private refFromCiWorkspace(userId: string, project: { id: string; machines: { agentId: string }[] }, workspaceId: string): GitWorkspaceRef | null {
-    const workspace = this.deps.db.ci.getCiWorkspaceById(workspaceId)
+  private async refFromCiWorkspace(userId: string, project: { id: string; machines: { agentId: string }[] }, workspaceId: string): Promise<GitWorkspaceRef | null> {
+    const workspace = await this.deps.db.ci.getCiWorkspaceById(workspaceId)
     if (!workspace || workspace.projectId !== project.id || !workspace.agentId) return null
-    const access = this.machineAccess(userId, project, workspace.agentId)
+    const access = await this.machineAccess(userId, project, workspace.agentId)
     if (!access) return null
-    const task = this.deps.db.tasks.getTaskDetail(userId, project.id, workspace.taskId)
+    const task = await this.deps.db.tasks.getTaskDetail(userId, project.id, workspace.taskId)
     return {
       id: buildGitWorkspaceId({ kind: 'ci-workspace', ciWorkspaceId: workspace.id }),
       kind: 'task-workspace',
@@ -758,18 +758,18 @@ export class GitWorkspaceService {
       online: access.online,
       writable: access.writable,
       readOnlyReason: access.readOnlyReason,
-      busy: this.busyFor(userId, project.id, workspace.taskId),
+      busy: await this.busyFor(userId, project.id, workspace.taskId),
       released: workspace.state === 'released'
     }
   }
 
-  private refFromTaskRepository(userId: string, project: { id: string; machines: { agentId: string }[] }, repositoryId: string): GitWorkspaceRef | null {
-    const repository = this.deps.db.tasks.getTaskRepositoryById(repositoryId)
+  private async refFromTaskRepository(userId: string, project: { id: string; machines: { agentId: string }[] }, repositoryId: string): Promise<GitWorkspaceRef | null> {
+    const repository = await this.deps.db.tasks.getTaskRepositoryById(repositoryId)
     if (!repository || repository.projectId !== project.id) return null
-    const access = this.machineAccess(userId, project, repository.agentId)
+    const access = await this.machineAccess(userId, project, repository.agentId)
     if (!access) return null
-    const task = this.deps.db.tasks.getTaskDetail(userId, project.id, repository.taskId)
-    const workspace = this.deps.db.ci.findActiveCiWorkspace(project.id, repository.taskId)
+    const task = await this.deps.db.tasks.getTaskDetail(userId, project.id, repository.taskId)
+    const workspace = await this.deps.db.ci.findActiveCiWorkspace(project.id, repository.taskId)
     return {
       id: buildGitWorkspaceId({ kind: 'task-repository', taskRepositoryId: repository.id }),
       kind: repository.kind === 'merge-clone' ? 'merge-clone' : 'task-workspace',
@@ -789,7 +789,7 @@ export class GitWorkspaceService {
       readOnlyReason: repository.kind === 'merge-clone'
         ? 'Merge-клоном управляет merge-ран: он только для чтения'
         : access.readOnlyReason,
-      busy: this.busyFor(userId, project.id, repository.taskId),
+      busy: await this.busyFor(userId, project.id, repository.taskId),
       released: repository.state === 'deleted'
     }
   }
@@ -798,14 +798,14 @@ export class GitWorkspaceService {
    * Рабочая копия разговора. Managed-запись (`conversation_workspaces`) сервер пока не
    * заполняет, поэтому основной путь — legacy `conversations.workdir` + машина чата.
    */
-  private refFromConversation(userId: string, project: { id: string; machines: { agentId: string }[] }, conversationId: string): GitWorkspaceRef | null {
-    const conversation = this.deps.db.chat.getConversation(userId, conversationId)
+  private async refFromConversation(userId: string, project: { id: string; machines: { agentId: string }[] }, conversationId: string): Promise<GitWorkspaceRef | null> {
+    const conversation = await this.deps.db.chat.getConversation(userId, conversationId)
     if (!conversation) return null
     if (conversation.projectId && conversation.projectId !== project.id) return null
     const agentId = conversation.execTarget && conversation.execTarget !== 'none' ? conversation.execTarget : null
     const path = conversation.workspace?.path ?? conversation.workdir
     if (!agentId || !path) return null
-    const access = this.machineAccess(userId, project, agentId)
+    const access = await this.machineAccess(userId, project, agentId)
     if (!access) return null
     return {
       id: buildGitWorkspaceId({ kind: 'conversation', conversationId }),
@@ -832,12 +832,12 @@ export class GitWorkspaceService {
   }
 
   /** Общая папка проекта на машине: та же, что берут релизы. */
-  private refFromProjectMachine(userId: string, project: { id: string; machines: { agentId: string }[] }, agentId: string): GitWorkspaceRef | null {
-    const machine = this.deps.db.machines.getProjectMachine(project.id, agentId)
+  private async refFromProjectMachine(userId: string, project: { id: string; machines: { agentId: string }[] }, agentId: string): Promise<GitWorkspaceRef | null> {
+    const machine = await this.deps.db.machines.getProjectMachine(project.id, agentId)
     if (!machine) return null
     const path = machine.directories?.projectWorkdir.path || machine.path
     if (!path) return null
-    const access = this.machineAccess(userId, project, agentId)
+    const access = await this.machineAccess(userId, project, agentId)
     if (!access) return null
     return {
       id: buildGitWorkspaceId({ kind: 'project-machine', agentId }),

@@ -23,7 +23,7 @@ function makeBridge(handler: (call: BridgeCall) => AgentHttpResponse | Error): P
   return bridge
 }
 
-async function makeApp(bridge: PreviewMachineBridge, canUse = (_userId: string, _agentId: string) => true, withDeps = true) {
+async function makeApp(bridge: PreviewMachineBridge, canUse = async (_userId: string, _agentId: string) => true, withDeps = true) {
   const app = fastify()
   app.addHook('onRequest', async (req) => {
     ;(req as unknown as { user: { name: string; role: string } }).user = { name: 'alice', role: 'admin' }
@@ -91,7 +91,7 @@ describe('/api/preview через мост машины', () => {
   })
 
   it('чужая машина → 403, офлайн → 502, без моста → 502', async () => {
-    const denied = await makeApp(makeBridge(() => html('x')), () => false)
+    const denied = await makeApp(makeBridge(() => html('x')), async () => false)
     const forbidden = await denied.inject({ method: 'GET', url: '/api/preview?url=' + encodeURIComponent('http://agent-1.machine.internal:5173/') })
     expect(forbidden.statusCode).toBe(403)
     await denied.close()
@@ -104,7 +104,7 @@ describe('/api/preview через мост машины', () => {
     expect(down.json()).toMatchObject({ error: 'preview_unavailable' })
     await offline.close()
 
-    const noDeps = await makeApp(makeBridge(() => html('x')), () => true, false)
+    const noDeps = await makeApp(makeBridge(() => html('x')), async () => true, false)
     const unsupported = await noDeps.inject({ method: 'GET', url: '/api/preview?url=' + encodeURIComponent('http://agent-1.machine.internal:5173/') })
     expect(unsupported.statusCode).toBe(502)
     await noDeps.close()
