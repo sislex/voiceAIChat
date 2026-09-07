@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-07
-checked: a994f3ac
+checked: 1a932d19
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -176,6 +176,15 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 `/api/projects/*` у ядра свои роуты (git-панель, KB), а права проекта проверяет preHandler ядра по пути;
 ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
 `/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
+
+**Машины отдельным сервисом (`docs/plans/machines-service.md`, 2026-09-07).** Профиль compose `machines`
+(образ `voicechat-machines`, стадия `machines-runtime`, порт 8793, точка входа
+`apps/server/src/machines/standalone/index.ts`). По умолчанию выключен (`VC_MACHINES_MODE=embedded`).
+Включение: `VC_MACHINES_MODE=remote` и `VC_DB_URL` (Postgres) в `.env`, `--profile postgres --profile machines`.
+У ядра `VC_MACHINES_URL=http://machines:8793`; у процесса машин — `VC_CORE_URL`, общий `VC_INTERNAL_TOKEN`,
+`VC_PUBLIC_URL`, тот же том `vc-data`. Компаньон-агенты ничего не меняют: они ходят на публичный хост `/agent`,
+ядро переправляет их WebSocket в процесс машин само (Caddy без изменений); REST машин и установщики ядро
+проксирует туда же. Откат — убрать `VC_MACHINES_MODE` (агенты переподключатся к ядру сами).
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,

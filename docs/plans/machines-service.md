@@ -1,6 +1,6 @@
 # Машины и админка отдельными сервисами (этап 3 плана «части приложения на любом сервере»)
 
-Статус: круг 1 ☑, круг 2 ☐, круг 3 ☐ (2026-09-07). Ветка `feat/machines-service` поверх
+Статус: круг 1 ☑, круг 2 ☑, круг 3 ☐ (2026-09-07). Ветка `feat/machines-service` поверх
 `feat/kanban-service` (#113) и `feat/db-postgres` (#112).
 
 ## Зачем
@@ -55,19 +55,33 @@ dev-сервера); события `onChange`/`onCommand`/`onAgentReady` — о
    Решение: журнал команд пишет полный лог в artifacts чата через обратный вызов ядра `chatArtifacts` —
    знание о хранилищах разговора остаётся у ядра; `closeTunnel` у потребителей ждёт `await` (в remote — сеть).
 
-### Круг 2 — отдельный процесс машин ☐
-1. ☐ Контракт `machines/internal.ts`: RPC (`/internal/machines/rpc`), потоковый exec (общий с канбаном),
-   **шина событий** — один WebSocket «ядро → процесс машин» (`/internal/machines/events`): изменения реестра
-   (снимок машин: онлайн, имя, версия, платформа, политика, телеметрия, imageHost), журнал команд, `agentReady`,
-   события PTY по `ptyId`. Синхронные чтения у ядра — из зеркала; PTY-состояние (`ptyLive`, `ptyBufferText`,
-   `ptyContextOf`) — тоже зеркало по событиям PTY.
-2. ☐ `HttpMachines` (`machines/standalone/httpMachines.ts` для потребителей в ядре — обратное направление
-   к канбану: провайдер снаружи), standalone-процесс `machines/standalone/` (реестр + WS агентов + роуты машин
-   + пересылка авторизации + `/v1/health`), у ядра `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL`, прокси
-   `/api/agents/*`, установщики, WS `/agent` — Caddy направляет в процесс машин (WebSocket через прокси
-   ядра не тащим).
-3. ☐ Канбан и Make в remote берут машины у ядра через свои порты — состав не меняется (ядро отдаёт
-   `HttpMachines` под теми же фасадами).
+### Круг 2 — отдельный процесс машин ☑ (2026-09-07)
+1. ☑ Контракт `machines/internal.ts`: RPC `/internal/rpc` (`MACHINES_RPC_METHODS`: файлы, git, http,
+   PTY-команды, тоннели, `waitForOnline`, `snapshot`), потоковый exec `/internal/exec-stream` (общий формат
+   `internal/execStream.ts` — тот же, что у канбана), шина событий `/internal/events` — постоянный WebSocket
+   «ядро → процесс машин»: снимки машин (`MachineState`: онлайн, имя, версия, платформа, политика, телеметрия,
+   imageHost) и PTY-сессий (`PtyState`), события PTY по `ptyId`, кадры владельцам (`frame`), `agentReady`,
+   журнал команд, запросы авторизации тоннелей (ответ — по той же шине). В реестре появились `onPtyChange` и
+   `ptySnapshot()`.
+2. ☑ Ядро: `machinesBridge/httpMachines.ts` — `HttpMachines implements MachinesService` (зеркало для
+   синхронных чтений, буфер PTY на стороне ядра с момента подписки, RPC с восстановлением `AgentFsError` по
+   коду, переподключение шины; при обрыве шины все машины считаются offline до переподключения),
+   `machinesBridge/proxy.ts` — прокси REST (`MACHINES_PROXY_PREFIXES`, полноту держит `proxy.test.ts`) и
+   **WebSocket-прокси `/agent`** в процесс машин (Caddy не знает, включён ли профиль; пинги процесса машин
+   до агента не проходят — прокси пингует сам). Конфиг `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL`; гейт
+   команд в remote ядро строит само (`createDbCommandGate`, только данные базы).
+3. ☑ Процесс машин `machines/standalone/` (`buildMachinesServer`): тот же `createMachinesModule`, пересылка
+   авторизации в ядро (`internal/forwardedAuth.ts`, общая с канбаном; публичные пути — `isPublic` ядра), шина
+   событий, RPC, exec-stream, `/v1/health`; точка входа `index.ts` (порт 8793). Compose: сервис `machines`
+   (профиль `machines`, образ `machines-runtime`), у ядра `VC_MACHINES_MODE` по умолчанию `embedded`.
+4. ☑ Хранилище разговора на машине вынесено в `chatStorage.ts` (`createManagedChatStorage`) — общий helper
+   ядра и модуля машин; модуль сам пишет лог долгой команды в artifacts чата.
+5. ☑ Тесты: `machinesBridge/httpMachines.test.ts` (зеркало, PTY, кадры, тоннели, коды ошибок),
+   `machinesBridge/machinesRemote.integration.test.ts` (ядро remote + процесс машин + фейковый агент через
+   WebSocket-прокси ядра: список машин через прокси, команда REST → агент → журнал → кадр `machine.command`
+   в WS-сессии ядра, PTY из сессии ядра туда и обратно), `internal/execStream.test.ts`.
+   Решения: канбан и Make в remote получают машины у ядра под теми же портами (`HttpMachines` структурно —
+   `MachinesService`); `ptyBufferText` у ядра — вывод с момента подписки (полный буфер — у процесса машин).
 
 ### Круг 3 — админка отдельным процессом ☐
 1. ☐ `admin/standalone/`: `routes/admin.ts` + пересылка авторизации; порты — машины (`HttpMachines`), Make
