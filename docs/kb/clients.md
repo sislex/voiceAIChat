@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-03
-checked: 66b310c8
+updated: 2026-09-07
+checked: e671ba68
 areas:
   - apps/web
   - apps/desktop/src
@@ -9,6 +9,11 @@ areas:
   - apps/agent-tray/src
   - apps/agent-tray/electron-builder.yml
   - apps/login-application
+  - apps/server/src/config.ts
+  - apps/server/src/server.ts
+  - apps/server/src/users/auth.ts
+  - packages/ui/src/remote
+  - packages/ui/src/store/domains/sessionStore.ts
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
