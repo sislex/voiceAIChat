@@ -5,73 +5,38 @@
 // история, к которой можно откатиться (аналог версий Figma Make). После каждой
 // мутации владелец получает `make.changed`, и превью справа перезагружается.
 
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { MAKE_LIMITS, taskMakeSources, type LlmMakeSource, type TaskDesignLink } from '@voicechat/shared'
+import { MAKE_LIMITS } from '@voicechat/shared'
 import { MakeError, type MakeWorkspaces } from '../make/workspace.js'
 import type { MakeHub } from '../make/hub.js'
+import type { MakeCore } from '../make/core.js'
+import { verifyTaskScope, type MakeTaskScope } from '../make/taskScope.js'
 
 export const MAKE_MCP_PATH = '/mcp/make'
-
-export interface MakeTaskScope {
-  userId: string
-  projectId: string
-  taskId: string
-  sources: Array<{ conversationId: string; title: string; mode: 'whole_project' | 'files'; paths: string[] }>
-  expiresAt: number
-}
-
-/** Непрозрачные краткоживущие полномочия task-run. */
-export class MakeTaskScopeBroker {
-  private readonly entries = new Map<string, MakeTaskScope>()
-  constructor(private readonly ttlMs = 30 * 60_000, private readonly now = Date.now) {}
-  issue(entry: Omit<MakeTaskScope, 'expiresAt'>): string {
-    const token = randomUUID()
-    this.entries.set(token, { ...entry, expiresAt: this.now() + this.ttlMs })
-    return token
-  }
-  get(token: string): MakeTaskScope | null {
-    const entry = this.entries.get(token)
-    if (!entry || entry.expiresAt <= this.now()) {
-      this.entries.delete(token)
-      return null
-    }
-    return entry
-  }
-}
-
-export function buildTaskMakeSources(args: {
-  designs: TaskDesignLink[]
-  userId: string
-  projectId: string
-  taskId: string
-  baseUrl?: string
-  broker?: MakeTaskScopeBroker
-}): LlmMakeSource[] {
-  if (!args.baseUrl || !args.broker) return []
-  const sources = taskMakeSources(args.designs)
-  if (!sources.length) return []
-  const token = args.broker.issue({ userId: args.userId, projectId: args.projectId, taskId: args.taskId, sources: sources.map(({ conversationId, title, mode, paths }) => ({ conversationId, title, mode, paths })) })
-  return sources.map((source) => ({
-    name: source.name,
-    conversationId: source.conversationId,
-    mode: source.mode,
-    paths: source.paths,
-    mcpUrl: `${args.baseUrl}&conv=${encodeURIComponent(source.conversationId)}&scope=${encodeURIComponent(token)}`
-  }))
-}
 
 export interface MakeMcpDeps {
   workspaces: MakeWorkspaces
   hub: MakeHub
-  /** Владелец разговора (для адресации make.changed); null — разговора нет. */
-  ownerOf(conversationId: string): Promise<string | null>
-  taskScopes?: MakeTaskScopeBroker
-  /** Перепроверяет актуальную task_designs, проект разговора и членство пользователя. */
-  authorizeTaskSource?(scope: MakeTaskScope, conversationId: string): Promise<boolean>
+  /** Владелец разговора (для адресации make.changed) и проверка scope-токенов рана — данные ядра. */
+  core: Pick<MakeCore, 'conversationOwner' | 'conversationProject' | 'isProjectViewer' | 'taskDesigns'>
+}
+
+/**
+ * Scope-токен — заявка, а не право: сверяем с актуальными дизайнами задачи (их могли снять),
+ * проектом разговора и членством пользователя, от имени которого идёт ран.
+ */
+async function authorizeTaskSource(core: MakeMcpDeps['core'], scope: MakeTaskScope, conversationId: string): Promise<boolean> {
+  const designs = await core.taskDesigns(scope.userId, scope.projectId, scope.taskId)
+  const scopedSource = scope.sources.find((source) => source.conversationId === conversationId)
+  const current = designs?.find((design) => design.conversationId === conversationId)
+  return Boolean(designs && scopedSource && current
+    && await core.conversationProject(conversationId) === scope.projectId
+    && await core.isProjectViewer(scope.userId, conversationId)
+    && current.mode === scopedSource.mode
+    && JSON.stringify(current.paths) === JSON.stringify(scopedSource.paths))
 }
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
@@ -93,16 +58,16 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
         const conv = req.query.conv ?? ''
-        const taskScope = req.query.scope ? deps.taskScopes?.get(req.query.scope) ?? null : null
+        const taskScope = req.query.scope ? verifyTaskScope(secret, req.query.scope) : null
         const scopedSource = taskScope?.sources.find((source) => source.conversationId === conv)
-        if (req.query.scope && (!taskScope || !scopedSource || !await deps.authorizeTaskSource?.(taskScope, conv))) {
+        if (req.query.scope && (!taskScope || !scopedSource || !await authorizeTaskSource(deps.core, taskScope, conv))) {
           return reply.code(403).send({ error: `Make-источник ${conv} недоступен: scope отсутствует, истёк или отозван` })
         }
         const taskReadOnly = Boolean(taskScope)
         const turn = req.query.turn ?? ''
         const readOnly = taskReadOnly || req.query.ro === '1'
         const note = (req.query.note ?? '').trim().slice(0, 80)
-        const owner = await deps.ownerOf(conv)
+        const owner = await deps.core.conversationOwner(conv)
         if (!owner) return reply.code(404).send({ error: 'conversation not found' })
         const { workspaces, hub } = deps
 

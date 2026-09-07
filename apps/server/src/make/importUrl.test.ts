@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { importFromUrl } from './importUrl'
 import { buildStoredZip } from './zip'
 
-vi.mock('../routes/previewProxy.js', () => ({ assertPublicHost: async () => undefined }))
+vi.mock('../util/publicHost.js', () => ({ assertPublicHost: async () => undefined }))
 
 const fakeFetch = (routes: Record<string, { body: string; type: string; status?: number }>): typeof fetch =>
   (async (input: string | URL | Request) => {

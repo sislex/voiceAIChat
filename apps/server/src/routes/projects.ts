@@ -43,7 +43,7 @@ import type { CiRunManager } from '../ci/runManager.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { materializeProjectMachine as materialize } from '../projects/materialize.js'
 import type { MergeRunManager } from '../merge/runManager.js'
-import type { MakeWorkspaces } from '../make/workspace.js'
+import type { MakeService } from '../make/service.js'
 import type { UploadStore } from '../uploads.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
@@ -95,7 +95,8 @@ export function registerProjectRoutes(
   checkAutomatedQa?: (userId: string, projectId: string, scenarioIndex?: number) => Promise<AutomatedQaCheckResult[]>,
   /** Оркестратор планов ассистента: отмена должна ещё и снять его таймер. */
   orchestration?: { cancel(owner: string, planId: string): Promise<import('@voicechat/shared').Orchestration | null> },
-  makeWorkspaces?: MakeWorkspaces,
+  /** Список файлов Make-проекта — проверка путей `makeSources` цикла доработки (make/service.ts). */
+  make?: Pick<MakeService, 'listFiles'>,
   uploads?: UploadStore
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
@@ -1087,8 +1088,8 @@ export function registerProjectRoutes(
         for (const source of sources) {
           await db.tasks.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, source.conversationId)
           if (source.mode === 'files') {
-            if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
-            const existing = new Set((await makeWorkspaces.list(source.conversationId)).map((file) => file.path))
+            if (!make) throw new Error('Хранилище Make недоступно')
+            const existing = new Set((await make.listFiles(source.conversationId)).map((file) => file.path))
             const missing = source.paths.find((path) => !existing.has(path))
             if (missing) throw new Error(`Make-проект ${source.conversationId}: файл ${missing} не найден`)
           }
@@ -1131,8 +1132,8 @@ export function registerProjectRoutes(
     async (req, reply) => {
       try {
         await db.tasks.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, req.params.conversationId)
-        if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
-        return await makeWorkspaces.list(req.params.conversationId)
+        if (!make) throw new Error('Хранилище Make недоступно')
+        return await make.listFiles(req.params.conversationId)
       } catch (error) { return badReq(reply, errMessage(error)) }
     }
   )
@@ -1145,11 +1146,11 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const links = await db.tasks.listTaskDesigns(uid(req), req.params.id, req.params.taskId)
       if (!links) return nf(reply)
-      if (!makeWorkspaces) return links
+      if (!make) return links
       return Promise.all(links.map(async (link) => {
         if (link.mode === 'whole_project') return link
         try {
-          const existing = new Set((await makeWorkspaces.list(link.conversationId)).map((file) => file.path))
+          const existing = new Set((await make.listFiles(link.conversationId)).map((file) => file.path))
           return { ...link, fileStatuses: link.paths.map((path) => existing.has(path) ? { path, available: true } : { path, available: false, error: `Make-проект «${link.conversationTitle}» (${link.conversationId}): файл ${path} недоступен` }) }
         } catch (error) {
           return { ...link, fileStatuses: link.paths.map((path) => ({ path, available: false, error: `Make-проект «${link.conversationTitle}» (${link.conversationId}), файл ${path}: ${errMessage(error)}` })) }
@@ -1167,9 +1168,9 @@ export function registerProjectRoutes(
         const userId = uid(req)
         await db.tasks.assertTaskDesignSource(userId, req.params.id, req.params.taskId, conversationId)
         if (req.body?.mode === 'files') {
-          if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
+          if (!make) throw new Error('Хранилище Make недоступно')
           const requested = req.body.paths ?? []
-          const existing = new Set((await makeWorkspaces.list(conversationId)).map((file) => file.path))
+          const existing = new Set((await make.listFiles(conversationId)).map((file) => file.path))
           const missing = requested.find((path) => !existing.has(path))
           if (missing) throw new Error(`Make-проект ${conversationId}: файл ${missing} не найден`)
         }

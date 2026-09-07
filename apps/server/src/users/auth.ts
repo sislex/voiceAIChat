@@ -3,7 +3,7 @@
 // БД (таблица users). Плюс роуты сессии (login/me/logout) и guard requireAdmin.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { SlidingWindowLimiter } from '../make/rateLimit.js'
+import { SlidingWindowLimiter } from '../util/rateLimit.js'
 
 /** По имени — 10 за 10 минут; по IP — 30: за одним NAT сидит офис, и чужой брутфорс не должен запирать всех. */
 const LOGIN_LIMIT = 10

@@ -35,7 +35,11 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `cc/` (наблюдатель сессий Claude Code),
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
-`auth/loginStatus.ts`, `diarization/` (заглушка).
+`auth/loginStatus.ts`, `diarization/` (заглушка);
+`make/` (Make: мастерские, порты `core.ts`/`service.ts`, сборка `module.ts`, гейт границы
+`boundary.test.ts` — код Make не импортирует `db/`, ядро зовёт Make только через `service`),
+`makeBridge/` (реализация `MakeCore` поверх `db.*` — единственная встреча Make со слоем данных),
+`util/` (общие утилиты без владельца: `rateLimit`, `publicHost`, `storyParse`).
 
 ## Тесты
 

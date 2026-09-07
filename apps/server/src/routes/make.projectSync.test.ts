@@ -11,6 +11,7 @@ import { VoiceChatDb } from '../db/database.js'
 import { MakeWorkspaces } from '../make/workspace.js'
 import { MakeHub } from '../make/hub.js'
 import { MakeLibrary } from '../make/library.js'
+import { LocalMakeCore } from '../makeBridge/localCore.js'
 import { registerMakeRoutes } from './make.js'
 
 const U = 'admin'
@@ -71,8 +72,8 @@ beforeEach(async () => {
   app.decorateRequest('user', null)
   app.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
   registerMakeRoutes(app, {
-    db, workspaces, hub: new MakeHub(), library: new MakeLibrary(dataDir),
-    machineFs: fakeMachineFs()
+    core: new LocalMakeCore({ db, machineFs: fakeMachineFs() }),
+    workspaces, hub: new MakeHub(), library: new MakeLibrary(dataDir)
   })
   await app.ready()
 })
