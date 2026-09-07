@@ -36,6 +36,8 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `agents/` (реестр машин, WS-агента, сборка `.cjs`, установка на Android),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
 `auth/loginStatus.ts`, `diarization/` (заглушка);
+`kanban/` (сборка канбан-кластера `createKanbanModule(deps)` с явным списком зависимостей `KanbanDeps` и гейтом границы;
+чистые функции подготовки задач — `preparation.ts`),
 `makeBridge/` (Make живёт в пакете `@voicechat/make`; здесь — реализация его порта `MakeCore`
 поверх `db.*` (`localCore.ts`), `MakeService` для режима `remote` (`remote.ts`) и гейт границы
 `boundary.test.ts`: ядро импортирует из Make только типы и `createMakeModule`),
