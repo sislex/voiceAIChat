@@ -53,6 +53,12 @@ services:
       VC_MAKE_MODE: remote
       VC_MAKE_URL: http://make:8788
       VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
+      # Канбан отдельным процессом (docs/plans/kanban-service.md): по умолчанию кластер проектов/CI/QA
+      # встроен в ядро. Включение — VC_KANBAN_MODE=remote в .env вместе с VC_DB_URL (общая база
+      # Postgres) и профилями `--profile postgres --profile kanban`.
+      VC_KANBAN_MODE: ${VC_KANBAN_MODE:-embedded}
+      VC_KANBAN_URL: http://kanban:8789
+      VC_KANBAN_MCP_PUBLIC_BASE: http://kanban:8789
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       # Метаданные релиза: номер приходит от публикации или строгого Git-тега;
@@ -117,7 +123,9 @@ services:
     environment:
       POSTGRES_DB: voicechat
       POSTGRES_USER: voicechat
-      POSTGRES_PASSWORD: ${VC_PG_PASSWORD:?нужен VC_PG_PASSWORD в .env для профиля postgres}
+      # Не `:?` — compose подставляет переменные всех сервисов даже при выключенном профиле, и обязательная
+      # переменная ломала бы `docker compose up` без Postgres. Пустой пароль остановит только сам контейнер.
+      POSTGRES_PASSWORD: ${VC_PG_PASSWORD:-}
     volumes:
       - vc-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -148,6 +156,53 @@ services:
       - vc-data:/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Канбан (проекты, доска, CI/QA/релизы) отдельным процессом на той же базе Postgres
+  # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
+  # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
+  kanban:
+    build:
+      context: .
+      target: kanban-runtime
+    image: voicechat-kanban
+    profiles: ["kanban"]
+    mem_limit: 1g
+    depends_on:
+      - runner-work
+      - runner-personal
+      - browser-runner
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8789"
+      VC_DATA_DIR: /data
+      VC_CORE_URL: http://voicechat:8787
+      # Без `:?` по той же причине, что у postgres; без базы процесс канбана сам завершится с понятной ошибкой.
+      VC_DB_URL: ${VC_DB_URL:-}
+      VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
+      VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
+      # MCP ядра (машины, KB, превью) глазами исполнителя — адрес ядра; MCP канбана и CI-команд — этот процесс.
+      VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
+      VC_KANBAN_MCP_PUBLIC_BASE: http://kanban:8789
+      VC_MAKE_URL: http://make:8788
+      VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
+      VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
+      VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
+      VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
+      VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
+      VC_SMTP_URL: ${VC_SMTP_URL:-}
+      VC_MAIL_FROM: ${VC_MAIL_FROM:-}
+      VC_PUBLIC_URL: ${VC_PUBLIC_URL:-}
+      VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+    volumes:
+      - vc-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8789/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 3

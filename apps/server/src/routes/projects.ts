@@ -1054,10 +1054,11 @@ export function registerProjectRoutes(
       const body = req.body
       if (body?.idempotencyKey) {
         const userId = uid(req)
-        const files = (body.uploadIds ?? []).flatMap((uploadId) => {
-          const upload = uploads?.get(uploadId)
-          return upload?.ownerId === userId ? [{ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' as const }] : []
-        })
+        const files: Array<{ id: string; uploadId: string; name: string; mimeType: string; size: number; status: 'ready' }> = []
+        for (const uploadId of body.uploadIds ?? []) {
+          const upload = await uploads?.get(uploadId)
+          if (upload?.ownerId === userId) files.push({ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' })
+        }
         try {
           const cycle = await db.tasks.createTaskReworkCycle(userId, req.params.id, req.params.taskId, {
             description: body.description ?? '', criteria: body.criteria ?? [], makeMode: body.makeMode ?? 'whole_project',

@@ -88,6 +88,10 @@ import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
 
 import { createKanbanModule } from './kanban/module.js'
 import { createLocalKanbanCore } from './kanbanBridge/localCore.js'
+import { createRemoteKanban } from './kanbanBridge/remote.js'
+import { registerKanbanProxy } from './kanbanBridge/proxy.js'
+import { machinesSnapshot } from './kanbanBridge/internal.js'
+import type { KanbanService } from './kanban/service.js'
 import { UserFrameHub } from './frameHub.js'
 export { parseQaPreparationResponse, taskPreparationModel, taskPreparationFailure } from './kanban/preparation.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@voicechat/make'
@@ -590,10 +594,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   make.register?.(app)
   // Стенд доступен и напрямую портом ядра, минуя Caddy, — пути Make ядро переправляет в его процесс само.
   if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl! })
-  // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
-  if (opts.config.internalToken) {
-    registerInternalRoutes(app, { token: opts.config.internalToken, makeCore, authenticate, ...(makeRemote ? { makeHub: make.hub } : {}) })
+  // Канбан отдельным процессом: общая база (Postgres), пути канбана ядро переправляет туда, состояние
+  // машин/KB/виджета отдаёт по `/internal/*`, ленты событий принимает обратно (docs/plans/kanban-service.md).
+  const kanbanRemote = opts.config.kanbanMode === 'remote'
+  if (kanbanRemote && !(opts.config.kanbanUrl && opts.config.internalToken && opts.config.mcpSecret)) {
+    throw new Error('VC_KANBAN_MODE=remote требует VC_KANBAN_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
   }
+  if (kanbanRemote && !opts.config.dbUrl && !opts.db) throw new Error('VC_KANBAN_MODE=remote требует общую базу VC_DB_URL (Postgres)')
   // Снимок «что открыто» у виджета и мост в браузер: состояние ядра, которое mcp__kanban__* читает через
   // порт `KanbanCore.widgets`; сам MCP канбана регистрирует кластер.
   const widgetContexts = new WidgetContextStore()
@@ -820,10 +827,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }) : undefined
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
-  const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
+  // В remote MCP канбана и CI-команд слушает процесс канбана: исполнителю нужен его адрес, а не адрес ядра.
+  const kanbanMcpBase = (opts.config.kanbanMcpPublicBase ?? opts.config.kanbanUrl ?? '').replace(/\/+$/, '')
+  const ciCommandsMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
   const previewMcpBaseUrl = buildPublicMcpUrl(opts.config, PREVIEW_MCP_PATH, mcpSecret)
   const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
-  const kanbanMcpBaseUrl = buildPublicMcpUrl(opts.config, KANBAN_MCP_PATH, mcpSecret)
+  const kanbanMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${KANBAN_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, KANBAN_MCP_PATH, mcpSecret)
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
   // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
@@ -1312,7 +1321,34 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // подключаются здесь же (Срез 4).
   // Канбан-кластер собирается отдельным модулем; ядро отдаёт ему зависимости явно (docs/plans/kanban-service.md).
   const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
-  const kanban = await createKanbanModule({ app, db, config: opts.config, core: kanbanCore, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, ...(opts.ciExecutor ? { ciExecutor: opts.ciExecutor } : {}), automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, featurePreviewsRef, ciKbUpdate: opts.ciKbUpdate })
+  const remoteKanban = kanbanRemote
+    ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: (error, what) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался') })
+    : null
+  const kanban: { service: KanbanService } = remoteKanban ?? await createKanbanModule({ app, db, config: opts.config, core: kanbanCore, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, ...(opts.ciExecutor ? { ciExecutor: opts.ciExecutor } : {}), automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, featurePreviewsRef, ciKbUpdate: opts.ciKbUpdate })
+  if (remoteKanban) {
+    registerKanbanProxy(app, { kanbanUrl: opts.config.kanbanUrl! })
+    // Зеркало машин у канбана: снимок после каждого изменения реестра (онлайн, политика, телеметрия);
+    // телеметрия приходит часто, поэтому с небольшой задержкой — один пуш на пачку изменений.
+    let pushTimer: NodeJS.Timeout | null = null
+    const pushMachines = (): void => {
+      if (pushTimer) return
+      pushTimer = setTimeout(() => {
+        pushTimer = null
+        remoteKanban.pushMachines(machinesSnapshot(agentRegistry)).catch((error) => app.log.warn({ err: error }, 'kanban: снимок машин не доставлен'))
+      }, 250)
+      pushTimer.unref?.()
+    }
+    agentRegistry.onChange(pushMachines)
+    app.addHook('onClose', async () => { if (pushTimer) clearTimeout(pushTimer) })
+  }
+  // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
+  if (opts.config.internalToken) {
+    registerInternalRoutes(app, {
+      token: opts.config.internalToken, makeCore, authenticate,
+      ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
+      ...(remoteKanban ? { kanban: { core: kanbanCore, machinesSnapshot: () => machinesSnapshot(agentRegistry), tunnels: remoteKanban.tunnels, apply: (event) => remoteKanban.apply(event) } } : {})
+    })
+  }
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   const gitWorkspaces = new GitWorkspaceService({

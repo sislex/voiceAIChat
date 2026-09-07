@@ -8,6 +8,9 @@
 // в отдельном процессе тот же контракт реализует HTTP-клиент к `/internal/*` ядра.
 import type { AgentPolicy, AgentTelemetry, FsResult, GitAccessRequest, GitAccessResult, WidgetSurfaceSnapshot } from '@voicechat/shared'
 import type { ExecMeta, ExecResult } from '../agents/registry.js'
+
+/** Результат и метка команды машины — часть поверхности порта, кластер берёт их отсюда. */
+export type { ExecMeta, ExecResult }
 import type { KnowledgeBaseService } from '../kb/types.js'
 import type { StoredUpload } from '../uploads.js'
 import type { WidgetUiRelay } from '../mcp/widgetUiRelay.js'
@@ -33,19 +36,23 @@ export interface KanbanMachines {
   /** Доступ машины к git-репозиторию проекта: статус, настройка токена, проверка. */
   gitAccess(agentId: string, request: GitAccessRequest): Promise<GitAccessResult>
   createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize?: () => Promise<boolean>, onClose?: () => Promise<void>): Promise<number>
-  closeTunnel(id: string): boolean
+  /** В отдельном процессе ответ приходит по сети — вызывающий всегда ждёт `await`. */
+  closeTunnel(id: string): boolean | Promise<boolean>
   closeTunnelsForTarget(agentId: string): void
 }
 
-/** Вложения чата лежат на диске ядра; кластеру нужно только найти файл по id. */
+/**
+ * Вложения чата: индекс держит процесс ядра, файлы лежат на общем томе данных — кластер по id узнаёт
+ * путь и читает файл сам. Ответ может прийти по сети, поэтому вызывающий всегда ждёт `await`.
+ */
 export interface KanbanUploads {
-  get(id: string): StoredUpload | undefined
+  get(id: string): StoredUpload | undefined | Promise<StoredUpload | undefined>
 }
 
 /** Снимок экрана виджета для mcp__kanban__*: кладёт `turns.ts`/WS ядра, читает MCP канбана. */
 export interface KanbanWidgets {
   contexts: {
-    surface(conversationId: string): WidgetSurfaceSnapshot | null
+    surface(conversationId: string): WidgetSurfaceSnapshot | null | Promise<WidgetSurfaceSnapshot | null>
     updateSurface(conversationId: string, surface: WidgetSurfaceSnapshot): void
   }
   ui: Pick<WidgetUiRelay, 'request'>

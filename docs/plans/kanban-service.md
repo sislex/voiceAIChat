@@ -95,14 +95,47 @@
    из ядра, запрет типов состояния ядра (`agents/registry`, `mcp/widget*`, `frameHub`, `server`, `session`,
    `turns`) вне `kanban/core.ts`, структурная проверка `AgentRegistry` ⊇ `KanbanMachines`.
 
-### Круг 3 — пакет `apps/kanban` и отдельный процесс ☐
-1. ☐ Физический переезд в `@voicechat/kanban`; standalone: своя `VoiceChatDb` на `VC_DB_URL`
-   (только Postgres — SQLite-файл из двух процессов не открыть), `whoami` через ядро,
-   `HttpKanbanCore`, события ядру, прокси путей `/api/projects/*`, `/api/ci/*`, `/api/qa/*`,
-   `/api/task-preparation/*`, `/mcp/kanban`, `/mcp/ci-commands` в ядре.
-2. ☐ Решение по машинам: поток вывода команд (`exec` с `onChunk`) через RPC к ядру или прямое
-   подключение агентов к сервису канбана — фиксируется здесь по итогам круга 2.
-3. ☐ Compose, Caddy, KB, прогон на копии прод-БД в Postgres.
+### Круг 3 — отдельный процесс канбана ☑ (2026-09-07)
+1. ☑ **Решение по упаковке:** физического переезда 11 000 строк в пакет `apps/kanban` в этом этапе нет —
+   кластер сшит с `VoiceChatDb` и слоем данных, которые живут в `apps/server`; переезд потребовал бы сначала
+   выделить пакет базы. Цель пользователя (запуск на любом сервере) закрывает отдельный **процесс** того же
+   пакета: точка входа `apps/server/src/kanban/standalone/index.ts`, образ `kanban-runtime`, сервис compose
+   `kanban` (профиль `kanban`), у ядра `VC_KANBAN_MODE=remote` + `VC_KANBAN_URL` + `VC_KANBAN_MCP_PUBLIC_BASE`.
+   По умолчанию `embedded` — прод не меняется.
+2. ☑ `buildKanbanServer` (`kanban/standalone/server.ts`): тот же `loadConfig`, своя `VoiceChatDb` на `VC_DB_URL`
+   (только Postgres), `HttpKanbanCore`, пересылка авторизации в `/internal/whoami` (копия рецепта Make,
+   `kanban/standalone/auth.ts`; публичен только `/api/session/*`), `createRemoteMake` к Make или к ядру
+   (ядро в embedded-Make отдаёт `MakeService` по `/internal/service`), события ядру пачками на
+   `/internal/kanban/events`, `/internal/service` (snapshot, boardChanged, authorizeTunnel, tunnelClosed),
+   `/internal/machines` (снимок для зеркала), `/v1/health`.
+3. ☑ **Решение по машинам:** агенты остаются подключёнными к ядру. Синхронные чтения кластера
+   (`isOnline` ×21 и т. п.) отвечает зеркало `MachinesMirror`, которое ядро обновляет пушем после каждого
+   `AgentRegistry.onChange` (250 мс дебаунс; телеметрия тоже идёт через onChange). `exec`/`execStream` —
+   потоковый NDJSON-эндпоинт ядра `/internal/kanban/exec-stream` через `node:http` (у undici таймаут тела
+   5 мин, у шага CI — дольше); обрыв по `signal` отменяет команду у ядра. Тоннели превью: обратные вызовы
+   `authorize`/`onClose` живут у канбана, ядро зовёт их RPC. Для этого фасад получил объединённые типы
+   возврата (`closeTunnel`, `uploads.get`, `widgets.surface` могут быть `Promise`) — 5 мест вызова ждут `await`.
+4. ☑ Сторона ядра: `kanbanBridge/internal.ts` (RPC-диспетчер `KanbanCore`, снимок машин),
+   `kanbanBridge/remote.ts` (`KanbanService` на локальных лентах + RPC), `kanbanBridge/proxy.ts`
+   (`KANBAN_PROXY_PREFIXES`; прокси Make обобщён в `registerServiceProxy`), `routes/internal.ts` (RPC, exec-stream,
+   события). Транспорт RPC и whoami вынесены в `@voicechat/shared` (`internalRpc.ts`), Make реэкспортирует.
+5. ☑ **Решение по Caddy:** пути канбана снаружи идут только через ядро (Caddy не трогаем): под
+   `/api/projects/*` у ядра свои роуты (git-панель, KB-исследование), а права проекта проверяет preHandler
+   ядра по пути запроса — прямой маршрут в канбан обошёл бы их. Стоимость — один лишний hop.
+6. ☑ Тесты: `kanbanBridge/internal.test.ts`, `remote.test.ts`, `kanban/standalone/execStream.test.ts`,
+   `machinesMirror.test.ts`, интеграционный `kanbanBridge/kanbanRemote.integration.test.ts` (ядро remote +
+   канбан standalone на общей БД: прокси и whoami, роут ядра под общим префиксом, событие доски из процесса
+   канбана до WS-сессии ядра, MCP через ядро, внутренние пути без токена).
+7. ☑ Прогон на копии прод-БД (4,9 ГБ → Postgres за 122 с, 113 таблиц, расхождений 0): ядро `remote` на 8799 +
+   канбан на 8789. API через ядро — проекты, доска, статусы, релизы, настройки CI, типы проектов, квота: 200;
+   `git/workspaces` остался у ядра. Браузер: доска, релизы, карточка задачи (designs, QA-раны, rework-cycles,
+   вложения) — все запросы 200, консоль и логи чистые. Найден и закрыт пропуск: `/api/task-preparation/*` не
+   было в прокси (404) — добавлен, полноту списка теперь держит `kanbanBridge/proxy.test.ts` по исходникам
+   кластера (буквальные пути и `REST.*`).
+
+**Долг круга 3:** `featurePreviewsRef` в remote пуст (preview-MCP чата не видит превью канбана) →
+`KanbanService.previews`; `kb/*`-функции и `users/auth` остаются импортами кластера из ядра до выделения
+пакета базы; Release Center пересобирает всё — перекат одного `kanban` вручную (`docker compose up -d --build kanban`).
 
 ## Риски
 - Кластер связан с ходами чата в обе стороны (чат задачи создаёт ход, ход читает контекст задачи);
