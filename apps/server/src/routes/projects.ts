@@ -17,8 +17,6 @@ import {
   type ProjectMachineDirectoryKind,
   PROJECT_MACHINE_DIRECTORY_KINDS,
   type Task,
-  type TaskReworkCycle,
-  type CreateTaskReworkCycleInput,
   type TaskPriority,
   type TaskLaunchResult,
   type TaskPreparationLlmSelection,
@@ -823,50 +821,6 @@ export function registerProjectRoutes(
     }
   })
 
-  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply): Promise<TaskReworkCycle[] | FastifyReply> => {
-    const task = await db.tasks.getTaskDetail(uid(req), req.params.id, req.params.taskId)
-    if (!task) return nf(reply)
-    return (await db.tasks.listTaskReworkCycles(uid(req), req.params.id, req.params.taskId)).map((cycle) => ({
-      ...cycle,
-      attachments: cycle.attachments.map((file) => ({ ...file, status: uploads?.get(file.id) ? 'ready' as const : 'missing' as const }))
-    }))
-  })
-
-  app.post<{ Params: { id: string; taskId: string }; Body: CreateTaskReworkCycleInput }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply): Promise<TaskReworkCycle | FastifyReply> => {
-    const userId = uid(req)
-    if (!await db.tasks.getTaskDetail(userId, req.params.id, req.params.taskId)) return nf(reply)
-    const body = req.body
-    const validStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string')
-    const validMakeSources = (value: unknown): boolean => value === undefined || (Array.isArray(value) && value.every((source) => {
-      if (!source || typeof source !== 'object') return false
-      const item = source as Record<string, unknown>
-      return typeof item.conversationId === 'string' && typeof item.title === 'string'
-        && (item.mode === 'whole_project' || item.mode === 'files') && validStrings(item.paths)
-    }))
-    if (!body || typeof body.description !== 'string' || !body.description.trim()
-      || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey.trim()
-      || (body.makeMode !== 'whole_project' && body.makeMode !== 'files')
-      || !validStrings(body.criteria ?? []) || !validStrings(body.makePaths ?? [])
-      || !validStrings(body.uploadIds ?? []) || !validMakeSources(body.makeSources)) {
-      return reply.code(400).send({ error: 'validation_error', code: 'validation_error' })
-    }
-    const files = []
-    for (const uploadId of body.uploadIds ?? []) {
-      const upload = uploads?.get(uploadId)
-      if (upload?.ownerId === userId) files.push({ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' as const })
-    }
-    try {
-      const cycle = await db.tasks.createTaskReworkCycle(userId, req.params.id, req.params.taskId, body, files)
-      boardHub.emit(req.params.id)
-      return cycle
-    } catch (error) {
-      const code = errMessage(error)
-      if (code === 'not_found') return nf(reply)
-      const status = code === 'validation_error' || code === 'invalid_upload' ? 400 : 409
-      return reply.code(status).send({ error: code, code })
-    }
-  })
-
   // Полная задача по id: доска отдаёт лёгкие карточки без тяжёлых текстов, а
   // TaskModal догружает описание/критерии/лог подготовки при открытии карточки.
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId', async (req, reply): Promise<Task | FastifyReply> =>
@@ -1084,6 +1038,101 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const conv = await db.chat.openOrCreateTaskChat(uid(req), req.params.id, req.params.taskId)
       return conv ?? nf(reply)
+    }
+  )
+
+  // --- Неизменяемые циклы ручной доработки и постоянные вложения --------
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/rework-cycles', async (req, reply) =>
+    await db.tasks.taskReworkCycles(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+  )
+
+  app.post<{ Params: { id: string; taskId: string }; Body: { description?: string; criteria?: string[]; makeSources?: Array<{ conversationId: string; title?: string; mode: 'whole_project' | 'files'; paths: string[] }>; attachmentIds?: string[]; makeMode?: 'whole_project' | 'files'; makePaths?: string[]; uploadIds?: string[]; idempotencyKey?: string } }>(
+    '/api/projects/:id/tasks/:taskId/rework-cycles',
+    async (req, reply) => {
+      const body = req.body
+      if (body?.idempotencyKey) {
+        const userId = uid(req)
+        const files = (body.uploadIds ?? []).flatMap((uploadId) => {
+          const upload = uploads?.get(uploadId)
+          return upload?.ownerId === userId ? [{ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' as const }] : []
+        })
+        try {
+          const cycle = await db.tasks.createTaskReworkCycle(userId, req.params.id, req.params.taskId, {
+            description: body.description ?? '', criteria: body.criteria ?? [], makeMode: body.makeMode ?? 'whole_project',
+            makePaths: body.makePaths ?? [], makeSources: body.makeSources?.map((source) => ({ ...source, title: source.title ?? source.conversationId, owner: '' })),
+            uploadIds: body.uploadIds ?? [], idempotencyKey: body.idempotencyKey
+          }, files)
+          boardHub.emit(req.params.id)
+          return cycle
+        } catch (error) {
+          const code = errMessage(error)
+          if (code === 'not_found') return nf(reply)
+          return reply.code(code === 'validation_error' || code === 'invalid_upload' ? 400 : 409).send({ error: code, code })
+        }
+      }
+      const key = String(req.headers['idempotency-key'] ?? '').trim()
+      if (!key) return badReq(reply, 'Idempotency-Key required')
+      try {
+        const replay = await db.tasks.taskReworkCycleByIdempotencyKey(uid(req), req.params.id, req.params.taskId, key)
+        if (replay) {
+          const task = await db.tasks.getTaskDetail(uid(req), req.params.id, req.params.taskId)
+          if (!task) return nf(reply)
+          return { cycle: replay, task, replayed: true }
+        }
+        if ((await db.tasks.latestTaskRunResult(req.params.taskId))?.outcome === 'active') {
+          return reply.code(409).send({ error: 'task_active_run', message: 'Создание цикла заблокировано: активный ран продолжает выполняться.' })
+        }
+        const sources = Array.isArray(req.body?.makeSources) ? req.body.makeSources : []
+        for (const source of sources) {
+          await db.tasks.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, source.conversationId)
+          if (source.mode === 'files') {
+            if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
+            const existing = new Set((await makeWorkspaces.list(source.conversationId)).map((file) => file.path))
+            const missing = source.paths.find((path) => !existing.has(path))
+            if (missing) throw new Error(`Make-проект ${source.conversationId}: файл ${missing} не найден`)
+          }
+        }
+        const result = await db.tasks.createPersistentTaskReworkCycle(uid(req), req.params.id, req.params.taskId, key, {
+          description: req.body?.description ?? '',
+          criteria: Array.isArray(req.body?.criteria) ? req.body.criteria : [],
+          makeSources: sources,
+          attachmentIds: Array.isArray(req.body?.attachmentIds) ? req.body.attachmentIds : []
+        })
+        boardHub.emit(req.params.id)
+        return result
+      } catch (error) {
+        const message = errMessage(error)
+        if (message === 'TASK_ACTIVE_RUN') return reply.code(409).send({ error: 'task_active_run', message: 'Создание цикла заблокировано: активный ран продолжает выполняться.' })
+        return badReq(reply, message)
+      }
+    }
+  )
+
+  app.get<{ Params: { id: string; taskId: string }; Querystring: { scope?: 'source' | 'rework_draft' } }>(
+    '/api/projects/:id/tasks/:taskId/attachments',
+    async (req, reply) => await db.tasks.taskAttachments(uid(req), req.params.id, req.params.taskId, req.query.scope ?? 'source') ?? nf(reply)
+  )
+  app.post<{ Params: { id: string; taskId: string }; Body: { name?: string; mimeType?: string; dataBase64?: string; scope?: 'source' | 'rework_draft' } }>(
+    '/api/projects/:id/tasks/:taskId/attachments',
+    async (req, reply) => {
+      try {
+        if (!req.body?.name || !req.body?.dataBase64) return badReq(reply, 'name and dataBase64 required')
+        return await db.tasks.createTaskAttachment(uid(req), req.params.id, req.params.taskId, { name: req.body.name, mimeType: req.body.mimeType, dataBase64: req.body.dataBase64, scope: req.body.scope })
+      } catch (error) { return badReq(reply, errMessage(error)) }
+    }
+  )
+  app.delete<{ Params: { id: string; taskId: string; attachmentId: string } }>(
+    '/api/projects/:id/tasks/:taskId/attachments/:attachmentId',
+    async (req, reply) => await db.tasks.deleteTaskAttachment(uid(req), req.params.id, req.params.taskId, req.params.attachmentId) ? { deleted: true } : nf(reply)
+  )
+  app.get<{ Params: { id: string; taskId: string; conversationId: string } }>(
+    '/api/projects/:id/tasks/:taskId/rework-make/:conversationId/files',
+    async (req, reply) => {
+      try {
+        await db.tasks.assertTaskDesignSource(uid(req), req.params.id, req.params.taskId, req.params.conversationId)
+        if (!makeWorkspaces) throw new Error('Хранилище Make недоступно')
+        return await makeWorkspaces.list(req.params.conversationId)
+      } catch (error) { return badReq(reply, errMessage(error)) }
     }
   )
 

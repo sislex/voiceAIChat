@@ -765,6 +765,25 @@ CREATE TABLE IF NOT EXISTS task_rework_attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_task_rework_attachments_cycle ON task_rework_attachments(cycle_id, position);
 
+CREATE TABLE IF NOT EXISTS task_attachments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  rework_cycle_id TEXT,
+  scope TEXT NOT NULL CHECK(scope IN ('source','rework_draft','rework_cycle')),
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mime_type TEXT NOT NULL,
+  storage_key TEXT NOT NULL UNIQUE,
+  checksum TEXT NOT NULL,
+  data_base64 TEXT,
+  status TEXT NOT NULL DEFAULT 'ready',
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (rework_cycle_id) REFERENCES task_rework_cycles(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id, scope, created_at);
+
 CREATE TABLE IF NOT EXISTS task_creation_requests (
   actor TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
