@@ -38,6 +38,7 @@ function formatBytes(bytes: number): string {
 
 /** Разделы меню настроек. */
 export type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'security' | 'ui' | 'projectTypes'
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = ['llm', 'aiAssist', 'download', 'stt', 'tts', 'dialog', 'instructions', 'storage', 'security', 'ui', 'projectTypes']
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -62,6 +63,10 @@ export interface SettingsModalProps {
    * «LLM» значит просить человека искать раздел глазами.
    */
   initialSection?: SettingsSection
+  /** Управляемый раздел; нужен маршруту, чтобы Back/Forward сразу меняли панель. */
+  section?: SettingsSection
+  /** Сообщает хосту о выборе раздела. */
+  onSectionChange?: (section: SettingsSection) => void
   /** Каталог типов проекта для раздела «Типы проектов». */
   projectTypes?: ProjectTypeNode[]
   projectTypesStatus?: LoadStatus
@@ -152,13 +157,20 @@ export function SettingsModal({
   llmAccess = [],
   onClose,
   voiceInputEnabled = true,
-  initialSection
+  initialSection,
+  section: controlledSection,
+  onSectionChange
 }: SettingsModalProps): JSX.Element {
   const confirm = useConfirm()
   // Блокировка функций при нехватке ресурсов контейнера (null — ещё не загружено, не блокируем).
   const sttBlocked = !voiceInputEnabled || (capabilities != null && !capabilities.stt.available)
   const ttsBlocked = capabilities != null && !capabilities.tts.available
-  const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm')
+  const [localSection, setLocalSection] = useState<SettingsSection>(initialSection ?? 'llm')
+  const section = controlledSection ?? localSection
+  const selectSection = (next: SettingsSection): void => {
+    if (controlledSection === undefined) setLocalSection(next)
+    onSectionChange?.(next)
+  }
   const [ttlDraft, setTtlDraft] = useState(String(settings.generatedFilesTtlDays))
   const ttlNumber = Number(ttlDraft)
   const ttlValid = /^\d+$/.test(ttlDraft) && Number.isInteger(ttlNumber) && ttlNumber >= 1 && ttlNumber <= 3650
@@ -187,7 +199,7 @@ export function SettingsModal({
                 key={s.id}
                 className={section === s.id ? 'settnav-item on' : 'settnav-item'}
                 aria-pressed={section === s.id}
-                onClick={() => setSection(s.id)}
+                onClick={() => selectSection(s.id)}
               >
                 {s.label}
               </button>

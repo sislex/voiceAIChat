@@ -105,7 +105,7 @@ describe('App — версия релиза', () => {
 })
 
 async function openSettings(section?: string): Promise<void> {
-  await userEvent.click(screen.getByText('Настройки'))
+  await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
   if (section) await userEvent.click(screen.getByRole('button', { name: section }))
 }
 
@@ -376,6 +376,64 @@ describe('App — интеграция UI со стором и IPC', () => {
     await userEvent.type(input, 'Привет!{Enter}')
     expect(await screen.findByText('Привет!')).toBeInTheDocument()
     expect(screen.queryByText('Claude думает')).not.toBeInTheDocument()
+  })
+
+  // @testCase TC-1
+  it('открывает каждый раздел глобальных настроек по его hash-маршруту', async () => {
+    const api = await seededApi()
+    window.location.hash = '#/settings/llm'
+    render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    const sections = [
+      ['llm', 'LLM'], ['aiAssist', 'AI-помощник'], ['download', 'Скачать'], ['stt', 'Распознавание'],
+      ['tts', 'Озвучка'], ['dialog', 'Голосовой диалог'], ['instructions', 'Инструкции'], ['storage', 'Хранилище'],
+      ['security', 'Безопасность'], ['ui', 'Интерфейс'], ['projectTypes', 'Типы проектов']
+    ] as const
+    for (const [id, label] of sections) {
+      window.location.hash = `#/settings/${id}`
+      await waitFor(() => expect(within(dialog).getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true'))
+    }
+  })
+
+  // @testCase TC-2
+  it('синхронизирует выбор вкладки с историей и восстанавливает его после повторного mount', async () => {
+    const api = await seededApi()
+    window.location.hash = '#/settings/llm'
+    const view = render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'AI-помощник' }))
+    expect(window.location.hash).toBe('#/settings/aiAssist')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Инструкции' }))
+    expect(window.location.hash).toBe('#/settings/instructions')
+    window.location.hash = '#/settings/aiAssist'
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'AI-помощник' })).toHaveAttribute('aria-pressed', 'true'))
+    window.location.hash = '#/settings/instructions'
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Инструкции' })).toHaveAttribute('aria-pressed', 'true'))
+    view.unmount()
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByRole('button', { name: 'Инструкции' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // @testCase TC-3
+  it.each(['#/settings', '#/settings/nope', '#/settings/llm/extra'])('нормализует некорректный маршрут %s в LLM', async (route) => {
+    const api = await seededApi()
+    window.location.hash = route
+    render(<App api={api} delays={SLOW} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки' })
+    await waitFor(() => expect(window.location.hash).toBe('#/settings/llm'))
+    expect(within(dialog).getByRole('button', { name: 'LLM' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // @testCase TC-4
+  it('не перехватывает маршрут контекста разговора глобальными настройками', async () => {
+    const api = await renderApp()
+    window.api = api as never
+    const chat = api._state.conversations.find((conversation) => conversation.title === 'Поездка в Лиссабон')!
+    window.location.hash = `#/chat/${chat.id}/context`
+    fireEvent(window, new HashChangeEvent('hashchange'))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки разговора' })
+    expect(within(dialog).getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('dialog', { name: 'Настройки' })).not.toBeInTheDocument()
   })
 
   it('открытие и закрытие модалки настроек по кнопке ✕', async () => {
