@@ -41,6 +41,11 @@ export class ReleasesRepo extends BaseRepo {
     return rows.map(row=>({id:row.id,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],previousReleaseId:row.previous_release_id,createdAt:row.created_at,durationMs:row.started_at==null?null:(row.running?now:row.finished_at??now)-row.started_at}))
   }
 
+  /** Подготовки (`preparing`/`checking`), оборванные рестартом: их регрессия шла в процессе ядра и после рестарта не продолжается. */
+  async listInterruptedPreparations():Promise<ProjectRelease[]> {
+    return await Promise.all(((await this.sql.all(`SELECT * FROM project_releases WHERE status IN ('preparing','checking') AND deleted_at IS NULL ORDER BY created_at`)) as ReleaseRow[]).map(async row=>(await this.getProjectRelease(row.triggered_by,row.project_id,row.id))!))
+  }
+
   async listActiveProjectReleases():Promise<ProjectRelease[]> {
     return await Promise.all(((await this.sql.all(`SELECT * FROM project_releases WHERE status IN ('switching','building','health_check') ORDER BY created_at`)) as ReleaseRow[])
       .map(async row=>await this.mapProjectRelease(row)))
@@ -64,8 +69,12 @@ export class ReleasesRepo extends BaseRepo {
 
   async setProjectReleaseStep(id:string,kind:ReleaseStepKind,status:ReleaseStepStatus,log:string,actor:string):Promise<void> {
     const now=this.now()
+    // Событие таймлайна — только на смену статуса шага: живой лог `running` переписывается по ходу команды,
+    // и событие с полной копией лога на каждое обновление раздуло таблицу событий до 3 ГБ на проде.
+    const previous=(await this.sql.get(`SELECT status FROM project_release_steps WHERE release_id=? AND kind=?`, [id, kind])) as {status:ReleaseStepStatus}|undefined
+    const progressOnly=status==='running'&&previous?.status==='running'
     await this.sql.run(`UPDATE project_release_steps SET status=?,log=?,started_at=CASE WHEN ?='running' THEN COALESCE(started_at,?) ELSE started_at END,finished_at=CASE WHEN ? IN ('passed','failed','skipped') THEN ? ELSE NULL END WHERE release_id=? AND kind=?`, [status, log, status, now, status, now, id, kind])
-    await this.addReleaseEvent(id,`step.${status}`,actor,{kind,log})
+    if(!progressOnly)await this.addReleaseEvent(id,`step.${status}`,actor,{kind,log})
   }
 
   async softDeleteProjectRelease(userId:string,projectId:string,id:string):Promise<boolean> {
@@ -88,6 +97,27 @@ export class ReleasesRepo extends BaseRepo {
   private async mapProjectRelease(row:ReleaseRow):Promise<ProjectRelease> {
     const steps=((await this.sql.all(`SELECT * FROM project_release_steps WHERE release_id=? ORDER BY position`, [row.id])) as ReleaseStepRow[]).map(s=>({id:s.id,kind:s.kind as ReleaseStepKind,status:s.status as ReleaseStepStatus,model:s.model,attempt:s.attempt,log:s.log,startedAt:s.started_at,finishedAt:s.finished_at,limitMs:s.limit_ms??null}))
     return {id:row.id,projectId:row.project_id,version:row.version,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],triggeredBy:row.triggered_by,attempt:row.attempt,previousReleaseId:row.previous_release_id,createdAt:row.created_at,releasedAt:row.released_at,agentId:row.agent_id??null,checkoutPath:row.checkout_path??null,deletedAt:row.deleted_at??null,steps}
+  }
+
+  /**
+   * Чистка прогресс-событий `step.running`: раньше каждое обновление живого лога шага писало событие с
+   * полной копией лога (на проде — 97 тысяч событий на 3 ГБ). Оставляем по одному `step.running` на шаг
+   * (момент старта), остальные удаляем пачками, чтобы не держать полосу базы. Возвращает число удалённых.
+   */
+  async pruneProgressEvents(batchSize=500):Promise<number> {
+    const rows=(await this.sql.all(`SELECT id,release_id,created_at,rowid AS rid,substr(payload_json,1,120) AS head FROM project_release_events WHERE type='step.running' ORDER BY created_at,rowid`)) as Array<{id:string;release_id:string;created_at:number;rid:number;head:string}>
+    const seen=new Set<string>()
+    const doomed:string[]=[]
+    for(const row of rows){
+      const kind=/"kind":"([a-z_]+)"/.exec(row.head)?.[1]??''
+      const key=`${row.release_id}:${kind}`
+      if(seen.has(key))doomed.push(row.id);else seen.add(key)
+    }
+    for(let i=0;i<doomed.length;i+=batchSize){
+      const batch=doomed.slice(i,i+batchSize)
+      await this.sql.run(`DELETE FROM project_release_events WHERE id IN (${batch.map(()=>'?').join(',')})`, batch)
+    }
+    return doomed.length
   }
 
   private async addReleaseEvent(releaseId:string,type:string,actor:string,payload:unknown):Promise<void> {

@@ -80,6 +80,8 @@ export interface ConversationSettingsProps {
   onCopyContextTo?: (targetId: string, fromId: string) => Promise<void>
   /** Открыть существующую панель статистики БЗ текущего разговора. */
   onOpenKbUsage?: () => void
+  /** Контейнер окна принадлежит родителю, чтобы сохраняться при загрузке снимка. */
+  embedded?: boolean
   onClose: () => void
 }
 
@@ -96,7 +98,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, embedded = false, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -344,8 +346,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     onClose()
   }
 
-  return (
-    <PopupFrame title="Настройки разговора" onClose={onClose} onEscape={escapeFromSettings} testId="conversation-settings-overlay" panelClassName="convsettings">
+  const content = (
+    <>
       <header className="convsettings-head">
         <IconButton className="convsettings-back" onClick={onClose} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</IconButton>
         <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>
@@ -537,6 +539,12 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         {error && <p className="convsettings-error" role="alert">{error}</p>}
       </main>
       <footer className="convsettings-footer"><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</Button></footer>
+    </>
+  )
+
+  return embedded ? content : (
+    <PopupFrame title="Настройки разговора" onClose={onClose} onEscape={escapeFromSettings} testId="conversation-settings-overlay" panelClassName="convsettings">
+      {content}
     </PopupFrame>
   )
 }

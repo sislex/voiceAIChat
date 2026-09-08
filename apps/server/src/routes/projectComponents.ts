@@ -61,7 +61,8 @@ export interface ProjectComponentsDeps {
     isOnline(agentId: string): boolean
     ownsAgent(userId: string, agentId: string): Promise<boolean>
     create(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => Promise<boolean>): Promise<number>
-    close(id: string): boolean
+    /** В отдельном процессе машин ответ приходит по сети — ждём `await`. */
+    close: (id: string) => boolean | Promise<boolean>
   }
 }
 
@@ -219,7 +220,7 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
         const session = await storybook.refresh(ref.agentId, workspace, ref.path)
         const expected = tunnelIdFor(userId, workspace, ref.agentId, session.port)
         if (req.params.tunnelId !== expected) throw new GitError(404, 'tunnel_not_found', 'Туннель не найден')
-        return { closed: deps.tunnels?.close(req.params.tunnelId) ?? false }
+        return { closed: (await deps.tunnels?.close(req.params.tunnelId)) ?? false }
       })
     }
   )

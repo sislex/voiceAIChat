@@ -21,7 +21,6 @@ import { KB_MCP_PATH } from '../kb/kbMcp.js'
 import { CI_COMMANDS_MCP_PATH, ciToolBroker } from './ciCommandsMcp.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
-const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 const U = 'alice'
 const KB_MCP = 'http://127.0.0.1:8787/mcp/kb?k=secret'
@@ -452,7 +451,7 @@ describe('токен базы знаний живёт ровно один ход
     expect(tool.live()).toEqual([])
   })
 
-  it.skipIf(ON_POSTGRES)('отмена рана снимает токен работы модели', async () => {
+  it('отмена рана снимает токен работы модели', async () => {
     const tool = broker()
     const ctl = new AbortController()
     const { ctx } = await setup('auto', ctl.signal)
@@ -1092,7 +1091,7 @@ describe('пробелы базы знаний доходят до шага ак
     expect(save).not.toHaveBeenCalled()
   })
 
-  it.skipIf(ON_POSTGRES)('общий таймаут гасит repair и не выдаёт ему новый бюджет стадии', async () => {
+  it('общий таймаут гасит repair и не выдаёт ему новый бюджет стадии', async () => {
     const requests: LlmRequest[] = []
     const client: LlmClient = {
       send: (req, handlers) => {
@@ -1106,7 +1105,7 @@ describe('пробелы базы знаний доходят до шага ак
       }
     }
     const { ctx } = await setup('off')
-    const result = await hooksWith(client, { kb: undefined, executor: diffExecutor, kbTimeoutMs: 5 }).kbUpdate(withAgent(ctx))
+    const result = await hooksWith(client, { kb: undefined, executor: diffExecutor, kbTimeoutMs: 300 }).kbUpdate(withAgent(ctx))
     expect(result).toEqual({ ok: false, message: 'Repair финального ответа не завершён до таймаута' })
     expect(requests).toHaveLength(2)
   })

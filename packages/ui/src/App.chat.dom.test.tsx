@@ -18,10 +18,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason?: unknown) => void } {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 interface Seeded {
@@ -549,24 +550,50 @@ describe('App — настройки разговора привязаны к и
     expect(screen.getByLabelText('Название разговора')).toHaveValue('Настройки отменённой задачи')
   })
 
-  // @testCase TC-REG-2
-  it('завершает неуспешное открытие и не переносит его на следующий чат', async () => {
-    const { api, gifts, lisbon } = await seededApi()
+  // @testCase tc-ui-loading
+  // @testCase tc-ui-success-transition
+  it('сразу показывает загрузку настроек и заменяет её формой после актуального снимка', async () => {
+    const { api, lisbon } = await seededApi()
     window.location.hash = `#/chat/${lisbon}`
     render(<App api={api} delays={SLOW} />)
     await screen.findByText('Погода в июле?')
     const realGet = api['conversations:get']
-    api['conversations:get'] = async (args) => args.id === lisbon ? null : realGet(args)
+    const pending = deferred<Awaited<ReturnType<FakeApi['conversations:get']>>>()
+    api['conversations:get'] = (args) => args.id === lisbon ? pending.promise : realGet(args)
 
     await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
-    expect(await screen.findByText('Настройки недоступны: разговор удалён или недоступен.')).toBeInTheDocument()
-    await userEvent.click(screen.getByText('Идеи для подарка'))
-    await waitFor(() => expect(window.location.hash).toBe(`#/chat/${gifts}`))
+    expect(screen.getByRole('dialog', { name: 'Настройки разговора' })).toBeInTheDocument()
+    expect(screen.getByText('Загрузка настроек…')).toHaveAttribute('role', 'status')
 
-    expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument()
+    pending.resolve(await realGet({ id: lisbon, scope: 'chat' }))
+    expect(await screen.findByLabelText('Название разговора')).toHaveValue('Поездка в Лиссабон')
+    expect(screen.queryByText('Загрузка настроек…')).not.toBeInTheDocument()
   })
 
-  // @testCase TC-NEG-3
+  // @testCase tc-ui-close-pending
+  it('инвалидирует pending-настройки при закрытии крестиком и Escape', async () => {
+    const { api, lisbon } = await seededApi()
+    window.location.hash = `#/chat/${lisbon}`
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Погода в июле?')
+    const realGet = api['conversations:get']
+    const first = deferred<Awaited<ReturnType<FakeApi['conversations:get']>>>()
+    const second = deferred<Awaited<ReturnType<FakeApi['conversations:get']>>>()
+    let attempt = 0
+    api['conversations:get'] = (args) => args.id === lisbon ? (++attempt === 1 ? first.promise : second.promise) : realGet(args)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Вернуться в разговор' }))
+    first.resolve(await realGet({ id: lisbon, scope: 'chat' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument())
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    await userEvent.keyboard('{Escape}')
+    second.resolve(await realGet({ id: lisbon, scope: 'chat' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument())
+  })
+
+  // @testCase tc-regression-switch-chat
   it('игнорирует запоздалый ответ настроек после смены разговора', async () => {
     const { api, gifts, lisbon } = await seededApi()
     window.location.hash = `#/chat/${lisbon}`
@@ -577,11 +604,28 @@ describe('App — настройки разговора привязаны к и
     api['conversations:get'] = (args) => args.id === lisbon ? late.promise : realGet(args)
 
     await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    expect(screen.getByText('Загрузка настроек…')).toHaveAttribute('role', 'status')
     await userEvent.click(screen.getByText('Идеи для подарка'))
     await waitFor(() => expect(window.location.hash).toBe(`#/chat/${gifts}`))
     late.resolve(await realGet({ id: lisbon, scope: 'chat' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument())
+  })
+
+  // @testCase tc-negative-load-error
+  it('закрывает окно и показывает существующий toast при ошибке загрузки настроек', async () => {
+    const { api, lisbon } = await seededApi()
+    window.location.hash = `#/chat/${lisbon}`
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Погода в июле?')
+    const pending = deferred<Awaited<ReturnType<FakeApi['conversations:get']>>>()
+    api['conversations:get'] = (args) => args.id === lisbon ? pending.promise : Promise.resolve(null)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    expect(screen.getByText('Загрузка настроек…')).toHaveAttribute('role', 'status')
+    pending.reject(new Error('network'))
+    expect(await screen.findByText('Не удалось открыть настройки разговора.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Настройки разговора' })).not.toBeInTheDocument()
   })
 
   // @testCase TC-UI-5

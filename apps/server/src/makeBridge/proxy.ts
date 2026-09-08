@@ -20,14 +20,29 @@ export interface MakeProxyOptions {
   timeoutMs?: number
 }
 
+/** Общий прокси путей соседнего сервиса (Make, канбан): тот же перенос заголовков и тела. */
+export interface ServiceProxyOptions {
+  /** Имя сервиса — для лога и кода ошибки `<name>_unavailable`. */
+  name: string
+  baseUrl: string
+  prefixes: readonly string[]
+  fetchImpl?: typeof fetch
+  bodyLimit?: number
+  timeoutMs?: number
+}
+
 /** Заголовки hop-by-hop и те, что задаёт транспорт, не пересылаются ни туда, ни обратно. */
 const SKIP_REQUEST = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'keep-alive', 'upgrade', 'expect'])
 // `set-cookie` fetch склеивает в одну строку — переносим отдельно через getSetCookie().
 const SKIP_RESPONSE = new Set(['connection', 'content-length', 'transfer-encoding', 'content-encoding', 'keep-alive', 'set-cookie'])
 
 export function registerMakeProxy(app: FastifyInstance, opts: MakeProxyOptions): void {
+  registerServiceProxy(app, { name: 'make', baseUrl: opts.makeUrl, prefixes: MAKE_PROXY_PREFIXES, ...opts })
+}
+
+export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOptions): void {
   const fetchImpl = opts.fetchImpl ?? fetch
-  const base = opts.makeUrl.replace(/\/+$/, '')
+  const base = opts.baseUrl.replace(/\/+$/, '')
   const forward = async (req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const headers = new Headers()
     for (const [name, value] of Object.entries(req.headers)) {
@@ -52,8 +67,8 @@ export function registerMakeProxy(app: FastifyInstance, opts: MakeProxyOptions):
         signal: AbortSignal.timeout(opts.timeoutMs ?? 60_000)
       })
     } catch (error) {
-      req.log.error({ err: error }, '[make-proxy] процесс Make недоступен')
-      return reply.code(503).send({ error: 'make_unavailable' })
+      req.log.error({ err: error }, `[${opts.name}-proxy] процесс ${opts.name} недоступен`)
+      return reply.code(503).send({ error: `${opts.name}_unavailable` })
     }
     reply.code(upstream.status)
     upstream.headers.forEach((value, name) => { if (!SKIP_RESPONSE.has(name)) reply.header(name, value) })
@@ -63,10 +78,10 @@ export function registerMakeProxy(app: FastifyInstance, opts: MakeProxyOptions):
   }
 
   app.register(async (scope) => {
-    // Сырое тело любого типа: Make сам разберёт JSON, urlencoded (форма пароля публикации) и бинарь.
+    // Сырое тело любого типа: сервис сам разберёт JSON, urlencoded (форма пароля публикации) и бинарь.
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: opts.bodyLimit ?? 16 * 1024 * 1024 }, (_req, body, done) => done(null, body))
-    for (const prefix of MAKE_PROXY_PREFIXES) {
+    for (const prefix of opts.prefixes) {
       scope.all(prefix, forward)
       scope.all(`${prefix}/*`, forward)
     }

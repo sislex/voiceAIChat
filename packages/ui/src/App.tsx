@@ -3303,8 +3303,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           </ToolFrame>
         </Suspense>
       )}
-      {conversationSettingsTarget?.conversation && (
-        <ConversationSettings
+      {conversationSettingsTarget && (
+        <PopupFrame
+          title="Настройки разговора"
+          onClose={closeConversationSettings}
+          onEscape={() => {
+            const prefix = `#/chat/${encodeURIComponent(conversationSettingsTarget.id)}/context/`
+            if (window.location.hash.startsWith(prefix)) {
+              window.location.hash = `/chat/${encodeURIComponent(conversationSettingsTarget.id)}/context`
+              return
+            }
+            closeConversationSettings()
+          }}
+          testId="conversation-settings-overlay"
+          panelClassName="convsettings"
+        >
+          {conversationSettingsTarget.conversation ? <ConversationSettings
+          embedded
           conversation={conversationSettingsTarget.conversation}
           agents={operations.agents}
           // Список для «скопировать контекст из»: только чаты этого человека,
@@ -3379,7 +3394,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             closeConversationSettings()
             if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') navigate(`/chat/${conversationSettingsTarget.id}`)
           }}
-        />
+        /> : <>
+          <header className="convsettings-head">
+            <IconButton className="convsettings-back" onClick={closeConversationSettings} aria-label="Вернуться в разговор" title="Вернуться в разговор">←</IconButton>
+            <div><h1>Настройки разговора</h1><p>Параметры применяются только к этому разговору</p></div>
+          </header>
+          <div className="convsettings-body" role="status">Загрузка настроек…</div>
+        </>}
+        </PopupFrame>
       )}
 
       {showConsole && (
