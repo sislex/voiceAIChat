@@ -65,7 +65,7 @@ export interface CiModelHooksDeps {
    * упиралась бы в таймаут relay.
    */
   previewMcpBaseUrl?: string
-  previewTool?: { register(token: string, entry: { userId: string; conversationId: string }): void; unregister(token: string): void }
+  previewTurns?: { issue(entry: { userId: string; conversationId: string }): string }
   /** Scope-источники Make для рана: дизайны задачи читаются моделью через MCP Make (make/service.ts). */
   make?: Pick<MakeService, 'taskSources'>
 }
@@ -616,23 +616,19 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   /**
    * Инструменты браузера на ход работы модели. Транспорт выбирает сервер по
    * настройке задачи: `chromium` — изолированный браузер (см. `checkTarget`),
-   * `user_panel` — открытая панель пользователя. Токен снимается в `finally`,
-   * как у БЗ: он адресует ход и жить дольше него не должен.
+   * `user_panel` — открытая панель пользователя. Токен хода подписан секретом MCP
+   * (`reader/turnToken.ts`): его проверит и ядро, и отдельный процесс ридера, в
+   * каком бы процессе ни шёл ран.
    */
   async function withBrowserTools<T>(ctx: CiModelContext, body: (fields: Partial<LlmRequest>) => Promise<T>): Promise<T> {
     const conversationId = ctx.run.conversationId
     const check = await deps.db.ci.getTaskBrowserCheck(ctx.task.id)
-    if (!deps.previewMcpBaseUrl || !deps.previewTool || !conversationId || check.mode === 'off') return body({})
-    const token = randomUUID()
-    deps.previewTool.register(token, { userId: ctx.run.triggeredBy, conversationId })
-    try {
-      return await body({
-        previewMcpUrl: `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(token)}`,
-        previewSurface: check.mode === 'chromium' ? 'chromium' : 'panel'
-      })
-    } finally {
-      deps.previewTool.unregister(token)
-    }
+    if (!deps.previewMcpBaseUrl || !deps.previewTurns || !conversationId || check.mode === 'off') return body({})
+    const token = deps.previewTurns.issue({ userId: ctx.run.triggeredBy, conversationId })
+    return body({
+      previewMcpUrl: `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(token)}`,
+      previewSurface: check.mode === 'chromium' ? 'chromium' : 'panel'
+    })
   }
 
   /**
