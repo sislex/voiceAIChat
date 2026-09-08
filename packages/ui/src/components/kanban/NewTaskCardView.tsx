@@ -153,7 +153,6 @@ export function NewTaskCardView(props: NewTaskCardViewProps): JSX.Element {
     <Button size="sm" variant={props.version === 'legacy' ? 'primary' : 'ghost'} aria-pressed={props.version === 'legacy'} onClick={() => props.onVersionChange('legacy')}>Старая</Button>
   </div>
   const headerActions = <>
-    {callbacks.onOpenChat && <Button size="sm" variant="secondary" onClick={callbacks.onOpenChat}>Открыть чат</Button>}
     {model.actions.canRework && <Button size="sm" variant="primary" onClick={callbacks.onStartRework}>↩ На доработку · цикл {model.nextCycleNumber}</Button>}
     {versionSwitch}
   </>

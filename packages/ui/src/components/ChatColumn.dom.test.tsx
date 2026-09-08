@@ -793,6 +793,7 @@ describe('ChatColumn — автопрокрутка ленты', () => {
     expect(box.scrollTop).toBe(1100)
   })
 
+  // @testCase TC-REG-CHAT-LAYOUT
   it('хранит ручную позицию отдельно для разговоров и восстанавливает её после переключения', () => {
     const { rerender } = render(col({ conversationId: 'scroll-chat-a', streamingReply: 'A' }))
     const scroll = screen.getByTestId('scroll')

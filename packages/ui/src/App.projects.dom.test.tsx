@@ -376,12 +376,14 @@ describe('App — чаты завершённых задач в сайдбаре
     expect(row).toHaveAttribute('aria-current', 'true')
   })
 
-  it('«Открыть чат» на карточке завершённой задачи ведёт в её чат', async () => {
-    const { projectId, taskId, chatId } = await withDoneTaskChat()
+  it('AI-чат завершённой задачи остаётся во вкладке карточки', async () => {
+    const { projectId, taskId } = await withDoneTaskChat()
     window.location.hash = `#/projects/${projectId}/task/${taskId}`
     const modal = await screen.findByTestId('task-modal')
-    await userEvent.click(within(modal).getAllByRole('button', { name: /Открыть чат/ })[0]!)
-    await waitFor(() => expect(window.location.hash).toBe(`#/projects/${projectId}/task/${taskId}/chat/${chatId}`))
+    expect(within(modal).queryByRole('button', { name: /Открыть чат/ })).not.toBeInTheDocument()
+    await userEvent.click(within(modal).getByRole('tab', { name: 'AI-чат' }))
+    expect(await within(modal).findByTestId('task-chat-surface')).toBeInTheDocument()
+    expect(window.location.hash).toBe(`#/projects/${projectId}/task/${taskId}`)
   })
 
   it('возврат задачи из «Готово» возвращает чат в список', async () => {
