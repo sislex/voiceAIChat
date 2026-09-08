@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-08 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-08 | ⚠ 3 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-08 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-06 | ⚠ 63 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-06 | ⚠ 64 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 140 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 117 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 288 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
@@ -23,9 +23,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 66 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 79 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 64 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1275 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 40 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 4 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1276 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 41 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 5 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 46 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 79 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 290 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
@@ -33,7 +33,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-07 | ⚠ 8 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-08 | ⚠ 3 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 214 коммит(ов) в areas после сверки: a7e8e5b4 CHAT-431 restrict release machines and remember selection … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-08 | ⚠ 4 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-08 | ⚠ 5 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-07 | ⚠ 29 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-08 | ⚠ 4 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 45 коммит(ов) в areas после сверки: a7e8e5b4 CHAT-431 restrict release machines and remember selection … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 143 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ⚠ 8 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 668. Последние:
+Всего записей: 669. Последние:
 
 - [2026-09-08-macbook-air-user-ui-settings-routes.md](log/2026-09-08-macbook-air-user-ui-settings-routes.md) — ui-settings-routes
 - [2026-09-08-macbook-air-user-task-card-ai-chat.md](log/2026-09-08-macbook-air-user-task-card-ai-chat.md) — task-card-ai-chat

@@ -80,6 +80,7 @@ export function useAutoGrow(
   onOverflowChange?: (overflowing: boolean) => void
 ): (el: HTMLTextAreaElement | null) => void {
   const ref = useRef<HTMLTextAreaElement | null>(null)
+  const observerRef = useRef<ResizeObserver | null>(null)
 
   const fit = useCallback(() => {
     if (!ref.current) return
@@ -89,11 +90,34 @@ export function useAutoGrow(
 
   useLayoutEffect(fit, [value, fit])
 
+  const observeWidth = useCallback(() => {
+    observerRef.current?.disconnect()
+    observerRef.current = null
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let width: number | undefined
+    const observer = new ResizeObserver(([entry]) => {
+      // Высоту меняем сами. Реагируем только на ширину, иначе автоподгонка
+      // запускает себя снова; скрытая вкладка дождётся появления на экране.
+      if (!entry || entry.contentRect.width <= 0 || entry.contentRect.width === width) return
+      width = entry.contentRect.width
+      fit()
+    })
+    observer.observe(el)
+    observerRef.current = observer
+  }, [fit])
+
+  useLayoutEffect(() => {
+    observeWidth()
+    return () => observerRef.current?.disconnect()
+  }, [observeWidth])
+
   return useCallback(
     (el: HTMLTextAreaElement | null) => {
       ref.current = el
       if (el) fitToText(el, minRows, maxRows)
+      observeWidth()
     },
-    [minRows, maxRows]
+    [minRows, maxRows, observeWidth]
   )
 }
