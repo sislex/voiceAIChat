@@ -440,6 +440,10 @@ export const REST = {
   projectTask: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}`,
   projectTaskReworkCycles: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-cycles`,
+  /** Черновики доработок: правятся и удаляются, пока не отправлены. */
+  projectTaskReworkDrafts: (id: string, taskId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-drafts`,
+  projectTaskReworkDraft: (id: string, taskId: string, cycleId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-drafts/${encodeURIComponent(cycleId)}`,
+  projectTaskReworkDraftSubmit: (id: string, taskId: string, cycleId: string) => `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/rework-drafts/${encodeURIComponent(cycleId)}/submit`,
   projectTaskMove: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
   projectTaskChat: (id: string, taskId: string) =>
