@@ -34,6 +34,7 @@ import {
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import type { MachinesService } from '../machines/service.js'
 import { ensureDefaultStorage } from '../agents/defaultStorage.js'
 import type { CommandGate } from '../agents/commandGate.js'
 import { buildAgentScript } from '../agents/agentScript.js'
@@ -96,7 +97,7 @@ function reachableFromMachine(base: string): boolean {
  * чтобы пережить смерть старого агента. Общий для владельца (`/api/agents/:id/update`) и админки
  * (`/api/admin/machines/:id/update`). Ошибки возвращаются как {status, error} — роут решает, как ответить.
  */
-export async function updateAgentOnMachine(registry: AgentRegistry, id: string, req: FastifyRequest): Promise<{ ok: true; os: string; output: string } | { status: number; error: string }> {
+export async function updateAgentOnMachine(registry: MachinesService, id: string, req: FastifyRequest): Promise<{ ok: true; os: string; output: string } | { status: number; error: string }> {
   if (!registry.isOnline(id)) {
     return { status: 409, error: 'Машина не в сети — обновить можно только запущенного агента' }
   }

@@ -158,6 +158,8 @@ export class AgentRegistry {
   private readonly tunnels = new Map<string, TunnelSession>()
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
+  /** Подписчики изменений PTY-сессий (старт, выход, контекст) — зеркало отдельного процесса ядра. */
+  private readonly ptyListeners = new Set<() => void>()
 
   /** Сколько ждать возврата офлайн-машины перед отказом (0 — отказывать сразу, как раньше). */
   readonly offlineGraceMs: number
@@ -305,9 +307,11 @@ export class AgentRegistry {
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась'))
     }
+    let ptysClosed = false
     for (const [ptyId, sess] of this.ptys) {
       if (sess.agentId !== agentId) continue
       this.ptys.delete(ptyId)
+      ptysClosed = true
       if (sess.idleTimer) clearTimeout(sess.idleTimer)
       try {
         sess.emit?.({ t: 'pty.error', ptyId, message: 'Машина отключилась' })
@@ -316,6 +320,7 @@ export class AgentRegistry {
       }
     }
     if (had) this.emitChange()
+    if (ptysClosed) this.emitPtyChange()
   }
 
   /** Обновляет политику онлайн-агента и шлёт её ему. */
@@ -344,6 +349,22 @@ export class AgentRegistry {
 
   isOnline(agentId: string): boolean {
     return this.online.has(agentId)
+  }
+
+  onPtyChange(cb: () => void): () => void {
+    this.ptyListeners.add(cb)
+    return () => this.ptyListeners.delete(cb)
+  }
+
+  private emitPtyChange(): void {
+    for (const cb of this.ptyListeners) {
+      try { cb() } catch { /* слушатель не должен ронять реестр */ }
+    }
+  }
+
+  /** Живые PTY-сессии: id, машина и последний контекст — для зеркала в отдельном процессе. */
+  ptySnapshot(): Array<{ ptyId: string; agentId: string; context: import('@voicechat/shared').PtyContext | null }> {
+    return [...this.ptys.entries()].map(([ptyId, sess]) => ({ ptyId, agentId: sess.agentId, context: sess.context }))
   }
 
   nameOf(agentId: string): string | undefined {
@@ -643,6 +664,7 @@ export class AgentRegistry {
     }
     this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null, context: null, inputIdleTimer: null, line: '', pendingSudo: null })
     this.send(agentId, { t: 'pty.start', ptyId, cols, rows, ...(cwd ? { cwd } : {}) })
+    this.emitPtyChange()
     this.armPtyInputIdle(ptyId)
   }
 
@@ -738,6 +760,7 @@ export class AgentRegistry {
     if (sess.idleTimer) clearTimeout(sess.idleTimer)
     if (sess.inputIdleTimer) clearTimeout(sess.inputIdleTimer)
     this.send(sess.agentId, { t: 'pty.kill', ptyId })
+    this.emitPtyChange()
   }
 
   /** Есть ли живая PTY-сессия с таким id (для консольного MCP ассистента). */
@@ -860,7 +883,7 @@ export class AgentRegistry {
     }
     if (msg.t === 'pty.context') {
       const sess = this.ptys.get(msg.ptyId)
-      if (sess && sess.agentId === agentId) sess.context = msg.context
+      if (sess && sess.agentId === agentId) { sess.context = msg.context; this.emitPtyChange() }
       return
     }
     if (msg.t === 'pty.output' || msg.t === 'pty.exit' || msg.t === 'pty.error') {
@@ -873,10 +896,12 @@ export class AgentRegistry {
         this.ptys.delete(msg.ptyId)
         if (sess.idleTimer) clearTimeout(sess.idleTimer)
         sess.emit?.({ t: 'pty.exit', ptyId: msg.ptyId, exitCode: msg.exitCode })
+        this.emitPtyChange()
       } else {
         this.ptys.delete(msg.ptyId)
         if (sess.idleTimer) clearTimeout(sess.idleTimer)
         sess.emit?.({ t: 'pty.error', ptyId: msg.ptyId, message: msg.message })
+        this.emitPtyChange()
       }
       return
     }

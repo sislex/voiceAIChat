@@ -11,11 +11,11 @@ import {
   type ProjectMachineDirectoryKind
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { KanbanMachines } from '../kanban/core.js'
 
 export async function materializeProjectMachine(
   db: VoiceChatDb,
-  agents: AgentRegistry,
+  agents: KanbanMachines,
   userId: string,
   projectId: string,
   agentId: string,

@@ -1,3 +1,4 @@
+import { createChunkSink } from '../ci/chunkSink.js'
 import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
@@ -211,11 +212,16 @@ export class ReleaseManager {
         const limit=(await this.db.releases.getProjectRelease(actor,target.projectId,release.id))?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
         const runRegressionCommand=async(command:string,label:string):Promise<void>=>{
           let stageOutput=''
+          // Живой лог шага переписывается целиком, поэтому не чаще раза в секунду и не больше одной записи в
+          // полёте: на каждый чанк это давало тысячи копий лога в памяти (потолок кучи ядра на проде 2026-09-08).
+          const live=createChunkSink(async()=>{
+            await this.db.releases.setProjectReleaseStep(release.id,'regression','running',[...logs,`$ ${command}\n${stageOutput}`].join('\n\n'),actor)
+          },{intervalMs:1_000,maxBytes:Number.MAX_SAFE_INTEGER})
           const regression=await this.runtime.exec(target,releaseRegressionStageCommand(target,release.id,command),limit,async (chunk)=>{
             stageOutput+=chunk
-            const live=[...logs,`$ ${command}\n${stageOutput}`].join('\n\n')
-            await this.db.releases.setProjectReleaseStep(release.id,'regression','running',live,actor)
+            live.push('.')
           })
+          await live.flush().catch(()=>undefined)
           const output=stageOutput||regression.output
           logs.push(`$ ${command}\n${output}`)
           if(regression.timedOut)throw new Error(`${label}: фактическая длительность превысила лимит ${Math.round(limit/1000)} с\n${output}`)
@@ -242,6 +248,13 @@ export class ReleaseManager {
   }
 
   async reconcile(resolveTarget:(release:ProjectRelease)=>Promise<ProductionTarget|null>):Promise<void> {
+    // Подготовка релиза (checkout, регрессия, KB) идёт в памяти процесса ядра: после рестарта продолжать её
+    // некому, а статус `checking` иначе висел бы вечно и релиз нельзя было бы ни удалить, ни повторить.
+    for(const release of await this.db.releases.listInterruptedPreparations()){
+      const kind=release.steps.find(step=>step.status==='running')?.kind??'checkout'
+      await this.db.releases.setProjectReleaseStep(release.id,kind,'failed','Подготовка прервана перезапуском сервера — повторите релиз',release.triggeredBy)
+      await this.db.releases.setProjectReleaseStatus(release.id,'failed',release.triggeredBy)
+    }
     for(const release of await this.db.releases.listActiveProjectReleases()){
       const actor=release.triggeredBy
       const target=await resolveTarget(release)

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-07
-checked: f7925b34
+updated: 2026-09-08
+checked: c310aba9
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -162,6 +162,53 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 `docker compose up -d --build make` — ядро при этом не трогается (Release Center пока пересобирает
 всё; отдельный профиль — круг 4 плана). Без compose (dev, desktop) `VC_MAKE_MODE` не задан → Make
 встроен в процесс ядра, как раньше.
+
+**Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
+(образ `voicechat-kanban`, стадия `kanban-runtime`, порт 8789, тот же код `apps/server`, точка входа
+`src/kanban/standalone/index.ts`). По умолчанию выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
+в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
+**только Postgres** — файл SQLite из двух процессов не открыть), поднять
+`docker compose --profile postgres --profile kanban up -d --build`. У ядра `VC_KANBAN_URL=http://kanban:8789`
+и `VC_KANBAN_MCP_PUBLIC_BASE` (адрес MCP канбана и CI-команд глазами исполнителя); у канбана —
+`VC_CORE_URL`, общие `VC_INTERNAL_TOKEN`/`VC_MCP_SECRET`, `VC_MCP_PUBLIC_BASE` = адрес ядра (MCP машин, KB
+и превью остаются у ядра), адреса раннеров LLM/браузера, SMTP и **тот же том** `vc-data` (скриншоты QA и
+вложения читаются с диска). Пути канбана снаружи идут только через ядро — Caddy их не выделяет: под
+`/api/projects/*` у ядра свои роуты (git-панель, KB), а права проекта проверяет preHandler ядра по пути;
+ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
+`/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
+
+**Машины отдельным сервисом (`docs/plans/machines-service.md`, 2026-09-07).** Профиль compose `machines`
+(образ `voicechat-machines`, стадия `machines-runtime`, порт 8793, точка входа
+`apps/server/src/machines/standalone/index.ts`). По умолчанию выключен (`VC_MACHINES_MODE=embedded`).
+Включение: `VC_MACHINES_MODE=remote` и `VC_DB_URL` (Postgres) в `.env`, `--profile postgres --profile machines`.
+У ядра `VC_MACHINES_URL=http://machines:8793`; у процесса машин — `VC_CORE_URL`, общий `VC_INTERNAL_TOKEN`,
+`VC_PUBLIC_URL`, тот же том `vc-data`. Компаньон-агенты ничего не меняют: они ходят на публичный хост `/agent`,
+ядро переправляет их WebSocket в процесс машин само (Caddy без изменений); REST машин и установщики ядро
+проксирует туда же. Откат — убрать `VC_MACHINES_MODE` (агенты переподключатся к ядру сами).
+
+**Админка отдельным сервисом (2026-09-07).** Профиль compose `admin` (образ `voicechat-admin`, стадия
+`admin-runtime`, порт 8794, точка входа `apps/server/src/admin/standalone/index.ts`), у ядра
+`VC_ADMIN_MODE=remote` + `VC_ADMIN_URL=http://admin:8794`. Требует `VC_DB_URL` (Postgres); у процесса —
+`VC_CORE_URL`, общие `VC_INTERNAL_TOKEN`/`VC_MCP_SECRET`, `VC_MAKE_URL`, при вынесенных машинах —
+`VC_ADMIN_MACHINES_URL=http://machines:8793` (иначе машины читаются у ядра). Деплой из админки по-прежнему
+выполняет ядро (сокет host-side API у него). Откат — убрать `VC_ADMIN_MODE`.
+
+**Распределённый стенд (2026-09-08).** Что где может жить и что для этого нужно:
+
+| Процесс | Точка входа / образ | Режим у ядра | Нужно процессу | Общий том с ядром |
+|---|---|---|---|---|
+| ядро (чат, БД-миграции, CLI-раннеры, WS клиентов) | `apps/server/src/index.ts`, `server-runtime` | — | `VC_DB_URL` (Postgres), `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` | — |
+| Make | `apps/make/src/standalone`, `make-runtime` | `VC_MAKE_MODE=remote`, `VC_MAKE_URL` | `VC_CORE_URL`, общие токен и секрет, свой `VC_DATA_DIR` (мастерские `/data/make`) | нужен, если Make раньше работал встроенным — мастерские лежат в `/data/make` ядра |
+| канбан | `apps/server/src/kanban/standalone`, `kanban-runtime` | `VC_KANBAN_MODE=remote`, `VC_KANBAN_URL`, `VC_KANBAN_MCP_PUBLIC_BASE` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE` (адрес ядра), адреса раннеров LLM и браузера, `VC_MAKE_URL`, SMTP | нет: вложения читаются через порт ядра, скриншоты QA — свой каталог |
+| машины | `apps/server/src/machines/standalone`, `machines-runtime` | `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, `VC_PUBLIC_URL` | нет: установщики — из образа, перенос хранилищ — свой файл |
+| админка | `apps/server/src/admin/standalone`, `admin-runtime` | `VC_ADMIN_MODE=remote`, `VC_ADMIN_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MAKE_URL`, при вынесенных машинах `VC_MACHINES_URL`, SMTP | нет |
+
+Сеть: Postgres доступен всем процессам; ядро ходит к каждому соседу по его URL, соседи — к ядру по
+`VC_CORE_URL` (whoami, RPC, ленты событий); снаружи всё идёт через публичный хост ядра (Caddy → ядро →
+прокси), агенты подключаются к публичному `/agent`. Процесс машин держит постоянный WebSocket к ядру и
+админке — ему нужен входящий доступ от них. Порты по умолчанию: 8787 ядро, 8788 Make, 8789 канбан, 8793
+машины, 8794 админка. Что остаётся у ядра принципиально: чат и ходы модели, WS клиентов, миграции схемы,
+раздача web-клиента, сокет деплоя host-side API. Откат любого процесса — снять его `VC_*_MODE` у ядра.
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,
