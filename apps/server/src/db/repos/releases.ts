@@ -41,6 +41,11 @@ export class ReleasesRepo extends BaseRepo {
     return rows.map(row=>({id:row.id,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],previousReleaseId:row.previous_release_id,createdAt:row.created_at,durationMs:row.started_at==null?null:(row.running?now:row.finished_at??now)-row.started_at}))
   }
 
+  /** Подготовки (`preparing`/`checking`), оборванные рестартом: их регрессия шла в процессе ядра и после рестарта не продолжается. */
+  async listInterruptedPreparations():Promise<ProjectRelease[]> {
+    return await Promise.all(((await this.sql.all(`SELECT * FROM project_releases WHERE status IN ('preparing','checking') AND deleted_at IS NULL ORDER BY created_at`)) as ReleaseRow[]).map(async row=>(await this.getProjectRelease(row.triggered_by,row.project_id,row.id))!))
+  }
+
   async listActiveProjectReleases():Promise<ProjectRelease[]> {
     return await Promise.all(((await this.sql.all(`SELECT * FROM project_releases WHERE status IN ('switching','building','health_check') ORDER BY created_at`)) as ReleaseRow[])
       .map(async row=>await this.mapProjectRelease(row)))
