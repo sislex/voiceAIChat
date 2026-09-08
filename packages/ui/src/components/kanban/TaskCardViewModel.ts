@@ -9,7 +9,7 @@ export type TaskCardVersion = 'new' | 'legacy'
 export type TaskCardTab =
   | 'overview' | 'reworks' | 'preparation' | 'settings' | 'progress'
   | 'component_qa' | 'integration_tests' | 'automated_qa' | 'manual_qa'
-  | 'merge' | 'feed'
+  | 'merge' | 'feed' | 'chat'
 export type TaskCardRunStatus = 'queued' | 'running' | 'waiting_for_answer' | 'success' | 'failed' | 'cancelled'
 export type TaskCardLoadState = 'loading' | 'ready' | 'empty' | 'error'
 export type TaskCardMakeMode = 'whole_project' | 'files'

@@ -13,7 +13,7 @@ import { TaskRunFeed } from '../ci/TaskRunFeed'
 import { TaskPreparationTab } from './TaskPreparationTab'
 import { TaskTimeline } from './TaskTimeline'
 import type { TaskModalProps } from './TaskModal'
-import { TaskModal } from './TaskModal'
+import { TaskModal, TaskChatPanel } from './TaskModal'
 import { NewTaskCardView } from './NewTaskCardView'
 import type { TaskCardRunStatus, TaskCardTab, TaskCardVersion, TaskCardViewModel, TaskReworkCycleViewModel, TaskReworkDraft, TaskReworkSourcesState } from './TaskCardViewModel'
 
@@ -159,6 +159,7 @@ function cardTabs(props: TaskCardContainerProps, semanticType: KanbanColumnSeman
   const preparationVisible = props.task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(semanticType)
   return [
     { id: 'overview', label: 'Общее' },
+    { id: 'chat', label: 'AI-чат' },
     { id: 'reworks', label: 'Доработки', ...(draftCount ? { count: draftCount } : {}) },
     ...(preparationVisible && features.ci ? [{ id: 'preparation' as const, label: 'Подготовка к разработке' }] : []),
     { id: 'settings', label: 'Настройки' },
@@ -218,6 +219,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   const renderPanel = (tab: TaskCardTab): ReactNode => {
     const shared = { projectId: props.task.projectId, taskId: props.task.id }
     const runActive = Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(props.task.activeMergeRunId)
+    if (tab === 'chat') return <TaskChatPanel projectId={props.task.projectId} taskId={props.task.id} />
     if (tab === 'preparation') return <TaskPreparationTab
       {...shared} liveRunId={props.task.taskPreparationRunId} liveStatus={props.task.taskPreparationStatus}
       loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation}
@@ -291,7 +293,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
       onDeleteAttachment: async (id) => { await window.api['tasks:deleteAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId: id }); setSourceAttachments((all) => all.filter((item) => item.id !== id)); setDraft((value) => ({ ...value, attachments: value.attachments.filter((item) => item.id !== id) })) },
       onChangeReworkDraft: setDraft,
       onCancelRework: () => { setDraft(EMPTY_DRAFT); setReworkOpen(false) },
-      onOpenChat: props.onOpenChat ? () => props.onOpenChat?.(props.task.id) : undefined,
+      onOpenChat: () => setActiveTab('chat'),
       loadAttachment: async (attachmentId) => {
         const file = await window.api['tasks:readAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId })
         return `data:${file.mimeType};base64,${file.dataBase64}`
