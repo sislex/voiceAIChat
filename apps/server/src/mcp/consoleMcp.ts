@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { consolePtyId } from '@voicechat/shared'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { MachinesService } from '../machines/service.js'
 
 export const CONSOLE_MCP_PATH = '/mcp/console'
 
@@ -43,7 +43,7 @@ const DESTRUCTIVE_RE = /(^|[\s;&|])(rm\s+-[a-z]*f|rm\s+-[a-z]*r|shred|mkfs|dd\s|
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-export function registerConsoleMcp(app: FastifyInstance, registry: AgentRegistry, secret: string): void {
+export function registerConsoleMcp(app: FastifyInstance, registry: MachinesService, secret: string): void {
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined))
@@ -68,7 +68,7 @@ export function registerConsoleMcp(app: FastifyInstance, registry: AgentRegistry
         }, async () => {
           const live = requireLive()
           if (live) return text(live, true)
-          const buf = registry.ptyBufferText(ptyId) ?? ''
+          const buf = (await registry.ptyBufferText(ptyId)) ?? ''
           const screen = stripAnsi(buf).slice(-READ_TAIL_CHARS)
           return text(screen.trim() || '(экран пуст)')
         })
@@ -103,7 +103,7 @@ export function registerConsoleMcp(app: FastifyInstance, registry: AgentRegistry
           if (DESTRUCTIVE_RE.test(command) && !args.confirm) {
             return text(`Команда выглядит необратимой: «${command}». Сначала спроси подтверждение у пользователя в чате, затем повтори с confirm=true.`, true)
           }
-          const before = (registry.ptyBufferText(ptyId) ?? '').length
+          const before = ((await registry.ptyBufferText(ptyId)) ?? '').length
           const id = Math.abs((Date.now() ^ command.length) % 1_000_000).toString(36)
           const sentinel = `__VCEND_${id}_`
           registry.ptyInput(ptyId, `${command} ; printf '\\n${sentinel}%d__\\n' $?\r`)
@@ -113,7 +113,7 @@ export function registerConsoleMcp(app: FastifyInstance, registry: AgentRegistry
           let match: RegExpMatchArray | null = null
           while (Date.now() < deadline) {
             await sleep(150)
-            tailRaw = (registry.ptyBufferText(ptyId) ?? '').slice(before)
+            tailRaw = ((await registry.ptyBufferText(ptyId)) ?? '').slice(before)
             match = stripAnsi(tailRaw).match(re)
             if (match) break
           }

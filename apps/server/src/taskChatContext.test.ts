@@ -80,6 +80,34 @@ describe('GET /api/conversations/:id/task-context', () => {
     })
   })
 
+  // @testCase TC-API-1
+  it('изолирует историю разных task-scoped чатов', async () => {
+    const first = await setup()
+    const second = await setup()
+    await db.chat.addMessage('admin', first.chat.id, 'u1', 'только первая', '10:00')
+    await db.chat.addMessage('admin', second.chat.id, 'u1', 'только вторая', '10:01')
+
+    const [a, b] = await Promise.all([
+      inj({ method: 'GET', url: `/api/conversations/${first.chat.id}?scope=kanban&projectId=${first.project.id}` }),
+      inj({ method: 'GET', url: `/api/conversations/${second.chat.id}?scope=kanban&projectId=${second.project.id}` })
+    ])
+
+    expect(a.json().messages.map((message: { text: string }) => message.text)).toEqual(['только первая'])
+    expect(b.json().messages.map((message: { text: string }) => message.text)).toEqual(['только вторая'])
+  })
+
+  // @testCase TC-API-3
+  it('не раскрывает историю или чат задачи пользователю без доступа', async () => {
+    const { project, task, chat } = await setup()
+    await db.chat.addMessage('admin', chat.id, 'u1', 'секрет задачи', '10:00')
+    await db.identity.createUser('stranger', 'password-stranger', 'developer')
+    const token = signToken({ name: 'stranger', role: 'developer' }, SECRET)
+    const denied = (url: string) => app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } })
+
+    expect((await denied(`/api/conversations/${chat.id}`)).statusCode).toBe(404)
+    expect((await denied(`/api/projects/${project.id}/tasks/${task.id}`)).statusCode).toBe(404)
+  })
+
   it('для чата без задачи возвращает null', async () => {
     const conv = await db.chat.createConversation('admin')
     const res = await inj({ method: 'GET', url: `/api/conversations/${conv.id}/task-context` })
@@ -145,6 +173,7 @@ describe('GET /api/conversations/:id/task-context', () => {
 })
 
 describe('контекст задачи в промпте хода', () => {
+  // @testCase TC-API-2
   it('чат задачи получает иерархию, этап, папку и критерии приёмки', async () => {
     const { chat } = await setup()
     await db.chat.addMessage('admin', chat.id, 'u1', 'привет', '10:00')
@@ -172,6 +201,8 @@ describe('контекст задачи в промпте хода', () => {
     expect(prompt).toContain('Эпик: VC-1 · Канбан')
     expect(prompt).toContain('История: VC-2 · Карточка')
     expect(prompt).toContain('Рабочая директория: /srv/app')
+    expect(prompt).toContain('Этап разработки: Бэклог (backlog)')
+    expect(prompt).toContain('Описание задачи: Боковая панель должна скроллиться')
     expect(prompt).toContain('Критерии приёмки: Появляется вертикальный скролл')
   })
 })

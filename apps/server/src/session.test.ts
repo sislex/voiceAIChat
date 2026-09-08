@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
@@ -12,7 +12,6 @@ import { PreviewActionRelay } from './mcp/previewMcp.js'
 import { AuthStatusState } from './auth/statusState.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
-const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 const SECRET = 'test-secret'
 const U = 'admin'
@@ -64,6 +63,23 @@ function connect(p = port, token = TOKEN): Promise<WebSocket> {
   const ws = new WebSocket(`ws://127.0.0.1:${p}/ws?token=${token}`)
   return new Promise((res, rej) => {
     ws.on('open', () => res(ws))
+    ws.on('error', rej)
+  })
+}
+
+/**
+ * Подключение и ожидание готовности сессии. `open` у клиента приходит до того, как сервер проверил
+ * сессию в базе и подписал соединение на ленты; на Postgres это заметно, и кадр, отправленный «сразу
+ * после open», сессия ещё не видит. `claude.active` сервер шлёт первым — по нему и ждём готовность;
+ * слушатель вешаем до открытия сокета, иначе на быстром SQLite кадр приходит раньше подписки и теряется.
+ */
+function connectReady(p = port, token = TOKEN): Promise<WebSocket> {
+  const ws = new WebSocket(`ws://127.0.0.1:${p}/ws?token=${token}`)
+  return new Promise((res, rej) => {
+    const onMessage = (d: Buffer): void => {
+      if ((JSON.parse(d.toString()) as { t: string }).t === 'claude.active') { ws.off('message', onMessage); res(ws) }
+    }
+    ws.on('message', onMessage)
     ws.on('error', rej)
   })
 }
@@ -554,7 +570,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     slowDbs.delete(sdb)
   }
 
-  it.skipIf(ON_POSTGRES)('обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер', async () => {
+  it('обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 60))
     const conv = await sdb.chat.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
@@ -567,17 +583,19 @@ describe('WS: ходы переживают обрыв соединения (Tur
     )
     await wait(20)
     await closeWs(ws) // «обновление страницы» посреди генерации
-    await wait(90)
-
-    const saved = (await sdb.chat.listMessages(U, conv.id)).filter((m) => m.role === 'ai')
-    expect(saved).toHaveLength(1)
+    // Ответ мока приходит через 60 мс, запись в базу — ещё позже: ждём сам факт сохранения.
+    const saved = await vi.waitFor(async () => {
+      const list = (await sdb.chat.listMessages(U, conv.id)).filter((m) => m.role === 'ai')
+      expect(list).toHaveLength(1)
+      return list
+    }, { timeout: 5_000 })
     expect(saved[0].text).toBe('Часть ответа')
     expect(saved[0].engine).toBe('claude')
     expect(saved[0].meta?.request?.provider).toBe('claude')
     await cleanupSlow(sapp, sdb, [ws])
   })
 
-  it.skipIf(ON_POSTGRES)('новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД', async () => {
+  it('новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД', async () => {
     let finish: (() => void) | undefined
     const controlledClaude: LlmClient = {
       send(_req, h) {
@@ -630,6 +648,8 @@ describe('WS: ходы переживают обрыв соединения (Tur
       })
       ws2.on('error', reject)
     })
+    // Финал хода — только когда вторая сессия подписана (получила claude.active): иначе done ушёл бы в пустоту.
+    await vi.waitFor(() => expect(events.some((e) => e.t === 'claude.active')).toBe(true))
     expect(finish).toBeDefined()
     finish?.()
     await done
@@ -691,7 +711,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
 })
 
 describe('WS: relay действий веб-превью', () => {
-  it.skipIf(ON_POSTGRES)('preview.action доходит только своему пользователю, preview.result закрывает запрос', async () => {
+  it('preview.action доходит только своему пользователю, preview.result закрывает запрос', async () => {
     await app.close()
     const relay = new PreviewActionRelay()
     app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, previewRelay: relay })
@@ -699,8 +719,8 @@ describe('WS: relay действий веб-превью', () => {
     const p2 = (app.server.address() as AddressInfo).port
     await db.identity.createUser('bob', '', 'developer')
 
-    const mine = await connect(p2)
-    const other = await connect(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
+    const mine = await connectReady(p2)
+    const other = await connectReady(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
     const otherFrames: Array<{ t: string }> = []
     other.on('message', (d) => otherFrames.push(JSON.parse(d.toString())))
     // Клиент-автоответчик: получил preview.action — вернул результат чтения.
@@ -720,7 +740,7 @@ describe('WS: relay действий веб-превью', () => {
 })
 
 describe('WS: кадры использования базы знаний', () => {
-  it.skipIf(ON_POSTGRES)('kb.usage доходит только своему пользователю', async () => {
+  it('kb.usage доходит только своему пользователю', async () => {
     // Свой сервер с инжектированным трекером: обращения к БЗ в этом тесте
     // создаём напрямую, а проверяем именно маршрутизацию кадров по владельцу.
     await app.close()
@@ -731,8 +751,8 @@ describe('WS: кадры использования базы знаний', () =
     await db.identity.createUser('bob', '', 'developer')
     const conv = await db.chat.createConversation(U, 'Чат')
 
-    const mine = await connect(p2)
-    const other = await connect(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
+    const mine = await connectReady(p2)
+    const other = await connectReady(p2, signToken({ name: 'bob', role: 'developer' }, SECRET))
     const mineFrames: Array<{ t: string; query?: { status: string; chars: number } }> = []
     const otherFrames: Array<{ t: string }> = []
     mine.on('message', (d) => mineFrames.push(JSON.parse(d.toString())))

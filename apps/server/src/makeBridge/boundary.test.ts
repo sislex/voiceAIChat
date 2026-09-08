@@ -7,8 +7,8 @@ import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const srcDir = join(__dirname, '..')
-/** Композиция процесса и внутренний API для соседних сервисов — им положено знать обе стороны. */
-const COMPOSITION = new Set(['server.ts', 'routes/internal.ts'])
+/** Композиция процессов (ядра и отдельного канбана) и внутренний API для соседних сервисов — им положено знать обе стороны. */
+const COMPOSITION = new Set(['server.ts', 'routes/internal.ts', 'kanban/standalone/server.ts'])
 
 function walk(dir: string): string[] {
   const out: string[] = []
