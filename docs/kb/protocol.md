@@ -1,12 +1,13 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-07
-checked: 01753b91
+updated: 2026-09-09
+checked: eb4e281f
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/llm.ts
+  - packages/shared/src/imageStudioInternal.ts
   - apps/server/src/ws.ts
   - apps/server/src/routes
   - packages/ui/src/remote
@@ -25,6 +26,16 @@ areas:
 `serverErrors.test.ts` держит список кодов, реально отправляемых сервером, —
 новый код без перевода он подсветит.
 
+
+## Отдельная студия картинок
+
+Выделение `apps/image-studio` сохраняет REST `/api/image-studio/*`, публичные `/g/*`,
+мост `imgstudio:*` и WS чата. Внутренний контракт ядро ↔ студия —
+`packages/shared/src/imageStudioInternal.ts`: RPC портов, отдельный запрос генерации с
+отменой при обрыве HTTP и пересылка авторизации в общий `/internal/whoami`.
+Внутренние запросы требуют `VC_INTERNAL_TOKEN`, а не пользовательский токен.
+Ошибки недоступности `image_studio_unavailable`/`core_unavailable` переводятся в
+`serverErrors.ts`; при перезапуске галерея сохраняется, активная генерация отменяется.
 
 ## Reader ports и неизменённые backend-контракты
 

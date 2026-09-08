@@ -14,10 +14,14 @@ import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 
 let app: FastifyInstance
 let port: number
+let dataDir: string
 
 beforeAll(async () => {
+  // Без VC_DATA_DIR тест открывал ~/.voicechat-server/voicechat.db пользователя
+  // и зависел от схемы другого checkout. Каждый сервер получает отдельную БД.
+  dataDir = mkdtempSync(join(tmpdir(), 'vc-server-test-'))
   app = await buildServer({
-    config: loadConfig({ PORT: '0' }),
+    config: loadConfig({ PORT: '0', VC_DATA_DIR: join(dataDir, 'server') }),
     // тестовый обработчик: эхо типа сообщения обратно клиенту
     createWsHandlers: () => ({
       onMessage: async (msg, ctx) => ctx.send({ t: 'stt.error', message: msg.t }),
@@ -29,7 +33,8 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await app.close()
+  await app?.close()
+  if (dataDir) rmSync(dataDir, { recursive: true, force: true })
 })
 
 describe('QA preparation response contract', () => {
@@ -145,13 +150,13 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
     writeFileSync(join(webRecorderDir, 'assets', 'recorder.js'), 'console.log(\'recorder\')')
     writeFileSync(join(webRecorderDir, 'assets', 'recorder.css'), '.webpreview{display:grid}')
     webApp = await buildServer({
-      config: { ...loadConfig({ PORT: '0' }), webDir, webRecorderDir },
+      config: { ...loadConfig({ PORT: '0', VC_DATA_DIR: join(dataDir, 'static-server') }), webDir, webRecorderDir },
       createWsHandlers: () => ({ onMessage: async () => {}, onBinary: async () => {} })
     })
   })
 
   afterAll(async () => {
-    await webApp.close()
+    await webApp?.close()
     rmSync(webDir, { recursive: true, force: true })
     rmSync(webRecorderDir, { recursive: true, force: true })
   })

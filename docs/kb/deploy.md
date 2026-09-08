@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-08
-checked: 29dcec84
+updated: 2026-09-09
+checked: eb4e281f
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -163,6 +163,19 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 всё; отдельный профиль — круг 4 плана). Без compose (dev, desktop) `VC_MAKE_MODE` не задан → Make
 встроен в процесс ядра, как раньше.
 
+**Студия картинок отдельным приложением (2026-09-09).** Workspace `apps/image-studio`,
+сервис compose `image-studio`, образ `voicechat-image-studio`, target `image-studio-runtime`,
+порт 8796, healthcheck `/v1/health` (имя сервиса и `VC_RELEASE_VERSION`), память 512 МБ.
+У ядра в compose `VC_IMAGE_STUDIO_MODE=remote`, `VC_IMAGE_STUDIO_URL=http://image-studio:8796`;
+у студии — `VC_CORE_URL`, общий `VC_INTERNAL_TOKEN` и `VC_DATA_DIR=/data`. Прежний каталог
+`/data/image-studio` доступен через том `vc-data`, переноса формата данных не требуется.
+Caddy ведёт `/api/image-studio/*` и `/g/*` в студию напрямую, порт 8787 — через прокси ядра;
+`/internal/*` снаружи закрыт. UI собирается с общим web-клиентом. Обновить только студию:
+`docker compose up -d --build image-studio`. Вне compose режим ядра по умолчанию embedded;
+standalone запускается `npm run -w @voicechat/image-studio start` с теми же переменными
+(каталог можно задать через `VC_IMAGE_STUDIO_DATA_DIR`). На один каталог запускается один
+экземпляр студии: слоты генераций и лимиты попыток пароля живут в памяти процесса.
+
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
 (образ `voicechat-kanban`, стадия `kanban-runtime`, порт 8789, тот же код `apps/server`, точка входа
 `src/kanban/standalone/index.ts`). По умолчанию выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
@@ -199,6 +212,7 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 |---|---|---|---|---|
 | ядро (чат, БД-миграции, CLI-раннеры, WS клиентов) | `apps/server/src/index.ts`, `server-runtime` | — | `VC_DB_URL` (Postgres), `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` | — |
 | Make | `apps/make/src/standalone`, `make-runtime` | `VC_MAKE_MODE=remote`, `VC_MAKE_URL` | `VC_CORE_URL`, общие токен и секрет, свой `VC_DATA_DIR` (мастерские `/data/make`) | нужен, если Make раньше работал встроенным — мастерские лежат в `/data/make` ядра |
+| студия картинок | `apps/image-studio/src/standalone`, `image-studio-runtime` | `VC_IMAGE_STUDIO_MODE=remote`, `VC_IMAGE_STUDIO_URL` | `VC_CORE_URL`, общий токен, `VC_DATA_DIR` | для прежних галерей нужен доступ к `/data/image-studio`; после переноса каталога общий том не требуется |
 | канбан | `apps/server/src/kanban/standalone`, `kanban-runtime` | `VC_KANBAN_MODE=remote`, `VC_KANBAN_URL`, `VC_KANBAN_MCP_PUBLIC_BASE` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE` (адрес ядра), адреса раннеров LLM и браузера, `VC_MAKE_URL`, SMTP | нет: вложения читаются через порт ядра, скриншоты QA — свой каталог |
 | машины | `apps/server/src/machines/standalone`, `machines-runtime` | `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, `VC_PUBLIC_URL` | нет: установщики — из образа, перенос хранилищ — свой файл |
 | админка | `apps/server/src/admin/standalone`, `admin-runtime` | `VC_ADMIN_MODE=remote`, `VC_ADMIN_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MAKE_URL`, при вынесенных машинах `VC_MACHINES_URL`, SMTP | нет |

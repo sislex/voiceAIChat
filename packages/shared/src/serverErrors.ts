@@ -14,6 +14,8 @@ const MESSAGES: Readonly<Record<string, string>> = {
   password_change_required: 'Сначала смените временный пароль — до этого доступно только чтение.',
   token_missing: 'Не передан токен доступа.',
   unavailable: 'Сервис временно недоступен.',
+  image_studio_unavailable: 'Студия картинок временно недоступна. Попробуйте ещё раз позже.',
+  core_unavailable: 'Сервер временно недоступен. Попробуйте ещё раз позже.',
   runner_unavailable: 'Исполнитель недоступен — проверьте, запущен ли он.',
   browser_runner: 'Браузерный исполнитель недоступен.',
   preview_unavailable: 'Превью недоступно для этой задачи.',
