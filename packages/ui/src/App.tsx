@@ -217,7 +217,7 @@ const GitTargetPane = lazy(async () => {
 
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
 // в главном чанке они лежат мёртвым весом до первого открытия.
-import type { SettingsSection } from './components/SettingsModal'
+import { SETTINGS_SECTIONS, type SettingsSection } from './components/SettingsModal'
 
 const ContextInspector = lazy(async () => {
   const module = await import('./components/ContextInspector')
@@ -275,6 +275,12 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
 const HOST_UTILITY_PAGES: readonly string[] = ['users', 'account', 'personalization', 'make-shared']
+
+function globalSettingsSectionFromSegments(segments: string[]): SettingsSection | null {
+  if (segments[0] !== 'settings' || segments.length !== 2) return null
+  const section = segments[1]
+  return SETTINGS_SECTIONS.includes(section as SettingsSection) ? section as SettingsSection : null
+}
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -342,6 +348,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
   const routeSettings = projectsRoute?.kind === 'settings'
+  const globalSettingsRoute = segments[0] === 'settings'
+  const globalSettingsSection = globalSettingsSectionFromSegments(segments)
+  const invalidGlobalSettingsRoute = globalSettingsRoute && globalSettingsSection === null
   // Вкладка настроек — из адреса; без сегмента открыто «Общее».
   const routeSettingsTab = projectsRoute?.kind === 'settings' ? projectsRoute.tab ?? 'general' : 'general'
   const routeReleases = projectsRoute?.kind === 'releases'
@@ -408,7 +417,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
   const sidebarAvailable = !inSplit || splitSidebarMode !== null
   const inTaskChat = routeTaskChatId !== null
-  const inChat = (!inProjects && !onUtilityPage && !inSplit) || inTaskChat
+  const inChat = (!inProjects && !onUtilityPage && !inSplit && !globalSettingsRoute) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
   // Каждый домен — своя подписка: обновление аудио или админских данных не
   // тянет за собой перерисовку соседних экранов.
@@ -444,8 +453,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     routeProjectSummary?.typeChain?.features ??
     ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
-  /** С какого раздела открыть общие настройки (переход из инспектора контекста). */
-  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null)
   /**
    * Чужой разговор, контекст которого смотрит админ. Отдельным окном, а не
    * активным чатом: разговор не его, и подменять им активный чат нельзя.
@@ -1320,7 +1327,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       stopOrCancel,
       toggleAutoSpeak: () => applySettings({ autoSpeak: !settingsState.settings.autoSpeak }),
       toggleTheme: () => applySettings({ theme: settingsState.settings.theme === 'light' ? 'dark' : 'light' }),
-      openSettings: shellActions.openSettings,
+      openSettings: () => navigate('/settings/llm'),
       openBoard: (projectId) => navigate(`/projects/${projectId}`),
       openMachineConsole: (agentId) =>
         agentId ? operationsActions.openUtility('console', agentId) : operationsActions.openUtilityForActiveChat('console'),
@@ -1562,11 +1569,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     navigate(`/projects/${firstProjectId}`, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId, firstProjectId])
+  // Глобальные настройки управляются адресом. Неполный или неизвестный адрес
+  // нормализуем replace-ом, чтобы Back не зацикливался на редиректе.
+  useEffect(() => {
+    if (invalidGlobalSettingsRoute) {
+      navigate('/settings/llm', { replace: true })
+      return
+    }
+    if (globalSettingsSection && !shell.settingsOpen) shellActions.openSettings()
+    else if (!globalSettingsSection && shell.settingsOpen) shellActions.closeSettings()
+  }, [globalSettingsSection, invalidGlobalSettingsRoute, navigate, shell.settingsOpen, shellActions])
   // Каталог типов нужен разделу «Типы проектов» в пользовательских настройках.
   useEffect(() => {
-    if (authed && shell.settingsOpen && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+    if (authed && globalSettingsSection && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, shell.settingsOpen])
+  }, [authed, globalSettingsSection])
   const loadGitWorkspaces = useCallback(async (projectId: string): Promise<void> => {
     setGitWorkspaces((prev) => ({ ...prev, status: 'loading' }))
     try {
@@ -2368,7 +2385,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
-        onOpenSettings={menu(shellActions.openSettings)}
+        onOpenSettings={menu(() => navigate('/settings/llm'))}
         onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
         onOpenConsole={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('console')) : undefined}
         onOpenWebReader={session.authRequired ? menu(openWebReaderWorkspace) : undefined}
@@ -3327,8 +3344,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             // Открываем общие настройки сразу на «Инструкциях»: иначе человек,
             // пришедший из карточки инструкции, ищет раздел глазами.
             closeConversationSettings()
-            setSettingsSection('instructions')
-            shellActions.openSettings()
+            navigate('/settings/instructions')
           }}
           onAddInstruction={async (title, text) => {
             // Своя инструкция без `kind`: стандартного ответного блока у неё нет,
@@ -3474,9 +3490,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
-      {shell.settingsOpen && (
+      {globalSettingsSection && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
-          {...(settingsSection ? { initialSection: settingsSection } : {})}
+          section={globalSettingsSection}
+          onSectionChange={(section) => navigate(`/settings/${section}`)}
           projectTypes={projects.projectTypes}
           projectTypesStatus={projects.projectTypesStatus}
           projectTypesError={projects.projectTypesError}
@@ -3516,7 +3533,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           role={session.currentUser?.role ?? 'admin'}
           llmAccess={settingsState.llmAccess}
           voiceInputEnabled={VOICE_INPUT_ENABLED}
-          onClose={shellActions.closeSettings}
+          onClose={() => navigate(chat.activeId ? `/chat/${chat.activeId}` : '/')}
         /></Suspense>
       )}
     </div>
