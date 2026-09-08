@@ -175,6 +175,9 @@ export class VoiceChatDb {
       })
       await this.ctx.repos.projects.seedBuiltinProjectTypes()
     } else {
+      // Старый model_prices ещё не знает tiers_json, а актуальный сид уже пишет в
+      // эту колонку. Поднять совместимую форму таблицы нужно до выполнения схемы.
+      await this.migrateModelPriceTiers()
       await this.sql.exec(SCHEMA_SQL)
       await this.migrate()
     }
@@ -195,15 +198,19 @@ export class VoiceChatDb {
     await this.ctx.repos.settings.setAppConfig(key, '1')
   }
 
+  private async migrateModelPriceTiers(): Promise<void> {
+    const columns = (await this.sql.all(`PRAGMA table_info(model_prices)`)) as Array<{ name: string }>
+    if (columns.length && !columns.some((column) => column.name === 'tiers_json')) {
+      await this.sql.exec(`ALTER TABLE model_prices ADD COLUMN tiers_json TEXT NOT NULL DEFAULT '[]'`)
+    }
+  }
+
   private async migrate(): Promise<void> {
     // CHAT-193: legacy `user` becomes developer; only the two known ChatAI
     // accounts are elevated. Future accounts are never promoted implicitly.
     await this.sql.run(`UPDATE users SET role = 'developer' WHERE role = 'user'`)
     await this.sql.run(`UPDATE users SET role = 'admin' WHERE name IN ('admin', 'admin1')`)
     await this.sql.run(`UPDATE llm_engines SET allowed_roles = replace(allowed_roles, '"user"', '"developer"') WHERE allowed_roles LIKE '%"user"%'`)
-
-    const modelPriceCols = (await this.sql.all(`PRAGMA table_info(model_prices)`)) as Array<{ name: string }>
-    if (modelPriceCols.length && !modelPriceCols.some((c) => c.name === 'tiers_json')) await this.sql.exec(`ALTER TABLE model_prices ADD COLUMN tiers_json TEXT NOT NULL DEFAULT '[]'`)
 
     // Блокировка после неудачных входов (auth-roadmap п.3): три колонки поверх существующей таблицы users.
     const userCols = (await this.sql.all(`PRAGMA table_info(users)`)) as Array<{ name: string }>
