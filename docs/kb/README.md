@@ -13,35 +13,35 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 297 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 18 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-08 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-08 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-08 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 139 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 114 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 285 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-06 | ⚠ 61 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 140 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 115 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 286 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 185 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 63 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 76 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 61 коммит(ов) в areas после сверки: 1a99413b Merge main into CHAT-430 (task 3e47abde-e891-4854-9c60-8917aae08e8b) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1272 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 37 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 83 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 43 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 76 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 64 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 77 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 62 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1273 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 38 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 3 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 44 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 77 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 288 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 15 коммит(ов) в areas после сверки: 6b0928c2 feat(reader): модуль Web Reader с портом ReaderCore и подписанные токены ходов превью (круг 1) … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-07 | ⚠ 6 коммит(ов) в areas после сверки: 6b0928c2 feat(reader): модуль Web Reader с портом ReaderCore и подписанные токены ходов превью (круг 1) … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-07 | ⚠ 41 коммит(ов) в areas после сверки: 6b0928c2 feat(reader): модуль Web Reader с портом ReaderCore и подписанные токены ходов превью (круг 1) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-08 | ⚠ 2 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 213 коммит(ов) в areas после сверки: 1a99413b Merge main into CHAT-430 (task 3e47abde-e891-4854-9c60-8917aae08e8b) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: 6b0928c2 feat(reader): модуль Web Reader с портом ReaderCore и подписанные токены ходов превью (круг 1) |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-08 | ⚠ 2 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-07 | ⚠ 27 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-08 | ⚠ 2 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 44 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 191 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 143 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ⚠ 5 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ⚠ 6 коммит(ов) в areas после сверки: e167b49c fix(db): схема Postgres ставится под advisory-замком — одновременный старт процессов без deadlock (круг 3) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 666. Последние:
+Всего записей: 667. Последние:
 
 - [2026-09-08-macbook-air-user-ui-settings-routes.md](log/2026-09-08-macbook-air-user-ui-settings-routes.md) — ui-settings-routes
 - [2026-09-08-macbook-air-user-task-card-ai-chat.md](log/2026-09-08-macbook-air-user-task-card-ai-chat.md) — task-card-ai-chat
 - [2026-09-08-macbook-air-user-instant-conversation-settings-loader.md](log/2026-09-08-macbook-air-user-instant-conversation-settings-loader.md) — instant-conversation-settings-loader
 - [2026-09-08-macbook-air-user-assistant-settings-routes.md](log/2026-09-08-macbook-air-user-assistant-settings-routes.md) — assistant-settings-routes
+- [2026-09-08-alexeys-macbook-air-2-release-machine-catalog.md](log/2026-09-08-alexeys-macbook-air-2-release-machine-catalog.md) — release-machine-catalog
 - [2026-09-08-alexeys-macbook-air-2-reader-service-round1.md](log/2026-09-08-alexeys-macbook-air-2-reader-service-round1.md) — reader-service-round1
 - [2026-09-08-alexeys-macbook-air-2-prod-postgres.md](log/2026-09-08-alexeys-macbook-air-2-prod-postgres.md) — prod-postgres
 - [2026-09-08-alexeys-macbook-air-2-pg-quarantine.md](log/2026-09-08-alexeys-macbook-air-2-pg-quarantine.md) — pg-quarantine
 - [2026-09-08-alexeys-macbook-air-2-oom-exec-stream.md](log/2026-09-08-alexeys-macbook-air-2-oom-exec-stream.md) — oom-exec-stream
 - [2026-09-08-alexeys-macbook-air-2-new-task-card-complete.md](log/2026-09-08-alexeys-macbook-air-2-new-task-card-complete.md) — new-task-card-complete
-- [2026-09-08-alexeys-macbook-air-2-distributed-polish.md](log/2026-09-08-alexeys-macbook-air-2-distributed-polish.md) — distributed-polish
 
 ## Исторические планы
 

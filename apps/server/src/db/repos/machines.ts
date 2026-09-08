@@ -1,4 +1,4 @@
-// Домен «machines»: таблицы agents, machine_commands, machine_events, machine_storages, chat_storage_bindings, generated_cleanup_retry, login_enrollments, machine_project_shares, machine_project_share_audit, project_machines, user_project_machine_defaults, git_workspace_locks.
+// Домен «machines»: таблицы agents, machine_commands, machine_events, machine_storages, chat_storage_bindings, generated_cleanup_retry, login_enrollments, machine_project_shares, machine_project_share_audit, project_machines, user_project_machine_defaults, user_project_release_machines, git_workspace_locks.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
 import type { MachineCommandRecord, MachineCommandSource, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
@@ -298,6 +298,20 @@ export class MachinesRepo extends BaseRepo {
     const row = (await this.sql.get(`SELECT d.agent_id FROM user_project_machine_defaults d
        WHERE d.username = ? AND d.project_id = ?`, [userId, projectId])) as { agent_id: string } | undefined
     return row && await this.canUseAgent(userId, row.agent_id, projectId) ? row.agent_id : null
+  }
+
+  async getUserProjectReleaseMachine(userId: string, projectId: string): Promise<string | null> {
+    const row = (await this.sql.get(`SELECT agent_id FROM user_project_release_machines
+       WHERE username = ? AND project_id = ?`, [userId, projectId])) as { agent_id: string } | undefined
+    return row?.agent_id ?? null
+  }
+
+  /** Записывается только после того, как ReleaseManager принял создание рана. */
+  async setUserProjectReleaseMachine(userId: string, projectId: string, agentId: string): Promise<void> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) throw new Error('Пользователь не состоит в проекте')
+    await this.sql.run(`INSERT INTO user_project_release_machines (username,project_id,agent_id,updated_at)
+       VALUES (?,?,?,?)
+       ON CONFLICT(username,project_id) DO UPDATE SET agent_id=excluded.agent_id,updated_at=excluded.updated_at`, [userId, projectId, agentId, this.now()])
   }
 
   async setUserProjectDefaultMachine(userId: string, projectId: string, agentId: string | null): Promise<void> {

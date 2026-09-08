@@ -6,7 +6,7 @@ import { ManagedEnvironmentResolver } from '../releases/managedEnvironmentResolv
 import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from '../releases/releaseManager.js'
 import type { KanbanMachines } from '../kanban/core.js'
 import { materializeProjectMachine } from '../projects/materialize.js'
-import { releaseCiTarget, releaseProductionTarget } from '../releases/targets.js'
+import { releaseCiTarget, releaseMachineCatalog, releaseProductionTarget } from '../releases/targets.js'
 
 const DEFAULT_PRODUCTION_DEPLOY_COMMAND = '/usr/local/bin/voicechat-deploy'
 const DEFAULT_PRODUCTION_HEALTH_CHECK_COMMAND = 'curl -fsS --max-time 10 http://127.0.0.1:8787/api/health'
@@ -94,12 +94,21 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
     }catch(error){return bad(reply,error)}
   })
 
+  app.get<{Params:{id:string}}>('/api/projects/:id/releases/machines',async(req,reply)=>{
+    if(!await project(req,req.params.id))return nf(reply)
+    try{return await releaseMachineCatalog(db,releases,uid(req),req.params.id)}catch(error){return bad(reply,error)}
+  })
   app.get<{Params:{id:string}}>('/api/projects/:id/releases/branches',async(req,reply)=>{
     if(!await project(req,req.params.id))return nf(reply)
     try{return await releases.listBranches(await ciTarget(req,req.params.id))}catch(error){return bad(reply,error)}
   })
-  app.post<{Params:{id:string};Body:{branch?:string;baseBranch?:string}}>('/api/projects/:id/releases/branches',prepareGuard,async(req,reply)=>{
-    try{const value=await ciTarget(req,req.params.id);return reply.code(202).send(await releases.createBranch(uid(req),value,req.body?.branch??'',req.body?.baseBranch??value.baseBranch))}catch(error){return bad(reply,error)}
+  app.post<{Params:{id:string};Body:{branch?:string;baseBranch?:string;agentId?:string}}>('/api/projects/:id/releases/branches',prepareGuard,async(req,reply)=>{
+    try{
+      const userId=uid(req), value=await releaseCiTarget(db,releases,userId,req.params.id,req.body?.agentId)
+      const release=await releases.createBranch(userId,value,req.body?.branch??'',req.body?.baseBranch??value.baseBranch)
+      await db.machines.setUserProjectReleaseMachine(userId,req.params.id,value.agentId)
+      return reply.code(202).send(release)
+    }catch(error){return bad(reply,error)}
   })
   app.get<{Params:{id:string}}>('/api/projects/:id/releases',async(req,reply)=>{
     if(!await project(req,req.params.id))return nf(reply)

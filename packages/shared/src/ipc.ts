@@ -502,7 +502,8 @@ export interface IpcInvokeMap {
   'projectTypes:publish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
   'projectTypes:unpublish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
-  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string }; result: import('./release').ProjectRelease }
+  'releases:machines': { arg: { projectId: string }; result: import('./release').ReleaseMachineCatalog }
+  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string }; result: import('./release').ProjectReleaseSummary[] }
   'releases:get': { arg: { projectId: string; releaseId: string }; result: import('./release').ProjectRelease | null }
   'releases:deploy': { arg: { projectId: string; branch: string }; result: import('./release').ProjectRelease }
@@ -1453,6 +1454,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projectTypes:publish',
   'projectTypes:unpublish',
   'releases:branches',
+  'releases:machines',
   'releases:createBranch',
   'releases:list',
   'releases:get',
