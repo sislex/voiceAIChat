@@ -152,7 +152,14 @@ function validateModelPrice(body: Partial<ModelPriceInput> | undefined): { ok: t
   if (!provider || !model) return { ok: false, error: 'provider and model required' }
   if (!sourceUrl || !isAbsoluteHttpUrl(sourceUrl)) return { ok: false, error: 'bad sourceUrl' }
   if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) return { ok: false, error: 'bad price values' }
-  return { ok: true, value: { provider, model, sourceUrl, inputPerMillion: body!.inputPerMillion!, cachedInputPerMillion: body!.cachedInputPerMillion!, cacheWritePerMillion: body!.cacheWritePerMillion!, outputPerMillion: body!.outputPerMillion!, effectiveAt: body!.effectiveAt! } }
+  const tiers = body?.tiers ?? []
+  const validTierValue = (value: number | null): boolean => value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  if (!Array.isArray(tiers) || tiers.some((tier) =>
+    !['standard', 'batch', 'flex', 'fast'].includes(tier.mode) ||
+    !['short', 'long'].includes(tier.context) ||
+    ![tier.inputPerMillion, tier.cachedInputPerMillion, tier.cacheWritePerMillion, tier.outputPerMillion].every(validTierValue)
+  )) return { ok: false, error: 'bad price tiers' }
+  return { ok: true, value: { provider, model, sourceUrl, inputPerMillion: body!.inputPerMillion!, cachedInputPerMillion: body!.cachedInputPerMillion!, cacheWritePerMillion: body!.cacheWritePerMillion!, outputPerMillion: body!.outputPerMillion!, effectiveAt: body!.effectiveAt!, tiers } }
 }
 
 function healthUrl(baseUrl: string) {

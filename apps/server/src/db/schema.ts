@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS conversation_turn_control (
 
 -- Редактируемый прайс моделей: USD за 1M токенов. Начальные строки Codex/OpenAI
 -- зафиксированы по developers.openai.com/api/docs/pricing (Standard, short context,
--- 04.08.2026); INSERT OR IGNORE сохраняет будущие ручные обновления.
+-- 08.09.2026); INSERT OR IGNORE сохраняет будущие ручные обновления.
 CREATE TABLE IF NOT EXISTS model_prices (
   provider          TEXT NOT NULL,
   model             TEXT NOT NULL,
@@ -106,22 +106,24 @@ CREATE TABLE IF NOT EXISTS model_prices (
   cached_input_per_million REAL NOT NULL,
   cache_write_per_million REAL NOT NULL DEFAULT 0,
   output_per_million REAL NOT NULL,
+  tiers_json        TEXT NOT NULL DEFAULT '[]',
   source_url        TEXT NOT NULL,
   effective_at      INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL,
   PRIMARY KEY (provider, model)
 );
-INSERT OR IGNORE INTO model_prices VALUES
-  ('codex','gpt-5.6-sol',5.00,0.50,6.25,30.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.6-terra',2.00,0.20,2.50,12.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.6-luna',0.20,0.02,0.25,1.20,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.5',5.00,0.50,0,30.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.5-pro',30.00,0,0,180.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.4',2.50,0.25,0,15.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.4-mini',0.75,0.075,0,4.50,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.4-nano',0.20,0.02,0,1.25,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.4-pro',30.00,0,0,180.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.3-codex',1.75,0.175,0,14.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000);
+INSERT OR IGNORE INTO model_prices (provider, model, input_per_million, cached_input_per_million, cache_write_per_million, output_per_million, tiers_json, source_url, effective_at, updated_at) VALUES
+  ('codex','gpt-6-astra',10,1,12.5,50,'[{"mode":"standard","context":"long","inputPerMillion":20,"cachedInputPerMillion":2,"cacheWritePerMillion":25,"outputPerMillion":75}]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.6-sol',4,0.4,5,20,'[{"mode":"standard","context":"long","inputPerMillion":8,"cachedInputPerMillion":0.8,"cacheWritePerMillion":10,"outputPerMillion":30}]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.6-terra',2,0.2,2.5,12,'[{"mode":"standard","context":"long","inputPerMillion":4,"cachedInputPerMillion":0.4,"cacheWritePerMillion":5,"outputPerMillion":18}]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.6-luna',0.2,0.02,0.25,1.2,'[{"mode":"standard","context":"long","inputPerMillion":0.4,"cachedInputPerMillion":0.04,"cacheWritePerMillion":0.5,"outputPerMillion":1.8}]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.5',5,0.5,0,30,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.5-pro',30,0,0,180,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.4',2.5,0.25,0,15,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.4-mini',0.75,0.075,0,4.5,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.4-nano',0.2,0.02,0,1.25,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.4-pro',30,0,0,180,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.3-codex',1.75,0.175,0,14,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000);
 
 -- Состояние бэкфилла FTS-индексов. Живёт отдельно от settings: это внутренняя
 -- служебная запись движка, а не настройка пользователя.

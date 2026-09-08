@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { estimateCostUsd, totalTokens } from './pricing'
 
 describe('estimateCostUsd', () => {
-  it('undefined без модели или без прайса', () => {
+  // @testCase TC-NEG-1
+  it('undefined без точного modelId или без прайса', () => {
     expect(estimateCostUsd(undefined, { inputTokens: 100 })).toBeUndefined()
-    expect(estimateCostUsd('totally-unknown-model', { inputTokens: 100 })).toBeUndefined()
+    expect(estimateCostUsd('', { inputTokens: 100 })).toBeUndefined()
+    expect(estimateCostUsd('unknown', { inputTokens: 100 })).toBeUndefined()
+    expect(estimateCostUsd('totally-unknown-gpt-model', { inputTokens: 100 })).toBeUndefined()
+    expect(estimateCostUsd('gpt-6-astra', { pricingMode: 'fast', inputTokens: 100 })).toBeUndefined()
   })
 
   it('opus: считает по видам токенов (USD / 1M)', () => {
@@ -68,9 +72,17 @@ describe('estimateCostUsd', () => {
     }
   })
 
-  it('gpt/codex попадают в GPT-прайс', () => {
-    expect(estimateCostUsd('gpt-5.6-sol', { outputTokens: 1_000_000 })).toBeCloseTo(10, 5)
-    expect(estimateCostUsd('codex-mini', { inputTokens: 1_000_000 })).toBeCloseTo(1.25, 5)
+  // @testCase TC-UNIT-1
+  it('gpt-6-astra считает четыре вида токенов по точному Standard/short тарифу', () => {
+    expect(estimateCostUsd('gpt-6-astra', {
+      inputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+      outputTokens: 1_000_000
+    })).toBeCloseTo(10 + 1 + 12.5 + 50, 5)
+    expect(estimateCostUsd('gpt-6-astra', {
+      contextTier: 'long', inputTokens: 1_000_000, outputTokens: 1_000_000
+    })).toBeCloseTo(20 + 75, 5)
   })
 })
 

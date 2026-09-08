@@ -94,14 +94,28 @@ export class LlmRepo extends BaseRepo {
     await this.sql.run(`DELETE FROM llm_engines WHERE id = ?`, [id])
   }
 
+  private mapModelPrice(row: ModelPrice & { tiersJson: string }): ModelPrice {
+    const { tiersJson, ...price } = row
+    try {
+      return { ...price, tiers: JSON.parse(tiersJson) as ModelPrice['tiers'] }
+    } catch {
+      return { ...price, tiers: [] }
+    }
+  }
+
+  private readonly modelPriceSelect = `SELECT provider, model, input_per_million AS inputPerMillion, cached_input_per_million AS cachedInputPerMillion, cache_write_per_million AS cacheWritePerMillion, output_per_million AS outputPerMillion, tiers_json AS tiersJson, source_url AS sourceUrl, effective_at AS effectiveAt, updated_at AS updatedAt FROM model_prices`
+
   async listModelPrices(): Promise<ModelPrice[]> {
-    return (await this.sql.all(`SELECT provider, model, input_per_million AS inputPerMillion, cached_input_per_million AS cachedInputPerMillion, cache_write_per_million AS cacheWritePerMillion, output_per_million AS outputPerMillion, source_url AS sourceUrl, effective_at AS effectiveAt, updated_at AS updatedAt FROM model_prices ORDER BY provider, model`)) as ModelPrice[]
+    const rows = await this.sql.all(`${this.modelPriceSelect} ORDER BY provider, model`) as Array<ModelPrice & { tiersJson: string }>
+    return rows.map((row) => this.mapModelPrice(row))
   }
 
   async upsertModelPrice(input: ModelPriceInput): Promise<ModelPrice> {
     const updatedAt = Date.now()
-    await this.sql.run(`INSERT INTO model_prices (provider, model, input_per_million, cached_input_per_million, cache_write_per_million, output_per_million, source_url, effective_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(provider, model) DO UPDATE SET input_per_million=excluded.input_per_million, cached_input_per_million=excluded.cached_input_per_million, cache_write_per_million=excluded.cache_write_per_million, output_per_million=excluded.output_per_million, source_url=excluded.source_url, effective_at=excluded.effective_at, updated_at=excluded.updated_at`, [input.provider, input.model, input.inputPerMillion, input.cachedInputPerMillion, input.cacheWritePerMillion, input.outputPerMillion, input.sourceUrl, input.effectiveAt, updatedAt])
-    return (await this.sql.get(`SELECT provider, model, input_per_million AS inputPerMillion, cached_input_per_million AS cachedInputPerMillion, cache_write_per_million AS cacheWritePerMillion, output_per_million AS outputPerMillion, source_url AS sourceUrl, effective_at AS effectiveAt, updated_at AS updatedAt FROM model_prices WHERE provider = ? AND model = ?`, [input.provider, input.model])) as ModelPrice
+    const tiersJson = JSON.stringify(input.tiers ?? [])
+    await this.sql.run(`INSERT INTO model_prices (provider, model, input_per_million, cached_input_per_million, cache_write_per_million, output_per_million, tiers_json, source_url, effective_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(provider, model) DO UPDATE SET input_per_million=excluded.input_per_million, cached_input_per_million=excluded.cached_input_per_million, cache_write_per_million=excluded.cache_write_per_million, output_per_million=excluded.output_per_million, tiers_json=excluded.tiers_json, source_url=excluded.source_url, effective_at=excluded.effective_at, updated_at=excluded.updated_at`, [input.provider, input.model, input.inputPerMillion, input.cachedInputPerMillion, input.cacheWritePerMillion, input.outputPerMillion, tiersJson, input.sourceUrl, input.effectiveAt, updatedAt])
+    const row = await this.sql.get(`${this.modelPriceSelect} WHERE provider = ? AND model = ?`, [input.provider, input.model]) as ModelPrice & { tiersJson: string }
+    return this.mapModelPrice(row)
   }
 
   async deleteModelPrice(provider: string, model: string): Promise<boolean> {
