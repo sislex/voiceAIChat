@@ -217,7 +217,7 @@ const GitTargetPane = lazy(async () => {
 
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
 // в главном чанке они лежат мёртвым весом до первого открытия.
-import type { SettingsSection } from './components/SettingsModal'
+import { SETTINGS_SECTIONS, type SettingsSection } from './components/SettingsModal'
 
 const ContextInspector = lazy(async () => {
   const module = await import('./components/ContextInspector')
@@ -338,6 +338,10 @@ function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.E
 function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
   const { path, segments, navigate } = useHashRoute()
+  const settingsRouteSection = segments[0] === 'settings' && segments.length === 2 && SETTINGS_SECTIONS.includes(segments[1] as SettingsSection)
+    ? segments[1] as SettingsSection
+    : null
+  const isSettingsRoute = segments[0] === 'settings'
   const projectsRoute = parseProjectsRoute(path)
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
@@ -444,8 +448,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     routeProjectSummary?.typeChain?.features ??
     ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
-  /** С какого раздела открыть общие настройки (переход из инспектора контекста). */
-  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null)
   /**
    * Чужой разговор, контекст которого смотрит админ. Отдельным окном, а не
    * активным чатом: разговор не его, и подменять им активный чат нельзя.
@@ -1320,7 +1322,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       stopOrCancel,
       toggleAutoSpeak: () => applySettings({ autoSpeak: !settingsState.settings.autoSpeak }),
       toggleTheme: () => applySettings({ theme: settingsState.settings.theme === 'light' ? 'dark' : 'light' }),
-      openSettings: shellActions.openSettings,
+      openSettings: () => navigate('/settings/llm'),
       openBoard: (projectId) => navigate(`/projects/${projectId}`),
       openMachineConsole: (agentId) =>
         agentId ? operationsActions.openUtility('console', agentId) : operationsActions.openUtilityForActiveChat('console'),
@@ -3342,8 +3344,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             // Открываем общие настройки сразу на «Инструкциях»: иначе человек,
             // пришедший из карточки инструкции, ищет раздел глазами.
             closeConversationSettings()
-            setSettingsSection('instructions')
-            shellActions.openSettings()
+            navigate('/settings/instructions')
           }}
           onAddInstruction={async (title, text) => {
             // Своя инструкция без `kind`: стандартного ответного блока у неё нет,
@@ -3364,8 +3365,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           machineOps={machineOps}
           role={session.currentUser?.role ?? 'admin'}
           settings={settingsState.settings}
-          engines={settingsState.llmEngines}
-          llmAccess={settingsState.llmAccess}
           defaultAgentId={settingsState.settings.defaultAgentId}
           projects={projects.projects}
           webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
@@ -3376,10 +3375,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
           onOpenExplorer={(agentId, path) => { closeConversationSettings(); operationsActions.openUtility('explorer', agentId, path) }}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, permissionMode, kbContextMode, projectId }) => {
             await chatActions.renameConversation(conversationSettingsTarget.id, title)
             await chatActions.setConversationProject(conversationSettingsTarget.id, projectId)
-            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
+            // Существующие legacy-переопределения не меняем: форма разговора их
+            // больше не редактирует и не должна случайно очищать при сохранении.
+            const conversation = conversationSettingsTarget.conversation!
+            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, conversation.llmProvider, conversation.llmModel, permissionMode, kbContextMode, conversation.llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = operations.agents.find((item) => item.id === agentId)
@@ -3496,9 +3498,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
-      {shell.settingsOpen && (
+      {(shell.settingsOpen || isSettingsRoute) && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
-          {...(settingsSection ? { initialSection: settingsSection } : {})}
+          section={settingsRouteSection ?? 'llm'}
+          onSectionChange={(section) => navigate(`/settings/${section}`)}
           projectTypes={projects.projectTypes}
           projectTypesStatus={projects.projectTypesStatus}
           projectTypesError={projects.projectTypesError}
@@ -3538,7 +3541,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           role={session.currentUser?.role ?? 'admin'}
           llmAccess={settingsState.llmAccess}
           voiceInputEnabled={VOICE_INPUT_ENABLED}
-          onClose={shellActions.closeSettings}
+          onClose={() => { shellActions.closeSettings(); navigate(chat.activeId ? `/chat/${chat.activeId}` : '/') }}
         /></Suspense>
       )}
     </div>
