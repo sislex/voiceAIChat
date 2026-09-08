@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-07
-checked: b3091e19
+updated: 2026-09-08
+checked: c310aba9
 areas:
   - apps/server/src
 ---
@@ -336,8 +336,9 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 `/internal/service` канбана (там же `snapshot` рана и `boardChanged` от Make). События кластера (кадры
 ранов, доска, подготовка, QA-стадии, репозитории, улучшения, уведомления) канбан шлёт ядру пачками на
 `/internal/kanban/events`; `kanbanBridge/remote.ts` воспроизводит их на локальных лентах `KanbanService`.
-Авторизация у канбана — пересылкой в `/internal/whoami` ядра (`kanban/standalone/auth.ts`, кэш чтений
-30 с); снаружи пути канбана идут только через прокси ядра `kanbanBridge/proxy.ts` (`KANBAN_PROXY_PREFIXES`),
+Вложения канбан читает через порт (`uploads.read`, байты base64) — общий том с ядром ему не нужен;
+список живых превью для preview-MCP чата — `KanbanService.previews.list()`. Авторизация у канбана —
+пересылкой в `/internal/whoami` ядра (`internal/forwardedAuth.ts`, кэш чтений 30 с); снаружи пути канбана идут только через прокси ядра `kanbanBridge/proxy.ts` (`KANBAN_PROXY_PREFIXES`),
 где preHandler ядра уже проверил права проекта. Контракт протокола — `kanban/internal.ts`, транспорт RPC
 общий с Make — `@voicechat/shared` (`internalRpc.ts`). Интеграционный тест границы —
 `kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
@@ -364,7 +365,8 @@ artifacts привязанного хранилища через обратны�
 процесс машин наполняет по постоянному WebSocket событий `/internal/events` (снимки машин и PTY-сессий,
 события PTY, кадры владельцам, `agentReady`, журнал команд, запросы авторизации тоннелей); вызовы — RPC
 `/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`). Ошибки
-файловых операций возвращаются с кодом и восстанавливаются как `AgentFsError`. При обрыве шины все машины
+файловых операций возвращаются с кодом и восстанавливаются как `AgentFsError`; буфер PTY (`ptyBufferText`) —
+полный, по RPC у процесса машин (тип у порта допускает `Promise`, консольный MCP ждёт `await`). При обрыве шины все машины
 считаются offline до переподключения. Ядро переправляет в процесс машин REST машин и установщики
 (`MACHINES_PROXY_PREFIXES`, `machinesBridge/proxy.ts`) и **WebSocket компаньон-агентов `/agent`** — кадр в
 кадр, с исходным IP в `x-forwarded-for` (Caddy остаётся без изменений). Авторизация REST у процесса машин —

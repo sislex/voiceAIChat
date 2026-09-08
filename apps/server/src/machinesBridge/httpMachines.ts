@@ -24,9 +24,6 @@ export interface HttpMachinesOptions {
   reconnectMs?: number
 }
 
-/** Кап буфера вывода PTY на стороне ядра — как у реестра: хватает на восстановление экрана. */
-const PTY_BUFFER_CAP_BYTES = 200 * 1024
-
 class Listeners<T extends unknown[]> {
   private readonly set = new Set<(...args: T) => unknown>()
   add(cb: (...args: T) => unknown): () => void { this.set.add(cb); return () => { this.set.delete(cb) } }
@@ -37,7 +34,6 @@ export class HttpMachines implements MachinesService {
   private machines = new Map<string, MachineState>()
   private ptys = new Map<string, PtyState>()
   private readonly ptyEmits = new Map<string, (e: PtyEvent) => void>()
-  private readonly ptyBuffers = new Map<string, { chunks: string[]; bytes: number }>()
   private readonly changeListeners = new Listeners<[]>()
   private readonly readyListeners = new Listeners<[string]>()
   private readonly commandListeners = new Listeners<[MachineCommandReport]>()
@@ -98,11 +94,10 @@ export class HttpMachines implements MachinesService {
   apply(event: MachinesEvent): void {
     switch (event.kind) {
       case 'machines': this.applyMachines(event.machines); break
-      case 'ptys': this.ptys = new Map(event.ptys.map((p) => [p.ptyId, p])); for (const id of this.ptyBuffers.keys()) if (!this.ptys.has(id)) this.ptyBuffers.delete(id); break
+      case 'ptys': this.ptys = new Map(event.ptys.map((p) => [p.ptyId, p])); break
       case 'pty': {
         const { ptyId } = event.event
-        if (event.event.t === 'pty.output') this.appendPtyOutput(ptyId, event.event.data)
-        else { this.ptys.delete(ptyId); this.ptyBuffers.delete(ptyId) }
+        if (event.event.t !== 'pty.output') this.ptys.delete(ptyId)
         const emit = this.ptyEmits.get(ptyId)
         if (event.event.t !== 'pty.output') this.ptyEmits.delete(ptyId)
         try { emit?.(event.event) } catch { /* подписчик не должен ронять шину */ }
@@ -131,14 +126,6 @@ export class HttpMachines implements MachinesService {
     this.machines = new Map(list.map((m) => [m.id, m]))
     this.connectedAt = Date.now()
     this.changeListeners.emit()
-  }
-
-  private appendPtyOutput(ptyId: string, data: string): void {
-    const buf = this.ptyBuffers.get(ptyId) ?? { chunks: [], bytes: 0 }
-    buf.chunks.push(data)
-    buf.bytes += Buffer.byteLength(data)
-    while (buf.bytes > PTY_BUFFER_CAP_BYTES && buf.chunks.length > 1) buf.bytes -= Buffer.byteLength(buf.chunks.shift()!)
-    this.ptyBuffers.set(ptyId, buf)
   }
 
   // --- RPC ---
@@ -219,10 +206,10 @@ export class HttpMachines implements MachinesService {
   ptyInput(ptyId: string, data: string): void { this.fire('ptyInput', ptyId, data) }
   ptyResize(ptyId: string, cols: number, rows: number): void { this.fire('ptyResize', ptyId, cols, rows) }
   ptyDetach(ptyId: string): void { this.ptyEmits.delete(ptyId); this.fire('ptyDetach', ptyId) }
-  ptyKill(ptyId: string): void { this.ptyEmits.delete(ptyId); this.ptys.delete(ptyId); this.ptyBuffers.delete(ptyId); this.fire('ptyKill', ptyId) }
+  ptyKill(ptyId: string): void { this.ptyEmits.delete(ptyId); this.ptys.delete(ptyId); this.fire('ptyKill', ptyId) }
   ptyLive(ptyId: string): boolean { return this.ptys.has(ptyId) }
-  /** Буфер вывода, увиденный этим ядром с момента подписки (процесс машин хранит полный). */
-  ptyBufferText(ptyId: string): string | null { const buf = this.ptyBuffers.get(ptyId); return buf ? buf.chunks.join('') : (this.ptys.has(ptyId) ? '' : null) }
+  /** Полный кольцевой буфер сессии — у процесса машин; неизвестную сессию не спрашиваем. */
+  ptyBufferText(ptyId: string): Promise<string | null> { return this.ptys.has(ptyId) ? this.rpc<string | null>('ptyBufferText', [ptyId]) : Promise.resolve(null) }
   ptyContextOf(ptyId: string) { return this.ptys.get(ptyId)?.context ?? null }
 
   // --- тоннели ---
