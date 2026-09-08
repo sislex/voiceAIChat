@@ -1084,6 +1084,14 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const interruptedQaStages = await db.qa.failInterruptedQaStageRuns()
   if (interruptedQaStages.length) app.log.warn({ runs: interruptedQaStages }, 'qa stages: прерванные раны закрыты как interrupted')
   for (const run of await db.qa.recoverableAutomatedQaRuns()) await automatedQaRunner.launch(run.id, run.userId)
+  // Разовая фоновая чистка прогресс-событий релизов (до исправления их писали на каждый чанк лога): пачками и
+  // после старта, чтобы многогигабайтная таблица на проде не задерживала подъём сервера и не держала базу.
+  const pruneTimer = setTimeout(() => {
+    void db.releases.pruneProgressEvents().then((removed) => { if (removed) app.log.info({ removed }, 'releases: удалены прогресс-события step.running') })
+      .catch((error) => app.log.warn({ err: error }, 'releases: чистка прогресс-событий не удалась'))
+  }, 15_000)
+  pruneTimer.unref?.()
+  app.addHook('onClose', async () => clearTimeout(pruneTimer))
   const interruptedComponentQa=await db.ci.failInterruptedComponentQaRuns()
   if (interruptedComponentQa.length) app.log.warn({runs:interruptedComponentQa},'component QA: прерванные раны закрыты как blocked infrastructure')
   const interruptedIntegrationTests=await db.ci.failInterruptedIntegrationTestRuns()
