@@ -515,9 +515,10 @@ describe('resolveCiStageModel', () => {
     expect(ciModelKnown('claude', 'claude-haiku')).toBe(true)
     expect(ciModelKnown('claude', 'gpt-5.4')).toBe(false)
     expect(ciModelKnown('claude', '')).toBe(false)
+    expect(ciModelKnown('codex', 'gpt-6-astra')).toBe(true)
     expect(ciModelKnown('codex', 'gpt-5.5')).toBe(true)
-    expect(ciModelKnown('codex', 'gpt-5.4')).toBe(true)
-    expect(ciModelKnown('codex', 'gpt-5.3-codex-spark')).toBe(true)
+    expect(ciModelKnown('codex', 'gpt-5.4')).toBe(false)
+    expect(ciModelKnown('codex', 'gpt-5.3-codex-spark')).toBe(false)
   })
 
   it('настройка чистится: чужие ключи прочь, не-строка — «модель рана»', () => {
