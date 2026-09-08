@@ -263,6 +263,9 @@ export class VoiceChatDb {
     if (taskDesignCols.length && !taskDesignCols.some((column) => column.name === 'paths_json')) await this.sql.exec(`ALTER TABLE task_designs ADD COLUMN paths_json TEXT NOT NULL DEFAULT '[]'`)
     // Legacy: пустой path = whole_project, конкретный path = файловый режим.
     await this.sql.exec(`UPDATE task_designs SET mode = CASE WHEN path = '' THEN 'whole_project' ELSE 'files' END, paths_json = CASE WHEN path = '' THEN '[]' ELSE json_array(path) END WHERE paths_json = '[]' AND path <> ''`)
+    const reworkCols = (await this.sql.all(`PRAGMA table_info(task_rework_cycles)`)) as Array<{ name: string }>
+    // Все ранее созданные циклы — уже отправленные: черновиков до этой колонки не было.
+    if (reworkCols.length && !reworkCols.some((column) => column.name === 'status')) await this.sql.exec(`ALTER TABLE task_rework_cycles ADD COLUMN status TEXT NOT NULL DEFAULT 'submitted'`)
     const improvementCols = (await this.sql.all(`PRAGMA table_info(task_improvements)`)) as Array<{ name: string }>
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'acceptance_criteria')) await this.sql.exec(`ALTER TABLE task_improvements ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'created_task_id')) await this.sql.exec(`ALTER TABLE task_improvements ADD COLUMN created_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)

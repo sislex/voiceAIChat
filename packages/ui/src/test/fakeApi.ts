@@ -1527,7 +1527,37 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:getPreparationRun': async () => null,
     'tasks:get': async () => null,
     'tasks:listReworkCycles': async () => [],
-    'tasks:createReworkCycle': async ({ taskId, input }) => ({ id: nextId(), taskId, sequence: 1, description: input.description, criteria: input.criteria ?? [], makeSources: input.makeSources ?? [], attachments: [], createdBy: 'admin', createdAt: Date.now(), preparationRunId: null }),
+    'tasks:createReworkCycle': async ({ taskId, input }) => ({ id: nextId(), taskId, sequence: 1, description: input.description, criteria: input.criteria ?? [], makeSources: input.makeSources ?? [], attachments: [], createdBy: 'admin', createdAt: Date.now(), preparationRunId: null, status: 'submitted' }),
+    // Черновики живут в том же массиве, что и отправленные циклы: карточка
+    // различает их по status, как и сервер.
+    'tasks:createReworkDraft': async ({ taskId, input }) => {
+      const cycle: TaskReworkCycle = {
+        id: `draft-${reworkCycles.length + 1}`, taskId,
+        sequence: reworkCycles.filter((item) => item.taskId === taskId).length + 1,
+        description: input.description, criteria: input.criteria,
+        makeSources: input.makeSources.map((source) => ({ ...source, title: source.title ?? source.conversationId, owner: 'me' })),
+        attachments: [], createdBy: 'me', createdAt: nowMs, preparationRunId: null, status: 'draft'
+      }
+      reworkCycles.push(cycle)
+      return cycle
+    },
+    'tasks:updateReworkDraft': async ({ cycleId, input }) => {
+      const cycle = reworkCycles.find((item) => item.id === cycleId)!
+      cycle.description = input.description
+      cycle.criteria = input.criteria
+      cycle.makeSources = input.makeSources.map((source) => ({ ...source, title: source.title ?? source.conversationId, owner: 'me' }))
+      return cycle
+    },
+    'tasks:deleteReworkDraft': async ({ cycleId }) => {
+      const index = reworkCycles.findIndex((item) => item.id === cycleId)
+      if (index >= 0) reworkCycles.splice(index, 1)
+      return { deleted: true as const }
+    },
+    'tasks:submitReworkDraft': async ({ taskId, cycleId }) => {
+      const cycle = reworkCycles.find((item) => item.id === cycleId)!
+      cycle.status = 'submitted'
+      return { cycle, task: tasks.find((item) => item.id === taskId)! }
+    },
     'tasks:cancelPreparationRun': async ({ runId }) => ({ id: runId, projectId: '', taskId: '', status: 'cancelled', attempt: 1, maxAttempts: 1, log: '', error: 'Подготовка отменена пользователем', readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: nowMs, canRetry: true, canCancel: false }),
     'tasks:startPreparationRun': async ({ projectId, taskId, selection }) => ({ id: `preparation-${taskId}`, projectId, taskId, status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),
     'tasks:retryPreparationRun': async ({ runId, selection }) => ({ id: `${runId}-retry`, projectId: '', taskId: '', status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),
@@ -1580,7 +1610,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:reworkCycles': async ({ taskId }) => reworkCycles.filter((cycle) => cycle.taskId === taskId),
     'tasks:createPersistentReworkCycle': async ({ taskId, input }) => {
       const task = tasks.find((item) => item.id === taskId)!
-      const cycle: TaskReworkCycle = { id: `cycle-${reworkCycles.length + 1}`, taskId, sequence: reworkCycles.filter((item) => item.taskId === taskId).length + 1, description: input.description, criteria: input.criteria, makeSources: input.makeSources.map((source) => ({ ...source, title: source.conversationId, owner: 'me' })), attachments: taskAttachments.filter((item) => input.attachmentIds.includes(item.id)).map((item) => ({ ...item, scope: 'rework_cycle' })), createdBy: 'me', createdAt: nowMs, preparationRunId: null }
+      const cycle: TaskReworkCycle = { id: `cycle-${reworkCycles.length + 1}`, taskId, sequence: reworkCycles.filter((item) => item.taskId === taskId).length + 1, description: input.description, criteria: input.criteria, makeSources: input.makeSources.map((source) => ({ ...source, title: source.conversationId, owner: 'me' })), attachments: taskAttachments.filter((item) => input.attachmentIds.includes(item.id)).map((item) => ({ ...item, scope: 'rework_cycle' })), createdBy: 'me', createdAt: nowMs, preparationRunId: null, status: 'submitted' }
       reworkCycles.push(cycle)
       return { cycle, task, replayed: false }
     },
@@ -1588,6 +1618,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:uploadAttachment': async ({ taskId, scope, name, mimeType = 'application/octet-stream', dataBase64 }) => {
       const item: TaskAttachment = { id: `attachment-${taskAttachments.length + 1}`, taskId, scope, name, mimeType, size: dataBase64.length, checksum: '', status: 'ready', createdBy: 'me', createdAt: nowMs }
       taskAttachments.push(item); return item
+    },
+    'tasks:readAttachment': async ({ attachmentId }) => {
+      const item = taskAttachments.find((file) => file.id === attachmentId)
+      return { name: item?.name ?? 'file', mimeType: item?.mimeType ?? 'application/octet-stream', dataBase64: '' }
     },
     'tasks:deleteAttachment': async ({ attachmentId }) => { const index = taskAttachments.findIndex((item) => item.id === attachmentId); if (index >= 0) taskAttachments.splice(index, 1); return { deleted: index >= 0 } },
     'tasks:reworkMakeFiles': async () => [],
