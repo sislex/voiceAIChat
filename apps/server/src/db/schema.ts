@@ -624,6 +624,17 @@ CREATE TABLE IF NOT EXISTS user_project_machine_defaults (
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
+-- Последняя фактически принятая машина подготовки релиза. Не участвует в defaults задач/чатов.
+CREATE TABLE IF NOT EXISTS user_project_release_machines (
+  username   TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (username, project_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS machine_project_share_audit (
   id         TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,

@@ -6,7 +6,7 @@ import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { ProjectNotFoundPage, ProjectPage, ProjectsEmptyPage, type ProjectSection } from './ProjectPage'
 import { ReleaseCenter } from './releases/ReleaseCenter'
 import { createFakeApi } from '../test/fakeApi'
-import type { ProjectRelease, ProjectReleaseSummary } from '@voicechat/shared'
+import type { ProjectRelease, ProjectReleaseSummary, ReleaseMachine } from '@voicechat/shared'
 
 function renderPage(section: ProjectSection = 'board'): { onSectionChange: (s: ProjectSection) => void } {
   const onSectionChange = vi.fn()
@@ -192,24 +192,49 @@ describe('ReleaseCenter — список, деплой и лента', () => {
     expect(screen.getByText('Health-check')).toBeInTheDocument()
   })
 
-  it('создаёт релиз только на машине проекта по умолчанию', async () => {
+  // @testCase TC-UI-1
+  it('показывает server-filtered каталог без дубликатов', async () => {
     const value = api()
-    value['releases:createBranch'] = vi.fn(async ({ projectId, branch }) => ({ ...prepared, projectId, branch, version: branch.slice('release/'.length) }))
-    render(<ReleaseCenter projectId="p1" baseBranch="main" owner defaultAgentId="mac" machines={[{ agentId: 'other', name: 'Server', path: '/srv/app', reposRoot: '/srv/repos', online: true }, { agentId: 'mac', name: 'MacBook', path: '/Users/me/app', reposRoot: '/Users/me/repos', online: true }]} api={value} />)
-    const machine = await screen.findByRole('combobox', { name: 'Машина проекта по умолчанию' })
-    expect(machine).toHaveValue('mac')
-    expect(within(machine).getByRole('option', { name: 'MacBook · online · машина проекта' })).toBeInTheDocument()
-    await userEvent.type(screen.getByPlaceholderText('1.2.3'), '2.0.0')
-    await userEvent.click(screen.getByRole('button', { name: 'Собрать новый релиз' }))
-    expect(value['releases:createBranch']).toHaveBeenCalledWith({ projectId: 'p1', branch: 'release/2.0.0', baseBranch: 'main' })
+    value['releases:machines'] = vi.fn(async () => ({ machines: [
+      { agentId:'personal',name:'Мой Mac',ownership:'mine',access:'owner',online:true,path:'/app',reposRoot:'',eligible:true,unavailableReason:null },
+      { agentId:'shared',name:'Shared Mac',ownership:'project',access:'full',online:true,path:'/shared',reposRoot:'',eligible:true,unavailableReason:null }
+    ] as ReleaseMachine[], lastAgentId:null }))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    const machine = await screen.findByRole('combobox', { name: 'Машина сборки релиза' })
+    expect(within(machine).getAllByRole('option').map(option=>option.getAttribute('value'))).toEqual(['','personal','shared'])
   })
 
-  it('разрешает release checkout через reposRoot, если обычный checkout не настроен', async () => {
-    render(<ReleaseCenter projectId="p1" baseBranch="main" owner defaultAgentId="mac" machines={[{ agentId: 'mac', name: 'MacBook', path: '', reposRoot: '/Users/me/repos', online: true }]} api={api()} />)
-    expect(await screen.findByRole('combobox', { name: 'Машина проекта по умолчанию' })).toHaveValue('mac')
-    expect(screen.queryByText(/root-директория/)).not.toBeInTheDocument()
+  // @testCase TC-UI-2
+  it('выбирает последнюю пригодную release-машину и отправляет её', async () => {
+    const value = api()
+    value['releases:machines'] = vi.fn(async () => ({ machines: [
+      { agentId:'first',name:'First',ownership:'mine',access:'owner',online:true,path:'/first',reposRoot:'',eligible:true,unavailableReason:null },
+      { agentId:'last',name:'Last',ownership:'project',access:'full',online:true,path:'/last',reposRoot:'',eligible:true,unavailableReason:null }
+    ] as ReleaseMachine[], lastAgentId:'last' }))
+    value['releases:createBranch'] = vi.fn(async ({ projectId, branch }) => ({ ...prepared, projectId, branch, version: branch.slice('release/'.length) }))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    expect(await screen.findByRole('combobox', { name: 'Машина сборки релиза' })).toHaveValue('last')
     await userEvent.type(screen.getByPlaceholderText('1.2.3'), '2.0.0')
-    expect(screen.getByRole('button', { name: 'Собрать новый релиз' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Собрать новый релиз' }))
+    expect(value['releases:createBranch']).toHaveBeenCalledWith({ projectId:'p1',branch:'release/2.0.0',baseBranch:'main',agentId:'last' })
+  })
+
+  // @testCase TC-UI-3
+  it.each(['missing','offline','no-path','read'])('выбирает первую пригодную при непригодном preference: %s', async (reason) => {
+    const value=api()
+    const saved=reason==='missing'?[]:[{agentId:'saved',name:'Saved',ownership:'project' as const,access:(reason==='read'?'read':'full') as 'read'|'full',online:reason!=='offline',path:reason==='no-path'?'':'/saved',reposRoot:'',eligible:false,unavailableReason:reason}]
+    value['releases:machines']=vi.fn(async()=>({machines:[...saved,{agentId:'fallback',name:'Fallback',ownership:'mine',access:'owner',online:true,path:'',reposRoot:'/repos',eligible:true,unavailableReason:null}] as ReleaseMachine[],lastAgentId:'saved'}))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value}/>)
+    expect(await screen.findByRole('combobox',{name:'Машина сборки релиза'})).toHaveValue('fallback')
+  })
+
+  // @testCase TC-UI-4
+  it.each<[ReleaseMachine[]]>([[[]],[ [{agentId:'offline',name:'Offline',ownership:'mine',access:'owner',online:false,path:'/app',reposRoot:'',eligible:false,unavailableReason:'Машина offline'}] ]])('блокирует сборку без пригодных машин', async (machines) => {
+    const value=api();value['releases:machines']=vi.fn(async()=>({machines,lastAgentId:null}));value['releases:createBranch']=vi.fn(value['releases:createBranch'])
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value}/>)
+    await userEvent.type(screen.getByPlaceholderText('1.2.3'),'2.0.0')
+    expect(await screen.findByRole('button',{name:'Собрать новый релиз'})).toBeDisabled()
+    expect(value['releases:createBranch']).not.toHaveBeenCalled()
   })
 
   it('показывает пустое состояние после успешной загрузки списка', async () => {
@@ -234,23 +259,4 @@ describe('ReleaseCenter — список, деплой и лента', () => {
     expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument()
   })
 
-  it('назначает личную машину дефолтом, сначала привязав её к проекту', async () => {
-    const value = api()
-    value['projects:linkMachine'] = vi.fn(async () => ({}) as never)
-    value['projects:setDefaultMachine'] = vi.fn(async () => ({}) as never)
-    render(<ReleaseCenter projectId="p1" baseBranch="main" owner machines={[]} agents={[{ id: 'personal', name: 'Мой Mac', online: true } as never]} api={value} />)
-    const select = await screen.findByRole('combobox', { name: 'Машина проекта по умолчанию' })
-    expect(within(select).getByRole('option', { name: 'Мой Mac · online · личная машина' })).toBeInTheDocument()
-    await userEvent.selectOptions(select, 'personal')
-    expect(value['projects:linkMachine']).toHaveBeenCalledWith({ id: 'p1', agentId: 'personal' })
-    expect(value['projects:setDefaultMachine']).toHaveBeenCalledWith({ id: 'p1', agentId: 'personal' })
-  })
-
-  it('явно помечает сохранённую машину, которая стала недоступна', async () => {
-    render(<ReleaseCenter projectId="p1" baseBranch="main" owner defaultAgentId="gone" machines={[]} agents={[]} api={api()} />)
-    const select = await screen.findByRole('combobox', { name: 'Машина проекта по умолчанию' })
-    expect(select).toHaveValue('gone')
-    expect(within(select).getByRole('option', { name: 'Ранее выбранная машина · недоступна' })).toBeInTheDocument()
-    expect(screen.getByText('Машина проекта по умолчанию не подключена к проекту.')).toBeInTheDocument()
-  })
 })
