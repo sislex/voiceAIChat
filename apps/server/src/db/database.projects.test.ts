@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_SETTINGS, taskReworkContext } from '@voicechat/shared'
+import { releaseCiTarget, releaseMachineCatalog } from '../releases/targets.js'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
@@ -496,6 +497,64 @@ describe('projects: машины', () => {
     expect(machine.directories?.projectWorkdir.override).toBe(true)
     expect(machine.directories?.reposRoot.override).toBe(true)
     expect(machine.recommendations?.projectWorkdir).toContain('/managed/root/projects/')
+  })
+
+  async function releaseFixture(access: 'full'|'read'='full') {
+    const project=await db.projects.createProject('alice',{name:'Release',gitUrl:'git@example/repo.git'})
+    await db.projects.addMember('alice',project.id,'bob')
+    const personal=await db.machines.createAgent('alice','Alice Mac')
+    const shared=await db.machines.createAgent('bob','Bob Mac')
+    const foreign=await db.machines.createAgent('bob','Foreign Mac')
+    await db.machines.linkMachine('alice',project.id,personal.id)
+    await db.machines.setProjectMachinePath('alice',project.id,personal.id,'/alice/project')
+    await db.machines.linkMachine('bob',project.id,shared.id)
+    await db.machines.setProjectMachinePath('bob',project.id,shared.id,'/bob/project')
+    await db.machines.setMachineSharedWithProject('bob',project.id,shared.id,true,access)
+    return {project,personal,shared,foreign}
+  }
+
+  // @testCase TC-API-1
+  it('release-каталог использует listUsableAgents без дубликатов и чужих машин',async()=>{
+    const {project,personal,shared,foreign}=await releaseFixture()
+    await db.machines.setMachineSharedWithProject('alice',project.id,personal.id,true,'full')
+    const catalog=await releaseMachineCatalog(db,{isOnline:()=>true},'alice',project.id)
+    expect(catalog.machines.map(machine=>machine.agentId)).toEqual([personal.id,shared.id])
+    expect(catalog.machines.filter(machine=>machine.agentId===personal.id)).toHaveLength(1)
+    expect(catalog.machines.some(machine=>machine.agentId===foreign.id)).toBe(false)
+  })
+
+  // @testCase TC-API-2
+  it('release target отклоняет чужой и read-only agentId',async()=>{
+    const {project,shared,foreign}=await releaseFixture('read')
+    await expect(releaseCiTarget(db,{isOnline:()=>true},'alice',project.id,foreign.id)).rejects.toThrow(/недоступна/)
+    await expect(releaseCiTarget(db,{isOnline:()=>true},'alice',project.id,shared.id)).rejects.toThrow(/Только чтение/)
+  })
+
+  // @testCase TC-INT-1
+  it('release preference изолирована по пользователю и проекту',async()=>{
+    const {project,personal,shared}=await releaseFixture()
+    await db.machines.setUserProjectReleaseMachine('alice',project.id,personal.id)
+    await db.machines.setUserProjectReleaseMachine('bob',project.id,shared.id)
+    expect(await db.machines.getUserProjectReleaseMachine('alice',project.id)).toBe(personal.id)
+    expect(await db.machines.getUserProjectReleaseMachine('bob',project.id)).toBe(shared.id)
+  })
+
+  // @testCase TC-INT-2
+  it('разрешение и отклонение target не меняет release preference',async()=>{
+    const {project,personal,foreign}=await releaseFixture()
+    await db.machines.setUserProjectReleaseMachine('alice',project.id,personal.id)
+    await releaseCiTarget(db,{isOnline:()=>true},'alice',project.id,personal.id)
+    await expect(releaseCiTarget(db,{isOnline:()=>true},'alice',project.id,foreign.id)).rejects.toThrow()
+    expect(await db.machines.getUserProjectReleaseMachine('alice',project.id)).toBe(personal.id)
+  })
+
+  // @testCase TC-REG-2
+  it('release preference не меняет CHAT-177 default и каталог',async()=>{
+    const {project,personal,shared}=await releaseFixture()
+    await db.machines.setUserProjectDefaultMachine('alice',project.id,personal.id)
+    await db.machines.setUserProjectReleaseMachine('alice',project.id,shared.id)
+    expect(await db.machines.getUserProjectDefaultMachine('alice',project.id)).toBe(personal.id)
+    expect((await db.machines.listUsableAgents('alice',project.id)).map(agent=>agent.id)).toEqual([personal.id,shared.id])
   })
 })
 
