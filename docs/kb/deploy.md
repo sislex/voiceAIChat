@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-08
-checked: c310aba9
+checked: 0d1c7312
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -209,6 +209,19 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 админке — ему нужен входящий доступ от них. Порты по умолчанию: 8787 ядро, 8788 Make, 8789 канбан, 8793
 машины, 8794 админка. Что остаётся у ядра принципиально: чат и ходы модели, WS клиентов, миграции схемы,
 раздача web-клиента, сокет деплоя host-side API. Откат любого процесса — снять его `VC_*_MODE` у ядра.
+
+**Прод на Postgres с 2026-09-08 12:06 UTC.** Профиль `postgres` включён постоянно через `COMPOSE_PROFILES=postgres`
+в `.env` чекаута (там же `VC_PG_PASSWORD` и полный `VC_DB_URL=postgres://voicechat:…@postgres:5432/voicechat`), поэтому
+штатный `voicechat-deploy` поднимает Postgres вместе со всем. Перенос делался так: пробная копия на живой базе
+(`VACUUM INTO /data/prod-copy.db` внутри контейнера ядра → `docker compose run --rm --no-deps -w /app/apps/server
+voicechat node --import tsx src/db/copyToPostgres.cli.ts --sqlite /data/prod-copy.db --url …`), затем
+`docker compose stop voicechat`, свежий снимок, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` в Postgres,
+чистая копия (72 с, 113 таблиц, расхождений 0), `VC_DB_URL` в `.env`, `docker compose up -d voicechat` с
+`VC_RELEASE_VERSION`/`VC_RELEASE_COMMIT` в окружении (иначе метаданные релиза обнулятся). Простой — 108 с.
+База в Postgres — 639 МБ (в файле SQLite 5,2 ГБ живых данных было ~1 ГБ, остальное — пустые страницы после
+чистки событий). Откат: убрать `VC_DB_URL` из `.env` и поднять `voicechat` — файл `/data/voicechat.db` не тронут,
+но записи после переключения останутся в Postgres. Снимок `/data/prod-copy.db` можно удалить через несколько дней.
+Проверка переключения: `SELECT MAX(last_seen) FROM agents` в Postgres растёт, mtime `voicechat.db` стоит.
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,
