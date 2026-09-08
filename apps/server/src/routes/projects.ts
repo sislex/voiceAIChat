@@ -1114,11 +1114,15 @@ export function registerProjectRoutes(
   // --- Черновики доработок ---------------------------------------------
   // Отдельные маршруты, а не флаг у создания цикла: черновик правится и
   // удаляется, поэтому у него свой жизненный цикл и свои коды ошибок.
-  const draftFiles = (userId: string, uploadIds: string[]): Array<{ uploadId: string; name: string; mimeType: string; size: number }> =>
-    uploadIds.flatMap((uploadId) => {
-      const upload = uploads?.get(uploadId)
-      return upload?.ownerId === userId ? [{ uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size }] : []
-    })
+  // Вложения приходят через порт ядра (в отдельном процессе — по сети), поэтому по одному и с `await`.
+  const draftFiles = async (userId: string, uploadIds: string[]): Promise<Array<{ uploadId: string; name: string; mimeType: string; size: number }>> => {
+    const files: Array<{ uploadId: string; name: string; mimeType: string; size: number }> = []
+    for (const uploadId of uploadIds) {
+      const upload = await uploads?.get(uploadId)
+      if (upload?.ownerId === userId) files.push({ uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size })
+    }
+    return files
+  }
   const draftError = (reply: FastifyReply, error: unknown): FastifyReply => {
     const code = errMessage(error)
     if (code === 'not_found') return nf(reply)
@@ -1138,7 +1142,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const userId = uid(req)
       try {
-        const cycle = await db.tasks.createTaskReworkDraft(userId, req.params.id, req.params.taskId, draftInput(req.body), draftFiles(userId, req.body?.uploadIds ?? []))
+        const cycle = await db.tasks.createTaskReworkDraft(userId, req.params.id, req.params.taskId, draftInput(req.body), await draftFiles(userId, req.body?.uploadIds ?? []))
         boardHub.emit(req.params.id)
         return cycle
       } catch (error) { return draftError(reply, error) }
@@ -1150,7 +1154,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const userId = uid(req)
       try {
-        const cycle = await db.tasks.updateTaskReworkDraft(userId, req.params.id, req.params.taskId, req.params.cycleId, draftInput(req.body), draftFiles(userId, req.body?.uploadIds ?? []))
+        const cycle = await db.tasks.updateTaskReworkDraft(userId, req.params.id, req.params.taskId, req.params.cycleId, draftInput(req.body), await draftFiles(userId, req.body?.uploadIds ?? []))
         boardHub.emit(req.params.id)
         return cycle
       } catch (error) { return draftError(reply, error) }
