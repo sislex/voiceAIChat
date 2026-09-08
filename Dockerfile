@@ -111,6 +111,18 @@ EXPOSE 8794
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/admin/standalone/index.ts"]
 
+# ---- Runtime Web Reader (отдельный сервис, профиль compose `reader`) --------
+# Тот же код сервера, процесс — apps/server/src/reader/standalone: прокси превью и MCP «browser»
+# на общей базе Postgres; состояние ядра берёт по /internal/reader/core.
+FROM runtime-base AS reader-runtime
+ENV PORT=8795
+RUN mkdir -p /data \
+  && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8795
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/reader/standalone/index.ts"]
+
 # ---- Изолированный runtime распознавания речи ---------------------------
 FROM runtime-base AS stt-runner-runtime
 ENV PORT=8791 \

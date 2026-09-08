@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-08
-checked: 0d1c7312
+checked: 29dcec84
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -202,12 +202,15 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 | канбан | `apps/server/src/kanban/standalone`, `kanban-runtime` | `VC_KANBAN_MODE=remote`, `VC_KANBAN_URL`, `VC_KANBAN_MCP_PUBLIC_BASE` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE` (адрес ядра), адреса раннеров LLM и браузера, `VC_MAKE_URL`, SMTP | нет: вложения читаются через порт ядра, скриншоты QA — свой каталог |
 | машины | `apps/server/src/machines/standalone`, `machines-runtime` | `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, `VC_PUBLIC_URL` | нет: установщики — из образа, перенос хранилищ — свой файл |
 | админка | `apps/server/src/admin/standalone`, `admin-runtime` | `VC_ADMIN_MODE=remote`, `VC_ADMIN_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MAKE_URL`, при вынесенных машинах `VC_MACHINES_URL`, SMTP | нет |
+| Web Reader (прокси превью, MCP «browser», Chromium) | `apps/server/src/reader/standalone`, `reader-runtime` | `VC_READER_MODE=remote`, `VC_READER_URL`, `VC_READER_MCP_PUBLIC_BASE` (те же три — и процессу канбана, чтобы ходы ранов получали адрес ридера) | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE`/`VC_BROWSER_PREVIEW_BASE` (адрес ядра — Chromium открывает `/api/preview` через ядро), адрес и токен browser-runner, при вынесенных машинах `VC_MACHINES_URL` | нет: кадры проверок уходят ядру по RPC |
 
 Сеть: Postgres доступен всем процессам; ядро ходит к каждому соседу по его URL, соседи — к ядру по
 `VC_CORE_URL` (whoami, RPC, ленты событий); снаружи всё идёт через публичный хост ядра (Caddy → ядро →
 прокси), агенты подключаются к публичному `/agent`. Процесс машин держит постоянный WebSocket к ядру и
 админке — ему нужен входящий доступ от них. Порты по умолчанию: 8787 ядро, 8788 Make, 8789 канбан, 8793
-машины, 8794 админка. Что остаётся у ядра принципиально: чат и ходы модели, WS клиентов, миграции схемы,
+машины, 8794 админка, 8795 Web Reader. Одновременный старт всех процессов на одной базе безопасен: схему Postgres
+ставит тот, кто первым взял advisory-замок (`VoiceChatDb.init()`), остальные ждут (2026-09-08 — до этого два процесса
+могли упасть deadlock-ом на `CREATE TABLE IF NOT EXISTS`). Что остаётся у ядра принципиально: чат и ходы модели, WS клиентов, миграции схемы,
 раздача web-клиента, сокет деплоя host-side API. Откат любого процесса — снять его `VC_*_MODE` у ядра.
 
 **Прод на Postgres с 2026-09-08 12:06 UTC.** Профиль `postgres` включён постоянно через `COMPOSE_PROFILES=postgres`
