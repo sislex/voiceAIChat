@@ -16,7 +16,7 @@ import { formatDateTime, formatDate } from '../../lib/dateFormat'
 import { ALL_PROJECT_FEATURES, type ProjectFeatureSet } from '@shared/projectTypes'
 import type { Board, ProjectMember, Task, TaskPriority, TaskRunResult, WorkItemType } from '@shared/projects'
 import { normalizeAcceptanceCriteria, TASK_PRIORITIES } from '@shared/projects'
-import type { ModifierPrompt, Message } from '@shared/types'
+import type { ModifierPrompt, Message, PermissionMode, VoiceState } from '@shared/types'
 import { Button } from '@voicechat/ui-kit'
 import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
@@ -26,7 +26,9 @@ import { BranchFlow, ChipList, ProgressTrack, PropertyRow, SectionHeader } from 
 import { LiveIndicator, PanelHeading, StatusPill, type StatusTone } from '@voicechat/ui-kit'
 import { Markdown } from '../Markdown'
 import { useConfirm } from '@voicechat/ui-kit'
-import { ChatIcon, FlagIcon, TrashIcon, WandIcon } from '../icons'
+import { FlagIcon, TrashIcon, WandIcon } from '../icons'
+import { ChatColumn } from '../ChatColumn'
+import { VoiceBar, type ComposerAttachment } from '../VoiceBar'
 import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
@@ -98,7 +100,7 @@ const RUN_OUTCOME_LABEL: Record<TaskRunResult['outcome'], string> = {
   skipped: 'пропущен'
 }
 
-export type TaskModalTab = 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'code' | 'merge' | 'feed' | 'improvements'
+export type TaskModalTab = 'chat' | 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'code' | 'merge' | 'feed' | 'improvements'
 
 export interface TaskModalProps {
   task: Task
@@ -107,7 +109,7 @@ export interface TaskModalProps {
   members: ProjectMember[]
   onUpdate: (taskId: string, fields: TaskUpdateFields) => void
   onDelete: (taskId: string) => void
-  /** Открыть связанный с задачей чат (кнопка в шапке модалки). */
+  /** @deprecated The task chat is embedded in the AI-чат tab. */
   onOpenChat?: (taskId: string) => void
   /**
    * Создать связанный чат, не уходя с доски. Зовётся при первом открытии
@@ -292,6 +294,10 @@ function ModelWorkDisclosure({
   )
 }
 
+/**
+ * Task-scoped adapter for the regular chat surface.  The conversation is never
+ * navigated to: only task-bound history from the current project is loaded.
+ */
 export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId: string }): JSX.Element {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -300,9 +306,12 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryDraft, setRetryDraft] = useState<string | null>(null)
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('plan')
 
   const load = async (): Promise<void> => {
-    setLoading(true); setError(null)
+    setLoading(true)
+    setError(null)
     try {
       const conversation = await window.api['tasks:openChat']({ projectId, taskId })
       const history = await window.api['conversations:get']({ id: conversation.id, scope: 'kanban', projectId })
@@ -311,7 +320,9 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
       setMessages(history.messages)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось загрузить историю чата')
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { void load() }, [projectId, taskId])
@@ -320,11 +331,14 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
     const done = window.claude?.onDone((event) => {
       if (event.conversationId !== conversationId) return
       if (event.message) setMessages((items) => [...items, event.message!])
-      setSending(false); setRetryDraft(null)
+      setSending(false)
+      setRetryDraft(null)
     })
     const failed = window.claude?.onError((event) => {
       if (event.conversationId !== conversationId) return
-      setSending(false); setDraft(retryDraft ?? draft); setError(event.message)
+      setSending(false)
+      setDraft(retryDraft ?? draft)
+      setError(event.message)
     })
     return () => { done?.(); failed?.() }
   }, [conversationId, retryDraft, draft])
@@ -332,26 +346,60 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
   const send = async (): Promise<void> => {
     const text = draft.trim()
     if (!text || sending || !conversationId) return
-    setSending(true); setError(null); setRetryDraft(text)
+    setSending(true)
+    setError(null)
+    setRetryDraft(text)
     try {
       const message = await window.api['messages:add']({
         conversationId, role: 'u1', text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       })
-      setMessages((items) => [...items, message]); setDraft('')
+      setMessages((items) => [...items, message])
+      setDraft('')
       window.claude?.send({ conversationId, messageId: message.id, segments: [{ speakerId: 1, text }] })
     } catch (cause) {
-      setSending(false); setDraft(text); setError(cause instanceof Error ? cause.message : 'Не удалось отправить сообщение')
+      setSending(false)
+      setDraft(text)
+      setError(cause instanceof Error ? cause.message : 'Не удалось отправить сообщение')
     }
   }
 
-  return <section className="task-chat-panel" aria-label="AI-чат задачи">
-    {loading && <p role="status">Загружаем историю чата…</p>}
-    {!loading && error && <div role="alert"><p>{error}</p><Button size="sm" onClick={() => { if (retryDraft) void send(); else void load() }}>Повторить</Button></div>}
-    {!loading && <div className="task-chat-messages" role="log" aria-live="polite">
-      {messages.length ? messages.map((message) => <article key={message.id} data-role={message.role}><strong>{message.role === 'ai' ? 'AI' : 'Вы'}</strong><p>{message.text}</p></article>) : <p>История пока пуста. Задайте вопрос ассистенту.</p>}
-    </div>}
-    <label>Сообщение ассистенту<textarea aria-label="Сообщение ассистенту" value={draft} disabled={loading || sending} onChange={(event) => setDraft(event.target.value)} /></label>
-    <Button variant="primary" loading={sending} disabled={loading || sending || !draft.trim()} onClick={() => void send()}>{sending ? 'Отправляем…' : 'Отправить'}</Button>
+  const voiceState: VoiceState = sending ? 'thinking' : 'idle'
+  return <section className="task-chat-panel task-chat-panel--surface" aria-label="AI-чат задачи" data-testid="task-chat-surface">
+    <ChatColumn
+      title="AI-чат задачи"
+      conversationId={conversationId}
+      permissionMode={permissionMode}
+      onOpenConversationSettings={() => undefined}
+      state={voiceState}
+      messages={messages}
+      loadingMessages={loading}
+      liveSegments={[]}
+      diarization={false}
+      preparingReply={sending}
+      error={error}
+      onDismissError={() => setError(null)}
+      composerLayout="docked"
+      voiceBar={<VoiceBar
+        layout="docked"
+        state={voiceState}
+        draft={draft}
+        diarization={false}
+        detectedSpeakers={[]}
+        attachments={attachments}
+        onDraftChange={setDraft}
+        onSubmitText={() => void send()}
+        onStartVoice={() => undefined}
+        onStopVoice={() => undefined}
+        onStopSpeak={() => undefined}
+        onCancelRequest={() => undefined}
+        onAddFiles={(files) => setAttachments(files.map((file) => ({ id: `task-file-${file.name}-${file.lastModified}`, name: file.name, file, status: 'ready' })))}
+        onRemoveAttachment={(id) => setAttachments((items) => items.filter((item) => item.id !== id))}
+        permissionMode={permissionMode}
+        onChangePermissionMode={setPermissionMode}
+        voiceInputEnabled={false}
+      />}
+    />
+    {error && <Button size="sm" onClick={() => { if (retryDraft) void send(); else void load() }}>Повторить</Button>}
   </section>
 }
 
@@ -367,7 +415,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const criteriaDirtyRef = useRef(false)
   const [subtaskOpen, setSubtaskOpen] = useState(false)
   const [subtaskTitle, setSubtaskTitle] = useState('')
-  const [chatOpen, setChatOpen] = useState(false)
   useEffect(() => {
     if (!props.draft || task.assignee) return
     const current = props.members.find((member) => member.role === 'owner' && member.active !== false)?.username
@@ -665,7 +712,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // попадал в доступное имя вкладки («Улучшения (3)») и зачитывался при каждом
   // переходе стрелками, а рядом с ним нельзя было поставить пилюлю.
   const tabItems: Array<{ id: TaskTab; label: string; count?: number }> = [
-    { id: 'general', label: 'Общее' }, { id: 'timeline', label: 'Временная шкала' },
+    { id: 'general', label: 'Общее' }, { id: 'chat', label: 'AI-чат' }, { id: 'timeline', label: 'Временная шкала' },
     // «Активность» — как в Jira: комментарии, история изменений, ворклог.
     { id: 'activity' as const, label: 'Активность' },
     ...(preparationVisible && features.ci ? [{ id: 'preparation' as const, label: 'Подготовка к разработке' }] : []),
@@ -787,11 +834,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       </IconButton>
       {menuOpen && (
         <div className="jcard-menu jmodal-menu">
-          {props.onOpenChat && (
-            <button onClick={() => { setMenuOpen(false); props.onOpenChat?.(task.id) }}>
-              <ChatIcon /> {task.chatId ? 'Открыть чат' : 'Создать чат'}
-            </button>
-          )}
           <button onClick={() => { setMenuOpen(false); toggleFlag() }}>
             <FlagIcon filled={task.flagged} /> {task.flagged ? 'Снять флаг' : 'Флаг'}
           </button>
@@ -1052,7 +1094,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           /> : criteria.trim() ? <div className="jmodal-desc-view task-criteria-view" data-testid="task-criteria-view"><Markdown>{normalizeAcceptanceCriteria(criteria)}</Markdown></div> : <button className="jmodal-desc-empty" onClick={() => setCriteriaEditing(true)}>Добавьте критерии приёмки…</button>}
           <span id="task-criteria-help" className="vc-sr-only">Enter создаёт новый критерий, Shift+Enter — перенос внутри критерия.</span>
           </section>
-          {!props.draft && activeTab === 'general' && <><section className="task-section" aria-label="AI-чат"><Button size="sm" variant="secondary" onClick={() => setChatOpen((open) => !open)}>{chatOpen ? 'Скрыть AI-чат' : 'Открыть AI-чат'}</Button>{chatOpen && <TaskChatPanel projectId={task.projectId} taskId={task.id} />}</section><TaskDesigns projectId={task.projectId} taskId={task.id} onOpenMake={props.onOpenMake} /></>}
+          {!props.draft && activeTab === 'general' && <TaskDesigns projectId={task.projectId} taskId={task.id} onOpenMake={props.onOpenMake} />}
           {(children.length > 0 || canAddSubtask) && (
             <section className="task-section" aria-label="Подзадачи">
               <SectionHeader title="Подзадачи" meta={children.length > 0 ? `${doneChildren} из ${children.length}` : undefined} />
@@ -1133,11 +1175,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   </li>
                 ))}
               </ul>
-              {props.onOpenChat && (
-                <button type="button" className="task-section-action" onClick={() => props.onOpenChat?.(task.id)}>
-                  {task.chatId ? 'Открыть чат задачи' : 'Создать чат задачи'}
-                </button>
-              )}
             </section>
           )}
         </div>
@@ -1157,6 +1194,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           </div>}
         </section>}
         {!props.draft && <>
+        <section className="task-tab-panel task-chat-tab" data-testid="task-chat-panel" {...panelProps('chat')}>
+          {activeTab === 'chat' && <TaskChatPanel projectId={task.projectId} taskId={task.id} />}
+        </section>
         <section className="task-tab-panel" data-testid="task-timeline-panel" {...panelProps('timeline')}>
           <PanelHeading title="Временная шкала" description="Этапы задачи, попытки внутри них и время, потраченное на каждую." />
           {activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}

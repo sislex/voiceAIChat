@@ -32,6 +32,18 @@ describe('NewTaskCardView', () => {
     fireEvent.click(screen.getByRole('button', { name: '↩ На доработку · цикл 2' }))
     expect(cb.onStartRework).toHaveBeenCalledOnce()
   })
+  // @testCase TC-UI-CHAT-NEW
+  it('оставляет AI-чат единственным входом и рендерит task-scoped панель', () => {
+    const change = vi.fn()
+    const renderPanel = vi.fn(() => <div data-testid="task-chat-panel">Чат текущей задачи</div>)
+    const chatModel = { ...model, tabs: [...model.tabs, { id: 'chat' as const, label: 'AI-чат' }] }
+    render(<NewTaskCardView model={chatModel} activeTab="chat" renderPanel={renderPanel} version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks({ onChangeTab: change, onOpenChat: vi.fn() })} />)
+    expect(screen.getByRole('tab', { name: 'AI-чат' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Открыть чат' })).toBeNull()
+    expect(screen.getByTestId('task-chat-panel')).toHaveTextContent('Чат текущей задачи')
+    expect(renderPanel).toHaveBeenCalledWith('chat')
+  })
+
   // @testCase TC-REG-1
   it('переключает представление без доменной мутации', () => {
     const change = vi.fn()

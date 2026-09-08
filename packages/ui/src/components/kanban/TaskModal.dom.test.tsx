@@ -631,17 +631,15 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     setMobile(true)
     render(<TaskModal {...props({ onUpdate, onOpenChat })} />)
 
-    // В шапке из подписанных кнопок — только ⋯ и закрытие. Проверяем именно
-    // шапку: чат теперь есть и в секции «Активность» на вкладке «Общее».
+    // В шапке из подписанных кнопок — только ⋯ и закрытие; вход в чат — вкладка.
     const head = document.querySelector('.mdhead') as HTMLElement
     expect(within(head).queryByLabelText('Удалить задачу')).not.toBeInTheDocument()
     expect(within(head).queryByRole('button', { name: /Открыть чат|Создать чат/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('Действия с задачей'))
-    fireEvent.click(within(document.querySelector('.jmodal-menu') as HTMLElement).getByRole('button', { name: /Создать чат/ }))
-    expect(onOpenChat).toHaveBeenCalledWith('t1')
+    expect(within(document.querySelector('.jmodal-menu') as HTMLElement).queryByRole('button', { name: /Открыть чат|Создать чат/ })).not.toBeInTheDocument()
+    expect(onOpenChat).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByLabelText('Действия с задачей'))
     fireEvent.click(screen.getByRole('button', { name: /Флаг/ }))
     expect(onUpdate).toHaveBeenCalledWith('t1', { flagged: true })
     // Пункт выбран — меню закрылось.
@@ -810,7 +808,7 @@ describe('TaskModal — вкладки и merge', () => {
     render(<TaskModal {...props()} />)
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
+      'Общее', 'AI-чат', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
     ])
   })
 
@@ -837,6 +835,8 @@ describe('TaskModal — вкладки и merge', () => {
 
     screen.getByRole('tab', { name: 'Общее' }).focus()
     await userEvent.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'AI-чат' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{ArrowRight}')
     expect(timeline).toHaveAttribute('aria-selected', 'true')
     await userEvent.keyboard('{End}')
     expect(screen.getByRole('tab', { name: 'Лента рана' })).toHaveAttribute('aria-selected', 'true')
@@ -860,21 +860,21 @@ describe('TaskModal — вкладки и merge', () => {
     const preparationBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Подготовка', semanticType: 'preparation' }] }
     const { unmount } = render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationRunId: 'prep-1' }) })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Активность', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
+      'Общее', 'AI-чат', 'Временная шкала', 'Активность', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
     ])
     unmount()
 
     const manualQaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
     render(<TaskModal {...props({ board: manualQaBoard })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения', 'Улучшения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
+      'Общее', 'AI-чат', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения', 'Улучшения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Код', 'Merge', 'Лента рана'
     ])
   })
 
   it('переключает вкладки без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
-    expect(screen.getAllByRole('tab')).toHaveLength(10)
+    expect(screen.getAllByRole('tab')).toHaveLength(11)
     fireEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
@@ -1597,7 +1597,7 @@ describe('TaskModal — вкладки по возможностям типа п
 
   it('без возможностей типа остаются только вкладки, не зависящие от подсистем', () => {
     render(<TaskModal {...props({ projectFeatures: NO_PROJECT_FEATURES })} />)
-    expect(tabNames()).toEqual(['Общее', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения'])
+    expect(tabNames()).toEqual(['Общее', 'AI-чат', 'Временная шкала', 'Активность', 'Настройки', 'Ход выполнения'])
   })
 
   it('с полным набором возвращаются CI, QA и merge', () => {
@@ -1641,57 +1641,51 @@ describe('TaskModal — создание чата задачи', () => {
 describe('TaskModal — встроенный AI-чат', () => {
   const message = (id: string, role: 'u1' | 'ai', text: string) => ({ id, conversationId: 'chat-1', role, text, time: '10:00', createdAt: 1 }) as never
 
-  // @testCase TC-UI-1
-  it('открывает историю в карточке, отправляет сообщение и показывает сохранённый ответ', async () => {
+  // @testCase TC-UI-CHAT-LEGACY
+  it('открывает AI-чат только вкладкой и не показывает прежние входы', async () => {
+    render(<TaskModal {...props({ onOpenChat: vi.fn() })} />)
+    expect(screen.getByRole('tab', { name: 'AI-чат' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Открыть (AI-)?чат/ })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'AI-чат' }))
+    expect(await screen.findByTestId('task-chat-surface')).toBeInTheDocument()
+  })
+
+  // @testCase TC-INTEGRATION-TASK-CHAT
+  it('изолирует task-scoped историю, стриминг и повтор', async () => {
     const originalApi = window.api
     const originalClaude = window.claude
     let done: ((event: { conversationId: string; text: string; message?: import('@shared/types').Message }) => void) | undefined
-    const send = vi.fn()
-    window.api = { ...originalApi,
-      'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)),
-      'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [message('old', 'ai', 'Сохранённый ответ')] })) as never,
-      'messages:add': vi.fn(async () => message('new', 'u1', 'Новый вопрос'))
-    }
-    window.claude = { ...originalClaude, send, onDone: (cb) => { done = cb; return () => {} }, onError: () => () => {} }
-    render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-чат' }))
-    expect(await screen.findByText('Сохранённый ответ')).toBeInTheDocument()
-    await userEvent.type(screen.getByRole('textbox', { name: 'Сообщение ассистенту' }), 'Новый вопрос')
-    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'chat-1', messageId: 'new' }))
-    act(() => done?.({ conversationId: 'chat-1', text: 'Ответ AI', message: message('answer', 'ai', 'Ответ AI') as never }))
-    expect(await screen.findByText('Ответ AI')).toBeInTheDocument()
-    window.api = originalApi; window.claude = originalClaude
-  })
-
-  // @testCase TC-UI-2
-  it('после ошибки сохраняет черновик и повторно отправляет его', async () => {
-    const originalApi = window.api
-    const originalClaude = window.claude
     let failed: ((event: { conversationId: string; message: string }) => void) | undefined
     const send = vi.fn()
-    window.api = { ...originalApi, 'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)), 'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [] })) as never, 'messages:add': vi.fn(async () => message('new', 'u1', 'Повтори')) }
-    window.claude = { ...originalClaude, send, onDone: () => () => {}, onError: (cb) => { failed = cb; return () => {} } }
+    const open = vi.fn(async () => ({ id: 'chat-1' } as never))
+    window.api = { ...originalApi, 'tasks:openChat': open, 'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [message('old', 'ai', 'Сохранённый ответ')] })) as never, 'messages:add': vi.fn(async () => message('new', 'u1', 'Повтори')) }
+    window.claude = { ...originalClaude, send, onDone: (cb) => { done = cb; return () => {} }, onError: (cb) => { failed = cb; return () => {} } }
     render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-чат' }))
-    await userEvent.type(await screen.findByRole('textbox', { name: 'Сообщение ассистенту' }), 'Повтори')
-    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
-    await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    await userEvent.click(screen.getByRole('tab', { name: 'AI-чат' }))
+    expect(await screen.findByText('Сохранённый ответ')).toBeInTheDocument()
+    expect(open).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1' })
+    await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'Повтори')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }))
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'chat-1', messageId: 'new' }))
+    act(() => done?.({ conversationId: 'other', text: 'Чужой', message: message('other', 'ai', 'Чужой') as never }))
+    expect(screen.queryByText('Чужой')).not.toBeInTheDocument()
     act(() => failed?.({ conversationId: 'chat-1', message: 'AI временно недоступен' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('AI временно недоступен')
-    expect(screen.getByRole('textbox', { name: 'Сообщение ассистенту' })).toHaveValue('Повтори')
     await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
     await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
     window.api = originalApi; window.claude = originalClaude
   })
 
-  // @testCase TC-REG-1
-  it('не мешает редактированию карточки при открытом чате', async () => {
-    const onUpdate = vi.fn()
-    render(<TaskModal {...props({ onUpdate })} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-чат' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Заголовок задачи' }), { target: { value: 'Новое имя' } })
-    fireEvent.blur(screen.getByRole('textbox', { name: 'Заголовок задачи' }))
-    expect(onUpdate).toHaveBeenCalledWith('t1', { title: 'Новое имя' })
+  // @testCase TC-NEG-CHAT-ACCESS
+  it('показывает ошибку загрузки и позволяет повторить', async () => {
+    const originalApi = window.api
+    const open = vi.fn(async () => { throw new Error('Чат задачи недоступен') })
+    window.api = { ...originalApi, 'tasks:openChat': open }
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'AI-чат' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Чат задачи недоступен')
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(2))
+    window.api = originalApi
   })
 })
