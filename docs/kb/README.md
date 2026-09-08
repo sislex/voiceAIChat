@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 60 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 72 коммит(ов) в areas после сверки: 41ee78ca Merge main into CHAT-429 (task 4af2c395-ce53-461c-b2a7-e38d17cd4716) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 59 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1265 коммит(ов) в areas после сверки: 0d1c7312 docs(kb): update after merge 98f035cf-3cdc-44b2-913f-26b2d7475f7c … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1266 коммит(ов) в areas после сверки: 5ef8414d docs(kb): прод переведён на Postgres 2026-09-08 — как делался перенос, откат, наблюдения … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 33 коммит(ов) в areas после сверки: 41ee78ca Merge main into CHAT-429 (task 4af2c395-ce53-461c-b2a7-e38d17cd4716) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 77 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 40 коммит(ов) в areas после сверки: 0aea426b fix(projects): черновики доработок читают вложения через порт с await … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-08 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 140 коммит(ов) в areas после сверки: 6ec7e2b1 feat(distributed): процессы на разных хостах — вложения и превью канбана через порт, полный буфер PTY по RPC, runbook … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: b3aba1c8 fix(image-studio): закрытие лайтбокса больше не отскакивает |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
