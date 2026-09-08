@@ -73,6 +73,12 @@ function broker(): { register: (t: string, e: unknown) => void; unregister: (t: 
   return { register: (t) => live.add(t), unregister: (t) => live.delete(t), live: () => [...live] }
 }
 
+/** Подписанные токены превью: в тесте запоминаем, кому выдан токен. */
+function previewTokens(): { issue: (e: { userId: string; conversationId: string }) => string; entries: Array<{ userId: string; conversationId: string }> } {
+  const entries: Array<{ userId: string; conversationId: string }> = []
+  return { issue: (e) => { entries.push(e); return `signed-${entries.length}` }, entries }
+}
+
 let db: VoiceChatDb
 beforeEach(async () => {
   let id = 0
@@ -183,7 +189,7 @@ describe('работа модели: браузерная проверка за�
   it('без режима проверки инструментов браузера у хода нет', async () => {
     const { ctx } = await setup()
     const rec = recorder()
-    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTurns: previewTokens() }).modelWork(ctx)
     expect(rec.last()?.previewMcpUrl).toBeUndefined()
     expect(rec.last()?.previewSurface).toBeUndefined()
   })
@@ -192,19 +198,19 @@ describe('работа модели: браузерная проверка за�
     const { task, ctx } = await setup()
     await db.ci.setTaskBrowserCheck(task.id, { mode: 'chromium', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
-    const tokens = broker()
-    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: tokens }).modelWork(ctx)
+    const tokens = previewTokens()
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tokens }).modelWork(ctx)
     expect(rec.last()?.previewMcpUrl).toContain(`${PREVIEW_MCP}&turn=`)
     expect(rec.last()?.previewSurface).toBe('chromium')
-    // Токен адресует ход и после него жить не должен.
-    expect(tokens.live()).toEqual([])
+    // Токен адресует ход рана: владелец рана и чат задачи.
+    expect(tokens.entries).toEqual([{ userId: U, conversationId: ctx.run.conversationId }])
   })
 
   it('режим user_panel оставляет поверхностью панель пользователя', async () => {
     const { task, ctx } = await setup()
     await db.ci.setTaskBrowserCheck(task.id, { mode: 'user_panel', devServerPort: 5173, startPath: '/' })
     const rec = recorder()
-    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTurns: previewTokens() }).modelWork(ctx)
     expect(rec.last()?.previewSurface).toBe('panel')
   })
 
@@ -224,7 +230,7 @@ describe('работа модели: браузерная проверка за�
       runCommandById: async () => ({ exitCode: 0, timedOut: false, output: '' })
     } as unknown as CiModelContext
     const rec = recorder()
-    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTool: broker() }).modelWork(ctx)
+    await hooksWith(rec.client, { previewMcpBaseUrl: PREVIEW_MCP, previewTurns: previewTokens() }).modelWork(ctx)
     expect(rec.last()?.previewMcpUrl).toBeUndefined()
   })
 })

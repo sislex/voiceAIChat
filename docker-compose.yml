@@ -66,6 +66,10 @@ services:
       # Админка отдельным процессом (docs/plans/machines-service.md, круг 3): VC_ADMIN_MODE=remote + `--profile admin`.
       VC_ADMIN_MODE: ${VC_ADMIN_MODE:-embedded}
       VC_ADMIN_URL: http://admin:8794
+      # Web Reader отдельным процессом (docs/plans/web-reader-service.md): VC_READER_MODE=remote + `--profile reader`.
+      VC_READER_MODE: ${VC_READER_MODE:-embedded}
+      VC_READER_URL: http://reader:8795
+      VC_READER_MCP_PUBLIC_BASE: http://reader:8795
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       # Метаданные релиза: номер приходит от публикации или строгого Git-тега;
@@ -195,6 +199,10 @@ services:
       # MCP ядра (машины, KB, превью) глазами исполнителя — адрес ядра; MCP канбана и CI-команд — этот процесс.
       VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
       VC_KANBAN_MCP_PUBLIC_BASE: http://kanban:8789
+      # MCP «browser» ходов рана: при вынесенном ридере — его адрес (те же переменные, что у ядра).
+      VC_READER_MODE: ${VC_READER_MODE:-embedded}
+      VC_READER_URL: http://reader:8795
+      VC_READER_MCP_PUBLIC_BASE: http://reader:8795
       VC_MAKE_URL: http://make:8788
       VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
       VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
@@ -276,6 +284,44 @@ services:
       - vc-data:/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8794/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Web Reader (прокси превью `/api/preview*`, MCP «browser» `/mcp/preview`, действия в изолированном Chromium)
+  # отдельным процессом на той же базе Postgres (docs/plans/web-reader-service.md). Профиль `reader`, у ядра
+  # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
+  # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
+  reader:
+    build:
+      context: .
+      target: reader-runtime
+    image: voicechat-reader
+    profiles: ["reader"]
+    mem_limit: 512m
+    depends_on:
+      - browser-runner
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8795"
+      VC_DATA_DIR: /data
+      VC_CORE_URL: http://voicechat:8787
+      # Задать VC_MACHINES_URL=http://machines:8793, если машины тоже вынесены; пусто — машины у ядра.
+      VC_MACHINES_URL: ${VC_READER_MACHINES_URL:-}
+      VC_DB_URL: ${VC_DB_URL:-}
+      VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
+      VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
+      # Публичная база ядра: по ней Chromium раннера открывает `/api/preview` (ядро проксирует сюда),
+      # чтобы SSRF-гейт раннера (VC_BROWSER_PREVIEW_ORIGIN) не пришлось перенастраивать.
+      VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
+      VC_BROWSER_PREVIEW_BASE: ${VC_BROWSER_PREVIEW_BASE:-http://voicechat:8787}
+      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
+      VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
+      VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8795/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 3

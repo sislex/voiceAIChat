@@ -22,7 +22,7 @@ const CLUSTER_FILES = ['routes/projects.ts', 'routes/ci.ts', 'routes/qa.ts', 'ro
  * базой, они переедут вместе с кластером или встанут за порт `core.kb` в круге 3; `users/auth` —
  * разбор пользователя из запроса, в отдельном процессе его даст whoami ядра.
  */
-const ALLOWED_VALUE_IMPORTS = ['db/database.ts', 'kb/access.ts', 'kb/autoContext.ts', 'kb/kbMcp.ts', 'kb/routes.ts', 'kb/taskQuery.ts', 'llm/remoteClient.ts', 'manifests.ts', 'mcp/previewMcp.ts', 'users/auth.ts']
+const ALLOWED_VALUE_IMPORTS = ['db/database.ts', 'kb/access.ts', 'kb/autoContext.ts', 'kb/kbMcp.ts', 'kb/routes.ts', 'kb/taskQuery.ts', 'llm/remoteClient.ts', 'manifests.ts', 'reader/turnToken.ts', 'users/auth.ts']
 /** Состояние процесса ядра — только через `KanbanCore`, даже типами (кроме самого порта). */
 const FORBIDDEN_TYPE_IMPORTS = ['agents/registry.ts', 'mcp/widgetContext.ts', 'mcp/widgetUiRelay.ts', 'frameHub.ts', 'server.ts', 'session.ts', 'turns.ts']
 

@@ -24,6 +24,24 @@ export const releaseStepLimit = (kind: ReleaseStepKind, limits: ReleaseTimeouts)
 
 export interface ReleaseBranch { branch: string; version: string; sha: string }
 
+/** Разрешённая текущему пользователю машина для подготовки release-ветки. */
+export interface ReleaseMachine {
+  agentId: string
+  name: string
+  ownership: 'mine' | 'project'
+  access: 'owner' | 'full' | 'read'
+  online: boolean
+  path: string
+  reposRoot: string
+  eligible: boolean
+  unavailableReason: string | null
+}
+
+export interface ReleaseMachineCatalog {
+  machines: ReleaseMachine[]
+  lastAgentId: string | null
+}
+
 export interface ManagedPreflightResult {
   ok: boolean
   environment: 'production' | 'staging'

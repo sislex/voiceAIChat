@@ -6868,11 +6868,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Отдельная страница Web Reader: на обычном чате браузерной панели нет. */
 .chat-page { grid-column: 2; min-width: 0; min-height: 0; height: 100%; }
 .app--web-reader, .app--playwright-reader, .app--console-reader, .app--make, .app--image-studio { height: 100%; }
-.app--web-reader, .app--playwright-reader { grid-template-columns: minmax(0, 1fr); }
-.app--console-reader, .app--make, .app--image-studio { grid-template-columns: var(--sidebar-width, 264px) minmax(0, 1fr); }
-.app--sidebar-collapsed.app--console-reader, .app--sidebar-collapsed.app--make, .app--sidebar-collapsed.app--image-studio { grid-template-columns: 0 minmax(0, 1fr); }
-.app--web-reader > .chat-split, .app--playwright-reader > .chat-split { grid-column: 1; }
-.app--console-reader > .chat-split, .app--make > .chat-split, .app--image-studio > .chat-split { grid-column: 2; }
+/* В студии Sidebar не монтируется: его сохранённое состояние не должно
+   оставлять пустую колонку ни на десктопе, ни при переключении мобильных вкладок. */
+.app--web-reader, .app--playwright-reader, .app--image-studio, .app--sidebar-collapsed.app--image-studio { grid-template-columns: minmax(0, 1fr); }
+.app--console-reader, .app--make { grid-template-columns: var(--sidebar-width, 264px) minmax(0, 1fr); }
+.app--sidebar-collapsed.app--console-reader, .app--sidebar-collapsed.app--make { grid-template-columns: 0 minmax(0, 1fr); }
+.app--web-reader > .chat-split, .app--playwright-reader > .chat-split, .app--image-studio > .chat-split { grid-column: 1; }
+.app--console-reader > .chat-split, .app--make > .chat-split { grid-column: 2; }
 .playwright-reader-selector > strong, .workshop-selector > strong { white-space: nowrap; }
 .playwright-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .playwright-reader-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
@@ -6942,7 +6944,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .workshop-split {
   position: relative;
   display: grid;
-  grid-template-columns: var(--workshop-chat-width, 42%) 12px minmax(320px, 1fr);
+  /* Ограничение нужно самой колонке, а не только её содержимому: после
+     resize окна сохранённый процент иначе уводит шапку чата за разделитель. */
+  grid-template-columns: clamp(360px, var(--workshop-chat-width, 42%), calc(100% - 332px)) 12px minmax(320px, 1fr);
   grid-template-rows: auto 1fr;
   background: var(--bg);
 }

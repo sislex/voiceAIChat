@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-08
-checked: c310aba9
+checked: 6b0928c2
 areas:
   - apps/server/src
 ---
@@ -112,8 +112,8 @@ slug — транслит имени (`librarySlug`). `GET/POST /api/make/:id/sh
 
 ## Прокси веб-превью
 
-`registerPreviewProxy()` подключается из `server.ts` после основной REST-поверхности
-и обслуживает защищённый `/api/preview` — маршрут зарегистрирован как `all`, то есть
+`registerPreviewProxy()` подключается из модуля Web Reader (`reader/module.ts`, см. раздел
+«Web Reader» ниже) и обслуживает защищённый `/api/preview` — маршрут зарегистрирован как `all`, то есть
 обслуживает любой метод, а не только GET первичной загрузки страницы. Реализация в
 `routes/previewProxy.ts` принимает только HTTP/HTTPS и не позволяет превью стать
 SSRF-мостом: до запроса и в DNS-lookup все адреса имени должны быть публичными;
@@ -343,6 +343,37 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 общий с Make — `@voicechat/shared` (`internalRpc.ts`). Интеграционный тест границы —
 `kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
 идут через `UserFrameHub`.
+
+## Web Reader: модуль `reader/module.ts` и порт `ReaderCore` (2026-09-08)
+
+Прокси превью (`routes/previewProxy.ts`: `/api/preview`, `/api/preview/reset-cookies`, `/api/preview/diagnostics`)
+и MCP «browser» (`mcp/previewMcp.ts`: `/mcp/preview`, инструменты `mcp__browser__*`) вместе с контекстом
+изолированного Chromium (`browserExecutor`/`browserScreenshot`, машина разговора, тестовые пользователи, окружения,
+политика `evaluate`) собираются одной функцией `createReaderModule(deps)` (`apps/server/src/reader/module.ts`).
+Состояние процесса ядра ридер берёт портом `ReaderCore` (`reader/core.ts`): `previewAction` (relay действий в
+WS-клиенты пользователя — сокеты живут у ядра), `issuePreviewRunKey` (ключ Chromium к прокси превью; проверяет его
+авторизация ядра в `previewRunUser`), `listPreviews` (feature-preview канбана) и `logBrowserShot` (кадр проверки —
+файл в `dataDir/ci-browser-shots` ядра и строка в ленту рана). Остальное — из базы (`db.chat`, `db.projects`,
+`db.ci`, `canUseAgentForPreview`) и машин (`isOnline`, `http` порта `MachinesService`). Встроенная реализация порта —
+`readerBridge/localCore.ts`; снимок ключей `ReaderDeps` держит `reader/boundary.test.ts`. Ядру от ридера не нужно
+ничего, кроме адреса MCP превью для ходов — порта `ReaderService` нет.
+
+**Токены ходов превью подписаны** (`reader/turnToken.ts`, `createPreviewTurnTokens(mcpSecret)`): `?turn=` — это
+`base64url({u, c, e}).HMAC-SHA256`, живёт сутки и проверяется в любом процессе без состояния. Раньше это был
+in-memory брокер ядра, и ход CI из отдельного процесса канбана регистрировал токен там, где `/mcp/preview` его
+не видел. `turns.ts` и `ci/modelHooks.ts` только выдают токен (`previewTurns.issue`), снимать нечего; без
+`?k=<секрет>` токен бесполезен.
+
+**Отдельный процесс** (`VC_READER_MODE=remote` + `VC_READER_URL`, опционально `VC_READER_MCP_PUBLIC_BASE`):
+`reader/standalone/server.ts` (`buildReaderServer`) — тот же модуль на общей базе Postgres, авторизация
+пересылкой в ядро (`internal/forwardedAuth.ts`: cookie превью и ключ Chromium разбирает ядро в `whoami`), машины —
+`HttpMachines` к `VC_MACHINES_URL` или к ядру, порт ядра — `HttpReaderCore` по RPC `/internal/reader/core`
+(контракт `reader/internal.ts`, тело до 16 МБ ради кадра PNG). Ядро в `remote` регистрирует прокси
+`readerBridge/proxy.ts` (`/api/preview`, `/api/preview/*`, `/mcp/preview`; роуты Make `/api/preview/make*`
+конкретнее и выигрывают — `readerBridge/proxy.test.ts`), а `previewMcpBaseUrl` ходов ядра и процесса канбана
+считает общий helper `reader/mcpBase.ts` (адрес ридера). Cookie-контейнер превью — память процесса ридера.
+Точка входа `reader/standalone/index.ts` (порт 8795), образ `reader-runtime`, compose-профиль `reader`.
+Интеграционный тест — `reader/standalone/readerRemote.integration.test.ts`.
 
 ## Машины: модуль `machines/module.ts` и порт `MachinesService` (2026-09-07)
 
