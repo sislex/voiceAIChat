@@ -13,7 +13,7 @@ export function loadPlaywrightReaderConfig(env: NodeJS.ProcessEnv = process.env)
   const coreUrl = env.VC_CORE_URL ?? 'http://127.0.0.1:8787'
   return {
     host: env.HOST ?? '127.0.0.1',
-    port: Number(env.PORT ?? 8796),
+    port: Number(env.PORT ?? 8797),
     coreUrl,
     internalToken: env.VC_INTERNAL_TOKEN ?? '',
     runnerUrl: env.VC_BROWSER_RUNNER_URL,

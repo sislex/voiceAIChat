@@ -75,9 +75,10 @@ import { registerServiceProxy } from './makeBridge/proxy.js'
 import type { MachinesService } from './machines/service.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
-import { ImageStudioStore } from './images/studio.js'
-import { registerImageStudioRoutes } from './routes/imageStudio.js'
-import { llmImageStudioGenerator } from './llm/imageStudioGenerator.js'
+import { createImageStudioModule } from '@voicechat/image-studio'
+import { LocalImageStudioCore } from './imageStudioBridge/localCore.js'
+import { createRemoteImageStudio } from './imageStudioBridge/remote.js'
+import { registerImageStudioProxy } from './imageStudioBridge/proxy.js'
 
 import { KANBAN_MCP_PATH } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
@@ -606,24 +607,24 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // порт `KanbanCore.widgets`; сам MCP канбана регистрирует кластер.
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
-  // Студия картинок: галерея на разговор + генерация/правка через LLM — тем же
-  // способом, что ретушь (модель сохраняет PNG и показывает fenced-блоком).
-  const imageStudioStore = new ImageStudioStore(join(opts.config.dataDir, 'image-studio'))
-  registerImageStudioRoutes(app, {
-    db,
-    store: imageStudioStore,
-    generator: async (userId) => llmImageStudioGenerator({
-      client: codex,
-      userId,
-      model: (await db.settings.getSettings(userId)).codexModel,
-      cwd: profileHome(userId),
-      readGenerated: async (path) => {
-        if (runnerFs) return runnerFs.readFile(userId, path)
-        const local = readUserFile(path, [profileHome(userId)])
-        return local.ok ? local.file : null
-      }
-    })
+  const imageStudioCore = new LocalImageStudioCore({
+    db, client: codex, profileHome,
+    readGenerated: async (userId, path) => {
+      if (runnerFs) return runnerFs.readFile(userId, path)
+      const local = readUserFile(path, [profileHome(userId)])
+      return local.ok ? local.file : null
+    }
   })
+  const imageStudioRemote = opts.config.imageStudioMode === 'remote'
+  if (imageStudioRemote && !(opts.config.imageStudioUrl && opts.config.internalToken)) {
+    throw new Error('VC_IMAGE_STUDIO_MODE=remote требует VC_IMAGE_STUDIO_URL и VC_INTERNAL_TOKEN')
+  }
+  // В remote ядро не открывает файлы галерей: единственный владелец — процесс студии.
+  const imageStudio = imageStudioRemote
+    ? { service: createRemoteImageStudio({ studioUrl: opts.config.imageStudioUrl!, token: opts.config.internalToken! }) }
+    : createImageStudioModule({ dataDir: opts.config.dataDir, core: imageStudioCore })
+  if ('register' in imageStudio) imageStudio.register(app)
+  if (imageStudioRemote) registerImageStudioProxy(app, { studioUrl: opts.config.imageStudioUrl! })
 
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
@@ -1067,33 +1068,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     ensureChatStorage,
     ensureProjectMainCurrent,
-    // Студия картинок: изображения из ответа складываются в галерею разговора.
-    studioContext: async (conversationId) => {
-      const files = await imageStudioStore.list(conversationId)
-      const listing = files.slice(0, 30).map((file) => `- ${file.path}${file.prompt ? ` (промпт: ${file.prompt.slice(0, 80)})` : ''}`).join('\n')
-      return [
-        '## Студия картинок',
-        'Это чат студии картинок: пользователь собирает галерею изображений этого разговора.',
-        'Когда рисуешь или правишь картинку — сохрани файл и обязательно покажи его штатным fenced-блоком image с абсолютным путём: только так он попадает в галерею.',
-        listing ? `Сейчас в галерее:\n${listing}` : 'Галерея пока пуста.'
-      ].join('\n')
-    },
-    captureStudioImages: async (userId, conversationId, finalText) => {
-      const { parseImages } = await import('@voicechat/shared')
-      for (const image of parseImages(finalText).images.slice(0, 10)) {
-        try {
-          const file = await (runnerFs ? runnerFs.readFile(userId, image.path) : Promise.resolve(readUserFile(image.path, [profileHome(userId)])).then((r) => r.ok ? r.file : null))
-          if (!file?.dataBase64) continue
-          const original = image.path.split('/').pop() ?? 'изображение.png'
-          // Технические имена ранов («exec-<uuid>.png») в галерее нечитаемы.
-          const readable = /^exec-[0-9a-f-]{20,}\./i.test(original) ? `из-чата${original.slice(original.lastIndexOf('.'))}` : original
-          const name = await imageStudioStore.freeName(conversationId, readable)
-          await imageStudioStore.writeBuffer(conversationId, name, Buffer.from(file.dataBase64, 'base64'))
-        } catch {
-          // не-картинка, квота или чтение не удалось — ход это не ломает
-        }
-      }
-    },
+    studioContext: (conversationId) => imageStudio.service.promptContext(conversationId),
+    captureStudioImages: (userId, conversationId, finalText) => imageStudio.service.captureImages(userId, conversationId, finalText),
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = await db.settings.getSettings(userId)
@@ -1170,7 +1146,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
   if (opts.config.internalToken) {
     registerInternalRoutes(app, {
-      token: opts.config.internalToken, makeCore, authenticate,
+      token: opts.config.internalToken, makeCore, authenticate, imageStudio: imageStudioCore,
       ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
       admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
       reader: readerCore,

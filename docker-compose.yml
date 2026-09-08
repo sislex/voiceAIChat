@@ -33,6 +33,7 @@ services:
     depends_on:
       - make
       - playwright-reader
+      - image-studio
       - runner-work
       - runner-personal
       - tts-runner
@@ -51,9 +52,11 @@ services:
       # профиле `postgres` ниже) и перенеси данные: docs/kb/data-auth.md#схема.
       # Пусто — SQLite в /data/voicechat.db, как раньше.
       VC_DB_URL: ${VC_DB_URL:-}
+      VC_IMAGE_STUDIO_MODE: remote
+      VC_IMAGE_STUDIO_URL: http://image-studio:8796
       VC_MAKE_MODE: remote
       VC_PLAYWRIGHT_READER_MODE: remote
-      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8796
+      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
       VC_MAKE_URL: http://make:8788
       VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
       # Канбан отдельным процессом (docs/plans/kanban-service.md): по умолчанию кластер проектов/CI/QA
@@ -188,13 +191,37 @@ services:
       - browser-runner
     environment:
       HOST: 0.0.0.0
-      PORT: "8796"
+      PORT: "8797"
       VC_CORE_URL: http://voicechat:8787
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_BROWSER_PREVIEW_BASE: ${VC_BROWSER_PREVIEW_BASE:-http://voicechat:8787}
       VC_BROWSER_RUNNER_URL: http://browser-runner:8792
       VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8797/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
+  image-studio:
+    build:
+      context: .
+      target: image-studio-runtime
+    image: voicechat-image-studio
+    mem_limit: 512m
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8796"
+      VC_DATA_DIR: /data
+      VC_CORE_URL: http://voicechat:8787
+      VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
+      VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+    volumes:
+      - vc-data:/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8796/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
@@ -344,7 +371,7 @@ services:
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       VC_PLAYWRIGHT_READER_MODE: remote
-      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8796
+      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8795/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

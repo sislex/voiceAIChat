@@ -23,13 +23,13 @@ REST `/api/browser/:id/{start,command,screenshot}`, остановка сесс�
 
 ## Запуск
 
-`npm run -w @voicechat/playwright-reader start`: `PORT` (8796), `HOST` (127.0.0.1),
+`npm run -w @voicechat/playwright-reader start`: `PORT` (8797), `HOST` (127.0.0.1),
 `VC_CORE_URL`, `VC_INTERNAL_TOKEN`, `VC_BROWSER_RUNNER_URL` + `VC_BROWSER_RUNNER_TOKEN`,
 `VC_BROWSER_PREVIEW_BASE` (origin прокси глазами Chromium). У ядра —
 `VC_PLAYWRIGHT_READER_MODE=remote`, `VC_PLAYWRIGHT_READER_URL`; по умолчанию embedded.
 MCP-секрет нужен ядру/Web Reader, приложение использует только внутренний токен.
 
-Docker: сервис `playwright-reader`, стадия `playwright-reader-runtime`, порт 8796.
+Docker: сервис `playwright-reader`, стадия `playwright-reader-runtime`, порт 8797.
 Caddy отправляет `/api/browser/*` напрямую, ядро также проксирует эти пути.
 
 ## Проверки
