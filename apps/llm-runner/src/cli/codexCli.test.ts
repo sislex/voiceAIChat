@@ -32,15 +32,16 @@ const argsOf = (spawn: unknown): string[] =>
   (spawn as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
 
 describe('CodexCli', () => {
-  it('базовые args: prompt передаётся через stdin, argv заканчивается на -', async () => {
+  // @testCase TC-INT-1
+  it('передаёт gpt-6-astra без подмены; prompt идёт через stdin', async () => {
     const { child, stdin } = fakeChild()
     let input = ''
     stdin.on('data', (chunk) => (input += chunk.toString()))
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn
-    new CodexCli({ spawn }).send({ prompt: 'привет', sessionId: null, model: 'gpt-5-codex' }, makeHandlers())
+    new CodexCli({ spawn }).send({ prompt: 'привет', sessionId: null, model: 'gpt-6-astra' }, makeHandlers())
     const args = argsOf(spawn)
     expect(args.slice(0, 3)).toEqual(['exec', '--json', '--skip-git-repo-check'])
-    expect(args[args.indexOf('-m') + 1]).toBe('gpt-5-codex')
+    expect(args[args.indexOf('-m') + 1]).toBe('gpt-6-astra')
     expect(args[args.length - 1]).toBe('-')
     await tick()
     expect(input).toBe('привет')

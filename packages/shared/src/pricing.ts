@@ -16,43 +16,41 @@ interface ModelPrice {
 }
 
 /**
- * Прайс по подстроке в id/алиасе модели (первое совпадение), USD / 1M токенов;
- * при изменении цен правится только эта таблица.
- *
- * ПРОВЕРЕНО — цифры подобраны под фактическую цену, которую сообщил CLI
- * (`total_cost_usd`), по строкам `ci_run_usage` с непустой `cost_usd`. Сходимость
- * на 02.08.2026: opus — 26 ходов, сумма $88.71 против оценки $88.55 (0.2%),
- * худший отдельный ход 2.1% (это ход на $0.69, в абсолюте цент); fable — 3 хода,
- * $7.02 против $7.01, худший ход 0.6%. Одной таблицы для всех видов токенов
- * достаточно: подгонка по методу наименьших квадратов на тех же ходах даёт
- * выход 25.09, чтение кэша 0.4987, запись кэша 10.01 — то есть ровно строку ниже.
- *
- * Вход отдельным фактом не подтверждается: его в ходе CI-рана сотни токенов
- * против миллионов кэша, на цену он не влияет и из данных не восстанавливается.
- * Взят по тем же пропорциям, что подтвердились: чтение кэша = 1/10 входа,
- * запись = 2× вход.
- *
- * НЕПРОВЕРЕНО — sonnet, haiku и семейство GPT: ходов с настоящей ценой от CLI по
- * ним в `ci_run_usage` нет (codex своей цены не сообщает вовсе), подобрать не на
- * чем. Оставлены публичные ориентиры как были. Важно: у них запись кэша взята по
- * ПЯТИМИНУТНОМУ TTL (1.25× вход), тогда как у проверенных моделей фактом оказался
- * ЧАСОВОЙ (2× вход) — так что эти строки, скорее всего, занижают запись кэша
- * почти вдвое. Появятся ходы с ценой — пересчитать тем же способом.
+ * Claude сохраняет проверенное сопоставление по алиасам: его CLI сообщает
+ * фактическую стоимость. OpenAI/Codex ниже устроен иначе: только точные реальные
+ * modelId из официального справочника, чтобы неизвестная строка оставалась
+ * unpriced. Базовая категория без метаданных — Standard / short context.
  */
-const PRICES: { match: RegExp; price: ModelPrice }[] = [
-  // Fable 5 — проверено; ровно вдвое дороже opus по всем видам токенов.
+const CLAUDE_PRICES: { match: RegExp; price: ModelPrice }[] = [
   { match: /fable/i, price: { input: 10, output: 50, cacheRead: 1, cacheWrite: 20 } },
-  // Opus 5 — проверено. Запись кэша 10 = 2× вход, тариф ЧАСОВОГО TTL: развести
-  // TTL по счётчикам нельзя (CLI отдаёт один `cache_creation_input_tokens`, без
-  // разбивки `ephemeral_5m`/`ephemeral_1h`), а пятиминутный тариф (6.25) с фактом
-  // не сходится — на ходах, где запись кэша заметна, он занижает цену в полтора
-  // раза. Так что берётся часовой: он подтверждён фактом.
   { match: /opus/i, price: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 10 } },
   { match: /sonnet/i, price: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } },
-  { match: /haiku/i, price: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } },
-  // Codex/GPT — ориентиры семейства GPT-5; отдельного прайса на sol-варианты нет.
-  { match: /gpt|codex|o[0-9]/i, price: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 } }
+  { match: /haiku/i, price: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 } }
 ]
+
+/** Официальные OpenAI цены Standard; ключ — точный реальный modelId. */
+const OPENAI_PRICES: Record<string, { short: ModelPrice; long: ModelPrice }> = {
+  'gpt-6-astra': {
+    short: { input: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 },
+    long: { input: 20, cacheRead: 2, cacheWrite: 25, output: 75 }
+  },
+  'gpt-5.6-sol': {
+    short: { input: 4, cacheRead: 0.4, cacheWrite: 5, output: 20 },
+    long: { input: 8, cacheRead: 0.8, cacheWrite: 10, output: 30 }
+  },
+  'gpt-5.6-terra': {
+    short: { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 12 },
+    long: { input: 4, cacheRead: 0.4, cacheWrite: 5, output: 18 }
+  },
+  'gpt-5.6-luna': {
+    short: { input: 0.2, cacheRead: 0.02, cacheWrite: 0.25, output: 1.2 },
+    long: { input: 0.4, cacheRead: 0.04, cacheWrite: 0.5, output: 1.8 }
+  },
+  'gpt-5.5': { short: { input: 5, cacheRead: 0.5, cacheWrite: 0, output: 30 }, long: { input: 5, cacheRead: 0.5, cacheWrite: 0, output: 30 } },
+  'gpt-5.4': { short: { input: 2.5, cacheRead: 0.25, cacheWrite: 0, output: 15 }, long: { input: 2.5, cacheRead: 0.25, cacheWrite: 0, output: 15 } },
+  'gpt-5.4-mini': { short: { input: 0.75, cacheRead: 0.075, cacheWrite: 0, output: 4.5 }, long: { input: 0.75, cacheRead: 0.075, cacheWrite: 0, output: 4.5 } },
+  'gpt-5.3-codex-spark': { short: { input: 1.75, cacheRead: 0.175, cacheWrite: 0, output: 14 }, long: { input: 1.75, cacheRead: 0.175, cacheWrite: 0, output: 14 } }
+}
 
 /**
  * Модель хода осталась неизвестной: CLI её не назвал, и в настройке рана её тоже
@@ -69,12 +67,17 @@ export const UNKNOWN_MODEL = 'unknown'
  */
 export function estimateCostUsd(model: string | undefined, usage: TurnUsage): number | undefined {
   if (!model || model === UNKNOWN_MODEL) return undefined
-  const row = PRICES.find((p) => p.match.test(model))
-  if (!row) return undefined
-  const p = row.price
+  const openAi = OPENAI_PRICES[model]
+  // Специальный тариф допустим только при явных метаданных. Пока справочник
+  // публикует здесь Standard; неизвестный режим не подменяем Standard.
+  if (openAi && usage.pricingMode && usage.pricingMode !== 'standard') return undefined
+  const p = openAi?.[usage.contextTier ?? 'short'] ?? CLAUDE_PRICES.find((entry) => entry.match.test(model))?.price
+  if (!p) return undefined
+  const cacheRead = usage.cacheReadTokens ?? 0
+  // Здесь inputTokens уже обычный input: источники с inclusive-семантикой
+  // нормализуют его до вызова (ciUsageInputTokens / серверный usage report).
   const input = usage.inputTokens ?? 0
   const output = usage.outputTokens ?? 0
-  const cacheRead = usage.cacheReadTokens ?? 0
   const cacheWrite = usage.cacheCreationTokens ?? 0
   return (
     (input * p.input + output * p.output + cacheRead * p.cacheRead + cacheWrite * p.cacheWrite) /

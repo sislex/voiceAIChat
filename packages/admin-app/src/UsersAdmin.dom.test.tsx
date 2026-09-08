@@ -340,6 +340,32 @@ describe('UsersAdmin — служебные страницы', () => {
     })
   })
 
+  // @testCase TC-UI-3
+  it('страница цен показывает официальный Standard short/long и отсутствующие значения', () => {
+    renderAdmin({
+      route: { page: 'prices' },
+      modelPrices: [{
+        provider: 'codex', model: 'gpt-6-astra', inputPerMillion: 10,
+        cachedInputPerMillion: 1, cacheWritePerMillion: 12.5, outputPerMillion: 50,
+        sourceUrl: 'https://developers.openai.com/api/docs/pricing',
+        effectiveAt: 1785801600000, updatedAt: 1785801600000,
+        tiers: [
+          { mode: 'standard', context: 'long', inputPerMillion: 20, cachedInputPerMillion: 2, cacheWritePerMillion: 25, outputPerMillion: 75 },
+          { mode: 'flex', context: 'short', inputPerMillion: null, cachedInputPerMillion: null, cacheWritePerMillion: null, outputPerMillion: null }
+        ]
+      }]
+    })
+    const section = screen.getByTestId('model-prices-section')
+    expect(section).toHaveTextContent('USD за 1 млн токенов')
+    expect(section).toHaveTextContent('codex / gpt-6-astra')
+    expect(section).toHaveTextContent('Standard / short context')
+    expect(section).toHaveTextContent('Standard / long context')
+    expect(section).toHaveTextContent('Flex / short context')
+    expect(section).toHaveTextContent('12.5')
+    expect(within(section).getAllByText('—')).toHaveLength(4)
+    expect(within(section).getByRole('link', { name: 'источник' })).toHaveAttribute('href', 'https://developers.openai.com/api/docs/pricing')
+  })
+
   it('кнопки шапки ведут на страницы цен, движков и системы', async () => {
     const onNavigate = vi.fn()
     // Маршрут задан снаружи: клик по кнопке шапки не должен уводить сам себя
