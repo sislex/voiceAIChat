@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-09-07
-checked: 33a7972d
+updated: 2026-09-08
+checked: a7e8e5b4
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -17,12 +17,14 @@ areas:
   - apps/server/src/routes/rest.ts
   - apps/server/src/turns.ts
   - apps/server/src/preview
+  - apps/server/src/releases/targets.ts
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/manifests.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/migration.ts
   - packages/shared/src/protocol.ts
+  - packages/shared/src/release.ts
   - apps/server/src/storageMigration
   - packages/shared/src/version.ts
   - packages/ui/src/App.tsx
@@ -371,6 +373,8 @@ PTY и preview-туннели не ждут — там обрыв виден п�
 роуты проекта (`project:settings`), поэтому делиться машиной и менять уровень может владелец с правом на настройки
 проекта (обычно admin). Тесты — `rest.test.ts › доступ участников к машине проекта`, dom-тесты проводника, консоли и
 настроек машин.
+
+Release-каталог не вводит отдельную политику видимости машин: `releaseMachineCatalog` (`apps/server/src/releases/targets.ts`) получает кандидатов тем же `listUsableAgents(userId, projectId)`, который обслуживает общий каталог CHAT-177, и уточняет уровень через `machineAccess`. Для подготовки релиза `read` недостаточно; при принятии запроса сервер дополнительно вызывает `canWriteAgent`. Последний release-выбор хранится отдельно в `user_project_release_machines` по `(username, project_id)` и не участвует в `user_project_machine_defaults`, `execTarget` и разрешении машины чата.
 
 ## Групповая команда
 
