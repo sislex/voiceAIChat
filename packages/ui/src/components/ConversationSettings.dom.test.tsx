@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { ConversationSettings } from './ConversationSettings'
 import type { ProjectDetail, ProjectSummary } from '@shared/projects'
-import type { UserLlmAccess } from '@shared/llmAccess'
 import { makeAgent, makeConversation } from '../test/fixtures'
 import { contextLockReason, isContextToggleable } from '@shared/contextGating'
 import type { ConversationContextSnapshot } from '@shared/types'
@@ -100,7 +99,7 @@ describe('ConversationSettings', () => {
     await screen.findByText('/home/u/project')
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать эту папку' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], permissionMode: null, kbContextMode: 'auto', projectId: null }))
   })
 
   it('показывает кнопку самодиагностики чата и запускает её', async () => {
@@ -135,51 +134,14 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onAddSkill).toHaveBeenCalledWith('m1', { name: 'test', command: 'npm test' }))
   })
 
-  it('сохраняет движок и модель разговора', async () => {
+  // @testCase tc-regression-conversation-save
+  it('не показывает и не сохраняет LLM-поля разговора', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'codex' } })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Модель разговора' }), { target: { value: 'gpt-5.5' } })
+    expect(screen.queryByText('LLM')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Движок разговора' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Старое имя', execTarget: 'm1', workdir: null, skillNames: [], llmProvider: 'codex', llmModel: 'gpt-5.5', permissionMode: null, kbContextMode: 'auto', projectId: null }))
-  })
-
-  // Набор моделей задаёт персональный доступ (`llmAccess`), а не роль: запреты —
-  // это данные пользователя, и админ правит их в карточке на `#/users/:name`.
-  it('запреты доступа убирают opus/fable из выбора модели разговора', () => {
-    const denied: UserLlmAccess[] = [{ provider: 'claude', modelId: 'opus[1m]' }, { provider: 'claude', modelId: 'fable' }]
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" llmAccess={denied} settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'claude' } })
-    const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option')).map((o) => o.value)
-    expect(options).not.toContain('opus[1m]')
-    expect(options).not.toContain('fable')
-    expect(options).toEqual(['default', 'sonnet', 'haiku'])
-  })
-
-  it('без запретов роль user видит все модели: доступ решает llmAccess, а не роль', () => {
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Движок разговора' }), { target: { value: 'claude' } })
-    const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option')).map((o) => o.value)
-    expect(options).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
-  })
-
-  it('модели Claude в разговоре — то же меню, что в настройках', () => {
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    const options = Array.from(screen.getByRole('combobox', { name: 'Модель разговора' }).querySelectorAll('option'))
-    expect(options.map((o) => o.value)).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
-    expect(options.map((o) => o.textContent)).toEqual([
-      'Default (recommended)', 'Opus (1M context)', 'Fable', 'Sonnet', 'Haiku'
-    ])
-  })
-
-  it('в списке движков нет пункта «по умолчанию» — только движки, предвыбран глобальный', () => {
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    const engine = screen.getByRole('combobox', { name: 'Движок разговора' }) as HTMLSelectElement
-    const options = Array.from(engine.querySelectorAll('option')).map((o) => o.value)
-    expect(options).toEqual(['claude', 'codex'])
-    expect(engine.value).toBe('claude')
-    // Поле модели видно всегда и зависит от движка.
-    expect(screen.getByRole('combobox', { name: 'Модель разговора' })).toBeInTheDocument()
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.not.objectContaining({ llmProvider: expect.anything(), llmModel: expect.anything() })))
   })
 
   it('сохраняет режим прав разговора и показывает действующий режим', async () => {
