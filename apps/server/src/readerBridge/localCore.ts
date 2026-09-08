@@ -13,7 +13,7 @@ export interface LocalReaderCoreDeps {
   runKeys: Pick<PreviewRunKeys, 'issue'>
   /** Живые feature-preview: канбан ядра или его порт в режиме `remote`. */
   previews: () => Promise<PreviewEnvironment[]>
-  /** Корень кадров браузерной проверки (`routes/browser.ts` отдаёт их по ссылке из лога). */
+  /** Корень кадров браузерной проверки (`routes/browserShots.ts` отдаёт их по ссылке из лога). */
   shotsRoot: string
   publish: (message: ServerMessage, userId: string) => void
 }

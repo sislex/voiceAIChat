@@ -17,11 +17,9 @@ let port: number
 let dataDir: string
 
 beforeAll(async () => {
-  // Без VC_DATA_DIR тест открывал ~/.voicechat-server/voicechat.db пользователя
-  // и зависел от схемы другого checkout. Каждый сервер получает отдельную БД.
   dataDir = mkdtempSync(join(tmpdir(), 'vc-server-test-'))
   app = await buildServer({
-    config: loadConfig({ PORT: '0', VC_DATA_DIR: join(dataDir, 'server') }),
+    config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir }),
     // тестовый обработчик: эхо типа сообщения обратно клиенту
     createWsHandlers: () => ({
       onMessage: async (msg, ctx) => ctx.send({ t: 'stt.error', message: msg.t }),
@@ -138,8 +136,10 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
   let webApp: FastifyInstance
   let webDir: string
   let webRecorderDir: string
+  let webDataDir: string
 
   beforeAll(async () => {
+    webDataDir = mkdtempSync(join(tmpdir(), 'vc-web-data-'))
     webDir = mkdtempSync(join(tmpdir(), 'vc-web-'))
     writeFileSync(join(webDir, 'index.html'), '<!doctype html><title>voiceAIChat</title>')
     mkdirSync(join(webDir, 'assets'), { recursive: true })
@@ -150,13 +150,14 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
     writeFileSync(join(webRecorderDir, 'assets', 'recorder.js'), 'console.log(\'recorder\')')
     writeFileSync(join(webRecorderDir, 'assets', 'recorder.css'), '.webpreview{display:grid}')
     webApp = await buildServer({
-      config: { ...loadConfig({ PORT: '0', VC_DATA_DIR: join(dataDir, 'static-server') }), webDir, webRecorderDir },
+      config: { ...loadConfig({ PORT: '0', VC_DATA_DIR: webDataDir }), webDir, webRecorderDir },
       createWsHandlers: () => ({ onMessage: async () => {}, onBinary: async () => {} })
     })
   })
 
   afterAll(async () => {
     await webApp?.close()
+    if (webDataDir) rmSync(webDataDir, { recursive: true, force: true })
     rmSync(webDir, { recursive: true, force: true })
     rmSync(webRecorderDir, { recursive: true, force: true })
   })

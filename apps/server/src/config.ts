@@ -97,6 +97,9 @@ export interface ServerConfig {
   readerUrl?: string
   /** База `/mcp/preview` глазами исполнителя LLM в режиме `remote`; без неё — `readerUrl`. */
   readerMcpPublicBase?: string
+  /** Playwright Reader: REST Chromium и команды модели обслуживает приложение по адресу playwrightReaderUrl. */
+  playwrightReaderMode: 'embedded' | 'remote'
+  playwrightReaderUrl?: string
   /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
   coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
@@ -273,6 +276,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     readerMode: env.VC_READER_MODE === 'remote' ? 'remote' : 'embedded',
     readerUrl: env.VC_READER_URL,
     readerMcpPublicBase: env.VC_READER_MCP_PUBLIC_BASE,
+    playwrightReaderMode: env.VC_PLAYWRIGHT_READER_MODE === 'remote' ? 'remote' : 'embedded',
+    playwrightReaderUrl: env.VC_PLAYWRIGHT_READER_URL,
     coreUrl: env.VC_CORE_URL,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,

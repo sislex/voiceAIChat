@@ -20,6 +20,10 @@ https://{$VC_PUBLIC_HOST} {
 	handle /internal/* {
 		respond 404
 	}
+	@playwright_reader path /api/browser /api/browser/*
+	handle @playwright_reader {
+		reverse_proxy playwright-reader:8797
+	}
 	@make path /api/make /api/make/* /api/preview/make/* /api/preview/make-shared/* /p/* /s/*
 	handle @make {
 		reverse_proxy make:8788
@@ -49,6 +53,10 @@ https://caddy {
 	# их переправлять — для доступа портом 8787 без Caddy). Внутренний API сервисов наружу закрыт.
 	handle /internal/* {
 		respond 404
+	}
+	@playwright_reader path /api/browser /api/browser/*
+	handle @playwright_reader {
+		reverse_proxy playwright-reader:8797
 	}
 	@make path /api/make /api/make/* /api/preview/make/* /api/preview/make-shared/* /p/* /s/*
 	handle @make {

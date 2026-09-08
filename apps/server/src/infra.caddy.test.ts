@@ -48,4 +48,12 @@ describe('Caddyfile', () => {
     expect(compose).toMatch(/^  make:\n/m)
     expect(compose).toContain('VC_MAKE_MODE: remote')
   })
+
+  it('API Playwright Reader на обоих хостах идёт в отдельное приложение', () => {
+    expect(caddyfile.match(/reverse_proxy playwright-reader:8797/g)).toHaveLength(2)
+    expect(caddyfile.match(/@playwright_reader path \/api\/browser \/api\/browser\/\*/g)).toHaveLength(2)
+    expect(compose).toMatch(/^  playwright-reader:\n/m)
+    expect(compose).toContain('VC_PLAYWRIGHT_READER_MODE: remote')
+    expect(compose).toContain('VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797')
+  })
 })

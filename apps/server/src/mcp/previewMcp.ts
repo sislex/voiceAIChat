@@ -1,3 +1,4 @@
+import type { BrowserActionOutcome } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
 // пользователя (открыть URL, найти элемент, клик, ввод текста, структурированное
 // чтение DOM). Сама страница живёт в браузере пользователя, поэтому сервер не
@@ -185,20 +186,20 @@ export interface RegisterPreviewMcpOptions {
   /**
    * Исполнитель для разговоров Playwright Reader: их страница живёт в
    * изолированном Chromium сервера, а не в браузере пользователя, поэтому relay
-   * туда не достаёт. Возвращает `null`, если разговор не тот или раннер не
-   * настроен — тогда действие идёт прежним путём.
+   * туда не достаёт. Возвращает `null` только для разговоров без Chromium-цели;
+   * недоступность раннера возвращается ошибкой, без переключения в relay.
    */
-  browserExecutor?: (userId: string, conversationId: string, action: PreviewAction) => Promise<PreviewActionOutcome | null>
+  browserExecutor?: (userId: string, conversationId: string, action: PreviewAction) => Promise<BrowserActionOutcome | null>
   /**
    * Снимок из изолированного Chromium. Отдельно от `browserExecutor`, потому что
    * возвращает картинку `dataUrl`, а не структуру действия; `null` — «этот
    * разговор не про изолированный браузер, иди обычным путём».
    */
-  browserScreenshot?: (userId: string, conversationId: string, args: { selector?: string }) => Promise<PreviewActionOutcome | null>
+  browserScreenshot?: (userId: string, conversationId: string, args: { selector?: string }) => Promise<BrowserActionOutcome | null>
 }
 
 /** Ответ инструмента: результат действия сериализованным JSON либо ошибка. */
-function toolResult(outcome: PreviewActionOutcome): { content: Array<{ type: 'text'; text: string }>; isError?: boolean } {
+function toolResult(outcome: PreviewActionOutcome | BrowserActionOutcome): { content: Array<{ type: 'text'; text: string }>; isError?: boolean } {
   if (!outcome.ok) {
     return { content: [{ type: 'text', text: outcome.error ?? 'Действие в превью не выполнено.' }], isError: true }
   }

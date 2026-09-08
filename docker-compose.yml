@@ -32,6 +32,7 @@ services:
       - "8787:8787"
     depends_on:
       - make
+      - playwright-reader
       - image-studio
       - runner-work
       - runner-personal
@@ -54,6 +55,8 @@ services:
       VC_IMAGE_STUDIO_MODE: remote
       VC_IMAGE_STUDIO_URL: http://image-studio:8796
       VC_MAKE_MODE: remote
+      VC_PLAYWRIGHT_READER_MODE: remote
+      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
       VC_MAKE_URL: http://make:8788
       VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
       # Канбан отдельным процессом (docs/plans/kanban-service.md): по умолчанию кластер проектов/CI/QA
@@ -170,6 +173,33 @@ services:
       - vc-data:/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *default-logging
+    restart: unless-stopped
+
+  # Playwright Reader владеет REST-сессиями и действиями модели. БД и том ему не нужны:
+  # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
+  playwright-reader:
+    build:
+      context: .
+      target: playwright-reader-runtime
+    image: voicechat-playwright-reader
+    mem_limit: 256m
+    depends_on:
+      - browser-runner
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8797"
+      VC_CORE_URL: http://voicechat:8787
+      VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
+      VC_BROWSER_PREVIEW_BASE: ${VC_BROWSER_PREVIEW_BASE:-http://voicechat:8787}
+      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
+      VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
+      VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8797/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -329,7 +359,7 @@ services:
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
-      - browser-runner
+      - playwright-reader
     environment:
       HOST: 0.0.0.0
       PORT: "8795"
@@ -340,12 +370,8 @@ services:
       VC_DB_URL: ${VC_DB_URL:-}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
-      # Публичная база ядра: по ней Chromium раннера открывает `/api/preview` (ядро проксирует сюда),
-      # чтобы SSRF-гейт раннера (VC_BROWSER_PREVIEW_ORIGIN) не пришлось перенастраивать.
-      VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
-      VC_BROWSER_PREVIEW_BASE: ${VC_BROWSER_PREVIEW_BASE:-http://voicechat:8787}
-      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
-      VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
+      VC_PLAYWRIGHT_READER_MODE: remote
+      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8795/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

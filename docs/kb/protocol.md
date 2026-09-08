@@ -1,8 +1,11 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-09
-checked: eb4e281f
+checked: 41e07830
 areas:
+  - apps/playwright-reader
+  - apps/server/src/playwrightReaderBridge
+  - packages/shared/src/playwrightReader.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/agentProtocol.ts
@@ -162,6 +165,16 @@ Bearer-гейтом: `POST /api/browser/:id/start` (идемпотентно п�
 сконфигурированного browser-runner отвечают `501`, ошибки раннера пробрасываются
 статусами 404/409/503/502. Мост `window.browser` (`RendererBrowserBridge`) и
 серверная связка — [features/playwright-reader.md](features/playwright-reader.md).
+
+Эти REST-пути обслуживает `apps/playwright-reader`, встроенный в ядро или отдельный
+процесс. Во втором случае cookie/Bearer/CSRF проверяет ядро через `/internal/whoami`.
+Внутренний контракт в `packages/shared/src/playwrightReader.ts` задаёт
+`/internal/playwright-reader/core` (данные ядра) и `/internal/playwright-reader/service`
+(`execute`, `screenshot`). RPC закрыты общим `VC_INTERNAL_TOKEN`, методы ограничены
+списками контракта, тело — 16 МиБ для PNG. Сервисный RPC есть также у ядра: им
+пользуется отдельный Web Reader при встроенном Playwright Reader. Результат Chromium
+передаётся в `BrowserActionOutcome.result`, ошибка селектора остаётся ошибкой MCP;
+`null` возвращается только для разговора без Chromium-цели и включает обычный relay.
 
 `GET /api/search` (`REST.messagesSearch`) — полнотекстовый поиск по сообщениям:
 `q` (ввод пользователя, экранируется на сервере), `projectId` (`none` или пусто —
