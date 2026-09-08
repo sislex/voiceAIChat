@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS conversation_turn_control (
 
 -- Редактируемый прайс моделей: USD за 1M токенов. Начальные строки Codex/OpenAI
 -- зафиксированы по developers.openai.com/api/docs/pricing (Standard, short context,
--- 04.08.2026); INSERT OR IGNORE сохраняет будущие ручные обновления.
+-- 08.09.2026); INSERT OR IGNORE сохраняет будущие ручные обновления.
 CREATE TABLE IF NOT EXISTS model_prices (
   provider          TEXT NOT NULL,
   model             TEXT NOT NULL,
@@ -112,9 +112,10 @@ CREATE TABLE IF NOT EXISTS model_prices (
   PRIMARY KEY (provider, model)
 );
 INSERT OR IGNORE INTO model_prices VALUES
-  ('codex','gpt-5.6-sol',5.00,0.50,6.25,30.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.6-terra',2.00,0.20,2.50,12.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
-  ('codex','gpt-5.6-luna',0.20,0.02,0.25,1.20,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-6-astra',10.00,1.00,12.50,50.00,'https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.6-sol',4.00,0.40,5.00,20.00,'https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.6-terra',2.00,0.20,2.50,12.00,'https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
+  ('codex','gpt-5.6-luna',0.20,0.02,0.25,1.20,'https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
   ('codex','gpt-5.5',5.00,0.50,0,30.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
   ('codex','gpt-5.5-pro',30.00,0,0,180.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
   ('codex','gpt-5.4',2.50,0.25,0,15.00,'https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),

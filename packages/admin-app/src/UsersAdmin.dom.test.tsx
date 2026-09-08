@@ -3,7 +3,8 @@ import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
-import type { AdminLlmEngine, AdminUserInfo } from '@shared/admin'
+import type { AdminLlmEngine, AdminUserInfo, ModelPrice } from '@shared/admin'
+import { ModelPricesPage } from './pages/ModelPricesPage'
 
 const NOW = Date.now()
 
@@ -62,6 +63,40 @@ function renderAdmin(props: Partial<UsersAdminProps> = {}): UsersAdminProps {
 function renderUser(name: string, tab: 'overview' | 'access' | 'machines' | 'usage' | 'history' = 'overview', props: Partial<UsersAdminProps> = {}): UsersAdminProps {
   return renderAdmin({ selected: name, route: { page: 'users', userName: name, tab }, ...props })
 }
+
+// @testCase TC-UI-1
+describe('Component QA страницы тарифов OpenAI', () => {
+  it('показывает синхронизированные строки, четыре тарифа, источник, дату и действия', async () => {
+    const sourceUrl = 'https://developers.openai.com/api/docs/pricing'
+    const effectiveAt = 1_788_825_600_000
+    const modelPrices: ModelPrice[] = [
+      { provider: 'codex', model: 'gpt-6-astra', inputPerMillion: 10, cachedInputPerMillion: 1, cacheWritePerMillion: 12.5, outputPerMillion: 50, sourceUrl, effectiveAt, updatedAt: effectiveAt },
+      { provider: 'codex', model: 'gpt-5.6-sol', inputPerMillion: 4, cachedInputPerMillion: 0.4, cacheWritePerMillion: 5, outputPerMillion: 20, sourceUrl, effectiveAt, updatedAt: effectiveAt },
+      { provider: 'codex', model: 'gpt-5.6-terra', inputPerMillion: 2, cachedInputPerMillion: 0.2, cacheWritePerMillion: 2.5, outputPerMillion: 12, sourceUrl, effectiveAt, updatedAt: effectiveAt },
+      { provider: 'codex', model: 'gpt-5.6-luna-with-a-long-identifier-for-layout-qa', inputPerMillion: 0.2, cachedInputPerMillion: 0.02, cacheWritePerMillion: 0.25, outputPerMillion: 1.2, sourceUrl, effectiveAt, updatedAt: effectiveAt }
+    ]
+    const onDelete = vi.fn()
+    render(<ModelPricesPage modelPrices={modelPrices} onDeleteModelPrice={onDelete} />)
+
+    expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
+      'Провайдер / модель', 'Вход', 'Кэш', 'Запись кэша', 'Выход', 'Источник / дата', 'Действия'
+    ])
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(modelPrices.length)
+    modelPrices.forEach((price, index) => {
+      const row = within(rows[index]!)
+      expect(row.getByText(`codex / ${price.model}`)).toBeVisible()
+      expect(row.getByRole('link', { name: 'источник' })).toHaveAttribute('href', sourceUrl)
+      expect(row.getByRole('button', { name: 'Править' })).toBeVisible()
+      expect(row.getByRole('button', { name: 'Удалить' })).toBeVisible()
+      expect(within(rows[index]!).getAllByRole('cell').slice(1, 5).map((cell) => cell.textContent)).toEqual(
+        [price.inputPerMillion, price.cachedInputPerMillion, price.cacheWritePerMillion, price.outputPerMillion].map(String)
+      )
+    })
+    await userEvent.click(within(rows[0]!).getByRole('button', { name: 'Удалить' }))
+    expect(onDelete).toHaveBeenCalledWith('codex', 'gpt-6-astra')
+  })
+})
 
 describe('UsersAdmin — список и метрики', () => {
   it('метрики считают людей, активность и расход, список открывает карточку кликом', async () => {

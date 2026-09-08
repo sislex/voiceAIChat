@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VoiceChatDb, hashAgentToken } from './database'
+import { SCHEMA_SQL } from './schema'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
@@ -19,6 +20,52 @@ function makeDb(): VoiceChatDb {
     now: () => (clock += 10)
   })
 }
+
+const OPENAI_PRICE_SOURCE = 'https://developers.openai.com/api/docs/pricing'
+const OPENAI_PRICE_EFFECTIVE_AT = 1_788_825_600_000
+
+// @testCase TC-INT-1
+describe('начальные тарифы OpenAI', () => {
+  it('создаёт в новой базе точные Standard short-context тарифы официального источника', () => {
+    const raw = new Database(':memory:')
+    try {
+      raw.exec(SCHEMA_SQL)
+      const rows = raw.prepare(`
+        SELECT provider, model, input_per_million AS input, cached_input_per_million AS cached,
+          cache_write_per_million AS cacheWrite, output_per_million AS output,
+          source_url AS sourceUrl, effective_at AS effectiveAt
+        FROM model_prices
+        WHERE provider = 'codex' AND model IN ('gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna')
+        ORDER BY CASE model WHEN 'gpt-6-astra' THEN 1 WHEN 'gpt-5.6-sol' THEN 2 WHEN 'gpt-5.6-terra' THEN 3 ELSE 4 END
+      `).all()
+      expect(rows).toEqual([
+        { provider: 'codex', model: 'gpt-6-astra', input: 10, cached: 1, cacheWrite: 12.5, output: 50, sourceUrl: OPENAI_PRICE_SOURCE, effectiveAt: OPENAI_PRICE_EFFECTIVE_AT },
+        { provider: 'codex', model: 'gpt-5.6-sol', input: 4, cached: 0.4, cacheWrite: 5, output: 20, sourceUrl: OPENAI_PRICE_SOURCE, effectiveAt: OPENAI_PRICE_EFFECTIVE_AT },
+        { provider: 'codex', model: 'gpt-5.6-terra', input: 2, cached: 0.2, cacheWrite: 2.5, output: 12, sourceUrl: OPENAI_PRICE_SOURCE, effectiveAt: OPENAI_PRICE_EFFECTIVE_AT },
+        { provider: 'codex', model: 'gpt-5.6-luna', input: 0.2, cached: 0.02, cacheWrite: 0.25, output: 1.2, sourceUrl: OPENAI_PRICE_SOURCE, effectiveAt: OPENAI_PRICE_EFFECTIVE_AT }
+      ])
+    } finally {
+      raw.close()
+    }
+  })
+})
+
+// @testCase TC-INT-2
+describe('идемпотентность начальных тарифов', () => {
+  it('не перезаписывает ручную цену и добавляет отсутствующую seed-строку', () => {
+    const raw = new Database(':memory:')
+    try {
+      raw.exec(SCHEMA_SQL)
+      raw.prepare("UPDATE model_prices SET input_per_million = 123 WHERE provider = 'codex' AND model = 'gpt-5.6-sol'").run()
+      raw.prepare("DELETE FROM model_prices WHERE provider = 'codex' AND model = 'gpt-6-astra'").run()
+      raw.exec(SCHEMA_SQL)
+      expect(raw.prepare("SELECT input_per_million FROM model_prices WHERE provider = 'codex' AND model = 'gpt-5.6-sol'").get()).toEqual({ input_per_million: 123 })
+      expect(raw.prepare("SELECT input_per_million FROM model_prices WHERE provider = 'codex' AND model = 'gpt-6-astra'").get()).toEqual({ input_per_million: 10 })
+    } finally {
+      raw.close()
+    }
+  })
+})
 
 describe('conversations: окно недели и курсорная догрузка', () => {
   /** База с управляемыми часами: метка беседы — момент её создания. */
@@ -789,6 +836,7 @@ describe('VoiceChatDb — пользователи и админ-данные', 
     expect((await db.chat.usageReport('alice', 'day')).totals.messages).toBe(0)
   })
 
+  // @testCase TC-NEG-1
   it('usageReport фильтрует разговор и оценивает Codex по таблице цен БД', async () => {
     const priced = await db.chat.createConversation('bob', 'Codex')
     const other = await db.chat.createConversation('bob', 'Другой чат')
