@@ -56,6 +56,9 @@ export interface ServerConfig {
   kbRoot: string
   /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
+  /** Студия картинок: встроенный модуль для dev/desktop или отдельный процесс. */
+  imageStudioMode: 'embedded' | 'remote'
+  imageStudioUrl?: string
   /** Публичная база MCP-эндпоинтов для контейнера-исполнителя; без env остаётся loopback сервера. */
   mcpPublicBase?: string
   /**
@@ -255,6 +258,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
+    imageStudioMode: env.VC_IMAGE_STUDIO_MODE === 'remote' ? 'remote' : 'embedded',
+    imageStudioUrl: env.VC_IMAGE_STUDIO_URL,
     makeMode: env.VC_MAKE_MODE === 'remote' ? 'remote' : 'embedded',
     makeUrl: env.VC_MAKE_URL,
     makeMcpPublicBase: env.VC_MAKE_MCP_PUBLIC_BASE,

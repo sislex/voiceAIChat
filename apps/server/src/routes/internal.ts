@@ -4,6 +4,8 @@
 // в dev и desktop его просто нет.
 
 import type { FastifyInstance } from 'fastify'
+import type { ImageStudioCore } from '@voicechat/image-studio'
+import { registerImageStudioInternal } from '../imageStudioBridge/internal.js'
 import {
   INTERNAL_MAKE_CORE_PATH, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_MAKE_SERVICE_PATH, INTERNAL_WHOAMI_PATH, RpcError,
   createCoreRpcDispatcher, createServiceRpcDispatcher,
@@ -28,6 +30,7 @@ export interface InternalRoutesDeps {
   token: string
   /** Данные чата/канбана/машин для Make — тот же порт, что и у встроенного режима. */
   makeCore: MakeCore
+  imageStudio?: ImageStudioCore
   /** Шина событий Make у ядра: сюда отдельный процесс Make присылает `changed`/`presence`/`turnSnapshot`. */
   makeHub?: Pick<MakeHub, 'apply'>
   /** Make встроен в ядро: его `MakeService` отдаём по RPC соседям (отдельному канбану нужны источники дизайна задачи). */
@@ -74,6 +77,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
       const verdict = await deps.authenticate({ method: forwarded.method, url: forwarded.url, headers: forwarded.headers })
       return verdict.ok ? { ok: true, user: verdict.user } : verdict
     })
+    if (deps.imageStudio) registerImageStudioInternal(scope, deps.imageStudio)
     if (deps.kanban) registerKanbanInternal(scope, deps.kanban, sendRpcError)
     if (deps.reader) {
       const dispatchReader = createRpcDispatcher(deps.reader, READER_CORE_RPC_METHODS)

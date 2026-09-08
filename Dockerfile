@@ -76,6 +76,17 @@ EXPOSE 8788
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/make && exec node --import tsx src/standalone/index.ts"]
 
+# ---- Runtime студии картинок --------------------------------------------
+# Файлы остаются в /data/image-studio; доступа к SQLite и профилям CLI процессу не нужно.
+FROM runtime-base AS image-studio-runtime
+ENV PORT=8796
+RUN mkdir -p /data \
+  && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8796
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/image-studio && exec node --import tsx src/standalone/index.ts"]
+
 # ---- Runtime канбана (отдельный сервис, профиль compose `kanban`) -----------
 # Тот же образ-база и тот же код сервера, но процесс — apps/server/src/kanban/standalone:
 # роуты проектов/CI/QA/релизов и MCP канбана на общей базе Postgres; состояние ядра — по
