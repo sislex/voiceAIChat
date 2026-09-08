@@ -92,7 +92,7 @@ function waitFrame(ws: WebSocket, match: (m: ServerMessage) => boolean, ms = 300
 
 describe('ядро (remote) + отдельный процесс канбана', () => {
   it('здоровье канбана; внутренние пути обеих сторон без общего токена закрыты', async () => {
-    expect(await (await fetch(`${kanbanUrl}${KANBAN_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'kanban', version: 'test', engine: 'sqlite', machines: 0 })
+    expect(await (await fetch(`${kanbanUrl}${KANBAN_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'kanban', version: 'test', engine: db.engine, machines: 0 })
     expect((await fetch(`${coreUrl}${INTERNAL_KANBAN_CORE_PATH}`, { method: 'POST', headers: json, body: '{}' })).status).toBe(401)
     expect((await fetch(`${kanbanUrl}${KANBAN_INTERNAL_SERVICE_PATH}`, { method: 'POST', headers: json, body: '{}' })).status).toBe(401)
     const snapshot = await fetch(`${coreUrl}${INTERNAL_KANBAN_CORE_PATH}`, { method: 'POST', headers: { ...json, authorization: `Bearer ${INTERNAL}` }, body: JSON.stringify({ method: 'machines.snapshot', args: [] }) })

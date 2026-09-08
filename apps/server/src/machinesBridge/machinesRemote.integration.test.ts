@@ -121,7 +121,7 @@ describe('ядро (remote) + отдельный процесс машин', () 
   it('агент через WebSocket-прокси ядра зарегистрирован в процессе машин; ядро подключено к шине; внутренние пути без токена закрыты', async () => {
     expect(machines.registry.isOnline(agentId)).toBe(true)
     const health = await waitFor(async () => { const h = await (await fetch(`${machinesUrl}${MACHINES_HEALTH_PATH}`)).json() as { cores: number; online: number }; return h.cores === 1 ? h : null })
-    expect(health).toMatchObject({ ok: true, service: 'machines', version: 'test', engine: 'sqlite', online: 1, cores: 1 })
+    expect(health).toMatchObject({ ok: true, service: 'machines', version: 'test', engine: db.engine, online: 1, cores: 1 })
     expect((await fetch(`${machinesUrl}${MACHINES_INTERNAL_RPC_PATH}`, { method: 'POST', headers: json, body: '{}' })).status).toBe(401)
   })
 

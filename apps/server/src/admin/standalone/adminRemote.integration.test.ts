@@ -73,7 +73,7 @@ afterAll(async () => {
 
 describe('ядро (admin remote) + отдельный процесс админки', () => {
   it('здоровье; внутренний RPC ядра без токена закрыт; чужая роль — 403 у ядра до прокси', async () => {
-    expect(await (await fetch(`${adminUrl}${ADMIN_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'admin', version: 'test', engine: 'sqlite' })
+    expect(await (await fetch(`${adminUrl}${ADMIN_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'admin', version: 'test', engine: db.engine })
     expect((await fetch(`${coreUrl}${INTERNAL_ADMIN_RPC_PATH}`, { method: 'POST', headers: json, body: '{}' })).status).toBe(401)
     expect((await fetch(`${coreUrl}/api/admin/users`)).status).toBe(401)
     expect((await fetch(`${coreUrl}/api/admin/users`, { headers: annAuth })).status).toBe(403)
