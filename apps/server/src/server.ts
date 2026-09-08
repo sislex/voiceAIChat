@@ -1446,7 +1446,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         socket.close()
         return
       }
-      await attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null))
+      await attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null), {
+        // Логгер Fastify выключен — пишем в stdout контейнера: по счётчикам видно, какие кадры забили очередь.
+        onOverflow: (info) => console.warn('[ws] исходящая очередь переполнена, соединение разорвано:', JSON.stringify({ user: user.name, ...info }))
+      })
       for (const [data, isBinary] of early) socket.emit('message', data, isBinary)
     })
   })
