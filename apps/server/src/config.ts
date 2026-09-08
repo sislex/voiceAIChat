@@ -67,6 +67,27 @@ export interface ServerConfig {
   makeUrl?: string
   /** База `/mcp/make` глазами исполнителя LLM в режиме `remote`; без неё — `makeUrl`. */
   makeMcpPublicBase?: string
+  /**
+   * Канбан: `embedded` — кластер проектов/CI/QA/релизов в этом процессе; `remote` — отдельный процесс
+   * канбана по адресу `kanbanUrl` на той же базе (только Postgres), ядро переправляет ему пути канбана,
+   * отдаёт состояние машин/KB/виджета по `/internal/*` и принимает ленты событий. См. docs/plans/kanban-service.md.
+   */
+  kanbanMode: 'embedded' | 'remote'
+  kanbanUrl?: string
+  /** База `/mcp/kanban` и `/mcp/ci-commands` глазами исполнителя LLM в режиме `remote`; без неё — `kanbanUrl`. */
+  kanbanMcpPublicBase?: string
+  /**
+   * Машины: `embedded` — реестр и WebSocket агентов в этом процессе; `remote` — отдельный процесс машин по
+   * адресу `machinesUrl` на той же базе (Postgres): ядро переправляет туда REST машин и WebSocket `/agent`,
+   * а состояние машин читает из зеркала по шине событий. См. docs/plans/machines-service.md.
+   */
+  machinesMode: 'embedded' | 'remote'
+  machinesUrl?: string
+  /** Админка: `remote` — `/api/admin/*` обслуживает отдельный процесс по адресу `adminUrl` (те же порты к ядру и машинам). */
+  adminMode: 'embedded' | 'remote'
+  adminUrl?: string
+  /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
+  coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
   internalToken?: string
   /** Секрет MCP-эндпоинтов (`?k=`); в `remote` обязан совпадать у ядра и Make, иначе — случайный на процесс. */
@@ -229,6 +250,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     makeMode: env.VC_MAKE_MODE === 'remote' ? 'remote' : 'embedded',
     makeUrl: env.VC_MAKE_URL,
     makeMcpPublicBase: env.VC_MAKE_MCP_PUBLIC_BASE,
+    kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'embedded',
+    kanbanUrl: env.VC_KANBAN_URL,
+    kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
+    machinesMode: env.VC_MACHINES_MODE === 'remote' ? 'remote' : 'embedded',
+    machinesUrl: env.VC_MACHINES_URL,
+    adminMode: env.VC_ADMIN_MODE === 'remote' ? 'remote' : 'embedded',
+    adminUrl: env.VC_ADMIN_URL,
+    coreUrl: env.VC_CORE_URL,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,
     browserPreviewBase: env.VC_BROWSER_PREVIEW_BASE,

@@ -5,7 +5,7 @@
 // Менеджер собираем напрямую (без buildServer): нужен контроль над хуком модели
 // и коротким `cancelGraceMs`.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
 import { createCiRunManager, type CiRunManager, type CiRunManagerDeps } from './runManager.js'
 import { createCiModelHooks } from './modelHooks.js'
@@ -13,7 +13,6 @@ import type { CommandExecutor, CiFixHook, CiModelContext, CiModelWorkHook } from
 import type { LlmClient } from '../claude/types.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
-const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 /** Хвост лога повреждённого кэша npm — по нему шаг признаётся инфраструктурным. */
 const CACACHE_LOG = `npm error code EEXIST
@@ -77,7 +76,7 @@ async function startRun(ci: CiRunManager, projectId: string, taskId: string): Pr
 }
 
 describe('отмена рана в фазе модели', () => {
-  it.skipIf(ON_POSTGRES)('останавливает работу модели и пропускает следующий ран из очереди', async () => {
+  it('останавливает работу модели и пропускает следующий ран из очереди', async () => {
     const { projectId, taskIds, prevColumnId } = await setup()
     await db.ci.updateCiSettings({ maxConcurrentRuns: 1 })
     let sawAbort = false
@@ -110,7 +109,7 @@ describe('отмена рана в фазе модели', () => {
     expect((await db.tasks.getBoard('admin', projectId))!.tasks.find((t) => t.id === taskIds[0])!.columnId).toBe(prevColumnId)
     // Главное: очередь не залипла — следующий ран доехал сам.
     expect(await waitStatus(second)).toBe('success')
-    expect(ci.activeRunIds()).toEqual([])
+    await vi.waitFor(() => expect(ci.activeRunIds()).toEqual([]))
   })
 
   it('отмена посередине работы очищает checkout, и следующий ран проходит подготовку', async () => {
@@ -370,12 +369,14 @@ describe('инфраструктурные ошибки шага', () => {
 })
 
 describe('хук работы модели слушает отмену', () => {
-  it.skipIf(ON_POSTGRES)('abort гасит процесс CLI и закрывает ход как cancelled', async () => {
+  it('abort гасит процесс CLI и закрывает ход как cancelled', async () => {
     const { projectId, taskIds } = await setup()
     const ctl = new AbortController()
     let cancelled = 0
     // Клиент, который «думает» бесконечно: без реакции на signal ход не закрылся бы.
-    const silent: LlmClient = { send: () => ({ cancel: () => { cancelled++ } }) }
+    let sent: () => void = () => {}
+    const started = new Promise<void>((resolve) => { sent = resolve })
+    const silent: LlmClient = { send: () => { sent(); return { cancel: () => { cancelled++ } } } }
     const hooks = createCiModelHooks({
       db,
       claude: silent,
@@ -413,7 +414,8 @@ describe('хук работы модели слушает отмену', () => {
       parentStepId: step.id
     }
     const work = hooks.modelWork(ctx)
-    await new Promise((r) => setTimeout(r, 10))
+    // Отмена — после старта клиента: до него хук ещё ходит в базу, и abort закрыл бы ход без cancel() у клиента.
+    await started
     ctl.abort()
     await expect(work).resolves.toEqual({ ok: false, cancelled: true })
     expect(cancelled).toBe(1)

@@ -13,7 +13,6 @@ import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
-const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 const U = 'admin'
 
@@ -1423,7 +1422,7 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it.skipIf(ON_POSTGRES)('два одновременных start дают один CLI-ход и один элемент очереди', async () => {
+  it('два одновременных start дают один CLI-ход и один элемент очереди', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'queue')
     const first = await db.chat.addMessage(U, conversation.id, 'u1', 'Первый', '10:00')
@@ -1440,7 +1439,7 @@ describe('turns: управляемая персистентная очеред�
     expect((await db.chat.listMessages(U, conversation.id)).map((message) => message.text)).toEqual(['Первый'])
 
     await llm.handlers[0].onDone('Ответ 1')
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await turns.idle()
     expect(llm.handlers).toHaveLength(2)
     expect((await db.chat.listMessages(U, conversation.id)).map((message) => message.text)).toEqual(['Первый', 'Ответ 1', 'Второй'])
     expect((await db.chat.listMessages(U, conversation.id))[2]?.id).toBe(second.id)
@@ -1448,7 +1447,7 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it.skipIf(ON_POSTGRES)('сохраняет полный порядок очереди и запускает сообщения строго по нему', async () => {
+  it('сохраняет полный порядок очереди и запускает сообщения строго по нему', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'queue')
     const active = await db.chat.addMessage(U, conversation.id, 'u1', 'Активный', '10:00')
@@ -1464,7 +1463,7 @@ describe('turns: управляемая персистентная очеред�
     expect((await db.chat.listQueuedTurns(U, conversation.id)).map((item) => item.text)).toEqual(['C', 'A', 'B'])
 
     await llm.handlers[0]!.onDone('done')
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await turns.idle()
     expect(llm.handlers).toHaveLength(2)
     expect(llm.requests[1]?.prompt).toContain('C')
     expect((await db.chat.listQueuedTurns(U, conversation.id)).map((item) => item.text)).toEqual(['A', 'B'])
@@ -1472,7 +1471,7 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it.skipIf(ON_POSTGRES)('ошибка активного хода фиксируется и однократно продвигает следующий элемент', async () => {
+  it('ошибка активного хода фиксируется и однократно продвигает следующий элемент', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'queue')
     const active = await db.chat.addMessage(U, conversation.id, 'u1', 'Активный', '10:00')
@@ -1483,7 +1482,7 @@ describe('turns: управляемая персистентная очеред�
     await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
     await turns.start({ userId: U, conversationId: conversation.id, messageId: queued.id, segments: [{ speakerId: 1, text: queued.text }] })
     await llm.handlers[0]!.onError('runner failed')
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await turns.idle()
 
     expect(llm.handlers).toHaveLength(2)
     expect(llm.requests[1]?.prompt).toContain('Следующий')
@@ -1493,7 +1492,7 @@ describe('turns: управляемая персистентная очеред�
     ])
 
     await llm.handlers[1]!.onDone('Ответ следующего')
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await turns.idle()
     expect(llm.handlers).toHaveLength(2)
     expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([
       expect.objectContaining({ messageId: active.id, status: 'failed' })
@@ -1513,7 +1512,7 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it.skipIf(ON_POSTGRES)('Отправить сейчас отменяет partial и перезапускает один объединённый запрос', async () => {
+  it('Отправить сейчас отменяет partial и перезапускает один объединённый запрос', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'queue')
     const duplicate = { uploadId: 'same-file', path: '/same.png', name: 'same.png', mimeType: 'image/png', size: 1 }
@@ -1533,7 +1532,7 @@ describe('turns: управляемая персистентная очеред�
     const selected = (await db.chat.listQueuedTurns(U, conversation.id))[1]
     await turns.sendQueuedNow(U, conversation.id, selected.id)
     await turns.sendQueuedNow(U, conversation.id, selected.id)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await turns.idle()
 
     expect(llm.cancels()).toBe(1)
     expect(llm.handlers).toHaveLength(2)
@@ -1568,7 +1567,7 @@ describe('turns: управляемая персистентная очеред�
     await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
     await turns.start({ userId: U, conversationId: conversation.id, messageId: queued.id, segments: [{ speakerId: 1, text: queued.text }] })
     await turns.sendQueuedNow(U, conversation.id, (await db.chat.listQueuedTurns(U, conversation.id))[0]!.id)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await turns.idle()
 
     expect(starts).toBe(1)
     expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
@@ -1582,7 +1581,7 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it.skipIf(ON_POSTGRES)('Отправить сейчас запускает выбранный элемент, если активного хода уже нет', async () => {
+  it('Отправить сейчас запускает выбранный элемент, если активного хода уже нет', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'queue')
     const queued = await db.chat.addMessage(U, conversation.id, 'u1', 'Ожидающий вопрос', '10:00')
@@ -1594,7 +1593,7 @@ describe('turns: управляемая персистентная очеред�
     const item = (await db.chat.listQueuedTurns(U, conversation.id))[0]
 
     await turns.sendQueuedNow(U, conversation.id, item.id)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await turns.idle()
 
     expect(llm.handlers).toHaveLength(1)
     expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])

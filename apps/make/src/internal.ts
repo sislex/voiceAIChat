@@ -6,6 +6,7 @@
 // ничего, кроме второй копии контракта. Диспетчеры живут здесь же — рядом с портами, которые они
 // обслуживают: список разрешённых методов растёт вместе с интерфейсом, а не в чужом файле.
 
+import { RpcError, type RpcRequest } from '@voicechat/shared'
 import type { MakeCore } from './core.js'
 import type { MakeHubEvent } from './hub.js'
 import type { MakeService } from './service.js'
@@ -13,23 +14,12 @@ import type { MakeService } from './service.js'
 /** У ядра: данные для Make (`MakeCore` по RPC) и приём событий шины Make. */
 export const INTERNAL_MAKE_CORE_PATH = '/internal/make/core'
 export const INTERNAL_MAKE_EVENTS_PATH = '/internal/make/events'
-/** У ядра: аутентификация пересланного запроса — cookie/Bearer пользователя разбирает только ядро. */
-export const INTERNAL_WHOAMI_PATH = '/internal/whoami'
+// Транспорт RPC и whoami общие для всех соседей ядра — живут в @voicechat/shared, здесь реэкспорт для совместимости.
+export { INTERNAL_WHOAMI_PATH, RpcError, createRpcClient, type RpcRequest, type RpcResponse, type WhoamiRequest, type WhoamiResponse } from '@voicechat/shared'
 /** У Make: `MakeService` по RPC для ядра и здоровье процесса. */
 export const INTERNAL_MAKE_SERVICE_PATH = '/internal/service'
 export const MAKE_HEALTH_PATH = '/v1/health'
 
-export interface RpcRequest { method: string; args: unknown[] }
-export type RpcResponse = { result: unknown } | { error: string }
-
-export interface WhoamiRequest {
-  method: string
-  url: string
-  headers: { cookie?: string; authorization?: string; [csrf: string]: string | undefined }
-}
-export type WhoamiResponse =
-  | { ok: true; user: { name: string; role: string; mustChangePassword?: boolean } }
-  | { ok: false; status: 401 | 403; error: string }
 
 export type MakeEventsRequest = { events: MakeHubEvent[] }
 
@@ -40,10 +30,6 @@ export const CORE_RPC_METHODS = [
   'boardChanged', 'machineFs.available', 'machineFs.list', 'machineFs.read', 'machineFs.isOnline'
 ] as const
 export type CoreRpcMethod = (typeof CORE_RPC_METHODS)[number]
-
-export class RpcError extends Error {
-  constructor(readonly status: number, message: string) { super(message) }
-}
 
 /** Диспетчер RPC над реализацией порта (у ядра — `LocalMakeCore`). */
 export function createCoreRpcDispatcher(core: MakeCore): (req: RpcRequest) => Promise<unknown> {
@@ -73,22 +59,5 @@ export function createServiceRpcDispatcher(service: Pick<MakeService, ServiceRpc
     if (!Array.isArray(args) || !(SERVICE_RPC_METHODS as readonly string[]).includes(method)) throw new RpcError(400, `неизвестный метод ${method}`)
     const fn = service[method as ServiceRpcMethod] as (...x: never[]) => unknown
     return (await fn.apply(service, args as never[])) ?? null
-  }
-}
-
-/** Клиент RPC: один POST на вызов, Bearer внутреннего токена, ошибки — исключением с текстом ядра. */
-export function createRpcClient(opts: { baseUrl: string; token: string; path: string; fetchImpl?: typeof fetch; timeoutMs?: number }) {
-  const fetchImpl = opts.fetchImpl ?? fetch
-  const url = `${opts.baseUrl.replace(/\/+$/, '')}${opts.path}`
-  return async <T>(method: string, ...args: unknown[]): Promise<T> => {
-    const res = await fetchImpl(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${opts.token}` },
-      body: JSON.stringify({ method, args } satisfies RpcRequest),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000)
-    })
-    const body = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as RpcResponse
-    if (!res.ok || 'error' in body) throw new RpcError(res.status, 'error' in body ? body.error : `HTTP ${res.status}`)
-    return body.result as T
   }
 }
