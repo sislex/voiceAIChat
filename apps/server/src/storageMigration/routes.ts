@@ -1,13 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import { isMachineStoragePathAllowed, normalizeMachineStoragePath, type MigrationAssignment } from '@voicechat/shared'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { MachinesService } from '../machines/service.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { StorageMigrationManager } from './manager.js'
 
 interface CreateBody { machineId?: string; storageId?: string; sources?: Array<{ path?: string; assignment?: MigrationAssignment }> }
 
-export function registerStorageMigrationRoutes(app: FastifyInstance, db: VoiceChatDb, agents: AgentRegistry, manager: StorageMigrationManager): void {
+export function registerStorageMigrationRoutes(app: FastifyInstance, db: VoiceChatDb, agents: MachinesService, manager: StorageMigrationManager): void {
   const ownerContext = async (userId: string, machineId: string, storageId: string) => {
     if (!(await db.machines.listAgents(userId)).some((agent) => agent.id === machineId)) throw new Error('Machine not found')
     if (!agents.isOnline(machineId)) throw new Error('Machine offline')
