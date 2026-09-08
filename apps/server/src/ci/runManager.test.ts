@@ -16,7 +16,6 @@ import { createCiRunManager } from './runManager.js'
 import type { BrowserRunnerClient } from '../browser/runnerClient.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
-const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
@@ -168,7 +167,7 @@ async function setup() {
   return { project, task, agent, readyColId: ready.id }
 }
 
-it.skipIf(ON_POSTGRES)('новый менеджер после рестарта возвращает незапущенный ран в очередь и прерывает активный', async () => {
+it('новый менеджер после рестарта возвращает незапущенный ран в очередь и прерывает активный', async () => {
   const { project, task, agent, readyColId } = await setup()
   const development = (await db.tasks.getBoard('admin', project.id))!.columns.find((column) => column.semanticType === 'development')!
   await db.tasks.moveTask('admin', project.id, task.id, { columnId: development.id })
@@ -207,7 +206,7 @@ it.skipIf(ON_POSTGRES)('новый менеджер после рестарта 
   })
 
   await vi.waitFor(async () => expect((await db.ci.getCiRunRaw(queued.id))?.status).not.toBe('queued'))
-  expect(columnAtModel).toBe(development.id)
+  await vi.waitFor(() => expect(columnAtModel).toBe(development.id))
 })
 
 it('каталог машин задачи объединяет личные и проектные машины без дублей', async () => {
@@ -701,7 +700,7 @@ describe('ci run manager', () => {
     expect(log.some((line) => line.chunk.includes('fatal: не удалось переключить ветку'))).toBe(true)
   })
 
-  it.skipIf(ON_POSTGRES)('упавший слот «после»: резюме всё равно попадает в чат', async () => {
+  it('упавший слот «после»: резюме всё равно попадает в чат', async () => {
     const { project, task } = await setup()
     const cmd = await db.ci.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'test', script: 'FAIL test' })
     await db.ci.setCiSlotCommands('task', task.id, 'after_model', [cmd.id])
@@ -709,7 +708,8 @@ describe('ci run manager', () => {
     const d = await waitRun(runId)
     expect(d.run.status).toBe('failed')
     const chatId = (await db.ci.getCiRunRaw(runId))!.conversationId!
-    expect((await db.chat.listMessages('admin', chatId)).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true)
+    // Резюме пишется после финального статуса рана — ждём его, а не читаем сразу.
+    await vi.waitFor(async () => expect((await db.chat.listMessages('admin', chatId)).some((m) => m.meta?.ciRunSummary?.runId === runId)).toBe(true))
   })
 
   it('legacy kb_update из старого снимка слота не создаёт шаг development-рана', async () => {
@@ -839,7 +839,7 @@ describe('ci run manager', () => {
     expect((await db.ci.getCiRunRaw(runId))!.slotProgress.fixing).toBe(false)
   })
 
-  it.skipIf(ON_POSTGRES)('ready → development автоматически создаёт один queued development-run и возвращает его id', async () => {
+  it('ready → development автоматически создаёт один queued development-run и возвращает его id', async () => {
     const { project, task, readyColId } = await setup()
     const board = (await db.tasks.getBoard('admin', project.id))!
     const development = board.columns.find((column) => column.semanticType === 'development')!
@@ -1360,7 +1360,7 @@ describe('карточка после падения, отмены и повто
     await db.ci.setCiSlotCommands('task', taskId, 'after_model', [gate.id, merge.id])
   }
 
-  it.skipIf(ON_POSTGRES)('ран упал → починили → новый ран доводит карточку до «Готово», лозенг свежий', async () => {
+  it('ран упал → починили → новый ран доводит карточку до «Готово», лозенг свежий', async () => {
     const { project, task, readyColId } = await setup()
     await db.ci.updateCiSettings({ maxFixAttempts: 1 })
     await pipeline(project.id, task.id)
@@ -1368,8 +1368,8 @@ describe('карточка после падения, отмены и повто
 
     const first = await run(project.id, task.id)
     expect((await waitRun(first)).run.status).toBe('failed')
-    // Исход B: карточка вернулась туда, где была, мержа не было.
-    expect((await db.tasks.getBoard('admin', project.id))!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+    // Исход B: карточка вернулась туда, где была, мержа не было. Возврат карточки идёт после записи статуса — ждём.
+    await vi.waitFor(async () => expect((await db.tasks.getBoard('admin', project.id))!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId), { timeout: 5_000 })
 
     failStep = false
     dirtyWorkspace = false // пользователь устранил локальные изменения
@@ -1379,7 +1379,7 @@ describe('карточка после падения, отмены и повто
     expect(board.tasks.find((t) => t.id === task.id)!.columnId).toBe(board.columns.find((c) => c.semanticType === 'component_qa')!.id)
     // Сводка на доске — про новый ран, а не про упавший.
     const summary = (await db.ci.latestCiRunSummary(task.id))!
-    expect(summary.id).toBe(second)
+    expect(summary.id, JSON.stringify((await db.ci.listCiRunsForTask('admin', project.id, task.id)).map((r) => ({ id: r.id, status: r.status, mode: (r as { mode?: string }).mode })))).toBe(second)
     expect(summary.status).toBe('success')
     expect((await db.ci.latestCiRunSummaries(project.id)).find((x) => x.taskId === task.id)!.id).toBe(second)
   })
@@ -1406,7 +1406,7 @@ describe('карточка после падения, отмены и повто
     expect(scripts.filter((x) => x === 'CLONE')).toHaveLength(1)
   })
 
-  it.skipIf(ON_POSTGRES)('повтор с упавшего шага: карточка уходит в разработку и после успеха доезжает до «Готово»', async () => {
+  it('повтор с упавшего шага: карточка уходит в разработку и после успеха доезжает до «Готово»', async () => {
     const { project, task, readyColId } = await setup()
     await db.ci.updateCiSettings({ maxFixAttempts: 1 })
     await pipeline(project.id, task.id)
@@ -1414,7 +1414,7 @@ describe('карточка после падения, отмены и повто
 
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('failed')
-    expect((await db.tasks.getBoard('admin', project.id))!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+    await vi.waitFor(async () => expect((await db.tasks.getBoard('admin', project.id))!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId), { timeout: 5_000 })
     const prepRunsBeforeRetry = scripts.filter((script) => script.includes('fetch origin main')).length
 
     failStep = false

@@ -40,11 +40,11 @@ import type { BoardHub } from '../projects/boardHub.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { kbUsageFlags } from '../kb/routes.js'
 import type { CiRunManager } from '../ci/runManager.js'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { KanbanMachines } from '../kanban/core.js'
 import { materializeProjectMachine as materialize } from '../projects/materialize.js'
 import type { MergeRunManager } from '../merge/runManager.js'
 import type { MakeService } from '@voicechat/make'
-import type { UploadStore } from '../uploads.js'
+import type { KanbanUploads } from '../kanban/core.js'
 
 const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 'not found' })
 const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
@@ -82,7 +82,7 @@ export function registerProjectRoutes(
   kbUsage?: { kb: KnowledgeBaseService; toolEnabled: boolean },
   /** Нужен переносу в TODO: ожидающий CI-ран надо снять до успешного ответа. */
   ci?: CiRunManager,
-  agents?: AgentRegistry,
+  agents?: KanbanMachines,
   merge?: MergeRunManager,
   startTaskPreparation?: (userId: string, projectId: string, taskId: string, selection?: TaskPreparationLlmSelection) => Promise<TaskPreparationRun>,
   membershipChanged?: (projectId: string, affectedUserId?: string) => void,
@@ -97,7 +97,7 @@ export function registerProjectRoutes(
   orchestration?: { cancel(owner: string, planId: string): Promise<import('@voicechat/shared').Orchestration | null> },
   /** Список файлов Make-проекта — проверка путей `makeSources` цикла доработки (make/service.ts). */
   make?: Pick<MakeService, 'listFiles'>,
-  uploads?: UploadStore
+  uploads?: KanbanUploads
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = async (project: ProjectDetail | null, userId: string): Promise<ProjectDetail | null> => {
@@ -1054,10 +1054,11 @@ export function registerProjectRoutes(
       const body = req.body
       if (body?.idempotencyKey) {
         const userId = uid(req)
-        const files = (body.uploadIds ?? []).flatMap((uploadId) => {
-          const upload = uploads?.get(uploadId)
-          return upload?.ownerId === userId ? [{ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' as const }] : []
-        })
+        const files: Array<{ id: string; uploadId: string; name: string; mimeType: string; size: number; status: 'ready' }> = []
+        for (const uploadId of body.uploadIds ?? []) {
+          const upload = await uploads?.get(uploadId)
+          if (upload?.ownerId === userId) files.push({ id: upload.id, uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size, status: 'ready' })
+        }
         try {
           const cycle = await db.tasks.createTaskReworkCycle(userId, req.params.id, req.params.taskId, {
             description: body.description ?? '', criteria: body.criteria ?? [], makeMode: body.makeMode ?? 'whole_project',
@@ -1113,11 +1114,15 @@ export function registerProjectRoutes(
   // --- Черновики доработок ---------------------------------------------
   // Отдельные маршруты, а не флаг у создания цикла: черновик правится и
   // удаляется, поэтому у него свой жизненный цикл и свои коды ошибок.
-  const draftFiles = (userId: string, uploadIds: string[]): Array<{ uploadId: string; name: string; mimeType: string; size: number }> =>
-    uploadIds.flatMap((uploadId) => {
-      const upload = uploads?.get(uploadId)
-      return upload?.ownerId === userId ? [{ uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size }] : []
-    })
+  // Вложения приходят через порт ядра (в отдельном процессе — по сети), поэтому по одному и с `await`.
+  const draftFiles = async (userId: string, uploadIds: string[]): Promise<Array<{ uploadId: string; name: string; mimeType: string; size: number }>> => {
+    const files: Array<{ uploadId: string; name: string; mimeType: string; size: number }> = []
+    for (const uploadId of uploadIds) {
+      const upload = await uploads?.get(uploadId)
+      if (upload?.ownerId === userId) files.push({ uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size })
+    }
+    return files
+  }
   const draftError = (reply: FastifyReply, error: unknown): FastifyReply => {
     const code = errMessage(error)
     if (code === 'not_found') return nf(reply)
@@ -1137,7 +1142,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const userId = uid(req)
       try {
-        const cycle = await db.tasks.createTaskReworkDraft(userId, req.params.id, req.params.taskId, draftInput(req.body), draftFiles(userId, req.body?.uploadIds ?? []))
+        const cycle = await db.tasks.createTaskReworkDraft(userId, req.params.id, req.params.taskId, draftInput(req.body), await draftFiles(userId, req.body?.uploadIds ?? []))
         boardHub.emit(req.params.id)
         return cycle
       } catch (error) { return draftError(reply, error) }
@@ -1149,7 +1154,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const userId = uid(req)
       try {
-        const cycle = await db.tasks.updateTaskReworkDraft(userId, req.params.id, req.params.taskId, req.params.cycleId, draftInput(req.body), draftFiles(userId, req.body?.uploadIds ?? []))
+        const cycle = await db.tasks.updateTaskReworkDraft(userId, req.params.id, req.params.taskId, req.params.cycleId, draftInput(req.body), await draftFiles(userId, req.body?.uploadIds ?? []))
         boardHub.emit(req.params.id)
         return cycle
       } catch (error) { return draftError(reply, error) }
