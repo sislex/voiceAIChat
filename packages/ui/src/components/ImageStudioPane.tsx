@@ -948,10 +948,18 @@ export function ImageStudioPane({ conversationId, api, turnActive, onAttachToCha
   }, [visibleCount, files?.length])
   // Адрес ведёт лайтбокс: открыли ссылку — картинка раскрылась сама. Файла
   // может не быть (переименовали, удалили) — тогда просто чистим адрес.
+  // Адрес применяется один раз на файл: между `setViewing(null)` и очисткой
+  // адреса соседним эффектом этот успевал переоткрыть лайтбокс, и закрытие
+  // «отскакивало» — на нагруженной машине это роняло тест закрытия по таймауту.
+  const appliedRouteFile = useRef<string | null>(null)
+  useEffect(() => { if (!routeFile) appliedRouteFile.current = null }, [routeFile])
   useEffect(() => {
     if (!routeFile || !files) return
-    if (files.some((file) => file.path === routeFile)) setViewing((prev) => prev ?? routeFile)
-    else navigate(`/images/${conversationId}`, { replace: true })
+    if (appliedRouteFile.current === routeFile) return
+    if (files.some((file) => file.path === routeFile)) {
+      appliedRouteFile.current = routeFile
+      setViewing((prev) => prev ?? routeFile)
+    } else navigate(`/images/${conversationId}`, { replace: true })
   }, [routeFile, files, conversationId, navigate])
   // Отбор из ссылки применяется один раз, после чего адрес чистится: иначе
   // любое изменение фильтров конфликтовало бы с адресом, а «Назад» возвращало
