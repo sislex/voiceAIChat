@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 61 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 74 коммит(ов) в areas после сверки: c5cb21ec feat(ui): embed task AI chat in card tabs … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 61 коммит(ов) в areas после сверки: 1a99413b Merge main into CHAT-430 (task 3e47abde-e891-4854-9c60-8917aae08e8b) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1269 коммит(ов) в areas после сверки: d2a953ce Merge remote-tracking branch 'origin/main' into fix/ws-backpressure … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1270 коммит(ов) в areas после сверки: a45e2dde docs(kb): update after merge afb55149-4d95-417c-a4f2-85adcf6b6ae3 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 35 коммит(ов) в areas после сверки: c5cb21ec feat(ui): embed task AI chat in card tabs … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 81 коммит(ов) в areas после сверки: d2a953ce Merge remote-tracking branch 'origin/main' into fix/ws-backpressure … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 41 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 665. Последние:
+Всего записей: 666. Последние:
 
 - [2026-09-08-macbook-air-user-ui-settings-routes.md](log/2026-09-08-macbook-air-user-ui-settings-routes.md) — ui-settings-routes
 - [2026-09-08-macbook-air-user-task-card-ai-chat.md](log/2026-09-08-macbook-air-user-task-card-ai-chat.md) — task-card-ai-chat
 - [2026-09-08-macbook-air-user-instant-conversation-settings-loader.md](log/2026-09-08-macbook-air-user-instant-conversation-settings-loader.md) — instant-conversation-settings-loader
 - [2026-09-08-macbook-air-user-assistant-settings-routes.md](log/2026-09-08-macbook-air-user-assistant-settings-routes.md) — assistant-settings-routes
+- [2026-09-08-alexeys-macbook-air-2-reader-service-round1.md](log/2026-09-08-alexeys-macbook-air-2-reader-service-round1.md) — reader-service-round1
 - [2026-09-08-alexeys-macbook-air-2-prod-postgres.md](log/2026-09-08-alexeys-macbook-air-2-prod-postgres.md) — prod-postgres
 - [2026-09-08-alexeys-macbook-air-2-pg-quarantine.md](log/2026-09-08-alexeys-macbook-air-2-pg-quarantine.md) — pg-quarantine
 - [2026-09-08-alexeys-macbook-air-2-oom-exec-stream.md](log/2026-09-08-alexeys-macbook-air-2-oom-exec-stream.md) — oom-exec-stream
 - [2026-09-08-alexeys-macbook-air-2-new-task-card-complete.md](log/2026-09-08-alexeys-macbook-air-2-new-task-card-complete.md) — new-task-card-complete
 - [2026-09-08-alexeys-macbook-air-2-distributed-polish.md](log/2026-09-08-alexeys-macbook-air-2-distributed-polish.md) — distributed-polish
-- [2026-09-07-macbook-air-user-make-permission-mode.md](log/2026-09-07-macbook-air-user-make-permission-mode.md) — make-permission-mode
 
 ## Исторические планы
 

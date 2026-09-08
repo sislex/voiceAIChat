@@ -2,17 +2,15 @@
 // чтобы тестировать через fastify.inject / ws-клиент.
 
 import { mkdirSync, existsSync } from 'node:fs'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { DEFAULT_CI_BROWSER_CHECK, isPlaywrightReaderConversation, planModelAction } from '@voicechat/shared'
-import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
-import { clearPreviewCookies, registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAdminRoutes } from './routes/admin.js'
 
 
@@ -28,7 +26,7 @@ import { shellQuote } from './ci/executor.js'
 
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
-import { saveBrowserShot, sweepBrowserShots } from './browser/checkShots.js'
+import { sweepBrowserShots } from './browser/checkShots.js'
 
 import { syncProjectWithRetry } from './projectSync.js'
 
@@ -132,11 +130,13 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
-import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
+import { PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
+import { createPreviewTurnTokens } from './reader/turnToken.js'
+import { createReaderModule } from './reader/module.js'
+import { createLocalReaderCore } from './readerBridge/localCore.js'
 import { registerBrowserRoutes } from './routes/browser.js'
 import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
-import { browserCheckTarget, withMachinePreviewTarget, type BrowserCheckTarget } from './browser/checkTarget.js'
-import { PREVIEW_RUN_COOKIE, PreviewRunKeys } from './browser/machinePreview.js'
+import { PreviewRunKeys } from './browser/machinePreview.js'
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 import { AuthStatusState } from './auth/statusState.js'
@@ -356,8 +356,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Адрес сервера, видимый из контейнера browser-runner (в compose — http://voicechat:8787);
   // без него остаёмся на loopback dev-сервера, где раннер и сервер — один хост.
   const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
-  const previewRunCookie = (userId: string): { name: string; value: string; url: string } =>
-    ({ name: PREVIEW_RUN_COOKIE, value: previewRunKeys.issue(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` })
   const { authenticate } = await registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
@@ -466,13 +464,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       )
     }
   })
-  registerPreviewProxy(app, {
-    machines: {
-      bridge: agentRegistry,
-      canUse: async (userId, agentId) => await db.machines.canUseAgentForPreview(userId, agentId)
-    }
-  })
-
   const profileHome = (userId: string): string =>
     ensureCliProfile(opts.config.dataDir, userId).home
   // Движок либо запускается рядом (spawn CLI), либо живёт в контейнере-исполнителе
@@ -645,149 +636,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     deployTrigger
   })
   // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
-  // сессии WS подписываются на подключении, ход адресуется токеном ?turn=.
+  // сессии WS подписываются на подключении; сам MCP собирает модуль ридера ниже.
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
-
-  /**
-   * Кадр браузерной проверки уходит в ленту активного рана задачи ссылкой на
-   * файл: base64 в логе распухал бы на сотни килобайт при каждом реплее ленты.
-   * Нет рана или шага — кадр просто не логируется: модель его уже получила.
-   */
-  const logBrowserCheckShot = async (conversationId: string, userId: string, png: Buffer): Promise<void> => {
-    const taskId = (await db.chat.getConversation(userId, conversationId))?.taskId
-    if (!taskId || (await db.ci.getTaskBrowserCheck(taskId)).mode !== 'chromium') return
-    const run = await db.ci.activeCiRunForTask(taskId)
-    if (!run) return
-    const step = (await db.ci.getCiRun(run.triggeredBy, run.id))?.steps.filter((item) => item.status === 'running').at(-1)
-    if (!step) return
-    const saved = saveBrowserShot(browserShotsRoot, run.id, png)
-    if (!saved) return
-    const line = await db.ci.appendCiLog(run.id, step.id, 'system', `Снимок страницы проверки: ${saved.url}\n`)
-    frames.publish({ t: 'ci.log', runId: run.id, line }, run.triggeredBy)
-  }
-
-  /**
-   * Изолированный Chromium обслуживает два входа: разговор Playwright Reader и
-   * браузерную проверку задачи (её режим — настройка CI задачи). Всё остальное
-   * идёт прежним путём — в панель браузера пользователя.
-   */
-  const browserCheckTargetOf = async (userId: string, conversationId: string): Promise<BrowserCheckTarget | null> => {
-    const conversation = await db.chat.getConversation(userId, conversationId)
-    if (!conversation) return null
-    const taskId = conversation.taskId ?? null
-    return browserCheckTarget({
-      conversationId,
-      taskId,
-      playwrightReader: isPlaywrightReaderConversation(conversation),
-      check: taskId ? await db.ci.getTaskBrowserCheck(taskId) : DEFAULT_CI_BROWSER_CHECK
-    })
-  }
-  registerPreviewMcp(app, {
-    secret: mcpSecret,
-    relay: previewRelay,
-    // Разговоры Playwright Reader исполняются в изолированном Chromium сервера:
-    // relay пушит действие в браузер пользователя, а страницы там нет.
-    browserExecutor: async (userId, conversationId, action) => {
-      if (!browserRunner) return null
-      const target = await browserCheckTargetOf(userId, conversationId)
-      if (!target) return null
-      const plan = planModelAction(withMachinePreviewTarget(action, runnerFacingBase))
-      if (plan.kind === 'unsupported') return { ok: false, error: plan.reason }
-      try {
-        // start идемпотентен: живая сессия переиспользуется, incarnation берём из неё.
-        const session = await browserRunner.start({
-          sessionId: target.sessionId, userKey: userId, conversationKey: target.conversationKey,
-          cookies: [previewRunCookie(userId)]
-        })
-        const result = await browserRunner.command(target.sessionId, {
-          requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant', command: plan.command
-        })
-        return { ok: true, data: result as unknown as Record<string, unknown> }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Действие в Chromium не выполнено' }
-      }
-    },
-    // Снимок из изолированного Chromium: отдельным входом, потому что он
-    // возвращает картинку, а не структуру действия.
-    browserScreenshot: async (userId, conversationId, args) => {
-      if (!browserRunner) return null
-      const target = await browserCheckTargetOf(userId, conversationId)
-      if (!target) return null
-      try {
-        const session = await browserRunner.start({
-          sessionId: target.sessionId, userKey: userId, conversationKey: target.conversationKey,
-          cookies: [previewRunCookie(userId)]
-        })
-        const shot = await browserRunner.screenshot(target.sessionId, {
-          requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
-          command: { type: 'screenshot', format: 'png', ...(args.selector ? { selector: args.selector } : {}) }
-        })
-        await logBrowserCheckShot(conversationId, userId, shot.buffer)
-        return {
-          ok: true,
-          result: {
-            page: { url: session.currentUrl ?? '', title: session.title ?? '' },
-            rect: { x: 0, y: 0, width: session.viewport.width, height: session.viewport.height },
-            dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`
-          }
-        }
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Снимок в Chromium не сделан' }
-      }
-    },
-    context: {
-      // Машина алиаса machine.internal: execTarget разговора (agentId) с гейтом доступа.
-      machineOf: async ({ userId, conversationId }) => {
-        const conversation = await db.chat.getConversation(userId, conversationId)
-        const target = conversation?.execTarget
-        if (!target || target === 'none' || target === 'server') return null
-        return await db.machines.canUseAgentForPreview(userId, target) || await db.machines.canUseAgent(userId, target, conversation?.projectId ?? null) ? target : null
-      },
-      testUsersOf: async ({ userId, conversationId }) => {
-        const projectId = (await db.chat.getConversation(userId, conversationId))?.projectId
-        if (!projectId) return []
-        return (await db.projects.getProject(userId, projectId))?.testUsers ?? []
-      },
-      environmentsOf: async ({ userId, conversationId }) => {
-        const projectId = (await db.chat.getConversation(userId, conversationId))?.projectId
-        if (!projectId || !await db.projects.getProject(userId, projectId)) return []
-        const toMachineUrl = (agentId: string, raw: string | null): string | null => {
-          if (!raw) return null
-          try {
-            const url = new URL(raw)
-            url.hostname = agentId + '.machine.internal'
-            return url.toString()
-          } catch { return null }
-        }
-        // Превью живут у канбана (в remote — в его процессе): список идёт через порт, а не по ссылке на менеджер.
-        return (await kanban.service.previews.list())
-          .filter((env) => env.projectId === projectId)
-          .map((env) => ({
-            taskId: env.taskId,
-            branch: env.branch,
-            state: env.state,
-            healthy: env.healthStatus === 'healthy',
-            appUrl: toMachineUrl(env.agentId, env.appUrl),
-            storybookUrl: toMachineUrl(env.agentId, env.storybookUrl)
-          }))
-      },
-      clearCookies: ({ userId }, host) => clearPreviewCookies(userId, host),
-      gateEvaluate: async ({ userId, conversationId }, code, confirmed) => {
-        const conversation = await db.chat.getConversation(userId, conversationId)
-        const project = conversation?.projectId ? await db.projects.getProject(userId, conversation.projectId) : null
-        const policy = project?.commandPolicy
-        if (policy) {
-          const verdict = evaluateCommandLayers(code, [{ ...policy, name: 'project' }])
-          if (!verdict.allowed) return verdict
-        }
-        const mutating = /(?:\.remove\s*\(|\.delete\s*\(|\.setItem\s*\(|\.clear\s*\(|document\.(?:write|cookie)\s*=|innerHTML\s*=|outerHTML\s*=|fetch\s*\(|XMLHttpRequest|location\s*=)/i.test(code)
-        if (mutating && policy?.confirmDangerous !== false && !confirmed) {
-          return { allowed: false, needsConfirmation: true, reason: 'Код изменяет DOM/хранилище либо выполняет сетевой запрос; спроси пользователя и повтори с confirm=true.' }
-        }
-        return { allowed: true }
-      }
-    }
-  })
   // Playwright Reader: REST-оркестрация изолированного Chromium в browser-runner.
   // Клиент создаётся, только если задан адрес раннера; иначе роуты отвечают 501.
   const browserRunner = opts.browserRunner ?? (opts.config.browserRunnerUrl && opts.config.browserRunnerToken
@@ -1256,7 +1106,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kanbanMcpBaseUrl,
     widgetContexts,
     make: make.service,
-    previewTool: previewToolBroker,
+    previewTurns: createPreviewTurnTokens(mcpSecret),
     remoteFileTool: remoteFileBroker,
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }
   })
@@ -1286,6 +1136,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     agentRegistry.onChange(pushMachines)
     app.addHook('onClose', async () => { if (pushTimer) clearTimeout(pushTimer) })
   }
+  // Web Reader: прокси превью и MCP «browser» — модулем с портом к ядру (docs/plans/web-reader-service.md).
+  const readerCore = createLocalReaderCore({
+    db, relay: previewRelay, runKeys: previewRunKeys, shotsRoot: browserShotsRoot,
+    publish: (message, userId) => frames.publish(message, userId),
+    previews: () => kanban.service.previews.list()
+  })
+  createReaderModule({ app, db, core: readerCore, machines: agentRegistry, mcpSecret, runnerFacingBase, ...(browserRunner ? { browserRunner } : {}) })
   // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
   if (opts.config.internalToken) {
     registerInternalRoutes(app, {
