@@ -18,6 +18,7 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `packages/sessions-app` | `@voicechat/sessions-app` | UI-модуль «Сессии и устройства» (окно аккаунта + панель в админке) | [AGENTS](packages/sessions-app/AGENTS.md) |
 | `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
 | `apps/make` | `@voicechat/make` | Make (веб-проект с ассистентом): мастерские, REST/превью/публикация, MCP; модуль ядра или отдельный процесс | [AGENTS](apps/make/AGENTS.md) |
+| `apps/playwright-reader` | `@voicechat/playwright-reader` | Playwright Reader: API сессий и действия модели в Chromium; модуль ядра или отдельный процесс | [AGENTS](apps/playwright-reader/AGENTS.md) |
 | `apps/llm-runner` | `@voicechat/llm-runner` | Исполнитель LLM: единственный, кто делает spawn claude/codex; HTTP `/v1/run` | [AGENTS](apps/llm-runner/AGENTS.md) |
 | `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
 | `apps/web-recorder` | `@voicechat/web-recorder` | Независимый Vite-веб-рекордер; интеграция с ChatAI только через `postMessage`-контракт | [UI KB](docs/kb/ui.md#независимый-веб-рекордер-и-контракт-хоста) |

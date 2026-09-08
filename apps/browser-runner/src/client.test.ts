@@ -2,7 +2,7 @@
 // бинарный ответ screenshot. fetch подменён фейком — сети нет.
 
 import { describe, expect, it, vi } from 'vitest'
-import { BrowserRunnerError, createBrowserRunnerClient } from './runnerClient.js'
+import { BrowserRunnerError, createBrowserRunnerClient } from './client.js'
 
 const meta = { id: 's1', conversationId: 'c1', incarnation: 'inc', state: 'ready', activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: null, title: null }
 

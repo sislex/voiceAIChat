@@ -10,14 +10,14 @@ import { VoiceChatDb } from '../../db/database.js'
 import { registerForwardedAuth } from '../../internal/forwardedAuth.js'
 import { HttpMachines } from '../../machinesBridge/httpMachines.js'
 import type { MachinesService } from '../../machines/service.js'
-import { createBrowserRunnerClient, type BrowserRunnerClient } from '../../browser/runnerClient.js'
+import { createRemotePlaywrightReader, type PlaywrightReaderService } from '@voicechat/playwright-reader'
 import type { ReaderCore } from '../core.js'
 import { createReaderModule } from '../module.js'
 import { READER_HEALTH_PATH } from '../internal.js'
 import { HttpReaderCore } from './httpCore.js'
 
 export interface BuildReaderServerOptions {
-  /** Тот же `loadConfig(env)`, что у ядра: база, секреты, адрес browser-runner — из одного набора env. */
+  /** Тот же `loadConfig(env)`, что у ядра: база, секреты, адрес Playwright Reader — из одного набора env. */
   config: ServerConfig
   /** Адрес ядра внутри сети (`VC_CORE_URL`). */
   coreUrl: string
@@ -27,7 +27,7 @@ export interface BuildReaderServerOptions {
   core?: ReaderCore
   /** Машины; по умолчанию — `HttpMachines` к `VC_MACHINES_URL` или к ядру. */
   machines?: Pick<MachinesService, 'isOnline' | 'http'>
-  browserRunner?: BrowserRunnerClient
+  browser?: PlaywrightReaderService
   fetchImpl?: typeof fetch
   logger?: boolean
   version?: string | null
@@ -43,6 +43,7 @@ export async function buildReaderServer(opts: BuildReaderServerOptions): Promise
   const { config, coreUrl } = opts
   if (!config.internalToken) throw new Error('Web Reader отдельным процессом требует VC_INTERNAL_TOKEN (тот же, что у ядра)')
   if (!config.mcpSecret) throw new Error('Web Reader отдельным процессом требует VC_MCP_SECRET (тот же, что у ядра)')
+  if (config.playwrightReaderMode === 'remote' && !config.playwrightReaderUrl) throw new Error('VC_PLAYWRIGHT_READER_MODE=remote требует VC_PLAYWRIGHT_READER_URL')
   if (!opts.db && !config.dbUrl) throw new Error('Web Reader отдельным процессом требует общую базу VC_DB_URL (Postgres)')
   const token = config.internalToken
   const fetchImpl = opts.fetchImpl ?? fetch
@@ -62,14 +63,13 @@ export async function buildReaderServer(opts: BuildReaderServerOptions): Promise
     return http
   })()
   const core = opts.core ?? new HttpReaderCore({ coreUrl, token, fetchImpl })
-  const browserRunner = opts.browserRunner ?? (config.browserRunnerUrl && config.browserRunnerToken
-    ? createBrowserRunnerClient({ baseUrl: config.browserRunnerUrl, token: config.browserRunnerToken })
-    : undefined)
-  // Адрес прокси превью глазами browser-runner: по умолчанию — публичная база ядра (оно проксирует
-  // `/api/preview` сюда), чтобы SSRF-гейт раннера (`VC_BROWSER_PREVIEW_ORIGIN`) не пришлось перенастраивать.
-  const runnerFacingBase = config.browserPreviewBase ?? config.mcpPublicBase ?? coreUrl
+  // Встроенный Playwright Reader публикует тот же RPC у ядра: режимы двух ридеров независимы.
+  const browser = opts.browser ?? createRemotePlaywrightReader({
+    baseUrl: config.playwrightReaderMode === 'remote' ? config.playwrightReaderUrl! : coreUrl,
+    token, fetchImpl
+  })
 
-  createReaderModule({ app, db, core, machines, mcpSecret: config.mcpSecret, runnerFacingBase, ...(browserRunner ? { browserRunner } : {}) })
+  createReaderModule({ app, db, core, machines, mcpSecret: config.mcpSecret, browser })
   app.get(READER_HEALTH_PATH, async () => ({ ok: true, service: 'reader', version: opts.version ?? null, engine: db.engine }))
   return { app, db, core }
 }

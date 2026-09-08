@@ -76,6 +76,13 @@ EXPOSE 8788
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/make && exec node --import tsx src/standalone/index.ts"]
 
+# ---- Runtime Playwright Reader (без БД и собственного Chromium) ----------
+FROM runtime-base AS playwright-reader-runtime
+ENV PORT=8796
+USER node
+EXPOSE 8796
+CMD ["sh", "-c", "cd apps/playwright-reader && exec node --import tsx src/standalone/index.ts"]
+
 # ---- Runtime канбана (отдельный сервис, профиль compose `kanban`) -----------
 # Тот же образ-база и тот же код сервера, но процесс — apps/server/src/kanban/standalone:
 # роуты проектов/CI/QA/релизов и MCP канбана на общей базе Postgres; состояние ядра — по

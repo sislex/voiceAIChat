@@ -71,7 +71,8 @@ export class PreviewProxyError extends Error {
 // компаньон-агентом машины (HTTP строго к его 127.0.0.1:<port>). Так модель и
 // пользователь открывают в Reader dev-серверы и feature-preview репозиториев,
 // не выставляя их наружу; SSRF-гейт публичных адресов эта ветка не ослабляет.
-export const MACHINE_PREVIEW_SUFFIX = '.machine.internal'
+import { MACHINE_PREVIEW_SUFFIX } from '@voicechat/shared'
+export { MACHINE_PREVIEW_SUFFIX } from '@voicechat/shared'
 /** Алиас «машина текущего разговора» — разворачивает previewMcp в open. */
 export const MACHINE_PREVIEW_ALIAS_HOST = 'machine.internal'
 
