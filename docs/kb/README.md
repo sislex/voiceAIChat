@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 66 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 79 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 64 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1276 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1278 коммит(ов) в areas после сверки: 1f2c5114 chore(merge): обновить main и разрешить конфликт индекса KB … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 41 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 5 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 46 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
@@ -35,7 +35,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 214 коммит(ов) в areas после сверки: a7e8e5b4 CHAT-431 restrict release machines and remember selection … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-08 | ⚠ 5 коммит(ов) в areas после сверки: 6680220f fix(ui): исправить адаптивную раскладку студии картинок … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-07 | ⚠ 29 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-08 | ⚠ 4 коммит(ов) в areas после сверки: 38d265a8 Merge remote-tracking branch 'origin/main' into feat/reader-service … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-08 | ⚠ 5 коммит(ов) в areas после сверки: 90677e50 test(machines): зеркало HttpMachines ждёт состояние, а не паузу в 30 мс … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 45 коммит(ов) в areas после сверки: a7e8e5b4 CHAT-431 restrict release machines and remember selection … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 191 коммит(ов) в areas после сверки: 29dcec84 feat(reader): Web Reader отдельным процессом — VC_READER_MODE=remote (круг 2) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
