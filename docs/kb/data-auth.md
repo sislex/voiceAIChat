@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-08
-checked: 0d1c7312
+checked: 29dcec84
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -54,6 +54,12 @@ areas:
 - тест, который трогает сырой драйвер (`(db as { db }).db.prepare(...)`) или открывает второй
   `VoiceChatDb` на том же файле, обязан `await db.ready` / `await db.close()`; тест с изменяемыми
   часами (`now: () => clock`) обязан ждать каждый вызов — иначе тело прочитает уже переставленные часы.
+
+**Установка схемы Postgres под замком (2026-09-08).** `VoiceChatDb.init()` на Postgres ставит `PG_SCHEMA.sql`
+внутри транзакции после `SELECT pg_advisory_xact_lock(<константа>)`: соседние процессы стенда (ядро, канбан,
+машины, ридер) открывают базу одновременно, и без замка `CREATE TABLE IF NOT EXISTS` двух сессий упирается в
+deadlock (40P01), а `CREATE SCHEMA IF NOT EXISTS` — в duplicate key по `pg_namespace`. Регрессия —
+`db/database.pgBootstrap.test.ts` (только с `VC_TEST_DB_URL`).
 
 **Postgres как движок всей базы (`VC_DB_URL`, 2026-09-07, `docs/plans/db-postgres.md`).** Тот же
 `VoiceChatDb`, тот же код репозиториев: `new VoiceChatDb(path, { postgres: { url } })` открывает
