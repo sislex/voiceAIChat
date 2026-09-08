@@ -226,6 +226,16 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.44' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.44 commit=fixed-sha source=release-manager' && install -m 755 scripts/prod/deploy.sh /usr/local/bin/voicechat-deploy && git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy")
   })
 
+  it('reconcile закрывает подготовку, оборванную рестартом: шаг failed, релиз failed — его можно повторить',async()=>{
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:''})}
+    const release=await db.releases.createProjectRelease('owner',projectId,{branch:'release/3.0.0',version:'3.0.0',sha:'sha',status:'checking'})
+    await db.releases.setProjectReleaseStep(release.id,'regression','running','$ npm ci',' owner'.trim())
+    await new ReleaseManager(db,runtime).reconcile(async()=>prod())
+    const stored=await db.releases.getProjectRelease('owner',projectId,release.id)
+    expect(stored?.status).toBe('failed')
+    expect(stored?.steps.find(step=>step.kind==='regression')).toMatchObject({status:'failed',log:expect.stringContaining('прервана перезапуском')})
+  })
+
   it('does not release when health reports the expected commit with another version',async()=>{
     const limits={checkoutMs:1_000,knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_000}
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.35\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
