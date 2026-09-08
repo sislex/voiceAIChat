@@ -656,6 +656,10 @@ export interface TurnUsage {
   cacheReadTokens?: number
   /** Токены, записанные в кэш промпта (cache_creation_input_tokens). */
   cacheCreationTokens?: number
+  /** Фактический режим тарификации, если его сообщил источник usage. */
+  pricingMode?: 'standard' | 'batch' | 'flex' | 'fast'
+  /** Фактическая категория контекста, если её сообщил источник usage. */
+  contextTier?: 'short' | 'long'
 }
 
 /**
@@ -1318,6 +1322,7 @@ export interface CodexModelInfo {
  */
 export const CODEX_MODELS: CodexModelInfo[] = [
   { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol (default) — Latest frontier agentic coding model.' },
+  { id: 'gpt-6-astra', label: 'gpt-6-astra — Most capable model for complex, demanding work.' },
   { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra — Balanced agentic coding model for everyday work.' },
   { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna — Fast and affordable agentic coding model.' },
   { id: 'gpt-5.5', label: 'gpt-5.5 — Frontier model for complex coding, research, and real-world work.' },
