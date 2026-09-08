@@ -19,8 +19,10 @@ const model: TaskCardViewModel = {
   ],
   runs: [{ id: 'run-19', title: 'Development', status: 'success', outcome: 'success', createdAt: Date.UTC(2026, 8, 4), finishedAt: Date.UTC(2026, 8, 4, 0, 12), canOpen: true, canCancel: false, canAnswer: false }],
   makeSources: [{ id: 'make', title: 'Проект 19', conversationId: 'e7b501e7-a0b5-4c00-bb20-e8743e25011f', mode: 'files', paths: [{ path: 'src/App.jsx', available: true }, { path: 'src/removed.jsx', available: false, error: 'Файл удалён' }] }],
-  cycles: [], loadState: 'ready',
-  actions: { canRework: true, hasActiveRun: false, safeActiveRunActions: [] }
+  cycles: [], drafts: [], loadState: 'ready',
+  cycleNumber: 1, nextCycleNumber: 2, branch: null, commit: null,
+  tabs: [{ id: 'overview', label: 'Общее' }, { id: 'reworks', label: 'Доработки' }],
+  actions: { canRework: true, hasActiveRun: false, canStopRun: false, safeActiveRunActions: [] }
 }
 const meta: Meta<typeof NewTaskCardView> = {
   title: 'Kanban/NewTaskCard',
@@ -41,5 +43,25 @@ export const Dark: Story = { globals: { theme: 'dark' } }
 export const Loading: Story = { args: { model: { ...model, loadState: 'loading' } } }
 export const Empty: Story = { args: { model: { ...model, loadState: 'empty' } } }
 export const Error: Story = { args: { model: { ...model, loadState: 'error', error: 'Сеть недоступна' } } }
-export const WaitingForAnswer: Story = { args: { model: { ...model, runs: [{ ...model.runs[0]!, status: 'waiting_for_answer', outcome: 'active', canAnswer: true }] }, activeTab: 'runs' } }
+export const WaitingForAnswer: Story = { args: { model: { ...model, runs: [{ ...model.runs[0]!, status: 'waiting_for_answer', outcome: 'active', canAnswer: true }] }, activeTab: 'overview' } }
 export const Rework: Story = { args: { reworkOpen: true, reworkDraft: { description: 'Уточнить мобильное поведение', criteria: ['Нет горизонтального скролла'], makeMode: 'files', makePaths: ['src/App.jsx'], attachments: [] } } }
+
+export const Reworks: Story = {
+  args: {
+    activeTab: 'reworks',
+    model: {
+      ...model,
+      tabs: [{ id: 'overview', label: 'Общее' }, { id: 'reworks', label: 'Доработки', count: 1 }],
+      drafts: [{
+        id: 'draft-1', sequence: 2, description: 'Компактный статус синхронизации',
+        criteria: ['Статус рядом с сообщением'], makeSources: [], attachments: [],
+        createdBy: 'alex', createdAt: Date.UTC(2026, 8, 7, 12), preparationRunId: null, status: 'draft'
+      }],
+      cycles: [{
+        id: 'cycle-1', sequence: 1, description: 'Первый вариант индикатора записи',
+        criteria: ['Индикатор виден'], makeSources: [], attachments: [],
+        createdBy: 'alex', createdAt: Date.UTC(2026, 8, 1, 12), preparationRunId: null, status: 'submitted', merged: true
+      }]
+    }
+  }
+}

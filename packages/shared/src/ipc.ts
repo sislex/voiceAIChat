@@ -122,6 +122,14 @@ export interface UploadInfo {
  * Карта invoke-каналов: имя → { arg; result }.
  * `arg: void` означает вызов без аргументов.
  */
+/** Тело черновика доработки: карточка присылает конечное состояние набора. */
+export interface TaskReworkDraftInput {
+  description: string
+  criteria: string[]
+  makeSources: Array<{ conversationId: string; title?: string; mode: 'whole_project' | 'files'; paths: string[] }>
+  uploadIds: string[]
+}
+
 export interface IpcInvokeMap {
   'app:ping': { arg: void; result: HealthResponse }
   'kb:status': { arg: void; result: KbStatus }
@@ -628,6 +636,11 @@ export interface IpcInvokeMap {
   'tasks:get': { arg: { projectId: string; taskId: string }; result: Task | null }
   'tasks:listReworkCycles': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskReworkCycle[] }
   'tasks:createReworkCycle': { arg: { projectId: string; taskId: string; input: import('./projects').CreateTaskReworkCycleInput }; result: import('./projects').TaskReworkCycle }
+  /** Черновик доработки: создаётся, правится и удаляется до отправки. */
+  'tasks:createReworkDraft': { arg: { projectId: string; taskId: string; input: TaskReworkDraftInput }; result: import('./projects').TaskReworkCycle }
+  'tasks:updateReworkDraft': { arg: { projectId: string; taskId: string; cycleId: string; input: TaskReworkDraftInput }; result: import('./projects').TaskReworkCycle }
+  'tasks:deleteReworkDraft': { arg: { projectId: string; taskId: string; cycleId: string }; result: { deleted: true } }
+  'tasks:submitReworkDraft': { arg: { projectId: string; taskId: string; cycleId: string }; result: { cycle: import('./projects').TaskReworkCycle; task: import('./projects').Task } }
   'tasks:create': {
     arg: {
       projectId: string
@@ -726,6 +739,8 @@ export interface IpcInvokeMap {
   'tasks:createPersistentReworkCycle': { arg: { projectId: string; taskId: string; idempotencyKey: string; input: import('./projects').CreateTaskReworkCycle }; result: { cycle: import('./projects').TaskReworkCycle; task: import('./projects').Task; replayed: boolean } }
   'tasks:attachments': { arg: { projectId: string; taskId: string; scope?: 'source' | 'rework_draft' }; result: import('./projects').TaskAttachment[] }
   'tasks:uploadAttachment': { arg: { projectId: string; taskId: string; scope: 'source' | 'rework_draft'; name: string; mimeType?: string; dataBase64: string }; result: import('./projects').TaskAttachment }
+  /** Байты вложения: <img src> без токена получил бы 401, карточка строит data-URL. */
+  'tasks:readAttachment': { arg: { projectId: string; taskId: string; attachmentId: string }; result: { name: string; mimeType: string; dataBase64: string } }
   'tasks:deleteAttachment': { arg: { projectId: string; taskId: string; attachmentId: string }; result: { deleted: boolean } }
   'tasks:reworkMakeFiles': { arg: { projectId: string; taskId: string; conversationId: string }; result: Array<{ path: string }> }
   /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
@@ -1507,6 +1522,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:get',
   'tasks:listReworkCycles',
   'tasks:createReworkCycle',
+  'tasks:createReworkDraft',
+  'tasks:updateReworkDraft',
+  'tasks:deleteReworkDraft',
+  'tasks:submitReworkDraft',
   'tasks:create',
   'tasks:createFromProposalInPreparation',
   'tasks:activity',
@@ -1535,9 +1554,14 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:designSources',
   'tasks:reworkCycles',
   'tasks:createReworkCycle',
+  'tasks:createReworkDraft',
+  'tasks:updateReworkDraft',
+  'tasks:deleteReworkDraft',
+  'tasks:submitReworkDraft',
   'tasks:attachments',
   'tasks:uploadAttachment',
   'tasks:deleteAttachment',
+  'tasks:readAttachment',
   'tasks:reworkMakeFiles',
   'imgstudio:list',
   'imgstudio:read',

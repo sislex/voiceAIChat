@@ -26,9 +26,9 @@ describe('контекст повторной подготовки', () => {
   it('детерминированно содержит исходную постановку, все циклы, Make и missing-вложения', () => {
     const attachment = { id: 'a', taskId: 't', scope: 'source' as const, name: 'brief.pdf', size: 1, mimeType: 'application/pdf', checksum: 'x', status: 'ready' as const, createdBy: 'alice', createdAt: 1 }
     const text = taskReworkContext({ description: 'ORIGINAL', acceptanceCriteria: 'ORIGINAL-AC' }, [{
-      id: 'c2', taskId: 't', sequence: 2, description: 'SECOND', criteria: ['SECOND-AC'], makeSources: [], attachments: [{ ...attachment, id: 'missing', name: 'gone.png', scope: 'rework_cycle', status: 'missing' }], createdBy: 'alice', createdAt: 3, preparationRunId: null
+      id: 'c2', taskId: 't', sequence: 2, description: 'SECOND', criteria: ['SECOND-AC'], makeSources: [], attachments: [{ ...attachment, id: 'missing', name: 'gone.png', scope: 'rework_cycle', status: 'missing' }], createdBy: 'alice', createdAt: 3, preparationRunId: null, status: 'submitted'
     }, {
-      id: 'c1', taskId: 't', sequence: 1, description: 'FIRST', criteria: ['FIRST-AC'], makeSources: [{ conversationId: 'make', title: 'Design', owner: 'alice', mode: 'files', paths: ['b.ts', 'a.ts'] }], attachments: [], createdBy: 'alice', createdAt: 2, preparationRunId: null
+      id: 'c1', taskId: 't', sequence: 1, description: 'FIRST', criteria: ['FIRST-AC'], makeSources: [{ conversationId: 'make', title: 'Design', owner: 'alice', mode: 'files', paths: ['b.ts', 'a.ts'] }], attachments: [], createdBy: 'alice', createdAt: 2, preparationRunId: null, status: 'submitted'
     }], [attachment])
     expect(text.indexOf('ORIGINAL')).toBeLessThan(text.indexOf('FIRST'))
     expect(text.indexOf('FIRST')).toBeLessThan(text.indexOf('SECOND'))

@@ -772,6 +772,9 @@ CREATE TABLE IF NOT EXISTS task_rework_cycles (
   preparation_run_id TEXT,
   idempotency_key TEXT NOT NULL,
   payload_hash TEXT NOT NULL,
+  -- Черновик правится и удаляется, отправленный цикл неизменяем: карточка
+  -- собирает набор доработок заранее и отправляет их, когда сочтёт нужным.
+  status TEXT NOT NULL DEFAULT 'submitted',
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_rework_cycles_sequence ON task_rework_cycles(task_id, sequence);
