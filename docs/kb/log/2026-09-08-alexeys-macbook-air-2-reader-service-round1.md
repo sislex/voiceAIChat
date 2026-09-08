@@ -23,8 +23,14 @@ author: alexeyrozhnov
 
 ## Куда занесено
 
-- docs/plans/web-reader-service.md, apps/server/AGENTS.md (раскладка `reader/`, `readerBridge/`).
+- docs/plans/web-reader-service.md, apps/server/AGENTS.md (раскладка `reader/`, `readerBridge/`),
+  docs/kb/server-internals.md (раздел «Web Reader»), docs/kb/deploy.md (строка распределённого стенда).
+
+- Круг 2 (та же сессия): отдельный процесс `reader/standalone` (`buildReaderServer`, `HttpReaderCore`, порт 8795),
+  RPC ядра `/internal/reader/core`, прокси `readerBridge/proxy.ts`, `VC_READER_MODE=remote`/`VC_READER_URL`/
+  `VC_READER_MCP_PUBLIC_BASE`, compose-профиль `reader`, образ `reader-runtime`; тесты полноты/приоритета прокси
+  и интеграция «ядро remote + процесс ридера».
 
 ## Открытые вопросы / что осталось
 
-- Круг 2: отдельный процесс `reader/standalone`, `VC_READER_MODE=remote`, прокси путей, compose-профиль.
+- Круг 3: прогон на копии прод-БД, PR.

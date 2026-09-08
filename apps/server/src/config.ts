@@ -86,6 +86,14 @@ export interface ServerConfig {
   /** Админка: `remote` — `/api/admin/*` обслуживает отдельный процесс по адресу `adminUrl` (те же порты к ядру и машинам). */
   adminMode: 'embedded' | 'remote'
   adminUrl?: string
+  /**
+   * Web Reader: `remote` — прокси превью `/api/preview*` и MCP «browser» `/mcp/preview` обслуживает отдельный
+   * процесс по адресу `readerUrl` (docs/plans/web-reader-service.md); ядро переправляет туда пути превью.
+   */
+  readerMode: 'embedded' | 'remote'
+  readerUrl?: string
+  /** База `/mcp/preview` глазами исполнителя LLM в режиме `remote`; без неё — `readerUrl`. */
+  readerMcpPublicBase?: string
   /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
   coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
@@ -257,6 +265,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     machinesUrl: env.VC_MACHINES_URL,
     adminMode: env.VC_ADMIN_MODE === 'remote' ? 'remote' : 'embedded',
     adminUrl: env.VC_ADMIN_URL,
+    readerMode: env.VC_READER_MODE === 'remote' ? 'remote' : 'embedded',
+    readerUrl: env.VC_READER_URL,
+    readerMcpPublicBase: env.VC_READER_MCP_PUBLIC_BASE,
     coreUrl: env.VC_CORE_URL,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,

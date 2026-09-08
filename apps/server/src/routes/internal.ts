@@ -20,6 +20,9 @@ import {
   type KanbanEvent, type KanbanEventsRequest, type MachineSnapshot
 } from '../kanban/internal.js'
 import { serveExecStream, type ExecStreamRequest } from '../internal/execStream.js'
+import { createRpcDispatcher } from '@voicechat/shared'
+import type { ReaderCore } from '../reader/core.js'
+import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIMIT } from '../reader/internal.js'
 
 export interface InternalRoutesDeps {
   token: string
@@ -32,6 +35,8 @@ export interface InternalRoutesDeps {
   authenticate: AuthenticateFn
   /** Для отдельного процесса админки: деплой (сокет на хосте ядра) и живое уведомление об отзыве сессии. */
   admin?: { deployTrigger?: DeployTrigger; sessionHub: Pick<SessionHub, 'emit'> }
+  /** Web Reader — отдельный процесс: relay действий в панель, ключи Chromium, список превью, кадры проверок. */
+  reader?: ReaderCore
   /** Канбан — отдельный процесс: состояние ядра ему по RPC, его события — на ленты ядра. */
   kanban?: {
     core: KanbanCore
@@ -70,6 +75,12 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
       return verdict.ok ? { ok: true, user: verdict.user } : verdict
     })
     if (deps.kanban) registerKanbanInternal(scope, deps.kanban, sendRpcError)
+    if (deps.reader) {
+      const dispatchReader = createRpcDispatcher(deps.reader, READER_CORE_RPC_METHODS)
+      scope.post<{ Body: RpcRequest }>(INTERNAL_READER_CORE_PATH, { bodyLimit: READER_RPC_BODY_LIMIT }, async (req, reply) => {
+        try { return { result: await dispatchReader(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
+      })
+    }
     if (deps.admin) {
       const admin = deps.admin
       scope.post<{ Body: RpcRequest }>(INTERNAL_ADMIN_RPC_PATH, async (req, reply) => {
