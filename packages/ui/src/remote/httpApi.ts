@@ -627,6 +627,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectTaskReworkCycles(projectId, taskId)),
     'tasks:createReworkCycle': ({ projectId, taskId, input }) =>
       req(REST.projectTaskReworkCycles(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
+    'tasks:createReworkDraft': ({ projectId, taskId, input }) =>
+      req(REST.projectTaskReworkDrafts(projectId, taskId), { method: 'POST', body: JSON.stringify(input) }),
+    'tasks:updateReworkDraft': ({ projectId, taskId, cycleId, input }) =>
+      req(REST.projectTaskReworkDraft(projectId, taskId, cycleId), { method: 'PATCH', body: JSON.stringify(input) }),
+    'tasks:deleteReworkDraft': ({ projectId, taskId, cycleId }) =>
+      req(REST.projectTaskReworkDraft(projectId, taskId, cycleId), { method: 'DELETE' }),
+    'tasks:submitReworkDraft': ({ projectId, taskId, cycleId }) =>
+      req(REST.projectTaskReworkDraftSubmit(projectId, taskId, cycleId), { method: 'POST' }),
     'tasks:activity': ({ projectId, taskId }) => req(REST.taskActivity(projectId, taskId)),
     'tasks:commentAdd': ({ projectId, taskId, ...b }) =>
       req(REST.taskComments(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
@@ -688,6 +696,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'tasks:attachments': ({ projectId, taskId, scope }) => req(REST.taskAttachments(projectId, taskId, scope)),
     'tasks:uploadAttachment': ({ projectId, taskId, ...body }) =>
       req(REST.taskAttachments(projectId, taskId), { method: 'POST', body: JSON.stringify(body) }),
+    'tasks:readAttachment': async ({ projectId, taskId, attachmentId }) => {
+      // Как у картинок студии: авторизованный fetch и base64 — токен в <img> не уходит.
+      const response = await credentialedFetch(`${httpBase}${REST.taskAttachment(projectId, taskId, attachmentId)}`, { headers: authHeaders() })
+      if (!response.ok) throw new Error(await response.text().catch(() => 'вложение не найдено'))
+      const buffer = await response.arrayBuffer()
+      const bytes = new Uint8Array(buffer)
+      let binary = ''
+      for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]!)
+      return { name: '', mimeType: response.headers.get('content-type') ?? 'application/octet-stream', dataBase64: btoa(binary) }
+    },
     'tasks:deleteAttachment': ({ projectId, taskId, attachmentId }) =>
       req(REST.taskAttachment(projectId, taskId, attachmentId), { method: 'DELETE' }),
     'tasks:reworkMakeFiles': ({ projectId, taskId, conversationId }) => req(REST.taskReworkMakeFiles(projectId, taskId, conversationId)),
