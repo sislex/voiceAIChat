@@ -64,8 +64,12 @@ export class ReleasesRepo extends BaseRepo {
 
   async setProjectReleaseStep(id:string,kind:ReleaseStepKind,status:ReleaseStepStatus,log:string,actor:string):Promise<void> {
     const now=this.now()
+    // Событие таймлайна — только на смену статуса шага: живой лог `running` переписывается по ходу команды,
+    // и событие с полной копией лога на каждое обновление раздуло таблицу событий до 3 ГБ на проде.
+    const previous=(await this.sql.get(`SELECT status FROM project_release_steps WHERE release_id=? AND kind=?`, [id, kind])) as {status:ReleaseStepStatus}|undefined
+    const progressOnly=status==='running'&&previous?.status==='running'
     await this.sql.run(`UPDATE project_release_steps SET status=?,log=?,started_at=CASE WHEN ?='running' THEN COALESCE(started_at,?) ELSE started_at END,finished_at=CASE WHEN ? IN ('passed','failed','skipped') THEN ? ELSE NULL END WHERE release_id=? AND kind=?`, [status, log, status, now, status, now, id, kind])
-    await this.addReleaseEvent(id,`step.${status}`,actor,{kind,log})
+    if(!progressOnly)await this.addReleaseEvent(id,`step.${status}`,actor,{kind,log})
   }
 
   async softDeleteProjectRelease(userId:string,projectId:string,id:string):Promise<boolean> {
