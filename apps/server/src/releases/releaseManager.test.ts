@@ -53,6 +53,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(command).not.toContain('rm -rf')
   })
 
+  // @testCase TC-REG-1
   it('keeps a compound regression stage inside the project checkout',async()=>{
     const commands:string[]=[]
     const target={...ci(),testCommand:'npm run shared & p1=$!; npm run ui & p2=$!; wait $p1; wait $p2'}

@@ -106,11 +106,8 @@ export interface TurnManagerDeps {
   make?: Pick<MakeService, 'promptContext' | 'turnSnapshot' | 'taskSources'>
   /** Контекст студии картинок: список галереи + правило показа результата. */
   studioContext?: (conversationId: string) => Promise<string>
-  /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
-  previewTool?: {
-    register(token: string, entry: { userId: string; conversationId: string }): void
-    unregister(token: string): void
-  }
+  /** Подписанные токены ходов для инструментов превью (`reader/turnToken.ts`): проверяет их любой процесс. */
+  previewTurns?: { issue(entry: { userId: string; conversationId: string }): string }
   /** Резолв id вложения → локальный путь либо уже прочитанные байты с машины. */
   resolveUpload?: (id: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
   /** Короткоживущий контекст вложений для бинарного remote:image. */
@@ -364,8 +361,6 @@ interface TurnState {
   turnId: string
   /** Токен MCP-инструмента БЗ этого хода (снимается при завершении/отмене). */
   kbToolToken: string | null
-  /** Токен MCP-инструментов превью (mcp__browser__*) этого хода. */
-  previewToolToken: string | null
   /** Токен бинарного файлового контекста remote:image. */
   remoteFileToken: string | null
   source: StartTurnRequest
@@ -818,16 +813,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       })
     }
     // Инструменты веб-превью (mcp__browser__*) — вне ветки `remote`: действия
-    // выполняет браузер пользователя, машина-агент для них не нужна. Токен, как
-    // и у БЗ, живёт ровно один ход.
-    let previewToolToken: string | null = null
+    // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
+    // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
     let previewMcpUrl: string | undefined
     // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
     // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
-    if (conv && conv.assistantKind !== 'make' && deps.previewMcpBaseUrl && deps.previewTool) {
-      previewToolToken = randomUUID()
-      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(previewToolToken)}`
-      deps.previewTool.register(previewToolToken, { userId, conversationId })
+    if (conv && conv.assistantKind !== 'make' && deps.previewMcpBaseUrl && deps.previewTurns) {
+      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
     // разговора (ptyId `console:<conv>`). Только у чата этого вида.
@@ -947,7 +939,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       execTarget: requestedTarget,
       turnId,
       kbToolToken,
-      previewToolToken,
       remoteFileToken,
       source: req
     }
@@ -1199,7 +1190,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   /**
-   * Снять токены инструментов хода (БЗ и превью). Обязателен во всех выходах
+   * Снять токены инструментов хода (БЗ и файлы). Обязателен во всех выходах
    * хода (готово, ошибка, отмена, остановка сервера) — иначе каждый отменённый
    * ход оставляет живые токены, по которым можно действовать от его имени.
    */
@@ -1207,11 +1198,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (turn.kbToolToken) {
       deps.kbTool?.unregister(turn.kbToolToken)
       turn.kbToolToken = null
-    }
-    // Токен превью живёт по тем же правилам: снимается вместе с ходом.
-    if (turn.previewToolToken) {
-      deps.previewTool?.unregister(turn.previewToolToken)
-      turn.previewToolToken = null
     }
     if (turn.remoteFileToken) {
       deps.remoteFileTool?.unregister(turn.remoteFileToken)

@@ -45,7 +45,7 @@ import { RemoteLlmClient } from '../llm/remoteClient.js'
 import type { LlmClient } from '../claude/types.js'
 import { type KbUsageTracker } from '../kb/usage.js'
 import { kbToolBroker } from '../kb/kbMcp.js'
-import { previewToolBroker } from '../mcp/previewMcp.js'
+import { createPreviewTurnTokens } from '../reader/turnToken.js'
 import { type BrowserRunnerClient } from '../browser/runnerClient.js'
 import { taskPreparationModel, taskPreparationFailure, parseQaPreparationResponse } from './preparation.js'
 
@@ -138,9 +138,10 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
     kbTool: kbToolBroker,
     kbMcpBaseUrl,
     // Браузерная проверка результата: инструменты появляются у хода только при
-    // выбранном режиме проверки задачи (см. `withBrowserTools`).
+    // выбранном режиме проверки задачи (см. `withBrowserTools`). Токен подписан
+    // секретом MCP — его проверит эндпоинт превью в любом процессе.
     previewMcpBaseUrl,
-    previewTool: previewToolBroker,
+    previewTurns: createPreviewTurnTokens(mcpSecret),
     make: make.service
   })
   // Вопросы модели дублируются в связанный чат задачи обычными сообщениями:

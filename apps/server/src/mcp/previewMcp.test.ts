@@ -8,14 +8,15 @@ import type { ServerMessage } from '@voicechat/shared'
 import {
   PREVIEW_MCP_PATH,
   PreviewActionRelay,
-  previewToolBroker,
   registerPreviewMcp
 } from './previewMcp.js'
+import { createPreviewTurnTokens } from '../reader/turnToken.js'
 
 const SECRET = 'test-secret'
-const TURN = 'turn-token'
 const U = 'admin'
 const CONV = 'conv-1'
+// Токен хода подписан секретом эндпоинта: регистрировать его в процессе больше не нужно.
+const TURN = createPreviewTurnTokens(SECRET).issue({ userId: U, conversationId: CONV })
 
 const MCP_HEADERS = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
 
@@ -122,12 +123,9 @@ describe('previewMcp — инструменты browser', () => {
 
   beforeEach(() => {
     client = (m) => relay.resolve(U, m.requestId, { ok: true, result: { url: 'https://a.b' } })
-    previewToolBroker.register(TURN, { userId: U, conversationId: CONV })
   })
   afterEach(async () => {
-    previewToolBroker.unregister(TURN)
     await app.close()
-    expect(previewToolBroker.size()).toBe(0)
   })
 
   it('неверный секрет → 403', async () => {
@@ -439,8 +437,7 @@ describe('previewMcp — снимок из изолированного Chromium
     }
   }
 
-  beforeEach(() => previewToolBroker.register(TURN, { userId: U, conversationId: CONV }))
-  afterEach(async () => { previewToolBroker.unregister(TURN); await app.close() })
+  afterEach(async () => { await app.close() })
 
   it('снимок берётся у раннера, а не у браузера пользователя', async () => {
     app = Fastify({ logger: false })
