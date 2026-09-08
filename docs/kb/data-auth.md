@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-08
-checked: 023a890a
+checked: 0d1c7312
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -72,7 +72,7 @@ BIGINT, REAL → DOUBLE PRECISION, AUTOINCREMENT → BIGSERIAL, у каждой 
 `migrate()` — только для старых SQLite-файлов; гейт `schemaPg.test.ts` требует и то и другое.
 Миграции `migrate()` на Postgres не выполняются: база создаётся переносом
 (`db/copyToPostgres.ts`, CLI `npx tsx apps/server/src/db/copyToPostgres.cli.ts --sqlite <файл> --url <postgres://…>`)
-уже в актуальной схеме. Тесты: `VC_TEST_DB_URL=postgres://…` заставляет каждую `:memory:`-базу
+уже в актуальной схеме. Прод работает на Postgres с 2026-09-08 (см. deploy.md). Тесты: `VC_TEST_DB_URL=postgres://…` заставляет каждую `:memory:`-базу
 открываться свежей схемой `t_<id>` в Postgres и удалять её в `close()` — так гоняется вся матрица
 сервера; контейнеру нужен `-c max_locks_per_transaction=1024` (схемы с сотней таблиц дропаются
 одной транзакцией). Тесты сырого драйвера и файловых баз помечены `ON_POSTGRES`; тесты

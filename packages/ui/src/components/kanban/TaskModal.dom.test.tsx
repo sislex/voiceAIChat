@@ -1637,3 +1637,61 @@ describe('TaskModal — создание чата задачи', () => {
     expect(calls).toEqual(['t1'])
   })
 })
+
+describe('TaskModal — встроенный AI-чат', () => {
+  const message = (id: string, role: 'u1' | 'ai', text: string) => ({ id, conversationId: 'chat-1', role, text, time: '10:00', createdAt: 1 }) as never
+
+  // @testCase TC-UI-1
+  it('открывает историю в карточке, отправляет сообщение и показывает сохранённый ответ', async () => {
+    const originalApi = window.api
+    const originalClaude = window.claude
+    let done: ((event: { conversationId: string; text: string; message?: import('@shared/types').Message }) => void) | undefined
+    const send = vi.fn()
+    window.api = { ...originalApi,
+      'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)),
+      'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [message('old', 'ai', 'Сохранённый ответ')] })) as never,
+      'messages:add': vi.fn(async () => message('new', 'u1', 'Новый вопрос'))
+    }
+    window.claude = { ...originalClaude, send, onDone: (cb) => { done = cb; return () => {} }, onError: () => () => {} }
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-чат' }))
+    expect(await screen.findByText('Сохранённый ответ')).toBeInTheDocument()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Сообщение ассистенту' }), 'Новый вопрос')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'chat-1', messageId: 'new' }))
+    act(() => done?.({ conversationId: 'chat-1', text: 'Ответ AI', message: message('answer', 'ai', 'Ответ AI') as never }))
+    expect(await screen.findByText('Ответ AI')).toBeInTheDocument()
+    window.api = originalApi; window.claude = originalClaude
+  })
+
+  // @testCase TC-UI-2
+  it('после ошибки сохраняет черновик и повторно отправляет его', async () => {
+    const originalApi = window.api
+    const originalClaude = window.claude
+    let failed: ((event: { conversationId: string; message: string }) => void) | undefined
+    const send = vi.fn()
+    window.api = { ...originalApi, 'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)), 'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [] })) as never, 'messages:add': vi.fn(async () => message('new', 'u1', 'Повтори')) }
+    window.claude = { ...originalClaude, send, onDone: () => () => {}, onError: (cb) => { failed = cb; return () => {} } }
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-чат' }))
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Сообщение ассистенту' }), 'Повтори')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    act(() => failed?.({ conversationId: 'chat-1', message: 'AI временно недоступен' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('AI временно недоступен')
+    expect(screen.getByRole('textbox', { name: 'Сообщение ассистенту' })).toHaveValue('Повтори')
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    window.api = originalApi; window.claude = originalClaude
+  })
+
+  // @testCase TC-REG-1
+  it('не мешает редактированию карточки при открытом чате', async () => {
+    const onUpdate = vi.fn()
+    render(<TaskModal {...props({ onUpdate })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть AI-чат' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Заголовок задачи' }), { target: { value: 'Новое имя' } })
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Заголовок задачи' }))
+    expect(onUpdate).toHaveBeenCalledWith('t1', { title: 'Новое имя' })
+  })
+})

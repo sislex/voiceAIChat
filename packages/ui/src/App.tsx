@@ -276,6 +276,12 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
 const HOST_UTILITY_PAGES: readonly string[] = ['users', 'account', 'personalization', 'make-shared']
 
+function globalSettingsSectionFromSegments(segments: string[]): SettingsSection | null {
+  if (segments[0] !== 'settings' || segments.length !== 2) return null
+  const section = segments[1]
+  return SETTINGS_SECTIONS.includes(section as SettingsSection) ? section as SettingsSection : null
+}
+
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
 /** Открывает независимое рабочее пространство, не меняя маршрут исходного чата. */
@@ -338,14 +344,13 @@ function AppRuntimeHost({ api = window.api, now, delays }: AppProps = {}): JSX.E
 function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Hash-роутинг: URL — источник навигации (см. useHashRoute).
   const { path, segments, navigate } = useHashRoute()
-  const settingsRouteSection = segments[0] === 'settings' && segments.length === 2 && SETTINGS_SECTIONS.includes(segments[1] as SettingsSection)
-    ? segments[1] as SettingsSection
-    : null
-  const isSettingsRoute = segments[0] === 'settings'
   const projectsRoute = parseProjectsRoute(path)
   const inProjects = projectsRoute !== null
   const routeProjectId = projectsRoute && projectsRoute.kind !== 'index' ? projectsRoute.projectId : null
   const routeSettings = projectsRoute?.kind === 'settings'
+  const globalSettingsRoute = segments[0] === 'settings'
+  const globalSettingsSection = globalSettingsSectionFromSegments(segments)
+  const invalidGlobalSettingsRoute = globalSettingsRoute && globalSettingsSection === null
   // Вкладка настроек — из адреса; без сегмента открыто «Общее».
   const routeSettingsTab = projectsRoute?.kind === 'settings' ? projectsRoute.tab ?? 'general' : 'general'
   const routeReleases = projectsRoute?.kind === 'releases'
@@ -412,7 +417,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
   const sidebarAvailable = !inSplit || splitSidebarMode !== null
   const inTaskChat = routeTaskChatId !== null
-  const inChat = (!inProjects && !onUtilityPage && !inSplit) || inTaskChat
+  const inChat = (!inProjects && !onUtilityPage && !inSplit && !globalSettingsRoute) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
   // Каждый домен — своя подписка: обновление аудио или админских данных не
   // тянет за собой перерисовку соседних экранов.
@@ -1564,11 +1569,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     navigate(`/projects/${firstProjectId}`, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId, firstProjectId])
+  // Глобальные настройки управляются адресом. Неполный или неизвестный адрес
+  // нормализуем replace-ом, чтобы Back не зацикливался на редиректе.
+  useEffect(() => {
+    if (invalidGlobalSettingsRoute) {
+      navigate('/settings/llm', { replace: true })
+      return
+    }
+    if (globalSettingsSection && !shell.settingsOpen) shellActions.openSettings()
+    else if (!globalSettingsSection && shell.settingsOpen) shellActions.closeSettings()
+  }, [globalSettingsSection, invalidGlobalSettingsRoute, navigate, shell.settingsOpen, shellActions])
   // Каталог типов нужен разделу «Типы проектов» в пользовательских настройках.
   useEffect(() => {
-    if (authed && shell.settingsOpen && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+    if (authed && globalSettingsSection && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, shell.settingsOpen])
+  }, [authed, globalSettingsSection])
   const loadGitWorkspaces = useCallback(async (projectId: string): Promise<void> => {
     setGitWorkspaces((prev) => ({ ...prev, status: 'loading' }))
     try {
@@ -2370,7 +2385,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
-        onOpenSettings={menu(shellActions.openSettings)}
+        onOpenSettings={menu(() => navigate('/settings/llm'))}
         onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
         onOpenConsole={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('console')) : undefined}
         onOpenWebReader={session.authRequired ? menu(openWebReaderWorkspace) : undefined}
@@ -3498,9 +3513,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
-      {(shell.settingsOpen || isSettingsRoute) && (
+      {globalSettingsSection && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
-          section={settingsRouteSection ?? 'llm'}
+          section={globalSettingsSection}
           onSectionChange={(section) => navigate(`/settings/${section}`)}
           projectTypes={projects.projectTypes}
           projectTypesStatus={projects.projectTypesStatus}
@@ -3541,7 +3556,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           role={session.currentUser?.role ?? 'admin'}
           llmAccess={settingsState.llmAccess}
           voiceInputEnabled={VOICE_INPUT_ENABLED}
-          onClose={() => { shellActions.closeSettings(); navigate(chat.activeId ? `/chat/${chat.activeId}` : '/') }}
+          onClose={() => navigate(chat.activeId ? `/chat/${chat.activeId}` : '/')}
         /></Suspense>
       )}
     </div>

@@ -63,8 +63,9 @@ export interface SettingsModalProps {
    * «LLM» значит просить человека искать раздел глазами.
    */
   initialSection?: SettingsSection
-  /** Управляемый раздел: App синхронизирует его с hash-маршрутом. */
+  /** Управляемый раздел; нужен маршруту, чтобы Back/Forward сразу меняли панель. */
   section?: SettingsSection
+  /** Сообщает хосту о выборе раздела. */
   onSectionChange?: (section: SettingsSection) => void
   /** Каталог типов проекта для раздела «Типы проектов». */
   projectTypes?: ProjectTypeNode[]
@@ -167,8 +168,8 @@ export function SettingsModal({
   const [localSection, setLocalSection] = useState<SettingsSection>(initialSection ?? 'llm')
   const section = controlledSection ?? localSection
   const selectSection = (next: SettingsSection): void => {
-    if (onSectionChange) onSectionChange(next)
-    else setLocalSection(next)
+    if (controlledSection === undefined) setLocalSection(next)
+    onSectionChange?.(next)
   }
   const [ttlDraft, setTtlDraft] = useState(String(settings.generatedFilesTtlDays))
   const ttlNumber = Number(ttlDraft)
