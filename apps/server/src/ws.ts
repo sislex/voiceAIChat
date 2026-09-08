@@ -21,14 +21,44 @@ export interface WsContext {
   sendBinary(data: Buffer): void
 }
 
+/**
+ * Потолок исходящей очереди одного соединения. Кадры, которые клиент не вычитывает (вкладка усыплена,
+ * связь висит), `ws` копит в памяти сервера без ограничения — так ядро на проде набирало сотни мегабайт
+ * буферов и падало по потолку кучи (2026-09-08). Разрыв дешевле: клиент переподключится и получит
+ * свежее состояние снимками, а не хвостом накопленных кадров.
+ */
+export const WS_MAX_BUFFERED_BYTES = 8 * 1024 * 1024
+
+export interface AttachWsOptions {
+  maxBufferedBytes?: number
+  /** Куда сообщить о разрыве: счётчики кадров по типам показывают, что именно переполнило очередь. */
+  onOverflow?: (info: { bufferedAmount: number; frames: Array<[string, number]> }) => void
+}
+
 /** Регистрирует обработчики на сокете; возвращает контекст. */
-export async function attachWs(socket: WebSocket, handlers: WsHandlers): Promise<WsContext> {
+export async function attachWs(socket: WebSocket, handlers: WsHandlers, options: AttachWsOptions = {}): Promise<WsContext> {
+  const limit = options.maxBufferedBytes ?? WS_MAX_BUFFERED_BYTES
+  const frames = new Map<string, number>()
+  let overflowed = false
+  const guard = (): boolean => {
+    if (overflowed || socket.bufferedAmount <= limit) return false
+    overflowed = true
+    options.onOverflow?.({ bufferedAmount: socket.bufferedAmount, frames: [...frames.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8) })
+    try { socket.terminate() } catch { /* уже закрыт */ }
+    return true
+  }
   const ctx: WsContext = {
     send: (msg) => {
-      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg))
+      if (socket.readyState !== socket.OPEN || overflowed) return
+      frames.set(msg.t, (frames.get(msg.t) ?? 0) + 1)
+      socket.send(JSON.stringify(msg))
+      guard()
     },
     sendBinary: (data) => {
-      if (socket.readyState === socket.OPEN) socket.send(data)
+      if (socket.readyState !== socket.OPEN || overflowed) return
+      frames.set('(binary)', (frames.get('(binary)') ?? 0) + 1)
+      socket.send(data)
+      guard()
     }
   }
 
