@@ -652,7 +652,8 @@ export function VoiceBar({
                     }
                   }}
                   className={`tin${editorExpanded ? ' tin--expanded' : ''}`}
-                  placeholder="Напишите сообщение (Shift+Enter — новая строка)…"
+                  placeholder="Напишите сообщение…"
+                  title="Shift+Enter — новая строка"
                   value={draft}
                   rows={DRAFT_MIN_ROWS}
                   onChange={(e) => onDraftChange(e.target.value)}
