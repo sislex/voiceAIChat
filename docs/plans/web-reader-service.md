@@ -1,6 +1,6 @@
 # Web Reader отдельным сервисом (этап 4 плана «части приложения на любом сервере»)
 
-Статус: круг 1 ☑ (2026-09-08), круг 2 ☐, круг 3 ☐. Ветка `feat/reader-service` от `main` (после #118, #119, #121, #122).
+Статус: круг 1 ☑, круг 2 ☑ (2026-09-08), круг 3 ☐. Ветка `feat/reader-service` от `main` (после #118, #119, #121, #122).
 
 ## Зачем
 
@@ -60,17 +60,17 @@
    `server.ts` собирает ридер одной функцией.
 4. ☑ Гейт: `npm run gate`.
 
-### Круг 2 — отдельный процесс ☐
-1. `reader/internal.ts` — `INTERNAL_READER_CORE_PATH = /internal/reader/rpc`, список методов; ядро
+### Круг 2 — отдельный процесс ☑ (2026-09-08)
+1. ☑ `reader/internal.ts` — `INTERNAL_READER_CORE_PATH = /internal/reader/core`, список методов; ядро
    регистрирует диспетчер в `routes/internal.ts` (тело до 16 МБ — кадр PNG base64).
-2. `reader/standalone/{server,index,httpCore}.ts` — `buildReaderServer`: своя база (Postgres), пересылка
+2. ☑ `reader/standalone/{server,index,httpCore}.ts` — `buildReaderServer`: своя база (Postgres), пересылка
    авторизации в ядро (cookie превью и ключ Chromium разбирает ядро в `whoami`), `HttpMachines` к
    `VC_MACHINES_URL` или к ядру, browser-runner по env, `HttpReaderCore` — RPC к ядру; `/v1/health`. Порт 8795.
-3. Ядро: `VC_READER_MODE=remote` + `VC_READER_URL` (+ `VC_READER_MCP_PUBLIC_BASE`) → `readerBridge/proxy.ts`
+3. ☑ Ядро: `VC_READER_MODE=remote` + `VC_READER_URL` (+ `VC_READER_MCP_PUBLIC_BASE`) → `readerBridge/proxy.ts`
    (`/api/preview`, `/api/preview/*`, `/mcp/preview`; роуты Make `/api/preview/make*` конкретнее и выигрывают),
    `previewMcpBaseUrl` указывает на ридер (в ядре и в процессе канбана — общий helper).
-4. Compose: сервис `reader` (профиль `reader`, образ `reader-runtime`), у ядра и канбана переменные режима.
-5. Тесты: `reader/turnToken.test.ts`, `readerBridge/proxy.test.ts` (полнота префиксов по исходникам,
+4. ☑ Compose: сервис `reader` (профиль `reader`, образ `reader-runtime`), у ядра и канбана переменные режима.
+5. ☑ Тесты: `reader/turnToken.test.ts`, `readerBridge/proxy.test.ts` (полнота префиксов по исходникам,
    приоритет путей Make), `reader/standalone/readerRemote.integration.test.ts` (ядро remote + процесс
    ридера: превью машины через прокси ядра и мост машин, MCP через подписанный токен, действие в панель
    уходит в relay ядра по RPC).

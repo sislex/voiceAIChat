@@ -130,10 +130,12 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
-import { PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
+import { PreviewActionRelay } from './mcp/previewMcp.js'
 import { createPreviewTurnTokens } from './reader/turnToken.js'
 import { createReaderModule } from './reader/module.js'
+import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
+import { registerReaderProxy } from './readerBridge/proxy.js'
 import { registerBrowserRoutes } from './routes/browser.js'
 import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
 import { PreviewRunKeys } from './browser/machinePreview.js'
@@ -682,7 +684,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // В remote MCP канбана и CI-команд слушает процесс канбана: исполнителю нужен его адрес, а не адрес ядра.
   const kanbanMcpBase = (opts.config.kanbanMcpPublicBase ?? opts.config.kanbanUrl ?? '').replace(/\/+$/, '')
   const ciCommandsMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
-  const previewMcpBaseUrl = buildPublicMcpUrl(opts.config, PREVIEW_MCP_PATH, mcpSecret)
+  // Web Reader отдельным процессом: MCP «browser» слушает он — исполнителю нужен его адрес (docs/plans/web-reader-service.md).
+  const readerRemote = opts.config.readerMode === 'remote'
+  if (readerRemote && !(opts.config.readerUrl && opts.config.internalToken && opts.config.mcpSecret)) throw new Error('VC_READER_MODE=remote требует VC_READER_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
+  const previewMcpBaseUrl = previewMcpBaseUrlOf(opts.config, mcpSecret)
   const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
   const kanbanMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${KANBAN_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, KANBAN_MCP_PATH, mcpSecret)
 
@@ -1137,18 +1142,21 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     app.addHook('onClose', async () => { if (pushTimer) clearTimeout(pushTimer) })
   }
   // Web Reader: прокси превью и MCP «browser» — модулем с портом к ядру (docs/plans/web-reader-service.md).
+  // Порт ядра нужен и в `remote`: его отдаёт `/internal/reader/core` отдельному процессу ридера.
   const readerCore = createLocalReaderCore({
     db, relay: previewRelay, runKeys: previewRunKeys, shotsRoot: browserShotsRoot,
     publish: (message, userId) => frames.publish(message, userId),
     previews: () => kanban.service.previews.list()
   })
-  createReaderModule({ app, db, core: readerCore, machines: agentRegistry, mcpSecret, runnerFacingBase, ...(browserRunner ? { browserRunner } : {}) })
+  if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl! })
+  else createReaderModule({ app, db, core: readerCore, machines: agentRegistry, mcpSecret, runnerFacingBase, ...(browserRunner ? { browserRunner } : {}) })
   // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
   if (opts.config.internalToken) {
     registerInternalRoutes(app, {
       token: opts.config.internalToken, makeCore, authenticate,
       ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
       admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
+      reader: readerCore,
       ...(remoteKanban ? { kanban: { core: kanbanCore, machinesSnapshot: () => machinesSnapshot(agentRegistry), tunnels: remoteKanban.tunnels, apply: (event) => remoteKanban.apply(event) } } : {})
     })
   }

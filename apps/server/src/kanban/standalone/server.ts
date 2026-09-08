@@ -17,7 +17,7 @@ import { createKbUsageTracker } from '../../kb/usage.js'
 import { KB_MCP_PATH } from '../../kb/kbMcp.js'
 import { buildPublicMcpUrl } from '../../mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from '../../mcp/remoteBashMcp.js'
-import { PREVIEW_MCP_PATH } from '../../mcp/previewMcp.js'
+import { previewMcpBaseUrlOf } from '../../reader/mcpBase.js'
 import { CI_COMMANDS_MCP_PATH } from '../../ci/ciCommandsMcp.js'
 import { createAutomatedQaScenarioRunner } from '../../ci/automatedQaScenario.js'
 import type { CommandExecutor } from '../../ci/types.js'
@@ -118,7 +118,7 @@ export async function buildKanbanServer(opts: BuildKanbanServerOptions): Promise
     automatedQaScenarioRunner, automatedQaScreenshotDir,
     remoteBashMcpBaseUrl: buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, mcpSecret),
     kbMcpBaseUrl: buildPublicMcpUrl(config, KB_MCP_PATH, mcpSecret),
-    previewMcpBaseUrl: buildPublicMcpUrl(config, PREVIEW_MCP_PATH, mcpSecret),
+    previewMcpBaseUrl: previewMcpBaseUrlOf(config, mcpSecret),
     ciCommandsMcpBaseUrl: `${ownMcpBase}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
     ciKbUpdate: undefined
   })
