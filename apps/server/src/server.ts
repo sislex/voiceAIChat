@@ -137,7 +137,10 @@ import { createReaderModule } from './reader/module.js'
 import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
 import { registerReaderProxy } from './readerBridge/proxy.js'
-import { registerBrowserRoutes } from './routes/browser.js'
+import { registerBrowserShotRoutes } from './routes/browserShots.js'
+import { createPlaywrightReaderModule, createRemotePlaywrightReader, type PlaywrightReaderService } from '@voicechat/playwright-reader'
+import { createLocalPlaywrightReaderCore } from './playwrightReaderBridge/localCore.js'
+import { registerPlaywrightReaderProxy } from './playwrightReaderBridge/proxy.js'
 import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
 import { PreviewRunKeys } from './browser/machinePreview.js'
 import { readUserFile } from './serverFiles.js'
@@ -648,7 +651,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : undefined)
   // Кадры браузерной проверки задач: файл на диске, в ленте рана — ссылка.
   const browserShotsRoot = join(opts.config.dataDir, 'ci-browser-shots')
-  registerBrowserRoutes(app, { db, shotsRoot: browserShotsRoot, ...(browserRunner ? { runner: browserRunner } : {}) })
+  registerBrowserShotRoutes(app, { db, shotsRoot: browserShotsRoot })
   // Снимки вердикта Playwright-этапа: файл на диске, а не base64 в result_json —
   // строка рана иначе распухала бы на сотни килобайт с каждой попыткой.
   const automatedQaScreenshotDir = join(opts.config.dataDir, 'qa-screenshots')
@@ -1124,8 +1127,22 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     publish: (message, userId) => frames.publish(message, userId),
     previews: () => kanban.service.previews.list()
   })
+  const playwrightReaderCore = createLocalPlaywrightReaderCore({
+    db, issuePreviewRunKey: (...args) => readerCore.issuePreviewRunKey(...args),
+    logBrowserShot: (...args) => readerCore.logBrowserShot(...args)
+  })
+  let playwrightReader: PlaywrightReaderService
+  if (opts.config.playwrightReaderMode === 'remote') {
+    if (!(opts.config.playwrightReaderUrl && opts.config.internalToken)) throw new Error('VC_PLAYWRIGHT_READER_MODE=remote требует VC_PLAYWRIGHT_READER_URL и VC_INTERNAL_TOKEN')
+    playwrightReader = createRemotePlaywrightReader({ baseUrl: opts.config.playwrightReaderUrl, token: opts.config.internalToken })
+    registerPlaywrightReaderProxy(app, { baseUrl: opts.config.playwrightReaderUrl })
+  } else {
+    const module = createPlaywrightReaderModule({ core: playwrightReaderCore, runner: browserRunner, runnerFacingBase })
+    module.register(app)
+    playwrightReader = module.service
+  }
   if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl! })
-  else createReaderModule({ app, db, core: readerCore, machines: agentRegistry, mcpSecret, runnerFacingBase, ...(browserRunner ? { browserRunner } : {}) })
+  else createReaderModule({ app, db, core: readerCore, machines: agentRegistry, mcpSecret, browser: playwrightReader })
   // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
   if (opts.config.internalToken) {
     registerInternalRoutes(app, {
@@ -1133,6 +1150,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
       admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
       reader: readerCore,
+      playwrightReader: { core: playwrightReaderCore, service: playwrightReader },
       ...(remoteKanban ? { kanban: { core: kanbanCore, machinesSnapshot: () => machinesSnapshot(agentRegistry), tunnels: remoteKanban.tunnels, apply: (event) => remoteKanban.apply(event) } } : {})
     })
   }

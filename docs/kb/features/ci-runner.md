@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-06
-checked: 991a960a
+updated: 2026-09-09
+checked: c8fcb5e8
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -150,7 +150,7 @@ relay. В фазе плана браузер не подключается — �
 пишет PNG в `<dataDir>/ci-browser-shots/<runId>/<n>.png`
 (`apps/server/src/browser/checkShots.ts`) и добавляет в лог активного рана
 системную строку со ссылкой `GET /api/ci/runs/:runId/browser-shots/:name`
-(`REST.ciRunBrowserShot`, роут — в `routes/browser.ts`, доступ решает `getCiRun`,
+(`REST.ciRunBrowserShot`, роут — в `routes/browserShots.ts`, доступ решает `getCiRun`,
 имя обязано быть номером). Base64 в лог не кладётся: лента реплеится целиком
 после каждого reconnect. `RunFeed` ссылку **не линкует** — она остаётся текстом,
 кадр открывается копированием адреса; картинок в ленте по-прежнему нет. Уборка

@@ -12,10 +12,7 @@
 // `previewProxy`).
 
 import { randomBytes } from 'node:crypto'
-import { MACHINE_PREVIEW_SUFFIX } from '../routes/previewProxy.js'
-
-/** Cookie ключа; имя отличается от пользовательской preview-cookie. */
-export const PREVIEW_RUN_COOKIE = 'vc_preview_run'
+export { PREVIEW_RUN_COOKIE, isMachinePreviewUrl, machinePreviewUrl } from '@voicechat/shared'
 
 /** Сколько живёт ключ без продления: ран длиннее суток — это уже не ран. */
 export const PREVIEW_RUN_KEY_TTL_MS = 24 * 60 * 60 * 1000
@@ -75,20 +72,4 @@ export class PreviewRunKeys {
     this.byKey.delete(key)
     if (this.byUser.get(userId) === key) this.byUser.delete(userId)
   }
-}
-
-/** Адрес машины ведёт на её loopback, поэтому его открывает не Chromium, а прокси. */
-export function isMachinePreviewUrl(raw: string): boolean {
-  try { return new URL(raw).hostname.toLowerCase().endsWith(MACHINE_PREVIEW_SUFFIX) } catch { return false }
-}
-
-/**
- * Адрес машины → адрес прокси превью, видимый из контейнера раннера. Прочие
- * адреса возвращаются как есть: публичный сайт Chromium открывает сам, и
- * прогонять его через прокси значило бы менять страницу без нужды.
- */
-export function machinePreviewUrl(runnerFacingBase: string, raw: string): string {
-  if (!isMachinePreviewUrl(raw)) return raw
-  const base = runnerFacingBase.replace(/\/+$/, '')
-  return `${base}/api/preview?url=${encodeURIComponent(raw)}`
 }

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-09
-checked: eb4e281f
+checked: 41e07830
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -147,6 +147,28 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 запуска health check; для `stt-runner` установлен лимит `cpus: 2`.
 
 ## Переменные окружения
+
+**Playwright Reader отдельным сервисом (2026-09-09).** В compose приложение
+`playwright-reader` включено по умолчанию, как Make: образ `voicechat-playwright-reader`,
+стадия `playwright-reader-runtime`, порт 8797. У ядра уже заданы
+`VC_PLAYWRIGHT_READER_MODE=remote` и `VC_PLAYWRIGHT_READER_URL=http://playwright-reader:8797`.
+После объединения со студией картинок порт 8796 оставлен ей; разные значения
+по умолчанию позволяют запускать оба standalone-процесса на одном хосте.
+Новые обязательные строки в `.env` не нужны: сервис получает существующие
+`VC_INTERNAL_TOKEN` и `VC_BROWSER_RUNNER_TOKEN`. Его `VC_CORE_URL` ведёт на ядро,
+`VC_BROWSER_RUNNER_URL` — на Chromium. Своей БД, тома данных и MCP-секрета у него нет.
+Caddy направляет `/api/browser/*` в приложение; при заходе на порт ядра эти пути
+переправляет `playwrightReaderBridge/proxy.ts`. `/internal/*` снаружи закрыты.
+
+В dev/desktop режим по умолчанию `embedded`. Для отдельного процесса вне compose
+ядру нужны `VC_PLAYWRIGHT_READER_MODE=remote`, `VC_PLAYWRIGHT_READER_URL` и общий
+`VC_INTERNAL_TOKEN`; приложению — `VC_CORE_URL`, тот же токен, URL/токен browser-runner.
+Запуск: `npm run -w @voicechat/playwright-reader start` (`PORT=8797`, `HOST=127.0.0.1`).
+`VC_BROWSER_PREVIEW_BASE` задаёт доступный Chromium адрес прокси (fallback —
+`VC_MCP_PUBLIC_BASE`, затем `VC_CORE_URL`); он должен совпадать с разрешённым
+`VC_BROWSER_PREVIEW_ORIGIN` раннера. Отдельный Web Reader обращается к приложению
+при режиме remote либо к RPC ядра при embedded; его собственный режим независим.
+Для возврата compose к embedded надо также убрать прямой маршрут Caddy в приложение.
 
 **Make отдельным сервисом (`docs/plans/make-standalone.md`, 2026-09-07).** В compose Make — сервис
 `make` (образ `voicechat-make`, стадия `make-runtime`, порт 8788, `mem_limit 512m`, healthcheck

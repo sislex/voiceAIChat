@@ -91,4 +91,5 @@ export * from './scenarioStep'
 export * from './rateLimit'
 export * from './storyParse'
 
+export * from './playwrightReader'
 export * from './imageStudioInternal'

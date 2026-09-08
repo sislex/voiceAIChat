@@ -1,11 +1,14 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-04
-checked: bbb48616
+updated: 2026-09-09
+checked: 41e07830
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
-  - apps/server/src/routes/browser.ts
+  - apps/playwright-reader
+  - apps/server/src/playwrightReaderBridge
+  - apps/server/src/routes/browserShots.ts
+  - packages/shared/src/playwrightReader.ts
   - packages/shared/src/types.ts
   - packages/shared/src/ipc.ts
   - packages/playwright-reader-app
@@ -23,17 +26,63 @@ areas:
 
 `@voicechat/playwright-reader-app` владеет route `#/playwright-reader[/conversationId]`, фильтруемым по `assistantKind: 'playwright-reader'` conversation read model, browser-панелью и собственным store/module lifecycle. Chat приходит через `ReaderChatPort`, а сессия — через создаваемый host-адаптером `BrowserSessionPort`; прямых imports host, Web Reader, `chatStore`, transport, browser storage или исходников browser-runner в пакете нет.
 
-Локальная frontend-модель `BrowserSessionState` имеет состояния `idle`, `starting`, `connected`, `stopped`, `error` и capabilities `chromium`, `navigate`, `screencast`. При активации предыдущая session отписывается и dispose-ится, новая запускается для выбранного `conversationId`; смена разговора защищена generation token, `stop` делегируется session, общий dispose очищает подписки и session. UI не заявляет Chromium подключённым при `capabilities.chromium === false`, показывает явную недоступность и блокирует навигацию без `navigate`. Это честная деградация по возможностям adapter; полноценная server orchestration Chromium по-прежнему не реализована.
+Локальная frontend-модель `BrowserSessionState` имеет состояния `idle`, `starting`, `connected`, `stopped`, `error` и capabilities `chromium`, `navigate`, `screencast`. При активации предыдущая session отписывается и dispose-ится, новая запускается для выбранного `conversationId`; смена разговора защищена generation token, `stop` делегируется session, общий dispose очищает подписки и session. UI не заявляет Chromium подключённым при `capabilities.chromium === false`, показывает явную недоступность и блокирует навигацию без `navigate`. Это деградация по возможностям adapter. Серверная оркестрация уже работает и принадлежит `apps/playwright-reader`; registry frontend пока остаётся переходным composition path (см. `architecture.md`).
 
 ## Что это и чем отличается от Web Reader
 
 Playwright Reader — отдельный продуктовый режим: слева обычный чат ChatAI, справа
-предполагается настоящий изолированный Chromium под управлением Playwright.
+работает изолированный Chromium под управлением Playwright.
 Существующий Web Reader (`assistantKind: 'web-recorder'`, iframe поверх
 `/api/preview`, `postMessage`-контракт рекордера) остаётся рабочим и не
-затрагивается: см. [ui.md](../ui.md#web-reader--отдельная-страница). Общего у них
-нет ничего, кроме переиспользованных React-компонентов чата и split-раскладки;
-`projectId` у Playwright Reader всегда `null`, проектный контекст не применяется.
+затрагивается: см. [ui.md](../ui.md#web-reader--отдельная-страница). Они используют общий
+MCP-вход `/mcp/preview`, компоненты чата и split-раскладку. Проект разговора может
+давать машине и инструментам контекст; выбор Chromium не зависит от наличия проекта.
+
+## Приложение `apps/playwright-reader` (2026-09-09)
+
+Backend вынесен в workspace `@voicechat/playwright-reader`: `routes.ts` обслуживает
+прежний REST `/api/browser/*`, `module.ts` собирает его с исполнением команд модели,
+`standalone/server.ts` запускает тот же модуль самостоятельным Fastify-процессом.
+У приложения нет БД, своего входа пользователя или файлов профилей. Эти границы
+держат тесты `boundary.test.ts` приложения и `playwrightReaderBridge/boundary.test.ts` ядра.
+
+`PlaywrightReaderCore` — четыре метода: разговор, доступный пользователю;
+цель модели (сессия Reader по разговору или Chromium-проверка по задаче);
+ключ прокси машины; запись PNG в ленту проверки. Реализация над БД/ключами/лентой
+живёт в `apps/server/src/playwrightReaderBridge/localCore.ts`, отдельный процесс
+получает её через `/internal/playwright-reader/core`. Снимки CI по-прежнему пишет
+ядро, отдаёт `routes/browserShots.ts`; переноса файлов или миграции данных нет.
+
+`PlaywrightReaderService` (`execute`, `screenshot`) подключает Chromium к общему MCP
+`/mcp/preview`. Встроенный Web Reader вызывает этот порт напрямую; отдельный —
+через `/internal/playwright-reader/service` у приложения, либо у ядра, если
+Playwright Reader встроен. Cookie прокси и преобразование URL `*.machine.internal`
+сохраняются. HTTP-клиент раннера теперь находится в `apps/browser-runner/src/client.ts`
+и экспортируется как `@voicechat/browser-runner/client`, без загрузки самого Playwright.
+Старый `apps/server/src/browser/runnerClient.ts` — совместимый реэкспорт для CI/QA.
+
+Отдельный процесс пересылает исходные cookie/Bearer/CSRF в `/internal/whoami` на
+каждом запросе. Доступ к чужим разговорам закрывает ядро, тип Reader проверяет
+приложение. Внутренние пути закрыты `VC_INTERNAL_TOKEN`, методы RPC перечислены в
+`packages/shared/src/playwrightReader.ts`; тело до 16 МБ для PNG/upload. REST без
+раннера отвечает 501. Для модели отсутствие раннера возвращает явную ошибку;
+только обычные разговоры получают `null` и переходят в relay панели пользователя.
+Результат чтения передаётся полем `result`: прежнее `data` терялось в MCP и
+превращало успешное чтение в `{}`. Ошибки селекторов сохраняются как ошибки MCP.
+
+В dev/desktop по умолчанию `embedded`. У ядра `VC_PLAYWRIGHT_READER_MODE=remote`
+и `VC_PLAYWRIGHT_READER_URL`; приложение запускается командой
+`npm run -w @voicechat/playwright-reader start` на порту 8797. Нужны `VC_CORE_URL`,
+общий `VC_INTERNAL_TOKEN`, адрес/токен browser-runner и `VC_BROWSER_PREVIEW_BASE`.
+В compose сервис включён по умолчанию, как Make; Caddy и прокси ядра сохраняют
+тот же публичный `/api/browser/*`. Подробности окружения — `deploy.md` и
+`apps/playwright-reader/AGENTS.md`. `/v1/health` показывает здоровье процесса,
+версию и наличие настройки раннера, не подтверждает запуск Chromium.
+
+Регрессии: тесты приложения и `playwrightReaderBridge/remote.integration.test.ts`
+(Playwright remote + Web Reader embedded/remote, Playwright embedded + Web Reader remote):
+настоящие HTTP-порты, Bearer/cookie+CSRF, чужой разговор, DELETE без тела, RPC-гейт,
+текст страницы и PNG через MCP. Chromium подменён фейком.
 
 ## Связка «оркестрация + панель» (2026-08-25)
 
@@ -49,15 +98,11 @@ Playwright Reader — отдельный продуктовый режим: сл
   Screenshot` и `browserSession` (`protocol.ts`), тип `BrowserCommand` и мост
   `RendererBrowserBridge` (`ipc.ts`, `window.browser`); screenshot вынесен из
   union команды моста (`RendererBrowserCommand`) — у него отдельный роут.
-- **Сервер**: `apps/server/src/browser/runnerClient.ts` — HTTP-клиент раннера
-  (Bearer, маппинг статусов в `BrowserRunnerError`: 404/409/503/502, screenshot —
-  бинарь). `apps/server/src/routes/browser.ts` — REST-оркестрация: `guard`
-  проверяет владение разговором (`db.getConversation(uid)`) и что это
-  playwright-reader; `sessionId = conversationId`, `userKey = uid`; screenshot
-  собирается в data-URL; без раннера — 501. Wiring в `server.ts`: клиент
-  создаётся из `config.browserRunnerUrl`+`browserRunnerToken`
-  (`VC_BROWSER_RUNNER_URL`/`VC_BROWSER_RUNNER_TOKEN`), инъекция —
-  `BuildOptions.browserRunner`.
+- **Сервер**: HTTP-клиент `apps/browser-runner/src/client.ts` (Bearer, статусы
+  `BrowserRunnerError`, бинарные снимки); `apps/playwright-reader/src/routes.ts`
+  проверяет доступ через `PlaywrightReaderCore` и тип разговора. Ключи сессии:
+  `sessionId = conversationId`, `userKey = uid`; без раннера — 501. В embedded
+  клиент инъектируется через `BuildOptions.browserRunner`, в standalone — `runner`.
 - **UI**: `makeBrowserBridge` в `remote/index.ts` ставит `window.browser`;
   `BrowserSessionPane` при монтировании зовёт `start` (incarnation хранит в ref),
   тянет кадры поллингом `screenshot` (screencast, 1.2 c), навигация/back/forward/
@@ -65,13 +110,12 @@ Playwright Reader — отдельный продуктовый режим: сл
   `scaleBrowserCoordinates` в координаты вьюпорта, `stop` — на размонтировании.
   Деградация: нет моста или 501 → «Chromium недоступен».
 
-Тесты: `runnerClient.test.ts`, `routes/browser.test.ts` (server),
+Тесты: `apps/browser-runner/src/client.test.ts`, `apps/playwright-reader/src/routes.test.ts`,
 `BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx` (UI).
 Для реального запуска раннеру нужен `npx playwright install chromium`.
 
-Не подключено к раннеру: инструменты модели `mcp__browser__*` в этом режиме
-по-прежнему идут через `PreviewActionRelay`/iframe (управление настоящим Chromium
-моделью — следующий шаг). Пользовательская навигация и ввод в Chromium — работают.
+Инструменты модели `mcp__browser__*` подключены к изолированному Chromium через
+`PlaywrightReaderService`; панель пользователя используется только Web Reader.
 
 Механика привязки одна на оба Reader-режима и живёт в `AppBody`
 (`packages/ui/src/App.tsx`): `previewRunnerRef` хранит не голый runner, а пару
@@ -279,10 +323,10 @@ hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт ме�
 ## Инструменты модели работают в изолированном Chromium (круг 4)
 
 `registerPreviewMcp` получил `browserExecutor`: для разговоров
-`playwright-reader` действие исполняется на сервере через `browserRunner`, а не
+`playwright-reader` действие исполняется приложением через `PlaywrightReaderService`, а не
 уходит в `PreviewActionRelay` (тот пушит его в браузер пользователя, где нужной
 страницы нет). Перевод `PreviewAction` → `BrowserCommand` живёт в
-`apps/server/src/browser/modelActions.ts` и покрыт тестами.
+`packages/shared/src/browserActions.ts` (`planModelAction`) и покрыт тестами.
 
 Ложатся напрямую: `open`, `back`, `forward`, `click`, `type`, `read`, `find`,
 `wait`, `scroll` (через колесо; `to: top|bottom` — крупный шаг), `press`,

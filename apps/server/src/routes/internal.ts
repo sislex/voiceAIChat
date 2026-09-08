@@ -1,3 +1,5 @@
+import type { PlaywrightReaderCore, PlaywrightReaderService } from '@voicechat/playwright-reader'
+import { INTERNAL_PLAYWRIGHT_READER_CORE_PATH, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, PLAYWRIGHT_READER_CORE_METHODS, PLAYWRIGHT_READER_SERVICE_METHODS, PLAYWRIGHT_READER_RPC_BODY_LIMIT } from '@voicechat/shared'
 // Внутренний API ядра для соседних сервисов (отдельные процессы Make и канбана). Не под `/api/`:
 // сюда не действует пользовательская авторизация, действует общий Bearer `VC_INTERNAL_TOKEN`
 // сети compose; наружу Caddy эти пути не проксирует. Без токена в конфиге API не регистрируется —
@@ -40,6 +42,7 @@ export interface InternalRoutesDeps {
   admin?: { deployTrigger?: DeployTrigger; sessionHub: Pick<SessionHub, 'emit'> }
   /** Web Reader — отдельный процесс: relay действий в панель, ключи Chromium, список превью, кадры проверок. */
   reader?: ReaderCore
+  playwrightReader?: { core: PlaywrightReaderCore; service: PlaywrightReaderService }
   /** Канбан — отдельный процесс: состояние ядра ему по RPC, его события — на ленты ядра. */
   kanban?: {
     core: KanbanCore
@@ -84,6 +87,17 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
       scope.post<{ Body: RpcRequest }>(INTERNAL_READER_CORE_PATH, { bodyLimit: READER_RPC_BODY_LIMIT }, async (req, reply) => {
         try { return { result: await dispatchReader(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
       })
+    }
+    if (deps.playwrightReader) {
+      const endpoints = [
+        [INTERNAL_PLAYWRIGHT_READER_CORE_PATH, createRpcDispatcher(deps.playwrightReader.core, PLAYWRIGHT_READER_CORE_METHODS)],
+        [INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, createRpcDispatcher(deps.playwrightReader.service, PLAYWRIGHT_READER_SERVICE_METHODS)]
+      ] as const
+      for (const [path, dispatchReader] of endpoints) {
+        scope.post<{ Body: RpcRequest }>(path, { bodyLimit: PLAYWRIGHT_READER_RPC_BODY_LIMIT }, async (req, reply) => {
+          try { return { result: await dispatchReader(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
+        })
+      }
     }
     if (deps.admin) {
       const admin = deps.admin
