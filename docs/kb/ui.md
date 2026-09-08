@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-08
-checked: f4cde042
+checked: 1a99413b
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -1029,10 +1029,21 @@ USD за 1M токенов, источник и дату тарифа; форм�
 Допустимы `llm`, `aiAssist`, `download`, `stt`, `tts`, `dialog`, `instructions`,
 `storage`, `security`, `ui` и `projectTypes`; URL управляет выбранной вкладкой,
 поэтому прямой вход, перезагрузка и Back/Forward её восстанавливают. Клик по
-вкладке добавляет запись истории. `#/settings`, неизвестный раздел и лишние
-сегменты нормализуются `replace`-переходом в `#/settings/llm`; закрытие возвращает
-к обычному маршруту активного чата. Маршруты настроек разговора
-`#/chat/:id/context[/... ]` остаются отдельными и не перехватываются.
+вкладке добавляет запись истории. `#/settings`, прежний неразделённый URL окна
+настроек, неизвестный раздел и лишние сегменты нормализуются `replace`-переходом
+в `#/settings/llm`; закрытие возвращает к обычному маршруту активного чата.
+Список допустимых сегментов — `SETTINGS_SECTIONS`, а controlled-связка
+`section`/`onSectionChange` в `packages/ui/src/components/SettingsModal.tsx`
+позволяет `App` держать URL единственным источником активной вкладки.
+
+LLM engine/provider/model теперь редактируются только на общей вкладке
+`#/settings/llm`. В `ConversationSettings` нет LLM-вкладки и этих полей в
+контракте `onSave`; сохранение остальных параметров разговора в
+`packages/ui/src/App.tsx` передаёт существующие legacy-значения
+`conversation.llmEngineId`, `conversation.llmProvider` и `conversation.llmModel`
+обратно без изменения, поэтому форма их не выбирает, не очищает и не
+перезаписывает. Адресуемая вкладка настроек разговора
+`#/chat/:id/context[/... ]` остаётся отдельной и не перехватывается.
 
 Карточка задачи тоже адресуема: `ProjectBoard` не только принимает
 `initialOpenTaskId`/`initialOpenTaskTab` из адреса, но и сообщает наружу каждое

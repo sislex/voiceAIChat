@@ -3380,8 +3380,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           machineOps={machineOps}
           role={session.currentUser?.role ?? 'admin'}
           settings={settingsState.settings}
-          engines={settingsState.llmEngines}
-          llmAccess={settingsState.llmAccess}
           defaultAgentId={settingsState.settings.defaultAgentId}
           projects={projects.projects}
           webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
@@ -3392,10 +3390,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
           onOpenExplorer={(agentId, path) => { closeConversationSettings(); operationsActions.openUtility('explorer', agentId, path) }}
-          onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, permissionMode, kbContextMode, projectId }) => {
             await chatActions.renameConversation(conversationSettingsTarget.id, title)
             await chatActions.setConversationProject(conversationSettingsTarget.id, projectId)
-            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
+            // Существующие legacy-переопределения не меняем: форма разговора их
+            // больше не редактирует и не должна случайно очищать при сохранении.
+            const conversation = conversationSettingsTarget.conversation!
+            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, conversation.llmProvider, conversation.llmModel, permissionMode, kbContextMode, conversation.llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = operations.agents.find((item) => item.id === agentId)

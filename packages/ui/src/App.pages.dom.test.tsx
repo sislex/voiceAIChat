@@ -25,6 +25,9 @@ async function renderApp(): Promise<FakeApi> {
 }
 
 describe('App — утилиты как страницы по URL', () => {
+  // @testCase tc-ui-settings-routes
+  // @testCase tc-ui-history
+  // @testCase tc-negative-legacy-chat-llm
   it('#/claude-code рендерит проводник Claude Code страницей (не попап), чат скрыт', async () => {
     window.location.hash = '#/claude-code'
     await renderApp()

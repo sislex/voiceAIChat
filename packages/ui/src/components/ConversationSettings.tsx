@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react'
-import { KB_CONTEXT_MODES, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
-import type { ChatInstruction, ContextPreset, Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
+import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
+import type { ChatInstruction, ContextPreset, Conversation, KbContextMode, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
-import type { LlmEngineOption } from '@shared/admin'
 import type { ChatStorageView, MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import { ChatStorageCard } from './ChatStorageCard'
-import type { UserLlmAccess } from '@shared/llmAccess'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
-import { LlmSettingsEditor } from './LlmSettingsEditor'
 import { SettingsPage } from './SettingsPage'
 import { ContextInspector } from './ContextInspector'
 
@@ -20,12 +17,9 @@ export interface ConversationSettingsProps {
   conversation: Conversation
   agents: AgentInfo[]
   machineOps?: MachineOps
-  /** Роль пользователя — прячет модели Claude, недоступные роли user. */
+  /** Роль пользователя определяет безопасный режим разговора без машины. */
   role: UserRole
-  llmAccess?: UserLlmAccess[]
-  /** Общие настройки — дефолты движка/модели, когда разговор их не переопределяет. */
-  settings: Pick<Settings, 'llmProvider' | 'model' | 'codexModel' | 'permissionMode'> & { llmEngineId?: string | null }
-  engines?: LlmEngineOption[]
+  settings: Pick<Settings, 'permissionMode'>
   /** Машина по умолчанию — предвыбирается в новых разговорах и помечается в списке. */
   defaultAgentId?: string | null
   /** Проекты пользователя — для привязки чата к проекту. */
@@ -50,9 +44,6 @@ export interface ConversationSettingsProps {
     execTarget: string | null
     workdir: string | null
     skillNames: string[]
-    llmEngineId?: string | null
-    llmProvider: LlmProvider | null
-    llmModel: string | null
     permissionMode: PermissionMode | null
     kbContextMode: KbContextMode
     projectId: string | null
@@ -98,24 +89,15 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, embedded = false, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, settings, projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, embedded = false, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
   const contextRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/context`
-  const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'context'>(() => window.location.hash.startsWith(contextRoutePrefix) ? 'context' : 'general')
+  const [activeTab, setActiveTab] = useState<'general' | 'context'>(() => window.location.hash.startsWith(contextRoutePrefix) ? 'context' : 'general')
   const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
-  const [llmEngineId, setLlmEngineId] = useState<string | null>(conversation.llmEngineId ?? settings.llmEngineId ?? null)
-  const initialProvider: LlmProvider = conversation.llmProvider ?? settings.llmProvider
-  const [llmProvider, setLlmProvider] = useState<LlmProvider>(initialProvider)
-  const userLlm = { engineId: settings.llmEngineId ?? null, provider: settings.llmProvider, model: settings.llmProvider === 'codex' ? settings.codexModel : normalizeClaudeModel(settings.model) }
-  const [inheritedLlm, setInheritedLlm] = useState(userLlm)
-  const [llmOverridden, setLlmOverridden] = useState(conversation.llmProvider !== null || (conversation.llmEngineId ?? null) !== null)
-  const [llmModel, setLlmModel] = useState<string>(
-    conversation.llmProvider && conversation.llmModel !== null ? conversation.llmModel : userLlm.model
-  )
   // '' — «как в общих настройках» (в БД хранится null).
   const [permissionMode, setPermissionMode] = useState<PermissionMode | ''>(conversation.permissionMode ?? '')
   const [kbContextMode, setKbContextMode] = useState<KbContextMode>(conversation.kbContextMode ?? 'auto')
@@ -140,7 +122,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     window.addEventListener('hashchange', syncContextRoute)
     return () => window.removeEventListener('hashchange', syncContextRoute)
   }, [contextRoutePrefix])
-  const selectTab = (tab: 'general' | 'llm' | 'context'): void => {
+  const selectTab = (tab: 'general' | 'context'): void => {
     if (window.location.hash.startsWith(contextRoutePrefix)) {
       window.location.hash = `/chat/${encodeURIComponent(conversation.id)}`
     }
@@ -154,15 +136,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
       return
     }
     void fetchProjectDetail(projectId).then((d) => {
-      if (alive && d) {
-        setProjectMachines(d.machines)
-        void window.ci?.getProjectCiLlm(projectId).then((view) => {
-          if (!alive) return
-          const inherited = { engineId: settings.llmEngineId ?? null, provider: view.config.provider, model: view.config.model }
-          setInheritedLlm(inherited)
-          if (!llmOverridden) { setLlmEngineId(inherited.engineId); setLlmProvider(inherited.provider); setLlmModel(inherited.model) }
-        })
-      }
+      if (alive && d) setProjectMachines(d.machines)
     })
     return () => {
       alive = false
@@ -207,11 +181,6 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     setSkillNames([...d.skills])
     setCwd('')
     setEntries([])
-    const view = await window.ci?.getProjectCiLlm(id)
-    if (view) {
-      const inherited = { engineId: settings.llmEngineId ?? null, provider: view.config.provider, model: view.config.model }
-      setInheritedLlm(inherited); setLlmEngineId(inherited.engineId); setLlmProvider(inherited.provider); setLlmModel(inherited.model); setLlmOverridden(false)
-    }
   }
   const [skillDescription, setSkillDescription] = useState('')
   const [saving, setSaving] = useState(false)
@@ -297,19 +266,11 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     ) return
     setSaving(true)
     try {
-      const inheritsGlobal = !llmOverridden || (
-        llmProvider === inheritedLlm.provider &&
-        llmModel === inheritedLlm.model &&
-        llmEngineId === (inheritedLlm.engineId ?? null)
-      )
       await onSave({
         title: cleanTitle,
         execTarget,
         workdir: execTarget ? workdir : null,
         skillNames: execTarget ? skillNames : [],
-        ...(conversation.llmEngineId !== undefined || settings.llmEngineId !== undefined ? { llmEngineId: inheritsGlobal ? null : llmEngineId } : {}),
-        llmProvider: inheritsGlobal ? null : llmProvider,
-        llmModel: inheritsGlobal ? null : llmModel,
         permissionMode: permissionMode || null,
         kbContextMode,
         projectId
@@ -356,13 +317,13 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         ariaLabel="Разделы настроек чата"
         activeTab={activeTab}
         onTabChange={selectTab}
-        tabs={[{ id: 'general', label: 'Общее' }, { id: 'llm', label: 'LLM' }, { id: 'context', label: 'Контекст и инструкции' }]}
+        tabs={[{ id: 'general', label: 'Общее' }, { id: 'context', label: 'Контекст и инструкции'}]}
       />
       <main className={`convsettings-body convsettings-tab-${activeTab}`}>
         {activeTab === 'context' && <ContextInspector
           conversationId={conversation.id}
-          provider={llmProvider}
-          model={llmModel}
+          provider={conversation.llmProvider ?? 'claude'}
+          model={conversation.llmModel ?? 'default'}
           permissionMode={effectiveMode}
           kbMode={kbContextMode}
           agent={selectedAgent}
@@ -388,14 +349,6 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
             // догнать её, иначе кнопка «Сохранить» вернёт старое значение.
             if (patch.kbContextMode) setKbContextMode(patch.kbContextMode)
             if (patch.permissionMode !== undefined) setPermissionMode(patch.permissionMode ?? '')
-            // Сброс переопределения движка: черновик возвращается к наследуемым
-            // значениям, иначе «Сохранить» снова запишет прежний override.
-            if (patch.llmProvider === null) {
-              setLlmOverridden(false)
-              setLlmEngineId(inheritedLlm.engineId)
-              setLlmProvider(inheritedLlm.provider)
-              setLlmModel(inheritedLlm.model)
-            }
           }}
         />}
         {webReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Web Reader">
@@ -471,20 +424,6 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
             </dl>
             {conversation.workspace.diagnostic && <p role="alert">{conversation.workspace.diagnostic}</p>}
           </section>}
-        </section>
-
-        <section className="convsettings-card convsettings-llm-card">
-          <div className="convsettings-sectionhead"><div><h2>LLM</h2><p>Чат наследует эффективные настройки проекта, а без проекта — пользователя.</p></div></div>
-          <LlmSettingsEditor
-            value={{ engineId: llmEngineId, provider: llmProvider, model: llmModel }}
-            inherited={inheritedLlm}
-            overridden={llmOverridden}
-            engines={engines}
-            llmAccess={llmAccess}
-            labels={{ engine: 'Исполнитель разговора', provider: 'Движок разговора', model: 'Модель разговора' }}
-            onChange={(next) => { setLlmEngineId(next.engineId ?? null); setLlmProvider(next.provider); setLlmModel(next.model); setLlmOverridden(true) }}
-            onReset={() => { setLlmEngineId(inheritedLlm.engineId ?? null); setLlmProvider(inheritedLlm.provider); setLlmModel(inheritedLlm.model); setLlmOverridden(false) }}
-          />
         </section>
 
         <section className="convsettings-card">

@@ -10,38 +10,38 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 68 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 294 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 15 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 295 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 16 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-08 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-08 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-08 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-06 | ⚠ 53 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-06 | ⚠ 54 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 138 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 108 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 279 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 182 коммит(ов) в areas после сверки: 6ec7e2b1 feat(distributed): процессы на разных хостах — вложения и превью канбана через порт, полный буфер PTY по RPC, runbook … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 60 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 72 коммит(ов) в areas после сверки: 41ee78ca Merge main into CHAT-429 (task 4af2c395-ce53-461c-b2a7-e38d17cd4716) … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 109 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 280 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 183 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 61 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 73 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-04 | ⚠ 59 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1266 коммит(ов) в areas после сверки: 5ef8414d docs(kb): прод переведён на Postgres 2026-09-08 — как делался перенос, откат, наблюдения … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 33 коммит(ов) в areas после сверки: 41ee78ca Merge main into CHAT-429 (task 4af2c395-ce53-461c-b2a7-e38d17cd4716) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 77 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 40 коммит(ов) в areas после сверки: 0aea426b fix(projects): черновики доработок читают вложения через порт с await … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 70 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 285 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1267 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 34 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-05 | ⚠ 78 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 41 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 71 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 286 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 14 коммит(ов) в areas после сверки: a40ef0e5 feat(make): пакет apps/make и режим отдельного процесса — внутренний API ядра, пересылка авторизации … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-07 | ⚠ 5 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-07 | ⚠ 38 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 211 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-08 | ⚠ 2 коммит(ов) в areas после сверки: f4cde042 Merge main into CHAT-428 (task 98f035cf-3cdc-44b2-913f-26b2d7475f7c) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-07 | ⚠ 25 коммит(ов) в areas после сверки: 0aea426b fix(projects): черновики доработок читают вложения через порт с await … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-08 | ⚠ 9 коммит(ов) в areas после сверки: 41ee78ca Merge main into CHAT-429 (task 4af2c395-ce53-461c-b2a7-e38d17cd4716) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-07 | ⚠ 26 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-08 | ⚠ 10 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-03 | ⚠ 44 коммит(ов) в areas после сверки: 7ce37a59 Merge remote-tracking branch 'origin/main' into feat/distributed-polish … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 188 коммит(ов) в areas после сверки: 6ec7e2b1 feat(distributed): процессы на разных хостах — вложения и превью канбана через порт, полный буфер PTY по RPC, runbook … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 189 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-08 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 140 коммит(ов) в areas после сверки: 6ec7e2b1 feat(distributed): процессы на разных хостах — вложения и превью канбана через порт, полный буфер PTY по RPC, runbook … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ✓ |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 141 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-08 | ⚠ 1 коммит(ов) в areas после сверки: a4c83d04 fix(ws): потолок исходящей очереди соединения — клиент, не вычитывающий кадры, отключается |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 664. Последние:
+Всего записей: 665. Последние:
 
+- [2026-09-08-macbook-air-user-ui-settings-routes.md](log/2026-09-08-macbook-air-user-ui-settings-routes.md) — ui-settings-routes
 - [2026-09-08-macbook-air-user-task-card-ai-chat.md](log/2026-09-08-macbook-air-user-task-card-ai-chat.md) — task-card-ai-chat
 - [2026-09-08-macbook-air-user-instant-conversation-settings-loader.md](log/2026-09-08-macbook-air-user-instant-conversation-settings-loader.md) — instant-conversation-settings-loader
 - [2026-09-08-macbook-air-user-assistant-settings-routes.md](log/2026-09-08-macbook-air-user-assistant-settings-routes.md) — assistant-settings-routes
@@ -73,7 +74,6 @@
 - [2026-09-08-alexeys-macbook-air-2-new-task-card-complete.md](log/2026-09-08-alexeys-macbook-air-2-new-task-card-complete.md) — new-task-card-complete
 - [2026-09-08-alexeys-macbook-air-2-distributed-polish.md](log/2026-09-08-alexeys-macbook-air-2-distributed-polish.md) — distributed-polish
 - [2026-09-07-macbook-air-user-make-permission-mode.md](log/2026-09-07-macbook-air-user-make-permission-mode.md) — make-permission-mode
-- [2026-09-07-macbook-air-user-hidden-chat-settings.md](log/2026-09-07-macbook-air-user-hidden-chat-settings.md) — hidden-chat-settings
 
 ## Исторические планы
 
