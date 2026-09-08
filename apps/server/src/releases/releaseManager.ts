@@ -248,6 +248,13 @@ export class ReleaseManager {
   }
 
   async reconcile(resolveTarget:(release:ProjectRelease)=>Promise<ProductionTarget|null>):Promise<void> {
+    // Подготовка релиза (checkout, регрессия, KB) идёт в памяти процесса ядра: после рестарта продолжать её
+    // некому, а статус `checking` иначе висел бы вечно и релиз нельзя было бы ни удалить, ни повторить.
+    for(const release of await this.db.releases.listInterruptedPreparations()){
+      const kind=release.steps.find(step=>step.status==='running')?.kind??'checkout'
+      await this.db.releases.setProjectReleaseStep(release.id,kind,'failed','Подготовка прервана перезапуском сервера — повторите релиз',release.triggeredBy)
+      await this.db.releases.setProjectReleaseStatus(release.id,'failed',release.triggeredBy)
+    }
     for(const release of await this.db.releases.listActiveProjectReleases()){
       const actor=release.triggeredBy
       const target=await resolveTarget(release)
