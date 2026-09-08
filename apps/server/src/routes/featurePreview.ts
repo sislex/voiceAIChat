@@ -29,10 +29,10 @@ export function manualPreviewCommand(localPort: number, remotePort: number, sshU
 import type { PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@voicechat/shared'
 import type { FeaturePreviewManager } from '../preview/manager.js'
 import type { VoiceChatDb } from '../db/database.js'
-import type { AgentRegistry } from '../agents/registry.js'
+import type { KanbanMachines } from '../kanban/core.js'
 import { uid } from '../users/auth.js'
 
-export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: FeaturePreviewManager, db: VoiceChatDb, agents: AgentRegistry): void {
+export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: FeaturePreviewManager, db: VoiceChatDb, agents: KanbanMachines): void {
   const base = '/api/projects/:projectId/tasks/:taskId/preview'
   app.get<{ Params: { projectId: string; taskId: string } }>(base, async (req, reply) => {
     const env = await previews.get(uid(req), req.params.projectId, req.params.taskId)
@@ -115,7 +115,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     if (!env) return reply.code(404).send({ error: 'preview not created or access denied' })
     const expected = ['app', 'storybook'].map((kind) => createHash('sha256').update(`${userId}:${env.id}:${env.builtCommitSha}:${kind}`).digest('hex').slice(0, 32))
     if (!expected.includes(req.params.tunnelId)) return reply.code(404).send({ error: 'tunnel not found' })
-    const closed = agents.closeTunnel(req.params.tunnelId)
+    const closed = await agents.closeTunnel(req.params.tunnelId)
     // close callback records explicit and automatic shutdowns in the same audit stream.
     return { closed }
   })

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-04
-checked: 4d06ce88
+updated: 2026-09-08
+checked: 3e65e459
 areas:
   - package.json
   - scripts
@@ -446,6 +446,19 @@ positive tests». `terminate()` безопасен в любом состоян�
 6. Browser devtools network — REST status и `/ws` reconnect.
 7. Server stdout — Fastify/CLI ошибки; UI console panel — нормализованные LLM events.
 8. Agent/tray log — connection, shell, PTY и fs ошибки на удалённой машине.
+
+**Ядро падает с `FATAL ERROR: … heap out of memory` (2026-09-08).** Потолок кучи в контейнере с `mem_limit 1g` —
+около 512 МБ; на простое ядро держит ~160 МБ и не растёт, рост — под активностью (ран модели, регрессия
+релиза). Первое, что смотреть: `docker inspect … RestartCount`, `docker logs --timestamps | grep FATAL`, что шло
+в базе в эти минуты (`ci_runs.started_at`, `project_releases.created_at`), `docker stats` каждые 15 с. Известная
+причина: асинхронная запись лога без обратного давления — исполнитель CI и регрессия релиза звали `onChunk`
+на каждый чанк, не дожидаясь записи, а регрессия ещё и переписывала полный лог шага с событием таймлайна на
+каждый чанк (таблица `project_release_events` — 3 ГБ). Исправлено стоком `ci/chunkSink.ts` (одна запись в
+полёте, слияние чанков) и событием только при смене статуса; старые прогресс-события чистит
+`releases.pruneProgressEvents()` через 15 с после старта. Профиль аллокаций живого процесса: открыть инспектор
+`docker exec <ядро> node -e "process._debugProcess(1)"` (порт 9229 только внутри контейнера) и снять
+`HeapProfiler.startSampling/stopSampling` через `ws` из `/app/node_modules` — скрипт-образец в журнале
+`2026-09-08-…-oom-exec-stream.md`.
 
 При «генерация пропала после refresh» проверять `claude.active` и TurnManager, а не только UI. При дублированных событиях — cleanup subscriptions после reconnect. При недоступном TTS/STT — capabilities и cgroup limit до проверки binary.
 

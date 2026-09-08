@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-07
-checked: 9ff8fe71
+updated: 2026-09-08
+checked: c310aba9
 areas:
   - apps/server/src
 ---
@@ -292,6 +292,97 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 
 **Auth-мок (roadmap-4 п.32).** Файл мока с полем `$auth` обрабатывает `applyAuthMock` (`@shared/makeMock`): `{ users: [{ username|login|email, password, … }], cookie? }` — POST сравнивает учётные данные, отвечает 200 с `user` (без пароля, слитым в объектное `$body`) и заголовком `Set-Cookie: vc_mock_session=<login>; Path=/; SameSite=Lax`, иначе 401 (не POST — 405); `{ require: true }` — без cookie 401, с ней в объектное `$body` подставляется `user: { username }`; `{ logout: true }` — 204 с `Max-Age=0`. `resolveMock` получил параметр `cookieHeader`, все три маршрута моков (GET превью, не-GET превью, публикация) передают `req.headers.cookie`; `sendMock` пробрасывает `set-cookie` как любой заголовок ответа. Это учебная имитация входа для прототипов, не защита данных.
 
+
+## Канбан-кластер: `kanban/module.ts`, порты `KanbanCore` и `KanbanService` (2026-09-07)
+
+Проекты, доска, подготовка задач, раны CI (`ci/runManager.ts`, `ci/modelHooks.ts`), QA-стадии, релизы,
+мерж-раны, автопилот, MCP канбана и CI-команд, оркестрация планов собираются одной функцией
+`createKanbanModule(deps)` (`apps/server/src/kanban/module.ts`); `buildServer` зовёт её один раз. Граница
+описана двумя портами (`docs/plans/kanban-service.md`):
+
+- **`KanbanCore`** (`kanban/core.ts`) — что кластер берёт у *процесса* ядра: `machines` (узкий фасад
+  `KanbanMachines` — `isOnline`, `exec`/`execStream`, `fs*`, `gitAccess`, тоннели; `AgentRegistry`
+  удовлетворяет ему структурно), `kb` (файловый индекс базы знаний), `uploads.get`, `widgets` (снимок экрана
+  виджета и мост UI для mcp__kanban__*), `ensureProjectMainCurrent`. Локальная реализация —
+  `kanbanBridge/localCore.ts`. Доменные данные чужих доменов (`db.chat`, `db.identity`, `db.machines`, …)
+  кластер читает сам: отдельный сервис канбана будет работать на той же базе.
+- **`KanbanService`** (`kanban/service.ts`) — что ядро берёт у кластера: `runs` (лента кадров ранов и
+  снимок для `ci.subscribe`), `board` (`changed` для соседей вроде Make и подписки доски, подготовки,
+  QA-стадий, репозиториев задач, очереди улучшений), `notifications`. `BoardHub`/`NotificationHub`
+  живут внутри модуля; `server.ts` обращается только к `kanban.service.*`.
+
+Кадры самого ядра (журнал команд машины `machine.command`, тревоги watchdog, снимки браузерной проверки
+`ci.log`) идут через шину `UserFrameHub` (`frameHub.ts`), а не через ленту канбана; WS-сессия подписана
+на обе (`SessionDeps.frames`, `SessionDeps.ci`). Остальные зависимости кластера (`KanbanDeps`, 20 полей:
+`db`, LLM-клиенты, `kbUsage`, `make.service`, адреса MCP, `mcpSecret`, `browserRunner`, `mailer`, тестовый
+`ciExecutor`, …) — клиенты и настройки, которые отдельный процесс поднимет из своего env.
+
+Гейт `kanban/boundary.test.ts` держит: маркеры сборки только в модуле, снимок ключей `KanbanDeps`,
+аллоулист импортов-значений кластера из ядра (`db/database`, `kb/*`, `users/auth`, `llm/remoteClient`,
+`manifests`, `mcp/previewMcp`), запрет типов состояния ядра вне `kanban/core.ts` и структурную проверку
+фасада машин. Чистые функции подготовки (`parseQaPreparationResponse`, `taskPreparationModel`,
+`taskPreparationFailure`) — `kanban/preparation.ts`, из `server.ts` реэкспорт. В `server.ts` из этого
+блока остались git-панель (`GitWorkspaceService`), Storybook/компоненты проекта и watchdog машин.
+
+**Режим `VC_KANBAN_MODE=remote` (2026-09-07).** Кластер работает отдельным процессом на той же базе
+(только Postgres): точка входа `kanban/standalone/index.ts`, сборка `buildKanbanServer` (тот же
+`loadConfig`, тот же `createKanbanModule`). Порт `KanbanCore` там реализует `HttpKanbanCore`: синхронные
+чтения о машинах (`isOnline`, `nameOf`, `policyOf`, `telemetryOf`, …) отвечает зеркало `MachinesMirror`,
+которое ядро наполняет пушем `POST /internal/machines` после каждого `AgentRegistry.onChange` (с задержкой
+250 мс); `exec`/`execStream` идут потоковым NDJSON-эндпоинтом ядра `/internal/kanban/exec-stream` через
+`node:http` (без таймаута тела, обрыв по `signal` отменяет команду); остальное — RPC `/internal/kanban/core`
+(`kb.*`, `uploads.get`, `widgets.*`, `ensureProjectMainCurrent`, `machines.fs*`/`gitAccess`/тоннели).
+Обратные вызовы тоннелей превью хранит канбан, ядро спрашивает их RPC `authorizeTunnel`/`tunnelClosed` на
+`/internal/service` канбана (там же `snapshot` рана и `boardChanged` от Make). События кластера (кадры
+ранов, доска, подготовка, QA-стадии, репозитории, улучшения, уведомления) канбан шлёт ядру пачками на
+`/internal/kanban/events`; `kanbanBridge/remote.ts` воспроизводит их на локальных лентах `KanbanService`.
+Вложения канбан читает через порт (`uploads.read`, байты base64) — общий том с ядром ему не нужен;
+список живых превью для preview-MCP чата — `KanbanService.previews.list()`. Авторизация у канбана —
+пересылкой в `/internal/whoami` ядра (`internal/forwardedAuth.ts`, кэш чтений 30 с); снаружи пути канбана идут только через прокси ядра `kanbanBridge/proxy.ts` (`KANBAN_PROXY_PREFIXES`),
+где preHandler ядра уже проверил права проекта. Контракт протокола — `kanban/internal.ts`, транспорт RPC
+общий с Make — `@voicechat/shared` (`internalRpc.ts`). Интеграционный тест границы —
+`kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
+идут через `UserFrameHub`.
+
+## Машины: модуль `machines/module.ts` и порт `MachinesService` (2026-09-07)
+
+Реестр онлайн-подключений (`agents/registry.ts`), WebSocket компаньон-агентов `/agent`, REST машин и
+установщиков (`routes/agents.ts`), политика команд, каталог ChatAI по умолчанию, журнал команд, watchdog и
+перенос хранилищ собираются одной функцией `createMachinesModule(deps)` (`apps/server/src/machines/module.ts`);
+наружу модуль отдаёт `{ machines, commandGate }`. Потребители — сессия, ходы, `mcp/remoteBashMcp`,
+`mcp/consoleMcp`, git-панель, storybook-сессии, превью, админка, канбан (через `KanbanMachines`), Make (через
+`MakeCore.machineFs`) — типизированы портом **`MachinesService`** (`machines/service.ts`): публичная
+поверхность реестра без `register`/`unregister`; `AgentRegistry` удовлетворяет ему структурно. Синхронные
+чтения (`isOnline`, `nameOf`, `versionOf`, `telemetryOf`, `ptyLive`, …) остаются синхронными — в режиме
+отдельного процесса машин их будет отдавать зеркало. Полный лог долгой команды из чата модуль пишет в
+artifacts привязанного хранилища через обратный вызов ядра `chatArtifacts` (хранилища разговора — знание
+ядра). Гейт `machines/boundary.test.ts`: `server.ts` не собирает машины сам, `AgentRegistry` импортируют
+только модуль машин и его части. План выделения в отдельный процесс — `docs/plans/machines-service.md`.
+
+**Режим `VC_MACHINES_MODE=remote` (2026-09-07).** Реестр живёт в отдельном процессе машин
+(`machines/standalone/index.ts`, `buildMachinesServer`, порт 8793, compose-профиль `machines`), а ядро
+получает порт как `HttpMachines` (`machinesBridge/httpMachines.ts`): синхронные чтения — из зеркала, которое
+процесс машин наполняет по постоянному WebSocket событий `/internal/events` (снимки машин и PTY-сессий,
+события PTY, кадры владельцам, `agentReady`, журнал команд, запросы авторизации тоннелей); вызовы — RPC
+`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`). Ошибки
+файловых операций возвращаются с кодом и восстанавливаются как `AgentFsError`; буфер PTY (`ptyBufferText`) —
+полный, по RPC у процесса машин (тип у порта допускает `Promise`, консольный MCP ждёт `await`). При обрыве шины все машины
+считаются offline до переподключения. Ядро переправляет в процесс машин REST машин и установщики
+(`MACHINES_PROXY_PREFIXES`, `machinesBridge/proxy.ts`) и **WebSocket компаньон-агентов `/agent`** — кадр в
+кадр, с исходным IP в `x-forwarded-for` (Caddy остаётся без изменений). Авторизация REST у процесса машин —
+пересылкой в `/internal/whoami` ядра (`internal/forwardedAuth.ts`, общая с канбаном). Канбан и Make в этом
+режиме ничего не замечают: под фасадами `KanbanMachines`/`MakeCore.machineFs` стоит тот же порт. Контракт —
+`machines/internal.ts`; интеграционный тест — `machinesBridge/machinesRemote.integration.test.ts`.
+Внутренний API машин (`machines/internalApi.ts`) ядро поднимает и во встроенном режиме при заданном
+`VC_INTERNAL_TOKEN` — так соседи (админка) берут машины у того процесса, где живёт реестр, одним клиентом.
+
+**Админка отдельным процессом (`VC_ADMIN_MODE=remote`, 2026-09-07).** `admin/standalone/index.ts`
+(`buildAdminServer`, порт 8794, compose-профиль `admin`): `routes/admin.ts` на общей базе, авторизация —
+пересылкой в ядро, машины — `HttpMachines` к `VC_MACHINES_URL` или к ядру, Make — по RPC, деплой и живое
+уведомление об отзыве сессии — RPC к ядру `/internal/admin/rpc` (`admin/internal.ts`). Ядро проксирует
+`/api/admin/*` (типы проектов `/api/admin/project-types*` остаются у канбана — его роуты конкретнее);
+проверку роли `users:manage` делает preHandler ядра до прокси. Тест —
+`admin/standalone/adminRemote.integration.test.ts`.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
