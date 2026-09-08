@@ -81,7 +81,11 @@ export class HttpKanbanCore implements KanbanCore {
       search: (request, view?: KbView) => this.rpc('kb.search', request, view),
       context: (query, budget?: number, view?: KbView) => this.rpc('kb.context', query, budget, view)
     }
-    this.uploads = { get: async (id) => (await this.rpc<Awaited<ReturnType<KanbanUploads['get']>> | null>('uploads.get', id)) ?? undefined }
+    this.uploads = {
+      get: async (id) => (await this.rpc<Awaited<ReturnType<KanbanUploads['get']>> | null>('uploads.get', id)) ?? undefined,
+      // Байты идут base64 в JSON: вложения QA — до 10 МБ, это редкий ручной путь.
+      read: async (id) => { const b64 = await this.rpc<string | null>('uploads.read', id); return b64 ? Buffer.from(b64, 'base64') : null }
+    }
     this.widgets = {
       contexts: {
         surface: (conversationId) => this.rpc('widgets.surface', conversationId),

@@ -24,7 +24,6 @@ import { registerAdminRoutes } from './routes/admin.js'
 
 
 
-import { FeaturePreviewManager } from './preview/manager.js'
 import { shellQuote } from './ci/executor.js'
 
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
@@ -648,8 +647,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
   // сессии WS подписываются на подключении, ход адресуется токеном ?turn=.
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
-  // FeaturePreviewManager создаётся ниже по файлу — previewMcp получает его лениво.
-  const featurePreviewsRef: { current: FeaturePreviewManager | null } = { current: null }
 
   /**
    * Кадр браузерной проверки уходит в ленту активного рана задачи ссылкой на
@@ -762,7 +759,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             return url.toString()
           } catch { return null }
         }
-        return (featurePreviewsRef.current?.list() ?? [])
+        // Превью живут у канбана (в remote — в его процессе): список идёт через порт, а не по ссылке на менеджер.
+        return (await kanban.service.previews.list())
           .filter((env) => env.projectId === projectId)
           .map((env) => ({
             taskId: env.taskId,
@@ -1271,7 +1269,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const remoteKanban = kanbanRemote
     ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: (error, what) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался') })
     : null
-  const kanban: { service: KanbanService } = remoteKanban ?? await createKanbanModule({ app, db, config: opts.config, core: kanbanCore, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, ...(opts.ciExecutor ? { ciExecutor: opts.ciExecutor } : {}), automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, featurePreviewsRef, ciKbUpdate: opts.ciKbUpdate })
+  const kanban: { service: KanbanService } = remoteKanban ?? await createKanbanModule({ app, db, config: opts.config, core: kanbanCore, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, ...(opts.ciExecutor ? { ciExecutor: opts.ciExecutor } : {}), automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, ciKbUpdate: opts.ciKbUpdate })
   if (remoteKanban) {
     registerKanbanProxy(app, { kanbanUrl: opts.config.kanbanUrl! })
     // Зеркало машин у канбана: снимок после каждого изменения реестра (онлайн, политика, телеметрия);

@@ -3,6 +3,7 @@
 // фасадом `KanbanMachines`, остальное передаётся без обёрток. Смысл файла — единственная точка,
 // где кластер получает доступ к состоянию ядра; в отдельном процессе её заменит HTTP-клиент.
 import type { MachinesService } from '../machines/service.js'
+import { readFileSync } from 'node:fs'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import type { UploadStore } from '../uploads.js'
 import type { WidgetContextStore } from '../mcp/widgetContext.js'
@@ -21,7 +22,13 @@ export function createLocalKanbanCore(deps: LocalKanbanCoreDeps): KanbanCore {
   return {
     machines: deps.registry,
     kb: deps.kb,
-    uploads: deps.uploads,
+    uploads: {
+      get: (id) => deps.uploads.get(id),
+      read: async (id) => {
+        const upload = deps.uploads.get(id)
+        return upload && !upload.agentId ? readFileSync(upload.path) : null
+      }
+    },
     widgets: deps.widgets,
     ensureProjectMainCurrent: deps.ensureProjectMainCurrent
   }

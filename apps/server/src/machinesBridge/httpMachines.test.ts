@@ -78,7 +78,7 @@ describe('HttpMachines', () => {
     expect(machines.policyOf('m1')?.allowedDirs).toEqual(['/w'])
     expect(machines.ptyLive('p1')).toBe(true)
     expect(machines.ptyContextOf('p1')).toEqual({ cwd: '/w' })
-    expect(machines.ptyBufferText('p1')).toBe('')
+    expect(await machines.ptyBufferText('unknown')).toBeNull()
     expect(changed).toHaveBeenCalled()
     for (const s of fake.sockets) s.close()
     await tick()
@@ -87,7 +87,7 @@ describe('HttpMachines', () => {
   })
 
   it('PTY: старт — RPC, вывод по шине идёт подписчику и в буфер, выход снимает подписку; кадры — в publish', async () => {
-    const fake = await fakeMachines(() => ({ body: { result: null } }))
+    const fake = await fakeMachines((method) => ({ body: { result: method === 'ptyBufferText' ? '$ ls' : null } }))
     const publish = vi.fn()
     const machines = new HttpMachines({ machinesUrl: fake.url, token: 'tok', publish })
     current = machines
@@ -102,15 +102,16 @@ describe('HttpMachines', () => {
     fake.push({ kind: 'frame', message: { t: 'board.changed', projectId: 'x' }, userId: 'ann' })
     await tick()
     expect(events).toEqual([{ t: 'pty.output', ptyId: 'p1', data: '$ ' }])
-    expect(machines.ptyBufferText('p1')).toBe('$ ')
+    // Буфер — у процесса машин: живую сессию спрашиваем по RPC, чужую — нет.
+    expect(await machines.ptyBufferText('p1')).toBe('$ ls')
     expect(publish).toHaveBeenCalledWith({ t: 'board.changed', projectId: 'x' }, 'ann')
     machines.ptyInput('p1', 'ls\r')
     fake.push({ kind: 'pty', event: { t: 'pty.exit', ptyId: 'p1', exitCode: 0 } })
     await tick()
     expect(events.at(-1)).toEqual({ t: 'pty.exit', ptyId: 'p1', exitCode: 0 })
     expect(machines.ptyLive('p1')).toBe(false)
-    expect(machines.ptyBufferText('p1')).toBeNull()
-    expect(fake.rpcCalls.map((c) => c.method)).toEqual(['ptyStart', 'ptyInput'])
+    expect(await machines.ptyBufferText('p1')).toBeNull()
+    expect(fake.rpcCalls.map((c) => c.method)).toEqual(['ptyStart', 'ptyBufferText', 'ptyInput'])
     machines.stop()
   })
 
