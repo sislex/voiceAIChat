@@ -99,6 +99,35 @@ function mapTaskRepository(r: Record<string, unknown>): TaskRepository {
     state: r.state as TaskRepository['state'], createdAt: Number(r.created_at), deletedAt: r.deleted_at as number | null
   }
 }
+/** Черновик доработки в том виде, в котором его присылает карточка задачи. */
+export interface ReworkDraftInput {
+  description: string
+  criteria: string[]
+  makeSources: Array<{ conversationId: string; title?: string; mode: 'whole_project' | 'files'; paths: string[] }>
+}
+
+/**
+ * Черновик нормализуем так же, как отправленный цикл: пути Make каноничны,
+ * без дублей и отсортированы — иначе один и тот же набор дал бы разные снимки.
+ */
+function normalizeReworkDraft(input: ReworkDraftInput): { description: string; criteria: string[]; makeSources: Array<{ conversationId: string; title: string; owner: string; mode: 'whole_project' | 'files'; paths: string[] }> } {
+  const description = String(input.description ?? '').trim()
+  if (description.length > 20_000) throw new Error('validation_error')
+  const criteria = (input.criteria ?? []).map((item) => String(item).trim()).filter(Boolean)
+  const makeSources = (input.makeSources ?? []).map((source) => {
+    if (source.mode !== 'whole_project' && source.mode !== 'files') throw new Error('validation_error')
+    const paths = [...new Set((source.paths ?? []).map((path) => {
+      const normalized = normalizeMakePath(path)
+      if (!normalized || normalized !== path) throw new Error('validation_error')
+      return normalized
+    }))].sort()
+    if (source.mode === 'whole_project' && paths.length) throw new Error('validation_error')
+    if (source.mode === 'files' && !paths.length) throw new Error('validation_error')
+    return { conversationId: String(source.conversationId), title: String(source.title ?? source.conversationId), owner: '', mode: source.mode, paths }
+  }).sort((a, b) => a.conversationId.localeCompare(b.conversationId))
+  return { description, criteria, makeSources }
+}
+
 export class TasksRepo extends BaseRepo {
   /**
    * Привязать чат к проекту (или отвязать при projectId=null). При привязке
@@ -1430,6 +1459,14 @@ export class TasksRepo extends BaseRepo {
       .map((row) => this.mapTaskAttachment(row))
   }
 
+  /** Содержимое вложения для отдачи файлом: карточка показывает превью картинок. */
+  async taskAttachmentContent(userId: string, projectId: string, taskId: string, attachmentId: string): Promise<{ name: string; mimeType: string; data: Buffer } | null> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
+    const row = (await this.sql.get('SELECT name, mime_type, data_base64 FROM task_attachments WHERE id = ? AND task_id = ?', [attachmentId, taskId])) as { name: string; mime_type: string; data_base64: string | null } | undefined
+    if (!row?.data_base64) return null
+    return { name: String(row.name), mimeType: String(row.mime_type), data: Buffer.from(String(row.data_base64), 'base64') }
+  }
+
   async createTaskAttachment(userId: string, projectId: string, taskId: string, input: { name: string; mimeType?: string; dataBase64: string; scope?: 'source' | 'rework_draft' }): Promise<TaskAttachment> {
     if (!(await this.repos.projects.isProjectMember(userId, projectId)) || !(await this.getTask(projectId, taskId))) throw new Error('Задача не найдена')
     const data = Buffer.from(input.dataBase64, 'base64')
@@ -1522,7 +1559,8 @@ export class TasksRepo extends BaseRepo {
       })),
       ...(row.implemented_result ? { implementedResult: String(row.implemented_result) } : {}),
       createdBy: String(row.created_by), createdAt: Number(row.created_at),
-      preparationRunId: row.preparation_run_id == null ? null : String(row.preparation_run_id)
+      preparationRunId: row.preparation_run_id == null ? null : String(row.preparation_run_id),
+      status: String(row.status ?? 'submitted') === 'draft' ? 'draft' as const : 'submitted' as const
     })))
   }
 
@@ -1576,6 +1614,103 @@ export class TasksRepo extends BaseRepo {
       if (!(await this.moveTask(userId, projectId, taskId, { columnId: target.id }))) throw new Error('invalid_state')
       return (await this.listTaskReworkCycles(userId, projectId, taskId)).find((cycle) => cycle.id === id)!
     })
+  }
+
+  /**
+   * Черновик доработки. В отличие от отправленного цикла он правится и
+   * удаляется, не двигает задачу и не требует успешного рана: набор доработок
+   * собирается заранее, а состояние задачи проверяется в момент отправки.
+   */
+  async createTaskReworkDraft(
+    userId: string,
+    projectId: string,
+    taskId: string,
+    input: ReworkDraftInput,
+    files: Array<{ uploadId: string; name: string; mimeType: string; size: number }>
+  ): Promise<TaskReworkCycle> {
+    const draft = normalizeReworkDraft(input)
+    return await this.sql.transaction(async () => {
+      if (!(await this.repos.projects.isProjectMember(userId, projectId))) throw new Error('not_found')
+      if (!(await this.sql.get('SELECT id FROM tasks WHERE id = ? AND project_id = ?', [taskId, projectId]))) throw new Error('not_found')
+      const sequence = Number(((await this.sql.get('SELECT COALESCE(MAX(sequence), 0) + 1 AS n FROM task_rework_cycles WHERE task_id = ?', [taskId])) as { n: number }).n)
+      const id = this.newId()
+      await this.sql.run(`INSERT INTO task_rework_cycles
+        (id, project_id, task_id, sequence, description, criteria_json, make_sources_json, created_by, created_at, preparation_run_id, idempotency_key, payload_hash, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, '', 'draft')`,
+        [id, projectId, taskId, sequence, draft.description, JSON.stringify(draft.criteria), JSON.stringify(draft.makeSources), userId, this.now(), `draft:${id}`])
+      await this.replaceReworkAttachments(id, files)
+      return (await this.listTaskReworkCycles(userId, projectId, taskId)).find((cycle) => cycle.id === id)!
+    })
+  }
+
+  /** Правка черновика целиком: клиент присылает конечное состояние набора. */
+  async updateTaskReworkDraft(
+    userId: string,
+    projectId: string,
+    taskId: string,
+    cycleId: string,
+    input: ReworkDraftInput,
+    files: Array<{ uploadId: string; name: string; mimeType: string; size: number }>
+  ): Promise<TaskReworkCycle> {
+    const draft = normalizeReworkDraft(input)
+    return await this.sql.transaction(async () => {
+      await this.assertReworkDraft(userId, projectId, taskId, cycleId)
+      await this.sql.run('UPDATE task_rework_cycles SET description = ?, criteria_json = ?, make_sources_json = ? WHERE id = ?',
+        [draft.description, JSON.stringify(draft.criteria), JSON.stringify(draft.makeSources), cycleId])
+      await this.replaceReworkAttachments(cycleId, files)
+      return (await this.listTaskReworkCycles(userId, projectId, taskId)).find((cycle) => cycle.id === cycleId)!
+    })
+  }
+
+  async deleteTaskReworkDraft(userId: string, projectId: string, taskId: string, cycleId: string): Promise<void> {
+    await this.sql.transaction(async () => {
+      await this.assertReworkDraft(userId, projectId, taskId, cycleId)
+      await this.sql.run('DELETE FROM task_rework_cycles WHERE id = ?', [cycleId])
+    })
+  }
+
+  /**
+   * Отправка черновика проходит те же ворота, что и прямое создание цикла:
+   * подходящая колонка, успешная разработка позади и отсутствие активного рана.
+   * Проверяем именно здесь, а не при создании черновика, — состояние задачи за
+   * время подготовки набора меняется.
+   */
+  async submitTaskReworkDraft(userId: string, projectId: string, taskId: string, cycleId: string): Promise<TaskReworkCycle> {
+    return await this.sql.transaction(async () => {
+      const draft = await this.assertReworkDraft(userId, projectId, taskId, cycleId)
+      if (!String(draft.description).trim()) throw new Error('validation_error')
+      const task = (await this.sql.get(`SELECT t.column_id, c.semantic_type
+        FROM tasks t JOIN kanban_columns c ON c.id = t.column_id
+        WHERE t.id = ? AND t.project_id = ?`, [taskId, projectId])) as { column_id: string; semantic_type: KanbanColumnSemanticType } | undefined
+      if (!task) throw new Error('not_found')
+      const allowed = new Set(['component_qa','integration_tests','automated_qa','testing','qa_preparation','manual_qa','awaiting_merge','merge','decision_required','done'])
+      if (!allowed.has(task.semantic_type) || task.semantic_type === 'cancelled') throw new Error('invalid_state')
+      const successful = (await this.sql.get("SELECT id FROM ci_runs WHERE task_id = ? AND status = 'success' ORDER BY created_at DESC LIMIT 1", [taskId])) as { id: string } | undefined
+      if (!successful) throw new Error('invalid_state')
+      const activeDevelopment = await this.sql.get("SELECT id FROM ci_runs WHERE task_id = ? AND status IN ('queued','running','awaiting_input') LIMIT 1", [taskId])
+      if (activeDevelopment || (await this.latestTaskRunResult(taskId))?.outcome === 'active') throw new Error('active_run')
+      const target = (await this.sql.get("SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = 'preparation' LIMIT 1", [projectId])) as { id: string } | undefined
+      if (!target || !canTransitionWorkflow(task.semantic_type, 'preparation', 'user')) throw new Error('invalid_state')
+      const prep = (await this.sql.get("SELECT id FROM task_preparation_runs WHERE task_id = ? AND status = 'success' ORDER BY created_at DESC LIMIT 1", [taskId])) as { id: string } | undefined
+      await this.sql.run("UPDATE task_rework_cycles SET status = 'submitted', created_at = ?, preparation_run_id = ? WHERE id = ?", [this.now(), prep?.id ?? null, cycleId])
+      if (!(await this.moveTask(userId, projectId, taskId, { columnId: target.id }))) throw new Error('invalid_state')
+      return (await this.listTaskReworkCycles(userId, projectId, taskId)).find((cycle) => cycle.id === cycleId)!
+    })
+  }
+
+  /** Черновик существует, принадлежит задаче и ещё не отправлен. */
+  private async assertReworkDraft(userId: string, projectId: string, taskId: string, cycleId: string): Promise<Record<string, unknown>> {
+    if (!(await this.repos.projects.isProjectMember(userId, projectId))) throw new Error('not_found')
+    const row = (await this.sql.get('SELECT * FROM task_rework_cycles WHERE id = ? AND task_id = ? AND project_id = ?', [cycleId, taskId, projectId])) as Record<string, unknown> | undefined
+    if (!row) throw new Error('not_found')
+    if (String(row.status ?? 'submitted') !== 'draft') throw new Error('invalid_state')
+    return row
+  }
+
+  private async replaceReworkAttachments(cycleId: string, files: Array<{ uploadId: string; name: string; mimeType: string; size: number }>): Promise<void> {
+    await this.sql.run('DELETE FROM task_rework_attachments WHERE cycle_id = ?', [cycleId])
+    const insert = this.sql.prepare('INSERT INTO task_rework_attachments (id, cycle_id, upload_id, position, name, mime_type, size) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    for (const [position, file] of files.entries()) await insert.run(this.newId(), cycleId, file.uploadId, position, file.name, file.mimeType, file.size)
   }
 
   async setTaskPreviewReady(projectId: string, taskId: string, ready: boolean): Promise<void> {

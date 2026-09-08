@@ -1,6 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button } from '@voicechat/ui-kit'
 import { issueKey, QA_WORKFLOW, type KanbanColumnSemanticType, type TaskReworkCycle } from '@shared/projects'
+import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
+import { isActiveCiStatus } from '@shared/ci'
+import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
+import { CiTaskSettings } from '../ci/CiTaskSettings'
+import { ComponentQaPanel } from '../qa/ComponentQaPanel'
+import { QaStageRunPanel } from '../qa/QaStageRunPanel'
+import { ManualQaPanel } from '../qa/ManualQaPanel'
+import { MergePanel } from '../ci/MergePanel'
+import { TaskRunFeed } from '../ci/TaskRunFeed'
+import { TaskPreparationTab } from './TaskPreparationTab'
+import { TaskTimeline } from './TaskTimeline'
 import type { TaskModalProps } from './TaskModal'
 import { TaskModal } from './TaskModal'
 import { NewTaskCardView } from './NewTaskCardView'
@@ -16,6 +27,19 @@ const LABELS: Record<KanbanColumnSemanticType, string> = {
 const POST_DEVELOPMENT = new Set<KanbanColumnSemanticType>(['component_qa', 'integration_tests', 'automated_qa', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge', 'decision_required', 'done'])
 const EMPTY_DRAFT: TaskReworkDraft = { description: '', criteria: [], makeMode: 'whole_project', makePaths: [], makeSources: [], attachments: [] }
 const fileView = (file: { id: string; name: string; size: number; mimeType: string; status: 'ready' | 'missing' }) => ({ ...file, status: file.status as 'ready' | 'missing' })
+
+/** Доменный цикл доработки → модель представления карточки. */
+function cycleView(cycle: TaskReworkCycle): TaskReworkCycleViewModel {
+  return {
+    ...cycle,
+    makeSources: cycle.makeSources.map((source, index) => ({
+      ...source,
+      id: source.conversationId || `source-${index}`,
+      paths: source.paths.map((path) => ({ path, available: source.fileStatuses?.find((item) => item.path === path)?.available ?? true }))
+    })),
+    attachments: cycle.attachments.map(fileView)
+  }
+}
 
 export interface TaskCardContainerProps extends TaskModalProps {
   initialVersion?: TaskCardVersion
@@ -68,30 +92,86 @@ export function buildTaskCardViewModel(props: TaskCardContainerProps, cycles: Ta
     outcome: props.ciSummary.status === 'success' ? 'success' as const : activeRun ? 'active' as const : props.ciSummary.status === 'cancelled' ? 'cancelled' as const : 'failure' as const,
     createdAt: 0, finishedAt: null, canOpen: true, canCancel: activeRun, canAnswer: props.ciSummary.awaitingInput
   }] : []
+  const submitted = cycles.filter((cycle) => cycle.status !== 'draft')
+  const drafts = cycles.filter((cycle) => cycle.status === 'draft')
   return {
     taskId: props.task.id,
     taskKey: issueKey(props.projectName, props.task),
     projectName: props.projectName,
     title: props.task.title,
-    stage: { semanticType, label: column?.name || LABELS.custom, fallback: !column || semanticType === 'custom' },
+    stage: {
+      semanticType, label: column?.name || LABELS.custom, fallback: !column || semanticType === 'custom',
+      ...(stageStatus(props, activeRun) ? { statusLabel: stageStatus(props, activeRun)! } : {}),
+      ...(stageNote(props, semanticType, activeRun) ? { note: stageNote(props, semanticType, activeRun)! } : {})
+    },
     priority: props.task.priority,
     assignee: props.task.assignee,
     description: props.task.description,
     acceptanceCriteria: props.task.acceptanceCriteria,
     labels: props.task.labels,
+    // Цикл 1 — первоначальная постановка; каждая отправленная доработка добавляет свой.
+    cycleNumber: submitted.length + 1,
+    nextCycleNumber: submitted.length + 2,
+    branch: props.task.mergeSourceBranch ?? null,
+    commit: props.task.mergeSourceSha ?? null,
     workflow: QA_WORKFLOW.map((step, index) => ({ id: step, semanticType: step, label: LABELS[step], state: step === semanticType ? 'current' as const : workflowIndex >= 0 && index < workflowIndex ? 'passed' as const : 'upcoming' as const })),
+    tabs: cardTabs(props, semanticType, drafts.length, activeRun),
     runs,
     source: { description: props.task.description, acceptanceCriteria: props.task.acceptanceCriteria, attachments: [] },
     makeSources,
-    cycles,
+    cycles: submitted,
+    drafts,
     loadState: 'ready',
     actions: {
       canRework,
-      ...(activeRun ? { reworkBlockedReason: 'Сначала выберите явное безопасное действие для активного рана.' } : {}),
+      ...(activeRun ? { reworkBlockedReason: 'Остановите его или дождитесь завершения.' } : {}),
       hasActiveRun: activeRun,
+      canStopRun: activeRun && Boolean(props.ciSummary),
       safeActiveRunActions: activeRun ? ['keep_running', 'open_run', 'cancel_explicitly'] : []
     }
   }
+}
+
+/** Состояние задачи внутри этапа — то, что в макете стоит рядом с названием колонки. */
+function stageStatus(props: TaskCardContainerProps, activeRun: boolean): string | null {
+  if (props.ciSummary?.awaitingInput || props.task.taskPreparationStatus === 'waiting_for_answer') return 'Пауза'
+  if (activeRun) return 'Выполняется'
+  if (props.task.latestRunResult?.outcome === 'failure') return 'Ошибка'
+  return 'Ожидает'
+}
+
+/** Подзаголовок карточки: одна фраза о том, что происходит с задачей сейчас. */
+function stageNote(props: TaskCardContainerProps, semanticType: KanbanColumnSemanticType, activeRun: boolean): string | null {
+  if (props.ciSummary?.awaitingInput) return 'Модель задала уточняющий вопрос.'
+  if (props.task.taskPreparationStatus === 'running') return 'AI формирует Development Brief.'
+  if (activeRun) return 'Ран выполняется.'
+  if (semanticType === 'decision_required') return 'Автоматический выход запрещён.'
+  if (semanticType === 'backlog') return 'Подготовка ещё не запускалась.'
+  return null
+}
+
+/**
+ * Состав вкладок зависит от возможностей типа проекта и стадии — как в старой
+ * карточке. Точка `live` у ленты рана показывает, что там сейчас что-то идёт.
+ */
+function cardTabs(props: TaskCardContainerProps, semanticType: KanbanColumnSemanticType, draftCount: number, activeRun: boolean): TaskCardViewModel['tabs'] {
+  const features = props.projectFeatures ?? ALL_PROJECT_FEATURES
+  const preparationVisible = props.task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(semanticType)
+  return [
+    { id: 'overview', label: 'Общее' },
+    { id: 'reworks', label: 'Доработки', ...(draftCount ? { count: draftCount } : {}) },
+    ...(preparationVisible && features.ci ? [{ id: 'preparation' as const, label: 'Подготовка к разработке' }] : []),
+    { id: 'settings', label: 'Настройки' },
+    { id: 'progress', label: 'Ход выполнения' },
+    ...(features.qa ? [
+      { id: 'component_qa' as const, label: 'Component QA' },
+      { id: 'integration_tests' as const, label: 'Интеграционные тесты' },
+      { id: 'automated_qa' as const, label: 'Automated QA' },
+      { id: 'manual_qa' as const, label: 'Ручное QA' }
+    ] : []),
+    ...(features.git ? [{ id: 'merge' as const, label: 'Merge' }] : []),
+    ...(features.ci ? [{ id: 'feed' as const, label: 'Лента рана', ...(activeRun ? { live: true } : {}) }] : [])
+  ]
 }
 
 export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
@@ -126,14 +206,51 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
     } catch (cause) { setMakeSources({ state: 'error', items: [], error: cause instanceof Error ? cause.message : 'Не удалось загрузить Make-проекты' }) }
   }
   useEffect(() => { void loadPersistent().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))) }, [props.task.id])
+  // Список Make-проектов нужен и форме доработки, и замене макета на «Общем».
+  useEffect(() => { if (version === 'new') void loadMakeSources() }, [props.task.projectId, version])
   const model = useMemo(() => {
     const value = buildTaskCardViewModel(props, cycles)
     value.source.attachments = sourceAttachments
     return value
   }, [props, cycles, sourceAttachments])
+  // Панели вкладок берём у старой карточки: логика подготовки, QA, merge и
+  // ленты рана живёт в них, и второй её копии в новой оболочке быть не должно.
+  const renderPanel = (tab: TaskCardTab): ReactNode => {
+    const shared = { projectId: props.task.projectId, taskId: props.task.id }
+    const runActive = Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(props.task.activeMergeRunId)
+    if (tab === 'preparation') return <TaskPreparationTab
+      {...shared} liveRunId={props.task.taskPreparationRunId} liveStatus={props.task.taskPreparationStatus}
+      loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation}
+      onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines}
+      onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation}
+    />
+    if (tab === 'settings') return <div className="task-settings-stack">
+      <CiTaskSettings section="machine" {...shared} mergeMachineBound={props.task.mergeMachineBound} />
+      <CiTaskSettings section="model" {...shared} />
+      <CiTaskSettings section="commands" {...shared} />
+    </div>
+    if (tab === 'progress') return <TaskTimeline {...shared} />
+    if (tab === 'component_qa') return <ComponentQaPanel {...shared} active={runActive} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
+    if (tab === 'integration_tests' || tab === 'automated_qa') return <QaStageRunPanel {...shared} stage={tab} />
+    if (tab === 'manual_qa') return <ManualQaPanel {...shared} activeRun={runActive} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
+    if (tab === 'merge') return <MergePanel
+      {...shared} runId={props.task.activeMergeRunId ?? null}
+      canStart={Boolean(props.onStartMerge) && canStartMerge({
+        semanticType: props.board.columns.find((column) => column.id === props.task.columnId)?.semanticType ?? 'custom',
+        sourceBranch: props.task.mergeSourceBranch,
+        alreadyMerged: isCurrentMergeSourceMerged({ sourceSha: props.task.mergeSourceSha, mergedSourceSha: props.task.mergedSourceSha, mergedSha: props.task.mergedSha }),
+        hasActiveRun: Boolean(props.task.activeMergeRunId), permitted: props.task.mergePermitted, machineBound: props.task.mergeMachineBound
+      })}
+      onStartMerge={(agentId) => props.onStartMerge?.(props.task.id, agentId)}
+    />
+    if (tab === 'feed') return <TaskRunFeed {...shared} activeDevelopmentRunId={props.ciSummary?.id ?? null} activeMergeRunId={props.task.activeMergeRunId ?? null} />
+    return null
+  }
+
   if (version === 'legacy') return <TaskModal {...props} headerExtra={<div className="task-version-switch" role="group" aria-label="Версия карточки"><Button size="sm" variant="ghost" aria-pressed={false} onClick={() => setVersion('new')}>Новая</Button><Button size="sm" variant="primary" aria-pressed>Старая</Button></div>} />
   return <NewTaskCardView
     model={model}
+    renderPanel={renderPanel}
     version={version}
     activeTab={activeTab}
     reworkOpen={reworkOpen}
@@ -173,21 +290,69 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
       },
       onDeleteAttachment: async (id) => { await window.api['tasks:deleteAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId: id }); setSourceAttachments((all) => all.filter((item) => item.id !== id)); setDraft((value) => ({ ...value, attachments: value.attachments.filter((item) => item.id !== id) })) },
       onChangeReworkDraft: setDraft,
-      onCancelRework: () => setReworkOpen(false),
-      onSubmitRework: async (next, key) => {
-        if (model.actions.hasActiveRun || pending) return
+      onCancelRework: () => { setDraft(EMPTY_DRAFT); setReworkOpen(false) },
+      onOpenChat: props.onOpenChat ? () => props.onOpenChat?.(props.task.id) : undefined,
+      loadAttachment: async (attachmentId) => {
+        const file = await window.api['tasks:readAttachment']({ projectId: props.task.projectId, taskId: props.task.id, attachmentId })
+        return `data:${file.mimeType};base64,${file.dataBase64}`
+      },
+      onReplaceMake: async (linkId, conversationId) => {
+        try {
+          await window.api['tasks:unlinkDesign']({ projectId: props.task.projectId, taskId: props.task.id, linkId })
+          await window.api['tasks:linkDesign']({ projectId: props.task.projectId, taskId: props.task.id, conversationId, mode: 'whole_project', paths: [] })
+          props.onUpdate(props.task.id, {})
+        } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось заменить макет.') }
+      },
+      onUnlinkMake: async (linkId) => {
+        try {
+          await window.api['tasks:unlinkDesign']({ projectId: props.task.projectId, taskId: props.task.id, linkId })
+          props.onUpdate(props.task.id, {})
+        } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось снять связь с макетом.') }
+      },
+      onStopRun: props.ciSummary && props.onOpenCiRun ? () => props.onOpenCiRun?.(props.ciSummary!.id) : undefined,
+      // Черновик сохраняется даже при активном ране: ворота стоят на отправке,
+      // а не на подготовке набора — иначе доработку не собрать заранее.
+      onSubmitRework: async (next) => {
+        if (pending) return
         if (!next.description.trim()) { setError('Опишите, что нужно доработать.'); return }
         setPending(true); setError(null)
         try {
-          const rawCycle = props.onCreateReworkCycle
-            ? await props.onCreateReworkCycle(props.task.id, next, key)
-            : (await window.api['tasks:createPersistentReworkCycle']({ projectId: props.task.projectId, taskId: props.task.id, idempotencyKey: key, input: { description: next.description, criteria: next.criteria, makeSources: next.makeSources ?? [], attachmentIds: next.attachments.map((item) => item.id) } })).cycle
-          const cycle: TaskReworkCycleViewModel = { ...rawCycle, makeSources: rawCycle.makeSources.map((source, index) => ({ ...source, id: source.conversationId || `source-${index}`, paths: source.paths.map((path) => ({ path, available: true })) })), attachments: rawCycle.attachments.map(fileView) }
-          setCycles((all) => all.some((item) => item.id === cycle.id) ? all : [...all, cycle])
+          const input = {
+            description: next.description, criteria: next.criteria,
+            makeSources: (next.makeSources ?? []).map((source) => ({ conversationId: source.conversationId, mode: source.mode, paths: source.paths })),
+            uploadIds: next.attachments.map((item) => item.id)
+          }
+          const raw = next.editingId
+            ? await window.api['tasks:updateReworkDraft']({ projectId: props.task.projectId, taskId: props.task.id, cycleId: next.editingId, input })
+            : await window.api['tasks:createReworkDraft']({ projectId: props.task.projectId, taskId: props.task.id, input })
+          const cycle = cycleView(raw)
+          setCycles((all) => all.some((item) => item.id === cycle.id) ? all.map((item) => item.id === cycle.id ? cycle : item) : [...all, cycle])
           setDraft(EMPTY_DRAFT); setReworkOpen(false)
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : 'Не удалось создать цикл доработки.')
+          setError(cause instanceof Error ? cause.message : 'Не удалось сохранить черновик доработки.')
         } finally { setPending(false) }
+      },
+      onEditDraft: (cycleId) => {
+        const cycle = cycles.find((item) => item.id === cycleId)
+        if (!cycle) return
+        setDraft({
+          description: cycle.description, criteria: [...cycle.criteria], makeMode: 'whole_project', makePaths: [],
+          makeSources: cycle.makeSources.map((source) => ({ conversationId: source.conversationId, mode: source.mode, paths: source.paths.map((path) => path.path) })),
+          attachments: cycle.attachments, editingId: cycle.id
+        })
+        setError(null); setReworkOpen(true); void loadMakeSources()
+      },
+      onDeleteDraft: async (cycleId) => {
+        try {
+          await window.api['tasks:deleteReworkDraft']({ projectId: props.task.projectId, taskId: props.task.id, cycleId })
+          setCycles((all) => all.filter((item) => item.id !== cycleId))
+        } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось удалить черновик.') }
+      },
+      onSubmitDraft: async (cycleId) => {
+        try {
+          const { cycle } = await window.api['tasks:submitReworkDraft']({ projectId: props.task.projectId, taskId: props.task.id, cycleId })
+          setCycles((all) => all.map((item) => item.id === cycleId ? cycleView(cycle) : item))
+        } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось отправить доработку.') }
       }
     }}
   />

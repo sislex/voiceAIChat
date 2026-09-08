@@ -55,6 +55,74 @@ async function createProject(name = 'P1'): Promise<ProjectDetail> {
   return res.json() as ProjectDetail
 }
 
+describe('вложения задачи REST', () => {
+  it('отдаёт файл вложения владельцу и прячет от неучастника', async () => {
+    const project = await createProject('Attachments')
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
+    const task = (await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: board.columns[0]!.id, title: 'С картинкой' } })).json() as Task
+    const url = `/api/projects/${project.id}/tasks/${task.id}/attachments`
+    const created = await inj(adminTok, { method: 'POST', url, payload: { name: 'shot.png', mimeType: 'image/png', dataBase64: Buffer.from('картинка').toString('base64') } })
+    expect(created.statusCode).toBe(200)
+
+    const file = await inj(adminTok, { method: 'GET', url: `${url}/${created.json().id}` })
+    expect(file.statusCode).toBe(200)
+    expect(file.headers['content-type']).toContain('image/png')
+    expect(file.rawPayload.toString('utf8')).toBe('картинка')
+    expect((await inj(bobTok, { method: 'GET', url: `${url}/${created.json().id}` })).statusCode).toBe(404)
+  })
+})
+
+describe('черновики доработок REST', () => {
+  it('создаётся, правится, переживает список и удаляется', async () => {
+    const { project, task } = await reworkFixture()
+    const base = `/api/projects/${project.id}/tasks/${task.id}/rework-drafts`
+    const created = await inj(adminTok, { method: 'POST', url: base, payload: { description: 'Черновик', criteria: ['A'], makeSources: [], uploadIds: [] } })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({ status: 'draft', description: 'Черновик', criteria: ['A'] })
+    const cycleId = created.json().id as string
+
+    const patched = await inj(adminTok, { method: 'PATCH', url: `${base}/${cycleId}`, payload: { description: 'Правка', criteria: ['A', 'B'], makeSources: [], uploadIds: [] } })
+    expect(patched.json()).toMatchObject({ status: 'draft', description: 'Правка', criteria: ['A', 'B'] })
+
+    // Черновик виден в общем списке — карточка показывает их вперемешку с отправленными.
+    const list = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles` })).json()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ id: cycleId, status: 'draft' })
+
+    expect((await inj(adminTok, { method: 'DELETE', url: `${base}/${cycleId}` })).json()).toEqual({ deleted: true })
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/rework-cycles` })).json()).toEqual([])
+  })
+
+  it('отправка переводит задачу в подготовку, а отправленный цикл больше не правится', async () => {
+    const { project, task, preparation } = await reworkFixture()
+    const base = `/api/projects/${project.id}/tasks/${task.id}/rework-drafts`
+    const cycleId = (await inj(adminTok, { method: 'POST', url: base, payload: { description: 'К отправке', criteria: [], makeSources: [], uploadIds: [] } })).json().id as string
+
+    const submitted = await inj(adminTok, { method: 'POST', url: `${base}/${cycleId}/submit` })
+    expect(submitted.statusCode).toBe(200)
+    expect(submitted.json().cycle).toMatchObject({ id: cycleId, status: 'submitted' })
+    expect(submitted.json().task.columnId).toBe(preparation.id)
+
+    // Повторная правка и повторная отправка отбиваются: цикл уже неизменяем.
+    expect((await inj(adminTok, { method: 'PATCH', url: `${base}/${cycleId}`, payload: { description: 'Поздно', criteria: [], makeSources: [], uploadIds: [] } })).statusCode).toBe(409)
+    expect((await inj(adminTok, { method: 'DELETE', url: `${base}/${cycleId}` })).statusCode).toBe(409)
+    expect((await inj(adminTok, { method: 'POST', url: `${base}/${cycleId}/submit` })).statusCode).toBe(409)
+  })
+
+  it('чужой проект не отдаёт черновики, активный ран блокирует отправку', async () => {
+    const { project, task } = await reworkFixture()
+    const base = `/api/projects/${project.id}/tasks/${task.id}/rework-drafts`
+    expect((await inj(bobTok, { method: 'POST', url: base, payload: { description: 'Чужой', criteria: [], makeSources: [], uploadIds: [] } })).statusCode).toBe(404)
+
+    const cycleId = (await inj(adminTok, { method: 'POST', url: base, payload: { description: 'Ждёт', criteria: [], makeSources: [], uploadIds: [] } })).json().id as string
+    // Черновик готовится и при работающем ране — ворота стоят только на отправке.
+    await db.ci.createCiRun({ projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'admin', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'model' } })
+    const blocked = await inj(adminTok, { method: 'POST', url: `${base}/${cycleId}/submit` })
+    expect(blocked.statusCode).toBe(409)
+    expect(blocked.json().error).toBe('task_active_run')
+  })
+})
+
 describe('task rework cycles REST', () => {
   // @testCase TC-API-1
   it('читает полную серверную историю по sequence и скрывает её от неучастника', async () => {

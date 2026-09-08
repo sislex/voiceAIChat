@@ -847,6 +847,13 @@ export interface TaskReworkMakeSource {
   fileStatuses?: Array<{ path: string; available: boolean; error?: string }>
 }
 
+/**
+ * Черновик правится и удаляется владельцем, отправленный цикл неизменяем.
+ * Карточка задачи собирает набор доработок заранее и отправляет их, когда
+ * человек решит, — поэтому статус живёт в той же таблице, а не в отдельной.
+ */
+export type TaskReworkCycleStatus = 'draft' | 'submitted'
+
 export interface TaskReworkCycle {
   id: string
   taskId: string
@@ -858,6 +865,7 @@ export interface TaskReworkCycle {
   createdBy: string
   createdAt: number
   preparationRunId: string | null
+  status: TaskReworkCycleStatus
 }
 
 export interface CreateTaskReworkCycle {
