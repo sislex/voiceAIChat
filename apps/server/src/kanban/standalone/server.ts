@@ -120,7 +120,6 @@ export async function buildKanbanServer(opts: BuildKanbanServerOptions): Promise
     kbMcpBaseUrl: buildPublicMcpUrl(config, KB_MCP_PATH, mcpSecret),
     previewMcpBaseUrl: buildPublicMcpUrl(config, PREVIEW_MCP_PATH, mcpSecret),
     ciCommandsMcpBaseUrl: `${ownMcpBase}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}`,
-    featurePreviewsRef: { current: null },
     ciKbUpdate: undefined
   })
 
@@ -161,7 +160,8 @@ export async function buildKanbanServer(opts: BuildKanbanServerOptions): Promise
     snapshot: async (userId: string, runId: string) => (await kanban.service.runs.snapshot(userId, runId)) ?? null,
     boardChanged: (projectId: string) => { kanban.service.board.changed(projectId) },
     authorizeTunnel: (id: string) => httpCore ? httpCore.tunnels.authorize(id) : Promise.resolve(false),
-    tunnelClosed: (id: string) => httpCore ? httpCore.tunnels.closed(id) : Promise.resolve()
+    tunnelClosed: (id: string) => httpCore ? httpCore.tunnels.closed(id) : Promise.resolve(),
+    previews: () => kanban.service.previews.list()
   }, KANBAN_SERVICE_RPC_METHODS)
   app.register(async (scope) => {
     scope.addHook('onRequest', async (req, reply) => {

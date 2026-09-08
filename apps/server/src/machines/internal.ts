@@ -43,7 +43,7 @@ export type MachinesClientMessage = { kind: 'tunnelAuthorizeResult'; requestId: 
 export const MACHINES_RPC_METHODS = [
   'waitForOnline', 'updatePolicy', 'disconnect', 'cancelAll', 'gitAccess',
   'fsList', 'fsRead', 'fsWrite', 'fsMkdir', 'fsDelete', 'fsDeleteFileSafe', 'fsTrash', 'fsRename', 'http',
-  'ptyStart', 'ptyInput', 'ptyResize', 'ptyDetach', 'ptyKill',
+  'ptyStart', 'ptyInput', 'ptyResize', 'ptyDetach', 'ptyKill', 'ptyBufferText',
   'createTunnel', 'closeTunnel', 'closeTunnelsForTarget', 'snapshot'
 ] as const
 export type MachinesRpcMethod = (typeof MACHINES_RPC_METHODS)[number]

@@ -76,7 +76,7 @@ describe('граница канбан-кластера', () => {
     const keys = [...block.matchAll(/^\s+(\w+)[?]?:/gm)].map((m) => m[1]).sort()
     expect(keys).toEqual([
       'app', 'automatedQaScenarioRunner', 'automatedQaScreenshotDir', 'browserRunner', 'ciCommandsMcpBaseUrl', 'ciExecutor', 'ciKbUpdate',
-      'claude', 'codex', 'config', 'core', 'db', 'featurePreviewsRef', 'kbMcpBaseUrl', 'kbUsage', 'mailer', 'make', 'mcpSecret',
+      'claude', 'codex', 'config', 'core', 'db', 'kbMcpBaseUrl', 'kbUsage', 'mailer', 'make', 'mcpSecret',
       'previewMcpBaseUrl', 'remoteBashMcpBaseUrl'
     ])
   })

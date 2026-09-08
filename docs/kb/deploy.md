@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-07
-checked: b3091e19
+updated: 2026-09-08
+checked: c310aba9
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -192,6 +192,23 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 `VC_CORE_URL`, общие `VC_INTERNAL_TOKEN`/`VC_MCP_SECRET`, `VC_MAKE_URL`, при вынесенных машинах —
 `VC_ADMIN_MACHINES_URL=http://machines:8793` (иначе машины читаются у ядра). Деплой из админки по-прежнему
 выполняет ядро (сокет host-side API у него). Откат — убрать `VC_ADMIN_MODE`.
+
+**Распределённый стенд (2026-09-08).** Что где может жить и что для этого нужно:
+
+| Процесс | Точка входа / образ | Режим у ядра | Нужно процессу | Общий том с ядром |
+|---|---|---|---|---|
+| ядро (чат, БД-миграции, CLI-раннеры, WS клиентов) | `apps/server/src/index.ts`, `server-runtime` | — | `VC_DB_URL` (Postgres), `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` | — |
+| Make | `apps/make/src/standalone`, `make-runtime` | `VC_MAKE_MODE=remote`, `VC_MAKE_URL` | `VC_CORE_URL`, общие токен и секрет, свой `VC_DATA_DIR` (мастерские `/data/make`) | нужен, если Make раньше работал встроенным — мастерские лежат в `/data/make` ядра |
+| канбан | `apps/server/src/kanban/standalone`, `kanban-runtime` | `VC_KANBAN_MODE=remote`, `VC_KANBAN_URL`, `VC_KANBAN_MCP_PUBLIC_BASE` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE` (адрес ядра), адреса раннеров LLM и браузера, `VC_MAKE_URL`, SMTP | нет: вложения читаются через порт ядра, скриншоты QA — свой каталог |
+| машины | `apps/server/src/machines/standalone`, `machines-runtime` | `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, `VC_PUBLIC_URL` | нет: установщики — из образа, перенос хранилищ — свой файл |
+| админка | `apps/server/src/admin/standalone`, `admin-runtime` | `VC_ADMIN_MODE=remote`, `VC_ADMIN_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MAKE_URL`, при вынесенных машинах `VC_MACHINES_URL`, SMTP | нет |
+
+Сеть: Postgres доступен всем процессам; ядро ходит к каждому соседу по его URL, соседи — к ядру по
+`VC_CORE_URL` (whoami, RPC, ленты событий); снаружи всё идёт через публичный хост ядра (Caddy → ядро →
+прокси), агенты подключаются к публичному `/agent`. Процесс машин держит постоянный WebSocket к ядру и
+админке — ему нужен входящий доступ от них. Порты по умолчанию: 8787 ядро, 8788 Make, 8789 канбан, 8793
+машины, 8794 админка. Что остаётся у ядра принципиально: чат и ходы модели, WS клиентов, миграции схемы,
+раздача web-клиента, сокет деплоя host-side API. Откат любого процесса — снять его `VC_*_MODE` у ядра.
 
 Полный разбор — `apps/server/src/config.ts` (одна функция `loadConfig`).
 Группы: `PORT`/`HOST`; данные и артефакты (`VC_DATA_DIR`, `VC_MODELS_DIR`,

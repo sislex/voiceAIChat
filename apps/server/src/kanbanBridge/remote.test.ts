@@ -52,6 +52,7 @@ describe('createRemoteKanban', () => {
       if (url.endsWith(KANBAN_INTERNAL_MACHINES_PATH)) return { ok: true }
       if (method === 'snapshot') return { result: { t: 'ci.run', runId: 'r', run: {} } }
       if (method === 'authorizeTunnel') return { result: true }
+      if (method === 'previews') return { result: [{ id: 'env-1', projectId: 'p' }] }
       return { result: null }
     })
     const remote = createRemoteKanban({ kanbanUrl: 'http://kanban/', token: 'tok', fetchImpl })
@@ -59,13 +60,14 @@ describe('createRemoteKanban', () => {
     remote.service.board.changed('p')
     expect(await remote.tunnels.authorize('t1')).toBe(true)
     await remote.tunnels.closed('t1')
+    expect(await remote.service.previews.list()).toEqual([{ id: 'env-1', projectId: 'p' }])
     await remote.pushMachines([{ id: 'm' }])
     await new Promise((r) => setTimeout(r, 0))
     expect(calls.map((c) => c.url)).toEqual([
       `http://kanban${KANBAN_INTERNAL_SERVICE_PATH}`, `http://kanban${KANBAN_INTERNAL_SERVICE_PATH}`, `http://kanban${KANBAN_INTERNAL_SERVICE_PATH}`,
-      `http://kanban${KANBAN_INTERNAL_SERVICE_PATH}`, `http://kanban${KANBAN_INTERNAL_MACHINES_PATH}`
+      `http://kanban${KANBAN_INTERNAL_SERVICE_PATH}`, `http://kanban${KANBAN_INTERNAL_SERVICE_PATH}`, `http://kanban${KANBAN_INTERNAL_MACHINES_PATH}`
     ])
-    expect(calls.map((c) => (c.body as { method?: string }).method ?? 'machines')).toEqual(['snapshot', 'boardChanged', 'authorizeTunnel', 'tunnelClosed', 'machines'])
-    expect(calls[4]!.body).toEqual({ machines: [{ id: 'm' }] })
+    expect(calls.map((c) => (c.body as { method?: string }).method ?? 'machines')).toEqual(['snapshot', 'boardChanged', 'authorizeTunnel', 'tunnelClosed', 'previews', 'machines'])
+    expect(calls[5]!.body).toEqual({ machines: [{ id: 'm' }] })
   })
 })
