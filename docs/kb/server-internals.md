@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-08
-checked: 6b0928c2
+updated: 2026-09-09
+checked: c8fcb5e8
 areas:
   - apps/server/src
 ---
@@ -348,7 +348,7 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 
 Прокси превью (`routes/previewProxy.ts`: `/api/preview`, `/api/preview/reset-cookies`, `/api/preview/diagnostics`)
 и MCP «browser» (`mcp/previewMcp.ts`: `/mcp/preview`, инструменты `mcp__browser__*`) вместе с контекстом
-изолированного Chromium (`browserExecutor`/`browserScreenshot`, машина разговора, тестовые пользователи, окружения,
+инструментов браузера (`browserExecutor`/`browserScreenshot`, машина разговора, тестовые пользователи, окружения,
 политика `evaluate`) собираются одной функцией `createReaderModule(deps)` (`apps/server/src/reader/module.ts`).
 Состояние процесса ядра ридер берёт портом `ReaderCore` (`reader/core.ts`): `previewAction` (relay действий в
 WS-клиенты пользователя — сокеты живут у ядра), `issuePreviewRunKey` (ключ Chromium к прокси превью; проверяет его
@@ -357,6 +357,15 @@ WS-клиенты пользователя — сокеты живут у ядр
 `db.ci`, `canUseAgentForPreview`) и машин (`isOnline`, `http` порта `MachinesService`). Встроенная реализация порта —
 `readerBridge/localCore.ts`; снимок ключей `ReaderDeps` держит `reader/boundary.test.ts`. Ядру от ридера не нужно
 ничего, кроме адреса MCP превью для ходов — порта `ReaderService` нет.
+
+Исполнение Chromium вынесено из `reader/module.ts` в `apps/playwright-reader`:
+`ReaderDeps.browser` — `PlaywrightReaderService`, а не клиент browser-runner.
+Сервис собирается `createPlaywrightReaderModule` у ядра или вызывается по HTTP при
+`VC_PLAYWRIGHT_READER_MODE=remote`; самостоятельный Web Reader использует тот же порт
+у приложения либо у ядра. REST `/api/browser/*` тоже принадлежит приложению,
+`routes/browserShots.ts` в ядре оставляет только файлы кадров CI. Порт данных приложения —
+`playwrightReaderBridge/localCore.ts`, контракт RPC — `packages/shared/src/playwrightReader.ts`.
+Подробности — [features/playwright-reader.md](features/playwright-reader.md).
 
 **Токены ходов превью подписаны** (`reader/turnToken.ts`, `createPreviewTurnTokens(mcpSecret)`): `?turn=` — это
 `base64url({u, c, e}).HMAC-SHA256`, живёт сутки и проверяется в любом процессе без состояния. Раньше это был

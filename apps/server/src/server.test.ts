@@ -14,10 +14,12 @@ import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 
 let app: FastifyInstance
 let port: number
+let dataDir: string
 
 beforeAll(async () => {
+  dataDir = mkdtempSync(join(tmpdir(), 'vc-server-test-'))
   app = await buildServer({
-    config: loadConfig({ PORT: '0' }),
+    config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir }),
     // тестовый обработчик: эхо типа сообщения обратно клиенту
     createWsHandlers: () => ({
       onMessage: async (msg, ctx) => ctx.send({ t: 'stt.error', message: msg.t }),
@@ -29,7 +31,8 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await app.close()
+  await app?.close()
+  if (dataDir) rmSync(dataDir, { recursive: true, force: true })
 })
 
 describe('QA preparation response contract', () => {
@@ -133,8 +136,10 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
   let webApp: FastifyInstance
   let webDir: string
   let webRecorderDir: string
+  let webDataDir: string
 
   beforeAll(async () => {
+    webDataDir = mkdtempSync(join(tmpdir(), 'vc-web-data-'))
     webDir = mkdtempSync(join(tmpdir(), 'vc-web-'))
     writeFileSync(join(webDir, 'index.html'), '<!doctype html><title>voiceAIChat</title>')
     mkdirSync(join(webDir, 'assets'), { recursive: true })
@@ -145,13 +150,14 @@ describe('server: раздача web-статики (VC_WEB_DIR)', () => {
     writeFileSync(join(webRecorderDir, 'assets', 'recorder.js'), 'console.log(\'recorder\')')
     writeFileSync(join(webRecorderDir, 'assets', 'recorder.css'), '.webpreview{display:grid}')
     webApp = await buildServer({
-      config: { ...loadConfig({ PORT: '0' }), webDir, webRecorderDir },
+      config: { ...loadConfig({ PORT: '0', VC_DATA_DIR: webDataDir }), webDir, webRecorderDir },
       createWsHandlers: () => ({ onMessage: async () => {}, onBinary: async () => {} })
     })
   })
 
   afterAll(async () => {
-    await webApp.close()
+    await webApp?.close()
+    if (webDataDir) rmSync(webDataDir, { recursive: true, force: true })
     rmSync(webDir, { recursive: true, force: true })
     rmSync(webRecorderDir, { recursive: true, force: true })
   })

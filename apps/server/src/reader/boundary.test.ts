@@ -23,7 +23,7 @@ function listTs(dir: string): string[] {
 
 describe('граница Web Reader', () => {
   it('server.ts не собирает ридер сам: прокси превью, MCP «browser» и контекст Chromium — в reader/module.ts', () => {
-    for (const marker of ['registerPreviewProxy(', 'registerPreviewMcp(', 'browserExecutor', 'browserScreenshot', 'clearPreviewCookies', 'PREVIEW_RUN_COOKIE']) {
+    for (const marker of ['registerPreviewProxy(', 'registerPreviewMcp(', 'browserExecutor', 'browserScreenshot', 'clearPreviewCookies']) {
       expect(server, `server.ts содержит ${marker}`).not.toContain(marker)
       expect(module, `reader/module.ts не содержит ${marker}`).toContain(marker)
     }
@@ -34,7 +34,7 @@ describe('граница Web Reader', () => {
   it('ReaderDeps — зафиксированный список того, что ридер берёт у ядра', () => {
     const block = /export interface ReaderDeps \{([\s\S]*?)\n\}/.exec(module)![1]!
     const keys = [...block.matchAll(/^\s+(\w+)[?]?:/gm)].map((m) => m[1]).sort()
-    expect(keys).toEqual(['actionTimeoutMs', 'app', 'browserRunner', 'core', 'db', 'machines', 'mcpSecret', 'runnerFacingBase'])
+    expect(keys).toEqual(['actionTimeoutMs', 'app', 'browser', 'core', 'db', 'machines', 'mcpSecret'])
   })
 
   it('токены ходов превью подписаны: in-memory брокера нет, ходы и хуки CI только выдают токен', () => {

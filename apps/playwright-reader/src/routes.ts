@@ -13,16 +13,14 @@ import {
   type BrowserViewport
 } from '@voicechat/shared'
 import { randomUUID } from 'node:crypto'
-import type { VoiceChatDb } from '../db/database.js'
-import { uid } from '../users/auth.js'
-import { BrowserRunnerError, type BrowserRunnerClient } from '../browser/runnerClient.js'
-import { readBrowserShot } from '../browser/checkShots.js'
+import type { PlaywrightReaderCore } from './core.js'
+import { BrowserRunnerError, type BrowserRunnerClient } from '@voicechat/browser-runner/client'
+
+const uid = (req: FastifyRequest): string => (req as unknown as { user: { name: string } }).user.name
 
 export interface BrowserRoutesDeps {
-  db: VoiceChatDb
+  core: PlaywrightReaderCore
   runner?: BrowserRunnerClient
-  /** Корень кадров браузерной проверки ранов; без него роут отдачи не появляется. */
-  shotsRoot?: string
 }
 
 /** Разумные границы вьюпорта: панель не должна просить у Chromium гигантский кадр. */
@@ -40,26 +38,13 @@ function normalizeViewport(value: unknown): BrowserViewport | undefined {
 }
 
 export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesDeps): void {
-  const { db, runner } = deps
-
-  // Кадр браузерной проверки рана. Доступ решает `getCiRun` (он проверяет
-  // членство в проекте), имя файла — строгий шаблон номера: в путь не должно
-  // попадать ничего, кроме кадра этого рана.
-  if (deps.shotsRoot) {
-    const shotsRoot = deps.shotsRoot
-    app.get<{ Params: { runId: string; name: string } }>('/api/ci/runs/:runId/browser-shots/:name', async (req, reply) => {
-      if (!await db.ci.getCiRun(uid(req), req.params.runId)) return reply.code(404).send({ error: 'not_found' })
-      const png = readBrowserShot(shotsRoot, req.params.runId, req.params.name)
-      if (!png) return reply.code(404).send({ error: 'not_found' })
-      return reply.type('image/png').header('cache-control', 'private, max-age=86400').send(png)
-    })
-  }
+  const { core, runner } = deps
 
   // Общая проверка: разговор существует, принадлежит пользователю и это
   // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.
   const guard = async (req: FastifyRequest, id: string): Promise<string> => {
     if (!runner) throw new BrowserRunnerError(501, 'Browser Runner не настроен на этом сервере')
-    const conversation = await db.chat.getConversation(uid(req), id)
+    const conversation = await core.conversation(uid(req), id)
     if (!conversation) throw new BrowserRunnerError(404, 'Разговор не найден')
     if (!isPlaywrightReaderConversation(conversation)) throw new BrowserRunnerError(403, 'Изолированный Chromium доступен только в Playwright Reader-разговоре')
     return id

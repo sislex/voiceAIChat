@@ -53,6 +53,10 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 гейт границы `boundary.test.ts`; контракт `internal.ts`, отдельный процесс `standalone/` с `HttpReaderCore`; `mcpBase.ts` — адрес MCP
 превью для ходов ядра и канбана), `readerBridge/` (сторона ядра: `localCore.ts` — `ReaderCore` поверх relay, ключей Chromium,
 канбана и шины кадров; `proxy.ts` — прокси путей превью для `VC_READER_MODE=remote`),
+`playwrightReaderBridge/` (Playwright Reader живёт в `@voicechat/playwright-reader`: здесь порт данных ядра,
+прокси `/api/browser/*` и проверки границы; MCP Web Reader получает `PlaywrightReaderService`,
+выдача кадров CI остаётся в `routes/browserShots.ts`; HTTP-клиент Chromium — публичный экспорт
+`@voicechat/browser-runner/client`, старый `browser/runnerClient.ts` только реэкспортирует его),
 `makeBridge/` (Make живёт в пакете `@voicechat/make`; здесь — реализация его порта `MakeCore`
 поверх `db.*` (`localCore.ts`), `MakeService` для режима `remote` (`remote.ts`) и гейт границы
 `boundary.test.ts`: ядро импортирует из Make только типы и `createMakeModule`),

@@ -1,8 +1,11 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-08-20
-checked: 9c99776f
+updated: 2026-09-09
+checked: c8fcb5e8
 areas:
+  - apps/playwright-reader
+  - apps/server/src/playwrightReaderBridge
+  - packages/shared/src/playwrightReader.ts
   - apps/server/src/server.ts
   - apps/llm-runner/src/server.ts
   - apps/server/src/session.ts
@@ -20,6 +23,13 @@ areas:
 # Архитектура: кто с кем разговаривает
 
 ## Границы Reader-модулей
+
+Серверная часть Playwright Reader живёт в `apps/playwright-reader`: самостоятельный
+Fastify-процесс или модуль ядра. REST `/api/browser/*` и исполнение команд модели
+принадлежат приложению, Chromium с профилями — `apps/browser-runner`, данные и
+авторизация — ядру через `PlaywrightReaderCore`. MCP Web Reader использует
+`PlaywrightReaderService`; встроенный и отдельный режимы обоих ридеров сочетаются
+независимо. Подробнее — [Playwright Reader](features/playwright-reader.md).
 
 Reader implementations разделены на workspace-пакеты `packages/web-reader-app` и `packages/playwright-reader-app`; каждый владеет маршрутом, conversation read model, browser surface, store и lifecycle. Их core не импортирует host, другой Reader или chat store: Chat передаётся через `ReaderChatPort`, browser/runtime effects — через `WebReaderHostPort`, `WebRecorderPort`, `PreviewRelayPort`, `PlaywrightReaderHostPort` и `BrowserSessionPort`. Разрешённая product-зависимость Reader → публичный `@voicechat/chat-app` нужна только для `SplitChatWorkspace`; architecture gates запрещают обратную связь и cross-Reader imports.
 
