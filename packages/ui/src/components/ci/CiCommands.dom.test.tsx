@@ -74,11 +74,17 @@ describe('CiCommands', () => {
     expect(await screen.findByText('Команда удалена')).toBeInTheDocument()
   })
 
-  it('модель по стадии: дефолт дешёвый, выбор уезжает в настройки', async () => {
-    const p = props()
+  // @testCase TC-UI-1
+  // @testCase TC-UI-2
+  it('модель по стадии использует общий каталог и deny-list', async () => {
+    const p = props({ llmAccess: [{ provider: 'codex', modelId: 'gpt-5.6-luna' }] })
     render(<CiCommands {...p} />)
     fireEvent.click(screen.getByRole('button', { name: /Глобальные настройки CI/ }))
-    expect(screen.getByTestId('ci-stage-model-model_work')).toHaveValue('')
+    const modelWork = screen.getByTestId('ci-stage-model-model_work')
+    const values = within(modelWork).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)
+    expect(values).toContain('gpt-6-astra')
+    expect(values).not.toContain('gpt-5.6-luna')
+    expect(modelWork).toHaveValue('')
     expect(screen.getByTestId('ci-stage-model-kb_update')).toHaveValue('sonnet')
     expect(screen.getByTestId('ci-stage-model-summary')).toHaveValue('haiku')
     fireEvent.change(screen.getByTestId('ci-stage-model-kb_update'), { target: { value: 'haiku' } })

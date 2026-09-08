@@ -235,6 +235,20 @@ describe('CiTaskSettings', () => {
     expect((await window.ci!.getTaskCiLlm('p1', 't1')).config.model).toBe('gpt-6-astra')
   })
 
+  // @testCase TC-UI-2
+  it('применяет персональный запрет модели и всего Codex в CI-селекторе', async () => {
+    const view = render(<CiTaskSettings section="model" projectId="p1" taskId="t1" llmAccess={[{ provider: 'codex', modelId: 'gpt-6-astra' }]} />)
+    await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
+    fireEvent.change(screen.getByLabelText('Движок модели'), { target: { value: 'codex' } })
+    expect(screen.queryByRole('option', { name: /gpt-6-astra/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /gpt-5.6-sol/ })).toBeInTheDocument()
+    view.unmount()
+
+    render(<CiTaskSettings section="model" projectId="p1" taskId="t1" llmAccess={[{ provider: 'codex', modelId: '*' }]} />)
+    await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
+    expect(screen.queryByRole('option', { name: 'Codex' })).not.toBeInTheDocument()
+  })
+
   it('режим и глубина уточнений сохраняются вместе с моделью', async () => {
     render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Режим запуска')).toHaveValue('development'))
