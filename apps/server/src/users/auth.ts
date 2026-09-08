@@ -277,7 +277,7 @@ export async function previewRunUser(
 }
 
 /** Публичные пути (без токена): health, сессия, скачивание бинарей/установщиков агента. */
-function isPublic(url: string): boolean {
+export function isPublic(url: string): boolean {
   return (
     url === REST.health ||
     url.startsWith('/api/session/') ||

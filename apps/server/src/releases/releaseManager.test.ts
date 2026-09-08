@@ -3,14 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
 import { knowledgeBaseTimeoutMs, RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тест опирается на порядок событий синхронного драйвера.
-const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 let db:VoiceChatDb
 let projectId:string
 const ci=():ReleaseProjectTarget=>({projectId,agentId:'ci',path:'/ci',baseBranch:'main',testCommand:'npm run verify:release',gitUrl:'git@example/repo.git',prepareCheckout:false})
 const prod=():ProductionTarget=>({...ci(),agentId:'prod',path:'/prod',deployCommand:'npm run deploy:prod',healthCheckCommand:'npm run health:prod',expectedRepository:'git@example/repo.git'})
 // На Postgres шаг конвейера — несколько сетевых запросов, одного цикла событий мало; ждём реальное время.
-const tick=()=>new Promise(resolve=>setTimeout(resolve,process.env.VC_TEST_DB_URL?60:0))
+/** Релиз доехал до терминального статуса: пауза «в два тика» на асинхронной базе ненадёжна, ждём сам факт. */
+const TERMINAL=new Set(['ready','failed','released'])
+const settled=(id:string)=>vi.waitFor(async()=>{const r=await db.releases.getProjectRelease('owner',projectId,id);expect(r&&TERMINAL.has(r.status)).toBe(true);return r},{timeout:5_000})
 beforeEach(async ()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});await db.identity.createUser('owner','','developer');projectId=(await db.projects.createProject('owner',{name:'P'})).id})
 afterEach(()=>db.close())
 
@@ -66,7 +67,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
       }
     }
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
-    await tick();await tick()
+    await settled(release.id)
     const setup=releaseRegressionSetupCommand(target,release.id,'prepared-sha')
     const install=releaseRegressionInstallCommand(target,release.id)
     const stage=releaseRegressionStageCommand(target,release.id,target.testCommand)
@@ -97,7 +98,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     }
     const target={...ci(),testCommand:'npm run verify:release'}
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
-    await tick();await tick()
+    await settled(release.id)
     const stored=await db.releases.getProjectRelease('owner',projectId,release.id)
     expect(commands).toContain(releaseRegressionInstallCommand(target,release.id))
     expect(commands).not.toContain(releaseRegressionStageCommand(target,release.id,target.testCommand))
@@ -121,7 +122,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     }
     const target={...ci(),testCommand:'npm run fail'}
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
-    await tick();await tick()
+    await settled(release.id)
     expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
     expect(commands.join('\n')).not.toMatch(/git checkout --detach 'prepared-sha' &&/)
     expect((await db.releases.getProjectRelease('owner',projectId,release.id))?.status).toBe('failed')
@@ -142,7 +143,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     }
     const target={...ci(),testCommand:'npm run slow'}
     const release=await new ReleaseManager(db,runtime).createBranch('owner',target,'release/1.2.3','main')
-    await tick();await tick()
+    await settled(release.id)
     expect(commands).toContain(releaseRegressionCleanupCommand(target,release.id))
     expect((await db.releases.getProjectRelease('owner',projectId,release.id))?.status).toBe('failed')
     expect((await db.releases.getProjectRelease('owner',projectId,release.id))?.steps.find(step=>step.kind==='regression')?.log).toContain('превысила лимит')
@@ -163,7 +164,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     }
     const manager=new ReleaseManager(db,runtime)
     const release=await manager.createBranch('owner',ci(),'release/1.2.3','main')
-    await tick();await tick()
+    await settled(release.id)
     expect(runtime.prepareKnowledgeBase).toHaveBeenCalledWith('release/1.2.3',ci())
     expect(commands.some(command=>command.includes('npm run verify:release'))).toBe(true)
     expect(commands.some(command=>command.includes('affected-check'))).toBe(false)
@@ -186,7 +187,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const prepared=await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.27',version:'0.1.27',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const attempt=await manager.start('owner',ci(),prod(),'release/0.1.27')
-    await tick();await tick()
+    await settled(attempt.id)
     expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
     expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
     expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.27 commit=fixed-sha source=release-manager' && npm run deploy:prod")
@@ -208,10 +209,9 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.50',version:'0.1.50',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const attempt=await manager.start('owner',ci(),prod(),'release/0.1.50')
-    await tick();await tick()
-    expect(pruned).toBe(true)
+    await vi.waitFor(()=>expect(pruned).toBe(true))
+    const release=await settled(attempt.id)
     expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
-    const release=await db.releases.getProjectRelease('owner',projectId,attempt.id)
     expect(release?.status).toBe('failed')
     expect(release?.steps.find(step=>step.kind==='building')?.log).toMatch(/свободно 2\.9 ГБ, нужно не меньше 5\.0 ГБ/)
   })
@@ -221,19 +221,18 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('ls-remote')?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.44\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.44","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}
     await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.44',version:'0.1.44',sha:'fixed-sha',status:'ready'})
     const target={...prod(),deployCommand:'git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy'}
-    await new ReleaseManager(db,runtime).start('owner',ci(),target,'release/0.1.44')
-    await tick();await tick()
+    const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),target,'release/0.1.44')
+    await settled(attempt.id)
     expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.44' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.44 commit=fixed-sha source=release-manager' && install -m 755 scripts/prod/deploy.sh /usr/local/bin/voicechat-deploy && git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy")
   })
 
-  it.skipIf(ON_POSTGRES)('does not release when health reports the expected commit with another version',async()=>{
+  it('does not release when health reports the expected commit with another version',async()=>{
     const limits={checkoutMs:1_000,knowledgeBaseMs:1_000,regressionMs:1_000,switchingMs:1_000,buildingMs:1_000,healthCheckMs:1_000}
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>target.agentId==='ci'?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.35\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.0","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}
     await db.releases.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.35',sha:'fixed-sha',status:'ready'})
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),{...prod(),limits},'release/0.1.35')
-    await new Promise(resolve=>setTimeout(resolve,1_050))
-    const stored=await db.releases.getProjectRelease('owner',projectId,attempt.id)
-    expect(stored?.status).toBe('failed')
+    // Проверка здоровья истекает по лимиту 1 с; на асинхронной базе финал дописывается позже — ждём статус, а не паузу.
+    const stored=await vi.waitFor(async()=>{const r=await db.releases.getProjectRelease('owner',projectId,attempt.id);expect(r?.status).toBe('failed');return r},{timeout:5_000})
     expect(stored?.steps.find(step=>step.kind==='health_check')?.log).toContain('version=0.1.0')
   })
 
@@ -243,7 +242,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async()=>({exitCode:0,output:'{"ok":true,"version":"1.0.0","commit":"fixed-sha"}'})}
     const manager=new ReleaseManager(db,runtime)
     await manager.reconcile(async ()=>prod())
-    await tick();await tick()
+    await settled(release.id)
     expect((await db.releases.getProjectRelease('owner',projectId,release.id))?.status).toBe('released')
   })
 
@@ -273,7 +272,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await db.releases.createProjectRelease('owner',projectId,{branch:'release/2.0.0',version:'2.0.0',sha:'fixed-sha',status:'ready'})
     const manager=new ReleaseManager(db,runtime)
     const failed=await manager.start('owner',ci(),prod(),'release/2.0.0')
-    await tick();await tick()
+    await settled(failed.id)
     expect((await db.releases.getProjectRelease('owner',projectId,failed.id))?.status).toBe('failed')
     expect(failed.attempt).toBe(2)
     const retry=await manager.start('owner',ci(),prod(),'release/2.0.0')
@@ -285,7 +284,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(target,command)=>{commands.push(command);if(target.agentId==='ci')return {exitCode:0,output:'fixed-sha\trefs/heads/release/1.0.0\n'};return {exitCode:1,output:'dirty checkout'}}}
     await db.releases.createProjectRelease('owner',projectId,{branch:'release/1.0.0',version:'1.0.0',sha:'fixed-sha',status:'ready'})
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/1.0.0')
-    await tick();await tick()
+    await settled(attempt.id)
     expect((await db.releases.getProjectRelease('owner',projectId,attempt.id))?.status).toBe('failed')
     expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
   })

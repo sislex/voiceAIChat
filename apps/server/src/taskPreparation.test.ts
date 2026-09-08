@@ -15,7 +15,6 @@ import { VoiceChatDb } from './db/database.js'
 import { signToken } from './users/accounts.js'
 import { DEFAULT_CODEX_MODEL, DEFAULT_SETTINGS, type Board, type LlmClient, type LlmHandle, type LlmRequest, type ProjectDetail, type Task, type TaskPreparationRun } from '@voicechat/shared'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
-const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
 const SECRET = 'test-secret'
 
@@ -971,10 +970,10 @@ describe('task-launch создаёт сразу в подготовке', () => 
     expect(claudeCalls).toHaveLength(1)
   })
 
-  it.skipIf(ON_POSTGRES)('без semantic preparation возвращает ошибку конфигурации и ничего не создаёт', async () => {
+  it('без semantic preparation возвращает ошибку конфигурации и ничего не создаёт', async () => {
     const { project } = await taskInBacklog()
     const before = (await db.tasks.getBoard('admin', project.id))!.tasks.length
-    ;(db as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND semantic_type='preparation'`).run(project.id)
+    await (db as unknown as { sql: { run(sql: string, params: unknown[]): Promise<unknown> } }).sql.run(`DELETE FROM kanban_columns WHERE project_id=? AND semantic_type='preparation'`, [project.id])
 
     const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
 
