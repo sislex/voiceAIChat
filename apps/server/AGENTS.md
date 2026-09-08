@@ -56,6 +56,8 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `makeBridge/` (Make живёт в пакете `@voicechat/make`; здесь — реализация его порта `MakeCore`
 поверх `db.*` (`localCore.ts`), `MakeService` для режима `remote` (`remote.ts`) и гейт границы
 `boundary.test.ts`: ядро импортирует из Make только типы и `createMakeModule`),
+`imageStudioBridge/` (студия живёт в `@voicechat/image-studio`: локальный порт к данным/LLM,
+HTTP-прокси и удалённый `ImageStudioService`; ядро в remote не открывает каталог галерей),
 `routes/internal.ts` (внутренний API `/internal/*` для соседних сервисов под `VC_INTERNAL_TOKEN`),
 `util/` (общие утилиты без владельца: `publicHost`).
 

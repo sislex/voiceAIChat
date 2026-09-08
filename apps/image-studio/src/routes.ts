@@ -5,13 +5,12 @@
 import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { countRu, IMAGE_STUDIO_LIMITS, imageStudioMime, isImageStudioConversation } from '@voicechat/shared'
-import type { VoiceChatDb } from '../db/database.js'
+import type { ImageStudioCore, ImageStudioGenerator } from './core.js'
 import { SlidingWindowLimiter } from '@voicechat/shared'
-import { ImageStudioError, type ImageStudioStore } from '../images/studio.js'
-import type { ImageStudioGenerator } from '../llm/imageStudioGenerator.js'
+import { ImageStudioError, type ImageStudioStore } from './studio.js'
 
 export interface ImageStudioRoutesDeps {
-  db: VoiceChatDb
+  core: Pick<ImageStudioCore, 'conversation' | 'renameConversation'>
   store: ImageStudioStore
   /** Генератор изображений; функцией — в тестах подменяется фейком. */
   generator?: (userId: string) => Promise<ImageStudioGenerator>
@@ -28,15 +27,20 @@ function sendStudioError(reply: FastifyReply, error: unknown): FastifyReply {
 }
 
 export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudioRoutesDeps): void {
-  const { db, store } = deps
-  const uid = (req: { user?: { name: string } | null }): string => req.user?.name ?? ''
+  const { core, store } = deps
+  const uid = (req: FastifyRequest): string => (req as unknown as { user?: { name: string } | null }).user?.name ?? ''
   // Один ран на разговор: параллельные генерации дерутся за имена и квоту, а
   // пользователю всё равно нужен один результат. Здесь же живёт ручка отмены.
   const activeRuns = new Map<string, { cancel: () => void; cancelled: boolean }>()
+  let closing = false
+
+  app.addHook('preClose', async () => { closing = true; for (const run of activeRuns.values()) run.cancel() })
 
   const withRun = async (conversationId: string, reply: FastifyReply, body: (run: { cancel: () => void; cancelled: boolean; onCancel: (fn: () => void) => void }) => Promise<FastifyReply | object>): Promise<FastifyReply | object> => {
+    // Проверка владельца по HTTP могла закончиться уже после начала остановки.
+    if (closing) return reply.code(503).send({ error: 'image_studio_unavailable' })
     if (activeRuns.has(conversationId)) return reply.code(409).send({ error: 'По этому чату уже идёт генерация — дождитесь её или отмените' })
-    const entry = { cancel: () => { entry.cancelled = true }, cancelled: false, onCancel: (fn: () => void) => { entry.cancel = () => { entry.cancelled = true; fn() } } }
+    const entry = { cancel: () => { entry.cancelled = true }, cancelled: false, onCancel: (fn: () => void) => { entry.cancel = () => { entry.cancelled = true; fn() }; if (entry.cancelled) fn() } }
     activeRuns.set(conversationId, entry)
     try {
       return await body(entry)
@@ -50,7 +54,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
 
   /** Разговор пользователя вида «студия картинок», иначе 404. */
   const own = async (userId: string, id: string, reply: FastifyReply): Promise<boolean> => {
-    const conversation = await db.chat.getConversation(userId, id)
+    const conversation = await core.conversation(userId, id)
     if (!conversation || !isImageStudioConversation(conversation)) {
       void reply.code(404).send({ error: 'conversation not found' })
       return false
@@ -116,13 +120,14 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       }
       const startedAt = Date.now()
       const data = await (await deps.generator!(userId))({ prompt, ...(references.length ? { references } : {}), onCancel: run.onCancel })
+      if (run.cancelled) throw new Error('Генерация отменена')
       const name = await store.freeName(req.params.id, (req.body?.name ?? '').trim() || 'изображение.png')
       const file = await store.writeBuffer(req.params.id, name, data)
       await store.setMeta(req.params.id, name, { prompt, tookMs: Date.now() - startedAt })
       // Первый успешный промпт даёт чату говорящее имя вместо «Картинки N».
-      const conversation = await db.chat.getConversation(userId, req.params.id)
+      const conversation = await core.conversation(userId, req.params.id)
       if (conversation && /^Картинки \d+$/.test(conversation.title)) {
-        await db.chat.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
+        await core.renameConversation(userId, req.params.id, `Картинки: ${prompt.slice(0, 40)}${prompt.length > 40 ? '…' : ''}`)
       }
       return { file: { ...file, prompt }, files: await store.list(req.params.id) }
     })
@@ -143,6 +148,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
       const data = await (await deps.generator!(userId))({ prompt, source, sourceName: sourcePath || 'source.png', onCancel: run.onCancel })
       // Правка не затирает оригинал: результат — новый файл рядом. Откат — это
       // просто удаление новой версии, истории снимков студии не нужно.
+      if (run.cancelled) throw new Error('Генерация отменена')
       const name = await store.freeName(req.params.id, sourcePath || 'правка.png')
       const file = await store.writeBuffer(req.params.id, name, data)
       await store.setMeta(req.params.id, name, { prompt, source: sourcePath, tookMs: Date.now() - startedAt })
@@ -189,7 +195,7 @@ export function registerImageStudioRoutes(app: FastifyInstance, deps: ImageStudi
     const userId = uid(req)
     if (!await own(userId, req.params.id, reply)) return reply
     try {
-      const title = (await db.chat.getConversation(userId, req.params.id))?.title ?? null
+      const title = (await core.conversation(userId, req.params.id))?.title ?? null
       const raw = await store.publish(req.params.id, { title, ...(req.body?.password !== undefined ? { password: req.body.password } : {}) })
       return { url: `/g/${raw.token}/`, publishedAt: raw.publishedAt, views: raw.views, passwordProtected: Boolean(raw.passwordHash) }
     } catch (error) { return sendStudioError(reply, error) }

@@ -24,6 +24,10 @@ https://{$VC_PUBLIC_HOST} {
 	handle @make {
 		reverse_proxy make:8788
 	}
+	@imageStudio path /api/image-studio /api/image-studio/* /g/*
+	handle @imageStudio {
+		reverse_proxy image-studio:8796
+	}
 	handle {
 		reverse_proxy voicechat:8787
 	}
@@ -49,6 +53,10 @@ https://caddy {
 	@make path /api/make /api/make/* /api/preview/make/* /api/preview/make-shared/* /p/* /s/*
 	handle @make {
 		reverse_proxy make:8788
+	}
+	@imageStudio path /api/image-studio /api/image-studio/* /g/*
+	handle @imageStudio {
+		reverse_proxy image-studio:8796
 	}
 	handle {
 		reverse_proxy voicechat:8787
