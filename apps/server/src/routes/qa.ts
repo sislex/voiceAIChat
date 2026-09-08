@@ -182,7 +182,8 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
         const upload = req.body?.uploadId ? await uploads.get(req.body.uploadId) : undefined
         if (!upload || upload.agentId) return reply.code(400).send({ error: 'local upload not found' })
         if (upload.size > 10 * 1024 * 1024) return reply.code(413).send({ error: 'QA screenshot too large' })
-        const bytes = readFileSync(upload.path)
+        const bytes = await uploads.read(upload.id)
+        if (!bytes) return reply.code(400).send({ error: 'local upload not found' })
         const detected = detectImageMime(bytes)
         const extension = extname(upload.name).toLowerCase()
         const expectedExtension = detected === 'image/png' ? '.png' : detected === 'image/jpeg' ? ['.jpg', '.jpeg'].includes(extension) : extension === '.webp'
@@ -198,8 +199,10 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     if (!attachment) return reply.code(404).send({ error: 'attachment not found' })
     const upload = await uploads.get(attachment.uploadId)
     if (!upload || upload.agentId) return reply.code(404).send({ error: 'attachment file not found' })
+    const bytes = await uploads.read(upload.id)
+    if (!bytes) return reply.code(404).send({ error: 'attachment file not found' })
     reply.header('content-disposition', `inline; filename="${basename(attachment.name).replace(/["\\]/g, '_')}"`)
-    return reply.type(attachment.mimeType).send(readFileSync(upload.path))
+    return reply.type(attachment.mimeType).send(bytes)
   })
 
   const stageOf = (raw: string): QaRunStage | null => QA_RUN_STAGES.includes(raw as QaRunStage) ? raw as QaRunStage : null

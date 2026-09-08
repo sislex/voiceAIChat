@@ -87,7 +87,6 @@ export interface KanbanDeps {
   kbMcpBaseUrl: string
   previewMcpBaseUrl: string
   ciCommandsMcpBaseUrl: string
-  featurePreviewsRef: { current: FeaturePreviewManager | null }
   ciKbUpdate: CiKbUpdateHook | undefined
 }
 
@@ -98,7 +97,7 @@ export async function createKanbanModule(deps: KanbanDeps): Promise<KanbanModule
 }
 
 async function createKanbanModuleImpl(deps: KanbanDeps) {
-  const { app, db, config, core, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, featurePreviewsRef, ciKbUpdate } = deps
+  const { app, db, config, core, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, ciKbUpdate } = deps
   const { machines, kb, uploads, widgets, ensureProjectMainCurrent } = core
   // Хабы доски и уведомлений принадлежат кластеру: ядро и соседи узнают о событиях через `KanbanService`.
   const boardHub = new BoardHub()
@@ -725,7 +724,6 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     fsDelete: (agentId, path) => machines.fsDelete(agentId, path),
     closeTunnelsForAgent: (agentId) => machines.closeTunnelsForTarget(agentId)
   })
-  featurePreviewsRef.current = featurePreviews
   registerFeaturePreviewRoutes(app, featurePreviews, db, machines)
   void featurePreviews.reconcile()
   const releaseManager = new ReleaseManager(db, {
@@ -1114,7 +1112,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       subscribeQaStages: (cb) => boardHub.onQaStageChange(cb),
       subscribeImprovements: (cb) => boardHub.onImprovementsChange(cb)
     },
-    notifications: { subscribe: (cb) => notificationHub.onChange(cb) }
+    notifications: { subscribe: (cb) => notificationHub.onChange(cb) },
+    previews: { list: async () => featurePreviews.list() }
   }
 
   return { service, ciModelHooks, ciRunManager, orchestrationManager, releaseManager, managedEnvironments, mergeRunManager, featurePreviews, automatedQaRunner, launchTaskPreparation, launchQaPreparation, runLaunchers: kanbanRunLaunchers }

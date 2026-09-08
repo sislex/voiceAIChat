@@ -56,7 +56,8 @@ export interface MachinesService {
   ptyDetach(ptyId: string): void
   ptyKill(ptyId: string): void
   ptyLive(ptyId: string): boolean
-  ptyBufferText(ptyId: string): string | null
+  /** В отдельном процессе машин буфер приходит по сети — вызывающий всегда ждёт `await`. */
+  ptyBufferText(ptyId: string): string | null | Promise<string | null>
   ptyContextOf(ptyId: string): PtyContext | null
   // --- тоннели ---
   createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize?: () => Promise<boolean>, onClose?: () => Promise<void>): Promise<number>

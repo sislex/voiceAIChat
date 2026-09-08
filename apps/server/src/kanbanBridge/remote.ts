@@ -3,7 +3,7 @@
 // приходят от канбана пачками в локальные ленты (`apply`) — сокеты пользователей живут у ядра, и
 // подписки остаются синхронными, как во встроенном режиме. Здесь же — обратные вызовы тоннелей,
 // которыми ядро спрашивает канбан при подключении к тоннелю превью.
-import type { ServerMessage } from '@voicechat/shared'
+import type { PreviewEnvironment, ServerMessage } from '@voicechat/shared'
 import { createRpcClient } from '@voicechat/shared'
 import type { KanbanService } from '../kanban/service.js'
 import { KANBAN_INTERNAL_MACHINES_PATH, KANBAN_INTERNAL_SERVICE_PATH, type KanbanEvent, type MachineSnapshot, type MachinesSnapshotRequest } from '../kanban/internal.js'
@@ -56,7 +56,8 @@ export function createRemoteKanban(opts: RemoteKanbanOptions): RemoteKanban {
       subscribeQaStages: (cb) => qaStages.add(cb),
       subscribeImprovements: (cb) => improvements.add(cb)
     },
-    notifications: { subscribe: (cb) => notifications.add(cb) }
+    notifications: { subscribe: (cb) => notifications.add(cb) },
+    previews: { list: () => rpc<PreviewEnvironment[]>('previews') }
   }
 
   return {

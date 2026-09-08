@@ -44,7 +44,7 @@ export interface MachinesSnapshotRequest { machines: MachineSnapshot[] }
 export type { ExecStreamLine, ExecStreamRequest } from '../internal/execStream.js'
 
 /** Методы `KanbanService`, которые ядро зовёт у процесса канбана. */
-export const KANBAN_SERVICE_RPC_METHODS = ['snapshot', 'boardChanged', 'authorizeTunnel', 'tunnelClosed'] as const
+export const KANBAN_SERVICE_RPC_METHODS = ['snapshot', 'boardChanged', 'authorizeTunnel', 'tunnelClosed', 'previews'] as const
 export type KanbanServiceRpcMethod = (typeof KANBAN_SERVICE_RPC_METHODS)[number]
 
 /** Методы `KanbanCore`, доступные канбану по RPC у ядра. `exec`/`execStream` — отдельным потоковым эндпоинтом. */
@@ -52,6 +52,6 @@ export const KANBAN_CORE_RPC_METHODS = [
   'machines.snapshot', 'machines.fsRead', 'machines.fsWrite', 'machines.fsMkdir', 'machines.fsDelete', 'machines.fsRename',
   'machines.gitAccess', 'machines.createTunnel', 'machines.closeTunnel', 'machines.closeTunnelsForTarget',
   'kb.status', 'kb.topics', 'kb.document', 'kb.search', 'kb.context',
-  'uploads.get', 'widgets.surface', 'widgets.updateSurface', 'widgets.uiRequest', 'ensureProjectMainCurrent'
+  'uploads.get', 'uploads.read', 'widgets.surface', 'widgets.updateSurface', 'widgets.uiRequest', 'ensureProjectMainCurrent'
 ] as const
 export type KanbanCoreRpcMethod = (typeof KANBAN_CORE_RPC_METHODS)[number]
