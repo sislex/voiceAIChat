@@ -29,7 +29,7 @@ describe('перевод кодов ответов сервера', () => {
     // добавить перевод, а не оставлять его пользователю в тосте.
     for (const code of [
       'unauthorized', 'forbidden', 'csrf', 'password_change_required', 'token_missing',
-      'unavailable', 'runner_unavailable', 'browser_runner', 'preview_unavailable',
+      'unavailable', 'image_studio_unavailable', 'core_unavailable', 'runner_unavailable', 'browser_runner', 'preview_unavailable',
       'machine_offline', 'no_online_machine', 'offline', 'run_exists',
       'codex_thread_in_use', 'invalid_url', 'feature_unavailable',
       // Именно с пробелом: так 404 отдаётся в полусотне мест сервера. Раньше в
