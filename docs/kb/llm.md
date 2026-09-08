@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-07
-checked: 399e57aa
+updated: 2026-09-09
+checked: 1b78b0b6
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -52,7 +52,12 @@ areas:
 `packages/shared/src/llmAccess.ts`, а не в роли пользователя.
 
 **Меню моделей повторяет меню самих CLI** (`CLAUDE_MODELS` / `CODEX_MODELS` в
-`packages/shared/src/types.ts` — один список на настройки, разговор и CI). У
+`packages/shared/src/types.ts`). Из общего каталога и с фильтрацией через
+`llm:access` строятся пользовательские селекторы в `SettingsModal` (включая
+AI-помощника) и CI-компонентах. `ConversationSettings` сейчас LLM-поля разговора
+не отображает и не сохраняет: его `onSave` меняет название, машину, рабочий
+каталог, навыки, режим прав, контекст БЗ и проект; имеющиеся `llmProvider` и
+`llmModel` он только передаёт инспектору контекста. У
 Claude это `default` («Default (recommended)» — модель выбирает сам CLI),
 `opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`: id уходит в
 `claude --model` как есть, включая суффикс окна `[1m]`. У Codex —
