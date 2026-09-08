@@ -3,6 +3,7 @@
 // окружения (значения shell-экранируются — пользовательский ввод НЕ конкатенируется
 // в строку скрипта), затем сам скрипт. Секреты маскируются в потоке лога.
 
+import { createChunkSink } from './chunkSink.js'
 import type { CommandExecRequest, CommandExecResult, CommandExecutor } from './types.js'
 
 /** Минимальный интерфейс реестра (для инъекции/моков). */
@@ -54,11 +55,14 @@ export function maskSecrets(secrets: string[]): (s: string) => string {
 export class AgentCommandExecutor implements CommandExecutor {
   constructor(private readonly registry: ExecStreamCapable) {}
 
-  run(req: CommandExecRequest, onChunk: (data: string) => void, signal?: AbortSignal): Promise<CommandExecResult> {
+  async run(req: CommandExecRequest, onChunk: (data: string) => unknown, signal?: AbortSignal): Promise<CommandExecResult> {
     const command = buildShellCommand(req.script, req.workdir, req.env)
     const mask = maskSecrets(req.secrets ?? [])
-    return this.registry
-      .execStream(req.agentId, command, req.timeoutMs, (d) => onChunk(mask(d)), signal)
-      .then((r) => ({ exitCode: r.exitCode, timedOut: r.timedOut }))
+    // Вывод идёт в лог через сток с обратным давлением: запись в базу асинхронна, и без него тысячи
+    // чанков полного гейта висели бы в полёте каждый со своей записью (потолок кучи ядра на проде).
+    const sink = createChunkSink(async (data) => { await onChunk(mask(data)) })
+    const result = await this.registry.execStream(req.agentId, command, req.timeoutMs, (d) => sink.push(d), signal)
+    await sink.flush()
+    return { exitCode: result.exitCode, timedOut: result.timedOut }
   }
 }
