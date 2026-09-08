@@ -1,14 +1,14 @@
 // Студия картинок: галерея, загрузка, генерация и правка по промпту.
 // Генератор — фейк: важен контракт роутов (доступ, имена, квоты, новые файлы
 // при правке), а не сам вызов LLM.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { VoiceChatDb } from '../db/database.js'
-import { ImageStudioStore } from '../images/studio.js'
-import { registerImageStudioRoutes } from './imageStudio.js'
+import { fakeCore } from './test/fakeCore.js'
+import { ImageStudioStore } from './studio.js'
+import { registerImageStudioRoutes } from './routes.js'
 
 
 /** Байты валидного однопиксельного PNG — sniffing в store пропускает только настоящие картинки. */
@@ -19,7 +19,7 @@ const PNG_BYTES = Buffer.concat([
 
 const U = 'admin'
 let app: FastifyInstance
-let db: VoiceChatDb
+let fixture: ReturnType<typeof fakeCore>
 let store: ImageStudioStore
 let dir: string
 let convId: string
@@ -27,16 +27,15 @@ let generated: Array<{ prompt: string; hasSource: boolean }>
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'img-routes-'))
-  db = new VoiceChatDb(':memory:')
-  await db.identity.createUser(U, '', 'admin')
+  fixture = fakeCore()
   store = new ImageStudioStore(dir)
-  convId = (await db.chat.createConversation(U, 'Студия', 'images'))!.id
+  convId = (await fixture.createConversation(U, 'Студия', 'images'))!.id
   generated = []
   app = Fastify()
   app.decorateRequest('user', null)
   app.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
   registerImageStudioRoutes(app, {
-    db, store,
+    core: fixture.core, store,
     generator: async () => async ({ prompt, source }) => {
       generated.push({ prompt, hasSource: Boolean(source) })
       return Buffer.concat([PNG_BYTES, Buffer.from(prompt)])
@@ -46,7 +45,6 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await app.close()
-  db.close()
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -86,12 +84,29 @@ describe('студия картинок: роуты', () => {
 
   it('пустой промпт — 400 словами; обычный чат — 404', async () => {
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: '  ' } })).statusCode).toBe(400)
-    const plain = (await db.chat.createConversation(U, 'Обычный'))!.id
+    const plain = (await fixture.createConversation(U, 'Обычный'))!.id
     expect((await app.inject({ method: 'GET', url: `/api/image-studio/${plain}/files` })).statusCode).toBe(404)
   })
 })
 
 describe('студия картинок: параллельность, отмена и происхождение', () => {
+  it('остановка во время проверки владельца не запускает новый LLM', async () => {
+    const slowApp = Fastify()
+    let release = () => {}
+    const owner = vi.fn(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return fixture.core.conversation(U, convId)
+    })
+    const generator = vi.fn(async () => async () => PNG_BYTES)
+    registerImageStudioRoutes(slowApp, { core: { ...fixture.core, conversation: owner }, store, generator })
+    slowApp.addHook('preClose', async () => { release() })
+    const running = slowApp.inject({ method: 'POST', url: `/api/image-studio/${convId}/generate`, payload: { prompt: 'кот' } }).then((res) => res)
+    await vi.waitFor(() => expect(owner).toHaveBeenCalledOnce())
+    await slowApp.close()
+    expect((await running).statusCode).toBe(503)
+    expect(generator).not.toHaveBeenCalled()
+  })
+
   it('второй ран по тому же разговору — 409, после завершения снова можно', async () => {
     // Генератор, который завершится по нашей команде.
     let finish: ((data: Buffer) => void) | undefined
@@ -99,7 +114,7 @@ describe('студия картинок: параллельность, отме�
     slowApp.decorateRequest('user', null)
     slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(slowApp, {
-      db, store,
+      core: fixture.core, store,
       generator: async () => () => new Promise((resolve) => { finish = resolve })
     })
     await slowApp.ready()
@@ -127,7 +142,7 @@ describe('студия картинок: параллельность, отме�
     slowApp.decorateRequest('user', null)
     slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(slowApp, {
-      db, store,
+      core: fixture.core, store,
       generator: async () => ({ onCancel }) => new Promise((_, reject) => {
         onCancel?.(() => { cancelCalls += 1; reject(new Error('cancelled')) })
       })
@@ -198,7 +213,7 @@ describe('студия картинок: публикация галереи', (
   })
 
   it('чужой или не-студийный чат публиковать нельзя', async () => {
-    const plain = await db.chat.createConversation(U, 'Обычный')
+    const plain = await fixture.createConversation(U, 'Обычный')
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${plain.id}/publish` })).statusCode).toBe(404)
   })
 
@@ -223,7 +238,7 @@ describe('студия картинок: статус рана', () => {
     slowApp.decorateRequest('user', null)
     slowApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(slowApp, {
-      db, store,
+      core: fixture.core, store,
       generator: async () => () => new Promise((resolve) => { finish = resolve })
     })
     await slowApp.ready()
@@ -283,7 +298,7 @@ describe('студия картинок: референсы генерации',
     refApp.decorateRequest('user', null)
     refApp.addHook('preHandler', async (req) => { (req as unknown as { user: { name: string } }).user = { name: U } })
     registerImageStudioRoutes(refApp, {
-      db, store,
+      core: fixture.core, store,
       generator: async () => async ({ references }) => {
         seenRefs = (references ?? []).map((ref) => ref.name)
         return PNG_BYTES
@@ -302,16 +317,16 @@ describe('студия картинок: референсы генерации',
 
 describe('студия картинок: автоназвание чата', () => {
   it('первый промпт переименовывает дефолтные «Картинки N», своё имя не трогается', async () => {
-    const auto = await db.chat.createConversation(U, 'Картинки 3', 'images')
+    const auto = await fixture.createConversation(U, 'Картинки 3', 'images')
     await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'синий кит в облаках' } })
-    expect((await db.chat.getConversation(U, auto.id))?.title).toBe('Картинки: синий кит в облаках')
+    expect((await fixture.core.conversation(U, auto.id))?.title).toBe('Картинки: синий кит в облаках')
     // Повторная генерация не перезатирает уже говорящее имя.
     await app.inject({ method: 'POST', url: `/api/image-studio/${auto.id}/generate`, payload: { prompt: 'другое' } })
-    expect((await db.chat.getConversation(U, auto.id))?.title).toBe('Картинки: синий кит в облаках')
+    expect((await fixture.core.conversation(U, auto.id))?.title).toBe('Картинки: синий кит в облаках')
 
-    const named = await db.chat.createConversation(U, 'Мой альбом', 'images')
+    const named = await fixture.createConversation(U, 'Мой альбом', 'images')
     await app.inject({ method: 'POST', url: `/api/image-studio/${named.id}/generate`, payload: { prompt: 'кот' } })
-    expect((await db.chat.getConversation(U, named.id))?.title).toBe('Мой альбом')
+    expect((await fixture.core.conversation(U, named.id))?.title).toBe('Мой альбом')
   })
 })
 
@@ -327,7 +342,7 @@ describe('студия картинок: происхождение клиент
 
 describe('студия картинок: перенос между чатами', () => {
   it('move уносит файл с метой, copy оставляет оригинал; чужой чат — 404', async () => {
-    const target = await db.chat.createConversation(U, 'Картинки 9', 'images')
+    const target = await fixture.createConversation(U, 'Картинки 9', 'images')
     await store.writeBuffer(convId, 'кот.png', PNG_BYTES)
     await store.setMeta(convId, 'кот.png', { prompt: 'рыжий кот' })
 
@@ -344,7 +359,7 @@ describe('студия картинок: перенос между чатами'
     expect(await store.list(target.id)).toHaveLength(1)
     expect((await store.list(convId)).map((f) => f.path)).toContain('кот.png')
 
-    const plain = await db.chat.createConversation(U, 'Обычный')
+    const plain = await fixture.createConversation(U, 'Обычный')
     expect((await app.inject({ method: 'POST', url: `/api/image-studio/${convId}/transfer`, payload: { path: 'кот.png', to: plain.id } })).statusCode).toBe(404)
   })
 })

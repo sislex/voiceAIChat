@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-09
-checked: c8fcb5e8
+checked: 41e07830
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -72,7 +72,7 @@ Playwright Reader встроен. Cookie прокси и преобразова�
 
 В dev/desktop по умолчанию `embedded`. У ядра `VC_PLAYWRIGHT_READER_MODE=remote`
 и `VC_PLAYWRIGHT_READER_URL`; приложение запускается командой
-`npm run -w @voicechat/playwright-reader start` на порту 8796. Нужны `VC_CORE_URL`,
+`npm run -w @voicechat/playwright-reader start` на порту 8797. Нужны `VC_CORE_URL`,
 общий `VC_INTERNAL_TOKEN`, адрес/токен browser-runner и `VC_BROWSER_PREVIEW_BASE`.
 В compose сервис включён по умолчанию, как Make; Caddy и прокси ядра сохраняют
 тот же публичный `/api/browser/*`. Подробности окружения — `deploy.md` и

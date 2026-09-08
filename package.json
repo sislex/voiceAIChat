@@ -9,6 +9,7 @@
     "apps/llm-runner",
     "apps/make",
     "apps/playwright-reader",
+    "apps/image-studio",
     "apps/tts-runner",
     "apps/stt-runner",
     "apps/automation-runner",

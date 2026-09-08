@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-09
-checked: c8fcb5e8
+checked: 41e07830
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -150,8 +150,10 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 
 **Playwright Reader отдельным сервисом (2026-09-09).** В compose приложение
 `playwright-reader` включено по умолчанию, как Make: образ `voicechat-playwright-reader`,
-стадия `playwright-reader-runtime`, порт 8796. У ядра уже заданы
-`VC_PLAYWRIGHT_READER_MODE=remote` и `VC_PLAYWRIGHT_READER_URL=http://playwright-reader:8796`.
+стадия `playwright-reader-runtime`, порт 8797. У ядра уже заданы
+`VC_PLAYWRIGHT_READER_MODE=remote` и `VC_PLAYWRIGHT_READER_URL=http://playwright-reader:8797`.
+После объединения со студией картинок порт 8796 оставлен ей; разные значения
+по умолчанию позволяют запускать оба standalone-процесса на одном хосте.
 Новые обязательные строки в `.env` не нужны: сервис получает существующие
 `VC_INTERNAL_TOKEN` и `VC_BROWSER_RUNNER_TOKEN`. Его `VC_CORE_URL` ведёт на ядро,
 `VC_BROWSER_RUNNER_URL` — на Chromium. Своей БД, тома данных и MCP-секрета у него нет.
@@ -161,7 +163,7 @@ Caddy направляет `/api/browser/*` в приложение; при за
 В dev/desktop режим по умолчанию `embedded`. Для отдельного процесса вне compose
 ядру нужны `VC_PLAYWRIGHT_READER_MODE=remote`, `VC_PLAYWRIGHT_READER_URL` и общий
 `VC_INTERNAL_TOKEN`; приложению — `VC_CORE_URL`, тот же токен, URL/токен browser-runner.
-Запуск: `npm run -w @voicechat/playwright-reader start` (`PORT=8796`, `HOST=127.0.0.1`).
+Запуск: `npm run -w @voicechat/playwright-reader start` (`PORT=8797`, `HOST=127.0.0.1`).
 `VC_BROWSER_PREVIEW_BASE` задаёт доступный Chromium адрес прокси (fallback —
 `VC_MCP_PUBLIC_BASE`, затем `VC_CORE_URL`); он должен совпадать с разрешённым
 `VC_BROWSER_PREVIEW_ORIGIN` раннера. Отдельный Web Reader обращается к приложению
@@ -182,6 +184,19 @@ Caddy направляет `/api/browser/*` в приложение; при за
 `docker compose up -d --build make` — ядро при этом не трогается (Release Center пока пересобирает
 всё; отдельный профиль — круг 4 плана). Без compose (dev, desktop) `VC_MAKE_MODE` не задан → Make
 встроен в процесс ядра, как раньше.
+
+**Студия картинок отдельным приложением (2026-09-09).** Workspace `apps/image-studio`,
+сервис compose `image-studio`, образ `voicechat-image-studio`, target `image-studio-runtime`,
+порт 8796, healthcheck `/v1/health` (имя сервиса и `VC_RELEASE_VERSION`), память 512 МБ.
+У ядра в compose `VC_IMAGE_STUDIO_MODE=remote`, `VC_IMAGE_STUDIO_URL=http://image-studio:8796`;
+у студии — `VC_CORE_URL`, общий `VC_INTERNAL_TOKEN` и `VC_DATA_DIR=/data`. Прежний каталог
+`/data/image-studio` доступен через том `vc-data`, переноса формата данных не требуется.
+Caddy ведёт `/api/image-studio/*` и `/g/*` в студию напрямую, порт 8787 — через прокси ядра;
+`/internal/*` снаружи закрыт. UI собирается с общим web-клиентом. Обновить только студию:
+`docker compose up -d --build image-studio`. Вне compose режим ядра по умолчанию embedded;
+standalone запускается `npm run -w @voicechat/image-studio start` с теми же переменными
+(каталог можно задать через `VC_IMAGE_STUDIO_DATA_DIR`). На один каталог запускается один
+экземпляр студии: слоты генераций и лимиты попыток пароля живут в памяти процесса.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
 (образ `voicechat-kanban`, стадия `kanban-runtime`, порт 8789, тот же код `apps/server`, точка входа
@@ -219,6 +234,7 @@ Caddy направляет `/api/browser/*` в приложение; при за
 |---|---|---|---|---|
 | ядро (чат, БД-миграции, CLI-раннеры, WS клиентов) | `apps/server/src/index.ts`, `server-runtime` | — | `VC_DB_URL` (Postgres), `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` | — |
 | Make | `apps/make/src/standalone`, `make-runtime` | `VC_MAKE_MODE=remote`, `VC_MAKE_URL` | `VC_CORE_URL`, общие токен и секрет, свой `VC_DATA_DIR` (мастерские `/data/make`) | нужен, если Make раньше работал встроенным — мастерские лежат в `/data/make` ядра |
+| студия картинок | `apps/image-studio/src/standalone`, `image-studio-runtime` | `VC_IMAGE_STUDIO_MODE=remote`, `VC_IMAGE_STUDIO_URL` | `VC_CORE_URL`, общий токен, `VC_DATA_DIR` | для прежних галерей нужен доступ к `/data/image-studio`; после переноса каталога общий том не требуется |
 | канбан | `apps/server/src/kanban/standalone`, `kanban-runtime` | `VC_KANBAN_MODE=remote`, `VC_KANBAN_URL`, `VC_KANBAN_MCP_PUBLIC_BASE` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE` (адрес ядра), адреса раннеров LLM и браузера, `VC_MAKE_URL`, SMTP | нет: вложения читаются через порт ядра, скриншоты QA — свой каталог |
 | машины | `apps/server/src/machines/standalone`, `machines-runtime` | `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, `VC_PUBLIC_URL` | нет: установщики — из образа, перенос хранилищ — свой файл |
 | админка | `apps/server/src/admin/standalone`, `admin-runtime` | `VC_ADMIN_MODE=remote`, `VC_ADMIN_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MAKE_URL`, при вынесенных машинах `VC_MACHINES_URL`, SMTP | нет |
