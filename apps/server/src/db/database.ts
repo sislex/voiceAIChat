@@ -192,6 +192,9 @@ export class VoiceChatDb {
     await this.sql.run(`UPDATE users SET role = 'admin' WHERE name IN ('admin', 'admin1')`)
     await this.sql.run(`UPDATE llm_engines SET allowed_roles = replace(allowed_roles, '"user"', '"developer"') WHERE allowed_roles LIKE '%"user"%'`)
 
+    const modelPriceCols = (await this.sql.all(`PRAGMA table_info(model_prices)`)) as Array<{ name: string }>
+    if (modelPriceCols.length && !modelPriceCols.some((c) => c.name === 'tiers_json')) await this.sql.exec(`ALTER TABLE model_prices ADD COLUMN tiers_json TEXT NOT NULL DEFAULT '[]'`)
+
     // Блокировка после неудачных входов (auth-roadmap п.3): три колонки поверх существующей таблицы users.
     const userCols = (await this.sql.all(`PRAGMA table_info(users)`)) as Array<{ name: string }>
     if (userCols.length && !userCols.some((c) => c.name === 'failed_logins')) await this.sql.exec(`ALTER TABLE users ADD COLUMN failed_logins INTEGER NOT NULL DEFAULT 0`)

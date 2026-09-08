@@ -120,7 +120,20 @@ export interface UsageReport {
 }
 
 /** Строка сводки расхода пользователя для админского дашборда. */
-/** Редактируемая запись прайса, USD за 1M токенов. */
+export type ModelPriceMode = 'standard' | 'batch' | 'flex' | 'fast'
+export type ModelPriceContext = 'short' | 'long'
+
+/** Дополнительная официальная категория тарифа, USD за 1M токенов. */
+export interface ModelPriceTier {
+  mode: ModelPriceMode
+  context: ModelPriceContext
+  inputPerMillion: number | null
+  cachedInputPerMillion: number | null
+  cacheWritePerMillion: number | null
+  outputPerMillion: number | null
+}
+
+/** Редактируемая запись прайса, USD за 1M токенов. Базовые поля = Standard/short. */
 export interface ModelPrice {
   provider: string
   model: string
@@ -131,6 +144,7 @@ export interface ModelPrice {
   sourceUrl: string
   effectiveAt: number
   updatedAt: number
+  tiers?: ModelPriceTier[]
 }
 
 /** Данные upsert без серверной даты изменения. */
@@ -143,6 +157,7 @@ export interface ModelPriceInput {
   outputPerMillion: number
   sourceUrl: string
   effectiveAt: number
+  tiers?: ModelPriceTier[]
 }
 
 export interface UserUsageSummary {
