@@ -1466,6 +1466,25 @@ describe('ImageStudioPane', () => {
     }
   })
 
+  it('закрытие лайтбокса не отскакивает обратно на тот же адрес', async () => {
+    // Эффект «адрес → лайтбокс» успевал сработать раньше, чем соседний чистил
+    // адрес, и закрытие мгновенно переоткрывало картинку.
+    const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
+    window.location.hash = `#/images/c1/${encodeURIComponent('пёс.png')}`
+    try {
+      render(<ImageStudioPane conversationId="c1" api={api as never} />)
+      const viewer = await screen.findByTestId('image-studio-viewer')
+      fireEvent.click(within(viewer).getByRole('button', { name: 'Закрыть' }))
+      await waitFor(() => expect(screen.queryByTestId('image-studio-viewer')).toBeNull())
+      // Дали эффектам ещё круг: раньше именно здесь лайтбокс возвращался.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(screen.queryByTestId('image-studio-viewer')).toBeNull()
+      expect(window.location.hash).toBe('#/images/c1')
+    } finally {
+      window.location.hash = ''
+    }
+  })
+
   it('адрес с исчезнувшим файлом чистится, а не показывает пустой лайтбокс', async () => {
     const { api } = makeApi([{ path: 'кот.png' }, { path: 'пёс.png' }])
     window.location.hash = '#/images/c1/удалённый.png'
