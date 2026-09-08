@@ -1111,6 +1111,77 @@ export function registerProjectRoutes(
     }
   )
 
+  // --- Черновики доработок ---------------------------------------------
+  // Отдельные маршруты, а не флаг у создания цикла: черновик правится и
+  // удаляется, поэтому у него свой жизненный цикл и свои коды ошибок.
+  const draftFiles = (userId: string, uploadIds: string[]): Array<{ uploadId: string; name: string; mimeType: string; size: number }> =>
+    uploadIds.flatMap((uploadId) => {
+      const upload = uploads?.get(uploadId)
+      return upload?.ownerId === userId ? [{ uploadId: upload.id, name: upload.name, mimeType: upload.mimeType, size: upload.size }] : []
+    })
+  const draftError = (reply: FastifyReply, error: unknown): FastifyReply => {
+    const code = errMessage(error)
+    if (code === 'not_found') return nf(reply)
+    if (code === 'active_run') return reply.code(409).send({ error: 'task_active_run', message: 'Отправка заблокирована: активный ран продолжает выполняться.' })
+    if (code === 'invalid_state') return reply.code(409).send({ error: code, code })
+    return reply.code(400).send({ error: code, code })
+  }
+  type DraftBody = { description?: string; criteria?: string[]; makeSources?: Array<{ conversationId: string; title?: string; mode: 'whole_project' | 'files'; paths: string[] }>; uploadIds?: string[] }
+  const draftInput = (body: DraftBody | undefined): { description: string; criteria: string[]; makeSources: NonNullable<DraftBody['makeSources']> } => ({
+    description: body?.description ?? '',
+    criteria: Array.isArray(body?.criteria) ? body.criteria : [],
+    makeSources: Array.isArray(body?.makeSources) ? body.makeSources : []
+  })
+
+  app.post<{ Params: { id: string; taskId: string }; Body: DraftBody }>(
+    '/api/projects/:id/tasks/:taskId/rework-drafts',
+    async (req, reply) => {
+      const userId = uid(req)
+      try {
+        const cycle = await db.tasks.createTaskReworkDraft(userId, req.params.id, req.params.taskId, draftInput(req.body), draftFiles(userId, req.body?.uploadIds ?? []))
+        boardHub.emit(req.params.id)
+        return cycle
+      } catch (error) { return draftError(reply, error) }
+    }
+  )
+
+  app.patch<{ Params: { id: string; taskId: string; cycleId: string }; Body: DraftBody }>(
+    '/api/projects/:id/tasks/:taskId/rework-drafts/:cycleId',
+    async (req, reply) => {
+      const userId = uid(req)
+      try {
+        const cycle = await db.tasks.updateTaskReworkDraft(userId, req.params.id, req.params.taskId, req.params.cycleId, draftInput(req.body), draftFiles(userId, req.body?.uploadIds ?? []))
+        boardHub.emit(req.params.id)
+        return cycle
+      } catch (error) { return draftError(reply, error) }
+    }
+  )
+
+  app.delete<{ Params: { id: string; taskId: string; cycleId: string } }>(
+    '/api/projects/:id/tasks/:taskId/rework-drafts/:cycleId',
+    async (req, reply) => {
+      try {
+        await db.tasks.deleteTaskReworkDraft(uid(req), req.params.id, req.params.taskId, req.params.cycleId)
+        boardHub.emit(req.params.id)
+        return { deleted: true as const }
+      } catch (error) { return draftError(reply, error) }
+    }
+  )
+
+  app.post<{ Params: { id: string; taskId: string; cycleId: string } }>(
+    '/api/projects/:id/tasks/:taskId/rework-drafts/:cycleId/submit',
+    async (req, reply) => {
+      const userId = uid(req)
+      try {
+        const cycle = await db.tasks.submitTaskReworkDraft(userId, req.params.id, req.params.taskId, req.params.cycleId)
+        const task = await db.tasks.getTaskDetail(userId, req.params.id, req.params.taskId)
+        if (!task) return nf(reply)
+        boardHub.emit(req.params.id)
+        return { cycle, task }
+      } catch (error) { return draftError(reply, error) }
+    }
+  )
+
   app.get<{ Params: { id: string; taskId: string }; Querystring: { scope?: 'source' | 'rework_draft' } }>(
     '/api/projects/:id/tasks/:taskId/attachments',
     async (req, reply) => await db.tasks.taskAttachments(uid(req), req.params.id, req.params.taskId, req.query.scope ?? 'source') ?? nf(reply)
@@ -1122,6 +1193,19 @@ export function registerProjectRoutes(
         if (!req.body?.name || !req.body?.dataBase64) return badReq(reply, 'name and dataBase64 required')
         return await db.tasks.createTaskAttachment(uid(req), req.params.id, req.params.taskId, { name: req.body.name, mimeType: req.body.mimeType, dataBase64: req.body.dataBase64, scope: req.body.scope })
       } catch (error) { return badReq(reply, errMessage(error)) }
+    }
+  )
+  // Сам файл вложения: карточка задачи показывает превью картинок, а не только имя.
+  app.get<{ Params: { id: string; taskId: string; attachmentId: string } }>(
+    '/api/projects/:id/tasks/:taskId/attachments/:attachmentId',
+    async (req, reply) => {
+      const file = await db.tasks.taskAttachmentContent(uid(req), req.params.id, req.params.taskId, req.params.attachmentId)
+      if (!file) return nf(reply)
+      return reply
+        .header('content-type', file.mimeType)
+        .header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`)
+        .header('cache-control', 'private, max-age=300')
+        .send(file.data)
     }
   )
   app.delete<{ Params: { id: string; taskId: string; attachmentId: string } }>(

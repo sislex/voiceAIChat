@@ -12,8 +12,10 @@ const model: TaskCardViewModel = {
   runs: [{ id: 'run-1', title: 'Разработка', status: 'success', outcome: 'success', createdAt: 1, finishedAt: 2, canOpen: true, canCancel: false, canAnswer: false }],
   source: { description: 'Исходное ТЗ', acceptanceCriteria: '1. Исходный критерий', attachments: [] },
   makeSources: [{ id: 'make-1', title: 'Проект 19', conversationId: 'make-19', mode: 'files', paths: [{ path: 'src/App.jsx', available: true }, { path: 'missing.jsx', available: false, error: 'Удалён' }] }],
-  cycles: [], loadState: 'ready',
-  actions: { canRework: true, hasActiveRun: false, safeActiveRunActions: [] }
+  cycles: [], drafts: [], loadState: 'ready',
+  cycleNumber: 1, nextCycleNumber: 2, branch: null, commit: null,
+  tabs: [{ id: 'overview', label: 'Общее' }, { id: 'reworks', label: 'Доработки' }],
+  actions: { canRework: true, hasActiveRun: false, canStopRun: false, safeActiveRunActions: [] }
 }
 function callbacks(over: Partial<TaskCardCallbacks> = {}): TaskCardCallbacks {
   return { onClose: vi.fn(), onChangeTab: vi.fn(), onOpenRun: vi.fn(), onOpenMake: vi.fn(), onStartRework: vi.fn(), onChangeReworkDraft: vi.fn(), onSubmitRework: vi.fn(), onCancelRework: vi.fn(), ...over }
@@ -23,8 +25,11 @@ describe('NewTaskCardView', () => {
   it('работает только через view model и callbacks', () => {
     const cb = callbacks()
     render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    // Первоначальная постановка свёрнута: на экране актуальная, исходная — по кнопке.
+    expect(screen.queryByText('Исходное ТЗ')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Показать' }))
     expect(screen.getByText('Исходное ТЗ')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'На доработку' }))
+    fireEvent.click(screen.getByRole('button', { name: '↩ На доработку · цикл 2' }))
     expect(cb.onStartRework).toHaveBeenCalledOnce()
   })
   // @testCase TC-REG-1
@@ -67,7 +72,7 @@ describe('NewTaskCardView', () => {
     fireEvent.click(screen.getByLabelText('src/styles.css'))
     const ready = { ...twoPaths, makeSources: [twoPaths.makeSources[0]!, { conversationId: 'b', mode: 'files' as const, paths: ['src/App.tsx', 'src/styles.css'] }] }
     rerender(view(ready))
-    fireEvent.click(screen.getByRole('button', { name: 'Создать цикл' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить как черновик' }))
     expect(submit).toHaveBeenCalledWith(ready, expect.stringMatching(/^rework-task-1-/))
   })
 
@@ -81,11 +86,92 @@ describe('NewTaskCardView', () => {
   })
 
   // @testCase TC-NEG-1
-  it('при активном ране не подтверждает доработку', () => {
+  it('при активном ране предупреждает, но черновик сохранить даёт', () => {
     const submit = vi.fn()
-    render(<NewTaskCardView model={{ ...model, actions: { canRework: true, hasActiveRun: true, reworkBlockedReason: 'Ран активен', safeActiveRunActions: ['keep_running'] } }} activeTab="overview" version="new" reworkOpen reworkDraft={{ ...draft, description: 'Правка' }} onVersionChange={vi.fn()} callbacks={callbacks({ onSubmitRework: submit })} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Ран активен')
-    fireEvent.click(screen.getByRole('button', { name: 'Создать цикл' }))
-    expect(submit).not.toHaveBeenCalled()
+    const stop = vi.fn()
+    const activeModel = { ...model, actions: { canRework: true, hasActiveRun: true, canStopRun: true, reworkBlockedReason: 'Ран активен', safeActiveRunActions: ['keep_running' as const] } }
+    render(<NewTaskCardView model={activeModel} activeTab="overview" version="new" reworkOpen reworkDraft={{ ...draft, description: 'Правка' }} onVersionChange={vi.fn()} callbacks={callbacks({ onSubmitRework: submit, onStopRun: stop })} />)
+    // Баннер в шапке объясняет ситуацию и даёт остановить ран.
+    expect(screen.getByRole('status')).toHaveTextContent('Активный ран блокирует возврат')
+    fireEvent.click(screen.getByRole('button', { name: 'Остановить ран' }))
+    expect(stop).toHaveBeenCalledOnce()
+    // Сам черновик собрать можно: ворота стоят на отправке, а не на подготовке.
+    expect(screen.getByRole('alert')).toHaveTextContent('Сейчас выполняется ран')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить как черновик' }))
+    expect(submit).toHaveBeenCalledOnce()
+  })
+
+  it('вкладка доработок показывает черновики с действиями, а отправленные — без них', () => {
+    const cb = callbacks({ onSubmitDraft: vi.fn(), onDeleteDraft: vi.fn(), onEditDraft: vi.fn() })
+    const withReworks = {
+      ...model,
+      tabs: [{ id: 'overview' as const, label: 'Общее' }, { id: 'reworks' as const, label: 'Доработки', count: 1 }],
+      drafts: [{ id: 'd1', sequence: 2, description: 'Черновик доработки', criteria: ['A'], makeSources: [], attachments: [], createdBy: 'alex', createdAt: 1, preparationRunId: null, status: 'draft' as const }],
+      cycles: [{ id: 'c1', sequence: 1, description: 'Отправленный цикл', criteria: [], makeSources: [], attachments: [], createdBy: 'alex', createdAt: 1, preparationRunId: null, status: 'submitted' as const, merged: true }]
+    }
+    render(<NewTaskCardView model={withReworks} activeTab="reworks" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(screen.getByText('Черновик доработки')).toBeTruthy()
+    expect(screen.getByText('Вмержено в main')).toBeTruthy()
+    // Действия есть только у черновика — отправленный цикл неизменяем.
+    expect(screen.getAllByRole('button', { name: 'Отправить на доработку' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить на доработку' }))
+    expect(cb.onSubmitDraft).toHaveBeenCalledWith('d1')
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить' }))
+    expect(cb.onEditDraft).toHaveBeenCalledWith('d1')
+  })
+
+  it('переносом файла в зону грузит вложение задачи', () => {
+    const upload = vi.fn()
+    render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks({ onUploadAttachment: upload })} />)
+    const zone = screen.getByText('Перетащите файлы сюда').closest('label')!
+    fireEvent.drop(zone, { dataTransfer: { files: [new File(['x'], 'dropped.png', { type: 'image/png' })] } })
+    expect(upload).toHaveBeenCalledWith('source', expect.objectContaining({ name: 'dropped.png' }))
+  })
+
+  it('показывает изменения текущего цикла со ссылкой на план', () => {
+    const cb = callbacks()
+    const withCycle = {
+      ...model,
+      cycles: [{ id: 'c1', sequence: 1, description: 'Восстановление записи', criteria: [], makeSources: [], attachments: [], createdBy: 'alex', createdAt: 1, preparationRunId: 'prep-1', status: 'submitted' as const }]
+    }
+    render(<NewTaskCardView model={withCycle} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={cb} />)
+    expect(screen.getByText('Восстановление записи')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'План →' }))
+    expect(cb.onChangeTab).toHaveBeenCalledWith('preparation')
+  })
+
+  it('Make-дизайн: превью, замена и снятие связи', () => {
+    const cb = callbacks({ onOpenMake: vi.fn(), onUnlinkMake: vi.fn(), onReplaceMake: vi.fn() })
+    const choices = { state: 'ready' as const, items: [
+      { conversationId: 'make-19', title: 'Проект 19', owner: 'me', own: true, updatedAt: 1 },
+      { conversationId: 'make-20', title: 'Проект 20', owner: 'me', own: true, updatedAt: 1 }
+    ] }
+    render(<NewTaskCardView model={model} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} makeSourcesState={choices} onVersionChange={vi.fn()} callbacks={cb} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть превью' }))
+    expect(cb.onOpenMake).toHaveBeenCalledWith('make-19')
+
+    // Заменить показывает выбор из остальных Make-проектов проекта.
+    fireEvent.click(screen.getByRole('button', { name: 'Заменить' }))
+    fireEvent.change(screen.getByLabelText('Новый макет'), { target: { value: 'make-20' } })
+    expect(cb.onReplaceMake).toHaveBeenCalledWith('make-1', 'make-20')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить связь' }))
+    expect(cb.onUnlinkMake).toHaveBeenCalledWith('make-1')
+  })
+
+  it('превью картинки грузится по требованию, а не при открытии карточки', async () => {
+    const load = vi.fn().mockResolvedValue('data:image/png;base64,AAA')
+    const withImage = { ...model, source: { ...model.source, attachments: [{ id: 'a1', name: 'shot.png', mimeType: 'image/png', status: 'ready' as const }] } }
+    render(<NewTaskCardView model={withImage} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks({ loadAttachment: load })} />)
+    expect(load).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Превью' }))
+    expect(await screen.findByAltText('shot.png')).toHaveAttribute('src', 'data:image/png;base64,AAA')
+  })
+
+  it('размечает критерии относительно первоначальной постановки', () => {
+    const diffModel = { ...model, acceptanceCriteria: '1. Исходный критерий\n2. Совсем новый пункт' }
+    render(<NewTaskCardView model={diffModel} activeTab="overview" version="new" reworkOpen={false} reworkDraft={draft} onVersionChange={vi.fn()} callbacks={callbacks()} />)
+    expect(screen.getByText('Исходный')).toBeTruthy()
+    expect(screen.getByText('Добавлен')).toBeTruthy()
   })
 })
