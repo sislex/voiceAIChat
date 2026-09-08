@@ -331,7 +331,7 @@ describe('projects REST: доступ', () => {
     const response = await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases/branches` })
     expect(response.statusCode).toBe(400)
     expect(response.json()).toEqual({
-      error: 'В настройках проекта не выбрана машина по умолчанию'
+      error: 'Нет пригодной машины для сборки релиза'
     })
   })
 

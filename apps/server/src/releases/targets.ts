@@ -6,34 +6,74 @@
 // иначе ассистент выпускает не туда, куда кнопка.
 
 import { DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
+import type { ReleaseMachineCatalog } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { ManagedEnvironmentResolver } from './managedEnvironmentResolver.js'
 import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from './releaseManager.js'
 
 const DEFAULT_TEST_COMMAND = 'npm run typecheck && npm run test'
 
+export async function releaseMachineCatalog(
+  db: VoiceChatDb,
+  releases: Pick<ReleaseManager, 'isOnline'>,
+  userId: string,
+  projectId: string
+): Promise<ReleaseMachineCatalog> {
+  const project = await db.projects.getProject(userId, projectId)
+  if (!project) throw new Error('Проект не найден или недоступен')
+  const usable = await db.machines.listUsableAgents(userId, projectId)
+  const machines = await Promise.all(usable.map(async (agent) => {
+    const configured = project.machines.find((item) => item.agentId === agent.id)
+    const access = await db.machines.machineAccess(userId, agent.id, projectId)
+    const online = releases.isOnline(agent.id)
+    const path = configured?.path?.trim() ?? ''
+    const reposRoot = configured?.reposRoot?.trim() ?? ''
+    const unavailableReason = access !== 'owner' && access !== 'full'
+      ? 'Только чтение: для сборки нужен полный доступ'
+      : !online
+        ? 'Машина offline'
+        : !path && !reposRoot
+          ? 'Не настроена папка проекта или reposRoot'
+          : null
+    return {
+      agentId: agent.id,
+      name: agent.name,
+      ownership: access === 'owner' ? 'mine' as const : 'project' as const,
+      access: access ?? 'read',
+      online,
+      path,
+      reposRoot,
+      eligible: unavailableReason === null,
+      unavailableReason
+    }
+  }))
+  return { machines, lastAgentId: await db.machines.getUserProjectReleaseMachine(userId, projectId) }
+}
+
 /** Бросает с человеческим текстом: он же уходит и в 400 REST, и в ответ инструмента. */
 export async function releaseCiTarget(
   db: VoiceChatDb,
   releases: Pick<ReleaseManager, 'isOnline'>,
   userId: string,
-  projectId: string
+  projectId: string,
+  requestedAgentId?: string
 ): Promise<ReleaseProjectTarget> {
   const value = await db.projects.getProject(userId, projectId)
-  const agentId = value?.defaultAgentId
-  if (!value || !agentId) throw new Error('В настройках проекта не выбрана машина по умолчанию')
-  const machine = value.machines.find((item) => item.agentId === agentId)
-  if (!machine || !await db.machines.canUseAgent(userId, agentId, projectId)) throw new Error('Нет доступа к машине проекта по умолчанию или она не подключена к проекту')
-  if (!releases.isOnline(agentId)) throw new Error('Машина проекта по умолчанию offline')
+  if (!value) throw new Error('Проект не найден или недоступен')
+  const catalog = await releaseMachineCatalog(db, releases, userId, projectId)
+  const selected = requestedAgentId
+    ? catalog.machines.find((item) => item.agentId === requestedAgentId)
+    : catalog.machines.find((item) => item.agentId === catalog.lastAgentId && item.eligible) ?? catalog.machines.find((item) => item.eligible)
+  if (!selected) throw new Error(requestedAgentId ? 'Выбранная машина недоступна для этого проекта' : 'Нет пригодной машины для сборки релиза')
+  if (!selected.eligible) throw new Error(selected.unavailableReason ?? 'Выбранная машина непригодна для сборки релиза')
+  if (!await db.machines.canWriteAgent(userId, selected.agentId, projectId)) throw new Error('Для сборки релиза нужен полный доступ к машине')
   if (!value.gitUrl) throw new Error('Для проекта не задан gitUrl')
-  const existingPath = machine.path?.trim()
-  const root = machine.reposRoot?.trim().replace(/[\\/]+$/, '')
-  if (!existingPath && !root) throw new Error('У машины для этого проекта не настроена даже root-директория (repos_root)')
+  const root = selected.reposRoot.replace(/[\\/]+$/, '')
   return {
     projectId,
-    agentId,
-    path: existingPath || `${root}/.release_repo`,
-    prepareCheckout: !existingPath,
+    agentId: selected.agentId,
+    path: selected.path || `${root}/.release_repo`,
+    prepareCheckout: !selected.path,
     gitUrl: value.gitUrl,
     baseBranch: value.ciBaseBranch || 'main',
     testCommand: value.testCommand?.trim() || DEFAULT_TEST_COMMAND,

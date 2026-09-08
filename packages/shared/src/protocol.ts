@@ -554,6 +554,7 @@ export const REST = {
   ciSuggestion: (id: string) => `/api/ci/suggestions/${encodeURIComponent(id)}`,
   ciWorkspaces: '/api/ci/workspaces',
   projectReleaseBranches: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/branches`,
+  projectReleaseMachines: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/machines`,
   projectReleases: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases`,
   projectReleaseDeploy: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/deploy`,
   projectManagedProductionPreflight: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/managed/preflight`,
