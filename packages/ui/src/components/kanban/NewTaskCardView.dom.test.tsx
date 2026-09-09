@@ -32,7 +32,7 @@ describe('NewTaskCardView', () => {
     fireEvent.click(screen.getByRole('button', { name: '↩ На доработку · цикл 2' }))
     expect(cb.onStartRework).toHaveBeenCalledOnce()
   })
-  // @testCase TC-UI-CHAT-NEW
+  // @testCase TC-UI-NEW-TASK-VOICEBAR
   it('оставляет AI-чат единственным входом и рендерит task-scoped панель', () => {
     const change = vi.fn()
     const renderPanel = vi.fn(() => <div data-testid="task-chat-panel">Чат текущей задачи</div>)
