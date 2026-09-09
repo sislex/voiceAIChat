@@ -286,6 +286,8 @@ export interface BrowserInspectResult {
 }
 
 export type BrowserCommand =
+  /** Пассивное наблюдение: адрес и вкладки обновляются и после действий модели. */
+  | { type: 'status' }
   | { type: 'navigate'; url: string }
   | { type: 'selector'; action: BrowserSelectorAction }
   | { type: 'inspect'; action: BrowserInspectAction }

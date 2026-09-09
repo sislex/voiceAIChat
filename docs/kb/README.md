@@ -9,8 +9,8 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 75 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-09 | ⚠ 4 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 76 коммит(ов) в areas после сверки: 3fae59bd fix(playwright-reader): открывать страницы проекта и восстановить навигацию … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-09 | ⚠ 5 коммит(ов) в areas после сверки: 3fae59bd fix(playwright-reader): открывать страницы проекта и восстановить навигацию … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 23 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-08 | ⚠ 3 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-09 | ✓ |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 74 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 88 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1290 коммит(ов) в areas после сверки: b086484d docs(kb): update after merge 9dd9335b-eef6-4afe-9710-b77a7ee95610 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1291 коммит(ов) в areas после сверки: 3fae59bd fix(playwright-reader): открывать страницы проекта и восстановить навигацию … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 50 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 14 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 54 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
@@ -34,14 +34,14 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-08 | ⚠ 9 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 214 коммит(ов) в areas после сверки: a7e8e5b4 CHAT-431 restrict release machines and remember selection … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-09 | ⚠ 2 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 3 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 4 коммит(ов) в areas после сверки: 3fae59bd fix(playwright-reader): открывать страницы проекта и восстановить навигацию … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-09 | ⚠ 7 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-09 | ⚠ 5 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 195 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 3 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 4 коммит(ов) в areas после сверки: 3fae59bd fix(playwright-reader): открывать страницы проекта и восстановить навигацию … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 147 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-09 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-10 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -64,9 +64,10 @@
 
 ## Журнал сессий
 
-Всего записей: 682. Последние:
+Всего записей: 683. Последние:
 
 - [2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md](log/2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md) — Назначение Web Reader и Playwright Reader
+- [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-02.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-02.md) — Playwright Reader — цикл 02, наблюдение за сессией
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-01.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-01.md) — Playwright Reader — цикл 01, навигация и сессия
 - [2026-09-09-macbook-air-user-task-chat-voicebar.md](log/2026-09-09-macbook-air-user-task-chat-voicebar.md) — task-chat-voicebar
 - [2026-09-09-macbook-air-user-global-llm-settings.md](log/2026-09-09-macbook-air-user-global-llm-settings.md) — global-llm-settings
@@ -75,7 +76,6 @@
 - [2026-09-09-alexeys-macbook-air-2-playwright-reader-main-sync.md](log/2026-09-09-alexeys-macbook-air-2-playwright-reader-main-sync.md) — Playwright Reader — согласование со студией картинок из main
 - [2026-09-09-alexeys-macbook-air-2-playwright-reader-app.md](log/2026-09-09-alexeys-macbook-air-2-playwright-reader-app.md) — playwright-reader-app
 - [2026-09-09-alexeys-macbook-air-2-openai-models-pricing.md](log/2026-09-09-alexeys-macbook-air-2-openai-models-pricing.md) — openai-models-pricing
-- [2026-09-09-alexeys-macbook-air-2-image-studio-standalone.md](log/2026-09-09-alexeys-macbook-air-2-image-studio-standalone.md) — Студия картинок как отдельное приложение
 
 ## Исторические планы
 

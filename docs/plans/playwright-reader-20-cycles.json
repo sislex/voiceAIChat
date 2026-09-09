@@ -8,7 +8,7 @@
   "cycles": [
     {
       "number": 1,
-      "status": "validated",
+      "status": "complete",
       "startedAt": "2026-09-09T22:23:57+00:00",
       "items": [
         {
@@ -211,13 +211,179 @@
           "scope": "После ожидания готового текста доступна публичная форма входа Instagram; вход в аккаунт не выполнялся."
         }
       ],
-      "validatedAt": "2026-09-09T22:59:11.854857+00:00"
+      "validatedAt": "2026-09-09T22:59:11.854857+00:00",
+      "commit": "3fae59bda4f9dedd4ee844710d52a6c3133b5575",
+      "completedAt": "2026-09-09T23:00:28.469392+00:00"
     },
     {
       "number": 2,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "validated",
+      "startedAt": "2026-09-09T23:00:28.469392+00:00",
+      "items": [
+        {
+          "id": "02-01",
+          "title": "Пассивное чтение состояния сессии без активной вкладки",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-02",
+          "title": "Обновление адреса, заголовка и вкладок после действий модели",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-03",
+          "title": "Снимки и фоновый опрос не стирают автора последнего действия",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-04",
+          "title": "about:blank не становится сайтом проверки и записью истории",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-05",
+          "title": "Черновик адреса сохраняется во время фонового обновления",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-06",
+          "title": "Один запрос кадра за раз и отбрасывание устаревшего ответа",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-07",
+          "title": "Опрос возвращается к 1200 мс после четырёх секунд активности",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-08",
+          "title": "Серия ошибок кадра видна пользователю, успешный кадр убирает предупреждение",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-09",
+          "title": "Смена разговора сбрасывает локальное состояние Reader",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-10",
+          "title": "Перезапуск сообщает отказ остановки и позволяет повторить",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        }
+      ],
+      "validation": {
+        "regressionBaseline": {
+          "uiFailed": 9,
+          "runnerFailed": 2,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-02-ui-baseline.log",
+            "/tmp/voicechat-reader-cycle-02-runner-red.log"
+          ]
+        },
+        "uiFocused": {
+          "passed": 81,
+          "durationMs": 1820,
+          "log": "/tmp/voicechat-reader-cycle-02-ui-final.log"
+        },
+        "browserRunnerLive": {
+          "passed": 9,
+          "durationMs": 3420,
+          "log": "/tmp/voicechat-reader-cycle-02-runner.log"
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 29150
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-02-fast.log",
+          "exitCode": 0,
+          "passed": 7249,
+          "reportedTotal": 7294,
+          "durationMs": 318801
+        },
+        "browserE2E": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-02-e2e-verified.log",
+          "previousAttempt": {
+            "exitCode": 1,
+            "passed": 4,
+            "failed": 1,
+            "reason": "Селектор активной вкладки выбирал также вкладку чата (strict mode violation). Уточнена область tablist Вкладки страницы; дополнительно предел ожидания статуса сделан больше интервала опроса."
+          },
+          "exitCode": 0,
+          "passed": 5,
+          "durationMs": 13720,
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-02",
+          "attempts": [
+            {
+              "log": "/tmp/voicechat-reader-cycle-02-e2e.log",
+              "exitCode": 1,
+              "durationMs": 53200
+            },
+            {
+              "log": "/tmp/voicechat-reader-cycle-02-e2e-final.log",
+              "exitCode": 1,
+              "durationMs": 75700
+            },
+            {
+              "log": "/tmp/voicechat-reader-cycle-02-e2e-verified.log",
+              "exitCode": 0,
+              "durationMs": 13720
+            }
+          ]
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-02-gate.log",
+          "exitCode": 0,
+          "passedWorkspaceTests": 7580,
+          "startedAt": "2026-09-09T23:10:46.635562+00:00",
+          "endedAt": "2026-09-09T23:20:24.286594+00:00",
+          "durationMs": 577651
+        }
+      },
+      "validatedAt": "2026-09-09T23:21:09.144400+00:00"
     },
     {
       "number": 3,
@@ -387,6 +553,12 @@
       "cycle": 1,
       "phase": "gate-repair",
       "detail": "Один сбой полного гейта вне Reader: старый тест таблицы тарифов. Исправлено только ожидание теста по действующему компоненту; не учитывается среди 10 улучшений Reader."
+    },
+    {
+      "at": "2026-09-09T23:09:08.092796+00:00",
+      "cycle": 2,
+      "phase": "implementation-complete",
+      "detail": "Состояние и кадры синхронизированы; 9 регрессий UI и 2 раннера воспроизведены на предыдущей реализации. Визуально подтверждены актуальный URL Make, автор-модель, отсутствие ложного offOrigin и предупреждение при потере кадров."
     }
   ],
   "backlogEvidence": [

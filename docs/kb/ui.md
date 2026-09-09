@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-09
-checked: fdf0b086
+updated: 2026-09-10
+checked: 3fae59bd
 areas:
   - packages/admin-app/src
   - packages/app-shell
@@ -1123,6 +1123,8 @@ LLM engine/provider/model теперь редактируются только �
 **Ширина колонки чата в сплите.** Панель превью (`.webpreview` / `.playwright-browser-pane`) — `flex: 0 1 var(--preview-width); min-width` (сжимаема), а `.chat-split-chat` держит `min-width: 360px`, чтобы композер и шапка не схлопывались при широком превью. Композер использует **контейнерный запрос**: `.voicebar` объявлен `container: composer / inline-size`, и компакт-режим (скрытая подпись «Полный доступ» у `.mode-menu`, уменьшённые круглые кнопки, узкие поля) включается по `@container composer (max-width: 560px)` — то есть по ширине самой колонки чата, а не вьюпорта; иначе в узкой reader-колонке на широком экране текстовое поле схлопывалось до ~80px. Заголовок шапки `.mtitle` — одна строка с многоточием (`white-space: nowrap; text-overflow: ellipsis`). Тулбар превью веб-рекордера (`apps/web-recorder/src/Recorder.tsx`) собирает инструменты страницы (Сессия, Выбор элемента, Редактировать, Область, Записать сценарий) в свёрнутое `<details className="webpreview-tools">`-меню, а `.webpreview-bar` получил `flex-wrap`, чтобы не переполнять узкую панель. Кнопки инструментов остаются в DOM и в свёрнутом меню — поэтому dom-тесты рекордера их находят без раскрытия.
 
 ## Отдельный режим Playwright Reader
+
+С 2026-09-10 фоновый опрос панели получает и кадр, и `status`: адрес, заголовок, вкладки и `lastActor` обновляются после действий модели. Черновик адреса защищён от фонового обновления, `about:blank` не задаёт origin проверки, локальное состояние сбрасывается при смене разговора. Интервалы, ошибки кадров и тесты описаны в [метаданных сессии](features/playwright-reader.md#метаданные-сессии-доходят-до-человека-круг-2-29082026).
 
 Рядом с Web Reader живёт второй полноэкранный режим — Playwright Reader (маршруты `#/playwright-reader` и `#/playwright-reader/<conversationId>`). Он устроен по той же схеме: признак `inPlaywrightReader` в `App.tsx` даёт корню класс `app--playwright-reader`, исключает `Sidebar` из DOM тем же условием, что и Reader, не передаёт в `ChatColumn` обработчик сайдбара и рендерит ту же `chat-split` с левой колонкой обычного чата. Пункт меню «Playwright Reader» (иконка `▣`) стоит в `Sidebar` сразу после «Web Reader» и в компактном наборе иконок, но, в отличие от него, открывается в текущей вкладке обычным `navigate('/playwright-reader')`, а не `window.open`. Смысл, состав контрактов и состояние backend-части — в [features/playwright-reader.md](features/playwright-reader.md).
 

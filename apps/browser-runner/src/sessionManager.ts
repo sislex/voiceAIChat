@@ -222,13 +222,15 @@ export class BrowserSessionManager {
   async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
-    session.lastActor = request.actor
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
     // разбор журналов и снимок экрана возвращаются раньше метаданных, а именно
     // из них состоит прогон сценария. Сборщик считал такую сессию брошенной и
     // закрывал Chromium посреди работы.
     session.lastUsedAt = Date.now()
     const command = request.command
+    // Наблюдение панели не должно стирать отметку о действии модели.
+    if (command.type === 'status') return this.metadata(session)
+    if (command.type !== 'screenshot') session.lastActor = request.actor
     // Управление вкладками не требует существования прежней активной страницы:
     // после закрытия последней пользователь всё ещё должен суметь открыть новую.
     if (command.type === 'newTab') {
