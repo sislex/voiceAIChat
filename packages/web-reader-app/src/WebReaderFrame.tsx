@@ -59,6 +59,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
   const gateSequence = useRef(0)
+  const savedByReader = useRef<string | null | undefined>(undefined)
   const url = conversationUrl ?? projectUrl
   const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost })
   callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost }
@@ -69,6 +70,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const bridgeRef = useRef<ReaderHostBridge | null>(null)
   const [bridgeGeneration, setBridgeGeneration] = useState(0)
   useEffect(() => {
+    savedByReader.current = undefined
     const bridge = createReaderHostBridge({
       conversationId,
       newId: browserId,
@@ -77,7 +79,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       },
       capabilities: ['mcp-actions', 'diagnostics', 'inspector', 'recording'],
       onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration),
-      onSaveUrl: (nextUrl) => void callbacks.current.onSave(nextUrl),
+      onSaveUrl: (nextUrl) => { savedByReader.current = nextUrl; void callbacks.current.onSave(nextUrl) },
       onElement: (element) => callbacks.current.onSelectElement?.(element),
       onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
     })
@@ -101,6 +103,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     // Первый commit проходит с generation 0 (state моста ещё не применён) —
     // гейт запускается один раз на поколение моста, иначе ensurePreview дублировался бы.
     if (!bridge || bridgeGeneration === 0) return
+    // Эхо сохранённой навигации не должно запускать cookie-гейт и новый iframe.
+    if (url === savedByReader.current && previewSession === 'ready') return
     const sequence = ++gateSequence.current
     if (!url) {
       setPreviewSession('ready')

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 1a5c4422
+checked: f4474be3
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -175,10 +175,14 @@ SPA-навигацию держит перехват History API и сервер
 `Authorization`, выставленный самой страницей, шим переименовывает в
 `x-preview-authorization` (иначе Bearer-гейт ChatAI принял бы его за токен ChatAI и
 ответил 401), а роут возвращает его апстриму как `authorization`. Deep-link:
-фрагмент целевого адреса (`http://…/#/machines`) живёт внутри query `?url=` и в
-`location` iframe-документа не попадает — в конце context-шима он восстанавливается
-(`location.hash = target.hash`, только если у документа hash ещё пуст), поэтому
-hash-роутеры вложенных SPA открывают нужный маршрут.
+фрагмент целевого адреса (`http://…/#/machines`) живёт внутри query `?url=`.
+Context-шim канонизирует его в `location` через нативный `replaceState` до запуска
+приложения, без дополнительного шага истории; после redirect используется конечный
+URL ответа. Обёртки `pushState/replaceState` сохраняют настоящий hash и уведомляют
+мост; hashchange/popstate тоже отправляют ready с логическим адресом (включая
+очищенный hash). `pageInfo` и выбор элемента возвращают этот же адрес. После
+pagehide/pageshow восстанавливается обработчик команд — BFCache не оставляет
+живую страницу с отключённым мостом. Chromium: `webReaderNavigation.e2e.test.ts`.
 
 Границы прокси-подхода (проверено живьём на instagram.com): SPA с
 **history-роутером** (маршрут из `location.pathname`) через превью не поднимаются —

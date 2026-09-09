@@ -60,6 +60,8 @@ export function Recorder(): JSX.Element {
   const [frameKey, setFrameKey] = useState(0)
   // Актуальная регистрация от init; до неё Reader шлёт только ready.
   const session = useRef<{ conversationId: string; registrationId: string } | null>(null)
+  const modes = useRef({ recording, inspecting, editing, capturing })
+  modes.current = { recording, inspecting, editing, capturing }
   const diagnosticsMode = useRef(false)
   // Времена стартов diagnostic-команд: по ним считается durationMs прогресса.
   const diagnosticStarts = useRef(new Map<string, { action: string; started: number }>())
@@ -142,8 +144,30 @@ export function Recorder(): JSX.Element {
       }
     }
     const receivePage = (data: unknown): void => {
-      const message = data as { type?: unknown; requestId?: unknown; ok?: unknown; result?: unknown; error?: unknown; payload?: unknown; step?: unknown; enabled?: unknown }
-      if (message?.type === PREVIEW_PAGE_READY_TYPE) { pageReady.current = true; reply({ kind: 'page-status', status: 'ready', url: currentUrl.current }); return }
+      const message = data as { type?: unknown; requestId?: unknown; ok?: unknown; result?: unknown; error?: unknown; payload?: unknown; step?: unknown; enabled?: unknown; url?: unknown }
+      if (message?.type === PREVIEW_PAGE_READY_TYPE) {
+        let next = typeof message.url === 'string' && message.url.length <= 4096 ? validUrl(message.url) : null
+        if (next) {
+          const reported = new URL(next)
+          if (reported.origin === sameOrigin && reported.pathname === '/api/preview') {
+            next = validUrl(reported.searchParams.get('url') ?? '')
+            if (next && reported.hash) { const logical = new URL(next); logical.hash = reported.hash; next = logical.toString() }
+          }
+        }
+        if (next && next !== currentUrl.current) {
+          const previous = currentUrl.current
+          currentUrl.current = next
+          // Это подтверждённая навигация живого iframe: его src менять нельзя.
+          setDraft(draft => draft === previous ? next : draft)
+        }
+        pageReady.current = true
+        reply({ kind: 'page-status', status: 'ready', url: currentUrl.current })
+        const state = modes.current
+        for (const [type, enabled] of [[RECORD, state.recording], [PREVIEW_INSPECTOR_COMMAND_TYPE, state.inspecting], [EDIT, state.editing], [CAPTURE, state.capturing]] as const) {
+          frame.current?.contentWindow?.postMessage({ type, enabled }, sameOrigin)
+        }
+        return
+      }
       if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { pageReady.current = false; reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
       if (message?.type === PREVIEW_ACTION_RESULT_TYPE && typeof message.requestId === 'string') {
         const diagnostic = diagnosticStarts.current.get(message.requestId)
