@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 72 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 86 коммит(ов) в areas после сверки: 7199a225 feat(tasks): use full composer in AI chat … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-09 | ⚠ 1 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1287 коммит(ов) в areas после сверки: a553394c Merge main into CHAT-438 (task 32aa9227-77a5-4b41-a427-e5f5528df477) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1288 коммит(ов) в areas после сверки: 1aab260a docs(kb): update after merge 32aa9227-77a5-4b41-a427-e5f5528df477 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 48 коммит(ов) в areas после сверки: 7199a225 feat(tasks): use full composer in AI chat … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 12 коммит(ов) в areas после сверки: 7199a225 feat(tasks): use full composer in AI chat … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 52 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
