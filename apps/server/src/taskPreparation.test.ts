@@ -591,6 +591,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('missing_acceptance_criteria')
   })
 
+  // @testCase TC-REG-DEVELOPMENT-READINESS-FRAMING
   it('отклоняет служебный текст и несколько JSON-объектов вместо чистого Development Brief', async () => {
     const { project, task } = await taskInBacklog()
     const prefixed = `Подготовка завершена.\\n${compatibleReadiness()}`
@@ -653,6 +654,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[0].prompt).toContain('Не заменяй строки массивами или объектами')
   })
 
+  // @testCase TC-REG-DEVELOPMENT-READINESS-NORMALIZATION
   it('принимает совместимые { id, text } в строковых списках и сохраняет канонические строки', async () => {
     const { project, task } = await taskInBacklog()
     const compatible = JSON.stringify({

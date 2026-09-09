@@ -395,7 +395,7 @@ describe('App — интеграция UI со стором и IPC', () => {
     }
   })
 
-  // @testCase TC-2
+  // @testCase TC-UI-LLM-DEEP-LINK
   it('синхронизирует выбор вкладки с историей и восстанавливает его после повторного mount', async () => {
     const api = await seededApi()
     window.location.hash = '#/settings/llm'
@@ -414,7 +414,7 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(await screen.findByRole('button', { name: 'Инструкции' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  // @testCase TC-3
+  // @testCase TC-NEG-SETTINGS-SECTION
   it.each(['#/settings', '#/settings/nope', '#/settings/llm/extra'])('нормализует некорректный маршрут %s в LLM', async (route) => {
     const api = await seededApi()
     window.location.hash = route
