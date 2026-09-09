@@ -29,6 +29,17 @@ function emit(data: object, overrides: { origin?: string; source?: MessageEventS
 afterEach(() => cleanup())
 
 describe('WebReaderFrame', () => {
+  // @testCase TC3
+  it('восстанавливает сохранённый публичный URL беседы с hash, не подменяя его адресом проекта', async () => {
+    const saved = 'http://89.125.68.35:8787/#/chat/81caab96-6d29-4054-a5bd-8da334caaf79'
+    const onSave = vi.fn(async () => undefined)
+    render(<WebReaderFrame platform={platform} conversationId="conv-restored" conversationUrl={saved} projectUrl="http://agent-1.machine.internal:5173/" onSave={onSave} />)
+    const post = vi.spyOn(frameEl().contentWindow as Window, 'postMessage')
+    emit(readyMessage)
+    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'init', previewUrl: saved }), platform.origin))
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
   it('после handshake регистрирует host и отвечает init на том же origin', async () => {
     const register = vi.fn<(registration: ReaderHostRegistration | null) => void>()
     render(<WebReaderFrame platform={platform} conversationId="conv-1" conversationUrl="https://shop.example/" projectUrl={null} onSave={vi.fn()} onRegisterHost={register} />)

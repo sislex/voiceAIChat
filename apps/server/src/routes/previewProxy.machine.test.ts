@@ -90,10 +90,13 @@ describe('/api/preview через мост машины', () => {
     await app.close()
   })
 
+  // @testCase TC4
   it('чужая машина → 403, офлайн → 502, без моста → 502', async () => {
-    const denied = await makeApp(makeBridge(() => html('x')), async () => false)
+    const deniedBridge = makeBridge(() => html('x'))
+    const denied = await makeApp(deniedBridge, async () => false)
     const forbidden = await denied.inject({ method: 'GET', url: '/api/preview?url=' + encodeURIComponent('http://agent-1.machine.internal:5173/') })
     expect(forbidden.statusCode).toBe(403)
+    expect(deniedBridge.calls).toEqual([])
     await denied.close()
 
     const offlineBridge = makeBridge(() => html('x'))
@@ -110,6 +113,30 @@ describe('/api/preview через мост машины', () => {
     await noDeps.close()
   })
 
+  // @testCase TC4
+  it.each(['127.0.0.1', '10.0.0.1', '192.168.1.1', '[::1]'])('прямой внутренний адрес %s запрещён и не попадает в мост', async (host) => {
+    const bridge = makeBridge(() => html('недопустимый ответ'))
+    const app = await makeApp(bridge)
+    try {
+      const res = await app.inject({ method: 'GET', url: '/api/preview?url=' + encodeURIComponent('http://' + host + ':5173/') })
+      expect(res.statusCode).toBe(403)
+      expect(bridge.calls).toEqual([])
+    } finally { await app.close() }
+  })
+
+  // @testCase TC4
+  it.each(['http://192.168.1.1/private', 'http://denied.machine.internal:5173/'])('редирект на %s не обходит ограничения', async (destination) => {
+    const bridge = makeBridge(() => ({ status: 302, headers: { location: destination }, bodyBase64: '' }))
+    const app = await makeApp(bridge, async (_user, agent) => agent === 'allowed')
+    try {
+      const res = await app.inject({ method: 'GET', url: '/api/preview?url=' + encodeURIComponent('http://allowed.machine.internal:5173/') })
+      expect(res.statusCode).toBe(destination.includes('machine.internal') ? 403 : 502)
+      expect(bridge.calls).toHaveLength(1)
+      expect(bridge.calls[0]?.agentId).toBe('allowed')
+    } finally { await app.close() }
+  })
+
+  // @testCase TC4
   it('редирект окружения на внешний адрес не следуется молча', async () => {
     const bridge = makeBridge(() => ({ status: 302, headers: { location: 'https://evil.example/' }, bodyBase64: '' }))
     const app = await makeApp(bridge)
