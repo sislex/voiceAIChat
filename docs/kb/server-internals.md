@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: f4474be3
+checked: e139188d
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -183,6 +183,18 @@ URL ответа. Обёртки `pushState/replaceState` сохраняют н�
 очищенный hash). `pageInfo` и выбор элемента возвращают этот же адрес. После
 pagehide/pageshow восстанавливается обработчик команд — BFCache не оставляет
 живую страницу с отключённым мостом. Chromium: `webReaderNavigation.e2e.test.ts`.
+
+Нативные формы и динамические ссылки обрабатывает `previewNavigation.ts` внутри
+context-шима. GET собирает successful controls через `FormData(form, submitter)`
+и заменяет query исходного action перед оборачиванием, иначе браузер удаляет
+служебный `?url=`. Пустой action использует адрес текущей страницы; учитываются
+formaction/formmethod. POST остаётся нативным (включая multipart и файлы), меняются
+только action/target. Программный `form.submit()` проходит тот же маршрут.
+Обработчики на window пропускают отменённые приложением события и dialog-формы.
+Динамические ссылки, включая Shadow DOM, выбираются через composedPath и
+оборачиваются перед default action. Якоря, download, специальные схемы и
+модифицированные клики сохраняют отдельную нативную семантику. Проверки:
+`previewNavigation.test.ts`, `e2e/webReaderForms.e2e.test.ts`.
 
 Границы прокси-подхода (проверено живьём на instagram.com): SPA с
 **history-роутером** (маршрут из `location.pathname`) через превью не поднимаются —
