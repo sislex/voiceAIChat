@@ -7,6 +7,7 @@ interface HtmlTransforms {
   url: (value: string, base: URL) => string
   css: (value: string, base: URL) => string
   module: (value: string, base: URL) => string
+  importMap: (value: string, base: URL) => string
   context: (base: URL) => string
   inspector: string
 }
@@ -61,6 +62,9 @@ export function rewritePreviewHtml(source: string, page: URL, transforms: HtmlTr
     if (loc.startTag && loc.endTag) {
       const start = loc.startTag.endOffset; const end = loc.endTag.startOffset
       if (el.tagName === 'style') edits.push({ start, end, value: transforms.css(source.slice(start, end), base) })
+      if (el.tagName === 'script' && attr(el, 'type')?.toLowerCase() === 'importmap') {
+        edits.push({ start, end, value: transforms.importMap(source.slice(start, end), base) })
+      }
       if (el.tagName === 'script' && attr(el, 'type')?.toLowerCase() === 'module' && !attr(el, 'src')) {
         edits.push({ start, end, value: transforms.module(source.slice(start, end), base) })
       }

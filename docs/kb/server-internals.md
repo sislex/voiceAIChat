@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: b086484d
+checked: 6d90d29b
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -141,7 +141,12 @@ HTML разбирается `parse5` в `routes/previewHtml.ts`, правятс�
 относительные адреса прокси оставались на origin Reader. Якоря `#…` сохраняются,
 `target=_blank|_parent|_top` заменяется на `_self`. Integrity у script/link снимается,
 поскольку тело CSS/модуля меняет прокси; импорты inline `type=module` также
-переписываются. Вставка context/inspector использует позиции настоящих head/body,
+переписываются. `previewModules.ts` использует AST Acorn для настоящих импортов
+(включая absolute URL, escapes, статические template literals и комментарии),
+реэкспортов и ресурсов `new URL(..., import.meta.url)`. Это относится и к JS
+публичного сайта без machine/alias; текст строк и комментариев сохраняется.
+Явные mappings в inline import map переписываются в те же URL прокси.
+Вставка context/inspector использует позиции настоящих head/body,
 поэтому HTML-строки внутри JavaScript её не сбивают. Регрессии:
 `previewHtml.test.ts`, реальные переходы/ресурсы Chromium —
 `e2e/webReaderHtml.e2e.test.ts` (порт выбирается автоматически, без данных прода).
