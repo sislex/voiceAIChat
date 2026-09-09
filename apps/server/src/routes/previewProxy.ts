@@ -148,11 +148,14 @@ const storage=(native)=>({get length(){return Object.keys(native).filter(k=>k.st
 for(const [name,native] of [['localStorage',nativeLocal],['sessionStorage',nativeSession]])try{Object.defineProperty(window,name,{configurable:true,value:storage(native)})}catch{}
 const nativeIdb=window.indexedDB;if(nativeIdb)try{Object.defineProperty(window,'indexedDB',{configurable:true,value:new Proxy(nativeIdb,{get(target,key){const value=Reflect.get(target,key,target);if(key==='open'||key==='deleteDatabase')return (name,...args)=>value.call(target,p+String(name),...args);return typeof value==='function'?value.bind(target):value}})})}catch{}
 const fallbackBase=${fallbackBase};
+// URL ответа может отличаться после redirect; runtime должен видеть ту же базу,
+// что и переписанные HTML-ресурсы. replaceState не добавляет пустой шаг назад.
+try{const outer=new URL(location.href);if(outer.pathname==='/api/preview'&&outer.searchParams.has('url')){const final=new URL(fallbackBase);if(outer.hash)final.hash=outer.hash;outer.searchParams.set('url',final.toString());outer.hash=final.hash;history.replaceState(history.state,'',outer.toString())}}catch{}
 const currentBase=()=>{try{const u=new URL(location.href);const t=u.searchParams.get('url');if(u.pathname==='/api/preview'&&t)return t}catch{}return fallbackBase};
 const documentBase=${JSON.stringify(documentBase)};
 const toProxy=(value)=>{const s=String(value);
 try{const local=new URL(s,location.href);if(local.origin===location.origin&&local.pathname==='/api/preview'&&local.searchParams.has('url'))return s}catch{}
-try{const u=new URL(s,documentBase===fallbackBase?currentBase():documentBase);if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())}catch{}
+try{const u=new URL(s,documentBase===fallbackBase?currentBase():documentBase);if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())+u.hash}catch{}
 return s};
 const cleanHeaders=(headers)=>{const h=new Headers(headers||undefined);const auth=h.get('authorization');if(auth!==null){h.delete('authorization');h.set('x-preview-authorization',auth)}return h};
 const nativeFetch=typeof window.fetch==='function'?window.fetch.bind(window):null;
@@ -177,8 +180,8 @@ try{const nativeAssign=location.assign.bind(location);Object.defineProperty(loca
 try{const nativeLocReplace=location.replace.bind(location);Object.defineProperty(location,'replace',{configurable:true,value:(value)=>nativeLocReplace(toProxy(String(value)))})}catch{}
 try{const hrefDescriptor=Object.getOwnPropertyDescriptor(location,'href');if(hrefDescriptor&&hrefDescriptor.set&&hrefDescriptor.configurable){const setHref=hrefDescriptor.set.bind(location),getHref=hrefDescriptor.get?hrefDescriptor.get.bind(location):()=>String(location);Object.defineProperty(location,'href',{configurable:true,get:getHref,set:(value)=>setHref(toProxy(String(value)))})}}catch{}
 if(window.history)try{const nativePush=history.pushState.bind(history),nativeReplaceState=history.replaceState.bind(history);
-history.pushState=(state,title,url)=>nativePush(state,title,url==null?url:toProxy(String(url)));
-history.replaceState=(state,title,url)=>nativeReplaceState(state,title,url==null?url:toProxy(String(url)))}catch{}
+history.pushState=(state,title,url)=>{nativePush(state,title,url==null?url:toProxy(String(url)));dispatchEvent(new Event('voicechat.preview.navigation'))};
+history.replaceState=(state,title,url)=>{nativeReplaceState(state,title,url==null?url:toProxy(String(url)));dispatchEvent(new Event('voicechat.preview.navigation'))}}catch{}
 // Deep-link: фрагмент реального адреса (#/machines) не доезжает до iframe-документа
 // (он живёт внутри query ?url=...) — восстанавливаем его для hash-роутеров SPA.
 try{const target=new URL(currentBase());if(target.hash&&!location.hash)location.hash=target.hash}catch{}
@@ -229,7 +232,7 @@ const styles=(el)=>{const s=getComputedStyle(el);return {
 const payload=(el)=>{const r=el.getBoundingClientRect(),data={};for(const a of [...el.attributes])if(a.name.startsWith('data-')&&Object.keys(data).length<ARRAY_LIMIT)data[a.name]=a.value.slice(0,TEXT_LIMIT);return {
   tag:el.localName,id:el.id,classes:[...el.classList].slice(0,ARRAY_LIMIT),dataAttributes:data,selector:uniqueSelector(el),ancestors:ancestors(el),
   rect:{x:r.x,y:r.y,top:r.top,right:r.right,bottom:r.bottom,left:r.left,width:r.width,height:r.height},
-  pageUrl:location.href,viewport:{width:innerWidth,height:innerHeight},outerHTML:el.outerHTML.slice(0,HTML_LIMIT),
+  pageUrl:pageInfo().url,viewport:{width:innerWidth,height:innerHeight},outerHTML:el.outerHTML.slice(0,HTML_LIMIT),
   text:(el.innerText||el.textContent||'').trim().slice(0,TEXT_LIMIT),styles:styles(el)
 }};
 const move=(e)=>{if(!active)return;const el=e.target;if(el instanceof Element&&!el.closest('[data-voicechat-inspector]'))draw(el)};
@@ -238,7 +241,6 @@ const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable();parent
 const enable=()=>{if(active)return;active=true;document.addEventListener('pointerover',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true)};
 const disable=()=>{active=false;selected=null;document.removeEventListener('pointerover',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);hide()};
 const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1', READY='voicechat.preview.page-ready.v1', LOADING='voicechat.preview.page-loading.v1', RECORD='voicechat.preview.record.v1';
-parent.postMessage({type:READY,url:location.href},location.origin);
 addEventListener('beforeunload',()=>parent.postMessage({type:LOADING,url:location.href},location.origin));
 // ---- Буферы страницы: ошибки (errors), сеть (network) и консоль (console) ----
 const pageErrors=[];const ERRORS_CAP=100;
@@ -267,7 +269,7 @@ function unproxyLazy(value){return typeof unproxy==='function'?unproxy(value):St
 const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
 const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],input,select,textarea,label,summary,[onclick]';
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
-const pageInfo=()=>({url:unproxy(location.href),title:document.title||''});
+const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url);target.hash=location.hash;url=target.toString()}catch{}return {url,title:document.title||''}};
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:textOf(el).slice(0,EL_TEXT)};
@@ -831,7 +833,13 @@ const message=(e)=>{
     finally{diagnosticRunning=false}
   }
 };
-addEventListener('message',message);addEventListener('pagehide',()=>{disable();disableEdit();disableCapture();setRecording(false);removeEventListener('message',message)},{once:true});
+const ready=()=>parent.postMessage({type:READY,...pageInfo()},location.origin);
+addEventListener('message',message);
+for(const event of ['hashchange','popstate','voicechat.preview.navigation'])addEventListener(event,ready);
+// BFCache сохраняет документ после pagehide: восстанавливаем его обработчик.
+addEventListener('pageshow',()=>{addEventListener('message',message);ready()});
+addEventListener('pagehide',()=>{disable();disableEdit();disableCapture();setRecording(false);removeEventListener('message',message)});
+ready();
 })();<\/script>`
 }
 

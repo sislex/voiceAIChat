@@ -72,6 +72,13 @@ describe('Reader: вход на собственную страницу прое
     await site.getByRole('button', { name: 'Войти', exact: true }).click()
     await site.getByRole('button', { name: 'Добавить машину', exact: true }).waitFor()
     expect(await site.getByRole('button', { name: 'Войти', exact: true }).count()).toBe(0)
+    const originTime = await site.locator('html').evaluate(() => performance.timeOrigin)
+    const saved = page.waitForResponse(response => response.url().startsWith(base + '/api/conversations/') && response.url().endsWith('/preview-url') && response.request().method() === 'POST')
+    await site.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    expect((await saved).ok()).toBe(true)
+    await expect.poll(() => recorder.getByRole('textbox', { name: 'Адрес превью' }).inputValue()).toBe('http://93.184.216.34:8787/#/')
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    expect(await site.locator('html').evaluate(() => performance.timeOrigin)).toBe(originTime)
     if (process.env.VC_VISUAL_ARTIFACTS) {
       await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
       await page.screenshot({ path: join(process.env.VC_VISUAL_ARTIFACTS, 'reader-project-login.png') })

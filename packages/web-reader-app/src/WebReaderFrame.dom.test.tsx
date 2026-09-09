@@ -121,3 +121,33 @@ describe('WebReaderFrame', () => {
     expect(register.mock.calls.at(-1)?.[0]).toBeNull()
   })
 })
+
+describe('WebReaderFrame: эхо сохранённого адреса', () => {
+  it('сохранение навигации не запускает cookie-гейт и set-url снова', async () => {
+    const ensurePreview = vi.fn(async () => true)
+    const register = vi.fn<(registration: ReaderHostRegistration | null) => void>()
+    const onSave = vi.fn(async () => undefined)
+    const props = { platform, conversationId: 'navigation', conversationUrl: 'https://shop.example/', projectUrl: null, ensurePreview, onSave, onRegisterHost: register }
+    const view = render(<WebReaderFrame {...props} />)
+    const original = frameEl()
+    const post = vi.spyOn(original.contentWindow!, 'postMessage')
+    emit(readyMessage)
+    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'set-url', url: props.conversationUrl }), platform.origin))
+    const registrationId = register.mock.calls.at(-1)![0]!.registrationId
+    emit({ type, kind: 'page-status', conversationId: 'navigation', registrationId, status: 'ready', url: 'https://shop.example/next' })
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith('https://shop.example/next'))
+    post.mockClear()
+    view.rerender(<WebReaderFrame {...props} conversationUrl="https://shop.example/next" />)
+    await waitFor(() => expect(ensurePreview).toHaveBeenCalledTimes(1))
+    expect(post.mock.calls.filter(([message]) => (message as { kind?: string }).kind === 'set-url')).toHaveLength(0)
+    expect(frameEl()).toBe(original)
+  })
+  it('новый внешний адрес продолжает проходить cookie-гейт', async () => {
+    const ensurePreview = vi.fn(async () => true)
+    const props = { platform, conversationId: 'external', conversationUrl: 'https://shop.example/', projectUrl: null, ensurePreview, onSave: vi.fn(async () => undefined) }
+    const view = render(<WebReaderFrame {...props} />)
+    await waitFor(() => expect(ensurePreview).toHaveBeenCalledTimes(1))
+    view.rerender(<WebReaderFrame {...props} conversationUrl="https://other.example/" />)
+    await waitFor(() => expect(ensurePreview).toHaveBeenCalledTimes(2))
+  })
+})

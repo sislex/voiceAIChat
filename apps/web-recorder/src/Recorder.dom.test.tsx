@@ -291,3 +291,43 @@ describe('Recorder viewport-команда', () => {
     expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).style.width).toBe('')
   })
 })
+
+describe('Recorder: подтверждённый адрес навигации', () => {
+  it('обновляет адрес без замены или перезагрузки живого iframe', () => {
+    render(<Recorder />); fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const src = frame.src
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next#/tab' })
+    expect((screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement).value).toBe('https://shop.example/next#/tab')
+    expect(screen.getByTitle('Предпросмотр сайта')).toBe(frame)
+    expect(frame.src).toBe(src)
+  })
+  it('не затирает незавершённый ввод адреса приходящим ready', () => {
+    render(<Recorder />); fromHost(init)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Адрес превью' }), { target: { value: 'https://draft.example/' } })
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next' })
+    expect((screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement).value).toBe('https://draft.example/')
+  })
+  it('принимает старый ready с URL прокси как логический адрес сайта', () => {
+    render(<Recorder />); fromHost(init)
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: window.location.origin + '/api/preview?url=' + encodeURIComponent('https://shop.example/new') + '#section' })
+    expect((screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement).value).toBe('https://shop.example/new#section')
+  })
+  it('восстанавливает режимы записи и инспектора после новой загрузки', () => {
+    render(<Recorder />); fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    fromHost({ type, ...ids, kind: 'inspector-state', enabled: true })
+    post.mockClear()
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next' })
+    expect(post).toHaveBeenCalledWith({ type: 'voicechat.preview.record.v1', enabled: true }, window.location.origin)
+    expect(post).toHaveBeenCalledWith({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: true }, window.location.origin)
+  })
+  it('не сохраняет не-HTTP адрес от страницы', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />); fromHost(init); post.mockClear()
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'javascript:alert(1)' })
+    expect(sent(post).find(message => message.kind === 'page-status')).toMatchObject({ url: 'https://shop.example/' })
+  })
+})

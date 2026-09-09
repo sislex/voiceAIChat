@@ -139,7 +139,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (entry.sent) continue
       // open резолвится готовностью целевой страницы, в iframe не пересылается.
       if (entry.action.kind === 'open') {
-        settle(requestId, { ok: true, result: { url: entry.action.url } })
+        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url } })
         continue
       }
       entry.sent = true
@@ -237,7 +237,12 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           pageStatus = message.status
           pageError = message.error
           syncPageStatus()
-          if (message.status === 'ready') flush()
+          if (message.status === 'ready') {
+            const changed = message.url !== approvedUrl
+            approvedUrl = message.url
+            if (changed) options.onSaveUrl?.(message.url)
+            flush()
+          }
           if (message.status === 'error') rejectAll('Сайт или страница недоступны: ' + (message.error ?? 'ошибка загрузки.'))
           return
         case 'result':
@@ -246,6 +251,7 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
             : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })
           return
         case 'save-url':
+          approvedUrl = message.url
           options.onSaveUrl?.(message.url)
           return
         case 'element-selected':
