@@ -134,7 +134,7 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onAddSkill).toHaveBeenCalledWith('m1', { name: 'test', command: 'npm test' }))
   })
 
-  // @testCase tc-regression-conversation-save
+  // @testCase TC-REG-CONVERSATION-NO-LLM
   it('не показывает и не сохраняет LLM-поля разговора', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
