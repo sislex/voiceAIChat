@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto'
 import { uid } from '../users/auth.js'
 import { applyHostAlias, type HostAliases } from '@voicechat/browser-runner/security'
 import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../util/publicHost.js'
+import { rewritePreviewModules, rewritePreviewImportMap } from './previewModules.js'
 import { rewritePreviewHtml } from './previewHtml.js'
 import { MachineResponseCache, isCacheableMachineResponse } from './machineCache.js'
 
@@ -832,7 +833,7 @@ addEventListener('message',message);addEventListener('pagehide',()=>{disable();d
 })();<\/script>`
 }
 
-export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = isMachinePreviewHost(base.hostname)): Buffer {
+export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = true): Buffer {
   let text = body.toString('utf8')
   const rewriteCssUrls = (css: string, targetBase = base): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, targetBase) + quote + ')')
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
@@ -840,6 +841,7 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewrit
       url: proxyUrl,
       css: rewriteCssUrls,
       module: rewriteModuleSpecifiers,
+      importMap: (source, mapBase) => rewritePreviewImportMap(source, mapBase, proxyUrl),
       context: (documentBase) => previewContextScript(base.toString(), documentBase.toString()),
       inspector: previewInspectorScript()
     })
@@ -864,12 +866,7 @@ export function isMachinePreviewHost(hostname: string): boolean {
  * статике они и не встречаются.
  */
 export function rewriteModuleSpecifiers(code: string, base: URL): string {
-  const path = "(\\.{0,2}/[^'\"\n]*)"
-  const rewrite = (prefix: string, quote: string, value: string): string => prefix + quote + proxyUrl(value, base) + quote
-  return code
-    .replace(new RegExp(`(\\bfrom\\s*)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
-    .replace(new RegExp(`(\\bimport\\s*\\(\\s*)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
-    .replace(new RegExp(`(\\bimport\\s+)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
+  return rewritePreviewModules(code, base, proxyUrl)
 }
 
 /**
@@ -1169,9 +1166,8 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
         storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
         const responseType = response.headers['content-type'] ?? 'application/octet-stream'
         const responseBody = await readLimited(response)
-        const aliased = deps.hostAliases ? applyHostAlias(finalUrl, deps.hostAliases).host !== finalUrl.host : false
-        const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) || aliased && /javascript|ecmascript/i.test(responseType)
-          ? rewritePreviewBody(responseBody, responseType, finalUrl, aliased)
+        const rewritten = /text\/(html|css)|application\/xhtml\+xml|javascript|ecmascript/i.test(responseType)
+          ? rewritePreviewBody(responseBody, responseType, finalUrl)
           : responseBody
         reply.code(response.statusCode ?? 502)
         for (const [name, value] of Object.entries(response.headers)) {

@@ -22,6 +22,7 @@
     "@voicechat/playwright-reader": "*",
     "@voicechat/sessions-core": "*",
     "@voicechat/shared": "*",
+    "acorn": "^8.18.0",
     "better-sqlite3": "^11.10.0",
     "esbuild": "^0.21.5",
     "fastify": "^5.1.0",
