@@ -1650,23 +1650,27 @@ describe('TaskModal — встроенный AI-чат', () => {
     expect(await screen.findByTestId('task-chat-surface')).toBeInTheDocument()
   })
 
-  // @testCase TC-INTEGRATION-TASK-CHAT
+  // @testCase TC-UI-TASK-VOICEBAR
   it('изолирует task-scoped историю, стриминг и повтор', async () => {
     const originalApi = window.api
     const originalClaude = window.claude
     let done: ((event: { conversationId: string; text: string; message?: import('@shared/types').Message }) => void) | undefined
     let failed: ((event: { conversationId: string; message: string }) => void) | undefined
     const send = vi.fn()
+    const cancel = vi.fn()
     const open = vi.fn(async () => ({ id: 'chat-1' } as never))
     window.api = { ...originalApi, 'tasks:openChat': open, 'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [message('old', 'ai', 'Сохранённый ответ')] })) as never, 'messages:add': vi.fn(async () => message('new', 'u1', 'Повтори')) }
-    window.claude = { ...originalClaude, send, onDone: (cb) => { done = cb; return () => {} }, onError: (cb) => { failed = cb; return () => {} } }
+    window.claude = { ...originalClaude, send, cancel, onDone: (cb) => { done = cb; return () => {} }, onError: (cb) => { failed = cb; return () => {} } }
     render(<TaskModal {...props()} />)
     await userEvent.click(screen.getByRole('tab', { name: 'AI-чат' }))
     expect(await screen.findByText('Сохранённый ответ')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Прикрепить файл' })).toBeInTheDocument()
     expect(open).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1' })
     await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'Повтори')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }))
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'chat-1', messageId: 'new' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Остановить ответ' }))
+    expect(cancel).toHaveBeenCalledWith({ conversationId: 'chat-1' })
     act(() => done?.({ conversationId: 'other', text: 'Чужой', message: message('other', 'ai', 'Чужой') as never }))
     expect(screen.queryByText('Чужой')).not.toBeInTheDocument()
     act(() => failed?.({ conversationId: 'chat-1', message: 'AI временно недоступен' }))
@@ -1676,7 +1680,7 @@ describe('TaskModal — встроенный AI-чат', () => {
     window.api = originalApi; window.claude = originalClaude
   })
 
-  // @testCase TC-NEG-CHAT-ACCESS
+  // @testCase TC-NEG-TASK-CHAT-ERROR
   it('показывает ошибку загрузки и позволяет повторить', async () => {
     const originalApi = window.api
     const open = vi.fn(async () => { throw new Error('Чат задачи недоступен') })
