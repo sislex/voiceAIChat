@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-09-09
-checked: 1b78b0b6
+checked: f5f68e75
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -25,6 +25,9 @@ areas:
   - packages/shared/src/auth.ts
   - packages/shared/src/protocol.ts
   - packages/ui/src/remote/index.ts
+  - packages/ui/src/App.tsx
+  - packages/ui/src/components/SettingsModal.tsx
+  - packages/ui/src/components/ConversationSettings.tsx
   - packages/ui/src/store/domains/settingsStore.ts
 ---
 
@@ -52,12 +55,17 @@ areas:
 `packages/shared/src/llmAccess.ts`, а не в роли пользователя.
 
 **Меню моделей повторяет меню самих CLI** (`CLAUDE_MODELS` / `CODEX_MODELS` в
-`packages/shared/src/types.ts`). Из общего каталога и с фильтрацией через
-`llm:access` строятся пользовательские селекторы в `SettingsModal` (включая
-AI-помощника) и CI-компонентах. `ConversationSettings` сейчас LLM-поля разговора
-не отображает и не сохраняет: его `onSave` меняет название, машину, рабочий
-каталог, навыки, режим прав, контекст БЗ и проект; имеющиеся `llmProvider` и
-`llmModel` он только передаёт инспектору контекста. У
+`packages/shared/src/types.ts`). В общих настройках отдельный раздел «LLM» монтирует
+`LlmSettingsEditor` с текущими `llmEngineId`, `llmProvider` и моделью выбранного
+провайдера; изменения редактора преобразуются в существующий `Partial<Settings>`
+и сохраняются тем же `onChange`. Маршрут `/settings/llm` открывает этот раздел
+напрямую, а неполный или неизвестный маршрут общих настроек нормализуется к нему.
+Из общего каталога и с фильтрацией через `llm:access` строятся пользовательские
+селекторы в `SettingsModal` (включая AI-помощника) и CI-компонентах.
+`ConversationSettings` LLM-поля разговора не отображает и не сохраняет: его
+`onSave` меняет название, машину, рабочий каталог, навыки, режим прав, контекст БЗ
+и проект; имеющиеся `llmProvider` и `llmModel` он только передаёт инспектору
+контекста. У
 Claude это `default` («Default (recommended)» — модель выбирает сам CLI),
 `opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`: id уходит в
 `claude --model` как есть, включая суффикс окна `[1m]`. У Codex —
