@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-09
-checked: 41e07830
+checked: 4391cd01
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -14,6 +14,8 @@ areas:
   - scripts/affected-check.test.mjs
   - apps/server/src/config.ts
   - apps/server/src/server.ts
+  - apps/server/src/reader/module.ts
+  - apps/server/src/routes/previewProxy.ts
   - apps/server/src/kb/kbMcp.ts
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
@@ -33,6 +35,12 @@ areas:
 показывает белый экран с `ERR_BLOCKED_BY_CLIENT`, потому что SSRF-гейт раннера
 режет адрес после DNS-резолва. Подробности —
 [features/playwright-reader.md](features/playwright-reader.md).
+
+### Операторские алиасы Web Reader
+
+`VC_BROWSER_HOST_ALIASES` — операторский список точных пар публичный `host:port` → внутренний транспорт. В `docker-compose.yml` он передаётся `voicechat`, standalone-сервису `reader` и `browser-runner`, поэтому embedded и remote Web Reader используют ту же конфигурацию, что Chromium. Reader разбирает переменную через security-модуль browser-runner и передаёт карту в `/api/preview` (`apps/server/src/reader/module.ts`, `apps/server/src/routes/previewProxy.ts`). Это нужно, когда сохранённый публичный URL доступен с хоста, но hairpin-запрос из контейнера таймаутится и раньше превращался в 504.
+
+Алиас не расширяет пользовательские права на сеть: исходный публичный hostname проходит SSRF-проверку на каждом редиректе, внутреннюю цель выбирает только заранее настроенная оператором точная пара, а прямые loopback/private URL, другой порт, смешанный публично-приватный DNS и редиректы во внутреннюю сеть остаются запрещены. В переписанном ответе остаётся исходный публичный адрес, внутренняя цель клиенту не раскрывается.
 
 ## Образ
 
