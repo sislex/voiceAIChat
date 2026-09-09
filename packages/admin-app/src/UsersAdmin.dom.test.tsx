@@ -79,7 +79,7 @@ describe('Component QA страницы тарифов OpenAI', () => {
     render(<ModelPricesPage modelPrices={modelPrices} onDeleteModelPrice={onDelete} />)
 
     expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual([
-      'Провайдер / модель', 'Вход', 'Кэш', 'Запись кэша', 'Выход', 'Источник / дата', 'Действия'
+      'Провайдер / модель', 'Режим / контекст', 'Input', 'Cached input', 'Cache writes', 'Output', 'Источник / дата', 'Действия'
     ])
     const rows = screen.getAllByRole('row').slice(1)
     expect(rows).toHaveLength(modelPrices.length)
@@ -89,7 +89,8 @@ describe('Component QA страницы тарифов OpenAI', () => {
       expect(row.getByRole('link', { name: 'источник' })).toHaveAttribute('href', sourceUrl)
       expect(row.getByRole('button', { name: 'Править' })).toBeVisible()
       expect(row.getByRole('button', { name: 'Удалить' })).toBeVisible()
-      expect(within(rows[index]!).getAllByRole('cell').slice(1, 5).map((cell) => cell.textContent)).toEqual(
+      expect(row.getByText('Standard / short context')).toBeVisible()
+      expect(within(rows[index]!).getAllByRole('cell').slice(2, 6).map((cell) => cell.textContent)).toEqual(
         [price.inputPerMillion, price.cachedInputPerMillion, price.cacheWritePerMillion, price.outputPerMillion].map(String)
       )
     })

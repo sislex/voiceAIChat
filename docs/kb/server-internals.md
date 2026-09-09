@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-09
-checked: c8fcb5e8
+updated: 2026-09-10
+checked: b086484d
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -133,6 +133,18 @@ XHTML и CSS прокси переписывает URL ресурсов, ссы�
 запись пользовательских действий через `postMessage`, а на `pagehide` снимает их
 обработчики. UI-поведение и семантика сценариев — в [ui.md](ui.md#веб-превью), путь
 контракта — в `packages/shared/src/protocol.ts`.
+
+HTML разбирается `parse5` в `routes/previewHtml.ts`, правятся диапазоны исходных
+атрибутов: entities декодируются перед разрешением URL, поддерживаются значения
+без кавычек и `formaction`, строки скриптов/комментарии и `data-*` сохраняются.
+Первый `<base href>` задаёт базу ресурсов и fetch/XHR; сами base удаляются, чтобы
+относительные адреса прокси оставались на origin Reader. Якоря `#…` сохраняются,
+`target=_blank|_parent|_top` заменяется на `_self`. Integrity у script/link снимается,
+поскольку тело CSS/модуля меняет прокси; импорты inline `type=module` также
+переписываются. Вставка context/inspector использует позиции настоящих head/body,
+поэтому HTML-строки внутри JavaScript её не сбивают. Регрессии:
+`previewHtml.test.ts`, реальные переходы/ресурсы Chromium —
+`e2e/webReaderHtml.e2e.test.ts` (порт выбирается автоматически, без данных прода).
 
 Динамический сетевой трафик страницы тоже не покидает `/api/preview`: context shim
 (`previewContextScript`, вставляется в начало `<head>`) переопределяет `window.fetch`,

@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto'
 import { uid } from '../users/auth.js'
 import { applyHostAlias, type HostAliases } from '@voicechat/browser-runner/security'
 import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../util/publicHost.js'
+import { rewritePreviewHtml } from './previewHtml.js'
 import { MachineResponseCache, isCacheableMachineResponse } from './machineCache.js'
 
 const MAX_REDIRECTS = 5
@@ -135,7 +136,7 @@ function proxyUrl(value: string, base: URL): string {
 export const PREVIEW_INSPECTOR_SCRIPT_ID = 'voicechat-preview-inspector'
 
 /** Emulates a browser origin while the rendered document safely stays on ChatAI origin. */
-export function previewContextScript(base: string): string {
+export function previewContextScript(base: string, documentBase = base): string {
   const baseUrl = new URL(base)
   const key = JSON.stringify(`voicechat.preview.context.v1:${baseUrl.origin}:`)
   const fallbackBase = JSON.stringify(baseUrl.toString())
@@ -145,9 +146,10 @@ for(const [name,native] of [['localStorage',nativeLocal],['sessionStorage',nativ
 const nativeIdb=window.indexedDB;if(nativeIdb)try{Object.defineProperty(window,'indexedDB',{configurable:true,value:new Proxy(nativeIdb,{get(target,key){const value=Reflect.get(target,key,target);if(key==='open'||key==='deleteDatabase')return (name,...args)=>value.call(target,p+String(name),...args);return typeof value==='function'?value.bind(target):value}})})}catch{}
 const fallbackBase=${fallbackBase};
 const currentBase=()=>{try{const u=new URL(location.href);const t=u.searchParams.get('url');if(u.pathname==='/api/preview'&&t)return t}catch{}return fallbackBase};
+const documentBase=${JSON.stringify(documentBase)};
 const toProxy=(value)=>{const s=String(value);
 try{const local=new URL(s,location.href);if(local.origin===location.origin&&local.pathname==='/api/preview'&&local.searchParams.has('url'))return s}catch{}
-try{const u=new URL(s,currentBase());if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())}catch{}
+try{const u=new URL(s,documentBase===fallbackBase?currentBase():documentBase);if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())}catch{}
 return s};
 const cleanHeaders=(headers)=>{const h=new Headers(headers||undefined);const auth=h.get('authorization');if(auth!==null){h.delete('authorization');h.set('x-preview-authorization',auth)}return h};
 const nativeFetch=typeof window.fetch==='function'?window.fetch.bind(window):null;
@@ -832,22 +834,15 @@ addEventListener('message',message);addEventListener('pagehide',()=>{disable();d
 
 export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = isMachinePreviewHost(base.hostname)): Buffer {
   let text = body.toString('utf8')
-  const rewriteCssUrls = (css: string): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
+  const rewriteCssUrls = (css: string, targetBase = base): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, targetBase) + quote + ')')
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
-    text = text.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)content-security-policy\1[^>]*>/gi, '')
-      // target=_blank выпрыгивал бы из iframe в голую вкладку прокси.
-      .replace(/\starget\s*=\s*(["'])_blank\1/gi, '')
-      .replace(/\b(href|src|action|poster)\s*=\s*(["'])(.*?)\2/gi, (_m, name, quote, value) => name + '=' + quote + proxyUrl(value, base) + quote)
-      .replace(/\bsrcset\s*=\s*(["'])(.*?)\1/gi, (_m, quote, value) => 'srcset=' + quote + value.split(',').map((part: string) => {
-        const [url, ...descriptor] = part.trim().split(/\s+/)
-        return proxyUrl(url, base) + (descriptor.length ? ' ' + descriptor.join(' ') : '')
-      }).join(', ') + quote)
-      .replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi, (_m, open, css, close) => open + rewriteCssUrls(css) + close)
-      .replace(/\bstyle\s*=\s*(["'])(.*?)\1/gi, (_m, quote, value) => 'style=' + quote + rewriteCssUrls(value) + quote)
-    const context = previewContextScript(base.toString())
-    const inspector = previewInspectorScript()
-    text = /<head\b[^>]*>/i.test(text) ? text.replace(/<head\b[^>]*>/i, (head) => head + context) : context + text
-    text = /<\/body\s*>/i.test(text) ? text.replace(/<\/body\s*>/i, inspector + '</body>') : text + inspector
+    text = rewritePreviewHtml(text, base, {
+      url: proxyUrl,
+      css: rewriteCssUrls,
+      module: rewriteModuleSpecifiers,
+      context: (documentBase) => previewContextScript(base.toString(), documentBase.toString()),
+      inspector: previewInspectorScript()
+    })
   }
   if (/text\/css/i.test(type)) text = rewriteCssUrls(text)
   // ESM-модули dev-сервера на машине. Их импорты браузер резолвит сам: `/@vite/client`
