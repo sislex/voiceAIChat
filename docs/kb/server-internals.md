@@ -1,9 +1,10 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-08
-checked: c310aba9
+updated: 2026-09-09
+checked: c8fcb5e8
 areas:
   - apps/server/src
+  - apps/image-studio/src
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
@@ -112,8 +113,8 @@ slug — транслит имени (`librarySlug`). `GET/POST /api/make/:id/sh
 
 ## Прокси веб-превью
 
-`registerPreviewProxy()` подключается из `server.ts` после основной REST-поверхности
-и обслуживает защищённый `/api/preview` — маршрут зарегистрирован как `all`, то есть
+`registerPreviewProxy()` подключается из модуля Web Reader (`reader/module.ts`, см. раздел
+«Web Reader» ниже) и обслуживает защищённый `/api/preview` — маршрут зарегистрирован как `all`, то есть
 обслуживает любой метод, а не только GET первичной загрузки страницы. Реализация в
 `routes/previewProxy.ts` принимает только HTTP/HTTPS и не позволяет превью стать
 SSRF-мостом: до запроса и в DNS-lookup все адреса имени должны быть публичными;
@@ -344,6 +345,46 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 `kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
 идут через `UserFrameHub`.
 
+## Web Reader: модуль `reader/module.ts` и порт `ReaderCore` (2026-09-08)
+
+Прокси превью (`routes/previewProxy.ts`: `/api/preview`, `/api/preview/reset-cookies`, `/api/preview/diagnostics`)
+и MCP «browser» (`mcp/previewMcp.ts`: `/mcp/preview`, инструменты `mcp__browser__*`) вместе с контекстом
+инструментов браузера (`browserExecutor`/`browserScreenshot`, машина разговора, тестовые пользователи, окружения,
+политика `evaluate`) собираются одной функцией `createReaderModule(deps)` (`apps/server/src/reader/module.ts`).
+Состояние процесса ядра ридер берёт портом `ReaderCore` (`reader/core.ts`): `previewAction` (relay действий в
+WS-клиенты пользователя — сокеты живут у ядра), `issuePreviewRunKey` (ключ Chromium к прокси превью; проверяет его
+авторизация ядра в `previewRunUser`), `listPreviews` (feature-preview канбана) и `logBrowserShot` (кадр проверки —
+файл в `dataDir/ci-browser-shots` ядра и строка в ленту рана). Остальное — из базы (`db.chat`, `db.projects`,
+`db.ci`, `canUseAgentForPreview`) и машин (`isOnline`, `http` порта `MachinesService`). Встроенная реализация порта —
+`readerBridge/localCore.ts`; снимок ключей `ReaderDeps` держит `reader/boundary.test.ts`. Ядру от ридера не нужно
+ничего, кроме адреса MCP превью для ходов — порта `ReaderService` нет.
+
+Исполнение Chromium вынесено из `reader/module.ts` в `apps/playwright-reader`:
+`ReaderDeps.browser` — `PlaywrightReaderService`, а не клиент browser-runner.
+Сервис собирается `createPlaywrightReaderModule` у ядра или вызывается по HTTP при
+`VC_PLAYWRIGHT_READER_MODE=remote`; самостоятельный Web Reader использует тот же порт
+у приложения либо у ядра. REST `/api/browser/*` тоже принадлежит приложению,
+`routes/browserShots.ts` в ядре оставляет только файлы кадров CI. Порт данных приложения —
+`playwrightReaderBridge/localCore.ts`, контракт RPC — `packages/shared/src/playwrightReader.ts`.
+Подробности — [features/playwright-reader.md](features/playwright-reader.md).
+
+**Токены ходов превью подписаны** (`reader/turnToken.ts`, `createPreviewTurnTokens(mcpSecret)`): `?turn=` — это
+`base64url({u, c, e}).HMAC-SHA256`, живёт сутки и проверяется в любом процессе без состояния. Раньше это был
+in-memory брокер ядра, и ход CI из отдельного процесса канбана регистрировал токен там, где `/mcp/preview` его
+не видел. `turns.ts` и `ci/modelHooks.ts` только выдают токен (`previewTurns.issue`), снимать нечего; без
+`?k=<секрет>` токен бесполезен.
+
+**Отдельный процесс** (`VC_READER_MODE=remote` + `VC_READER_URL`, опционально `VC_READER_MCP_PUBLIC_BASE`):
+`reader/standalone/server.ts` (`buildReaderServer`) — тот же модуль на общей базе Postgres, авторизация
+пересылкой в ядро (`internal/forwardedAuth.ts`: cookie превью и ключ Chromium разбирает ядро в `whoami`), машины —
+`HttpMachines` к `VC_MACHINES_URL` или к ядру, порт ядра — `HttpReaderCore` по RPC `/internal/reader/core`
+(контракт `reader/internal.ts`, тело до 16 МБ ради кадра PNG). Ядро в `remote` регистрирует прокси
+`readerBridge/proxy.ts` (`/api/preview`, `/api/preview/*`, `/mcp/preview`; роуты Make `/api/preview/make*`
+конкретнее и выигрывают — `readerBridge/proxy.test.ts`), а `previewMcpBaseUrl` ходов ядра и процесса канбана
+считает общий helper `reader/mcpBase.ts` (адрес ридера). Cookie-контейнер превью — память процесса ридера.
+Точка входа `reader/standalone/index.ts` (порт 8795), образ `reader-runtime`, compose-профиль `reader`.
+Интеграционный тест — `reader/standalone/readerRemote.integration.test.ts`.
+
 ## Машины: модуль `machines/module.ts` и порт `MachinesService` (2026-09-07)
 
 Реестр онлайн-подключений (`agents/registry.ts`), WebSocket компаньон-агентов `/agent`, REST машин и
@@ -384,32 +425,74 @@ artifacts привязанного хранилища через обратны�
 проверку роли `users:manage` делает preHandler ядра до прокси. Тест —
 `admin/standalone/adminRemote.integration.test.ts`.
 
+## Студия картинок ↔ ядро: отдельное приложение (2026-09-09)
+
+Галереи, корзина, метаданные, API генерации/правки и публикации `/g/*` живут в
+`apps/image-studio` (`@voicechat/image-studio`). `createImageStudioModule` собирает embedded,
+`src/standalone/server.ts` — отдельный Fastify. Каталог `<dataDir>/image-studio` и формат файлов
+прежние. UI `ImageStudioPane`, маршрут `#/images`, мосты и поллинг остаются в `packages/ui`.
+
+Порт `ImageStudioCore` (`apps/image-studio/src/core.ts`) даёт студии сведения о разговоре
+(`id`, `title`, `assistantKind` с проверкой владельца), переименование, генерацию и чтение
+результата LLM. `imageStudioBridge/localCore.ts` ядра реализует его над DB/LLM и ограниченным
+чтением профиля пользователя; `standalone/httpCore.ts` — через HTTP. Пакет студии не импортирует
+сервер, Make, DB или исполнителей: границу проверяют тесты с обеих сторон. Настройки модели,
+LLM и ретушь обычного чата остаются у ядра.
+
+Обратный порт `ImageStudioService` — `promptContext` и `captureImages`: контекст галереи для хода
+и сохранение картинок из fenced-блоков ответа. В remote ядро вызывает
+`/internal/image-studio/service` и не создаёт `ImageStudioStore`. Файлы исполнителя передаются
+в base64 через `readGenerated`, поэтому общий диск с профилями CLI не нужен. В compose прежний
+том сохранён для доступа к существующим галереям; для другой машины достаточно перенести
+каталог галерей и обеспечить HTTP-связь с ядром.
+
+Контракт — `packages/shared/src/imageStudioInternal.ts`: короткие методы идут в
+`/internal/image-studio/core`, генерация — отдельным долгим запросом
+`/internal/image-studio/generate`. Отмена разрывает HTTP и останавливает LLM; `preClose` отменяет
+раны и закрывает приём новых генераций, включая запросы с ещё незавершённой проверкой доступа.
+Кнопка отмены возвращает 410, при остановке процесса прокси также может вернуть 503.
+Бюджет генерации — 10 минут, API допускает 20 МБ JSON, внутренний запрос — четыре референса
+по 12 МБ в base64. Слот генерации и лимитер пароля локальны: один экземпляр на каталог.
+Авторизацию каждого приватного запроса ядро проверяет через `/internal/whoami`, включая CSRF.
+
+Дефолт dev/desktop — `VC_IMAGE_STUDIO_MODE=embedded`; в compose — `remote`, URL
+`http://image-studio:8796`, общий `VC_INTERNAL_TOKEN`. Caddy и прокси ядра сохраняют публичные
+пути `/api/image-studio/*` и `/g/*`. Интеграция
+`apps/server/src/imageStudioBridge/remote.integration.test.ts` проверяет embedded и remote
+на реальных HTTP-портах с разными каталогами данных ядра и студии.
+
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
-Make готовится стать отдельным сервисом (`docs/plans/make-standalone.md`), поэтому внутри
-монолита между ним и ядром проведена граница, которую держит гейт `make/boundary.test.ts`:
+Серверная часть Make уже выделена в workspace `apps/make` (`@voicechat/make`) и умеет
+запускаться отдельно (`src/standalone/index.ts`). В compose это сервис `make:8788`, а ядро
+использует `VC_MAKE_MODE=remote`; для dev/desktop сохраняется `embedded`. Границу пакетов
+проверяют `apps/make/src/boundary.test.ts` и `apps/server/src/makeBridge/boundary.test.ts`.
+UI Make остаётся в `packages/ui` и собирается общим web-клиентом; авторизация, разговоры,
+членство и пользовательские WS-соединения принадлежат ядру.
 
-- **`make/core.ts` — `MakeCore`, «что Make нужно от ядра»**: разговор и его владелец, проект
+- **`apps/make/src/core.ts` — `MakeCore`, «что Make нужно от ядра»**: разговор и его владелец, проект
   Make-разговора и членство (`isProjectViewer`), Make-разговоры владельца (квота), связи
   «дизайн ↔ карточка» (`taskLinks`, `linkTaskDesign`, `unlinkTaskDesign`, `linkableTasks`,
   `taskDesigns`), `project`, `userExists`, `boardChanged`, файловый мост машины только на чтение
-  (`machineFs`). Единственная реализация сегодня — `makeBridge/localCore.ts` поверх `db.*`,
-  реестра машин и `BoardHub`. `routes/make.ts` и `mcp/makeMcp.ts` принимают `core`, а не `db`,
+  (`machineFs`). Реализации — `apps/server/src/makeBridge/localCore.ts` над DB/машинами/канбаном
+  и `apps/make/src/standalone/httpCore.ts` через HTTP к ядру. `apps/make/src/routes.ts` и
+  `apps/make/src/mcp.ts` принимают `core`, а не `db`,
   и **не импортируют** `db/`, `users/`, `agents/`, `turns` — гейт это проверяет по тексту импортов.
-- **`make/service.ts` — `MakeService`, «что ядру нужно от Make»**: `promptContext` (блок промпта
+- **`apps/make/src/service.ts` — `MakeService`, «что ядру нужно от Make»**: `promptContext` (блок промпта
   Make-чата), `turnSnapshot` (id снимка «До правок» для `meta.makeSnapshotId`), `listFiles`
   (проверка путей `makeSources` цикла доработки в `routes/projects.ts`), `taskSources`
   (Make-источники рана CI и подготовки задачи), `adminStats`/`metrics` (админка), `sweep`,
   `subscribe` (кадры `make.changed`/`make.presence` для WS-сессии). `turns.ts`,
   `ci/modelHooks.ts`, `routes/projects.ts`, `routes/admin.ts` получают `make?: Pick<MakeService, …>`
-  и ничего больше о Make не знают. Ядро может импортировать из Make только `core.js`, `service.js`,
-  `module.js`, `taskScope.js`; композиция — `server.ts` и `makeBridge/`.
-- **`make/module.ts` — `createMakeModule({ dataDir, core, mcpSecret, mcpBaseUrl })`** собирает
-  мастерские, шину, библиотеку, роуты и MCP и отдаёт `service`; `server.ts` создаёт его один раз.
-- **Scope-токены рана (`make/taskScope.ts`)** — HMAC-SHA256 над JSON `{ userId, projectId, taskId,
+  и ничего больше о Make не знают. Вне композиции процессов и адаптеров `makeBridge/`
+  ядро импортирует из `@voicechat/make` только типы; исключения перечислены в гейте границы.
+- **`apps/make/src/module.ts` — `createMakeModule({ dataDir, core, mcpSecret, mcpBaseUrl })`** собирает
+  мастерские, шину, библиотеку, роуты и MCP и отдаёт `service`; его создаёт ядро в embedded
+  или `buildMakeServer` в отдельном сервисе.
+- **Scope-токены рана (`apps/make/src/taskScope.ts`)** — HMAC-SHA256 над JSON `{ userId, projectId, taskId,
   sources, expiresAt }` секретом MCP (`?k=`), TTL 30 мин, вместо прежнего `MakeTaskScopeBroker` в
   памяти процесса: токен выдаёт ядро (`MakeService.taskSources`), проверяет MCP Make
-  (`verifyTaskScope`), и завтра это разные процессы. Содержимое — заявка: MCP сверяет его с
+  (`verifyTaskScope`); в remote это разные процессы. Содержимое — заявка: MCP сверяет его с
   актуальными `taskDesigns`, проектом разговора и членством (`authorizeTaskSource`).
 - **Make — отдельный пакет `apps/make` (`@voicechat/make`), круг 2 (2026-09-07).** Код мастерских,
   роутов и MCP физически живёт там; ядро импортирует только типы портов и `createMakeModule`

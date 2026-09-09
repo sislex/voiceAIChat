@@ -10,6 +10,8 @@
 // Здесь — типы действий, лимиты и runtime-валидаторы конвертов. Чистые функции:
 // без DOM и сети, чтобы обе стороны (сервер и UI) проверяли одно и то же.
 
+import type { BrowserActionOutcome } from './playwrightReader'
+
 export const PREVIEW_ACTION_COMMAND_TYPE = 'voicechat.preview.action.v1' as const
 export const PREVIEW_ACTION_RESULT_TYPE = 'voicechat.preview.action-result.v1' as const
 /** Внутренний iframe сообщает recorder-оболочке, что инъецированный мост DOM готов. */
@@ -535,7 +537,7 @@ export function isScreenshotResult(result: Record<string, unknown>): boolean {
  * Сериализация результата для ответа модели: null — результат превысил кап
  * (вызывающий отвечает ошибкой, а не обрезанным невалидным JSON).
  */
-export function previewResultJson(result: PreviewActionResult): string | null {
+export function previewResultJson(result: NonNullable<BrowserActionOutcome['result']>): string | null {
   const json = JSON.stringify(result)
   return json.length <= PREVIEW_ACTION_LIMITS.resultJson ? json : null
 }

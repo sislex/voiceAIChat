@@ -172,6 +172,21 @@ describe('VoiceChatDb — разговоры', () => {
     expect((await db.chat.getConversation(U, conversation.id))?.llmProvider).toBeNull()
   })
 
+  // @testCase TC-API-1
+  it('round-trip расширенного тарифа сохраняет режимы, контекст, null и источник', async () => {
+    const input = {
+      provider: 'codex', model: 'gpt-6-astra', inputPerMillion: 10,
+      cachedInputPerMillion: 1, cacheWritePerMillion: 12.5, outputPerMillion: 50,
+      sourceUrl: 'https://developers.openai.com/api/docs/pricing', effectiveAt: 1785801600000,
+      tiers: [
+        { mode: 'standard' as const, context: 'long' as const, inputPerMillion: 20, cachedInputPerMillion: 2, cacheWritePerMillion: 25, outputPerMillion: 75 },
+        { mode: 'flex' as const, context: 'short' as const, inputPerMillion: null, cachedInputPerMillion: null, cacheWritePerMillion: null, outputPerMillion: null }
+      ]
+    }
+    expect(await db.llm.upsertModelPrice(input)).toMatchObject(input)
+    expect((await db.llm.listModelPrices()).find((row) => row.model === input.model)).toMatchObject(input)
+  })
+
   it('агрегирует стоимость AI-ходов по фактическим provider/model и не выдаёт неполную сумму', async () => {
     const conversation = await db.chat.createConversation(U, 'Стоимость')
     expect(conversation).toMatchObject({ costUsd: null, costStatus: 'unknown' })

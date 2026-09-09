@@ -222,13 +222,31 @@ describe('CiTaskSettings', () => {
     expect(window.ci!.getTaskMachines).toHaveBeenCalledTimes(2)
   })
 
-  it('показывает унаследованные движок и модель и сохраняет переопределение', async () => {
+  // @testCase TC-UI-1
+  it('показывает gpt-6-astra в CI-селекторе и сохраняет переопределение', async () => {
     render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
     expect(screen.getAllByText('унаследовано').length).toBeGreaterThan(0)
     fireEvent.change(screen.getByLabelText('Движок модели'), { target: { value: 'codex' } })
+    expect(screen.getByRole('option', { name: /gpt-6-astra/ })).toHaveValue('gpt-6-astra')
+    fireEvent.change(screen.getByLabelText('Модель'), { target: { value: 'gpt-6-astra' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить движок и модель' }))
     await waitFor(() => expect(screen.getByText('переопределено')).toBeInTheDocument())
+    expect((await window.ci!.getTaskCiLlm('p1', 't1')).config.model).toBe('gpt-6-astra')
+  })
+
+  // @testCase TC-UI-2
+  it('применяет персональный запрет модели и всего Codex в CI-селекторе', async () => {
+    const view = render(<CiTaskSettings section="model" projectId="p1" taskId="t1" llmAccess={[{ provider: 'codex', modelId: 'gpt-6-astra' }]} />)
+    await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
+    fireEvent.change(screen.getByLabelText('Движок модели'), { target: { value: 'codex' } })
+    expect(screen.queryByRole('option', { name: /gpt-6-astra/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /gpt-5.6-sol/ })).toBeInTheDocument()
+    view.unmount()
+
+    render(<CiTaskSettings section="model" projectId="p1" taskId="t1" llmAccess={[{ provider: 'codex', modelId: '*' }]} />)
+    await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
+    expect(screen.queryByRole('option', { name: 'Codex' })).not.toBeInTheDocument()
   })
 
   it('режим и глубина уточнений сохраняются вместе с моделью', async () => {

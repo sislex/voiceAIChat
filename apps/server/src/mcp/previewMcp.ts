@@ -1,3 +1,4 @@
+import type { BrowserActionOutcome } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
 // пользователя (открыть URL, найти элемент, клик, ввод текста, структурированное
 // чтение DOM). Сама страница живёт в браузере пользователя, поэтому сервер не
@@ -7,8 +8,8 @@
 // пользователя, а не произвольным браузингом.
 //
 // Устройство как у kb-эндпоинта: stateless (свежий McpServer на POST), доступ
-// по секрету процесса `?k=`, ход адресуется токеном `?turn=` через in-memory
-// брокер (выдаёт и снимает TurnManager).
+// по секрету процесса `?k=`, ход адресуется подписанным токеном `?turn=`
+// (`reader/turnToken.ts`) — его выдаёт TurnManager или хуки CI в любом процессе.
 
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -25,38 +26,15 @@ import {
   type ServerMessage
 } from '@voicechat/shared'
 import { MACHINE_PREVIEW_ALIAS_HOST, MACHINE_PREVIEW_SUFFIX } from '../routes/previewProxy.js'
+import { createPreviewTurnTokens, type PreviewToolEntry, type PreviewTurnTokens } from '../reader/turnToken.js'
+
+export type { PreviewToolEntry } from '../reader/turnToken.js'
 
 export const PREVIEW_MCP_PATH = '/mcp/preview'
 
 /** Сколько ждём ответ клиента: действие в живой вкладке быстрое, но открытие
  *  страницы проходит через прокси превью с его 10-секундным лимитом. */
 export const PREVIEW_ACTION_TIMEOUT_MS = 20_000
-
-/** Ход, от имени которого модель управляет превью (регистрирует turns.ts). */
-export interface PreviewToolEntry {
-  userId: string
-  conversationId: string
-}
-
-/** In-memory брокер: токен хода → контекст. Токен живёт ровно один ход. */
-class PreviewToolBroker {
-  private readonly map = new Map<string, PreviewToolEntry>()
-  register(token: string, entry: PreviewToolEntry): void {
-    this.map.set(token, entry)
-  }
-  unregister(token: string): void {
-    this.map.delete(token)
-  }
-  get(token: string): PreviewToolEntry | undefined {
-    return this.map.get(token)
-  }
-  /** Только для тестов: сколько токенов держим (проверка на утечку). */
-  size(): number {
-    return this.map.size
-  }
-}
-
-export const previewToolBroker = new PreviewToolBroker()
 
 /** Итог действия, каким его вернул клиент (или каким его закрыл relay). */
 export interface PreviewActionOutcome {
@@ -197,8 +175,10 @@ export interface PreviewTurnContext {
 
 export interface RegisterPreviewMcpOptions {
   secret: string
-  relay: PreviewActionRelay
-  broker?: PreviewToolBroker
+  /** Действие в панели браузера пользователя; в отдельном процессе ридера — RPC к ядру. */
+  relay: Pick<PreviewActionRelay, 'request'>
+  /** Проверка токенов ходов; по умолчанию — подписанные тем же `secret`. */
+  turns?: PreviewTurnTokens
   /** Контекст машин/тестовых пользователей; без него алиас и test-users недоступны. */
   context?: PreviewTurnContext
   /** Таймаут ожидания клиента (переопределяется в тестах). */
@@ -206,20 +186,20 @@ export interface RegisterPreviewMcpOptions {
   /**
    * Исполнитель для разговоров Playwright Reader: их страница живёт в
    * изолированном Chromium сервера, а не в браузере пользователя, поэтому relay
-   * туда не достаёт. Возвращает `null`, если разговор не тот или раннер не
-   * настроен — тогда действие идёт прежним путём.
+   * туда не достаёт. Возвращает `null` только для разговоров без Chromium-цели;
+   * недоступность раннера возвращается ошибкой, без переключения в relay.
    */
-  browserExecutor?: (userId: string, conversationId: string, action: PreviewAction) => Promise<PreviewActionOutcome | null>
+  browserExecutor?: (userId: string, conversationId: string, action: PreviewAction) => Promise<BrowserActionOutcome | null>
   /**
    * Снимок из изолированного Chromium. Отдельно от `browserExecutor`, потому что
    * возвращает картинку `dataUrl`, а не структуру действия; `null` — «этот
    * разговор не про изолированный браузер, иди обычным путём».
    */
-  browserScreenshot?: (userId: string, conversationId: string, args: { selector?: string }) => Promise<PreviewActionOutcome | null>
+  browserScreenshot?: (userId: string, conversationId: string, args: { selector?: string }) => Promise<BrowserActionOutcome | null>
 }
 
 /** Ответ инструмента: результат действия сериализованным JSON либо ошибка. */
-function toolResult(outcome: PreviewActionOutcome): { content: Array<{ type: 'text'; text: string }>; isError?: boolean } {
+function toolResult(outcome: PreviewActionOutcome | BrowserActionOutcome): { content: Array<{ type: 'text'; text: string }>; isError?: boolean } {
   if (!outcome.ok) {
     return { content: [{ type: 'text', text: outcome.error ?? 'Действие в превью не выполнено.' }], isError: true }
   }
@@ -235,7 +215,7 @@ function toolResult(outcome: PreviewActionOutcome): { content: Array<{ type: 'te
 }
 
 export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMcpOptions): void {
-  const broker = opts.broker ?? previewToolBroker
+  const turns = opts.turns ?? createPreviewTurnTokens(opts.secret)
   // Свой scope с парсером-пустышкой — тело читает транспорт MCP-SDK (см. kbMcp.ts).
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
@@ -244,7 +224,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
     })
     scope.post<{ Querystring: { k?: string; turn?: string } }>(PREVIEW_MCP_PATH, async (req, reply) => {
       if (req.query.k !== opts.secret) return reply.code(403).send({ error: 'forbidden' })
-      const entry = broker.get(req.query.turn ?? '')
+      const entry = turns.verify(req.query.turn ?? '')
       const server = new McpServer({ name: 'browser', version: '1.0.0' })
       const noContext = {
         content: [{ type: 'text' as const, text: 'Контекст хода недоступен: действие в превью не выполнено.' }],

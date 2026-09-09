@@ -5,9 +5,7 @@
 import type { LlmClient } from '../claude/types.js'
 import { IMAGE_HINT, parseImages, type LlmAttachment } from '@voicechat/shared'
 
-export interface ImageStudioGenerator {
-  (input: { prompt: string; source?: Buffer; sourceName?: string; references?: Array<{ name: string; data: Buffer }>; onCancel?: (cancel: () => void) => void }): Promise<Buffer>
-}
+import type { ImageStudioGenerator } from '@voicechat/image-studio'
 
 export function llmImageStudioGenerator(opts: {
   client: LlmClient
@@ -37,8 +35,13 @@ export function llmImageStudioGenerator(opts: {
           `Промпт пользователя: ${prompt}`,
           IMAGE_HINT
         ]
-    const fullText = await new Promise<string>(async (resolve, reject) => {
-      const handle = await opts.client.send({
+    const fullText = await new Promise<string>((resolve, reject) => {
+      let handle: { cancel(): void } | undefined
+      let cancelled = false
+      // Регистрируем отмену до асинхронного соединения с исполнителем.
+      onCancel?.(() => { cancelled = true; handle?.cancel(); reject(new Error('Генерация отменена')) })
+      if (cancelled) return
+      void Promise.resolve().then(() => opts.client.send({
         userId: opts.userId,
         prompt: lines.join('\n'),
         sessionId: null,
@@ -47,10 +50,10 @@ export function llmImageStudioGenerator(opts: {
         permissionMode: 'acceptEdits',
         ...(opts.cwd ? { cwd: opts.cwd } : {}),
         ...(attachments.length ? { attachments } : {})
-      }, { onDelta: async () => {}, onSession: async () => {}, onDone: resolve, onError: reject })
-      // cancel() у CLI-клиентов молчит (finished=true глушит onDone/onError),
-      // поэтому промис реджектим сами — иначе ран отмены не дождётся никогда.
-      onCancel?.(() => { handle.cancel(); reject(new Error('Генерация отменена')) })
+      }, { onDelta: async () => {}, onSession: async () => {}, onDone: resolve, onError: reject })).then((started) => {
+        handle = started
+        if (cancelled) handle.cancel()
+      }, reject)
     })
     const image = parseImages(fullText).images[0]
     if (!image) {

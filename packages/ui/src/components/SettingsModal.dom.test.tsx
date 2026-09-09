@@ -128,6 +128,29 @@ describe('PersonalizationPage', () => {
   })
 })
 
+describe('SettingsModal — общая LLM-вкладка', () => {
+  // @testCase TC-UI-LLM-NAV
+  it('открывает LLM-редактор с текущими engine, provider и model и сохраняет patch', async () => {
+    const onChange = vi.fn()
+    renderModal('developer', {
+      initialSection: 'aiAssist',
+      settings: { ...DEFAULT_SETTINGS, llmEngineId: 'work', llmProvider: 'codex', codexModel: 'gpt-6-astra' },
+      engines: [{ id: 'work', name: 'Рабочий', kind: 'codex', isDefault: true }],
+      onChange
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'LLM' }))
+    expect(screen.getByRole('button', { name: 'LLM' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('llm-settings-editor')).toBeInTheDocument()
+    expect(screen.getByLabelText('Исполнитель LLM')).toHaveValue('work')
+    expect(screen.getByLabelText('Движок')).toHaveValue('codex')
+    expect(screen.getByLabelText('Модель Codex')).toHaveValue('gpt-6-astra')
+
+    await userEvent.selectOptions(screen.getByLabelText('Модель Codex'), 'gpt-5.6-sol')
+    expect(onChange).toHaveBeenCalledWith({ codexModel: 'gpt-5.6-sol' })
+  })
+})
+
 describe('SettingsModal — модели Claude', () => {
   it('admin видит меню CLI целиком и в его порядке', () => {
     renderModal('admin')
@@ -167,7 +190,8 @@ describe('SettingsModal — модели Claude', () => {
 })
 
 describe('SettingsModal — модели Codex', () => {
-  it('показывает актуальный список в порядке меню', async () => {
+  // @testCase TC-UI-1
+  it('показывает gpt-6-astra из общего каталога и сохраняет точный id', async () => {
     const onChange = vi.fn()
     renderModal('admin', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex' }, onChange })
     const select = screen.getByLabelText('Модель Codex')
@@ -177,6 +201,28 @@ describe('SettingsModal — модели Codex', () => {
     expect(onChange).toHaveBeenCalledWith({ codexModel: 'gpt-5.5' })
   })
 
+  // @testCase TC-UI-2
+  it('персональный запрет скрывает только gpt-6-astra', () => {
+    renderModal('developer', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' }, llmAccess: [{ provider: 'codex', modelId: 'gpt-6-astra' }] })
+    const values = within(screen.getByLabelText('Модель Codex')).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)
+    expect(values).not.toContain('gpt-6-astra')
+    expect(values).toContain('gpt-5.6-sol')
+  })
+
+  // @testCase TC-UI-1
+  // @testCase TC-UI-2
+  it('AI-помощник использует тот же каталог и deny-list Codex', async () => {
+    renderModal('developer', {
+      settings: { ...DEFAULT_SETTINGS, aiAssistProvider: 'codex', aiAssistModel: 'gpt-5.6-sol' },
+      llmAccess: [{ provider: 'codex', modelId: 'gpt-5.6-luna' }]
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'AI-помощник' }))
+    const values = within(screen.getByLabelText('Модель AI-помощника')).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)
+    expect(values).toContain('gpt-6-astra')
+    expect(values).not.toContain('gpt-5.6-luna')
+  })
+
+  // @testCase TC-REG-1
   it('модель из старых настроек не теряется отдельным пунктом', () => {
     renderModal('admin', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: '' } })
     const select = screen.getByLabelText('Модель Codex') as HTMLSelectElement

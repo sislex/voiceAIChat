@@ -56,6 +56,9 @@ export interface ServerConfig {
   kbRoot: string
   /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
+  /** Студия картинок: встроенный модуль для dev/desktop или отдельный процесс. */
+  imageStudioMode: 'embedded' | 'remote'
+  imageStudioUrl?: string
   /** Публичная база MCP-эндпоинтов для контейнера-исполнителя; без env остаётся loopback сервера. */
   mcpPublicBase?: string
   /**
@@ -86,6 +89,17 @@ export interface ServerConfig {
   /** Админка: `remote` — `/api/admin/*` обслуживает отдельный процесс по адресу `adminUrl` (те же порты к ядру и машинам). */
   adminMode: 'embedded' | 'remote'
   adminUrl?: string
+  /**
+   * Web Reader: `remote` — прокси превью `/api/preview*` и MCP «browser» `/mcp/preview` обслуживает отдельный
+   * процесс по адресу `readerUrl` (docs/plans/web-reader-service.md); ядро переправляет туда пути превью.
+   */
+  readerMode: 'embedded' | 'remote'
+  readerUrl?: string
+  /** База `/mcp/preview` глазами исполнителя LLM в режиме `remote`; без неё — `readerUrl`. */
+  readerMcpPublicBase?: string
+  /** Playwright Reader: REST Chromium и команды модели обслуживает приложение по адресу playwrightReaderUrl. */
+  playwrightReaderMode: 'embedded' | 'remote'
+  playwrightReaderUrl?: string
   /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
   coreUrl?: string
   /** Bearer внутреннего API `/internal/*` между сервисами; без него внутренний API выключен. */
@@ -247,6 +261,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
+    imageStudioMode: env.VC_IMAGE_STUDIO_MODE === 'remote' ? 'remote' : 'embedded',
+    imageStudioUrl: env.VC_IMAGE_STUDIO_URL,
     makeMode: env.VC_MAKE_MODE === 'remote' ? 'remote' : 'embedded',
     makeUrl: env.VC_MAKE_URL,
     makeMcpPublicBase: env.VC_MAKE_MCP_PUBLIC_BASE,
@@ -257,6 +273,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     machinesUrl: env.VC_MACHINES_URL,
     adminMode: env.VC_ADMIN_MODE === 'remote' ? 'remote' : 'embedded',
     adminUrl: env.VC_ADMIN_URL,
+    readerMode: env.VC_READER_MODE === 'remote' ? 'remote' : 'embedded',
+    readerUrl: env.VC_READER_URL,
+    readerMcpPublicBase: env.VC_READER_MCP_PUBLIC_BASE,
+    playwrightReaderMode: env.VC_PLAYWRIGHT_READER_MODE === 'remote' ? 'remote' : 'embedded',
+    playwrightReaderUrl: env.VC_PLAYWRIGHT_READER_URL,
     coreUrl: env.VC_CORE_URL,
     internalToken: env.VC_INTERNAL_TOKEN,
     mcpSecret: env.VC_MCP_SECRET,

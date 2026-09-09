@@ -1,12 +1,16 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-07
-checked: 01753b91
+updated: 2026-09-09
+checked: 41e07830
 areas:
+  - apps/playwright-reader
+  - apps/server/src/playwrightReaderBridge
+  - packages/shared/src/playwrightReader.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/llm.ts
+  - packages/shared/src/imageStudioInternal.ts
   - apps/server/src/ws.ts
   - apps/server/src/routes
   - packages/ui/src/remote
@@ -25,6 +29,16 @@ areas:
 `serverErrors.test.ts` держит список кодов, реально отправляемых сервером, —
 новый код без перевода он подсветит.
 
+
+## Отдельная студия картинок
+
+Выделение `apps/image-studio` сохраняет REST `/api/image-studio/*`, публичные `/g/*`,
+мост `imgstudio:*` и WS чата. Внутренний контракт ядро ↔ студия —
+`packages/shared/src/imageStudioInternal.ts`: RPC портов, отдельный запрос генерации с
+отменой при обрыве HTTP и пересылка авторизации в общий `/internal/whoami`.
+Внутренние запросы требуют `VC_INTERNAL_TOKEN`, а не пользовательский токен.
+Ошибки недоступности `image_studio_unavailable`/`core_unavailable` переводятся в
+`serverErrors.ts`; при перезапуске галерея сохраняется, активная генерация отменяется.
 
 ## Reader ports и неизменённые backend-контракты
 
@@ -151,6 +165,16 @@ Bearer-гейтом: `POST /api/browser/:id/start` (идемпотентно п�
 сконфигурированного browser-runner отвечают `501`, ошибки раннера пробрасываются
 статусами 404/409/503/502. Мост `window.browser` (`RendererBrowserBridge`) и
 серверная связка — [features/playwright-reader.md](features/playwright-reader.md).
+
+Эти REST-пути обслуживает `apps/playwright-reader`, встроенный в ядро или отдельный
+процесс. Во втором случае cookie/Bearer/CSRF проверяет ядро через `/internal/whoami`.
+Внутренний контракт в `packages/shared/src/playwrightReader.ts` задаёт
+`/internal/playwright-reader/core` (данные ядра) и `/internal/playwright-reader/service`
+(`execute`, `screenshot`). RPC закрыты общим `VC_INTERNAL_TOKEN`, методы ограничены
+списками контракта, тело — 16 МиБ для PNG. Сервисный RPC есть также у ядра: им
+пользуется отдельный Web Reader при встроенном Playwright Reader. Результат Chromium
+передаётся в `BrowserActionOutcome.result`, ошибка селектора остаётся ошибкой MCP;
+`null` возвращается только для разговора без Chromium-цели и включает обычный relay.
 
 `GET /api/search` (`REST.messagesSearch`) — полнотекстовый поиск по сообщениям:
 `q` (ввод пользователя, экранируется на сервере), `projectId` (`none` или пусто —

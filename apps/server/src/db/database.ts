@@ -8,6 +8,9 @@ import { createPgSql } from './sql/pg.js'
 import type { Sql } from './sql/types.js'
 import { createLane, type Lane } from './sql/lane.js'
 import { PG_SCHEMA } from './schemaPg.js'
+
+/** Ключ advisory-замка установки схемы Postgres: произвольная константа, одна на все процессы стенда. */
+const PG_SCHEMA_LOCK_KEY = 7_260_119
 import { randomUUID } from 'node:crypto'
 import { SCHEMA_SQL } from './schema.js'
 import { IdentityRepo } from './repos/identity.js'
@@ -161,10 +164,20 @@ export class VoiceChatDb {
       // Postgres-база создаётся переносом из SQLite уже в актуальной схеме (или пустой), поэтому
       // ей нужны только сама схема и сиды — миграции старых SQLite-файлов к ней не относятся.
       const schema = (this.sql as { schema?: string | null }).schema
-      if (schema) await this.sql.exec(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
-      await this.sql.exec(PG_SCHEMA.sql)
+      // Соседние процессы одного стенда (ядро, канбан, машины, ридер) стартуют на одной базе одновременно, и
+      // `CREATE TABLE IF NOT EXISTS …` у двух сессий берёт замки связанных таблиц в разном порядке — Postgres
+      // валит одну deadlock-ом (40P01), а `CREATE SCHEMA IF NOT EXISTS` наперегонки даёт duplicate key. Схему
+      // ставит тот, кто первым взял advisory-замок транзакции; остальные ждут и находят всё уже созданным.
+      await this.sql.transaction(async () => {
+        await this.sql.run(`SELECT pg_advisory_xact_lock(?)`, [PG_SCHEMA_LOCK_KEY])
+        if (schema) await this.sql.exec(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
+        await this.sql.exec(PG_SCHEMA.sql)
+      })
       await this.ctx.repos.projects.seedBuiltinProjectTypes()
     } else {
+      // Старый model_prices ещё не знает tiers_json, а актуальный сид уже пишет в
+      // эту колонку. Поднять совместимую форму таблицы нужно до выполнения схемы.
+      await this.migrateModelPriceTiers()
       await this.sql.exec(SCHEMA_SQL)
       await this.migrate()
     }
@@ -183,6 +196,13 @@ export class VoiceChatDb {
     if (await this.ctx.repos.settings.getAppConfig(key)) return
     await step()
     await this.ctx.repos.settings.setAppConfig(key, '1')
+  }
+
+  private async migrateModelPriceTiers(): Promise<void> {
+    const columns = (await this.sql.all(`PRAGMA table_info(model_prices)`)) as Array<{ name: string }>
+    if (columns.length && !columns.some((column) => column.name === 'tiers_json')) {
+      await this.sql.exec(`ALTER TABLE model_prices ADD COLUMN tiers_json TEXT NOT NULL DEFAULT '[]'`)
+    }
   }
 
   private async migrate(): Promise<void> {

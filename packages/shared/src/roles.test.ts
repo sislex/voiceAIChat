@@ -10,15 +10,22 @@ import {
 import { allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed } from './llmAccess'
 
 describe('персональный доступ к моделям', () => {
+  // @testCase TC-UI-1
   it('пустой deny-list оставляет все модели доступными', () => {
     expect(allowedModels([], 'claude')).toHaveLength(CLAUDE_MODELS.length)
     expect(allowedModels([], 'codex')).toHaveLength(CODEX_MODELS.length)
   })
 
+  // @testCase TC-UI-2
   it('блокирует отдельную модель и клампит к первой разрешённой', () => {
-    const access = [{ provider: 'claude' as const, modelId: 'opus[1m]' }]
-    expect(isModelAllowedForUser(access, 'claude', 'opus[1m]')).toBe(false)
-    expect(clampModel(access, 'claude', 'opus[1m]')).toBe('default')
+    const access = [{ provider: 'codex' as const, modelId: 'gpt-6-astra' }]
+    expect(allowedModels(access, 'codex').some((model) => model.id === 'gpt-6-astra')).toBe(false)
+    expect(allowedModels(access, 'codex')).toHaveLength(CODEX_MODELS.length - 1)
+    const claudeAccess = [{ provider: 'claude' as const, modelId: 'opus[1m]' }]
+    expect(isModelAllowedForUser(claudeAccess, 'claude', 'opus[1m]')).toBe(false)
+    expect(clampModel(claudeAccess, 'claude', 'opus[1m]')).toBe('default')
+    const providerAccess = [{ provider: 'codex' as const, modelId: '*' }]
+    expect(allowedModels(providerAccess, 'codex')).toEqual([])
   })
 
   it('запрет провайдера скрывает его и выбирает другой', () => {
@@ -72,6 +79,7 @@ describe('подписи режима чата (карточка в сайдба
 
 // @testCase TC-REG-1
 describe('меню моделей Codex', () => {
+  // @testCase TC-REG-1
   it('повторяет список CLI по порядку; id = то, что уходит в `codex -m`', () => {
     expect(CODEX_MODELS).toEqual([
       { id: 'gpt-6-astra', label: 'gpt-6-astra (default) — Most capable model for complex, demanding work.' },

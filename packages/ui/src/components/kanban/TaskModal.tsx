@@ -308,6 +308,7 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
   const [retryDraft, setRetryDraft] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('plan')
+  const compact = useMediaQuery(MOBILE_QUERY)
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -355,12 +356,58 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
       })
       setMessages((items) => [...items, message])
       setDraft('')
-      window.claude?.send({ conversationId, messageId: message.id, segments: [{ speakerId: 1, text }] })
+      window.claude?.send({
+        conversationId,
+        messageId: message.id,
+        segments: [{ speakerId: 1, text }],
+        attachments: attachments.flatMap((attachment) => attachment.status === 'ready' && attachment.upload?.path ? [attachment.upload.path] : [])
+      })
     } catch (cause) {
       setSending(false)
       setDraft(text)
       setError(cause instanceof Error ? cause.message : 'Не удалось отправить сообщение')
     }
+  }
+
+  const addFiles = async (files: File[]): Promise<void> => {
+    if (!conversationId) return
+    const pending = files.map((file) => ({
+      id: `task-file-${file.name}-${file.lastModified}`,
+      name: file.name,
+      file,
+      status: 'processing' as const
+    }))
+    setAttachments((items) => [...items, ...pending])
+    await Promise.all(pending.map(async (attachment) => {
+      try {
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+          reader.onerror = () => reject(reader.error)
+          reader.readAsDataURL(attachment.file)
+        })
+        const upload = await window.api['uploads:add']({
+          name: attachment.file.name, dataBase64, mimeType: attachment.file.type, conversationId
+        })
+        setAttachments((items) => items.map((item) => item.id === attachment.id ? { ...item, status: 'ready', upload } : item))
+      } catch (cause) {
+        setAttachments((items) => items.map((item) => item.id === attachment.id
+          ? { ...item, status: 'error', error: cause instanceof Error ? cause.message : 'Не удалось загрузить вложение' }
+          : item))
+      }
+    }))
+  }
+
+  const retryAttachment = (id: string): void => {
+    const attachment = attachments.find((item) => item.id === id)
+    if (!attachment?.file) return
+    setAttachments((items) => items.filter((item) => item.id !== id))
+    void addFiles([attachment.file])
+  }
+
+  const cancelRequest = (): void => {
+    if (!conversationId) return
+    window.claude?.cancel({ conversationId })
   }
 
   const voiceState: VoiceState = sending ? 'thinking' : 'idle'
@@ -388,15 +435,20 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
         attachments={attachments}
         onDraftChange={setDraft}
         onSubmitText={() => void send()}
-        onStartVoice={() => undefined}
-        onStopVoice={() => undefined}
-        onStopSpeak={() => undefined}
-        onCancelRequest={() => undefined}
-        onAddFiles={(files) => setAttachments(files.map((file) => ({ id: `task-file-${file.name}-${file.lastModified}`, name: file.name, file, status: 'ready' })))}
+        replyStarted={sending}
+        requestError={error}
+        defaultCollapsed={compact}
+        allowCollapse={compact}
+        onStartVoice={() => conversationId && window.audio?.audioStart({ conversationId, sampleRate: 16_000 })}
+        onStopVoice={() => window.audio?.audioStop()}
+        onStopSpeak={() => window.tts?.cancel?.()}
+        onCancelRequest={cancelRequest}
+        onAddFiles={(files) => void addFiles(files)}
         onRemoveAttachment={(id) => setAttachments((items) => items.filter((item) => item.id !== id))}
+        onRetryAttachment={retryAttachment}
         permissionMode={permissionMode}
         onChangePermissionMode={setPermissionMode}
-        voiceInputEnabled={false}
+        voiceInputEnabled={Boolean(window.audio)}
       />}
     />
     {error && <Button size="sm" onClick={() => { if (retryDraft) void send(); else void load() }}>Повторить</Button>}

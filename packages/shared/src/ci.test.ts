@@ -341,7 +341,7 @@ describe('ciUsageTotals', () => {
     expect(t.cacheReadTokens).toBe(800)
     expect(t.inputNormalized).toBe(true)
     // Оценка идёт по приведённому входу: 200 по цене входа, а не 1000.
-    expect(t.costUsd).toBeCloseTo((200 * 1.25 + 200 * 10 + 800 * 0.125 + 400 * 1.25) / 1e6, 12)
+    expect(t.costUsd).toBeCloseTo((200 * 2.5 + 200 * 15 + 800 * 0.25 + 400 * 0) / 1e6, 12)
   })
 
   it('вход меньше кэша (иная арифметика CLI) зажимается в ноль, а не уходит в минус', () => {
