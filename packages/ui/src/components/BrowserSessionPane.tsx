@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
 import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
-import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
+import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
@@ -81,7 +81,13 @@ export function withScheme(raw: string): string {
   return `${hasExplicitPort ? 'http' : 'https'}://${value}`
 }
 
-export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios }: BrowserSessionPaneProps): JSX.Element {
+export function BrowserSessionPane(props: BrowserSessionPaneProps): JSX.Element {
+  // Запись, черновики и поздние ответы принадлежат одному разговору. Новый key
+  // сбрасывает их вместе, чтобы добавленный позднее state тоже не протекал.
+  return <BrowserSessionPaneSession key={props.conversationId} {...props} />
+}
+
+function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
@@ -128,22 +134,58 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
+  const addressDirty = useRef(false)
+  const [frameError, setFrameError] = useState('')
+  const frameFailures = useRef(0)
+  const frameRevision = useRef(0)
+  const frameRequest = useRef<{ generation: number; promise: Promise<void> } | null>(null)
   const [typing, setTyping] = useState<string>('')
   const incarnation = useRef<string | null>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   // Флаг актуальности: смена разговора или размонтирование отменяет поздние ответы.
   const alive = useRef(0)
 
-  const refreshFrame = useCallback(async (): Promise<void> => {
-    if (!browser || !incarnation.current) return
+  const applyMeta = useCallback((next: BrowserSessionMetadata): void => {
+    incarnation.current = next.incarnation
+    setMeta(next)
+    if (!addressDirty.current) setAddress(isWebAddress(next.currentUrl) ? next.currentUrl : '')
+    setHistory((current) => pushHistory(current, next.currentUrl))
+    if (!origin.current && isWebAddress(next.currentUrl)) origin.current = next.currentUrl
+  }, [])
+
+  const refreshFrame = useCallback((observe = false): Promise<void> => {
+    if (!browser || !incarnation.current) return Promise.resolve()
     const generation = alive.current
-    try {
-      // Качество 60 мылило мелкий текст, а панель нужна именно для разбора
-      // вёрстки; 82 заметно читаемее, а кадр остаётся лёгким.
-      const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, format: 'jpeg', quality: 82 })
-      if (generation === alive.current) setFrame(shot.dataUrl)
-    } catch { /* один пропущенный кадр не роняет панель */ }
-  }, [browser, conversationId])
+    if (frameRequest.current?.generation === generation) return frameRequest.current.promise
+    const revision = frameRevision.current
+    const currentIncarnation = incarnation.current
+    const current = (): boolean => generation === alive.current && revision === frameRevision.current
+    const request = { generation, promise: Promise.resolve() }
+    // Отложенное начало гарантирует установку request даже если мост бросит
+    // синхронно. За одну сессию одновременно запрашивается только один кадр.
+    request.promise = Promise.resolve().then(async () => {
+      try {
+        let tabId: string | undefined
+        if (observe) {
+          const next = await browser.command(conversationId, { incarnation: currentIncarnation, command: { type: 'status' } })
+          if (!current()) return
+          if (isBrowserSessionMetadata(next)) {
+            applyMeta(next)
+            if (!next.activeTabId) { setFrame(null); frameFailures.current = 0; setFrameError(''); return }
+            tabId = next.activeTabId
+          }
+        }
+        const shot = await browser.screenshot(conversationId, { incarnation: currentIncarnation, ...(tabId ? { tabId } : {}), format: 'jpeg', quality: 82 })
+        if (current()) { setFrame(shot.dataUrl); frameFailures.current = 0; setFrameError('') }
+      } catch (err) {
+        if (current() && ++frameFailures.current >= 3) setFrameError(`Кадр не обновляется: ${err instanceof Error ? err.message : 'нет связи с Chromium'}. Повторяем подключение…`)
+      } finally {
+        if (frameRequest.current === request) frameRequest.current = null
+      }
+    })
+    frameRequest.current = request
+    return request.promise
+  }, [browser, conversationId, applyMeta])
 
   // Старт сессии на монтирование/смену разговора; stop — на уходе.
   useEffect(() => {
@@ -168,7 +210,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     )
     return () => {
       alive.current++
-      if (browser && incarnation.current) void browser.stop(conversationId)
+      if (browser && incarnation.current) void browser.stop(conversationId).catch(() => undefined)
       incarnation.current = null
     }
   }, [browser, conversationId, refreshFrame])
@@ -176,32 +218,38 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // Поллинг кадров, пока сессия готова и вкладка на экране.
   useEffect(() => {
     if (phase !== 'ready') return
-    let timer: ReturnType<typeof setInterval> | null = null
-    const stop = (): void => { if (timer) { clearInterval(timer); timer = null } }
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let epoch = 0
+    let disposed = false
+    const stop = (): void => { epoch++; if (timer) { clearTimeout(timer); timer = null } }
+    const schedule = (currentEpoch: number): void => {
+      if (disposed || document.hidden || currentEpoch !== epoch) return
+      const fresh = Date.now() - lastAction.current < ACTIVE_WINDOW_MS
+      timer = setTimeout(() => {
+        timer = null
+        void refreshFrame(true).finally(() => schedule(currentEpoch))
+      }, fresh ? POLL_ACTIVE_MS : POLL_MS)
+    }
     const start = (): void => {
       stop()
-      const fresh = Date.now() - lastAction.current < ACTIVE_WINDOW_MS
-      timer = setInterval(() => void refreshFrame(), fresh ? POLL_ACTIVE_MS : POLL_MS)
+      schedule(epoch)
     }
-    const onVisibility = (): void => { if (document.hidden) stop(); else { void refreshFrame(); start() } }
+    const onVisibility = (): void => {
+      stop()
+      if (!document.hidden) {
+        const currentEpoch = epoch
+        void refreshFrame(true).finally(() => schedule(currentEpoch))
+      }
+    }
     if (!document.hidden) start()
     document.addEventListener('visibilitychange', onVisibility)
-    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility) }
+    return () => { disposed = true; stop(); document.removeEventListener('visibilitychange', onVisibility) }
   }, [phase, refreshFrame, pollTick])
-
-  /** Единая точка приёма метаданных: и старт, и команда идут через неё —
-   *  иначе история посещённого начиналась бы со второй страницы, а сверять уход
-   *  с проверяемого сайта было бы не с чем. */
-  const applyMeta = (next: BrowserSessionMetadata): void => {
-    incarnation.current = next.incarnation
-    setMeta(next); setAddress(next.currentUrl ?? '')
-    setHistory((current) => pushHistory(current, next.currentUrl))
-    if (!origin.current && next.currentUrl) origin.current = next.currentUrl
-  }
 
   const run = useCallback(async (command: Parameters<RendererBrowserBridge['command']>[1]['command']): Promise<unknown> => {
     if (!browser || !incarnation.current) return
     const generation = alive.current
+    frameRevision.current++
     setBusy(true)
     setMessage(''); setRetryable(false)
     lastCommand.current = command
@@ -227,7 +275,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     } finally {
       if (generation === alive.current) setBusy(false)
     }
-  }, [browser, conversationId, refreshFrame])
+  }, [browser, conversationId, refreshFrame, applyMeta])
 
   /** Координаты клика в системе вьюпорта: кадр показывается вписанным по ширине. */
   const pointFromEvent = (event: { clientX: number; clientY: number }): { x: number; y: number } | null => {
@@ -287,9 +335,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     if (!browser) return
     const generation = ++alive.current
     incarnation.current = null
-    setPhase('starting'); setFrame(null); setMeta(null); setMessage(''); setRetryable(false)
+    addressDirty.current = false
+    frameFailures.current = 0
+    setPhase('starting'); setFrame(null); setMeta(null); setMessage(''); setRetryable(false); setFrameError('')
     void browser.stop(conversationId)
-      .catch(() => {})
       // Выбранный размер окна переживает перезапуск: иначе проверка мобильной
       // вёрстки сбрасывалась на десктоп при каждом «Перезапустить».
       .then(() => browser.start(conversationId, VIEWPORTS.find((v) => v.id === viewportId)?.viewport ?? VIEWPORT))
@@ -342,6 +391,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     const url = address.trim()
     if (!url) return
     const full = withScheme(url)
+    addressDirty.current = false
     // Происхождение первого открытого адреса — то, с чем сверяемся дальше:
     // уход на другой хост посреди проверки почти всегда промах или редирект.
     if (!origin.current) origin.current = full
@@ -419,6 +469,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     return <section className="playwright-browser-pane" aria-label="Browser session">
       <div className="playwright-reader-header"><strong>Playwright Reader</strong></div>
       <div className="webpreview-empty" role={phase === 'error' ? 'alert' : 'status'}>{message || 'Изолированный Chromium недоступен'}</div>
+      {browser && <Button size="sm" onClick={restartSession}>Повторить запуск</Button>}
     </section>
   }
 
@@ -466,8 +517,15 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         placeholder="https://…"
         value={address}
         disabled={phase !== 'ready'}
-        onChange={(event) => setAddress(event.target.value)}
-        onKeyDown={(event) => { if (event.key === 'Enter') submitAddress() }}
+        onChange={(event) => { addressDirty.current = true; setAddress(event.target.value) }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submitAddress()
+          if (event.key === 'Escape') {
+            const loaded = meta?.currentUrl ?? null
+            addressDirty.current = false
+            setAddress(isWebAddress(loaded) ? loaded : '')
+          }
+        }}
       />
       <Button size="sm" variant="secondary" disabled={phase !== 'ready'} onClick={submitAddress}>Открыть</Button>
     </div>
@@ -735,6 +793,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !typing} onClick={submitTyping}>Ввести</Button>
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key: 'Enter' } })}>Enter</Button>
     </div>
+    {frameError && <div className="playwright-reader-message" role="status">{frameError}</div>}
     {message && (
       <div className="playwright-reader-error" role="alert">
         <span>{message}</span>

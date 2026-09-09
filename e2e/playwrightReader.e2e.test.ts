@@ -129,6 +129,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     const frame = page.locator('img[alt="Кадр Chromium"]')
     await expect.poll(() => frame.getAttribute('src')).toMatch(/^data:image\/jpeg;base64,/)
     await expect.poll(() => frame.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
+    expect(await page.getByText(/ушла с проверяемого сайта/).count()).toBe(0)
     await capture('01-project-login')
   })
 
@@ -142,6 +143,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
       await mcp('wait', { selector })
       const content = await mcp('read', { selector })
       expect(content.length).toBeGreaterThan(30)
+      await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).inputValue(), { timeout: 10_000 }).toBe(`${base}/#/${route}/${chats[kind]}`)
+      await expect.poll(() => page.locator('.playwright-reader-actor').getAttribute('data-actor'), { timeout: 10_000 }).toBe('assistant')
       if (artifacts) await writeFile(join(artifacts, `02-${kind}-mcp.json`), content)
       await capture(`02-project-${kind}`)
     }
@@ -157,5 +160,29 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await page.getByRole('tablist', { name: 'Вкладки страницы' }).getByRole('tab').first().click()
     await mcp('wait', { selector: '.app--image-studio' })
     await capture('03-tabs-after-model-actions')
+  })
+
+  it('сохраняет черновик адреса при действиях модели и возвращает актуальный URL по Escape', async () => {
+    const address = page.getByRole('textbox', { name: 'Адрес страницы', exact: true })
+    await address.fill('https://draft.example.test/')
+    const url = `${base}/#/make/${chats.make}`
+    await mcp('open', { url })
+    await mcp('wait', { selector: '.app--make' })
+    await expect.poll(() => page.getByRole('tablist', { name: 'Вкладки страницы' }).getByRole('tab', { selected: true }).getAttribute('title'), { timeout: 10_000 }).toBe(url)
+    expect(await address.inputValue()).toBe('https://draft.example.test/')
+    await address.press('Escape')
+    expect(await address.inputValue()).toBe(url)
+    await capture('04-draft-after-model-navigation')
+  })
+
+  it('показывает потерю кадров и восстанавливает трансляцию после возврата сети', async () => {
+    const pattern = '**/api/browser/*/screenshot'
+    await page.route(pattern, route => route.abort('failed'))
+    try {
+      await expect.poll(() => page.getByText(/Кадр не обновляется/).count(), { timeout: 15_000 }).toBe(1)
+      if (artifacts) await page.screenshot({ path: join(artifacts, '05-frame-connection-lost.png') })
+    } finally { await page.unroute(pattern) }
+    await expect.poll(() => page.getByText(/Кадр не обновляется/).count(), { timeout: 15_000 }).toBe(0)
+    await capture('05-frame-connection-restored')
   })
 })

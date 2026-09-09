@@ -59,6 +59,21 @@ afterAll(async () => {
 })
 
 describe('страницы проекта в реальном Chromium', () => {
+  it('пассивный status работает после закрытия всех вкладок', async () => {
+    for (const tab of [...meta.tabs]) await command({ type: 'closeTab', tabId: tab.id })
+    const state = await command({ type: 'status' })
+    expect(state).toMatchObject({ tabs: [], currentUrl: null, activeTabId: '' })
+  })
+
+  it('кадры и status панели не присваивают себе действие модели', async () => {
+    await command({ type: 'navigate', url: base })
+    for (const passive of [{ type: 'screenshot', format: 'jpeg' }, { type: 'status' }] as const) {
+      await manager.command(meta.id, { requestId: randomUUID(), incarnation: meta.incarnation, actor: 'user', command: passive })
+    }
+    const state = await manager.command(meta.id, { requestId: randomUUID(), incarnation: meta.incarnation, actor: 'user', command: { type: 'status' } })
+    expect(state).toMatchObject({ lastActor: 'assistant', currentUrl: `${base}/` })
+  })
+
   it('открывает настроенный loopback origin с JS, fetch, iframe и hash-маршрутом', async () => {
     await command({ type: 'navigate', url: `${base}/#/projects/test` })
     await command({ type: 'selector', action: { kind: 'wait', text: 'PROJECT READY' } })
