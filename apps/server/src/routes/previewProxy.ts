@@ -1,3 +1,4 @@
+import { previewNavigationScript } from './previewNavigation.js'
 import { lookup } from 'node:dns/promises'
 import type { LookupAddress } from 'node:dns'
 import { request as httpRequest } from 'node:http'
@@ -182,6 +183,7 @@ try{const hrefDescriptor=Object.getOwnPropertyDescriptor(location,'href');if(hre
 if(window.history)try{const nativePush=history.pushState.bind(history),nativeReplaceState=history.replaceState.bind(history);
 history.pushState=(state,title,url)=>{nativePush(state,title,url==null?url:toProxy(String(url)));dispatchEvent(new Event('voicechat.preview.navigation'))};
 history.replaceState=(state,title,url)=>{nativeReplaceState(state,title,url==null?url:toProxy(String(url)));dispatchEvent(new Event('voicechat.preview.navigation'))}}catch{}
+${previewNavigationScript()}
 // Deep-link: фрагмент реального адреса (#/machines) не доезжает до iframe-документа
 // (он живёт внутри query ?url=...) — восстанавливаем его для hash-роутеров SPA.
 try{const target=new URL(currentBase());if(target.hash&&!location.hash)location.hash=target.hash}catch{}
