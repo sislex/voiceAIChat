@@ -22,8 +22,8 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 190 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 74 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 88 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-09 | ⚠ 3 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1289 коммит(ов) в areas после сверки: f12cedbb docs(kb): update after merge afafa7da-e234-4d22-92ed-5375974291bf … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1290 коммит(ов) в areas после сверки: b086484d docs(kb): update after merge 9dd9335b-eef6-4afe-9710-b77a7ee95610 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 50 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 14 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 54 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
@@ -64,8 +64,10 @@
 
 ## Журнал сессий
 
-Всего записей: 680. Последние:
+Всего записей: 682. Последние:
 
+- [2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md](log/2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md) — Назначение Web Reader и Playwright Reader
+- [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-01.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-01.md) — Playwright Reader — цикл 01, навигация и сессия
 - [2026-09-09-macbook-air-user-task-chat-voicebar.md](log/2026-09-09-macbook-air-user-task-chat-voicebar.md) — task-chat-voicebar
 - [2026-09-09-macbook-air-user-global-llm-settings.md](log/2026-09-09-macbook-air-user-global-llm-settings.md) — global-llm-settings
 - [2026-09-09-germany-4-8-60-web-reader-preview-recovery.md](log/2026-09-09-germany-4-8-60-web-reader-preview-recovery.md) — web-reader-preview-recovery
@@ -74,8 +76,6 @@
 - [2026-09-09-alexeys-macbook-air-2-playwright-reader-app.md](log/2026-09-09-alexeys-macbook-air-2-playwright-reader-app.md) — playwright-reader-app
 - [2026-09-09-alexeys-macbook-air-2-openai-models-pricing.md](log/2026-09-09-alexeys-macbook-air-2-openai-models-pricing.md) — openai-models-pricing
 - [2026-09-09-alexeys-macbook-air-2-image-studio-standalone.md](log/2026-09-09-alexeys-macbook-air-2-image-studio-standalone.md) — Студия картинок как отдельное приложение
-- [2026-09-09-alexeys-macbook-air-2-image-studio-pr.md](log/2026-09-09-alexeys-macbook-air-2-image-studio-pr.md) — Подготовка PR отдельного приложения студии картинок
-- [2026-09-09-alexeys-macbook-air-2-image-studio-main-sync.md](log/2026-09-09-alexeys-macbook-air-2-image-studio-main-sync.md) — Синхронизация студии картинок с main
 
 ## Исторические планы
 

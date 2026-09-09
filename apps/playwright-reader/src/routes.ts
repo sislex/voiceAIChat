@@ -9,18 +9,21 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
   isPlaywrightReaderConversation,
+  machinePreviewUrl,
   type BrowserCommand,
   type BrowserViewport
 } from '@voicechat/shared'
 import { randomUUID } from 'node:crypto'
 import type { PlaywrightReaderCore } from './core.js'
 import { BrowserRunnerError, type BrowserRunnerClient } from '@voicechat/browser-runner/client'
+import { previewSessionCookies } from './sessionAccess.js'
 
 const uid = (req: FastifyRequest): string => (req as unknown as { user: { name: string } }).user.name
 
 export interface BrowserRoutesDeps {
   core: PlaywrightReaderCore
   runner?: BrowserRunnerClient
+  runnerFacingBase: string
 }
 
 /** Разумные границы вьюпорта: панель не должна просить у Chromium гигантский кадр. */
@@ -38,7 +41,7 @@ function normalizeViewport(value: unknown): BrowserViewport | undefined {
 }
 
 export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesDeps): void {
-  const { core, runner } = deps
+  const { core, runner, runnerFacingBase } = deps
 
   // Общая проверка: разговор существует, принадлежит пользователю и это
   // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.
@@ -59,7 +62,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
     try {
       const id = await guard(req, req.params.id)
       const viewport = normalizeViewport(req.body?.viewport)
-      return await runner!.start({ sessionId: id, userKey: uid(req), conversationKey: id, ...(viewport ? { viewport } : {}) })
+      return await runner!.start({ sessionId: id, userKey: uid(req), conversationKey: id, ...(viewport ? { viewport } : {}), cookies: await previewSessionCookies(core, uid(req), runnerFacingBase) })
     } catch (err) {
       return fail(reply, err)
     }
@@ -77,7 +80,11 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
       if (command.type === 'selector' && !command.action) {
         throw new BrowserRunnerError(400, 'Селекторной команде нужен action')
       }
-      return await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command })
+      // Адрес машины существует только через прокси ядра; ручная панель должна
+      // открывать его тем же путём, что browser.open у модели.
+      const resolved = (command.type === 'navigate' || command.type === 'newTab') && command.url
+        ? { ...command, url: machinePreviewUrl(runnerFacingBase, command.url) } : command
+      return await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command: resolved })
     } catch (err) {
       return fail(reply, err)
     }

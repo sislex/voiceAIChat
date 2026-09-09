@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
 import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
-import { aliasTargets, applyHostAlias, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
+import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
 
@@ -30,6 +30,9 @@ interface Session {
 
 /** Держим последние записи: журнал живой страницы иначе растёт без предела. */
 const LOG_LIMIT = 500
+// Внешняя аналитика и изображения могут грузиться бесконечно; работать с DOM
+// нужно одинаково при переходе, перезагрузке, истории и открытии вкладки.
+const NAVIGATION_OPTIONS = { waitUntil: 'domcontentloaded' as const, timeout: 30_000 }
 
 /**
  * Какая вкладка становится активной после закрытия. Закрытая не должна
@@ -75,7 +78,6 @@ export class BrowserSessionManager {
     this.allowedTargets = aliasTargets(hostAliases)
     if (previewOrigin) {
       this.allowedTargets.add(previewOrigin)
-      this.allowedTargets.add(previewOrigin.split(':')[0])
     }
   }
 
@@ -124,21 +126,20 @@ export class BrowserSessionManager {
     }
     await context.route('**/*', async (route) => {
       try {
-        const requested = validatePublicUrl(route.request().url())
+        const requested = validatePublicUrl(route.request().url(), this.allowedTargets)
         // Алиас применяется после проверки: во внутреннюю сеть пускает оператор
         // списком пар, а не пользователь адресом.
         const aliased = applyHostAlias(requested, this.hostAliases)
         // Цель алиаса разрешена явно: её назвал оператор, а не пользователь
         // адресом. Проверку приватных сетей для остальных адресов не трогаем.
-        const port = aliased.port || (aliased.protocol === 'https:' ? '443' : '80')
-        if (this.allowedTargets.has(`${aliased.hostname.toLowerCase()}:${port}`) || this.allowedTargets.has(aliased.hostname.toLowerCase())) {
+        if (this.allowedTargets.has(browserTarget(aliased))) {
           return aliased.toString() === requested.toString() ? route.continue() : route.continue({ url: aliased.toString() })
         }
         // Несуществующий домен и запрещённый политикой — разные беды, и раньше
         // обе давали ERR_BLOCKED_BY_CLIENT: человек думал, что его адрес в
         // чёрном списке, хотя тот просто не резолвится.
         let addresses
-        try { addresses = await lookup(aliased.hostname, { all: true, verbatim: true }) }
+        try { addresses = await lookup(aliased.hostname.replace(/^\[|\]$/g, ''), { all: true, verbatim: true }) }
         catch { return route.abort('namenotresolved') }
         if (addresses.some((entry) => isBlockedAddress(entry.address))) return route.abort('blockedbyclient')
         return route.continue()
@@ -227,25 +228,32 @@ export class BrowserSessionManager {
     // из них состоит прогон сценария. Сборщик считал такую сессию брошенной и
     // закрывал Chromium посреди работы.
     session.lastUsedAt = Date.now()
-    const tabId = request.tabId ?? session.activeTabId
-    const page = session.pages.get(tabId)
-    if (!page) throw new Error('stale_tab')
     const command = request.command
-    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
-    else if (command.type === 'back') await page.goBack()
-    else if (command.type === 'forward') await page.goForward()
-    else if (command.type === 'reload') await page.reload()
-    else if (command.type === 'stop') await page.evaluate('window.stop()')
-    else if (command.type === 'newTab') {
+    // Управление вкладками не требует существования прежней активной страницы:
+    // после закрытия последней пользователь всё ещё должен суметь открыть новую.
+    if (command.type === 'newTab') {
+      const url = command.url ? applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString() : null
       const created = await session.context.newPage()
       const id = session.pageIds.get(created) ?? randomUUID()
       session.pageIds.set(created, id); session.pages.set(id, created); session.activeTabId = id
-      // Тот же путь, что у navigate: без подстановки алиаса новая вкладка шла
-      // на внешний адрес, до которого контейнер не достаёт, и держалась на нём
-      // только благодаря перехватчику маршрутов — то есть по случайности.
-      if (command.url) await created.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString())
-    } else if (command.type === 'selectTab') session.activeTabId = command.tabId
-    else if (command.type === 'closeTab') await session.pages.get(command.tabId)?.close()
+      if (url) await created.goto(url, NAVIGATION_OPTIONS)
+      return this.metadata(session)
+    }
+    if (command.type === 'selectTab' || command.type === 'closeTab') {
+      const target = session.pages.get(command.tabId)
+      if (!target || target.isClosed()) throw new Error('stale_tab')
+      if (command.type === 'selectTab') session.activeTabId = command.tabId
+      else await target.close()
+      return this.metadata(session)
+    }
+    const tabId = request.tabId ?? session.activeTabId
+    const page = session.pages.get(tabId)
+    if (!page) throw new Error('stale_tab')
+    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), NAVIGATION_OPTIONS)
+    else if (command.type === 'back') await page.goBack(NAVIGATION_OPTIONS)
+    else if (command.type === 'forward') await page.goForward(NAVIGATION_OPTIONS)
+    else if (command.type === 'reload') await page.reload(NAVIGATION_OPTIONS)
+    else if (command.type === 'stop') await page.evaluate('window.stop()')
     else if (command.type === 'resize') {
       session.viewport = command.viewport
       await Promise.all([...session.pages.values()].map((item) => item.setViewportSize(command.viewport)))

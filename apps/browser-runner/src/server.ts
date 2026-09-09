@@ -89,7 +89,11 @@ export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Pr
   app.post<{ Params: { id: string }; Body: BrowserCommandRequest }>('/v1/sessions/:id/commands', async (request, reply) => {
     try {
       const result = await sessions.command(request.params.id, request.body)
-      if (Buffer.isBuffer(result)) return reply.type('image/png').send(result)
+      if (Buffer.isBuffer(result)) {
+        const command = request.body.command
+        const format = command.type === 'screenshot' ? command.format ?? 'png' : 'png'
+        return reply.type(`image/${format}`).send(result)
+      }
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : 'internal'
