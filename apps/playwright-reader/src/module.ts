@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { machinePreviewUrl, planModelAction, PREVIEW_RUN_COOKIE } from '@voicechat/shared'
+import { machinePreviewUrl, planModelAction } from '@voicechat/shared'
 import type { BrowserRunnerClient } from '@voicechat/browser-runner/client'
 import type { PlaywrightReaderCore } from './core.js'
 import type { PlaywrightReaderService } from './service.js'
 import { registerBrowserRoutes } from './routes.js'
+import { previewSessionCookies } from './sessionAccess.js'
 
 export interface PlaywrightReaderOptions {
   core: PlaywrightReaderCore
@@ -23,7 +24,7 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
     if (!runner) throw new Error('Browser Runner не настроен на этом сервере')
     const session = await runner.start({
       ...target, userKey: userId,
-      cookies: [{ name: PREVIEW_RUN_COOKIE, value: await core.issuePreviewRunKey(userId), url: `${runnerFacingBase.replace(/\/+$/, '')}/api/preview` }]
+      cookies: await previewSessionCookies(core, userId, runnerFacingBase)
     })
     return { target, session }
   }
@@ -67,5 +68,5 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
       }
     }
   }
-  return { service, register: (app) => registerBrowserRoutes(app, { core, runner }) }
+  return { service, register: (app) => registerBrowserRoutes(app, { core, runner, runnerFacingBase }) }
 }

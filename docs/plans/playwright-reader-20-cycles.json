@@ -1,0 +1,406 @@
+{
+  "startedAt": "2026-09-09T22:23:57+00:00",
+  "branch": "feat/playwright-reader-20-cycles",
+  "requestedCycles": 20,
+  "itemsPerCycle": 10,
+  "status": "in_progress",
+  "timingConvention": "UTC; интервалы исследования/реализации/проверки измеряются по часам. Несколько пунктов общей реализации помечаются группой; время группы не суммируется по пунктам.",
+  "cycles": [
+    {
+      "number": 1,
+      "status": "validated",
+      "startedAt": "2026-09-09T22:23:57+00:00",
+      "items": [
+        {
+          "id": "01-01",
+          "title": "Доверенный локальный origin и алиас открываются в Chromium",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-02",
+          "title": "Доверие внутреннему адресу ограничено настроенным портом",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-03",
+          "title": "Корректная подстановка и восстановление IPv6-алиасов",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-04",
+          "title": "Ошибочные host aliases не превращаются в неожиданные адреса",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-05",
+          "title": "Неверный выбор вкладки не повреждает активную сессию",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-06",
+          "title": "Создание вкладки после закрытия последней",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-07",
+          "title": "Единое ожидание DOM при back/forward/reload/newTab",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-08",
+          "title": "JPEG-кадры передаются с правильным MIME-типом",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-09",
+          "title": "Ручной запуск Reader получает cookie доступа к превью проекта",
+          "group": "project-preview",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:33:52.756731+00:00",
+          "implementationEndedAt": "2026-09-09T22:37:01.133001+00:00",
+          "validation": "19/19 Playwright Reader application tests passed"
+        },
+        {
+          "id": "01-10",
+          "title": "Ручная навигация к machine.internal использует тот же прокси, что модель",
+          "group": "project-preview",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:33:52.756731+00:00",
+          "implementationEndedAt": "2026-09-09T22:37:01.133001+00:00",
+          "validation": "19/19 Playwright Reader application tests passed"
+        }
+      ],
+      "validation": {
+        "fastGate": {
+          "exitCode": 0,
+          "relatedMs": 161405,
+          "typecheckMs": 7298,
+          "log": "/tmp/voicechat-reader-cycle-01-fast.log"
+        },
+        "browserRunnerLive": {
+          "passed": 7,
+          "durationMs": 2200
+        },
+        "appUnit": {
+          "passed": 19,
+          "durationMs": 1560
+        },
+        "browserE2E": {
+          "passed": 3,
+          "durationMs": 51810,
+          "log": "/tmp/voicechat-reader-cycle-01-e2e.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-01"
+        },
+        "fullGate": {
+          "status": "passed",
+          "attempts": [
+            {
+              "exitCode": 1,
+              "log": "/tmp/voicechat-reader-cycle-01-gate.log",
+              "failure": "Устаревшая проверка колонок ModelPricesPage в UsersAdmin.dom.test.tsx; обновлены названия, позиция четырёх тарифов и добавлено ожидание Standard / short context."
+            }
+          ],
+          "log": "/tmp/voicechat-reader-cycle-01-gate-final.log",
+          "exitCode": 0,
+          "passedWorkspaceTests": 7564,
+          "startedAt": "2026-09-09T22:50:59.153289+00:00",
+          "endedAt": "2026-09-09T22:58:32.744642+00:00",
+          "durationMs": 453591
+        },
+        "fastGateFinal": {
+          "exitCode": 0,
+          "relatedMs": 131514,
+          "typecheckMs": 4623,
+          "log": "/tmp/voicechat-reader-cycle-01-fast-final.log"
+        }
+      },
+      "externalChecks": [
+        {
+          "name": "example",
+          "url": "https://example.com/",
+          "startedAt": "2026-09-09T22:39:21.003Z",
+          "navigationOk": true,
+          "finalUrl": "https://example.com/",
+          "title": "Example Domain",
+          "read": {
+            "ok": true,
+            "text": "Example Domain\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\nLearn more"
+          },
+          "elapsedMs": 30451
+        },
+        {
+          "name": "gmail",
+          "url": "https://mail.google.com/",
+          "startedAt": "2026-09-09T22:39:51.455Z",
+          "navigationOk": true,
+          "finalUrl": "https://accounts.google.com/v3/signin/identifier?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=WebLiteSignIn&flowEntry=ServiceLogin&dsh=S-834899999:1788993592021366",
+          "title": "Gmail",
+          "read": {
+            "ok": true,
+            "text": "Sign in\n\nto continue to Gmail\n\nEmail or phone\n\nForgot email?\n\nNot your computer? Use a private browsing window to sign in. Learn more about using Guest mode\n\nNext\nCreate account\nAfrikaans\nazərbaycan\nbosanski\ncatalà\nČeština\nCymraeg\nDansk\nDeutsch\neesti\nEnglish (United Kingdom)\nEnglish (United States)\nEspañol (España)\nEspañol (Latinoamérica)\neuskara\nFilipino\nFrançais (Canada)\nFrançais (France)\nGaeilge\ngalego\nHrvatski\nIndonesia\nisiZulu\níslenska\nItaliano\nKiswahili\nlatviešu\nlietuvių\nmagyar\nMelayu\nNederlands\nnorsk\no‘zbek\npolski\nPortuguês (Brasil)\nPortuguês (Portugal)\nromână\nshqip\nSlovenčina\nslovenščina\nsrpski (latinica)\nSuomi\nSvenska\nTiếng Việt\nTürkçe\nΕλληνικά\nбеларуская\nбългарски\nкыргызча\nқазақ тілі\nмакедонски\nмонгол\nРусский\nсрпски (ћирилица)\nУкраїнська\nქართული\nհայերեն\n‫עברית‬‎\n‫اردو‬‎\n‫العربية‬‎\n‫فارسی‬‎\nአማርኛ\nनेपाली\nमराठी\nहिन्दी\nঅসমীয়া\nবাংলা\nਪੰਜਾਬੀ\nગુજરાતી\nଓଡ଼ିଆ\nதமிழ்\nతెలుగు\nಕನ್ನಡ\nമലയാളം\nසිංහල\nไทย\nລາວ\nမြန်မာ\nខ្មែរ\n한국어\n中文（香港）\n日本語\n简体中文\n繁體中文\nHelpPrivacyTerms"
+          },
+          "elapsedMs": 30906,
+          "scope": "Только публичная форма входа; доступ к почте не проверялся."
+        },
+        {
+          "name": "instagram",
+          "url": "https://www.instagram.com/",
+          "startedAt": "2026-09-09T22:40:22.361Z",
+          "navigationOk": true,
+          "finalUrl": "https://www.instagram.com/",
+          "title": "Instagram",
+          "read": {
+            "ok": true,
+            "text": ""
+          },
+          "elapsedMs": 18490,
+          "scope": "Первая навигация показала splash и пустое чтение; требуется ожидание готового содержимого, не считается проверкой работоспособности Instagram."
+        }
+      ],
+      "externalFollowUp": [
+        {
+          "name": "instagram",
+          "url": "https://www.instagram.com/",
+          "startedAt": "2026-09-09T22:41:51.482Z",
+          "diagnostics": {
+            "ok": true,
+            "console": []
+          },
+          "contentReady": true,
+          "navigationOk": true,
+          "finalUrl": "https://www.instagram.com/",
+          "title": "Instagram",
+          "read": {
+            "ok": true,
+            "text": "See everyday moments from your close friends.\nLog into Instagram\nMobile number, username or email\nPassword\nLog in\nForgot password?\nLog in with Facebook\nCreate new account\nMeta\nAbout\nBlog\nJobs\nHelp\nAPI\nPrivacy\nTerms\nLocations\nPopular\nInstagram Lite\nMeta AI\nMuse\nThreads\nContact Uploading & Non-Users\nMeta Verified\nEnglish\nAfrikaans\nالعربية\nČeština\nDansk\nDeutsch\nΕλληνικά\nEnglish\nEnglish (UK)\nEspañol (España)\nEspañol\nفارسی\nSuomi\nFrançais\nעברית\nBahasa Indonesia\nItaliano\n日本語\n한국어\nBahasa Melayu\nNorsk\nNederlands\nPolski\nPortuguês (Brasil)\nPortuguês (Portugal)\nРусский\nSvenska\nภาษาไทย\nFilipino\nTürkçe\n中文(简体)\n中文(台灣)\nবাংলা\nગુજરાતી\nहिन्दी\nHrvatski\nMagyar\nಕನ್ನಡ\nമലയാളം\nमराठी\nनेपाली\nਪੰਜਾਬੀ\nසිංහල\nSlovenčina\nதமிழ்\nతెలుగు\nاردو\nTiếng Việt\n中文(香港)\nБългарски\nFrançais (Canada)\nRomână\nСрпски\nУкраїнська\n© 2026 Instagram from Meta\nAfrikaans\nالعربية\nČeština\nDansk\nDeutsch\nΕλληνικά\nEnglish\nEnglish (UK)\nEspañol (España)\nEspañol\nفارسی\nSuomi\nFrançais\nעברית\nBahasa Indonesia\nItaliano\n日本語\n한국어\nBahasa Melayu\nNorsk\nNederlands\nP…",
+            "truncated": true
+          },
+          "elapsedMs": 5476,
+          "scope": "После ожидания готового текста доступна публичная форма входа Instagram; вход в аккаунт не выполнялся."
+        }
+      ],
+      "validatedAt": "2026-09-09T22:59:11.854857+00:00"
+    },
+    {
+      "number": 2,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 3,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 4,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 5,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 6,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 7,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 8,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 9,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 10,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 11,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 12,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 13,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 14,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 15,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 16,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 17,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 18,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 19,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    },
+    {
+      "number": 20,
+      "status": "pending",
+      "startedAt": null,
+      "items": []
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-09-09T22:26:38.145795+00:00",
+      "cycle": 1,
+      "phase": "baseline",
+      "detail": "Встроенный Browser недоступен (ошибка sandboxPolicy при двух подключениях); используется настоящий Chromium проекта. Существовавшие изменения — собственные уточнения KB из этой сессии."
+    },
+    {
+      "at": "2026-09-09T22:28:20.078589+00:00",
+      "cycle": 1,
+      "phase": "implementation-start",
+      "group": "navigation-policy",
+      "items": [
+        "01-01",
+        "01-02",
+        "01-03",
+        "01-04"
+      ],
+      "detail": "Базовый набор browser-runner: 96/96. Добавлены регрессии в настоящем Chromium."
+    },
+    {
+      "at": "2026-09-09T22:32:16.223806+00:00",
+      "cycle": 1,
+      "phase": "implementation-start",
+      "groups": [
+        "tabs",
+        "navigation-wait",
+        "screenshots"
+      ],
+      "items": [
+        "01-05",
+        "01-06",
+        "01-07",
+        "01-08"
+      ],
+      "detail": "4 независимых сбоя подтверждены настоящим Chromium после изоляции сессии каждого теста."
+    },
+    {
+      "at": "2026-09-09T22:33:52.756731+00:00",
+      "cycle": 1,
+      "phase": "implementation-start",
+      "group": "project-preview",
+      "items": [
+        "01-09",
+        "01-10"
+      ],
+      "detail": "Три регрессии REST воспроизводят отсутствие cookie и преобразования machine.internal для navigate/newTab."
+    },
+    {
+      "at": "2026-09-09T22:37:01.133001+00:00",
+      "cycle": 1,
+      "phase": "browser-e2e-start",
+      "detail": "Интеграция настоящего App, backend, browser-runner и MCP на изолированных портах."
+    },
+    {
+      "at": "2026-09-09T22:49:55.585215+00:00",
+      "cycle": 1,
+      "phase": "gate-repair",
+      "detail": "Один сбой полного гейта вне Reader: старый тест таблицы тарифов. Исправлено только ожидание теста по действующему компоненту; не учитывается среди 10 улучшений Reader."
+    }
+  ],
+  "backlogEvidence": [
+    {
+      "source": "/tmp/voicechat-reader-audit/cycle-01/02-project-make.png",
+      "issue": "Адресная строка Reader осталась на chat после перехода модели в Make."
+    },
+    {
+      "source": "/tmp/voicechat-reader-audit/cycle-01/02-project-make.png",
+      "issue": "about:blank принят за ожидаемый origin, собственный сайт ошибочно помечен уходом на другой сайт."
+    },
+    {
+      "source": "/tmp/voicechat-reader-audit/cycle-01/external-instagram.png",
+      "issue": "DCL и успешный read с пустым текстом не означают готовность SPA."
+    }
+  ]
+}
