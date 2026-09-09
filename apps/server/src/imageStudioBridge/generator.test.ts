@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { llmImageStudioGenerator } from './imageStudioGenerator.js'
+import { describe, expect, it, vi } from 'vitest'
+import { llmImageStudioGenerator } from './generator.js'
 import { imageBlock } from '@voicechat/shared'
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 
@@ -13,6 +13,31 @@ function fakeClient(onSend: (req: LlmRequest) => string): LlmClient {
 }
 
 describe('llmImageStudioGenerator', () => {
+  it('асинхронный отказ исполнителя завершает запрос ошибкой', async () => {
+    const generate = llmImageStudioGenerator({
+      client: { send: async () => { throw new Error('runner unavailable') } } as unknown as LlmClient,
+      userId: 'u1', model: 'gpt-5', readGenerated: async () => null
+    })
+    await expect(generate({ prompt: 'кот' })).rejects.toThrow('runner unavailable')
+  })
+
+  it('отмена во время соединения не оставляет запущенный позднее LLM', async () => {
+    let connected: (handle: { cancel(): void }) => void = () => {}
+    let cancel = () => {}
+    const cancelled = vi.fn()
+    const send = vi.fn(() => new Promise<{ cancel(): void }>((resolve) => { connected = resolve }))
+    const generate = llmImageStudioGenerator({
+      client: { send } as unknown as LlmClient, userId: 'u1', model: 'gpt-5', readGenerated: async () => null
+    })
+    const result = generate({ prompt: 'кот', onCancel: (fn) => { cancel = fn } })
+    const rejected = expect(result).rejects.toThrow('Генерация отменена')
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+    cancel()
+    await rejected
+    connected({ cancel: cancelled })
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledOnce())
+  })
+
   it('разрешает инструменты (acceptEdits + cwd) и читает файл из image-блока', async () => {
     let seen: LlmRequest | undefined
     const generate = llmImageStudioGenerator({

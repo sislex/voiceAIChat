@@ -15,6 +15,14 @@ const caddyfile = readFileSync(fileURLToPath(new URL('../../../Caddyfile', impor
 const compose = readFileSync(fileURLToPath(new URL('../../../docker-compose.yml', import.meta.url)), 'utf8')
 
 describe('Caddyfile', () => {
+  // @testCase TC3
+  it('оба режима Web Reader получают операторские алиасы собственного сайта', () => {
+    for (const service of ['voicechat', 'reader', 'browser-runner']) {
+      const block = compose.split('\n  ' + service + ':\n')[1]?.split(/\n  [a-z][a-z-]*:\n/)[0]
+      expect(block, service).toContain('VC_BROWSER_HOST_ALIASES: ${VC_BROWSER_HOST_ALIASES:-}')
+    }
+  })
+
   it('не содержит IP-адресов: хост приходит переменной окружения', () => {
     const literals = caddyfile.split('\n')
       .filter((line) => !line.trim().startsWith('#'))
@@ -47,5 +55,13 @@ describe('Caddyfile', () => {
     }
     expect(compose).toMatch(/^  make:\n/m)
     expect(compose).toContain('VC_MAKE_MODE: remote')
+  })
+
+  it('API Playwright Reader на обоих хостах идёт в отдельное приложение', () => {
+    expect(caddyfile.match(/reverse_proxy playwright-reader:8797/g)).toHaveLength(2)
+    expect(caddyfile.match(/@playwright_reader path \/api\/browser \/api\/browser\/\*/g)).toHaveLength(2)
+    expect(compose).toMatch(/^  playwright-reader:\n/m)
+    expect(compose).toContain('VC_PLAYWRIGHT_READER_MODE: remote')
+    expect(compose).toContain('VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797')
   })
 })

@@ -1,9 +1,13 @@
+import type { PlaywrightReaderCore, PlaywrightReaderService } from '@voicechat/playwright-reader'
+import { INTERNAL_PLAYWRIGHT_READER_CORE_PATH, INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, PLAYWRIGHT_READER_CORE_METHODS, PLAYWRIGHT_READER_SERVICE_METHODS, PLAYWRIGHT_READER_RPC_BODY_LIMIT } from '@voicechat/shared'
 // Внутренний API ядра для соседних сервисов (отдельные процессы Make и канбана). Не под `/api/`:
 // сюда не действует пользовательская авторизация, действует общий Bearer `VC_INTERNAL_TOKEN`
 // сети compose; наружу Caddy эти пути не проксирует. Без токена в конфиге API не регистрируется —
 // в dev и desktop его просто нет.
 
 import type { FastifyInstance } from 'fastify'
+import type { ImageStudioCore } from '@voicechat/image-studio'
+import { registerImageStudioInternal } from '../imageStudioBridge/internal.js'
 import {
   INTERNAL_MAKE_CORE_PATH, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_MAKE_SERVICE_PATH, INTERNAL_WHOAMI_PATH, RpcError,
   createCoreRpcDispatcher, createServiceRpcDispatcher,
@@ -20,11 +24,15 @@ import {
   type KanbanEvent, type KanbanEventsRequest, type MachineSnapshot
 } from '../kanban/internal.js'
 import { serveExecStream, type ExecStreamRequest } from '../internal/execStream.js'
+import { createRpcDispatcher } from '@voicechat/shared'
+import type { ReaderCore } from '../reader/core.js'
+import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIMIT } from '../reader/internal.js'
 
 export interface InternalRoutesDeps {
   token: string
   /** Данные чата/канбана/машин для Make — тот же порт, что и у встроенного режима. */
   makeCore: MakeCore
+  imageStudio?: ImageStudioCore
   /** Шина событий Make у ядра: сюда отдельный процесс Make присылает `changed`/`presence`/`turnSnapshot`. */
   makeHub?: Pick<MakeHub, 'apply'>
   /** Make встроен в ядро: его `MakeService` отдаём по RPC соседям (отдельному канбану нужны источники дизайна задачи). */
@@ -32,6 +40,9 @@ export interface InternalRoutesDeps {
   authenticate: AuthenticateFn
   /** Для отдельного процесса админки: деплой (сокет на хосте ядра) и живое уведомление об отзыве сессии. */
   admin?: { deployTrigger?: DeployTrigger; sessionHub: Pick<SessionHub, 'emit'> }
+  /** Web Reader — отдельный процесс: relay действий в панель, ключи Chromium, список превью, кадры проверок. */
+  reader?: ReaderCore
+  playwrightReader?: { core: PlaywrightReaderCore; service: PlaywrightReaderService }
   /** Канбан — отдельный процесс: состояние ядра ему по RPC, его события — на ленты ядра. */
   kanban?: {
     core: KanbanCore
@@ -69,7 +80,25 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
       const verdict = await deps.authenticate({ method: forwarded.method, url: forwarded.url, headers: forwarded.headers })
       return verdict.ok ? { ok: true, user: verdict.user } : verdict
     })
+    if (deps.imageStudio) registerImageStudioInternal(scope, deps.imageStudio)
     if (deps.kanban) registerKanbanInternal(scope, deps.kanban, sendRpcError)
+    if (deps.reader) {
+      const dispatchReader = createRpcDispatcher(deps.reader, READER_CORE_RPC_METHODS)
+      scope.post<{ Body: RpcRequest }>(INTERNAL_READER_CORE_PATH, { bodyLimit: READER_RPC_BODY_LIMIT }, async (req, reply) => {
+        try { return { result: await dispatchReader(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
+      })
+    }
+    if (deps.playwrightReader) {
+      const endpoints = [
+        [INTERNAL_PLAYWRIGHT_READER_CORE_PATH, createRpcDispatcher(deps.playwrightReader.core, PLAYWRIGHT_READER_CORE_METHODS)],
+        [INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, createRpcDispatcher(deps.playwrightReader.service, PLAYWRIGHT_READER_SERVICE_METHODS)]
+      ] as const
+      for (const [path, dispatchReader] of endpoints) {
+        scope.post<{ Body: RpcRequest }>(path, { bodyLimit: PLAYWRIGHT_READER_RPC_BODY_LIMIT }, async (req, reply) => {
+          try { return { result: await dispatchReader(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
+        })
+      }
+    }
     if (deps.admin) {
       const admin = deps.admin
       scope.post<{ Body: RpcRequest }>(INTERNAL_ADMIN_RPC_PATH, async (req, reply) => {

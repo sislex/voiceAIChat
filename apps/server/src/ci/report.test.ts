@@ -316,8 +316,8 @@ describe('GET /api/ci/runs/:runId/report', () => {
     const report = (await inj(admin, `/api/ci/runs/${runId}/report`)).json() as CiRunReport
     expect(report.totals.requests).toBe(2)
     expect(report.totals.inputTokens).toBe(400_000)
-    // gpt-семейство: вход 1.25 и чтение кэша 0.125 за 1M — оценка, а не прочерк.
-    expect(report.totals.costUsd).toBeCloseTo((400_000 * 1.25 + 1_600_000 * 0.125) / 1e6, 6)
+    // Точная строка gpt-5.4: Standard/short input 2.50 и cached input 0.25 за 1M.
+    expect(report.totals.costUsd).toBeCloseTo((400_000 * 2.5 + 1_600_000 * 0.25) / 1e6, 6)
     expect(report.totals.costEstimated).toBe(true)
     expect(report.totals.costUnderstated).toBe(false)
     // Длительности CLI не дал — «работа модели» считается по замеру хода.

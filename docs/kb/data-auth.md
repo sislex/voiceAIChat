@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-08
-checked: 0d1c7312
+updated: 2026-09-09
+checked: 1b78b0b6
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -54,6 +54,12 @@ areas:
 - тест, который трогает сырой драйвер (`(db as { db }).db.prepare(...)`) или открывает второй
   `VoiceChatDb` на том же файле, обязан `await db.ready` / `await db.close()`; тест с изменяемыми
   часами (`now: () => clock`) обязан ждать каждый вызов — иначе тело прочитает уже переставленные часы.
+
+**Установка схемы Postgres под замком (2026-09-08).** `VoiceChatDb.init()` на Postgres ставит `PG_SCHEMA.sql`
+внутри транзакции после `SELECT pg_advisory_xact_lock(<константа>)`: соседние процессы стенда (ядро, канбан,
+машины, ридер) открывают базу одновременно, и без замка `CREATE TABLE IF NOT EXISTS` двух сессий упирается в
+deadlock (40P01), а `CREATE SCHEMA IF NOT EXISTS` — в duplicate key по `pg_namespace`. Регрессия —
+`db/database.pgBootstrap.test.ts` (только с `VC_TEST_DB_URL`).
 
 **Postgres как движок всей базы (`VC_DB_URL`, 2026-09-07, `docs/plans/db-postgres.md`).** Тот же
 `VoiceChatDb`, тот же код репозиториев: `new VoiceChatDb(path, { postgres: { url } })` открывает
@@ -135,7 +141,7 @@ SQL-комментариях внутри него **нельзя обратны
 | `users` | `name` (PK и он же id владельца), `password_hash`, `role`, `blocked` |
 | `session_revocations` | SHA-256 отозванного Bearer-токена и время отзыва; deny-list переживает рестарт сервера |
 | `llm_engines` | реестр HTTP-исполнителей LLM для админки: `name`, `kind` (`claude`/`codex`), `base_url`, открытый `token`, `enabled`, `allowed_roles` (JSON-массив ролей), `is_default`, `created_at` |
-| `model_prices` | поддерживаемые тарифы Codex/OpenAI: USD за 1M обычных, кэшированных, записанных в кэш и выходных токенов, источник и даты тарифа/обновления; стартовые строки обновляются только через `INSERT OR IGNORE` |
+| `model_prices` | поддерживаемые тарифы Codex/OpenAI: USD за 1M обычных, кэшированных, записанных в кэш и выходных токенов; базовые колонки означают Standard/short context, а `tiers_json` хранит дополнительные сочетания Standard/Batch/Flex/Fast mode и short/long context с nullable-ставками; источник и даты тарифа/обновления; стартовые строки обновляются только через `INSERT OR IGNORE` |
 | `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения, `ci_run_id`/`ci_step_id` — ран и шаг CI-раннера, если обращение случилось в его ходе (NULL — обычный чат); каскад по разговору |
 | `kb_usage_sections` | разделы одного обращения (`document_id`+`anchor`, символы и оценка токенов), каскад по обращению |
 | `kb_documents` | статьи базы знаний, которые ведут пользователь и модель: `scope` (`usage`/`user`/`project`), `owner_id` для персональных, `project_id` для проектных (каскад по проекту); файловые темы `docs/kb/*.md` сюда не попадают |
@@ -305,8 +311,11 @@ Claude, Codex и других внешних сервисов.
 `model_prices` редактируются только админом через `GET/PUT/DELETE /api/admin/model-prices`. `usageReport` всегда возвращает две независимые суммы: `costUsd` (что сообщил CLI) и `costFromPrices` (пересчёт по `model_prices`) для Claude и Codex; обычный вход считается как
 `inputTokens - cacheReadTokens`, чтобы кэш не оплачивался дважды. Таблица содержит
 USD за 1M обычных/кэшированных/записанных в кэш/выходных токенов, URL источника и
-даты тарифа/обновления; начальные строки OpenAI сидятся `INSERT OR IGNORE`, поэтому
-будущее ручное обновление цен переживает рестарт. Неизвестная модель не получает
+даты тарифа/обновления. Базовые четыре поля — Standard/short context; дополнительные
+официальные сочетания режима (`standard`/`batch`/`flex`/`fast`) и контекста
+(`short`/`long`) лежат в обратно совместимом `tiers_json`, где отсутствующая ставка
+равна `null` и показывается как «—». Начальные строки OpenAI сидятся
+`INSERT OR IGNORE`, поэтому будущее ручное обновление цен переживает рестарт. Неизвестная модель не получает
 семейный выдуманный тариф: её известная часть суммы равна нулю, а в `UsageReport`
 ставится `costIncomplete`; UI показывает «—», а не ложные `$0.0000`. UI —
 `packages/admin-app/src/UsersAdmin.tsx`. Store административного модуля не использует личные `GET /api/llm-access` и `GET /api/usage`: выбранный пользователь загружается только защищёнными admin-операциями. Host adapter после изменения собственной роли обновляет сессию и собственный LLM access; потеря роли admin очищает store и закрывает модуль. Deny-list остаётся отдельным от роли механизмом и заменяется атомарно.

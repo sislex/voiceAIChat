@@ -74,6 +74,7 @@ describe('DNS lookup веб-превью', () => {
     expect(publicLookupResult(publicAddresses, false)).toEqual(publicAddresses[0])
   })
 
+  // @testCase TC4
   it('отвергает ответ DNS, если хотя бы один адрес непубличный', () => {
     expect(() => publicLookupResult([...publicAddresses, { address: '127.0.0.1', family: 4 }], true))
       .toThrow(PreviewProxyError)

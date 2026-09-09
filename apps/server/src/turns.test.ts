@@ -1259,45 +1259,27 @@ describe('turns: MCP-инструменты базы знаний и режим�
 describe('turns: MCP-инструменты веб-превью (mcp__browser__*)', () => {
   const PREVIEW_MCP = 'http://127.0.0.1:8787/mcp/preview?k=secret'
 
-  function broker(): { register: (t: string, e: { userId: string; conversationId: string }) => void; unregister: (t: string) => void; live: () => string[]; entries: Array<{ userId: string; conversationId: string }> } {
-    const live = new Set<string>()
+  /** Подписанные токены ходов: в тесте — подпись из контекста, чтобы проверить, кому выдан токен. */
+  function tokens(): { issue: (e: { userId: string; conversationId: string }) => string; entries: Array<{ userId: string; conversationId: string }> } {
     const entries: Array<{ userId: string; conversationId: string }> = []
-    return {
-      register: (t, e) => { live.add(t); entries.push(e) },
-      unregister: (t) => live.delete(t),
-      live: () => [...live],
-      entries
-    }
+    return { issue: (e) => { entries.push(e); return `signed:${e.userId}:${e.conversationId}` }, entries }
   }
 
-  it('ход разговора получает previewMcpUrl, токен привязан к чату и снят после завершения', async () => {
-    const db = await freshDb(); const conv = await db.chat.createConversation(U, 'Чат'); const rec = recorder(); const tool = broker()
-    const turns = createTurnManager({ db: await db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTool: tool })
+  it('ход разговора получает previewMcpUrl с токеном, привязанным к пользователю и чату', async () => {
+    const db = await freshDb(); const conv = await db.chat.createConversation(U, 'Чат'); const rec = recorder(); const tool = tokens()
+    const turns = createTurnManager({ db: await db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tool })
     await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
-    expect(rec.last()?.previewMcpUrl).toContain('/mcp/preview?k=secret&turn=')
+    expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${conv.id}`)}`)
     expect(tool.entries).toEqual([{ userId: U, conversationId: conv.id }])
-    expect(tool.live()).toEqual([]) // ход завершился — токен снят
     await turns.idle()
     db.close()
   })
 
   it('без previewMcpBaseUrl инструменты превью не подключаются', async () => {
     const db = await freshDb(); const conv = await db.chat.createConversation(U, 'Чат'); const rec = recorder()
-    const turns = createTurnManager({ db: await db, claude: rec.client, previewTool: broker() })
+    const turns = createTurnManager({ db: await db, claude: rec.client, previewTurns: tokens() })
     await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
     expect(rec.last()?.previewMcpUrl).toBeUndefined()
-    await turns.idle()
-    db.close()
-  })
-
-  it('отмена хода освобождает токен превью (иначе утечка на каждый cancel)', async () => {
-    const db = await freshDb(); const conv = await db.chat.createConversation(U, 'Чат'); const tool = broker()
-    const client = { send: () => ({ cancel: () => {} }) }
-    const turns = createTurnManager({ db: await db, claude: client, previewMcpBaseUrl: PREVIEW_MCP, previewTool: tool })
-    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
-    expect(tool.live()).toHaveLength(1)
-    await turns.cancel(conv.id)
-    expect(tool.live()).toEqual([])
     await turns.idle()
     db.close()
   })

@@ -96,6 +96,14 @@ describe('стили открытой карточки задачи', () => {
     expect(rule('.task-tab-panel')).toMatch(/flex:\s*1 1 100%/)
   })
 
+  // @testCase TC-UI-TASK-CHAT-LAYOUT
+  it('закрепляет VoiceBar AI-чата отдельно от прокручиваемой истории', () => {
+    expect(rule('.task-chat-tab')).toMatch(/overflow:\s*hidden/)
+    expect(rule('.task-chat-panel--surface')).toMatch(/display:\s*flex/)
+    expect(rule('.task-chat-panel--surface > .main')).toMatch(/min-height:\s*0/)
+    expect(rule('.task-chat-panel--surface .scroll')).toMatch(/overscroll-behavior:\s*contain/)
+  })
+
   it('панель «Общего» скрывается атрибутом hidden', () => {
     // У элемента с `display: flex` атрибут `hidden` сам по себе не действует —
     // без этого правила «Общее» было бы видно на всех вкладках сразу.

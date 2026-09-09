@@ -7,6 +7,7 @@
   "//": "Как и сервер, не компилируется в JS: запуск через tsx из исходников, относительные импорты — с .js",
   "exports": {
     ".": "./src/server.ts",
+    "./client": "./src/client.ts",
     "./security": "./src/security.ts"
   },
   "scripts": {

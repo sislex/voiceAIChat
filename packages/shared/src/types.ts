@@ -656,6 +656,10 @@ export interface TurnUsage {
   cacheReadTokens?: number
   /** Токены, записанные в кэш промпта (cache_creation_input_tokens). */
   cacheCreationTokens?: number
+  /** Фактический режим тарификации, если его сообщил источник usage. */
+  pricingMode?: 'standard' | 'batch' | 'flex' | 'fast'
+  /** Фактическая категория контекста, если её сообщил источник usage. */
+  contextTier?: 'short' | 'long'
 }
 
 /**
