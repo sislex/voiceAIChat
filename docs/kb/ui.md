@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-09
-checked: a553394c
+checked: 4391cd01
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -55,6 +55,10 @@ areas:
 Оба Reader используют публичный `SplitChatWorkspace` из `@voicechat/chat-app`, но получают Chat только через узкий `ReaderChatPort`: пакет не импортирует `chatStore`, не хранит сообщения и не управляет LLM lifecycle. Платформенные эффекты также инъецируются: Web — через `WebReaderHostPort`, `WebRecorderPort` и `PreviewRelayPort`, Playwright — через `PlaywrightReaderHostPort` и `BrowserSessionPort`. Architecture tests запрещают imports host/другого Reader/chat internals, прямые transport и browser storage API, а также исходники recorder/browser-runner.
 
 Web Reader сохраняет iframe `/api/preview?url=...`; URL разговора имеет приоритет, а project preview служит только нематериализованным fallback. При активации store создаёт recorder для `conversationId`, передаёт ему URL и исполняет relay-запросы только для активной беседы. Generation token отбрасывает устаревшие async-ответы, смена беседы dispose-ит recorder, а общий `dispose()` снимает relay subscription, поэтому поздний результат не доставляется в другой чат. Безопасность конкретного `postMessage` остаётся обязанностью host adapter/существующего recorder-контракта, а пакет видит только transport-agnostic port.
+
+Сетевые ошибки iframe формирует не Storybook и не `WebReaderApp`, а серверная `previewErrorPage` в `apps/server/src/routes/previewProxy.ts`. Для обычного сайта она сообщает «Сайт не загрузился», безопасно экранирует текст причины и предлагает «Повторить». Нажатие сразу блокирует кнопку, скрывает прежнюю причину, переводит страницу в статус «Загрузка сайта…» и через `location.reload()` повторяет текущий `/api/preview?url=...`; после восстановления апстрима iframe получает новую страницу. Серверные Storybook-истории описывают только состояния оболочки Reader.
+
+Прокси переписывает HTML-ссылки и CSS URL относительно исходного публичного адреса. Для машинных preview и сайтов, доставленных через операторский host alias, он также переписывает статические и динамические ESM-спецификаторы в `/api/preview?url=...`: без этого относительные chunks разрешались относительно `/api/preview` и приложение оставалось пустым. Публичный URL и его hash при этом сохраняются; источники поведения — `apps/server/src/routes/previewProxy.ts` и `packages/web-reader-app/src/WebReaderFrame.tsx`.
 
 ### Живые действия и безопасность Web Reader
 
