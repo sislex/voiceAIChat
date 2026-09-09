@@ -11,6 +11,7 @@ import { applyHostAlias, type HostAliases } from '@voicechat/browser-runner/secu
 import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../util/publicHost.js'
 import { rewritePreviewModules, rewritePreviewImportMap } from './previewModules.js'
 import { rewritePreviewHtml } from './previewHtml.js'
+import { canReadPreviewCache, canStorePreviewCache } from './previewCachePolicy.js'
 import { MachineResponseCache, isCacheableMachineResponse } from './machineCache.js'
 
 const MAX_REDIRECTS = 5
@@ -103,7 +104,8 @@ export interface PreviewProxyDeps {
 }
 
 function headerValue(headers: Record<string, string | string[]>, name: string): string | undefined {
-  const value = headers[name] ?? headers[name.toLowerCase()]
+  const key = Object.keys(headers).find(key => key.toLowerCase() === name.toLowerCase())
+  const value = key === undefined ? undefined : headers[key]
   return Array.isArray(value) ? value[0] : value
 }
 
@@ -1061,9 +1063,8 @@ export function clearPreviewCookies(userId: string, host?: string): number {
  * Ответы машины кэшируются на минуту: dev-сервер Storybook отдаёт сотни модулей, и
  * каждый идёт до машины через мост агента. Кэш общий на процесс, ключ включает машину.
  */
-const machineCache = new MachineResponseCache()
 /** Минута в браузере: столько же живёт серверная запись, дольше держать опасно. */
-const MACHINE_CACHE_CONTROL = 'private, max-age=60'
+const MACHINE_CACHE_CONTROL = 'private, no-cache'
 
 const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'etag', 'last-modified'])
 
@@ -1084,6 +1085,8 @@ export function previewErrorPage(message: string): string {
 }
 
 export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
+  // Экземпляры Reader могут иметь разные мосты/права; кэш не переживает их lifecycle.
+  const machineCache = new MachineResponseCache()
   // Сброс сессий окружений: удобно перелогиниться под другим тестовым
   // пользователем. Авторизуется preview-cookie (кнопка «Сессия» в Reader) или Bearer.
   app.post<{ Body: { host?: string } }>('/api/preview/reset-cookies', async (req) => {
@@ -1120,8 +1123,13 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
         const machineAgent = machineAgentIdOf(url.hostname)
         if (machineAgent) {
           if (!deps.machines) throw new PreviewProxyError(502, 'Мост машин недоступен на этом сервере')
+          // Проверка нужна и на cache hit: доступ могли отозвать после первой загрузки.
+          if (!(await deps.machines.canUse(userId, machineAgent))) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
+          if (!deps.machines.bridge.isOnline(machineAgent)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
+          if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) machineCache.dropAgent(machineAgent)
           const cacheUrl = url.toString()
-          const cached = req.method === 'GET' ? machineCache.get(machineAgent, cacheUrl) : null
+          const cacheAllowed = canReadPreviewCache(req.method, req.headers, Boolean(requestCookieHeader(userId, url)))
+          const cached = cacheAllowed ? machineCache.get(machineAgent, cacheUrl, userId) : null
           // Браузер уже держит эту версию — отвечаем 304 и не идём на машину вовсе.
           if (cached && String(req.headers['if-none-match'] ?? '') === cached.etag) {
             reply.code(304)
@@ -1150,12 +1158,15 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
             headers[name] = value
           }
           headers['content-type'] = machineType
+          // Браузер перепроверяет права даже пока серверная статика свежая.
+          // no-store апстрима строже: не ослабляем его до обычного revalidation.
+          headers['cache-control'] = /no-store/i.test(headerValue(machine.headers, 'cache-control') ?? '') ? 'private, no-store' : MACHINE_CACHE_CONTROL
           reply.code(machine.status)
           for (const [name, value] of Object.entries(headers)) reply.header(name, value)
-          if (isCacheableMachineResponse(req.method, machine.status, machineType, machineBody.length)) {
+          if (cacheAllowed && canStorePreviewCache(machine.headers) && isCacheableMachineResponse(req.method, machine.status, machineType, machineBody.length)) {
             // Валидатор считаем от переписанного тела: апстримовый etag ему не соответствует.
             const etag = `W/"${createHash('sha1').update(machineBody).digest('base64url')}"`
-            machineCache.put(machineAgent, cacheUrl, { status: machine.status, headers, body: machineBody, etag })
+            machineCache.put(machineAgent, cacheUrl, { status: machine.status, headers, body: machineBody, etag }, userId)
             reply.header('etag', etag)
             reply.header('cache-control', MACHINE_CACHE_CONTROL)
           }

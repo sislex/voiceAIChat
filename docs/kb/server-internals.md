@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 6d90d29b
+checked: 1a5c4422
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -150,6 +150,15 @@ HTML разбирается `parse5` в `routes/previewHtml.ts`, правятс�
 поэтому HTML-строки внутри JavaScript её не сбивают. Регрессии:
 `previewHtml.test.ts`, реальные переходы/ресурсы Chromium —
 `e2e/webReaderHtml.e2e.test.ts` (порт выбирается автоматически, без данных прода).
+
+Кэш ресурсов машины принадлежит экземпляру `registerPreviewProxy`, ключ включает
+машину, пользователя и URL. Доступ и online проверяются до чтения/304; браузер
+получает `private, no-cache`, чтобы отзыв прав замечался сразу. JSON не кэшируется.
+`previewCachePolicy.ts` исключает запросы с cookie/Authorization сайта, повторную
+загрузку и Range, а также ответы с private/no-store/no-cache, Vary и Set-Cookie;
+более строгий upstream no-store сохраняется до браузера. Мутации очищают старые
+ресурсы машины. HTTP-регрессии — `previewCache.integration.test.ts`, браузерные —
+`e2e/webReaderCache.e2e.test.ts`.
 
 Динамический сетевой трафик страницы тоже не покидает `/api/preview`: context shim
 (`previewContextScript`, вставляется в начало `<head>`) переопределяет `window.fetch`,
