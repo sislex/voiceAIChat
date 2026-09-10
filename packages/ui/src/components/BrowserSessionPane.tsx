@@ -110,7 +110,9 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   // Журналы страницы: раннер копит их с открытия, но до круга 11 показать их
   // было негде — человек видел белый экран и не знал, что упал запрос.
   const [downloadsOpen, setDownloadsOpen] = useState(false)
-  const [diagnostics, setDiagnostics] = useState<{ console: BrowserConsoleEntry[]; network: BrowserNetworkEntry[] } | null>(null)
+  const [diagnostics, setDiagnostics] = useState<{ console: BrowserConsoleEntry[]; network: BrowserNetworkEntry[]; loading?: boolean; error?: string; truncated?: boolean; at?: number } | null>(null)
+  const diagnosticRequest = useRef(0)
+  const activeTab = useRef<string | undefined>(undefined)
   // Запись сценария: ради неё Reader и делается инструментом автотестов —
   // человек проходит путь руками, а на выходе воспроизводимые шаги.
   const [recording, setRecording] = useState(false)
@@ -156,6 +158,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const alive = useRef(0)
 
   const applyMeta = useCallback((next: BrowserSessionMetadata): void => {
+    if (activeTab.current !== next.activeTabId || (incarnation.current && incarnation.current !== next.incarnation)) {
+      diagnosticRequest.current++
+      setDiagnostics(null)
+    }
+    activeTab.current = next.activeTabId ?? undefined
     incarnation.current = next.incarnation
     dialogOpen.current = Boolean(next.dialogs?.some(dialog => dialog.tabId === next.activeTabId))
     setMeta(next)
@@ -401,16 +408,26 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     }
   }
 
-  /** Ошибки страницы и неуспешные запросы — одним запросом на оба журнала. */
+  /** Читаем одну вкладку: модель может переключить её между ответами сети. */
   const loadDiagnostics = async (): Promise<void> => {
-    const errors = await run({ type: 'inspect', action: { kind: 'console', level: 'error', limit: 30 } }) as BrowserInspectResult | undefined
-    const network = await run({ type: 'inspect', action: { kind: 'network', limit: 50 } }) as BrowserInspectResult | undefined
-    setDiagnostics({
-      console: errors?.console ?? [],
-      // Показываем только неуспешные: успешные запросы человеку не нужны, а
-      // список из полусотни строк прячет то, ради чего его открыли.
-      network: (network?.network ?? []).filter((entry) => !entry.ok)
-    })
+    if (!browser || !incarnation.current || !activeTab.current) return
+    const generation = alive.current, requestId = ++diagnosticRequest.current, tabId = activeTab.current
+    const currentIncarnation = incarnation.current
+    const current = () => generation === alive.current && requestId === diagnosticRequest.current && activeTab.current === tabId
+    setDiagnostics({ console: [], network: [], loading: true })
+    try {
+      const results = await Promise.all([
+        browser.command(conversationId, { incarnation: currentIncarnation, command: { type: 'inspect', action: { kind: 'console', level: 'error', limit: 30, tabId } } }),
+        browser.command(conversationId, { incarnation: currentIncarnation, command: { type: 'inspect', action: { kind: 'network', failedOnly: true, limit: 50, tabId } } })
+      ]) as BrowserInspectResult[]
+      if (!current()) return
+      const [errors, network] = results
+      if (!errors?.ok || !Array.isArray(errors.console)) throw new Error(errors?.error || 'Консоль не прочитана')
+      if (!network?.ok || !Array.isArray(network.network)) throw new Error(network?.error || 'Сеть не прочитана')
+      setDiagnostics({ console: [...errors.console].reverse(), network: [...network.network].reverse().filter(entry => entry.state ? entry.state === 'failed' || entry.status >= 400 : !entry.ok), truncated: Boolean(errors.truncated || network.truncated || errors.dropped || network.dropped), at: Date.now() })
+    } catch (error) {
+      if (current()) setDiagnostics({ console: [], network: [], error: error instanceof Error ? error.message : 'Диагностика не прочитана' })
+    }
   }
 
   const changeViewport = (id: 'phone' | 'tablet' | 'desktop'): void => {
@@ -832,17 +849,22 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       <div className="playwright-reader-diagnostics" role="region" aria-label="Диагностика страницы">
         <div className="playwright-reader-diagnostics__head">
           <strong>Ошибки страницы: {diagnostics.console.length} · Неуспешные запросы: {diagnostics.network.length}</strong>
-          <IconButton size="sm" aria-label="Скрыть диагностику" title="Скрыть диагностику" onClick={() => setDiagnostics(null)}>✕</IconButton>
+          <IconButton size="sm" aria-label="Обновить диагностику" title="Обновить диагностику" disabled={diagnostics.loading} onClick={() => void loadDiagnostics()}>⟳</IconButton>
+          <IconButton size="sm" aria-label="Скрыть диагностику" title="Скрыть диагностику" onClick={() => { diagnosticRequest.current++; setDiagnostics(null) }}>✕</IconButton>
         </div>
-        {diagnostics.console.length === 0 && diagnostics.network.length === 0 && <p className="proj-muted">Страница не жаловалась.</p>}
-        {diagnostics.console.length > 0 && (
-          <ul className="playwright-reader-diagnostics__list">
-            {diagnostics.console.map((entry, index) => <li key={`c${index}`} data-kind="console">{entry.text}</li>)}
-          </ul>
-        )}
+        {diagnostics.loading && <p role="status">Читаем журналы вкладки…</p>}
+        {diagnostics.error && <p role="alert">Диагностика недоступна: {diagnostics.error}</p>}
+        {diagnostics.at && <p className="proj-muted">История выбранной вкладки · обновлено {new Date(diagnostics.at).toLocaleTimeString()}</p>}
+        {diagnostics.truncated && <p className="proj-muted">Показана часть журнала. Модель может прочитать оставшиеся записи инструментами console и network.</p>}
+        {!diagnostics.loading && !diagnostics.error && diagnostics.console.length === 0 && diagnostics.network.length === 0 && <p className="proj-muted">Страница не жаловалась.</p>}
         {diagnostics.network.length > 0 && (
           <ul className="playwright-reader-diagnostics__list">
-            {diagnostics.network.map((entry, index) => <li key={`n${index}`} data-kind="network"><code>{entry.status}</code> {entry.method} {entry.url}</li>)}
+            {diagnostics.network.map((entry, index) => <li key={`n${index}`} data-kind="network"><code>{entry.status || 'Сбой сети'}</code> {entry.method} {entry.url}{entry.error && <small> · {entry.error}</small>}</li>)}
+          </ul>
+        )}
+        {diagnostics.console.length > 0 && (
+          <ul className="playwright-reader-diagnostics__list">
+            {diagnostics.console.map((entry, index) => <li key={`c${index}`} data-kind="console">{entry.text.length > 240 ? <details><summary>{entry.text.slice(0, 240)}…</summary><pre>{entry.text}</pre></details> : entry.text}{(entry.source?.url || entry.pageUrl) && <small> · {entry.source?.url || entry.pageUrl}{entry.source?.line ? `:${entry.source.line}` : ''}</small>}</li>)}
           </ul>
         )}
       </div>

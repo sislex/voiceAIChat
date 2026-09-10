@@ -254,6 +254,29 @@ describe('previewMcp — инструменты browser', () => {
     expect(control).toHaveBeenCalledWith(U, CONV, command)
   })
 
+  it('диагностика передаёт вкладку и курсор в Chromium', async () => {
+    const executor = vi.fn(async () => ({ ok: true, result: { ok: true, console: [], cursor: 17, total: 0 } }))
+    await makeApp(undefined, { browserExecutor: executor })
+    expect((await call('console', { tabId: 't2', since: 4, before: 20, pattern: '[x]', clear: true, limit: 3 })).isError).not.toBe(true)
+    expect(executor).toHaveBeenCalledWith(U, CONV, { kind: 'console', tabId: 't2', since: 4, before: 20, pattern: '[x]', clear: true, limit: 3 })
+  })
+  it('устаревший раннер не подтверждает чтение по курсору', async () => {
+    await makeApp(undefined, { browserExecutor: async () => ({ ok: true, result: { ok: true, console: [] } }) })
+    expect(await call('console', { since: 1 })).toMatchObject({ isError: true, text: expect.stringContaining('не подтвердил') })
+  })
+  it.each([['console', { since: 1 }], ['network', { failedOnly: true }], ['console', { allTabs: true }]])('расширенный %s не теряет параметры в fallback', async (name, args) => {
+    await makeApp()
+    const forwarded = vi.fn(); client = forwarded
+    expect(await call(name as string, args as Record<string, unknown>)).toMatchObject({ isError: true, text: expect.stringContaining('Chromium') })
+    expect(forwarded).not.toHaveBeenCalled()
+  })
+  it.each([{ allTabs: true, tabId: 't' }, { since: 4, before: 2 }, { limit: 1.5 }])('невалидный запрос журналов не исполняется: %j', async args => {
+    const executor = vi.fn(async () => null)
+    await makeApp(undefined, { browserExecutor: executor })
+    expect((await call('console', args)).isError).toBe(true)
+    expect(executor).not.toHaveBeenCalled()
+  })
+
   it('управление вкладками не уходит в iframe и не вызывается без токена хода', async () => {
     const control = vi.fn(async () => null)
     const forwarded = vi.fn()

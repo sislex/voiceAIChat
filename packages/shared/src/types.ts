@@ -1,3 +1,4 @@
+import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from './browserDiagnostics'
 import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
 import type { BrowserDialogAnswer, BrowserDialogInfo } from './browserDialogs'
 import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserProfile'
@@ -297,8 +298,8 @@ export interface BrowserElementDescription {
  * текст, но не знает об ошибках страницы и упавших запросах.
  */
 export type BrowserInspectAction =
-  | { kind: 'console'; level?: 'log' | 'info' | 'warn' | 'error'; pattern?: string; limit?: number; clear?: boolean }
-  | { kind: 'network'; filter?: string; limit?: number; clear?: boolean }
+  | ({ kind: 'console' } & BrowserConsoleOptions)
+  | ({ kind: 'network' } & BrowserNetworkOptions)
   | { kind: 'styles'; selector: string; properties?: string[] }
   /**
    * Выполнить JS в контексте страницы. Гейт (политика проекта и подтверждение
@@ -307,10 +308,30 @@ export type BrowserInspectAction =
    */
   | { kind: 'evaluate'; code: string }
 
-export interface BrowserConsoleEntry { level: string; text: string; at: number }
-export interface BrowserNetworkEntry { method: string; url: string; status: number; ok: boolean; at: number }
+export interface BrowserConsoleEntry extends BrowserLogContext {
+  level: string; text: string; at: number
+  sourceType?: string
+  textTruncated?: boolean
+  source?: { url: string; line?: number; column?: number }
+  args?: BrowserDiagnosticValue[]
+  argsPending?: boolean
+  argsTruncated?: boolean
+  argsUnavailable?: boolean
+  stack?: string
+  stackTruncated?: boolean
+}
+export interface BrowserNetworkEntry extends BrowserLogContext {
+  method: string; url: string; status: number; ok: boolean; at: number
+  state?: BrowserNetworkState
+  resourceType?: string
+  durationMs?: number
+  error?: string
+  download?: boolean
+  redirectedFrom?: string
+  redirectedTo?: string
+}
 
-export interface BrowserInspectResult {
+export interface BrowserInspectResult extends BrowserLogSummary {
   ok: boolean
   page?: { url: string; title: string }
   frame?: BrowserFrameContext

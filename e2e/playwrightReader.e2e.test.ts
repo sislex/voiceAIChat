@@ -1,3 +1,4 @@
+import { startReaderDiagnosticsFixture } from '../apps/browser-runner/src/test/readerDiagnostics.js'
 // Полный путь: панель → REST → browser-runner → Chromium и MCP → тот же Chromium.
 // Собственный сайт проверяем на временной БД, чтобы не менять данные пользователя.
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -39,6 +40,7 @@ let frameSite: Awaited<ReturnType<typeof startReaderFramesFixture>> | undefined
 let profileSite: Awaited<ReturnType<typeof startReaderProfileFixture>> | undefined
 let inputSite: Awaited<ReturnType<typeof startReaderInputFixture>> | undefined
 let dialogSite: Awaited<ReturnType<typeof startReaderDialogsFixture>> | undefined
+let diagnosticSite: Awaited<ReturnType<typeof startReaderDiagnosticsFixture>> | undefined
 let downloadSite: Awaited<ReturnType<typeof startReaderDownloadsFixture>> | undefined
 const chats: Record<string, string> = {}
 const browserTrace: Array<Record<string, unknown>> = []
@@ -97,7 +99,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     inputSite = await startReaderInputFixture()
     dialogSite = await startReaderDialogsFixture()
     downloadSite = await startReaderDownloadsFixture()
-    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['downloads.reader.test', new URL(downloadSite.origin).host], ['dialog.reader.test', new URL(dialogSite.origin).host], ['input.reader.test', new URL(inputSite.origin).host], ['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
+    diagnosticSite = await startReaderDiagnosticsFixture()
+    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['diag.reader.test', new URL(diagnosticSite.origin).host], ['downloads.reader.test', new URL(downloadSite.origin).host], ['dialog.reader.test', new URL(dialogSite.origin).host], ['input.reader.test', new URL(inputSite.origin).host], ['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
@@ -179,6 +182,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await inputSite?.close()
     await dialogSite?.close()
     await downloadSite?.close()
+    await diagnosticSite?.close()
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
@@ -692,6 +696,58 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await expect.poll(async () => { file = JSON.parse(await mcp('downloads')).downloads.find((item: { filename: string }) => item.filename === 'make-export.txt'); return file?.state }).toBe('completed')
     expect(JSON.parse(await mcp('read-download', { downloadId: file!.id })).text).toBe('Проект Make 😀')
     await capture('34-make-export-download')
+  })
+
+  it('диагностика модели видит реальные сбои, literal warn, курсор и страницы журнала', async () => {
+    await mcp('new-tab', { url: 'http://diag.reader.test/' })
+    await mcp('click', { selector: '#logs' })
+    expect(JSON.parse(await mcp('console', { level: 'warn' })).console[0].text).toBe('Warning marker')
+    expect(JSON.parse(await mcp('console', { pattern: 'literal [x]' })).console).toHaveLength(1)
+    await mcp('click', { selector: '#network' })
+    await mcp('wait', { selector: 'output', text: 'Requests finished' })
+    const failed = JSON.parse(await mcp('network', { failedOnly: true, filter: 'diag.reader.test' }))
+    expect(failed.network).toHaveLength(2)
+    expect(failed.network.find((row: any) => row.url.endsWith('/broken'))).toMatchObject({ state: 'failed', status: 0, error: expect.stringContaining('ERR_') })
+    await mcp('click', { selector: '#error' })
+    await expect.poll(async () => JSON.parse(await mcp('console', { level: 'error' })).console.some((row: any) => row.stack?.includes('diag.reader.test'))).toBe(true)
+    const errors = JSON.parse(await mcp('console', { level: 'error' }))
+    await mcp('click', { selector: '#spam' })
+    const latest = JSON.parse(await mcp('console', { level: 'error', since: errors.cursor, limit: 100 }))
+    expect(latest).toMatchObject({ total: 100, truncated: true })
+    expect(JSON.parse(await mcp('console', { before: latest.nextBefore, since: errors.cursor, level: 'error' })).console.length).toBeGreaterThan(0)
+    const selected = JSON.parse(await mcp('tabs')).activeTabId
+    await mcp('new-tab', { url: 'http://diag.reader.test/other' })
+    expect(JSON.parse(await mcp('console')).console).toHaveLength(0)
+    expect(JSON.parse(await mcp('console', { tabId: selected, level: 'warn', clear: true })).cleared).toBe(1)
+    expect(JSON.parse(await mcp('console', { tabId: selected, level: 'error' })).total).toBeGreaterThanOrEqual(100)
+    await mcp('select-tab', { tabId: selected })
+    if (await page.getByRole('region', { name: 'Скачивания' }).count()) await page.getByRole('button', { name: /^Скачивания/ }).click()
+    await page.getByText('Ошибки страницы', { exact: true }).click()
+    await expect.poll(async () => page.getByRole('region', { name: 'Диагностика страницы' }).textContent(), { timeout: 10000 }).toContain('ERR_')
+    await capture('35-network-diagnostics')
+    await page.getByLabel('Скрыть диагностику').click()
+  })
+
+  it('на странице нашего проекта диагностика показывает источник и восстанавливается после HTTP-сбоя чтения', async () => {
+    await mcp('open', { url: `${base}/#/chat/${chats.chat}` })
+    if (JSON.parse(await mcp('find', { selector: 'input[type="password"]' })).elements?.length) {
+      await mcp('set', { selector: 'input[placeholder="Логин"]', value: 'admin' })
+      await mcp('set', { selector: 'input[type="password"]', value: PASSWORD })
+      await mcp('click', { selector: 'button[type="submit"]' })
+    }
+    await mcp('evaluate', { code: 'console.error("Ошибка теста собственного проекта")' })
+    await page.route(`**/api/browser/${conversationId}/command`, async route => {
+      const body = route.request().postDataJSON()
+      if (body.command?.type === 'inspect') await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'runner_unavailable', message: 'Логи временно недоступны' } }) })
+      else await route.continue()
+    })
+    await page.getByText('Ошибки страницы', { exact: true }).click()
+    await expect.poll(async () => page.getByRole('region', { name: 'Диагностика страницы' }).textContent()).toContain('Диагностика недоступна')
+    expect(await page.getByText('Страница не жаловалась.').count()).toBe(0)
+    await page.unroute(`**/api/browser/${conversationId}/command`)
+    await page.getByLabel('Обновить диагностику').click()
+    await expect.poll(async () => page.getByRole('region', { name: 'Диагностика страницы' }).textContent()).toContain('Ошибка теста собственного проекта')
+    await capture('36-project-diagnostics-recovered')
   })
 
 })

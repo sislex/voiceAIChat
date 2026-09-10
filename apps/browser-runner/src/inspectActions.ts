@@ -1,3 +1,4 @@
+import { readBrowserDiagnostics } from './diagnosticReading.js'
 import type { BrowserConsoleEntry, BrowserInspectAction, BrowserInspectResult, BrowserNetworkEntry } from '@voicechat/shared'
 
 /**
@@ -34,33 +35,8 @@ function serializeEvaluated(value: unknown): unknown {
   } catch { return String(value).slice(0, EVALUATE_VALUE_LIMIT) }
 }
 
-const clampLimit = (value: number | undefined, fallback: number): number =>
-  Math.min(Math.max(value ?? fallback, 1), 200)
-
 export async function runInspectAction(logs: InspectLogs, page: InspectPage, action: BrowserInspectAction): Promise<BrowserInspectResult> {
-  if (action.kind === 'console') {
-    // Битое выражение прилетало исключением и уходило наружу как 422 с сырым
-    // текстом движка: модель (и человек в панели) видели «Invalid regular
-    // expression: …» вместо понятного «вот что не так с фильтром».
-    let pattern: RegExp | null = null
-    if (action.pattern) {
-      try { pattern = new RegExp(action.pattern, 'i') }
-      catch { return { ok: false, error: `Фильтр «${action.pattern}» — не регулярное выражение` } }
-    }
-    const filtered = logs.console.filter((entry) =>
-      (!action.level || entry.level === action.level) && (!pattern || pattern.test(entry.text)))
-    // Отдаём хвост: свежие записи полезнее первых, а объём ограничен.
-    const result = filtered.slice(-clampLimit(action.limit, 50))
-    if (action.clear) logs.console.length = 0
-    return { ok: true, console: result }
-  }
-  if (action.kind === 'network') {
-    const needle = action.filter?.toLowerCase()
-    const filtered = logs.network.filter((entry) => !needle || entry.url.toLowerCase().includes(needle))
-    const result = filtered.slice(-clampLimit(action.limit, 50))
-    if (action.clear) logs.network.length = 0
-    return { ok: true, network: result }
-  }
+  if (action.kind === 'console' || action.kind === 'network') return readBrowserDiagnostics(logs, action)
   if (action.kind === 'evaluate') {
     // Гейт (политика проекта, подтверждение опасного кода) стоит выше — на
     // MCP-инструменте, до выбора транспорта, поэтому здесь его не дублируем.

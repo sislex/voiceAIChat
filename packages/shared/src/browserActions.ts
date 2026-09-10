@@ -91,36 +91,16 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
       return action.selector
         ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key } } }
         : { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key } } }
-    case 'console':
-      return {
-        kind: 'command',
-        command: {
-          type: 'inspect',
-          action: {
-            kind: 'console',
-            ...(action.level ? { level: action.level } : {}),
-            ...(action.pattern ? { pattern: action.pattern } : {}),
-            ...(typeof action.limit === 'number' ? { limit: action.limit } : {}),
-            ...(action.clear ? { clear: true } : {})
-          }
-        }
-      }
+    case 'console': {
+      const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
+      return { kind: 'command', command: { type: 'inspect', action: { kind: 'console', ...options, regex: false } } }
+    }
     case 'errors':
-      // «Ошибки страницы» — тот же журнал консоли, отфильтрованный по уровню.
       return { kind: 'command', command: { type: 'inspect', action: { kind: 'console', level: 'error', ...(action.clear ? { clear: true } : {}) } } }
-    case 'network':
-      return {
-        kind: 'command',
-        command: {
-          type: 'inspect',
-          action: {
-            kind: 'network',
-            ...(action.filter ? { filter: action.filter } : {}),
-            ...(typeof action.limit === 'number' ? { limit: action.limit } : {}),
-            ...(action.clear ? { clear: true } : {})
-          }
-        }
-      }
+    case 'network': {
+      const { kind: _kind, diagnostic: _diagnostic, frame: _frame, ...options } = action
+      return { kind: 'command', command: { type: 'inspect', action: { kind: 'network', ...options } } }
+    }
     case 'styles':
       return {
         kind: 'command',
