@@ -1,31 +1,24 @@
-// Экспорт записанного сценария Web Reader в Playwright-тест. Чистая функция:
-// секретные значения не встраиваются — вместо них переменные окружения.
-
+// Экспорт остаётся исполняемым с многострочным вводом; все секреты проверяются до навигации.
 import type { WebRecorderScenarioStep } from '@shared/webRecorder'
-
-const quote = (value: string): string => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+const quote = (value: string): string => JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 
 export function scenarioToPlaywright(pageUrl: string, steps: readonly WebRecorderScenarioStep[]): string {
-  const lines: string[] = [
-    "import { test } from '@playwright/test'",
-    '',
-    "test('recorded web reader scenario', async ({ page }) => {",
-    `  await page.goto(${quote(pageUrl)})`
-  ]
+  const lines = ["import { test } from '@playwright/test'", '', "test('recorded web reader scenario', async ({ page }) => {"]
   let secretIndex = 0
   for (const step of steps) {
-    if (step.kind === 'click') {
-      lines.push(`  await page.click(${quote(step.selector)})`)
-      continue
+    if (step.kind !== 'type' || !step.sensitive) continue
+    secretIndex++
+    lines.push(`  const secret${secretIndex} = process.env.SCENARIO_SECRET_${secretIndex}`)
+    lines.push(`  if (!secret${secretIndex}) throw new Error('Задайте SCENARIO_SECRET_${secretIndex} перед запуском сценария')`)
+  }
+  lines.push(`  await page.goto(${quote(pageUrl)})`)
+  secretIndex = 0
+  for (const step of steps) {
+    if (step.kind === 'click') lines.push(`  await page.click(${quote(step.selector)})`)
+    else {
+      lines.push(`  await page.fill(${quote(step.selector)}, ${step.sensitive ? 'secret' + ++secretIndex : quote(step.text)})`)
+      if (step.submit) lines.push(`  await page.press(${quote(step.selector)}, 'Enter')`)
     }
-    if (step.sensitive) {
-      secretIndex += 1
-      lines.push(`  // Секретное значение не записано — задайте переменную окружения перед запуском.`)
-      lines.push(`  await page.fill(${quote(step.selector)}, process.env.SCENARIO_SECRET_${secretIndex} ?? '')`)
-    } else {
-      lines.push(`  await page.fill(${quote(step.selector)}, ${quote(step.text)})`)
-    }
-    if (step.submit) lines.push(`  await page.press(${quote(step.selector)}, 'Enter')`)
   }
   lines.push('})', '')
   return lines.join('\n')

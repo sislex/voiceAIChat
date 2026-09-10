@@ -139,7 +139,9 @@ describe('Recorder inspector и запись', () => {
     const post = vi.spyOn(window, 'postMessage')
     render(<Recorder />)
     fromHost(init)
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#buy', text: 'Купить' } })
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#password', text: 'hunter2', sensitive: true } })
     const steps = sent(post).filter((message) => message.kind === 'recording-step')
     expect(steps[0]).toMatchObject({ step: { kind: 'click', selector: '#buy', text: 'Купить', sensitive: false } })
@@ -160,6 +162,7 @@ describe('Recorder диагностика', () => {
     fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fromHost({ type, ...ids, kind: 'diagnostics-start', active: true })
     fromHost({ type, ...ids, kind: 'command', requestId: 'diag-1', action: { kind: 'read', diagnostic: true } })
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#diag', text: 'x' } })
     fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'diag-1', ok: true, result: { text: 'ok' } })
     const progress = sent(post).find((message) => message.kind === 'diagnostics-progress')!
@@ -230,6 +233,7 @@ describe('Recorder submit-шаги', () => {
     const post = vi.spyOn(window, 'postMessage')
     render(<Recorder />)
     fromHost(init)
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })
     expect(screen.getByText('⏎ submit')).toBeTruthy()
     const step = sent(post).find((message) => message.kind === 'recording-step')!
@@ -243,6 +247,7 @@ describe('Recorder submit-шаги', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
     const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
     const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#q', text: 'ноутбук', submit: true } })
     fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
@@ -257,6 +262,7 @@ describe('Recorder scenario', () => {
     let byte = 0
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => { bytes.fill(++byte); return bytes } })
     render(<Recorder />)
+    fromHost(init)
     fireEvent.change(screen.getByPlaceholderText('https://example.com'), { target: { value: 'http://example.test' } })
     fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
     const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
@@ -265,7 +271,8 @@ describe('Recorder scenario', () => {
       { kind: 'click', selector: '#buy', text: '' },
       { kind: 'type', selector: '#search', text: 'shoes' }
     ]) {
-      fromPage({ type: 'voicechat.preview.record.v1', step })
+      fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    fromPage({ type: 'voicechat.preview.record.v1', step })
     }
     fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
@@ -463,6 +470,7 @@ describe('Recorder управляемое воспроизведение', () =>
     const host = vi.spyOn(window, 'postMessage'); seed()
     fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#self', text: '', sensitive: false } })
     expect(screen.queryByLabelText('Селектор шага 3')).toBeNull()
     fromHost({ type, ...ids, kind: 'command', requestId: 'model-during-run', action: { kind: 'click', selector: '#other' } })
@@ -480,4 +488,68 @@ it('старый onLoad не объявляет ошибкой новый мед
   expect(screen.queryByRole('alert')).toBeNull()
   fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next' })
   cleanup(); vi.useRealTimers()
+})
+
+
+describe('Recorder управление записанным сценарием', () => {
+  const step = { kind: 'type', selector: '#field', text: 'value', sensitive: false }
+  const record = (value: object) => fromPage({ type: 'voicechat.preview.record.v1', step: value })
+  it('игнорирует запись при выключенном режиме', () => {
+    render(<Recorder />); fromHost(init); record(step)
+    expect(screen.queryByLabelText('Селектор шага 1')).toBeNull()
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true }); record(step)
+    expect(screen.getByLabelText('Селектор шага 1')).toBeTruthy()
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: false }); record({ ...step, selector: '#other' })
+    expect(screen.queryByLabelText('Селектор шага 2')).toBeNull()
+  })
+  it('склеивает посимвольный ввод одного поля', () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    for (const text of ['А', 'Ан', 'Анна']) record({ ...step, text })
+    expect(screen.queryByLabelText('Селектор шага 2')).toBeNull()
+    expect((screen.getByLabelText('Значение шага 1') as HTMLInputElement).value).toBe('Анна')
+  })
+  it('ручная отметка секрета очищает исходный текст в состоянии и storage', async () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'recording-state', enabled: true }); record({ ...step, text: 'manually-secret' })
+    fireEvent.click(screen.getByLabelText('Секрет шага 1'))
+    expect(screen.queryByLabelText('Значение шага 1')).toBeNull()
+    expect((screen.getByLabelText('Секретное значение шага 1') as HTMLInputElement).value).toBe('')
+    await waitFor(() => expect(Object.values(localStorage).join('')).not.toContain('manually-secret'))
+  })
+  it('удаляет и переставляет шаги без переноса секретов к другим полям', () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    record(step); record({ ...step, selector: '#secret', sensitive: true })
+    fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByLabelText('Поднять шаг 2'))
+    expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#secret')
+    expect((screen.getByLabelText('Секретное значение шага 1') as HTMLInputElement).value).toBe('')
+    fireEvent.click(screen.getByLabelText('Удалить шаг 1'))
+    expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#field')
+    expect(screen.queryByLabelText('Селектор шага 2')).toBeNull()
+  })
+  it('очищенный перенесённый сценарий не восстанавливается из legacy', () => {
+    localStorage.setItem('voicechat.reader.scenario.v1:https://shop.example/', JSON.stringify([step]))
+    const view = render(<Recorder />); fromHost(init)
+    fireEvent.click(screen.getByRole('button', { name: 'Очистить' })); view.unmount()
+    render(<Recorder />); fromHost(init)
+    expect(screen.queryByLabelText('Селектор шага 1')).toBeNull()
+  })
+})
+
+
+it('SPA-навигация выбирает сценарий нового hash без reload iframe', () => {
+  localStorage.setItem('voicechat.reader.scenario.v2:https://shop.example/#/next', JSON.stringify([{ kind: 'click', selector: '#next', text: '', sensitive: false }]))
+  render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+  const frame = screen.getByTitle('Предпросмотр сайта')
+  fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/#/next' })
+  expect(screen.getByTitle('Предпросмотр сайта')).toBe(frame)
+  expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#next')
+})
+it('запись сохраняет исходный адрес сценария при переходе', () => {
+  render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+  fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+  fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#go', text: '', sensitive: false } })
+  fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/#/next' })
+  expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#go')
+  expect(localStorage.getItem('voicechat.reader.scenario.v2:https://shop.example/')).toContain('#go')
+  expect(localStorage.getItem('voicechat.reader.scenario.v2:https://shop.example/#/next')).toBeNull()
 })
