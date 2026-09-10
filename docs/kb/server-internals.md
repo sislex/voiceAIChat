@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: e139188d
+checked: 369ab366
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -133,6 +133,15 @@ XHTML и CSS прокси переписывает URL ресурсов, ссы�
 запись пользовательских действий через `postMessage`, а на `pagehide` снимает их
 обработчики. UI-поведение и семантика сценариев — в [ui.md](ui.md#веб-превью), путь
 контракта — в `packages/shared/src/protocol.ts`.
+
+CSS разбирается PostCSS, значения — postcss-value-parser (`previewStyles.ts`):
+переписываются настоящие url(), строковый @import и строковые источники image-set;
+CSS escapes декодируются до URL. Комментарии и content-строки сохраняются,
+fragment-only SVG-ссылки остаются локальными. Повреждённый CSS возвращается исходным.
+Тот же разбор работает для внешней таблицы, style-блока и атрибута.
+Srcset сканируется по URL/дескрипторам, поэтому запятые в data URL и именах файлов
+не превращаются в разделители; imagesrcset у preload обрабатывается так же.
+Проверки: `previewStyles.test.ts`, `e2e/webReaderStyles.e2e.test.ts`.
 
 HTML разбирается `parse5` в `routes/previewHtml.ts`, правятся диапазоны исходных
 атрибутов: entities декодируются перед разрешением URL, поддерживаются значения
