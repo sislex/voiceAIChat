@@ -5,7 +5,8 @@
 // @vitest-environment node
 import { describe, expect, it, beforeAll, afterAll } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { describeElementScript, scrollToScript } from './describeElement.js'
+import { describeElementScript } from './describeElement.js'
+import { runSelectorAction } from './selectorActions.js'
 
 const HTML = `<!doctype html><html><body style="margin:0">
   <button data-testid="create" style="position:absolute;left:10px;top:10px;width:100px;height:40px"><span>Создать</span></button>
@@ -34,8 +35,11 @@ describe('describeElementScript', () => {
   it('id — следующий по устойчивости', async () => {
     expect(await at(50, 80)).toMatchObject({ selector: '#save', stability: 'id' })
   })
-  it('aria-label берётся, когда ни testid, ни id нет', async () => {
-    expect(await at(50, 130)).toMatchObject({ selector: 'button[aria-label="Закрыть"]', stability: 'label' })
+  it('повторяющийся aria-label уточняется путём к нужной кнопке', async () => {
+    const found = await at(50, 130)
+    expect(found?.stability).toBe('path')
+    expect(await page.locator(found!.selector).count()).toBe(1)
+    expect(await page.locator(found!.selector).boundingBox()).toMatchObject({ y: 110 })
   })
   it('без опознавательных знаков строится путь и честно помечается ненадёжным', async () => {
     const found = await at(20, 170)
@@ -58,13 +62,10 @@ describe('describeElementScript', () => {
   })
 })
 
-describe('scrollToScript', () => {
+describe('scrollTo через локатор', () => {
   it('доводит до элемента за пределами вьюпорта', async () => {
-    expect(await page.evaluate(scrollToScript('#far'))).toBe(true)
+    expect(await runSelectorAction(page, { kind: 'scrollTo', selector: '#far' })).toMatchObject({ ok: true })
     expect(await page.evaluate('Math.round(window.scrollY) > 0')).toBe(true)
-  })
-  it('несуществующий селектор — false, а не исключение', async () => {
-    expect(await page.evaluate(scrollToScript('#нет-такого'))).toBe(false)
   })
 })
 
@@ -79,16 +80,11 @@ describe('устойчивость селектора (круг 14)', () => {
     expect(await at(50, 30)).toMatchObject({ selector: '[data-testid="create"]', tag: 'button' })
   })
 
-  it('сообщает, сколько узлов отвечает селектору', async () => {
+  it('при повторяющихся метках возвращает селектор ровно одного узла', async () => {
     expect((await at(50, 30))?.matches).toBe(1)
-    // В разметке уже две кнопки с aria-label="Закрыть"; добавляем третью.
-    // Записанный шаг кликнет по первой, и знать об этом надо при записи, а не
-    // когда сценарий однажды нажмёт не ту кнопку.
-    expect((await at(220, 30))?.matches).toBe(2)
-    // Код строкой, а не замыканием: у пакета нет библиотеки DOM (это
-    // Node-сервис), и `document` в замыкании не проходит typecheck. Замыкание
-    // здесь молча ломало гейт пять кругов подряд.
-    await page.evaluate('(() => { const extra = document.createElement("button"); extra.setAttribute("aria-label", "Закрыть"); document.body.appendChild(extra) })()')
-    expect((await at(220, 30))?.matches).toBe(3)
+    const found = await at(220, 30)
+    expect(found?.matches).toBe(1)
+    expect(await page.locator(found!.selector).count()).toBe(1)
+    expect(await page.locator(found!.selector).boundingBox()).toMatchObject({ x: 200 })
   })
 })

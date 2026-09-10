@@ -49,6 +49,14 @@ describe('browserId', () => {
 })
 
 describe('isPreviewAction', () => {
+  it('проверяет порции текста и фильтр поиска на границе конверта', () => {
+    expect(isPreviewAction({ kind: 'read', offset: 0, limit: 100 })).toBe(true)
+    expect(isPreviewAction({ kind: 'read', offset: 4000, limit: 20000 })).toBe(true)
+    for (const offset of [-1, 0.5, Infinity, '0']) expect(isPreviewAction({ kind: 'read', offset })).toBe(false)
+    for (const limit of [0, 99, 20001, NaN, '100']) expect(isPreviewAction({ kind: 'read', limit })).toBe(false)
+    expect(isPreviewAction({ kind: 'find', selector: 'button', visibleOnly: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'find', selector: 'button', visibleOnly: 'true' })).toBe(false)
+  })
   it('принимает все виды действий', () => {
     expect(isPreviewAction({ kind: 'open', url: 'https://example.com' })).toBe(true)
     expect(isPreviewAction({ kind: 'find', text: 'Электроника' })).toBe(true)

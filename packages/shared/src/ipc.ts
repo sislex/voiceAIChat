@@ -1,3 +1,7 @@
+import type { BrowserDownloadResult } from './browserDownloads'
+import type { BrowserDialogListResult } from './browserDialogs'
+import type { BrowserSiteDataResetResult } from './browserProfile'
+import type { BrowserFramesResult } from './browserFrames'
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
@@ -5,6 +9,7 @@ import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState,
 import type { MakeReplacePreviewLine } from './makeSearch'
 import type {
   BrowserCommand,
+  BrowserScreenshotOptions,
   BrowserSessionMetadata,
   BrowserSelectorResult,
   BrowserInspectResult,
@@ -1062,12 +1067,9 @@ export interface RendererAuthBridge {
  * В desktop отсутствует.
  */
 export type RendererBrowserCommand = Exclude<BrowserCommand, { type: 'screenshot' }>
-export interface RendererBrowserScreenshotOptions {
+export interface RendererBrowserScreenshotOptions extends BrowserScreenshotOptions {
   incarnation: string
   tabId?: string
-  fullPage?: boolean
-  format?: 'png' | 'jpeg' | 'webp'
-  quality?: number
 }
 export interface RendererBrowserBridge {
   /** Идемпотентно поднимает Chromium-сессию разговора и возвращает её метаданные. */
@@ -1080,7 +1082,7 @@ export interface RendererBrowserBridge {
    * поиска, а `inspect` — журналы страницы. Из-за этого панель не могла
    * показать ошибки страницы, не соврав компилятору.
    */
-  command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult>
+  command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult>
   /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
   screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string; page?: { url: string; title: string }; control?: 'shared' | 'user'; queuedCommands?: number }>
   /** Закрывает Chromium-сессию разговора. */

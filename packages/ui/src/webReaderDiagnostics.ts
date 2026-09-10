@@ -89,7 +89,7 @@ export async function runWebReaderDiagnostics(options: DiagnosticsOptions): Prom
     const url = new URL('/api/preview/diagnostics', options.origin).toString()
     await step('open', '/api/preview proxy, loading → ready и open', 'proxy/network', () => run({ kind: 'open', url, diagnostic: true }))
     await step('read', 'DOM read', 'dom-bridge', () => run({ kind: 'read', diagnostic: true }), (r) => 'text' in r && (r as PreviewReadResult).text.includes('VoiceChat Web Reader Diagnostics'))
-    await step('find-text', 'find по тексту', 'action', () => run({ kind: 'find', text: 'Diagnostic action', diagnostic: true }), (r) => 'total' in r && r.total > 0)
+    await step('find-text', 'find по тексту', 'action', () => run({ kind: 'find', text: 'Diagnostic action', diagnostic: true }), (r) => 'total' in r && typeof r.total === 'number' && r.total > 0)
     await step('find-selector', 'find по селектору', 'action', () => run({ kind: 'find', selector: '#diagnostic-input', diagnostic: true }), (r) => 'total' in r && r.total === 1)
     await step('styles', 'computed styles', 'action', () => run({ kind: 'styles', selector: '#diagnostic-style', properties: ['display', 'color'], diagnostic: true }), (r) => 'styles' in r && (r as PreviewStylesResult).styles.display === 'block')
     await step('hover', 'hover: pointer/mouse-события', 'action', async () => {

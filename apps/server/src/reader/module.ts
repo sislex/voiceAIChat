@@ -105,6 +105,7 @@ export function createReaderModule(deps: ReaderDeps): void {
     relay: { request: (userId, conversationId, action, timeoutMs) => core.previewAction(userId, conversationId, action, timeoutMs) },
     ...(deps.actionTimeoutMs ? { timeoutMs: deps.actionTimeoutMs } : {}),
     browserExecutor: (...args) => browser.execute(...args),
+    browserControl: (...args) => browser.control(...args),
     browserScreenshot: (...args) => browser.screenshot(...args),
     context
   })

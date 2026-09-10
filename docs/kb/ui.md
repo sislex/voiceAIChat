@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-10
-checked: fe2820cd
+checked: 9724b402
 areas:
   - packages/admin-app/src
   - packages/app-shell
@@ -1126,6 +1126,8 @@ chat store. Пока выбор сохраняется, селектор заб�
 
 ## Отдельный режим Playwright Reader
 
+С 2026-09-10 фоновый опрос панели получает и кадр, и `status`: адрес, заголовок, вкладки и `lastActor` обновляются после действий модели. Черновик адреса защищён от фонового обновления, `about:blank` не задаёт origin проверки, локальное состояние сбрасывается при смене разговора. Интервалы, ошибки кадров и тесты описаны в [метаданных сессии](features/playwright-reader.md#метаданные-сессии-доходят-до-человека-круг-2-29082026).
+
 Рядом с Web Reader живёт второй полноэкранный режим — Playwright Reader (маршруты `#/playwright-reader` и `#/playwright-reader/<conversationId>`). Он устроен по той же схеме: признак `inPlaywrightReader` в `App.tsx` даёт корню класс `app--playwright-reader`, исключает `Sidebar` из DOM тем же условием, что и Reader, не передаёт в `ChatColumn` обработчик сайдбара и рендерит ту же `chat-split` с левой колонкой обычного чата. Пункт меню «Playwright Reader» (иконка `▣`) стоит в `Sidebar` сразу после «Web Reader» и в компактном наборе иконок, но, в отличие от него, открывается в текущей вкладке обычным `navigate('/playwright-reader')`, а не `window.open`. Смысл, состав контрактов и состояние backend-части — в [features/playwright-reader.md](features/playwright-reader.md).
 
 Список этого режима — отдельное состояние `playwrightReaderConversations` в `chatStore`, которое строится из того же полного ответа `conversations:list` и по тем же правилам, что `readerConversations`: фильтр проекта и активный поиск сайдбара на него не влияют, удаление чата вычищает оба списка. Предикат `isPlaywrightReaderConversation` в `chatStore` смотрит только на `assistantKind === 'playwright-reader'` и не принимает легаси-чаты с `previewUrl`, поэтому два reader-списка не пересекаются. Эффект маршрута повторяет reader-логику: найденный по ID чат выбирается через `selectConversation`, иначе адрес заменяется первым чатом из списка, и только при пустом списке создаётся новый — под in-flight флагом `playwrightReaderCreating`, который проверяется и в самом эффекте, чтобы React не создал второй разговор. Имя нового чата — «Playwright Reader N»; общая для обоих видов нумерация теперь ищет **первый свободный** номер по существующим именам (прежний `nextReaderNumber` с максимумом удалён), поэтому после удаления «Web Reader 1» следующий чат снова получит номер 1.
@@ -1217,7 +1219,10 @@ diff-UI (своя вёрстка, свои токены, своя доступн
 (WS `make.changed`). Три режима:
 
 - **Превью** — same-origin iframe на `REST.makePreview(conv)` + `index.html?rev=N`
-  (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"`).
+  (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"`).
+  `allow-downloads` с2026-09-10 разрешает кнопкам HTTP/Blob-экспорта работать внутри
+  интерактивных превью, включая открытие Make через Playwright Reader.
+  Проверка: `e2e/playwrightReader.e2e.test.ts` скачивает и читает экспорт проекта.
   Перед первой загрузкой — cookie-гейт `ensurePreview` (тот же `session:ensurePreview`,
   что у Web Reader: iframe не шлёт Bearer). Пресеты ширины ПК/Планшет/Телефон, ⟳, открыть в
   новой вкладке, ⛶ на весь экран, **⌖ «Выбрать элемент»**: сервер инъецирует в HTML скрипт
