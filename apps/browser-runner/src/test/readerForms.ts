@@ -6,6 +6,10 @@ export async function startReaderFormsFixture() {
   const app = createServer((req, res) => {
     res.setHeader('content-type', 'text/html; charset=utf-8')
     if (req.url === '/next') { res.end('<!doctype html><title>Следующая страница</title><h1>Переход завершён</h1>'); return }
+    if (req.url === '/capture') {
+      res.end('<!doctype html><title>Проверка снимков</title><style>body{margin:0;height:1800px;font:18px sans-serif}#tile{position:absolute;left:40px;top:900px;width:160px;height:90px;background:#176b37;color:white}</style><h1>Снимок всей страницы</h1><div id="tile">Снимок области</div>')
+      return
+    }
     res.end(`<!doctype html><meta charset="utf-8"><title>Формы Reader</title>
       <style>body { font: 18px sans-serif; margin: 24px } label,output {display:block;margin:8px 0} #scroller {height:80px;width:300px;overflow:auto;border:1px solid} #inner {height:30000px} #tall {height:30000px}</style>
       <h1>Формы Reader</h1>

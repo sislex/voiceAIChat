@@ -45,16 +45,20 @@ async function api(path: string, method: string, body: unknown) {
   return response.json()
 }
 
-async function mcp(name: string, args: Record<string, unknown> = {}): Promise<string> {
+async function mcpReply(name: string, args: Record<string, unknown> = {}) {
   const response = await fetch(`${base}/mcp/preview?k=${MCP_SECRET}&turn=${encodeURIComponent(turn)}`, {
     method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
   })
   expect(response.status).toBe(200)
-  const body = await response.json() as { result?: { isError?: boolean; content: Array<{ type: string; text?: string }> }; error?: unknown }
+  const body = await response.json() as { result?: { isError?: boolean; content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }; error?: unknown }
   expect(body.error).toBeUndefined()
   expect(body.result?.isError, JSON.stringify(body)).not.toBe(true)
-  return body.result!.content.filter(item => item.type === 'text').map(item => item.text ?? '').join('\n')
+  return body.result!
+}
+
+async function mcp(name: string, args: Record<string, unknown> = {}): Promise<string> {
+  return (await mcpReply(name, args)).content.filter(item => item.type === 'text').map(item => item.text ?? '').join('\n')
 }
 
 async function capture(name: string): Promise<void> {
@@ -246,6 +250,36 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await expect.poll(async () => (await tabs()).tabs.length).toBe(1)
     expect(await mcp('read')).toContain('Формы Reader')
     await capture('08-human-recovers-empty-tabs')
+  })
+
+
+  it('модель получает нужную область и полную страницу с точными метаданными снимка', async () => {
+    await mcp('open', { url: 'http://forms.reader.test/capture' })
+    const shot = async (args: Record<string, unknown>, name: string) => {
+      const reply = await mcpReply('screenshot', args)
+      const picture = reply.content.find(item => item.type === 'image')!
+      expect(picture.mimeType).toBe('image/png')
+      const bytes = Buffer.from(picture.data!, 'base64')
+      if (artifacts) await writeFile(join(artifacts, `${name}.png`), bytes)
+      return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), text: reply.content.filter(item => item.type === 'text').map(item => item.text).join('\n') }
+    }
+    const rect = await shot({ rect: { x: 40, y: 900, width: 160, height: 90 }, animations: 'disabled', timeoutMs: 2000 }, '09-model-region')
+    expect(rect).toMatchObject({ width: 160, height: 90 })
+    expect(rect.text).toContain('x=40, y=900, 160×90')
+    expect(rect.text).toContain('http://forms.reader.test/capture')
+    expect(rect.text).toContain('Проверка снимков')
+    const node = await shot({ selector: '#tile' }, '10-model-element')
+    expect(node).toMatchObject({ width: 160, height: 90 })
+    expect(node.text).toContain('x=40, y=900')
+    const height = (JSON.parse(await mcp('evaluate', { code: 'document.scrollingElement.scrollHeight' })) as { value: number }).value
+    expect(height).toBeGreaterThanOrEqual(1800)
+    const full = await shot({ fullPage: true }, '11-model-full-page')
+    expect(full.height).toBe(height)
+    expect(full.text).toContain(`${full.width}×${height}`)
+    await mcp('scroll', { to: 'top' })
+    await mcp('scroll', { dy: 500 })
+    expect((await shot({}, '12-model-scrolled-viewport')).text).toContain('y=500')
+    await capture('13-reader-after-model-screenshots')
   })
 
 })

@@ -292,6 +292,28 @@ export interface BrowserInspectResult {
   error?: string
 }
 
+export interface BrowserScreenshotRect { x: number; y: number; width: number; height: number }
+
+export interface BrowserScreenshotOptions {
+  fullPage?: boolean
+  selector?: string
+  rect?: BrowserScreenshotRect
+  format?: 'png' | 'jpeg' | 'webp'
+  quality?: number
+  scale?: 'css' | 'device'
+  animations?: 'allow' | 'disabled'
+  timeoutMs?: number
+}
+
+/** Координаты документа в CSS px, снятые у той же страницы, что изображение. */
+export interface BrowserScreenshotMetadata {
+  page: { url: string; title: string }
+  rect: BrowserScreenshotRect
+  scale: 'css' | 'device'
+}
+
+export const BROWSER_SCREENSHOT_HEADER = 'x-vc-browser-screenshot'
+
 export type BrowserCommand =
   /** Пассивное наблюдение: адрес и вкладки обновляются и после действий модели. */
   | { type: 'status' }
@@ -304,7 +326,7 @@ export type BrowserCommand =
   | { type: 'resize'; viewport: Pick<BrowserViewport, 'width'> & Partial<Pick<BrowserViewport, 'height' | 'deviceScaleFactor'>> }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
-  | { type: 'screenshot'; fullPage?: boolean; selector?: string; format?: 'png' | 'jpeg' | 'webp'; quality?: number }
+  | ({ type: 'screenshot' } & BrowserScreenshotOptions)
 
 export interface BrowserCommandRequest {
   requestId: string

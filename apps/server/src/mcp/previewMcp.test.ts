@@ -476,6 +476,41 @@ describe('previewMcp — снимок из изолированного Chromium
 
   afterEach(async () => { await app.close() })
 
+  it.each([
+    { rect: { x: 40, y: 900, width: 160, height: 90 } },
+    { fullPage: true },
+    { animations: 'disabled' },
+    { timeoutMs: 100 }
+  ])('параметры снимка %j доходят до Chromium без потерь', async (args) => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    const capture = vi.fn(async () => ({ ok: true, result: { dataUrl: `data:image/png;base64,${PNG}` } }))
+    registerPreviewMcp(app, { secret: SECRET, relay, browserScreenshot: capture })
+    await app.ready()
+    expect((await call('screenshot', args)).isError).not.toBe(true)
+    expect(capture).toHaveBeenCalledWith(U, CONV, args)
+  })
+
+  it('конфликт selector/rect возвращает ошибку вместо другого снимка', async () => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    const capture = vi.fn(async () => ({ ok: true, result: { dataUrl: `data:image/png;base64,${PNG}` } }))
+    registerPreviewMcp(app, { secret: SECRET, relay, browserScreenshot: capture })
+    await app.ready()
+    expect((await call('screenshot', { selector: '.card', rect: { x: 0, y: 0, width: 20, height: 20 } })).isError).toBe(true)
+    expect(capture).not.toHaveBeenCalled()
+  })
+
+  it('режим fullPage не подменяется обычным снимком iframe', async () => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    const forward = vi.spyOn(relay, 'request')
+    registerPreviewMcp(app, { secret: SECRET, relay, browserScreenshot: async () => null })
+    await app.ready()
+    expect(await call('screenshot', { fullPage: true })).toMatchObject({ isError: true, text: expect.stringContaining('Playwright Reader') })
+    expect(forward).not.toHaveBeenCalled()
+  })
+
   it('снимок берётся у раннера, а не у браузера пользователя', async () => {
     app = Fastify({ logger: false })
     relay = new PreviewActionRelay()
@@ -487,6 +522,8 @@ describe('previewMcp — снимок из изолированного Chromium
     await app.ready()
     const result = await call('screenshot')
     expect(result.image?.data).toBe(PNG)
+    expect(result.text).toContain('http://x')
+    expect(result.text).toContain('X')
     expect(relaySpy).not.toHaveBeenCalled()
   })
 

@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
-import { BROWSER_COMMAND_BODY_LIMIT, type BrowserCommandRequest } from '@voicechat/shared'
+import { BROWSER_COMMAND_BODY_LIMIT, BROWSER_SCREENSHOT_HEADER, type BrowserCommandRequest } from '@voicechat/shared'
 import { registerRunnerAuth, type HostAliases } from './security.js'
 import { BrowserSessionManager, type StartSessionRequest } from './sessionManager.js'
 
@@ -89,10 +89,11 @@ export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Pr
   app.post<{ Params: { id: string }; Body: BrowserCommandRequest }>('/v1/sessions/:id/commands', { bodyLimit: BROWSER_COMMAND_BODY_LIMIT }, async (request, reply) => {
     try {
       const result = await sessions.command(request.params.id, request.body)
-      if (Buffer.isBuffer(result)) {
-        const command = request.body.command
-        const format = command.type === 'screenshot' ? command.format ?? 'png' : 'png'
-        return reply.type(`image/${format}`).send(result)
+      if ('buffer' in result) {
+        const metadata = Buffer.from(JSON.stringify(result.metadata)).toString('base64url')
+        // Огромный title/URL не должен ломать доставку самого изображения.
+        if (metadata.length <= 8192) reply.header(BROWSER_SCREENSHOT_HEADER, metadata)
+        return reply.type(result.mimeType).send(result.buffer)
       }
       return result
     } catch (error) {

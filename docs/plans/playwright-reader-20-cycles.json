@@ -572,7 +572,7 @@
     },
     {
       "number": 4,
-      "status": "in_progress",
+      "status": "complete",
       "startedAt": "2026-09-10T00:03:09.644769+00:00",
       "items": [
         {
@@ -795,13 +795,199 @@
           "passedWorkspaceTests": 7616
         }
       },
-      "validatedAt": "2026-09-10T00:35:44.429097+00:00"
+      "validatedAt": "2026-09-10T00:35:44.429097+00:00",
+      "completedAt": "2026-09-10T00:37:03.932291+00:00",
+      "commit": "e4e689586873701aa82d4636ad480d2fdd22fc5b"
     },
     {
       "number": 5,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T00:37:03.932291+00:00",
+      "items": [
+        {
+          "id": "05-01",
+          "title": "Снимок области rect доходит от MCP до Chromium",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-02",
+          "title": "Модель получает снимок всей страницы через fullPage",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-03",
+          "title": "Снимок модели содержит фактический URL и заголовок",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-04",
+          "title": "Координаты и размер снимка элемента соответствуют элементу",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-05",
+          "title": "Снимок прокрученного viewport сообщает координаты документа",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-06",
+          "title": "CSS-масштаб снимка модели соответствует координатам действий при DPR > 1",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-07",
+          "title": "PNG по умолчанию одинаково обрабатывает quality с явным PNG",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-08",
+          "title": "Конфликтующие режимы снимка не подменяются молча другим режимом",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-09",
+          "title": "Модель может отключить анимации для стабильного снимка",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-10",
+          "title": "Модель задаёт ограниченное ожидание снимка, включая загрузку шрифтов",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T00:15:20.884998+00:00",
+        "items": [
+          "Снимок области rect доходит от MCP до Chromium",
+          "Модель получает снимок всей страницы через fullPage",
+          "Снимок модели содержит фактический URL и заголовок",
+          "Координаты и размер снимка элемента соответствуют элементу",
+          "Снимок прокрученного viewport сообщает координаты документа",
+          "CSS-масштаб снимка модели соответствует координатам действий при DPR > 1",
+          "PNG по умолчанию одинаково обрабатывает quality с явным PNG",
+          "Конфликтующие режимы снимка не подменяются молча другим режимом",
+          "Модель может отключить анимации для стабильного снимка",
+          "Модель задаёт ограниченное ожидание снимка, включая загрузку шрифтов"
+        ],
+        "evidence": [
+          "/tmp/voicechat-reader-cycle-05-image-baseline.log",
+          "MCP screenshot удаляет rect при вызове browserScreenshot; у сервиса только selector; его rect всегда 0,0,viewport; page берётся до screenshot и MCP не передаёт page модели."
+        ],
+        "rejected": [
+          "WebP уже поддерживается установленным Playwright, живой контроль прошёл."
+        ],
+        "nextResearch": [
+          "Проверить с реальными областями и шрифтами перед реализацией; для новых функций зафиксировать их отсутствие и регрессии."
+        ]
+      },
+      "validation": {
+        "baselineLogs": [
+          "/tmp/voicechat-reader-cycle-05-image-baseline.log",
+          "/tmp/voicechat-reader-cycle-05-font-baseline.log"
+        ],
+        "baseline": {
+          "liveFailed": 10,
+          "mcpFailed": 6,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-05-baseline.log",
+            "/tmp/voicechat-reader-cycle-05-mcp-baseline.log"
+          ]
+        },
+        "focused": {
+          "runnerPassed": 26,
+          "appPassed": 22,
+          "mcpPassed": 46,
+          "remotePassed": 12,
+          "typecheck": "browser-runner и server exit 0"
+        },
+        "browserE2E": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-05-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-05",
+          "exitCode": 0,
+          "passed": 8,
+          "durationMs": 38800,
+          "initialAttempt": {
+            "exitCode": 1,
+            "passed": 7,
+            "failed": 1,
+            "log": "/tmp/voicechat-reader-cycle-05-e2e.log",
+            "reason": "Высота тестового документа 1824 из-за схлопнувшегося отступа h1; ожидание 1800 заменено проверкой фактической scrollHeight и соответствия PNG/метаданных."
+          },
+          "visuallyInspected": [
+            "09-model-region.png",
+            "11-model-full-page.png"
+          ]
+        },
+        "fontFollowUp": {
+          "exitCode": 0,
+          "livePassed": 10,
+          "log": "/tmp/voicechat-reader-cycle-05-shots-final.log",
+          "detail": "Шрифт удерживается до явного завершения в тесте; проверены timeout и успешный следующий снимок после завершения ресурса."
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-05-fast.log",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T00:56:12.231089+00:00",
+          "endedAt": "2026-09-10T01:01:38.792164+00:00",
+          "durationMs": 326560,
+          "passed": 7304,
+          "skipped": 45,
+          "failed": 0
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-05-gate.log",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:03:07.255109+00:00",
+          "endedAt": "2026-09-10T01:13:25.699786+00:00",
+          "durationMs": 618441,
+          "passedWorkspaceTests": 7635
+        }
+      },
+      "validatedAt": "2026-09-10T01:14:23.319217+00:00",
+      "completedAt": "2026-09-10T01:14:23.319217+00:00"
     },
     {
       "number": 6,

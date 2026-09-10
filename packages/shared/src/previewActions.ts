@@ -568,7 +568,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'После open или click, ведущего к переходу, страница загружается заново — перечитай её read перед следующим действием. ' +
     'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom | dy, selector?} — ' +
     'прокрутить окно или контейнер (ленивые ленты); press {key, selector?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…); ' +
-    'screenshot {selector? | rect?} — картинка элемента, области или видимой части страницы, когда важен внешний вид, а не текст; ' +
+    'screenshot {selector? | rect? | fullPage?, animations?, timeoutMs?} — картинка элемента, области или видимой части страницы. ' +
+    'В Chromium fullPage снимает всю страницу, animations: disabled стабилизирует кадр; timeoutMs ограничивает ожидание, по умолчанию 10000 мс. ' +
+    'Координаты снимка Chromium и действий — CSS px; rect задаётся в координатах документа; ' +
     'errors {clear?} — накопленные ошибки страницы (JS-исключения, console.error, упавшие запросы) — проверяй их после действий при тестировании; ' +
     'wait {selector|text, timeoutMs?} — дождаться появления элемента (асинхронные SPA); back/forward — по истории страницы; ' +
     'В Playwright Reader и Chromium-проверке также доступны tabs — список вкладок с id; new-tab {url?}; ' +

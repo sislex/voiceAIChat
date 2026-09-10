@@ -99,6 +99,17 @@ describe('registerBrowserRoutes', () => {
     await app.close()
   })
 
+  it('REST сохраняет область, масштаб и ограничение ожидания снимка', async () => {
+    const runner = makeRunner()
+    const app = await makeApp({ runner })
+    const options = { rect: { x: 40, y: 900, width: 160, height: 90 }, scale: 'css', animations: 'disabled', timeoutMs: 500 }
+    try {
+      const response = await app.inject({ method: 'POST', url: '/api/browser/c1/screenshot', payload: { incarnation: 'inc', ...options } })
+      expect(response.statusCode).toBe(200)
+      expect(runner.screenshot).toHaveBeenCalledWith('c1', expect.objectContaining({ actor: 'user', command: { type: 'screenshot', ...options } }))
+    } finally { await app.close() }
+  })
+
   it('чужой/несуществующий разговор — 404, не Playwright Reader — 403', async () => {
     const missing = await makeApp({ conv: null, runner: makeRunner() })
     expect((await missing.inject({ method: 'POST', url: '/api/browser/c1/start', payload: {} })).statusCode).toBe(404)

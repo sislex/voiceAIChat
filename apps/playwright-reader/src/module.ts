@@ -67,14 +67,13 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
         const { target, session } = active
         const shot = await runner!.screenshot(target.sessionId, {
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
-          command: { type: 'screenshot', format: 'png', ...(args.selector ? { selector: args.selector } : {}) }
+          command: { type: 'screenshot', ...args, format: 'png', scale: 'css' }
         })
         await core.logBrowserShot(userId, conversationId, shot.buffer.toString('base64'))
         return {
           ok: true,
           result: {
-            page: { url: session.currentUrl ?? '', title: session.title ?? '' },
-            rect: { x: 0, y: 0, width: session.viewport.width, height: session.viewport.height },
+            ...shot.metadata,
             dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`
           }
         }

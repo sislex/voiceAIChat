@@ -1,4 +1,4 @@
-import type { BrowserActionOutcome, BrowserControlCommand } from '@voicechat/shared'
+import type { BrowserActionOutcome, BrowserControlCommand, BrowserModelScreenshotOptions } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
 // пользователя (открыть URL, найти элемент, клик, ввод текста, структурированное
 // чтение DOM). Сама страница живёт в браузере пользователя, поэтому сервер не
@@ -197,7 +197,7 @@ export interface RegisterPreviewMcpOptions {
    * возвращает картинку `dataUrl`, а не структуру действия; `null` — «этот
    * разговор не про изолированный браузер, иди обычным путём».
    */
-  browserScreenshot?: (userId: string, conversationId: string, args: { selector?: string }) => Promise<BrowserActionOutcome | null>
+  browserScreenshot?: (userId: string, conversationId: string, args: BrowserModelScreenshotOptions) => Promise<BrowserActionOutcome | null>
 }
 
 /** Ответ инструмента: результат действия сериализованным JSON либо ошибка. */
@@ -353,37 +353,45 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Скриншот открытой в превью страницы: элемента по CSS-селектору, области rect (координаты документа) ' +
-            'или видимой части без аргументов. Возвращает картинку — используй, когда важен внешний вид, а не текст.',
+            'или видимой части без аргументов. В Chromium доступны fullPage, animations и timeoutMs. ' +
+            'Снимок Chromium имеет CSS-масштаб 1:1 с координатами действий. Возвращает картинку и контекст страницы.',
           inputSchema: {
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента для снимка'),
-            rect: z.object({ x: z.number(), y: z.number(), width: z.number().positive(), height: z.number().positive() }).optional().describe('Область в координатах документа страницы')
+            rect: z.object({ x: z.number().finite().nonnegative(), y: z.number().finite().nonnegative(), width: z.number().finite().positive(), height: z.number().finite().positive() }).optional().describe('Область в координатах документа страницы'),
+            fullPage: z.boolean().optional().describe('Вся страница Chromium, включая область ниже окна'),
+            animations: z.enum(['allow', 'disabled']).optional().describe('Отключить анимации только на время снимка Chromium'),
+            timeoutMs: z.number().int().min(100).max(30000).optional().describe('Ожидание снимка Chromium, включая шрифты; по умолчанию 10000 мс')
           }
         },
-        async ({ selector, rect }) => {
+        async ({ selector, rect, fullPage, animations, timeoutMs }) => {
           if (!entry) return noContext
+          if ([Boolean(selector), Boolean(rect), fullPage === true].filter(Boolean).length > 1) return toolResult({ ok: false, error: 'Выбери один режим снимка: selector, rect или fullPage' })
           // Единственный инструмент со своим транспортом: он отдаёт картинку, а
           // не JSON. Из-за этого он же дольше всех ходил мимо browserExecutor —
           // в Playwright Reader снимок уходил в браузер пользователя, где
           // страницы этого разговора нет, и модель оставалась без вида страницы.
-          // `rect` координатами документа раннер не поддерживает: у него снимок
-          // либо вьюпорта, либо узла по селектору.
-          const direct = await opts.browserScreenshot?.(entry.userId, entry.conversationId, { ...(selector ? { selector } : {}) })
+          const direct = await opts.browserScreenshot?.(entry.userId, entry.conversationId, {
+            ...(selector ? { selector } : {}), ...(rect ? { rect } : {}),
+            ...(fullPage !== undefined ? { fullPage } : {}), ...(animations ? { animations } : {}),
+            ...(timeoutMs !== undefined ? { timeoutMs } : {})
+          })
+          if (!direct && (fullPage || animations || timeoutMs !== undefined)) return toolResult({ ok: false, error: 'fullPage, animations и timeoutMs доступны только в Playwright Reader или Chromium-проверке.' })
           const outcome = direct ?? await opts.relay.request(entry.userId, entry.conversationId, {
             kind: 'screenshot',
             ...(selector ? { selector } : {}),
             ...(rect ? { rect } : {})
           }, opts.timeoutMs)
           if (!outcome.ok) return toolResult(outcome)
-          const result = outcome.result as { dataUrl?: string; rect?: { x: number; y: number; width: number; height: number } } | undefined
+          const result = outcome.result as { dataUrl?: string; page?: { url: string; title: string }; rect?: { x: number; y: number; width: number; height: number } } | undefined
           const match = typeof result?.dataUrl === 'string' ? /^data:(image\/[a-z+]+);base64,(.+)$/.exec(result.dataUrl) : null
           if (!match) {
             return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
           }
-          const where = result?.rect ? `x=${result.rect.x}, y=${result.rect.y}, ${result.rect.width}×${result.rect.height} px` : ''
+          const where = result?.rect ? `x=${result.rect.x}, y=${result.rect.y}, ${result.rect.width}×${result.rect.height} CSS px` : ''
           return {
             content: [
               { type: 'image' as const, data: match[2], mimeType: match[1] },
-              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.` }
+              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${result?.page ? `\nСтраница: ${JSON.stringify(result.page)}` : ''}` }
             ]
           }
         }

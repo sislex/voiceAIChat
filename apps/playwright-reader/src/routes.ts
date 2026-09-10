@@ -12,6 +12,7 @@ import {
   BROWSER_COMMAND_BODY_LIMIT,
   machinePreviewUrl,
   type BrowserCommand,
+  type BrowserScreenshotOptions,
   type BrowserViewport
 } from '@voicechat/shared'
 import { randomUUID } from 'node:crypto'
@@ -91,17 +92,17 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
     }
   })
 
-  app.post<{ Params: { id: string }; Body: { incarnation?: string; tabId?: string; fullPage?: boolean; format?: 'png' | 'jpeg' | 'webp'; quality?: number } }>('/api/browser/:id/screenshot', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { incarnation?: string; tabId?: string } & BrowserScreenshotOptions }>('/api/browser/:id/screenshot', async (req, reply) => {
     try {
       const id = await guard(req, req.params.id)
-      const { incarnation, tabId, fullPage, format, quality } = req.body ?? {}
+      const { incarnation, tabId, ...options } = req.body ?? {}
       if (typeof incarnation !== 'string') throw new BrowserRunnerError(400, 'Нужен incarnation')
       const shot = await runner!.screenshot(id, {
         requestId: randomUUID(),
         incarnation,
         ...(tabId ? { tabId } : {}),
         actor: 'user',
-        command: { type: 'screenshot', ...(fullPage ? { fullPage } : {}), ...(format ? { format } : {}), ...(typeof quality === 'number' ? { quality } : {}) }
+        command: { ...options, type: 'screenshot' }
       })
       return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}` }
     } catch (err) {
