@@ -587,6 +587,7 @@ describe('ChatColumn — режим работы', () => {
     })
   ]
 
+  // @testCase TC-REG-NON-TASK-SURFACES
   it('показывает фактический режим в шапке и открывает настройки по клику', async () => {
     const onOpen = vi.fn()
     renderCol({ permissionMode: 'acceptEdits', onOpenConversationSettings: onOpen })
