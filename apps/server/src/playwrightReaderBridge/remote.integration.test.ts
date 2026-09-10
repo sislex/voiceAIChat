@@ -119,7 +119,7 @@ describe.each([
       expect(stop.status).toBe(200)
       expect(await stop.json()).toEqual({ stopped: true })
     }
-    expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ sessionId: conversationId, userKey: 'ann', conversationKey: conversationId }))
+    expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ sessionId: conversationId, userKey: 'ann', conversationKey: conversationId, profileMode: 'persistent' }))
   })
 
   it('cookie ядра действует в приложении, а мутация требует CSRF при каждом вызове', async () => {

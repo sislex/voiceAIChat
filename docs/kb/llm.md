@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-09-10
-checked: 30d04e5b
+checked: dd98671b
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -573,7 +573,7 @@ heredoc — то есть к поведению, ради отмены кото�
 `remote`, а хинт называет их модели.
 
 С 2026-09-10 браузерные `tabs`, `new-tab`, `select-tab`, `close-tab`, `reload`,
-`stop-loading`, `frames` и `styles` также входят в allow-list Claude при подключённом preview MCP,
+`stop-loading`, `frames`, `styles` и `reset-session` также входят в allow-list Claude при подключённом preview MCP,
 если список включён из-за remote или `VC_KB_TOOL_ALLOWLIST=1`. Это касается и
 обычного Reader-чата, и QA-поверхности Chromium. Сервис проверяет доступ к
 Chromium-цели и не исполняет эти команды в iframe. Аргументы обоих вариантов

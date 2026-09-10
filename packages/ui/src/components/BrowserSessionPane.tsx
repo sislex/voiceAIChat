@@ -1,3 +1,4 @@
+import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
 import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
@@ -89,7 +90,7 @@ export function BrowserSessionPane(props: BrowserSessionPaneProps): JSX.Element 
 
 function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
-  const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
+  const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop' | null>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
   // идёт работа или страница просто такая.
   const [busy, setBusy] = useState(false)
@@ -148,6 +149,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const applyMeta = useCallback((next: BrowserSessionMetadata): void => {
     incarnation.current = next.incarnation
     setMeta(next)
+    setViewportId(VIEWPORTS.find(viewport => viewport.viewport.width === next.viewport.width && viewport.viewport.height === next.viewport.height)?.id ?? null)
     if (!addressDirty.current) setAddress(isWebAddress(next.currentUrl) ? next.currentUrl : '')
     setHistory((current) => pushHistory(current, next.currentUrl))
     if (!origin.current && isWebAddress(next.currentUrl)) origin.current = next.currentUrl
@@ -193,7 +195,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     incarnation.current = null
     setPhase('starting'); setFrame(null); setMeta(null); setMessage('')
     if (!browser) { setPhase('unavailable'); setMessage('Изолированный Chromium недоступен: browser-runner не настроен на сервере. Используйте Web Reader для доступных через прокси страниц или попросите администратора задать VC_BROWSER_RUNNER_URL и VC_BROWSER_RUNNER_TOKEN.'); return }
-    void browser.start(conversationId, VIEWPORT).then(
+    void browser.start(conversationId).then(
       (started) => {
         if (generation !== alive.current) return
         incarnation.current = started.incarnation
@@ -342,7 +344,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     void browser.stop(conversationId)
       // Выбранный размер окна переживает перезапуск: иначе проверка мобильной
       // вёрстки сбрасывалась на десктоп при каждом «Перезапустить».
-      .then(() => browser.start(conversationId, VIEWPORTS.find((v) => v.id === viewportId)?.viewport ?? VIEWPORT))
+      .then(() => browser.start(conversationId, meta?.viewport ?? VIEWPORT))
       .then((started) => {
         if (generation !== alive.current) return
         incarnation.current = started.incarnation
@@ -599,7 +601,14 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadDiagnostics()}>Ошибки страницы</Button>
       {/* Профиль persistent, поэтому «выйти и посмотреть экран входа» иначе
           нечем: перезапуск сессии куки не трогает. */}
-      <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'inspect', action: { kind: 'evaluate', code: 'document.cookie.split(";").forEach(c=>{document.cookie=c.split("=")[0]+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/"});localStorage.clear();sessionStorage.clear();"очищено"' } }).then(() => run({ type: 'reload' }))}>
+      <Button size="sm" variant="ghost" disabled={phase !== 'ready' || busy} onClick={() => void (async () => {
+        const result = await run({ type: 'clearSiteData' })
+        if (!isBrowserSiteDataResetResult(result)) {
+          setMessage(result && typeof result === 'object' && 'error' in result && typeof result.error === 'string' ? result.error : 'Раннер не подтвердил очистку данных сайта')
+          return
+        }
+        await run({ type: 'reload' })
+      })()}>
         Очистить сессию сайта
       </Button>
       <span className="playwright-reader-keys" role="group" aria-label="Клавиши">

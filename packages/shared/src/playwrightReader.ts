@@ -1,3 +1,4 @@
+import type { BrowserSiteDataResetOptions, BrowserSiteDataResetResult } from './browserProfile'
 // Граница приложения Playwright Reader: пользовательский REST остаётся /api/browser,
 // а ядро и отдельный процесс обмениваются только этими RPC и результатами действий.
 import type { BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
@@ -14,6 +15,7 @@ export const PLAYWRIGHT_READER_RPC_BODY_LIMIT = BROWSER_COMMAND_BODY_LIMIT
 /** Управление Chromium отдельно от действий iframe: вкладки и живое дерево документов существуют у раннера. */
 export type BrowserControlCommand =
   | { type: 'status' | 'reload' | 'stop' | 'frames' }
+  | ({ type: 'clearSiteData' } & BrowserSiteDataResetOptions)
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
 
@@ -23,7 +25,7 @@ export interface BrowserImageResult extends Partial<BrowserScreenshotMetadata> {
 
 export interface BrowserActionOutcome {
   ok: boolean
-  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult
+  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult | BrowserSiteDataResetResult
   error?: string
 }
 

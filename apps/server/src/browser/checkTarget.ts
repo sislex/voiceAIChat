@@ -9,11 +9,12 @@
 // несколько ранов и чат карточки, а профиль Chromium — файловый каталог в томе.
 // Ключ по рану оставлял бы в томе по каталогу на каждый прогон.
 
-import type { CiBrowserCheck } from '@voicechat/shared'
+import type { BrowserProfileMode, CiBrowserCheck } from '@voicechat/shared'
 import { isMachinePreviewUrl, machinePreviewUrl } from './machinePreview.js'
 import type { PreviewAction } from '@voicechat/shared'
 
 export interface BrowserCheckTarget {
+  profileMode?: BrowserProfileMode
   /** Идентификатор сессии раннера. */
   sessionId: string
   /** Ключ профиля Chromium (второй ключ пары в `profilePath`). */
@@ -29,7 +30,7 @@ export interface BrowserCheckInput {
 
 /** `null` — этот разговор не про изолированный браузер, идём прежним путём. */
 export function browserCheckTarget(input: BrowserCheckInput): BrowserCheckTarget | null {
-  if (input.playwrightReader) return { sessionId: input.conversationId, conversationKey: input.conversationId }
+  if (input.playwrightReader) return { sessionId: input.conversationId, conversationKey: input.conversationId, profileMode: 'persistent' }
   if (input.taskId && input.check.mode === 'chromium') {
     const key = `task-${input.taskId}`
     return { sessionId: key, conversationKey: key }

@@ -45,7 +45,7 @@ describe('registerBrowserRoutes', () => {
     const res = await app.inject({ method: 'POST', url: '/api/browser/c1/start', payload: { viewport: { width: 1000, height: 700, deviceScaleFactor: 1 } } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ incarnation: 'inc' })
-    expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'c1', userKey: 'admin', conversationKey: 'c1', viewport: { width: 1000, height: 700, deviceScaleFactor: 1 } }))
+    expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'c1', userKey: 'admin', conversationKey: 'c1', profileMode: 'persistent', viewport: { width: 1000, height: 700, deviceScaleFactor: 1 } }))
     await app.close()
   })
 

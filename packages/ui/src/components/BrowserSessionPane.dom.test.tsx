@@ -48,7 +48,7 @@ describe('BrowserSessionPane', () => {
     const browser = fakeBrowser()
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    expect(browser.start).toHaveBeenCalledWith('c1', { width: 1280, height: 800, deviceScaleFactor: 1 })
+    expect(browser.start).toHaveBeenCalledWith('c1')
     expect((screen.getByLabelText('Адрес страницы') as HTMLInputElement).value).toBe('https://a.b')
   })
 
@@ -255,16 +255,38 @@ describe('Playwright Reader как инструмент автотестов (к
     })))
   })
 
-  it('выбранный размер окна переживает перезапуск сессии', async () => {
-    const browser = fakeBrowser()
+  it('восстановленный нестандартный размер переживает перезапуск панели', async () => {
+    const viewport = { width: 1111, height: 777, deviceScaleFactor: 1 }
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ viewport })) })
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)
-    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Телефон' }))
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByRole('button', { name: 'Телефон' })).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Перезапустить' }))
-    // Раньше перезапуск всегда стартовал с десктопного вьюпорта, и проверка
-    // мобильной вёрстки сбрасывалась на каждом «Перезапустить».
-    await waitFor(() => expect(browser.start).toHaveBeenLastCalledWith('c1', expect.objectContaining({ width: 390 })))
+    await waitFor(() => expect(browser.start).toHaveBeenLastCalledWith('c1', viewport))
   })
+
+  it('размер телефона отражает метаданные сохранённого профиля', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ viewport: { width: 390, height: 844, deviceScaleFactor: 1 } })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByRole('button', { name: 'Телефон' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it.each([
+    [{ ok: true, clearedCookies: 3, clearedOrigins: ['https://a.b'] }, true, null],
+    [{ ok: false, error: 'Хранилище занято' }, false, 'Хранилище занято'],
+    [meta(), false, 'Раннер не подтвердил очистку данных сайта']
+  ])('очистка перезагружает страницу только после подтверждения: %j', async (reply, reload, error) => {
+    const command = vi.fn(async (_id: string, req: { command: { type: string } }) => req.command.type === 'clearSiteData' ? reply : meta())
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Очистить сессию сайта' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'clearSiteData' } })))
+    if (error) expect(await screen.findByText(error)).toBeInTheDocument()
+    else await waitFor(() => expect(command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'reload' } })))
+    expect(command.mock.calls.some(([, req]) => req.command.type === 'reload')).toBe(reload)
+  })
+
 })
 
 describe('запись сценария автотеста (круг 12)', () => {

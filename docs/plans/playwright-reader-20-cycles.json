@@ -2077,13 +2077,270 @@
         }
       },
       "endedAt": "2026-09-10T03:47:08.286840+00:00",
-      "durationSeconds": 1614
+      "durationSeconds": 1614,
+      "commit": "dd98671b"
     },
     {
       "number": 11,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T03:47:58.670888+00:00",
+      "items": [
+        {
+          "id": "11-01",
+          "title": "Сохраняемый профиль Reader при одноразовом профиле QA",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-02",
+          "title": "Сессионные cookie переживают закрытие Chromium",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-03",
+          "title": "Последний адрес Reader восстанавливается после открытия панели",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-04",
+          "title": "Размер окна восстанавливается из профиля, явный выбор имеет приоритет",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-05",
+          "title": "Одновременные start/stop не теряют новую сессию и не удаляют её профиль",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-06",
+          "title": "Ошибочные cookie старта проверяются до запуска и не оставляют скрытый Chromium",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-07",
+          "title": "Очистка сайта удаляет HttpOnly-cookie",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-08",
+          "title": "Очистка сайта удаляет IndexedDB, CacheStorage и service workers",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-09",
+          "title": "MCP reset-session очищает фактический Chromium",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-10",
+          "title": "Панель использует полную очистку и прекращает reload при ошибке",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T03:31:48.774036+00:00",
+        "baseline": "/tmp/voicechat-reader-cycle-11-probe.json",
+        "observations": [
+          "Точная кнопка UI очистила JS-cookie/localStorage, но сохранила HttpOnly session-cookie, IndexedDB auth-db и CacheStorage auth-cache.",
+          "CDP Storage.clearDataForOrigin плюс context.clearCookies удалили эти данные на локальном стенде.",
+          "Текущий stop/start потерял обе cookie и localStorage; profileMode persistent пока не существует и игнорируется.",
+          "Одновременные stop/start оба завершились, но процесс пробы остался жить после manager.close: прежний context.on(close) удаляет новую сессию из Map. Проба завершила JSON; её PID 5778 остановлен SIGTERM, чтобы не оставлять Chromium.",
+          "MCP reset-session по коду обращается только к WebReader clearCookies; UI исполняет script и reload даже после ошибки.",
+          "Reader и QA сейчас не различают срок жизни профиля. Core browserCheckTarget знает Reader/задачу; можно передавать явный profileMode."
+        ],
+        "status": "research_only",
+        "candidates": [
+          "Разделить сохраняемый профиль Reader и одноразовый QA",
+          "Сохранение сессионных cookie между остановками",
+          "Восстановление последнего адреса",
+          "Восстановление размера окна при повторном открытии панели",
+          "Сериализация start/stop и защита от старых close/catch",
+          "Полная очистка данных текущего сайта с HttpOnly/IndexedDB/CacheStorage/SW",
+          "MCP reset-session должен действовать в выбранном Chromium",
+          "Ошибка очистки не должна приводить к ложному успеху и reload"
+        ],
+        "notes": [
+          "Десять пунктов выбраны после прототипов; интеграция ещё не начата.",
+          "Другие процессы пользователя и voiceAIChat1 не трогать."
+        ],
+        "cleanup": "SIGTERM собственному PID5778 завершил пробу с задержкой. Защитная ветка SIGKILL по точному argv не исполнилась: к проверке процесс уже завершился. Другие процессы не тронуты.",
+        "raceEvidence": {
+          "path": "/tmp/voicechat-reader-cycle-11-race.json",
+          "iterations": 3,
+          "result": "Во всех трёх попытках stop/start fulfilled, но count=0 и новая incarnation получает not_found. Обе Chromium-context явно закрыты стендом."
+        },
+        "plannedItems": [
+          "Сохраняемый профиль Reader при одноразовом профиле QA",
+          "Сессионные cookie переживают закрытие Chromium",
+          "Последний адрес Reader восстанавливается после открытия панели",
+          "Размер окна восстанавливается из профиля, явный выбор имеет приоритет",
+          "Одновременные start/stop не теряют новую сессию и не удаляют её профиль",
+          "Ошибочные cookie старта проверяются до запуска и не оставляют скрытый Chromium",
+          "Очистка сайта удаляет HttpOnly-cookie",
+          "Очистка сайта удаляет IndexedDB, CacheStorage и service workers",
+          "MCP reset-session очищает фактический Chromium",
+          "Панель использует полную очистку и прекращает reload при ошибке"
+        ],
+        "prototype": {
+          "path": "/tmp/voicechat-reader-cycle-11-draft",
+          "raceFixed": "/tmp/voicechat-reader-cycle-11-race-fixed.json",
+          "result": "3/3: count=1 и новая incarnation ready после stop/start",
+          "implementedDraftOnly": [
+            "stopping Map; start ждёт закрытия/очистки; close/catch проверяют прежнюю запись; close ждёт остановки; нет новых стартов при закрытии manager",
+            "profileMode persistent/ephemeral; .reader-state.json c cookie, url, viewport (0600, atomic); восстановление ограничено 10с и прежней политикой URL",
+            "validCookies до запуска; create закрывает context при ошибке и чистит только ephemeral-профиль после успешного launch. Типизация/форматирование черновика ещё не проверены штатным typecheck."
+          ],
+          "notImplementedYet": [
+            "shared contracts и server/module/route профиль Reader/QA",
+            "полная очистка сайта и модель/панель",
+            "UI start без навязанного viewport, избегание двойного восстановления URL",
+            "последовательные регрессии, штатная типизация интегрированного кода, гейты"
+          ],
+          "cookieValidation": {
+            "baseline": "/tmp/voicechat-reader-cycle-11-cookie-start-baseline.log",
+            "fixed": "/tmp/voicechat-reader-cycle-11-cookie-start-fixed.log",
+            "result": "Неверный URL cookie: старый start отклоняется при count=1; прототип отклоняет до Chromium, count=0."
+          },
+          "profileFixed": {
+            "path": "/tmp/voicechat-reader-cycle-11-profile-fixed-2.json",
+            "result": "Без Set-Cookie при восстановлении сохранены session/persistent cookie, localStorage, URL auth.reader.test/ и viewport390x820. IndexedDB/CacheStorage в этой пробе были намеренно очищены до stop, их сохранение ещё отдельно не проверялось.",
+            "finalPath": "/tmp/voicechat-reader-cycle-11-profile-fixed-3.json",
+            "finalResult": "Повтор3 также сохранил IndexedDB retained-db и CacheStorage retained-cache; запущен после исправления validCookies и create cleanup."
+          },
+          "draftTypecheck": {
+            "exitCode": 0,
+            "log": "/tmp/voicechat-reader-cycle-11-draft-typecheck.log"
+          }
+        },
+        "designNotes": [
+          "profileMode по умолчанию ephemeral, Reader выставляет persistent и в REST-start, и в core.modelTarget/browserCheckTarget; QA сохраняет очистку профиля.",
+          "Cookie-file дополняет нативный persistent profile для cookie с expires=-1; хранить HttpOnly/secure/sameSite/partitionKey, не выводить значения.",
+          "Проба cookies после восстановления /seed была ложноположительной: /seed сам устанавливает cookie. Повтор2 перед stop открывает / без Set-Cookie и проверяет auto-restore URL/viewport.",
+          "Последнюю страницу восстанавливать после установки bootstrap cookie прокси; публичный alias сохранять, при старте снова validate/applyAlias.",
+          "MCP reset-session уже означает все сайты без host; для Chromium нужен соответствующий control, для панели — текущий origin. WebReader cookie jar тоже нужен проксированным машинным сайтам; не потерять прежний fallback.",
+          "Не сносить bootstrap cookie доступа к прокси как логин сайта: новая команда модели снова установит её, ручная панель иначе лишится доступа к превью.",
+          "Данные закрытых origin нужно учитывать при reset всех сайтов (tracking framenavigated + профиль); состояние одной текущей страницы недостаточно.",
+          "Cookie привязаны к host, не к порту; очистка host может затронуть cookie sibling-порта, это поведение браузера. Хранилища строго по origin.",
+          "Нельзя await undefined в начале start: это сдвигает резервирование pending за microtask и открывает race с немедленным stop. Черновик исправлен на условный await stopping.",
+          "Новые source-файлы и sessionManager пока только /tmp. Не копировать вслепую: 11-06..10 не реализованы, типы helper требуют ревью.",
+          "clearSiteData control: current (UI) или all+optional host (MCP прежняя семантика reset-session); отказ при unknown/unsupported response, чтобы старый runner не выдал ложный успех.",
+          "Сохранять service bootstrap cookie по name+hostname, не выводя value; очищать все paths HttpOnly-cookie совпадающего host/parent-domain, хранилища — по origin.",
+          "Панель start без VIEWPORT аргумента позволит восстановить размер; restart не должен открывать URL второй раз, если runner уже его восстановил.",
+          "MCP reset-session оставляет WebReader clearCookies fallback; Chromium reset и jar проксированных machine-сайтов требуют согласованного поведения.",
+          "Нужны отдельные тесты очистки чужого origin/профиля, service worker, host alias и bootstrap cookie.",
+          "На старте чтение профиля до launch, cookie восстановить перед bootstrap cookie и goto; .reader-state.json никогда не отправляется по API.",
+          "Пакетная интеграция цикла11 обязательно начинается с shared; inline profileMode в /tmp — лишь прототип."
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T03:31:48.774036+00:00",
+          "endedAt": "2026-09-10T03:47:58.670888+00:00",
+          "detail": "Прототипы вне checkout во время гейтов 10; интервалы пересекаются."
+        }
+      },
+      "validation": {
+        "native": {
+          "tests": 16,
+          "durationMs": 6040,
+          "log": "/tmp/voicechat-reader-cycle-11-native-3.log"
+        },
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:08:07.138125+00:00",
+          "endedAt": "2026-09-10T04:08:28.895950+00:00",
+          "durationMs": 21758
+        },
+        "e2eTests": 18,
+        "typecheckExitCode": 0,
+        "webBuildExitCode": 0,
+        "visual": [
+          "23-project-persistent-login.png",
+          "25-profile-cleared-from-panel.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-11",
+        "corrections": [
+          "Typecheck указал неизвестный ответ UI: добавлена object-проверка перед in.",
+          "Первый E2E: 17/18, точное число cookie заменено на >=3, поскольку стенды разных портов разделяют 127.0.0.1-cookie; отдельный native доказывает удаление ровно3.",
+          "Первый корневой адресный запуск Vitest не стартовал из-за min/max workers; тесты затем запущены из своих пакетов с обеими границами.",
+          "Первый gate:fast упал на двух прежних private applyCookies-тестах молчаливой фильтрации; теперь повреждённый список проверяется через public start с явным отказом до Chromium. Четыре cookie-теста прошли, повторный fast exit0."
+        ],
+        "fastAttempts": [
+          {
+            "exitCode": 1,
+            "startedAt": "2026-09-10T04:09:55.030763+00:00",
+            "endedAt": "2026-09-10T04:13:32.489337+00:00",
+            "durationMs": 217457
+          },
+          {
+            "exitCode": 0,
+            "startedAt": "2026-09-10T04:14:54.994525+00:00",
+            "endedAt": "2026-09-10T04:18:52.719879+00:00",
+            "durationMs": 237723
+          }
+        ],
+        "fastTests": {
+          "passed": 7465,
+          "skipped": 45
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:19:11.579998+00:00",
+          "endedAt": "2026-09-10T04:24:49.494466+00:00",
+          "durationMs": 337893
+        },
+        "gateTests": 7796
+      },
+      "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+      "sharedImplementationDurationSeconds": 1315,
+      "endedAt": "2026-09-10T04:25:31.032514+00:00"
     },
     {
       "number": 12,
