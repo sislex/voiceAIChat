@@ -632,7 +632,7 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'upload {selector, name, base64, mimeType?} — загрузить файл в input type=file; ' +
     'viewport {width} — ширина превью в px (0 — адаптив) для проверки мобильной вёрстки; ' +
     'a11y {selector?} — дерево доступности (роли и имена, как их видит скринридер). ' +
-    'In proxy Web Reader, audit {group?, selector?, rules?, mode?, limit?, offset?} reports bounded QA findings with selectors and evidence. ' +
+    'In both Web Reader engines, audit {group?, selector?, rules?, mode?, limit?, offset?} reports bounded QA findings with selectors and evidence. ' +
     'Use mode:list to discover checks, then mode:run (default); follow nextOffset and read limitations. Default group: markup. ' +
     'Heuristic findings need visual confirmation; no findings never proves the whole application bug-free. ' +
     'Тестовое окружение, запущенное на машине этого разговора (dev-сервер репозитория, feature-preview), открывай ' +

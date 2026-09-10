@@ -14,7 +14,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 30 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-11 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-10 | ⚠ 17 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 517f7602 fix(make): register localization dependencies in gate graphs … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: ee0fc797 feat(web-reader): add 30 markup audit checks (QA cycle 01) … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 27 коммит(ов) в areas после сверки: 517f7602 fix(make): register localization dependencies in gate graphs … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 143 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
@@ -23,9 +23,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 78 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 98 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1338 коммит(ов) в areas после сверки: 517f7602 fix(make): register localization dependencies in gate graphs … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1339 коммит(ов) в areas после сверки: ee0fc797 feat(web-reader): add 30 markup audit checks (QA cycle 01) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 62 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 517f7602 fix(make): register localization dependencies in gate graphs … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-10 | ⚠ 3 коммит(ов) в areas после сверки: ee0fc797 feat(web-reader): add 30 markup audit checks (QA cycle 01) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 60 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 104 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 316 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
@@ -36,12 +36,12 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-10 | ⚠ 2 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: 517f7602 fix(make): register localization dependencies in gate graphs … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-11 | ⚠ 3 коммит(ов) в areas после сверки: ee0fc797 feat(web-reader): add 30 markup audit checks (QA cycle 01) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 198 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 88eb665f feat(releases): независимые проверки и выпуски приложений … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: 517f7602 fix(make): register localization dependencies in gate graphs |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 150 коммит(ов) в areas после сверки: 93427cdf feat(readers): независимые приложения и релизы Web Reader и Playwright … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 1 коммит(ов) в areas после сверки: 78b39d12 feat(make): add Russian and English localization |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-11 | ⚠ 2 коммит(ов) в areas после сверки: ee0fc797 feat(web-reader): add 30 markup audit checks (QA cycle 01) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-10, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -74,8 +74,9 @@
 
 ## Журнал сессий
 
-Всего записей: 734. Последние:
+Всего записей: 735. Последние:
 
+- [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-02.md) — web-reader-qa-cycle-02
 - [2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-qa-cycle-01.md) — Web Reader QA cycle 01 - evidence-based markup audit
 - [2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md](log/2026-09-11-alexeys-macbook-air-2-web-reader-gate-timing.md) — Замер отдельных гейтов Web Reader и его UI
 - [2026-09-11-alexeys-macbook-air-2-make-localization.md](log/2026-09-11-alexeys-macbook-air-2-make-localization.md) — Russian and English localization for Make
@@ -85,7 +86,6 @@
 - [2026-09-10-macbook-air-user-task-chat-composer.md](log/2026-09-10-macbook-air-user-task-chat-composer.md) — task-chat-composer
 - [2026-09-10-macbook-air-user-chat-settings-llm.md](log/2026-09-10-macbook-air-user-chat-settings-llm.md) — chat-settings-llm
 - [2026-09-10-alexeys-macbook-air-2-web-reader-next-priorities.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-next-priorities.md) — web-reader-next-priorities
-- [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-20.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-20.md) — web-reader-cycle-20
 
 ## Исторические планы
 

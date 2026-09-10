@@ -55,6 +55,7 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
         })
         // Селекторные ошибки приходят значением. Их нельзя превращать в успешный ответ MCP.
         if ('ok' in result && !result.ok) return { ok: false, error: result.error ?? 'Действие в Chromium не выполнено' }
+        if (action.kind === 'audit' && (!('audit' in result) || result.audit?.version !== 1 || result.audit.surface !== 'chromium')) return { ok: false, error: 'This browser runner does not support native audits. Update browser-runner and retry.' }
         return { ok: true, result }
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : 'Действие в Chromium не выполнено' }

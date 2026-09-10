@@ -45,8 +45,8 @@ are written before implementation, after inspecting the relevant capabilities.
 
 | Cycle | Area | Completed | Commit |
 | --- | --- | --- | --- |
-| 01 | Markup audit and evidence contract | 30/30 | `feat(web-reader): add 30 markup audit checks (QA cycle 01)` |
-| 02 | Layout and clipping | 0/30 | pending |
+| 01 | Markup audit and evidence contract | 30/30 | `cf8e2df1` |
+| 02 | Layout and clipping, with native audit integration | 30/30 | `feat(web-reader): add native layout audits (QA cycle 02)` |
 | 03 | Typography and text rendering | 0/30 | pending |
 | 04 | Color and contrast | 0/30 | pending |
 | 05 | Interactive control states | 0/30 | pending |
@@ -72,7 +72,7 @@ are written before implementation, after inspecting the relevant capabilities.
 | 25 | Scenario assertions | 0/30 | pending |
 | 26 | Scenario execution diagnostics | 0/30 | pending |
 | 27 | External-site capability reporting | 0/30 | pending |
-| 28 | Native-browser audit parity and session handoff | 0/30 | pending |
+| 28 | Native session handoff and authenticated test profiles | 0/30 | pending |
 | 29 | Reproducible bug reports | 0/30 | pending |
 | 30 | Regression observation and model guidance | 0/30 | pending |
 
@@ -119,3 +119,50 @@ bounded reports and sensitive-value exclusion. Inspected the screenshot fixture.
 The final `npm run gate` passed with exit code 0 in 743.57 s; its Reader E2E stage
 passed all 279 tests. The earlier fast gate overlapped a late runtime/test change
 and failed; the complete frozen-implementation rerun supersedes that result.
+
+## Cycle 02: layout diagnostics and native parity
+
+The same bounded audit runtime will serve both engines. Native parity is supporting
+infrastructure; the 30 new improvements are these independent layout checks. All
+are review candidates because applications can intentionally clip or overlap UI.
+
+1. `document-horizontal-overflow`.
+2. `horizontal-scroll-locked`.
+3. `vertical-scroll-locked`.
+4. `clipped-horizontal-content`.
+5. `clipped-vertical-content`.
+6. `zero-width-control`.
+7. `zero-height-control`.
+8. `offscreen-fixed-element`.
+9. `oversized-fixed-element`.
+10. `sticky-without-inset`.
+11. `sticky-scroll-trap`.
+12. `collapsed-float-container`.
+13. `collapsed-positioned-container`.
+14. `overflowing-flex-row`.
+15. `overflowing-grid`.
+16. `zero-width-grid-item`.
+17. `image-wider-than-container`.
+18. `table-wider-than-container`.
+19. `pre-wider-than-container`.
+20. `absolute-outside-container`.
+21. `negative-inline-start-content`.
+22. `overlapping-flex-items`.
+23. `overlapping-grid-items`.
+24. `ineffective-z-index`.
+25. `ineffective-align-self`.
+26. `ineffective-order`.
+27. `ineffective-vertical-align`.
+28. `hidden-attribute-overridden`.
+29. `display-contents-control`.
+30. `multicolumn-content-clipping`.
+
+Each check requires a broken/repaired browser fixture on both surfaces. Native
+regressions also cover original URL reporting, human ownership and MCP integration.
+
+Cycle 02 verification: 132 proxy audit E2E tests, 125 native-runner audit tests,
+70 shared tests, 9 browser-contract tests and 8 Reader module tests passed. The
+complete App/MCP/runner audit path passed with human ownership preserved. Inspected
+the layout screenshot. `gate:fast` passed in 910.58 s; pre-commit `gate` passed in
+528.68 s, both with exit code 0 and all 371 Reader E2E tests. Public native audits
+ran on Google, Facebook and Instagram without signing in or choosing consent.
