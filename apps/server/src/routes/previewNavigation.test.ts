@@ -9,7 +9,7 @@ const setup = (html: string) => {
   dom.window.eval(previewContextScript(base).replace(/^<script>/, '').replace(/<\/script>$/, ''))
   return dom.window
 }
-const proxyTarget = (el: Element, attr: string) => new URL(el.getAttribute(attr)!, 'https://reader.test').searchParams.get('url')
+const proxyTarget = (el: Element, attr: string) => new URL(el.getAttributeNode(attr)!.value, 'https://reader.test').searchParams.get('url')
 afterEach(() => dom?.window.close())
 
 describe('context: динамическая нативная навигация', () => {

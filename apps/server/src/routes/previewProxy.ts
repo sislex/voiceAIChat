@@ -1,3 +1,4 @@
+import { previewResourceScript } from './previewResources.js'
 import { READER_PROJECT_ORIGIN, readerProjectUrl, type ReaderProjectRequest, type ReaderProjectResponse } from '@voicechat/shared'
 import { loadPreviewProject, ProjectPreviewError } from './previewProjectLoader.js'
 import { previewInteractionHelpers } from './previewInteractions.js'
@@ -122,6 +123,7 @@ const toProxy=(value)=>{const s=String(value);
 try{const local=new URL(s,location.href);if(local.origin===location.origin&&local.pathname==='/api/preview'&&local.searchParams.has('url'))return s}catch{}
 try{const u=new URL(s,documentBase===fallbackBase?currentBase():documentBase);if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())+u.hash}catch{}
 return s};
+${previewResourceScript()}
 const cleanHeaders=(headers)=>{const h=new Headers(headers||undefined);const auth=h.get('authorization');if(auth!==null){h.delete('authorization');h.set('x-preview-authorization',auth)}return h};
 const nativeFetch=typeof window.fetch==='function'?window.fetch.bind(window):null;
 if(nativeFetch)window.fetch=function(input,init){

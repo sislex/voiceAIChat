@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 3ff911b2
+checked: 30588c23
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -246,6 +246,14 @@ URL ответа. Обёртки `pushState/replaceState` сохраняют н�
 очищенный hash). `pageInfo` и выбор элемента возвращают этот же адрес. После
 pagehide/pageshow восстанавливается обработчик команд — BFCache не оставляет
 живую страницу с отключённым мостом. Chromium: `webReaderNavigation.e2e.test.ts`.
+
+Ресурсы, созданные JavaScript после загрузки, синхронно переписывает
+`previewResources.ts`: URL-свойства DOM, setAttribute/NS, srcset, inner/outerHTML,
+insertAdjacentHTML и ShadowRoot.innerHTML. MutationObserver здесь опоздал бы:
+запрос начинается до его callback. Getter возвращает URL сайта; document.URL,
+documentURI/baseURI следуют логическому SPA-адресу. SRI снимается с переписываемых
+script/link. CSSOM, document.write и srcdoc этот слой пока не эмулирует.
+Проверка реальной загрузки ресурсов — `e2e/webReaderResources.e2e.test.ts`.
 
 Нативные формы и динамические ссылки обрабатывает `previewNavigation.ts` внутри
 context-шима. GET собирает successful controls через `FormData(form, submitter)`
