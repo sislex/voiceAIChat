@@ -9,6 +9,7 @@ export async function startReaderFormsFixture() {
     res.end(`<!doctype html><meta charset="utf-8"><title>Формы Reader</title>
       <style>body { font: 18px sans-serif; margin: 24px } label,output {display:block;margin:8px 0} #scroller {height:80px;width:300px;overflow:auto;border:1px solid} #inner {height:30000px} #tall {height:30000px}</style>
       <h1>Формы Reader</h1>
+      <button id="popup" onclick="window.open('/next')">Вход в новом окне</button>
       <div id="drag-source" style="position:absolute;right:20px;top:20px;width:120px;height:80px;background:#cfe2cc">Перетащить</div><output id="drag-result">нет движения</output>
       <button id="modifiers">Проверить модификаторы</button><output id="modifiers-result">нет клика</output>
       <label>Цель клавиши <input id="target"></label><label>Другое поле <input id="other"></label><output id="key-result">нет клавиши</output>

@@ -7,7 +7,7 @@ import type { ProjectTestUser } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
 import { scenarioLabel } from '@shared/qa'
 import { runScenarioStep, scenarioProblems, stepHint } from '@shared/scenarioStep'
-import { Button, IconButton } from '@voicechat/ui-kit'
+import { Button, EmptyState, IconButton } from '@voicechat/ui-kit'
 
 // Панель Playwright Reader: живой изолированный Chromium разговора. В отличие от
 // WebReaderFrame (iframe поверх /api/preview), здесь настоящий браузер на сервере —
@@ -396,7 +396,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     // уход на другой хост посреди проверки почти всегда промах или редирект.
     if (!origin.current) origin.current = full
     if (recording) setSteps((current) => withPause(recordNavigate(current, full)))
-    void run({ type: 'navigate', url: full })
+    void run({ type: meta?.activeTabId ? 'navigate' : 'newTab', url: full })
   }
 
   const submitTyping = (): void => {
@@ -485,8 +485,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
   return <section className="playwright-browser-pane" aria-label="Browser session">
-    {tabs.length > 0 && (
-      <div className="playwright-reader-tabs" role="tablist" aria-label="Вкладки страницы">
+      <div className="playwright-reader-tabs" role={tabs.length ? 'tablist' : 'group'} aria-label="Вкладки страницы">
         {tabs.map((tab) => (
           <span key={tab.id} className={`playwright-reader-tab${tab.id === meta?.activeTabId ? ' is-active' : ''}`}>
             <button
@@ -505,11 +504,10 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         <IconButton size="sm" aria-label="Новая вкладка" title="Новая вкладка" disabled={phase !== 'ready'}
           onClick={() => void run({ type: 'newTab' })}>+</IconButton>
       </div>
-    )}
     <div className="playwright-reader-header">
-      <IconButton size="sm" aria-label="Назад" title="Назад" disabled={phase !== 'ready'} onClick={() => void run({ type: 'back' })}>‹</IconButton>
-      <IconButton size="sm" aria-label="Вперёд" title="Вперёд" disabled={phase !== 'ready'} onClick={() => void run({ type: 'forward' })}>›</IconButton>
-      <IconButton size="sm" aria-label="Обновить" title="Обновить" disabled={phase !== 'ready'} onClick={() => void run({ type: 'reload' })}>⟳</IconButton>
+      <IconButton size="sm" aria-label="Назад" title="Назад" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'back' })}>‹</IconButton>
+      <IconButton size="sm" aria-label="Вперёд" title="Вперёд" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'forward' })}>›</IconButton>
+      <IconButton size="sm" aria-label="Обновить" title="Обновить" disabled={phase !== 'ready' || !meta?.activeTabId} onClick={() => void run({ type: 'reload' })}>⟳</IconButton>
       <input
         type="url"
         className="playwright-reader-address"
@@ -646,7 +644,9 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             onKeyDown={onFrameKeyDown}
             style={{ width: '100%', display: 'block', cursor: 'pointer' }}
           />
-        : <div className="webpreview-empty" role="status">Запуск изолированного Chromium…</div>}
+        : phase === 'ready' && tabs.length === 0
+          ? <EmptyState title="Все вкладки закрыты" description="Откройте новую вкладку кнопкой + над адресом страницы." />
+          : <div className="webpreview-empty" role="status">Запуск изолированного Chromium…</div>}
       {busy && <span className="playwright-reader-busy" role="status">Выполняется…</span>}
     </div>
     {steps.length > 0 && (

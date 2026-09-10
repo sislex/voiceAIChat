@@ -9,7 +9,7 @@ REST `/api/browser/:id/{start,command,screenshot}`, остановка сесс�
   ключ к прокси машины и запись кадра проверки. Локальная реализация —
   `apps/server/src/playwrightReaderBridge/localCore.ts`, HTTP — `src/standalone/httpCore.ts`.
   Своей БД, пользовательской авторизации и файлового тома у приложения нет.
-- `PlaywrightReaderService` (`src/service.ts`) — `execute`/`screenshot`; сборка —
+- `PlaywrightReaderService` (`src/service.ts`) — `execute`/`screenshot`/`control`; сборка —
   `createPlaywrightReaderModule`. MCP `/mcp/preview` у Web Reader вызывает этот порт.
   Ответ команды находится в `result`; `null` означает обычную панель, ошибка Chromium
   возвращается явно и не запускает relay в iframe пользователя.

@@ -15,6 +15,7 @@ interface Session {
   context: BrowserContext
   pages: Map<string, Page>
   pageIds: WeakMap<Page, string>
+  openerIds: Map<string, string>
   activeTabId: string
   viewport: BrowserViewport
   /** Кольцевые журналы страницы: без них модели нечем проверять поведение. */
@@ -40,8 +41,9 @@ const NAVIGATION_OPTIONS = { waitUntil: 'domcontentloaded' as const, timeout: 30
  * следующая команда падала `stale_tab` — сессия становилась непригодной, хотя
  * другие вкладки живы. Пустая строка означает «вкладок не осталось».
  */
-export function nextActiveTab(open: string[], activeId: string, closedId: string): string {
+export function nextActiveTab(open: string[], activeId: string, closedId: string, openerId?: string): string {
   if (activeId !== closedId) return activeId
+  if (openerId && openerId !== closedId && open.includes(openerId)) return openerId
   return open.find((id) => id !== closedId) ?? ''
 }
 
@@ -117,6 +119,7 @@ export class BrowserSessionManager {
       context,
       pages: new Map(),
       pageIds: new WeakMap(),
+      openerIds: new Map(),
       console: [],
       network: [],
       activeTabId: '',
@@ -155,8 +158,10 @@ export class BrowserSessionManager {
       session.pages.set(id, page)
       page.on('close', () => {
         session.pages.delete(id)
-        session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id)
+        session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id, session.openerIds.get(id))
+        session.openerIds.delete(id)
       })
+      page.on('popup', (popup) => session.openerIds.set(register(popup), id))
       // Журналы собираются с момента открытия страницы: спросить их задним
       // числом нельзя, а этапу автотестов нужны именно они.
       page.on('console', (message) => {
@@ -236,6 +241,8 @@ export class BrowserSessionManager {
     if (command.type === 'newTab') {
       const url = command.url ? applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString() : null
       const created = await session.context.newPage()
+      // Размер контекста остался исходным после resize существующих страниц.
+      await created.setViewportSize(session.viewport)
       const id = session.pageIds.get(created) ?? randomUUID()
       session.pageIds.set(created, id); session.pages.set(id, created); session.activeTabId = id
       if (url) await created.goto(url, NAVIGATION_OPTIONS)
@@ -325,7 +332,8 @@ export class BrowserSessionManager {
   private async metadata(session: Session): Promise<BrowserSessionMetadata> {
     session.lastUsedAt = Date.now()
     const tabs: BrowserTab[] = await Promise.all([...session.pages].map(async ([id, page]) => ({
-      id, url: this.publicUrl(page.url()), title: await page.title().catch(() => ''), active: id === session.activeTabId
+      id, url: this.publicUrl(page.url()), title: await page.title().catch(() => ''), active: id === session.activeTabId,
+      ...(session.openerIds.get(id) ? { openerTabId: session.openerIds.get(id) } : {})
     })))
     const active = tabs.find((tab) => tab.active)
     const activePage = session.pages.get(session.activeTabId)

@@ -571,6 +571,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'screenshot {selector? | rect?} — картинка элемента, области или видимой части страницы, когда важен внешний вид, а не текст; ' +
     'errors {clear?} — накопленные ошибки страницы (JS-исключения, console.error, упавшие запросы) — проверяй их после действий при тестировании; ' +
     'wait {selector|text, timeoutMs?} — дождаться появления элемента (асинхронные SPA); back/forward — по истории страницы; ' +
+    'В Playwright Reader и Chromium-проверке также доступны tabs — список вкладок с id; new-tab {url?}; ' +
+    'select-tab {tabId}; close-tab {tabId}; reload — перезагрузка; stop-loading — остановка загрузки без закрытия сессии. ' +
+    'После открытия popup вызови tabs, найди его по openerTabId и выбери select-tab перед чтением или вводом. ' +
     'edits — правки, сделанные пользователем в режиме «Редактировать» (перенеси их в код, если просят «сделай как я поправил»); ' +
     'network {filter?, clear?} — журнал fetch/XHR-запросов страницы (метод, реальный URL, статус, длительность); ' +
     'console {pattern?, level?, clear?} — журнал console.log/info/warn/error; ' +

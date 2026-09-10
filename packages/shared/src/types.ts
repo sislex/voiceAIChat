@@ -140,6 +140,8 @@ export interface BrowserTab {
   url: string
   title: string
   active: boolean
+  /** Вкладка, открывшая popup; нужна модели для продолжения после входа. */
+  openerTabId?: string
 }
 
 export interface BrowserError {

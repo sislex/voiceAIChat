@@ -148,7 +148,44 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'console', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'hover', 'network', 'open', 'press', 'read', 'reset-session', 'screenshot', 'scroll', 'set', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'close-tab', 'console', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+  })
+
+  it.each([
+    ['tabs', {}, { type: 'status' }],
+    ['new-tab', { url: 'https://example.com/' }, { type: 'newTab', url: 'https://example.com/' }],
+    ['select-tab', { tabId: 't2' }, { type: 'selectTab', tabId: 't2' }],
+    ['close-tab', { tabId: 't2' }, { type: 'closeTab', tabId: 't2' }],
+    ['reload', {}, { type: 'reload' }],
+    ['stop-loading', {}, { type: 'stop' }]
+  ])('%s управляет Chromium от имени текущего разговора', async (name, args, command) => {
+    const control = vi.fn(async () => ({ ok: true, result: { id: CONV, conversationId: CONV, incarnation: 'inc', state: 'ready' as const, tabs: [], activeTabId: 't2', viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: null, title: null } }))
+    await makeApp(undefined, { browserControl: control })
+    const result = await call(name as string, args as Record<string, unknown>)
+    expect(result.isError).not.toBe(true)
+    expect(result.text).toContain('t2')
+    expect(control).toHaveBeenCalledWith(U, CONV, command)
+  })
+
+  it('управление вкладками не уходит в iframe и не вызывается без токена хода', async () => {
+    const control = vi.fn(async () => null)
+    const forwarded = vi.fn()
+    await makeApp(undefined, { browserControl: control })
+    client = forwarded
+    expect((await call('tabs', {}, `?k=${SECRET}&turn=invalid`)).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
+    expect(await call('tabs')).toMatchObject({ isError: true, text: expect.stringContaining('Playwright Reader') })
+    expect(forwarded).not.toHaveBeenCalled()
+  })
+
+  it('новая вкладка применяет доступный machine.internal и отвергает неверные URL', async () => {
+    const control = vi.fn(async () => ({ ok: true }))
+    await makeApp({ machineOf: async () => 'agent-7', testUsersOf: async () => [] }, { browserControl: control })
+    expect((await call('new-tab', { url: 'http://machine.internal:5173/#/make' })).isError).not.toBe(true)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'newTab', url: 'http://agent-7.machine.internal:5173/#/make' })
+    control.mockClear()
+    expect((await call('new-tab', { url: 'file:///tmp/data' })).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
   })
 
   it('errors, wait, back и edits доходят до клиента как действия', async () => {
