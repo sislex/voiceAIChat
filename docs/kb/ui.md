@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-10
-checked: 8b5e9306
+checked: 7b2c3283
 areas:
   - packages/admin-app/src
   - packages/app-shell
@@ -2370,7 +2370,9 @@ DOM Recorder и `e2e/webReaderScenarioStorage.e2e.test.ts`.
 
 Правки сохраняются в браузере клиента: скрипт пишет их через страничный `localStorage` (он уже подменён context-шимом, поэтому записи автоматически разделены по внешнему origin) под ключом `voicechat.preview.edits.v1:<origin+pathname реального URL>`. Формат — карта `selector → { original: {cssText, text}, style?, text?, deleted? }`; при каждой загрузке страницы скрипт применяет сохранённые правки заново, поэтому они переживают reload, навигацию туда-обратно и перезапуск браузера (в пределах native localStorage). Действия edit-режима не попадают в запись сценария и не мешают MCP-командам. Покрытие — `apps/server/src/routes/previewProxy.edit.test.ts`; Reader-сторона кнопки — `apps/web-recorder/src/Recorder.dom.test.tsx`.
 
-Общий синхронный генератор клиентских идентификаторов — `browserId()` из `packages/shared/src/browserId.ts`, экспортированный публичным barrel `packages/shared/src/index.ts`. Он сначала использует нативный `crypto.randomUUID()`, при его отсутствии формирует UUID v4 из `crypto.getRandomValues()`, а без обоих Web Crypto API возвращает непустой локально уникальный идентификатор из времени, последовательного счётчика и безопасной от исключений псевдослучайной части. Поэтому генерация не зависит от secure context и работает как на HTTP, так и на HTTPS. Один генератор используют request ID команд `WebReaderHost`, идентификатор регистрации preview/MCP-моста в `AppBody`, idempotency key Feature Preview и Kanban Assistant, а также request ID повторяемых шагов Web Recorder; прямого требования `crypto.randomUUID()` в этих клиентских операциях больше нет.
+Общий синхронный генератор клиентских идентификаторов — `browserId()` из `packages/shared/src/browserId.ts`, экспортированный публичным barrel `packages/shared/src/index.ts`. Он сначала использует нативный `crypto.randomUUID()`, при его отсутствии формирует UUID v4 из `crypto.getRandomValues()`, а без обоих Web Crypto API возвращает непустой локально уникальный идентификатор из времени, последовательного счётчика и безопасной от исключений псевдослучайной части. Поэтому генерация не зависит от secure context и работает как на HTTP, так и на HTTPS. Один генератор используют request ID и регистрация preview/MCP-моста через `WebReaderFrame`, записи истории действий модели в `AppBody`, idempotency key Feature Preview и Kanban Assistant, а также request ID повторяемых шагов Web Recorder. ID записи истории создаётся до обновления React-state: повторный вызов updater не генерирует другой ключ.
+
+На HTTP по IP или обычному имени хоста `crypto.randomUUID` может отсутствовать, хотя `crypto.getRandomValues` доступен. Прямой вызов в обработчике `window.preview.onChanged` раньше обрушал весь `AppBody` после первого успешного действия модели (`reader.changed`), а первоначальное открытие Reader могло проходить успешно. Регрессия в `App.dom.test.tsx` проверяет историю и повтор действия без `randomUUID` и без Web Crypto. Браузерный набор `e2e/webReaderHttp.e2e.test.ts` проверяет вход, MCP open/read, историю и reload на `http://reader-http.test` с локальным DNS-алиасом, а также на loopback. Проверять только `http://localhost` недостаточно: браузер считает loopback доверенным контекстом и оставляет `randomUUID` доступным.
 
 ### Действия hover, scroll, press и скриншот области
 
