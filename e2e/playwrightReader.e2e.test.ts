@@ -11,6 +11,7 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
+import { startReaderFramesFixture } from '../apps/browser-runner/src/test/readerFrames.js'
 import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
 import { BROWSER_UPLOAD_LIMIT_BYTES } from '../packages/shared/src/browserLimits'
 import type { BrowserSelectorResult } from '../packages/shared/src/types'
@@ -29,6 +30,7 @@ let conversationId = ''
 let turn = ''
 let auth = ''
 let forms: Awaited<ReturnType<typeof startReaderFormsFixture>> | undefined
+let frameSite: Awaited<ReturnType<typeof startReaderFramesFixture>> | undefined
 const chats: Record<string, string> = {}
 
 async function freePort(): Promise<number> {
@@ -77,7 +79,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     const port = await freePort()
     base = `http://127.0.0.1:${port}`
     forms = await startReaderFormsFixture()
-    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['forms.reader.test', new URL(forms.origin).host]]), idleMs: 0 })
+    frameSite = await startReaderFramesFixture()
+    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
@@ -130,6 +133,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
       await stopped
     }
     await forms?.close()
+    await frameSite?.close()
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
@@ -313,6 +317,49 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await mcp('scroll', { to: 'top' })
     await capture('16-model-shadow-components')
     if (artifacts) await writeFile(join(artifacts, '16-model-shadow-read.json'), JSON.stringify(contents, null, 2))
+  })
+
+  it('модель работает внутри настоящего превью Make', async () => {
+    await api(`/api/make/${chats.make}/notes`, 'PUT', { stack: 'html-js', uiKit: 'none' })
+    await api(`/api/make/${chats.make}/file`, 'PUT', { path: 'index.html', content: `<!doctype html><title>Reader внутри Make</title><h1>Форма проекта Make</h1><label>Название <input id="make-value"></label><button id="make-save" onclick="document.getElementById('make-result').textContent=document.getElementById('make-value').value">Проверить</button><p id="make-result">Пусто</p>` })
+    await mcp('open', { url: `${base}/#/make/${chats.make}` })
+    await mcp('wait', { selector: '.make-frame' })
+    let frame: string[] = []
+    await expect.poll(async () => {
+      const result = JSON.parse(await mcp('frames')) as { frames: Array<{ path: string[]; url: string }> }
+      frame = result.frames.find(item => item.url.includes(`/api/preview/make/${chats.make}/`))?.path ?? []
+      return frame.length
+    }).toBeGreaterThan(0)
+    await mcp('wait', { frame, text: 'Форма проекта Make' })
+    expect(JSON.parse(await mcp('read', { frame })).text).toContain('Форма проекта Make')
+    await mcp('type', { frame, selector: '#make-value', text: 'Проверено моделью' })
+    await mcp('click', { frame, selector: '#make-save' })
+    expect(JSON.parse(await mcp('read', { frame, selector: '#make-result' })).text).toBe('Проверено моделью')
+    await capture('17-model-inside-make-preview')
+  })
+
+
+  it('модель выбирает вложенные документы через MCP, читает стили и делает снимок frame', async () => {
+    await mcp('open', { url: 'http://frames.reader.test/' })
+    await mcp('wait', { loadState: 'load' })
+    const catalog = JSON.parse(await mcp('frames')) as { frames: Array<{ path: string[]; url: string }> }
+    const frame = catalog.frames.find(item => item.url === 'http://child.reader.test/frame')!.path
+    const nested = catalog.frames.find(item => item.url === 'http://child.reader.test/nested')!.path
+    expect(JSON.parse(await mcp('read', { frame, selector: '#field' })).text).toBe('child')
+    expect(JSON.parse(await mcp('read', { frame: nested, selector: '#field' })).text).toBe('nested')
+    await mcp('wait', { frame, url: 'http://child.reader.test/frame', predicate: 'window.frameMarker === "child"' })
+    expect(JSON.parse(await mcp('evaluate', { frame, code: 'window.frameMarker' }))).toMatchObject({ value: 'child' })
+    expect(JSON.parse(await mcp('styles', { frame, selector: '#field', properties: ['color'] }))).toMatchObject({ styles: { color: 'rgb(0, 128, 0)' } })
+    await mcp('type', { frame, selector: '#field', text: 'Модель в iframe' })
+    await mcp('click', { frame: nested, selector: '#nested-action' })
+    expect(JSON.parse(await mcp('read', { frame: nested })).text).toContain('Глубокий клик')
+    const shot = await mcpReply('screenshot', { frame, selector: 'body' })
+    expect(shot.content.find(item => item.type === 'text')?.text).toContain('только видимая часть')
+    const picture = shot.content.find(item => item.type === 'image')!
+    if (artifacts) await writeFile(join(artifacts, '19-scoped-frame.png'), Buffer.from(picture.data!, 'base64'))
+    await capture('18-model-nested-frames')
+    await mcp('open', { frame, url: 'http://child.reader.test/next' })
+    expect(JSON.parse(await mcp('read', { frame }))).toMatchObject({ text: 'Внутренний переход', page: { url: 'http://frames.reader.test/' }, frame: { url: 'http://child.reader.test/next' } })
   })
 
   it('модель получает нужную область и полную страницу с точными метаданными снимка', async () => {

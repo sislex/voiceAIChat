@@ -17,7 +17,7 @@ const metricsScript = `(() => {
 })()`
 
 /** Не подменяем ошибочно заданный режим снимком другой части страницы. */
-function validate(options: BrowserScreenshotOptions): void {
+export function validateScreenshotOptions(options: BrowserScreenshotOptions): void {
   if ([Boolean(options.selector), Boolean(options.rect), options.fullPage === true].filter(Boolean).length > 1) throw new Error('Выбери один режим снимка: selector, rect или fullPage')
   if (options.selector !== undefined && (typeof options.selector !== 'string' || !options.selector.trim())) throw new Error('Нужен непустой selector')
   if (options.rect !== undefined) {
@@ -33,12 +33,12 @@ function validate(options: BrowserScreenshotOptions): void {
 }
 
 /** Бинарь и описание берём у страницы; размер старого start не описывает crop. */
-export async function capturePage(page: Page, options: BrowserScreenshotOptions, publicUrl: (raw: string) => string): Promise<BrowserCapture> {
-  validate(options)
+export async function capturePage(page: Page, options: BrowserScreenshotOptions, publicUrl: (raw: string) => string, remainingMs?: number): Promise<BrowserCapture> {
+  validateScreenshotOptions(options)
   const format = options.format ?? 'png'
   const scale = options.scale ?? 'device'
   const settings = {
-    type: format, scale, timeout: options.timeoutMs ?? 10_000,
+    type: format, scale, timeout: remainingMs ?? options.timeoutMs ?? 10_000,
     ...(format !== 'png' && options.quality !== undefined ? { quality: options.quality } : {}),
     ...(options.animations ? { animations: options.animations } : {})
   }

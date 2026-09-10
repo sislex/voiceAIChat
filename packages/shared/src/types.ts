@@ -1,5 +1,6 @@
 // Общие типы, разделяемые между main, preload и renderer.
 
+import type { BrowserFrameContext, BrowserFrameTarget } from './browserFrames'
 import type { BrowserWaitOptions } from './browserWaiting'
 import type { PreviewElementPayload } from './previewInspector'
 
@@ -233,6 +234,7 @@ export type BrowserSelectorAction =
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
   ok: boolean
+  frame?: BrowserFrameContext
   /** После клика/ввода мог произойти переход; модель должна видеть реальную страницу. */
   page?: { url: string; title: string }
   /** Текст страницы, найденного узла (`read`) или снимок дерева ролей (`a11y`). */
@@ -265,6 +267,8 @@ export interface BrowserSelectorResult {
 
 /** Элемент кадра, пригодный для шага сценария и для разбора вёрстки. */
 export interface BrowserElementDescription {
+  /** Документы от верхнего к выбранному: селектор элемента относителен последнему. */
+  frame?: string[]
   /** Устойчивый селектор: data-testid → id → aria-label → роль → путь по тегам. */
   selector: string
   /** Насколько селектор надёжен: по testid переживает правки вёрстки, по пути — нет. */
@@ -298,6 +302,8 @@ export interface BrowserNetworkEntry { method: string; url: string; status: numb
 
 export interface BrowserInspectResult {
   ok: boolean
+  page?: { url: string; title: string }
+  frame?: BrowserFrameContext
   /** JSON-сериализованный результат `evaluate`. */
   value?: unknown
   console?: BrowserConsoleEntry[]
@@ -308,7 +314,7 @@ export interface BrowserInspectResult {
 
 export interface BrowserScreenshotRect { x: number; y: number; width: number; height: number }
 
-export interface BrowserScreenshotOptions {
+export interface BrowserScreenshotOptions extends BrowserFrameTarget {
   fullPage?: boolean
   selector?: string
   rect?: BrowserScreenshotRect
@@ -321,6 +327,9 @@ export interface BrowserScreenshotOptions {
 
 /** Координаты документа в CSS px, снятые у той же страницы, что изображение. */
 export interface BrowserScreenshotMetadata {
+  frame?: BrowserFrameContext
+  /** Элемент выходит за границу iframe; снята только видимая часть. */
+  clipped?: boolean
   page: { url: string; title: string }
   rect: BrowserScreenshotRect
   scale: 'css' | 'device'
@@ -328,9 +337,10 @@ export interface BrowserScreenshotMetadata {
 
 export const BROWSER_SCREENSHOT_HEADER = 'x-vc-browser-screenshot'
 
-export type BrowserCommand =
+export type BrowserCommand = BrowserFrameTarget & (
   /** Пассивное наблюдение: адрес и вкладки обновляются и после действий модели. */
   | { type: 'status' }
+  | { type: 'frames' }
   | { type: 'navigate'; url: string }
   | { type: 'selector'; action: BrowserSelectorAction }
   | { type: 'inspect'; action: BrowserInspectAction }
@@ -341,6 +351,7 @@ export type BrowserCommand =
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | ({ type: 'screenshot' } & BrowserScreenshotOptions)
+)
 
 export interface BrowserCommandRequest {
   requestId: string

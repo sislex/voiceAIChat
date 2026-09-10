@@ -36,6 +36,7 @@ export function recordClick(steps: RecordedStep[], element: BrowserElementDescri
     action: {
       kind: 'click',
       selector: element.selector,
+      ...(element.frame ? { frame: [...element.frame] } : {}),
       ...(click === 'right' ? { button: 'right' as const } : {}),
       ...(click === 'double' ? { dblclick: true } : {})
     },
@@ -134,7 +135,7 @@ export function recordType(steps: RecordedStep[], element: BrowserElementDescrip
   return [...steps, {
     id: `step-${steps.length + 1}`,
     title: stepTitle(element, 'type'),
-    action: { kind: 'type', selector: element.selector, text },
+    action: { kind: 'type', selector: element.selector, text, ...(element.frame ? { frame: [...element.frame] } : {}) },
     stability: element.stability,
     ...(typeof element.matches === 'number' ? { matches: element.matches } : {})
   }]
@@ -156,7 +157,7 @@ export function recordNavigate(steps: RecordedStep[], url: string): RecordedStep
  */
 export function toScenario(steps: RecordedStep[], currentUrl: string): AutomatedQaScenario {
   const first = steps[0]
-  const opensFirst = first?.action.kind === 'open'
+  const opensFirst = first?.action.kind === 'open' && first.action.frame === undefined
   const startUrl = opensFirst && first.action.kind === 'open' ? first.action.url : currentUrl
   const rest = opensFirst ? steps.slice(1) : steps
   return {

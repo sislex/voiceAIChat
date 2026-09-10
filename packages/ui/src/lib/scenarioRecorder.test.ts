@@ -232,3 +232,20 @@ describe('круг 29', () => {
     expect(expectOnStep(steps, 'нет', 'Текст')).toEqual(steps)
   })
 })
+
+
+describe('контекст iframe в записи', () => {
+  it('клик и ввод сохраняют независимую копию цепочки frame при экспорте', () => {
+    const frame = ['#preview', '#login']
+    const target = element({ frame, selector: '#email' })
+    const steps = recordType(recordClick([], target), target, 'test@example.test')
+    frame.push('#changed')
+    const scenario = toScenario(steps, 'https://project.test/')
+    for (const step of scenario.steps) expect(step.action.frame).toEqual(['#preview', '#login'])
+  })
+
+  it('переход первого iframe не заменяет стартовый адрес верхней страницы', () => {
+    const steps = [{ id: 'frame-open', title: 'Документ', action: { kind: 'open' as const, frame: '#preview', url: 'https://child.test/' }, stability: 'id' as const }]
+    expect(toScenario(steps, 'https://parent.test/')).toMatchObject({ startUrl: 'https://parent.test/', steps: [{ action: { kind: 'open', frame: '#preview', url: 'https://child.test/' } }] })
+  })
+})

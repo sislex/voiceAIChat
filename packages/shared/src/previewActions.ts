@@ -10,6 +10,7 @@
 // Здесь — типы действий, лимиты и runtime-валидаторы конвертов. Чистые функции:
 // без DOM и сети, чтобы обе стороны (сервер и UI) проверяли одно и то же.
 
+import { isBrowserFramePath, type BrowserFrameTarget } from './browserFrames'
 import type { BrowserActionOutcome } from './playwrightReader'
 import { BROWSER_UPLOAD_LIMIT_BYTES } from './browserLimits'
 import { isBrowserWaitOptions, type BrowserWaitOptions } from './browserWaiting'
@@ -64,7 +65,7 @@ export interface PreviewDragPoint {
 }
 
 /** Действие браузера, запрошенное моделью. `open` выполняет сам UI (без iframe). */
-export type PreviewAction =
+export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'open'; url: string; diagnostic?: boolean }
   | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
@@ -106,6 +107,7 @@ export type PreviewAction =
   | { kind: 'viewport'; width: number; diagnostic?: boolean }
   /** Дерево доступности страницы: роли и имена как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number; diagnostic?: boolean }
+)
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
 export type PreviewDomAction = Exclude<PreviewAction, { kind: 'open' }>
@@ -372,6 +374,7 @@ function optBounded(value: unknown, max: number): boolean {
 /** Валидатор действия (вход инструмента уже проверил zod — это проверка КОНВЕРТА). */
 export function isPreviewAction(value: unknown): value is PreviewAction {
   if (!record(value)) return false
+  if (value.frame !== undefined && !isBrowserFramePath(value.frame)) return false
   const L = PREVIEW_ACTION_LIMITS
   switch (value.kind) {
     case 'open':
@@ -582,6 +585,11 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'Дополнительные условия wait в Chromium: state (attached/detached/visible/hidden), enabled, editable, checked, value, count, url (шаблон с *), loadState (domcontentloaded/load), predicate (синхронное JS-условие). ' +
     'Условия делят один timeoutMs до 30000 мс; count включает скрытые узлы, по умолчанию видимость проверяется только без count. Для SPA жди нужное содержимое или predicate, один load не означает готовность приложения. ' +
     'back/forward — по истории страницы; ' +
+    'В Chromium frames перечисляет живые iframe: передавай path как frame в read/find/click/type/hover/scroll/wait/set/upload/a11y/evaluate/styles/open/screenshot. ' +
+    'frame — селектор iframe или цепочка до восьми уровней, работает и для документов другого origin; без него действие адресуется верхней странице. Селекторы read/find относительны выбранному frame. ' +
+    'open с frame меняет только вложенный документ. press с frame требует selector, drag — два селектора. ' +
+    'Снимок frame показывает видимую область; selector ограничивает её элементом, clipped сообщает усечение. fullPage и rect используются без frame. ' +
+    'styles {selector, properties?, frame?} — вычисленные CSS-свойства. ' +
     'В Playwright Reader и Chromium-проверке также доступны tabs — список вкладок с id; new-tab {url?}; ' +
     'select-tab {tabId}; close-tab {tabId}; reload — перезагрузка; stop-loading — остановка загрузки без закрытия сессии. ' +
     'После открытия popup вызови tabs, найди его по openerTabId и выбери select-tab перед чтением или вводом. ' +

@@ -299,7 +299,7 @@ describe('ClaudeCli', () => {
     const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]) as { mcpServers: Record<string, unknown> }
     expect(Object.keys(config.mcpServers).sort()).toEqual(['browser', 'remote'])
     const allowed = args[args.indexOf('--allowedTools') + 1]
-    for (const tool of ['open', 'read', 'find', 'click', 'type', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
+    for (const tool of ['open', 'read', 'find', 'click', 'type', 'frames', 'styles', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
   })
 
   it('previewSurface chromium: хинт про изолированный браузер и расширенный allow-list', () => {
@@ -318,7 +318,7 @@ describe('ClaudeCli', () => {
     expect(hint).toContain('изолированный Chromium')
     const allowed = args[args.indexOf('--allowedTools') + 1]
     // Смотреть страницу — снимок, ошибки и ожидание — без автоодобрения бесполезно.
-    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
+    for (const tool of ['screenshot', 'errors', 'wait', 'console', 'network', 'frames', 'styles', 'tabs', 'new-tab', 'select-tab', 'close-tab', 'reload', 'stop-loading']) expect(allowed).toContain(`mcp__browser__${tool}`)
   })
 
   it('передаёт cwd в spawn, когда задан; иначе третий аргумент undefined', () => {

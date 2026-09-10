@@ -1613,13 +1613,249 @@
           "authenticatedAccountsUsed": false
         }
       },
-      "endedAt": "2026-09-10T02:41:25.656495+00:00"
+      "endedAt": "2026-09-10T02:41:25.656495+00:00",
+      "commit": "30d04e5b"
     },
     {
       "number": 9,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T02:42:55.545174+00:00",
+      "items": [
+        {
+          "id": "09-01",
+          "title": "Каталог живых iframe с фактическим URL и цепочкой селекторов",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-02",
+          "title": "DOM-действия модели в явно выбранном iframe",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-03",
+          "title": "Вложенные iframe другого origin",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-04",
+          "title": "Ожидания URL/load/predicate выбранного документа",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-05",
+          "title": "evaluate в контексте выбранного документа",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-06",
+          "title": "Стили через локатор внутри iframe и Shadow DOM",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-07",
+          "title": "Снимок видимой области iframe или его элемента с честным усечением",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-08",
+          "title": "Навигация одного iframe с сохранением родительской страницы",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-09",
+          "title": "Запись координатного клика внутри iframe",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-10",
+          "title": "Воспроизведение записанного шага и его ожиданий внутри iframe",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T02:33:44.982090+00:00",
+        "items": [
+          "Каталог живых iframe с фактическим URL и цепочкой селекторов",
+          "DOM-действия модели в явно выбранном iframe",
+          "Вложенные iframe другого origin",
+          "Ожидания URL/load/predicate выбранного документа",
+          "evaluate в контексте выбранного документа",
+          "Стили через локатор внутри iframe и Shadow DOM",
+          "Снимок видимой области iframe или его элемента с честным усечением",
+          "Навигация одного iframe с сохранением родительской страницы",
+          "Запись координатного клика внутри iframe",
+          "Воспроизведение записанного шага и его ожиданий внутри iframe"
+        ],
+        "evidence": [
+          "/tmp/voicechat-reader-cycle-09-probe.log",
+          "/tmp/voicechat-reader-cycle-09-description-probe.log",
+          "/tmp/voicechat-reader-cycle-09-capture-probe.log",
+          "/tmp/voicechat-reader-cycle-09-manager-probe.log"
+        ],
+        "observations": [
+          "Старые read/evaluate игнорируют frame и возвращают parent. describe возвращает iframe, не кнопку.",
+          "Прототип resolveFrame/framePage читает и действует внутри двух iframe разных origin; listFrames сообщает URL после редиректа.",
+          "describeFramePoint возвращает относительный selector и цепочку frame, включая масштабированный iframe.",
+          "Нативный body.screenshot у iframe выдаёт 1413px при окне500px, ниже кадра пустота (изображение просмотрено). Прототип captureFrame ограничивает кадр видимой областью и сообщает clipped:true."
+        ],
+        "limitations": [
+          "Закрытые shadow roots не поддерживаются; запись в повёрнутом iframe явно отказывает.",
+          "frame+fullPage/rect планируется отклонять, пока полная прокрутка вложенного документа не реализована.",
+          "Подготовка вне checkout во время гейтов 08; ничего из 09 ещё не интегрировано."
+        ],
+        "integrationNotes": [
+          "Shared first: BrowserFramePath/BrowserFrameContext/BrowserFramesResult; command frame?: on navigate/selector/inspect/screenshot; PreviewAction common frame optional; mapper preserves scope, rejects unsupported types.",
+          "MCP run must reject frame fallback to Web Reader; schemas+handler forwarding frame for DOM/open/evaluate/styles/wait/screenshot. frames control tool needs Claude allow-list.",
+          "wait predicate policy remains same before dispatch. screenshot result text must include frame and clipped metadata.",
+          "Frame selector adapter from frames.ts; keyboard from Page, rest bound Frame. Frame resolution strictly single target.",
+          "Styles currently document.querySelector; replace with locator.evaluate to support returned selectors.",
+          "RecordClick and recordType forward element.frame; scenarioStep assertion read uses step.action.frame.",
+          "Real Make E2E: PUT /api/make/${chats.make}/notes {stack:html-js,uiKit:none}, PUT /api/make/${chats.make}/file {path:index.html,content:...}. Open own Make route, enumerate frames, read/click/type in preview. No external network needed.",
+          "Screenshot timeout must be shared across resolveFrame, scroll and capture; prototype does not yet enforce overall deadline.",
+          "Frame capture uses root screenshot of visible intersection; normal capturePage validation currently private. Validate screenshot arguments before doing frame work when integrating.",
+          "Cycle08 must pass full gate and be committed before any09 checkout edits.",
+          "Прототип sessionManager.ts работает runtime, но типы ещё не обновлены: при интеграции не копировать его вслепую.",
+          "Frame/page metadata вычислять ПОСЛЕ действия; клик может перейти внутри frame или через target=_top. Добавить detached marker при исчезновении выбранного frame.",
+          "У scoped read ссылки/iframe.src тоже восстанавливать через publicUrl как у обычного чтения.",
+          "toScenario не должен выносить первый open с frame в startUrl: это навигация iframe, а не стартовой страницы.",
+          "Стек Make для формы html-js (не html, который запрещает JS); основной iframe .make-frame, src /api/preview/make/:id/.",
+          "Обнаружен отдельный долг для следующих циклов: scenarioStep трактует read.ok:false как пустой текст, что может ложно пропускать expectAbsentText. Нужна отдельная регрессия.",
+          "styles вообще не зарегистрирован в previewMcp.ts, хотя внутренний BrowserInspectAction его поддерживает. Добавить новый MCP tool styles, его тест и Claude allow-list вместе с frames.",
+          "Scoped inspect console/network не должны маркировать общие логи как логи frame: отклонять frame для этих действий до исполнения.",
+          "frame+press без selector и frame+drag по координатам отклонять mapper: координаты и общий фокус принадлежат всей Page.",
+          "Максимум frame path 8 уровней, selector ≤2000 каждый. screenshot header cap8192 может отбросить длинные метаданные; учитывать, не подменять факты."
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T02:26:45.485220+00:00",
+          "endedAt": "2026-09-10T02:42:55.545174+00:00",
+          "detail": "Подготовка и браузерные прототипы вне checkout во время гейтов 08; интервалы пересекаются."
+        }
+      },
+      "validation": {
+        "baseline": {
+          "nativeFailed": 11,
+          "durationMs": 1710,
+          "log": "/tmp/voicechat-reader-cycle-09-native-baseline.log"
+        },
+        "focused": {
+          "runnerPassed": 59,
+          "runnerDurationMs": 10300,
+          "framesFinalPassed": 17,
+          "framesFinalDurationMs": 3890,
+          "sharedPassed": 79,
+          "mcpPassed": 79,
+          "uiRecordingPassed": 34,
+          "cliPassed": 17,
+          "typecheckAllExitCode": 0,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-09-native-2.log",
+            "/tmp/voicechat-reader-cycle-09-native-final.log",
+            "/tmp/voicechat-reader-cycle-09-shared-2.log",
+            "/tmp/voicechat-reader-cycle-09-mcp-2.log",
+            "/tmp/voicechat-reader-cycle-09-recording.log",
+            "/tmp/voicechat-reader-cycle-09-cli.log"
+          ],
+          "initialCorrections": [
+            "TS narrowing результата selector/inspect уточнён перед полным typecheck.",
+            "Один новый MCP-тест не создавал Fastify после закрытия предыдущего теста; стенд исправлен, повтор 79/79."
+          ]
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 18540,
+          "log": "/tmp/voicechat-reader-cycle-09-build.log"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:54:40.294210+00:00",
+          "endedAt": "2026-09-10T02:55:07.385705+00:00",
+          "durationMs": 27091,
+          "status": "passed",
+          "passed": 13,
+          "vitestDurationMs": 26010,
+          "log": "/tmp/voicechat-reader-cycle-09-e2e.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-09",
+          "visuallyInspected": [
+            "17-model-inside-make-preview.png",
+            "18-model-nested-frames.png",
+            "19-scoped-frame.png"
+          ]
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:59:44.683912+00:00",
+          "endedAt": "2026-09-10T03:09:31.456361+00:00",
+          "durationMs": 586725,
+          "status": "passed",
+          "passed": 7401,
+          "skipped": 45,
+          "failed": 0,
+          "log": "/tmp/voicechat-reader-cycle-09-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:09:45.507421+00:00",
+          "endedAt": "2026-09-10T03:19:14.327578+00:00",
+          "durationMs": 568815,
+          "status": "passed",
+          "passed": 7732,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-09-gate.log"
+        }
+      },
+      "endedAt": "2026-09-10T03:19:40.067330+00:00",
+      "durationSeconds": 2205
     },
     {
       "number": 10,

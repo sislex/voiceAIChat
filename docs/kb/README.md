@@ -23,20 +23,20 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 74 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 88 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1297 коммит(ов) в areas после сверки: b5e6fe3a fix(reader): wait for actual page and form readiness … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1298 коммит(ов) в areas после сверки: 30d04e5b fix(reader): read shadow components and preserve element targets … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 50 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 15 коммит(ов) в areas после сверки: c36ed3eb fix(playwright-reader): make model screenshots match the requested region … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 54 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 88 коммит(ов) в areas после сверки: c36ed3eb fix(playwright-reader): make model screenshots match the requested region … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 303 коммит(ов) в areas после сверки: b5e6fe3a fix(reader): wait for actual page and form readiness … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 18 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: e4e68958 feat(playwright-reader): управлять вкладками и popup из модели |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-10 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-08 | ⚠ 14 коммит(ов) в areas после сверки: b5e6fe3a fix(reader): wait for actual page and form readiness … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 214 коммит(ов) в areas после сверки: a7e8e5b4 CHAT-431 restrict release machines and remember selection … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-09 | ⚠ 8 коммит(ов) в areas после сверки: b5e6fe3a fix(reader): wait for actual page and form readiness … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 8 коммит(ов) в areas после сверки: f93ee2ca feat(playwright-reader): add structured reading and reusable element selectors … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-09 | ⚠ 12 коммит(ов) в areas после сверки: b5e6fe3a fix(reader): wait for actual page and form readiness … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-09 | ⚠ 11 коммит(ов) в areas после сверки: b5e6fe3a fix(reader): wait for actual page and form readiness … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-09 | ⚠ 12 коммит(ов) в areas после сверки: 30d04e5b fix(reader): read shadow components and preserve element targets … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 195 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 7 коммит(ов) в areas после сверки: c36ed3eb fix(playwright-reader): make model screenshots match the requested region … |
@@ -64,9 +64,10 @@
 
 ## Журнал сессий
 
-Всего записей: 689. Последние:
+Всего записей: 690. Последние:
 
 - [2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md](log/2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md) — Назначение Web Reader и Playwright Reader
+- [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-09.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-09.md) — Playwright Reader — цикл 09, вложенные документы
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-08.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-08.md) — Playwright Reader — цикл 08, компоненты и цели действий
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-07.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-07.md) — Playwright Reader — цикл 07, ожидание готовности
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-06.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-06.md) — Playwright Reader — цикл 06, чтение и поиск
@@ -75,7 +76,6 @@
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-03.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-03.md) — Playwright Reader — цикл 03, действия модели и формы
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-02.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-02.md) — Playwright Reader — цикл 02, наблюдение за сессией
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-01.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-01.md) — Playwright Reader — цикл 01, навигация и сессия
-- [2026-09-09-macbook-air-user-task-chat-voicebar.md](log/2026-09-09-macbook-air-user-task-chat-voicebar.md) — task-chat-voicebar
 
 ## Исторические планы
 

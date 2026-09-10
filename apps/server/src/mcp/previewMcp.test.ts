@@ -148,7 +148,43 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'close-tab', 'console', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'close-tab', 'console', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+  })
+
+  it.each([
+    ['open', { url: 'https://example.test/' }], ['read', {}], ['find', { text: 'Письмо' }],
+    ['click', { selector: '#button' }], ['type', { selector: '#field', text: 'Запись' }],
+    ['hover', { selector: '#menu' }], ['scroll', { to: 'bottom' }], ['press', { selector: '#field', key: 'Enter' }],
+    ['wait', { selector: '#ready' }], ['set', { selector: '#check', checked: true }],
+    ['upload', { selector: '#file', name: 'empty.txt', base64: '' }], ['a11y', {}],
+    ['drag', { from: { selector: '#from' }, to: { selector: '#to' } }],
+    ['evaluate', { code: 'document.title' }], ['styles', { selector: '#field', properties: ['color'] }]
+  ])('%s сохраняет цепочку frame до исполнителя Chromium', async (name, args) => {
+    await app.close()
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true } }))
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call(name as string, { ...args, frame: ['#preview', '#child'] })).isError).not.toBe(true)
+    expect(execute).toHaveBeenCalledWith(U, CONV, { kind: name, ...args, frame: ['#preview', '#child'] })
+  })
+
+  it('frame не уходит в relay Web Reader и неверная цепочка не выполняется', async () => {
+    await makeApp()
+    const observed = vi.fn()
+    client = observed
+    expect(await call('read', { frame: '#preview' })).toMatchObject({ isError: true, text: expect.stringContaining('Playwright Reader') })
+    expect(await call('read', { frame: [] })).toMatchObject({ isError: true })
+    expect(observed).not.toHaveBeenCalled()
+  })
+
+  it('снимок передаёт frame и сообщает усечение в тексте модели', async () => {
+    await app.close()
+    const screenshot = vi.fn(async () => ({ ok: true, result: { dataUrl: 'data:image/png;base64,AA==', frame: { path: ['#preview'], url: 'https://child.test/', title: 'Документ' }, clipped: true } }))
+    await makeApp(undefined, { browserScreenshot: screenshot })
+    const result = await call('screenshot', { frame: ['#preview'], selector: 'body' })
+    expect(result.isError).not.toBe(true)
+    expect(result.text).toContain('https://child.test/')
+    expect(result.text).toContain('только видимая часть')
+    expect(screenshot).toHaveBeenCalledWith(U, CONV, { frame: ['#preview'], selector: 'body' })
   })
 
   it.each([
@@ -202,6 +238,7 @@ describe('previewMcp — инструменты browser', () => {
   })
 
   it.each([
+    ['frames', {}, { type: 'frames' }],
     ['tabs', {}, { type: 'status' }],
     ['new-tab', { url: 'https://example.com/' }, { type: 'newTab', url: 'https://example.com/' }],
     ['select-tab', { tabId: 't2' }, { type: 'selectTab', tabId: 't2' }],

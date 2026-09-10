@@ -1,8 +1,11 @@
+import { resolveFrame, framePage, listFrames, framePath } from './frames.js'
+import { describeFramePoint } from './frameDescription.js'
+import { captureFrame } from './frameCapture.js'
 import { mkdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserCommandRequest, BrowserFramesResult, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
@@ -225,7 +228,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -234,6 +237,10 @@ export class BrowserSessionManager {
     // закрывал Chromium посреди работы.
     session.lastUsedAt = Date.now()
     const command = request.command
+    if (command.frame !== undefined) {
+      framePath(command.frame)
+      if (!['navigate', 'selector', 'inspect', 'screenshot'].includes(command.type)) throw new Error('Эта команда не поддерживает frame')
+    }
     // Наблюдение панели не должно стирать отметку о действии модели.
     if (command.type === 'status') return this.metadata(session)
     if (command.type !== 'screenshot') session.lastActor = request.actor
@@ -259,6 +266,29 @@ export class BrowserSessionManager {
     const tabId = request.tabId ?? session.activeTabId
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
+    if (command.type === 'frames') return { ...await listFrames(page, raw => this.publicUrl(raw)), page: { url: this.publicUrl(page.url()), title: await page.title() } }
+    if (command.frame !== undefined) {
+      if (command.type === 'screenshot') return captureFrame(page, command as typeof command & { frame: NonNullable<typeof command.frame> }, raw => this.publicUrl(raw))
+      if (!['navigate', 'selector', 'inspect'].includes(command.type) || (command.type === 'inspect' && !['styles', 'evaluate'].includes(command.action.kind))) throw new Error('Эта команда не поддерживает frame')
+      const timeout = command.type === 'selector' && command.action.kind === 'wait' ? command.action.timeoutMs ?? 5000 : command.type === 'navigate' ? 30000 : 5000
+      const started = performance.now(), deadline = started + timeout
+      const selected = await resolveFrame(page, command.frame, timeout)
+      let result: BrowserSelectorResult | BrowserInspectResult
+      if (command.type === 'navigate') {
+        await selected.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), { ...NAVIGATION_OPTIONS, timeout: Math.max(1, deadline - performance.now()) })
+        result = { ok: true }
+      } else if (command.type === 'selector') {
+        if (command.action.kind === 'describe') throw new Error('describe использует координаты всей страницы и автоматически определяет frame')
+        const action = command.action.kind === 'wait' ? { ...command.action, timeoutMs: Math.max(1, Math.floor(deadline - performance.now())) } : command.action
+        const content = await runSelectorAction(framePage(page, selected), action, raw => this.publicUrl(raw))
+        if (content.links) content.links = content.links.map(link => ({ ...link, href: this.publicUrl(link.href) }))
+        if (content.frames) content.frames = content.frames.map(frame => ({ ...frame, src: frame.src ? this.publicUrl(frame.src) : '' }))
+        if (command.action.kind === 'wait' && content.ok) content.waitedMs = Math.round(performance.now() - started)
+        result = content
+      } else if (command.type === 'inspect') result = await runInspectAction({ console: session.console, network: session.network }, selected, command.action)
+      else throw new Error('Эта команда не поддерживает frame')
+      return { ...result, page: { url: this.publicUrl(page.url()), title: await page.title().catch(() => '') }, frame: { path: framePath(command.frame), url: this.publicUrl(selected.url()), title: await selected.title().catch(() => ''), ...(selected.isDetached() ? { detached: true } : {}) } }
+    }
     if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), NAVIGATION_OPTIONS)
     else if (command.type === 'back') await page.goBack(NAVIGATION_OPTIONS)
     else if (command.type === 'forward') await page.goForward(NAVIGATION_OPTIONS)
@@ -285,7 +315,7 @@ export class BrowserSessionManager {
       else if (action.type === 'keyDown') await page.keyboard.down(action.key)
       else await page.keyboard.up(action.key)
     } else if (command.type === 'selector') {
-      const result = await runSelectorAction(page, command.action, raw => this.publicUrl(raw))
+      const result = command.action.kind === 'describe' ? await describeFramePoint(page, command.action.x, command.action.y) : await runSelectorAction(page, command.action, raw => this.publicUrl(raw))
       if (result.links) result.links = result.links.map(link => ({ ...link, href: this.publicUrl(link.href) }))
       if (result.frames) result.frames = result.frames.map(frame => ({ ...frame, src: frame.src ? this.publicUrl(frame.src) : '' }))
       return { ...result, page: { url: this.publicUrl(page.url()), title: await page.title().catch(() => '') } }

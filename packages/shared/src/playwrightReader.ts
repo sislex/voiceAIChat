@@ -1,6 +1,7 @@
 // Граница приложения Playwright Reader: пользовательский REST остаётся /api/browser,
 // а ядро и отдельный процесс обмениваются только этими RPC и результатами действий.
 import type { BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
+import type { BrowserFramesResult } from './browserFrames'
 import type { PreviewActionResult } from './previewActions'
 import { BROWSER_COMMAND_BODY_LIMIT } from './browserLimits'
 
@@ -10,19 +11,19 @@ export const PLAYWRIGHT_READER_CORE_METHODS = ['conversation', 'modelTarget', 'i
 export const PLAYWRIGHT_READER_SERVICE_METHODS = ['execute', 'screenshot', 'control'] as const
 export const PLAYWRIGHT_READER_RPC_BODY_LIMIT = BROWSER_COMMAND_BODY_LIMIT
 
-/** Управление Chromium отдельно от действий iframe: вкладки существуют у раннера. */
+/** Управление Chromium отдельно от действий iframe: вкладки и живое дерево документов существуют у раннера. */
 export type BrowserControlCommand =
-  | { type: 'status' | 'reload' | 'stop' }
+  | { type: 'status' | 'reload' | 'stop' | 'frames' }
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
 
-export type BrowserModelScreenshotOptions = Pick<BrowserScreenshotOptions, 'selector' | 'rect' | 'fullPage' | 'animations' | 'timeoutMs'>
+export type BrowserModelScreenshotOptions = Pick<BrowserScreenshotOptions, 'selector' | 'rect' | 'fullPage' | 'animations' | 'timeoutMs' | 'frame'>
 /** Старый раннер может вернуть только изображение: неизвестные размеры не выдумываем. */
 export interface BrowserImageResult extends Partial<BrowserScreenshotMetadata> { dataUrl: string }
 
 export interface BrowserActionOutcome {
   ok: boolean
-  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult
+  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult | BrowserFramesResult
   error?: string
 }
 

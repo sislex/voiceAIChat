@@ -15,6 +15,7 @@
 // `BrowserCommand` и выполняются сервером. Без этого моста модель Playwright
 // Reader не видела вовсе: до неё доходил только пользовательский REST-путь.
 
+import { isBrowserFramePath } from './browserFrames'
 import type { PreviewAction } from './previewActions'
 import type { BrowserCommand } from './types'
 
@@ -32,6 +33,15 @@ export type ModelActionPlan =
  * сказать модели «здесь этого нет», чем молча выполнить не то.
  */
 export function planModelAction(action: PreviewAction): ModelActionPlan {
+  if (action.frame !== undefined) {
+    if (!isBrowserFramePath(action.frame)) return { kind: 'unsupported', reason: 'frame: нужен селектор iframe или цепочка из 1–8 селекторов.' }
+    const { frame, ...unscoped } = action
+    const plan = planModelAction(unscoped)
+    if (plan.kind === 'command' && (plan.command.type === 'navigate' || plan.command.type === 'selector' || (plan.command.type === 'inspect' && ['evaluate', 'styles'].includes(plan.command.action.kind)))) {
+      return { kind: 'command', command: { ...plan.command, frame } }
+    }
+    return { kind: 'unsupported', reason: 'Это действие не поддерживает frame. Для press укажи selector, для drag — два селектора; координаты относятся к всей странице.' }
+  }
   switch (action.kind) {
     case 'open':
       return { kind: 'command', command: { type: 'navigate', url: action.url } }
