@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 21382334
+checked: 22208a32
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -212,6 +212,16 @@ beforeinput и InputEvent; неверное число/дата не стира�
 воспроизводит pointer/mouse-последовательность и фокус. Set проверяет фактическое
 состояние checkbox после отменяемого click; radio нельзя снять как checkbox.
 Проверки: `previewInteractions.test.ts`, `webReaderInteractions.e2e.test.ts`.
+
+`press` в прокси использует `previewKeyboard.ts`: dispatchEvent сам не запускает
+нативные действия клавиши, поэтому после отменяемых keydown/keypress выполняются
+ввод/удаление через beforeinput/input, выделение, Tab-порядок, Enter формы с
+валидацией, Space checkbox и выбор option стрелками. Keyup отправляется и после
+отмены keydown. Сочетания разбираются на key/code/модификаторы, ControlOrMeta
+выбирает платформу; удаление не разрывает Unicode code point. У contenteditable
+удаление не выходит за границы блока. Это ограниченная эмуляция, системные shortcut
+и все действия редакторов она не заменяет; для них доступен полный Chromium.
+Проверки: `previewKeyboard.test.ts`, `webReaderKeyboard.e2e.test.ts`.
 
 Чтение `read/find/a11y` использует `previewReading.ts`: обход видимых текстовых
 узлов исключает script/style, скрытое и инспектор; выбранный корень включается
