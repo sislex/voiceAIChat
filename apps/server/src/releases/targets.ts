@@ -5,13 +5,13 @@
 // «какая машина, какой путь, что обязательно настроено» обязаны быть одни —
 // иначе ассистент выпускает не туда, куда кнопка.
 
-import { DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
+import { DEFAULT_RELEASE_TIMEOUTS, type ApplicationEnvironmentName } from '@voicechat/shared'
 import type { ReleaseMachineCatalog } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { ManagedEnvironmentResolver } from './managedEnvironmentResolver.js'
 import type { ProductionTarget, ReleaseManager, ReleaseProjectTarget } from './releaseManager.js'
 
-const DEFAULT_TEST_COMMAND = 'npm run typecheck && npm run test'
+const DEFAULT_TEST_COMMAND = 'npm run gate:all'
 
 export async function releaseMachineCatalog(
   db: VoiceChatDb,
@@ -108,4 +108,13 @@ export async function releaseProductionTarget(
     limits: value.releaseTimeouts ?? DEFAULT_RELEASE_TIMEOUTS,
     mode: 'legacy'
   }
+}
+
+/** Компонентный исполнитель использует applications.json, а не legacy deployCommand. */
+export async function releaseApplicationTarget(db: VoiceChatDb, managed: ManagedEnvironmentResolver, userId: string, projectId: string, kind: ApplicationEnvironmentName): Promise<(ReleaseProjectTarget & {managedRoot?: string}) | null> {
+  const project = await db.projects.getProject(userId, projectId)
+  if (!project) return null
+  if (project.productionEnvironmentMode === 'managed') return (await managed.resolve(userId, projectId, kind)).target
+  if (kind !== 'production' || !project.productionAgentId || !project.productionCheckoutPath || !project.gitUrl || !project.machines.some(item => item.agentId === project.productionAgentId)) return null
+  return {projectId, agentId: project.productionAgentId, path: project.productionCheckoutPath, gitUrl: project.gitUrl, prepareCheckout: false, baseBranch: project.ciBaseBranch || 'main', testCommand: DEFAULT_TEST_COMMAND, limits: project.releaseTimeouts ?? DEFAULT_RELEASE_TIMEOUTS}
 }

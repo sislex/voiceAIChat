@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { loadConfig } from '../apps/server/src/config.js'
 import { buildServer } from '../apps/server/src/server.js'
 import { PreviewActionRelay } from '../apps/server/src/mcp/previewMcp.js'
-import type { PreviewAction, ServerMessage } from '../packages/shared/src/index'
+import type { PreviewAction, ServerMessage } from '@voicechat/shared/index'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, dataDir: string, token: string, conversationId: string
 let pageLoads = 0

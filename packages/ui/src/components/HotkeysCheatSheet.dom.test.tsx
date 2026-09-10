@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import { HotkeysCheatSheet } from './HotkeysCheatSheet'
-import type { Command } from '../lib/commands'
+import type { Command } from '@voicechat/ui-foundation/runtime'
 
 function cmd(partial: Partial<Command> & Pick<Command, 'id' | 'title'>): Command {
   return { section: 'action', run: () => {}, ...partial }

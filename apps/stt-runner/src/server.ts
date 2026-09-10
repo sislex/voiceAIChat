@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 import { existsSync, statSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import Fastify, { type FastifyInstance } from 'fastify'
@@ -83,7 +84,7 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
 
   app.get(STT_RUNNER.health, async () => {
     const models = listModels(config.modelsDir, { existsSync, statSync })
-    return { ok: existsSync(config.whisperCli), whisper: { available: existsSync(config.whisperCli), version: null }, models, memory: { availableBytes: null }, activeRuns: active, queuedRuns: queue.length }
+    return { application: applicationRuntimeMetadata('stt-runner', process.env), ok: existsSync(config.whisperCli), whisper: { available: existsSync(config.whisperCli), version: null }, models, memory: { availableBytes: null }, activeRuns: active, queuedRuns: queue.length }
   })
   app.get(STT_RUNNER.models, async () => listModels(config.modelsDir, { existsSync, statSync }))
   app.post<{ Params: { model: WhisperModel } }>(`${STT_RUNNER.models}/:model/download`, async (req, reply) => {

@@ -3,7 +3,7 @@
 // отдельный сервис Make заменит этот файл HTTP-клиентом к `/internal/*` ядра.
 
 import type { VoiceChatDb } from '../db/database.js'
-import type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from '@voicechat/make'
+import type { MakeCore, MakeMachineFs, MakeTaskDesignArgs } from '@voicechat/make-contracts'
 
 export interface LocalMakeCoreDeps {
   db: VoiceChatDb

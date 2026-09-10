@@ -8,7 +8,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { Button, EmptyState, ErrorState, Skeleton, useConfirm } from '@voicechat/ui-kit'
 import { CiSlotEditor } from './CiSlotEditor'
-import type { LoadStatus } from '../../lib/loadState'
+import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 
 export interface CiTaskSettingsProps {
   projectId: string

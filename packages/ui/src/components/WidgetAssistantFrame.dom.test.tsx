@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WidgetAssistantContext } from '@shared/widgetAssistant'
 import { WidgetAssistantFrame, WidgetProposalCard } from './WidgetAssistantFrame'
 import { KanbanAssistant, ProjectAssistantChatSelector, projectAssistantChatSource, projectAssistantChatState, relativeTime } from './KanbanAssistant'
-import { createFakeApi } from '../test/fakeApi'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 
 const context: WidgetAssistantContext<any> = {
   version: 1,

@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 import { createReadStream } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -23,6 +24,6 @@ export async function buildTtsRunner(opts:BuildTtsRunnerOptions):Promise<Fastify
  app.get<{Params:{runId:string}}>(`${TTS_RUNNER.runs}/:runId/audio`,async(req,reply)=>{const run=runs.get(req.params.runId);if(!run)return reply.code(404).send({error:{code:'invalid_request',message:'Run not found'}});const path=runs.audioPath(req.params.runId);if(!path)return reply.code(run.status==='failed'||run.status==='cancelled'?410:425).send(run);reply.header('content-type','audio/wav').header('cache-control','no-store');const stream=createReadStream(path);stream.once('close',()=>runs.consume(req.params.runId));return reply.send(stream)})
  app.get(TTS_RUNNER.voices,async()=>engines.listVoices())
  app.delete<{Params:{voiceId:string}}>(`${TTS_RUNNER.voices}/:voiceId`,async(req,reply)=>{if(!/^[A-Za-z0-9_.-]{1,160}$/.test(req.params.voiceId))return reply.code(400).send({error:{code:'invalid_request',message:'Invalid voice'}});await Promise.all([rm(join(config.voicesDir,`${req.params.voiceId}.onnx`),{force:true}),rm(join(config.voicesDir,`${req.params.voiceId}.onnx.json`),{force:true})]);return {ok:true}})
- app.get(TTS_RUNNER.health,async():Promise<TtsRunnerHealth>=>{const a=await engines.availability(),voices=await engines.piperVoices();return {ok:a.piper||a.say,engines:{piper:{available:a.piper},say:{available:a.say}},voices:voices.length,queue:{active:runs.activeCount,waiting:runs.waitingCount,maxActive:config.maxActive,maxWaiting:config.maxQueue}}})
+ app.get(TTS_RUNNER.health,async():Promise<TtsRunnerHealth & { application: ReturnType<typeof applicationRuntimeMetadata> }>=>{const a=await engines.availability(),voices=await engines.piperVoices();return {application: applicationRuntimeMetadata('tts-runner', process.env), ok:a.piper||a.say,engines:{piper:{available:a.piper},say:{available:a.say}},voices:voices.length,queue:{active:runs.activeCount,waiting:runs.waitingCount,maxActive:config.maxActive,maxWaiting:config.maxQueue}}})
  app.addHook('onClose',async()=>runs.cancelAll());return app
 }

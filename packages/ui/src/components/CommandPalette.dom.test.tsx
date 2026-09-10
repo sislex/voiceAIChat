@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import { CommandPalette } from './CommandPalette'
-import { rememberCommand, type Command } from '../lib/commands'
+import { rememberCommand, type Command } from '@voicechat/ui-foundation/runtime'
 
 function cmd(partial: Partial<Command> & Pick<Command, 'id' | 'title'>): Command {
   return { section: 'action', run: () => {}, ...partial }

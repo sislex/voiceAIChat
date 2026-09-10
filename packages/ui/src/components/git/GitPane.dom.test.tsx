@@ -4,8 +4,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../../test/uiRender'
-import { expectNoViolations } from '../../test/a11y'
-import { makeGitBranches, makeGitChange, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '../../test/fixtures/git'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
+import { makeGitBranches, makeGitChange, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '@voicechat/ui-foundation/test/fixtures/git'
 import { GitPane, type GitPaneApi } from './GitPane'
 import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
 

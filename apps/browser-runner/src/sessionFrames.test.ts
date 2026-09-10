@@ -45,7 +45,8 @@ it('цепочка frame читает и меняет вложенный док�
 })
 
 it('wait использует URL, ready state и predicate выбранного frame', async () => {
-  expect(await act({ kind: 'wait', url: `${CHILD}/frame`, loadState: 'load', predicate: 'window.frameMarker === "child"', timeoutMs: 200 }, '#outer')).toMatchObject({ ok: true })
+  // Проверяем выбор документа, а не скорость Chromium под параллельным гейтом.
+  expect(await act({ kind: 'wait', url: `${CHILD}/frame`, loadState: 'load', predicate: 'window.frameMarker === "child"', timeoutMs: 5000 }, '#outer')).toMatchObject({ ok: true })
 })
 
 it('evaluate читает глобальные переменные выбранного frame', async () => {

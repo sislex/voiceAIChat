@@ -12,7 +12,7 @@ describe('отдельный процесс Playwright Reader', () => {
   it('не требует БД или MCP-секрета, показывает отсутствие раннера и закрывает внутренний API', async () => {
     const { app } = await buildPlaywrightReaderServer({ config: loadPlaywrightReaderConfig({ VC_INTERNAL_TOKEN: 't' }) })
     try {
-      expect((await app.inject('/v1/health')).json()).toEqual({ ok: true, service: 'playwright-reader', version: null, runnerConfigured: false })
+      expect((await app.inject('/v1/health')).json()).toMatchObject({ ok: true, service: 'playwright-reader', version: null, runnerConfigured: false, application: { applicationId: 'playwright-reader', version: null } })
       expect((await app.inject({ method: 'POST', url: INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, payload: {} })).statusCode).toBe(401)
       const invalid = await app.inject({ method: 'POST', url: INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, headers: { authorization: 'Bearer t' }, payload: { method: 'constructor', args: [] } })
       expect(invalid.statusCode).toBe(400)

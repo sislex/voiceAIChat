@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { BrowserSessionPane } from './BrowserSessionPane'
+import { BrowserSessionPane } from '@voicechat/playwright-reader-app/components/BrowserSessionPane'
 import type { RendererBrowserBridge } from '@shared/ipc'
 const meta = {
   id: 'c',

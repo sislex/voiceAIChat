@@ -18,7 +18,7 @@ export const TABLE_OWNER: Record<RepoDomain, readonly string[]> = {
   tasks: ['tasks', 'task_comments', 'task_worklog', 'task_history', 'task_designs', 'task_creation_requests', 'task_creation_audit', 'task_improvements', 'task_rework_cycles', 'task_rework_attachments', 'task_attachments', 'task_repositories', 'task_launch_results', 'task_preparation_runs', 'task_preparation_events', 'task_preparation_steps', 'task_preparation_questions', 'task_preparation_notification_dismissals', 'assistant_orchestrations', 'assistant_orchestration_items'],
   ci: ['ci_commands', 'ci_slot_commands', 'ci_command_suggestions', 'ci_events', 'ci_fix_attempts', 'ci_gate_results', 'ci_interactions', 'ci_llm_configs', 'ci_stage_llm_configs', 'ci_run_kb_gaps', 'ci_run_kb_metrics', 'ci_run_logs', 'ci_run_steps', 'ci_run_tool_calls', 'ci_run_tool_responses', 'ci_run_usage', 'ci_runs', 'ci_settings', 'ci_stage_runs', 'ci_task_browser_checks', 'ci_task_process_stages', 'ci_test_events', 'ci_test_fix_cycles', 'ci_test_fix_decisions', 'ci_test_fix_targeted_runs', 'ci_test_fix_task_state', 'ci_test_group_configs', 'ci_test_group_runs', 'ci_test_runs', 'ci_test_targeted_runs', 'ci_workspaces', 'merge_runs', 'integration_test_runs', 'component_qa_runs'],
   qa: ['qa_sessions', 'qa_stage_runs', 'qa_preparation_runs', 'qa_criterion_results', 'qa_issues', 'qa_attachments', 'qa_audit', 'acceptance_criteria', 'acceptance_criterion_versions'],
-  releases: ['project_releases', 'project_release_steps', 'project_release_events'],
+  releases: ['project_releases', 'project_release_steps', 'project_release_events', 'application_releases', 'application_environments', 'application_deployments'],
   kb: ['kb_documents', 'kb_usage_queries', 'kb_usage_sections', 'kb_usage_views']
 }
 

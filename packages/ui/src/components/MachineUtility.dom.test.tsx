@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MachineUtility } from './MachineUtility'
-import { makeAgent, makeMachineOps, makePolicy } from '../test/fixtures'
+import { makeAgent, makeMachineOps, makePolicy } from '../test/fixtures/index'
 
 // Мост PTY в jsdom не установлен, поэтому `kind: 'console'` собирается в
 // однострочную MachineConsole — и подпись переключателя честно «Консоль».

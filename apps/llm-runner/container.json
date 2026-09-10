@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "apt": [
+    "ca-certificates",
+    "git",
+    "openssh-client",
+    "python3",
+    "python3-venv",
+    "build-essential",
+    "bubblewrap"
+  ],
+  "runtime": [
+    "ARG INSTALL_CLAUDE_CLI=1",
+    "ARG INSTALL_CODEX_CLI=1",
+    "RUN if [ \"$INSTALL_CLAUDE_CLI\" = \"1\" ]; then npm i -g @anthropic-ai/claude-code; fi && if [ \"$INSTALL_CODEX_CLI\" = \"1\" ]; then npm i -g @openai/codex; fi",
+    "RUN mkdir -p /home/node/.claude /home/node/.codex /mnt/server-data && chown -R node:node /home/node/.claude /home/node/.codex /mnt/server-data",
+    "ENV PORT=8790"
+  ]
+}

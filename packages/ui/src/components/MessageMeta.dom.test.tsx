@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageMeta } from './MessageMeta'
-import { makeTurnMeta } from '../test/fixtures'
+import { makeTurnMeta } from '../test/fixtures/index'
 import '../styles/app.css'
 
 // Мета хода — общая фикстура: те же значения показывают сториз Chat/MessageMeta.

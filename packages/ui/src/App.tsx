@@ -1,3 +1,8 @@
+import type { WebReaderFrameProps } from '@voicechat/web-reader-app/panelContract'
+import type { BrowserSessionPaneProps } from '@voicechat/playwright-reader-app/panelContract'
+import type { ImageStudioPaneProps } from '@voicechat/image-studio-app/panelContract'
+import type { MakePaneProps } from '@voicechat/make-app/panelContract'
+import { createApplicationPanel } from './runtime/applicationHost'
 import { WebReaderEngineSelect } from './components/WebReaderEngineSelect'
 import { runReaderModelRequest, readReaderErrors } from './webReaderModelRequest'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
@@ -5,10 +10,10 @@ import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { buildProjectsRoute, parseProjectsRoute } from '@voicechat/projects-app'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
-import type { LoadStatus } from './lib/loadState'
+import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import type { RendererApi } from '@shared/ipc'
 import { summarizeConversationUsage } from '@shared/usageSummary'
-import { MakeSharedView } from './components/MakeSharedView'
+import type { MakeSharedViewProps } from '@voicechat/make-app/panelContract'
 import type { Conversation, EditorContextPayload, LlmProvider, PermissionMode, Settings, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
@@ -30,13 +35,13 @@ import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
-import { IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY, workshopChatCollapsedKey, workshopChatWidthKey } from './store/contracts'
+import { IMAGE_STUDIO_LAST_KEY, KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY, workshopChatCollapsedKey, workshopChatWidthKey } from '@voicechat/ui-foundation/persistence'
 import { Sidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
 import { VoiceBar } from './components/VoiceBar'
 import { VOICE_INPUT_ENABLED } from './lib/featureFlags'
-import { CHAT_COMPOSER_QUERY, useMediaQuery } from './lib/mediaQuery'
+import { CHAT_COMPOSER_QUERY, useMediaQuery } from '@voicechat/ui-foundation/lib/mediaQuery'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
@@ -48,11 +53,11 @@ import { WidgetAssistantFrame } from './components/WidgetAssistantFrame'
 import { KanbanAssistant } from './components/KanbanAssistant'
 import { CiCommands } from './components/ci/CiCommands'
 import { RunFeed } from './components/ci/RunFeed'
-import { ToolFrame } from './components/ToolFrame'
+import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { SidebarToggle } from './components/ui/IconButton'
-import type { ConsoleHistoryStore, MachineOps } from './components/machine'
+import type { ConsoleHistoryStore, MachineOps } from '@voicechat/ui-foundation/components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
-import { PopupFrame } from './components/PopupFrame'
+import { PopupFrame } from '@voicechat/ui-foundation/components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
 import { Button, Dialog, EmptyState, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
@@ -86,10 +91,10 @@ import {
 } from './store/react'
 import type { PipelineDelays } from './store/mockPipeline'
 import { useVoiceCues } from './lib/useVoiceCues'
-import { useHashRoute } from './lib/useHashRoute'
+import { useHashRoute } from '@voicechat/ui-foundation/runtime'
 import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
-import { useCommandSource, useCommandsRevision } from './lib/useCommands'
-import { listCommands } from './lib/commands'
+import { useCommandSource, useCommandsRevision } from '@voicechat/ui-foundation/runtime'
+import { listCommands } from '@voicechat/ui-foundation/runtime'
 import { formatConfirmRows, runWidgetUiAction } from './lib/widgetUiActions'
 import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics } from './webReaderDiagnostics'
@@ -103,7 +108,7 @@ import { REST as REST_PATHS } from '@shared/protocol'
 import { buildAdminRoute, parseAdminRoute } from '@shared/adminRoute'
 import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
-import { placeScenario } from './lib/scenarioRecorder'
+import { placeScenario } from './lib/scenarioPlacement'
 import { createMachineRequiredGuard } from './lib/machineRequiredGuard'
 
 /** Подпись устройства для тоста о новом входе: ядро без текстов окна сессий. */
@@ -129,10 +134,7 @@ const SessionsDialogHost = lazy(async () => {
   return { default: module.SessionsDialogHost }
 })
 
-const ImageStudioPane = lazy(async () => {
-  const module = await import('./components/ImageStudioPane')
-  return { default: module.ImageStudioPane }
-})
+const ImageStudioPane = createApplicationPanel<ImageStudioPaneProps>('image-studio-ui')
 const UsersAdmin = lazy(async () => {
   const module = await import('@voicechat/admin-app')
   return { default: module.UsersAdmin }
@@ -157,19 +159,13 @@ const ProjectSettings = lazy(async () => {
   const module = await import('./components/ProjectSettings')
   return { default: module.ProjectSettings }
 })
-const BrowserSessionPane = lazy(async () => {
-  const module = await import('./components/BrowserSessionPane')
-  return { default: module.BrowserSessionPane }
-})
+const BrowserSessionPane = createApplicationPanel<BrowserSessionPaneProps>('playwright-reader-ui')
 
 // Поверхность Reader нужна только беседе-ридеру, парк машин и утилиты (консоль,
 // терминал, проводник) — только разделу машин, база знаний — своей странице.
 // В главном чанке всё это лежало мёртвым весом у пользователя, который просто
 // разговаривает с моделью.
-const WebReaderFrame = lazy(async () => {
-  const module = await import('@voicechat/web-reader-app')
-  return { default: module.WebReaderFrame }
-})
+const WebReaderFrame = createApplicationPanel<WebReaderFrameProps>('web-reader-ui')
 const MachineStatus = lazy(async () => {
   const module = await import('./components/MachineStatus')
   return { default: module.MachineStatus }
@@ -235,10 +231,8 @@ const SettingsModal = lazy(async () => {
 // Панель Make — самый большой экран приложения (две тысячи строк, редактор,
 // история снимков, комментарии) и нужна только в Make-режиме чата. В главном
 // чанке ей делать нечего.
-const MakePane = lazy(async () => {
-  const module = await import('./components/MakePane')
-  return { default: module.MakePane }
-})
+const MakeSharedView = createApplicationPanel<MakeSharedViewProps>('make-ui', 'shared')
+const MakePane = createApplicationPanel<MakePaneProps>('make-ui')
 
 import './styles/app.css'
 import '@voicechat/sessions-app/styles.css'
@@ -2821,7 +2815,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       } : {})} /></Suspense>}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} /></div>}
       {inWorkshop && <div className="workshop-drag-shield" aria-hidden="true" onPointerUp={stopWorkshopResize} />}
-      {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
+      {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane localAgentId={window.featurePreview?.localAgentId} key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
       {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense></div>}
       {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine === 'chromium' && <Suspense fallback={<div role="status">Запуск полного браузера…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} initialUrl={activeConversation.previewUrl ?? null} onPageChange={url => chatActions.setConversationPreviewUrl(chat.activeId!, url)} /></Suspense>}
       {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}

@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 import Fastify from 'fastify'
 import {
   createRpcDispatcher, RpcError, INTERNAL_IMAGE_STUDIO_SERVICE_PATH, IMAGE_STUDIO_SERVICE_METHODS,
@@ -34,6 +35,6 @@ export async function buildImageStudioServer(opts: {
       }
     })
   })
-  app.get(IMAGE_STUDIO_HEALTH_PATH, async () => ({ ok: true, service: 'image-studio', version: config.version }))
+  app.get(IMAGE_STUDIO_HEALTH_PATH, async () => ({ application: applicationRuntimeMetadata('image-studio', process.env), ok: true, service: 'image-studio', version: config.version }))
   return { app, studio }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { CcProject, CcSession, CcItem, CcItemKind } from '@shared/cc'
 import { Markdown } from './Markdown'
 import { Button } from '@voicechat/ui-kit'
-import { ToolFrame } from './ToolFrame'
+import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 
 export interface CcObserverProps {
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */

@@ -8,11 +8,11 @@
 import type { SttUpdate } from '@shared/ipc'
 import { transition, type VoiceEvent } from '@shared/stateMachine'
 import type { VoiceState } from '@shared/types'
-import type { LiveSegment } from '../../lib/view'
+import type { LiveSegment } from '@voicechat/ui-foundation/lib/view'
 import { flushSpeakable, splitSpeakable } from '../../lib/sentences'
 import { VadDetector } from '../../lib/vad'
 import type { SttPort, TtsPort, VoiceInputPort } from '../../clients/types'
-import type { EffectiveVoiceSettings } from '../contracts'
+import type { EffectiveVoiceSettings } from '@voicechat/ui-foundation/persistence'
 import { createStoreCore, type Store } from '../createStore'
 import { DEFAULT_DELAYS, type PipelineDelays, transcriptFrames } from '../mockPipeline'
 

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "apt": [
+    "ca-certificates",
+    "libgomp1"
+  ],
+  "stages": [
+    "FROM debian:bookworm-slim AS application-native",
+    "RUN apt-get update && apt-get install -y --no-install-recommends git cmake make g++ ca-certificates && rm -rf /var/lib/apt/lists/*",
+    "RUN git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp /whisper",
+    "RUN cmake -S /whisper -B /whisper/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DGGML_NATIVE=OFF && cmake --build /whisper/build -j\"$(nproc)\" --target whisper-cli"
+  ],
+  "runtime": [
+    "COPY --from=application-native /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli",
+    "ENV PORT=8791 VC_WHISPER_CLI=/usr/local/bin/whisper-cli VC_MODELS_DIR=/models VC_STT_TEMP_DIR=/stt-tmp",
+    "RUN mkdir -p /models /stt-tmp && chown -R node:node /models /stt-tmp",
+    "VOLUME [\"/models\", \"/stt-tmp\"]"
+  ]
+}

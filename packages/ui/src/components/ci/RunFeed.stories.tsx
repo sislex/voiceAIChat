@@ -21,7 +21,7 @@ import {
   queuedRunCache,
   runningRunCache,
   successRunCache
-} from '../../test/fixtures'
+} from '../../test/fixtures/index'
 
 const meta: Meta<typeof RunFeed> = {
   title: 'CI/RunFeed',

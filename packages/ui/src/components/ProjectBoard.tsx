@@ -8,7 +8,7 @@
 // стек окон, а страница остаётся открытой.
 
 import { useEffect, useState } from 'react'
-import { KanbanBoard, type KanbanBoardProps } from './kanban'
+import { KanbanBoard, type KanbanBoardProps } from './kanban/index'
 import type { TaskModalTab } from './kanban/TaskModal'
 
 export interface ProjectBoardProps extends Omit<KanbanBoardProps, 'openTaskId' | 'onOpenTaskChange' | 'defaultSwimlane'> {

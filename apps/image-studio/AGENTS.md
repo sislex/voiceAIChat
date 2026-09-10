@@ -24,5 +24,5 @@ UI остаётся в `packages/ui`; серверный пакет зависи
 - Тесты пакета используют фейковый порт, без SQLite. Интеграция embedded/remote с настоящими
   HTTP-портами и БД — `apps/server/src/imageStudioBridge/remote.integration.test.ts`.
 
-Запуск: `npm run -w @voicechat/image-studio dev`; гейт: `npm run gate:fast`.
+Запуск: `npm run -w @voicechat/image-studio dev`; гейт приложения: `npm run gate:app -- image-studio`; в разработке — `npm run gate:fast`.
 Комментарии по-русски, относительные импорты `.js`, выполнение исходников через `tsx`.

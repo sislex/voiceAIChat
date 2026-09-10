@@ -4,7 +4,7 @@
 
 import { isAssistantRunnableCommand } from '@shared/widgetAssistant'
 import type { WidgetSurfaceSnapshot, WidgetUiAction, WidgetUiActionResult } from '@shared/widgetAssistant'
-import type { Command } from './commands'
+import type { Command } from '@voicechat/ui-foundation/runtime'
 
 export interface WidgetUiActionDeps {
   /** Проект, открытый в этой вкладке; null — страницы проекта нет. */

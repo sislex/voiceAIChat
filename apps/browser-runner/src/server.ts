@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -80,7 +81,7 @@ export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Pr
   app.get('/v1/health', async (_request, reply) => {
     const probe = await options.probe?.() ?? await defaultProbe()
     if (!probe.ok) reply.code(503)
-    return { ...probe, sessions: sessions.count() }
+    return { application: applicationRuntimeMetadata('browser-runner', process.env), ...probe, sessions: sessions.count() }
   })
   app.post<{ Body: StartSessionRequest }>('/v1/sessions', async (request, reply) => {
     try { return await sessions.start(request.body) }

@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import type { TaskChatContext } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { TaskChatHeader } from './TaskChatHeader'
-import { makeTaskChatContext } from '../../test/fixtures'
+import { makeTaskChatContext } from '../../test/fixtures/index'
 
 const ctx = (over: Partial<TaskChatContext> = {}): TaskChatContext =>
   makeTaskChatContext({ story: { id: 's1', title: 'Карточка', key: 'VC-2' }, task: { id: 't1', title: 'Скролл', key: 'VC-3', type: 'task' }, workdir: '/repos/vc/3', ...over })

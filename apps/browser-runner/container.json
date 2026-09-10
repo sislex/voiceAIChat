@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "base": "mcr.microsoft.com/playwright:v1.62.1-noble",
+  "user": "pwuser",
+  "apt": [
+    "ca-certificates",
+    "libnss3-tools"
+  ],
+  "runtime": [
+    "ENV PORT=8792 HOME=/home/pwuser VC_BROWSER_DATA_DIR=/data"
+  ]
+}

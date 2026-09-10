@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import { CiCommands } from './CiCommands'
-import { makeCommand, makeCommands, makeGlobalSettings, makeSuggestion, makeWorkspace } from '../../test/fixtures'
+import { makeCommand, makeCommands, makeGlobalSettings, makeSuggestion, makeWorkspace } from '../../test/fixtures/index'
 
 const meta: Meta<typeof CiCommands> = {
   title: 'CI/CiCommands',

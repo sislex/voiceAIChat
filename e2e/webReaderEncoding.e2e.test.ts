@@ -3,7 +3,7 @@ import { gzipSync, deflateSync, brotliCompressSync } from 'node:zlib'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
-import type { ReaderProjectRequest } from '../packages/shared/src/previewProject'
+import type { ReaderProjectRequest } from '@voicechat/shared/previewProject'
 let app: FastifyInstance, browser: Browser, page: Page, base: string
 const cp = Buffer.from([0xcf,0xf0,0xe8,0xe2,0xe5,0xf2]), png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVn8AAAAASUVORK5CYII=', 'base64')
 const legacy = (prefix: string, suffix = '') => Buffer.concat([Buffer.from(prefix), cp, Buffer.from(suffix)])

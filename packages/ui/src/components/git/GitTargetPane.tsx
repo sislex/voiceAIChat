@@ -8,7 +8,7 @@ import { EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import type { RendererApi } from '@shared/ipc'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
 import { GitPane, type GitPaneApi } from './GitPane'
-import { loadView, type LoadStatus } from '../../lib/loadState'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 
 export type GitTargetPaneApi = GitPaneApi & Pick<RendererApi, 'projects:gitWorkspaces'>
 

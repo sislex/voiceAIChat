@@ -4,12 +4,12 @@ import type { KbDocument, KbDocumentKind, KbResearchRun, KbScope, KbSearchResult
 import { KB_SCOPE_LABELS, KB_SCOPES } from '@shared/kb'
 import type { ProjectSummary } from '@shared/projects'
 import { Markdown } from './Markdown'
-import { ToolFrame } from './ToolFrame'
+import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { Button } from '@voicechat/ui-kit'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
-import { loadView, type LoadStatus } from '../lib/loadState'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 
 const KINDS: Array<{ id: KbDocumentKind | ''; label: string }> = [
   { id: '', label: 'Все' }, { id: 'feature', label: 'Фичи' }, { id: 'subsystem', label: 'Подсистемы' },

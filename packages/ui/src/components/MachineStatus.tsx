@@ -10,7 +10,7 @@ import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage, B
 import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
 import { recommendedMachineStoragePath, type MachineStorage } from '@shared/projects'
-import { copyText } from '../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { AgentCard } from './AgentCard'
 import { AgentCommands } from './AgentCommands'
 import { MachineCommandLog } from './MachineCommandLog'
@@ -18,11 +18,11 @@ import { MachineBatchCommand } from './MachineBatchCommand'
 import type { MachineCommandRecord, MachineCommandSource } from '@shared/agentProtocol'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
-import { ToolFrame } from './ToolFrame'
+import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
-import { loadView, type LoadStatus } from '../lib/loadState'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 
 export interface MachineStatusProps {
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */

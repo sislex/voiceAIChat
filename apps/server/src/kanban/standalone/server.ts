@@ -6,7 +6,7 @@
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { RpcError, createRpcDispatcher, type RpcRequest } from '@voicechat/shared'
-import { MAKE_MCP_PATH } from '@voicechat/make'
+import { MAKE_MCP_PATH } from '@voicechat/make-contracts'
 import type { ServerConfig } from '../../config.js'
 import { VoiceChatDb } from '../../db/database.js'
 import type { LlmClient } from '../../claude/types.js'

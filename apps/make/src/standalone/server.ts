@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 // Отдельный процесс Make (`VC_MAKE_MODE=remote` у ядра). Тот же `createMakeModule`, что и внутри
 // ядра, но данные чата/канбана — по HTTP (`HttpMakeCore`), авторизация — пересылкой в ядро
 // (`registerForwardedAuth`), а события шины уходят ядру, у которого живут сокеты пользователей.
@@ -67,7 +68,7 @@ export async function buildMakeServer(opts: BuildMakeServerOptions): Promise<{ a
       return reply.code(error instanceof RpcError ? error.status : 500).send({ error: error instanceof Error ? error.message : String(error) })
     }
   })
-  app.get(MAKE_HEALTH_PATH, async () => ({ ok: true, service: 'make', version: config.version }))
+  app.get(MAKE_HEALTH_PATH, async () => ({ application: applicationRuntimeMetadata('make', process.env), ok: true, service: 'make', version: config.version }))
 
   return { app, make }
 }

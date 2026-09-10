@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { AgentCard } from './AgentCard'
-import { makeAgent, makeAndroidAgent, makeOfflineAgent, makePolicy } from '../test/fixtures'
+import { makeAgent, makeAndroidAgent, makeOfflineAgent, makePolicy } from '../test/fixtures/index'
 
 const meta: Meta<typeof AgentCard> = {
   title: 'Machines/AgentCard',

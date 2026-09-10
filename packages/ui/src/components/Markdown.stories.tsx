@@ -5,7 +5,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, userEvent, waitFor, within } from '@storybook/test'
 import { Markdown } from './Markdown'
-import { MD_CHECKLIST, MD_CODE_LONG, MD_KITCHEN_SINK, MD_LINKS, MD_TABLE } from '../test/fixtures'
+import { MD_CHECKLIST, MD_CODE_LONG, MD_KITCHEN_SINK, MD_LINKS, MD_TABLE } from '../test/fixtures/index'
 
 const meta: Meta<typeof Markdown> = {
   title: 'Chat/Markdown',

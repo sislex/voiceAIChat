@@ -8,7 +8,7 @@
 // Состояния «загрузка/ошибка/пусто» берутся из ui-kit: карточка задачи не имеет
 // права показывать пустоту иначе, чем остальной интерфейс.
 import { useEffect, useState } from 'react'
-import { usePolling } from '../../lib/usePolling'
+import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 import { EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import { formatDateTime } from '../../lib/dateFormat'
 import type { TaskTimeline as Timeline, TaskTimelineAttempt, TaskTimelineStage, TaskTimelineStatus } from '@shared/timeline'

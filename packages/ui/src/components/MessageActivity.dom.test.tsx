@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MessageActivity } from './MessageActivity'
-import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures'
+import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures/index'
 
 // Активность — общая фикстура (её же показывают сториз): три записи без смещений.
 const activity = ACTIVITY_LEGACY

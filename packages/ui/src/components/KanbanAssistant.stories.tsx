@@ -6,7 +6,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import type { Orchestration, OrchestrationItem } from '@shared/orchestration'
 import type { WidgetAssistantContext } from '@shared/widgetAssistant'
 import { KanbanAssistant } from './KanbanAssistant'
-import { createFakeApi } from '../test/fakeApi'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { withBridges } from '../test/storyBridges'
 
 const PROJECT_ID = 'p1'

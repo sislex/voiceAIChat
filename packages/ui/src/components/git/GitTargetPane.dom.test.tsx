@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { render } from '../../test/uiRender'
-import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '../../test/fixtures/git'
+import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '@voicechat/ui-foundation/test/fixtures/git'
 import { GitTargetPane, pickGitWorkspace, type GitTargetPaneApi } from './GitTargetPane'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
 

@@ -32,25 +32,8 @@ describe('app.css — chat и Make split layout', () => {
     expect(compact).toMatch(/\.mode-menu__list[^}]*max-width:\s*calc\(100cqw - 24px\)/s)
   })
 
-  it('ограничивает MakePane split-контейнером и оставляет внутренний скролл', () => {
-    expect(decl('.make-pane', 'max-width')).toBe('100%')
-    expect(decl('.make-pane', 'min-height')).toBe('0')
-    expect(decl('.make-pane', 'height')).toBe('100%')
-    expect(decl('.make-pane', 'overflow')).toBe('hidden')
-    for (const selector of ['.make-preview', '.make-code', '.make-history']) {
-      expect(decl(selector, 'min-width'), selector).toBe('0')
-      expect(decl(selector, 'min-height'), selector).toBe('0')
-      expect(decl(selector, 'overflow'), selector).toBe('hidden')
-    }
-    expect(decl('.make-frame-host', 'overflow')).toBe('auto')
-    expect(decl('.make-tree', 'overflow')).toBe('auto')
-    expect(decl('.make-snapshots', 'overflow')).toBe('auto')
-  })
-
-  it('mobile снимает desktop minimum и скрывает неактивную Make-вкладку', () => {
+  it('mobile снимает desktop minimum колонки чата', () => {
     const mobile = atRuleBodies('@media (max-width: 768px)').join('\n')
-    expect(mobile).toMatch(/\.make-pane\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s)
-    expect(mobile).toMatch(/\.chat-split--chat \.make-pane\s*\{[^}]*display:\s*none/s)
     expect(mobile).toMatch(/\.chat-split-chat[^}]*min-width:\s*0/s)
   })
 })

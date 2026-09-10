@@ -7,7 +7,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { userEvent, within } from '@storybook/test'
 import { CommandPalette } from './CommandPalette'
 import { Button } from '@voicechat/ui-kit'
-import { rememberCommand, type Command, type CommandSection } from '../lib/commands'
+import { rememberCommand, type Command, type CommandSection } from '@voicechat/ui-foundation/runtime'
 
 function cmd(id: string, title: string, section: CommandSection, extra: Partial<Command> = {}): Command {
   return { id, title, section, run: () => {}, ...extra }

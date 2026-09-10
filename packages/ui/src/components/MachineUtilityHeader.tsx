@@ -14,7 +14,7 @@
 
 import type { AgentInfo, AgentPolicy } from '@shared/agentProtocol'
 import { Button } from '@voicechat/ui-kit'
-import type { UtilityKind } from './machine'
+import type { UtilityKind } from '@voicechat/ui-foundation/components/machine'
 
 /** Запрет политики: короткая подпись бейджа и подсказка, что именно нельзя. */
 export interface PolicyBadge {

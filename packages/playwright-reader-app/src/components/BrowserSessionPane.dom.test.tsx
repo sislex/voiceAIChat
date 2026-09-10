@@ -1,0 +1,818 @@
+// Панель Playwright Reader: старт сессии, screencast-поллинг, навигация,
+// клик по кадру с пересчётом координат и деградация без раннера. Мост browser — фейк.
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { RendererBrowserBridge } from '@shared/ipc'
+import type { BrowserSessionMetadata } from '@shared/types'
+import { BrowserSessionPane } from './BrowserSessionPane'
+import { expectNoCriticalViolations } from '@voicechat/ui-foundation/test/a11y'
+
+const meta = (over: Partial<BrowserSessionMetadata> = {}): BrowserSessionMetadata => ({
+  id: 'c1', conversationId: 'c1', incarnation: 'inc-1', state: 'ready', activeTabId: 't1', tabs: [],
+  viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: 'https://a.b', title: null, ...over
+})
+
+function fakeBrowser(over: Partial<RendererBrowserBridge> = {}): RendererBrowserBridge {
+  return {
+    start: vi.fn(async () => meta()),
+    command: vi.fn(async () => meta({ currentUrl: 'https://x.y' })),
+    screenshot: vi.fn(async () => ({ dataUrl: 'data:image/jpeg;base64,QQ==' })),
+    stop: vi.fn(async () => {}),
+    ...over
+  }
+}
+
+afterEach(cleanup)
+
+describe('BrowserSessionPane', () => {
+  it('после закрытия всех вкладок позволяет человеку создать новую', async () => {
+    const empty = meta({ activeTabId: null, tabs: [], currentUrl: null })
+    const browser = fakeBrowser({ start: vi.fn(async () => empty) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const create = await screen.findByLabelText('Новая вкладка')
+    await expectNoCriticalViolations()
+    expect((screen.getByLabelText('Назад') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(create)
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'newTab' } })))
+  })
+  it('адрес в пустой панели открывает новую вкладку вместо stale_tab', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ activeTabId: null, currentUrl: null, tabs: [] })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByText('Все вкладки закрыты')
+    fireEvent.change(screen.getByLabelText('Адрес страницы'), { target: { value: 'example.com' } })
+    fireEvent.keyDown(screen.getByLabelText('Адрес страницы'), { key: 'Enter' })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'newTab', url: 'https://example.com' } })))
+  })
+  it('стартует сессию, показывает кадр и адрес открытой страницы', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    expect(browser.start).toHaveBeenCalledWith('c1')
+    expect((screen.getByLabelText('Адрес страницы') as HTMLInputElement).value).toBe('https://a.b')
+  })
+
+  it('навигация шлёт command с incarnation из start и нормализует схему', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
+    fireEvent.change(address, { target: { value: 'example.com' } })
+    fireEvent.click(screen.getByText('Открыть'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({
+      incarnation: 'inc-1', command: { type: 'navigate', url: 'https://example.com' }
+    })
+  })
+
+  it('клик по кадру пересчитывает координаты во вьюпорт и шлёт input click', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const img = await screen.findByAltText('Кадр Chromium') as HTMLImageElement
+    // jsdom не считает layout: подменяем rect на 640×400 (половина вьюпорта 1280×800).
+    img.getBoundingClientRect = () => ({ left: 0, top: 0, width: 640, height: 400, right: 640, bottom: 400, x: 0, y: 0, toJSON: () => ({}) })
+    fireEvent.click(img, { clientX: 320, clientY: 200 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command).toEqual({
+      type: 'input', action: { type: 'click', x: 640, y: 400, button: 'left', clickCount: 1 }
+    })
+  })
+
+  it('без моста браузера показывает недоступность вместо панели', () => {
+    render(<BrowserSessionPane conversationId="c1" browser={undefined} />)
+    expect(screen.getByRole('status').textContent).toMatch(/недоступен/i)
+  })
+
+  it('501 от сервера трактуется как недоступность (а не ошибка)', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => { throw new Error('Browser Runner не настроен на этом сервере') }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/не настроен/i))
+  })
+
+  it('останавливает сессию при размонтировании', async () => {
+    const browser = fakeBrowser()
+    const { unmount } = render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    unmount()
+    await waitFor(() => expect(browser.stop).toHaveBeenCalledWith('c1'))
+  })
+  it('колесо прокручивает страницу: длиннее вьюпорта её нечем было листать', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium')
+    fireEvent.wheel(frame, { deltaX: 0, deltaY: 240 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({
+      command: { type: 'input', action: { type: 'wheel', deltaX: 0, deltaY: 240 } }
+    })
+  })
+
+  it('правая кнопка и двойной клик доходят до страницы', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium')
+    fireEvent.contextMenu(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls[0][1].command.action).toMatchObject({ type: 'click', button: 'right', clickCount: 1 })
+    // Настоящий dblclick предваряется двумя click с detail 1 и 2.
+    fireEvent.click(frame, { detail: 1, clientX: 10, clientY: 10 })
+    fireEvent.click(frame, { detail: 2, clientX: 10, clientY: 10 })
+    fireEvent.doubleClick(frame, { detail: 2, clientX: 10, clientY: 10 })
+    await waitFor(() => expect(calls.length).toBe(3))
+    expect(calls[calls.length - 1][1].command.action).toMatchObject({ button: 'left', detail: 2 })
+  })
+
+  it('переключатель размера окна шлёт resize', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByText('Телефон'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command).toMatchObject({
+      type: 'resize', viewport: { width: 390, height: 844 }
+    })
+  })
+
+  it('клавиатура работает прямо в кадре, без отдельного поля', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium')
+    fireEvent.keyDown(frame, { key: 'a' })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command.action).toMatchObject({ type: 'type', text: 'a' })
+    fireEvent.keyDown(frame, { key: 'Enter' })
+    const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+    await waitFor(() => expect(calls.length).toBeGreaterThan(1))
+    expect(calls[calls.length - 1][1].command.action).toMatchObject({ type: 'press', key: 'Enter' })
+  })
+
+  it('снимок уходит в чат тем же кадром, что видит человек', async () => {
+    const onAttachFrame = vi.fn()
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser()} onAttachFrame={onAttachFrame} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByText('Снимок в чат'))
+    expect(onAttachFrame).toHaveBeenCalledWith('data:image/jpeg;base64,QQ==')
+  })
+
+  it('состояние сессии показано словами, а не сырым ready', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser()} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByText('Готово')).toBeTruthy()
+    expect(screen.queryByText('ready')).toBeNull()
+  })
+  it('вкладки видны, переключаются и закрываются', async () => {
+    const withTabs = meta({ activeTabId: 't1', tabs: [
+      { id: 't1', url: 'https://a.b', title: 'Первая', active: true },
+      { id: 't2', url: 'https://c.d', title: 'Вторая', active: false }
+    ] })
+    const browser = fakeBrowser({ start: vi.fn(async () => withTabs), command: vi.fn(async () => withTabs) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('tab', { name: 'Вторая' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command).toMatchObject({ type: 'selectTab', tabId: 't2' })
+    fireEvent.click(screen.getByLabelText('Закрыть вкладку Вторая'))
+    const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+    await waitFor(() => expect(calls.length).toBeGreaterThan(1))
+    expect(calls[calls.length - 1][1].command).toMatchObject({ type: 'closeTab', tabId: 't2' })
+  })
+
+  it('заголовок страницы показан рядом с адресом', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ title: 'Пример страницы' })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByText('Пример страницы')).toBeTruthy()
+  })
+
+  it('повторяемая ошибка даёт кнопку «Повторить», а неповторяемая — нет', async () => {
+    const failing = Object.assign(new Error('Страница не ответила'), { retryable: true, code: 'timeout' })
+    const browser = fakeBrowser({ command: vi.fn(async () => { throw failing }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByLabelText('Обновить'))
+    expect(await screen.findByText('Страница не ответила')).toBeTruthy()
+    expect(screen.getByText('Повторить')).toBeTruthy()
+  })
+
+  it('перезапуск сессии останавливает старую и стартует новую', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    ;(browser.start as ReturnType<typeof vi.fn>).mockClear()
+    fireEvent.click(screen.getByText('Перезапустить'))
+    await waitFor(() => expect(browser.stop).toHaveBeenCalledWith('c1'))
+    await waitFor(() => expect(browser.start).toHaveBeenCalled())
+  })
+
+  it('снимок всей страницы просит fullPage, а не текущий кадр', async () => {
+    const onAttachFrame = vi.fn()
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} onAttachFrame={onAttachFrame} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByText('Вся страница'))
+    await waitFor(() => expect(onAttachFrame).toHaveBeenCalled())
+    const shots = (browser.screenshot as ReturnType<typeof vi.fn>).mock.calls
+    expect(shots.some((c) => c[1]?.fullPage === true)).toBe(true)
+  })
+})
+
+describe('Playwright Reader как инструмент автотестов (круг 11)', () => {
+  it('показывает ошибки страницы и неуспешные запросы, скрывая успешные', async () => {
+    // Раннер копит журналы с открытия страницы, но до этого круга человек их не
+    // видел: белый экран и никакого объяснения.
+    const command = vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+      if (req.command.type !== 'inspect') return meta()
+      return req.command.action?.kind === 'console'
+        ? { ok: true, console: [{ level: 'error', text: 'TypeError: x is not a function', at: 1 }] }
+        : { ok: true, network: [
+            { method: 'GET', url: 'http://site/api/board', status: 500, ok: false, at: 2 },
+            { method: 'GET', url: 'http://site/ok', status: 200, ok: true, at: 3 }
+          ] }
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Ошибки страницы' }))
+    expect(await screen.findByText('TypeError: x is not a function')).toBeInTheDocument()
+    expect(screen.getByText(/api\/board/)).toBeInTheDocument()
+    expect(screen.queryByText(/site\/ok/)).not.toBeInTheDocument()
+    expect(screen.getByText('Ошибки страницы: 1 · Неуспешные запросы: 1')).toBeInTheDocument()
+  })
+
+  it('«страница не жаловалась» — отдельное состояние, а не пустой блок', async () => {
+    const command = vi.fn(async (_id: string, req: { command: { type: string } }) =>
+      req.command.type === 'inspect' ? { ok: true, console: [], network: [] } : meta())
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Ошибки страницы' }))
+    expect(await screen.findByText('Страница не жаловалась.')).toBeInTheDocument()
+  })
+
+  it('клавиши Enter, Tab и Escape шлются как press', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Tab' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'input', action: { type: 'press', key: 'Tab' } }
+    })))
+  })
+
+  it('восстановленный нестандартный размер переживает перезапуск панели', async () => {
+    const viewport = { width: 1111, height: 777, deviceScaleFactor: 1 }
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ viewport })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByRole('button', { name: 'Телефон' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Перезапустить' }))
+    await waitFor(() => expect(browser.start).toHaveBeenLastCalledWith('c1', viewport))
+  })
+
+  it('размер телефона отражает метаданные сохранённого профиля', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ viewport: { width: 390, height: 844, deviceScaleFactor: 1 } })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByRole('button', { name: 'Телефон' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it.each([
+    [{ ok: true, clearedCookies: 3, clearedOrigins: ['https://a.b'] }, true, null],
+    [{ ok: false, error: 'Хранилище занято' }, false, 'Хранилище занято'],
+    [meta(), false, 'Раннер не подтвердил очистку данных сайта']
+  ])('очистка перезагружает страницу только после подтверждения: %j', async (reply, reload, error) => {
+    const command = vi.fn(async (_id: string, req: { command: { type: string } }) => req.command.type === 'clearSiteData' ? reply : meta())
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Очистить сессию сайта' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'clearSiteData' } })))
+    if (error) expect(await screen.findByText(error)).toBeInTheDocument()
+    else await waitFor(() => expect(command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'reload' } })))
+    expect(command.mock.calls.some(([, req]) => req.command.type === 'reload')).toBe(reload)
+  })
+
+})
+
+describe('запись сценария автотеста (круг 12)', () => {
+  const element = { selector: '[data-testid="create"]', stability: 'testid', tag: 'button', text: 'Создать', rect: { x: 0, y: 0, width: 100, height: 40 } }
+
+  const recordingBrowser = (over: Partial<{ element: unknown }> = {}): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element: over.element ?? element }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const startAndRecord = async (browser: RendererBrowserBridge): Promise<HTMLElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    return frame
+  }
+
+  it('клик по кадру превращается в селекторный шаг, а не в координаты', async () => {
+    const frame = await startAndRecord(recordingBrowser())
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    // Названия шагов правятся на месте, поэтому это поля ввода, а не текст.
+    expect(await screen.findByDisplayValue('Нажать «Создать»')).toBeInTheDocument()
+    expect(screen.getByText('[data-testid="create"]')).toBeInTheDocument()
+    // Первым шагом записывается открытый адрес — с него начинается сценарий.
+    expect(screen.getByDisplayValue('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
+  })
+
+  it('клик всё равно выполняется: запись не мешает работать', async () => {
+    const browser = recordingBrowser()
+    const frame = await startAndRecord(browser)
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'input', action: { type: 'click', x: 50, y: 30, button: 'left', clickCount: 1 } }
+    })))
+  })
+
+  it('ненадёжный селектор предупреждает при записи, а не падает потом', async () => {
+    const frame = await startAndRecord(recordingBrowser({ element: { ...element, selector: 'div > span:nth-of-type(2)', stability: 'path', text: '' } }))
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ненадёжных шагов: 1')
+  })
+
+  it('без записи клик остаётся координатным и шагов не появляется', async () => {
+    const browser = recordingBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect(screen.queryByLabelText('Записанный сценарий')).not.toBeInTheDocument()
+  })
+})
+
+describe('отладка записи (круг 29)', () => {
+  const frameOf = async (browser: RendererBrowserBridge): Promise<HTMLImageElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    return await screen.findByAltText('Кадр Chromium') as HTMLImageElement
+  }
+
+  it('«прогнать до этого шага» на шаге-переходе не прогоняет весь сценарий', async () => {
+    // Шаг-перехода в сценарии нет: он уезжает в startUrl, и поиск по его id
+    // давал −1 — то есть «весь сценарий» вместо «только до перехода».
+    const sent: string[] = []
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'https://a.b/' })),
+      command: vi.fn(async (_id, request) => {
+        sent.push(request.command.type === 'selector' ? request.command.action.kind : request.command.type)
+        return meta({ currentUrl: 'https://a.b/' })
+      })
+    })
+    const frame = await frameOf(browser)
+    fireEvent.click(screen.getByText('Записать сценарий'))
+    frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1280, height: 800, right: 1280, bottom: 800, x: 0, y: 0, toJSON: () => ({}) })
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(screen.getByLabelText('Название шага step-1')).toBeInTheDocument())
+    sent.length = 0
+    fireEvent.click(screen.getAllByTitle('Прогнать до этого шага')[0])
+    await waitFor(() => expect(sent).toContain('navigate'))
+    // Только переход: ни одного селекторного действия после него.
+    expect(sent.filter((item) => item !== 'navigate' && item !== 'describe')).toEqual([])
+  })
+})
+
+describe('отметки прогона (круг 29)', () => {
+  it('удаление шага уносит и его отметку: перенумерация id дарила «ок» соседу', async () => {
+    const described = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'https://a.b/' })),
+      command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+        req.command.type === 'selector' && req.command.action?.kind === 'describe'
+          ? { ok: true, element: described }
+          : meta({ currentUrl: 'https://a.b/' })) as never
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium') as HTMLImageElement
+    fireEvent.click(screen.getByText('Записать сценарий'))
+    frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1280, height: 800, right: 1280, bottom: 800, x: 0, y: 0, toJSON: () => ({}) })
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(screen.getByLabelText('Название шага step-2')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Прогнать сценарий'))
+    await waitFor(() => expect(screen.getAllByText(/прогон:/).length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByTitle('Убрать шаг')[0])
+    expect(screen.queryAllByText(/прогон:/)).toHaveLength(0)
+  })
+})
+
+describe('где мы и кто действовал (круг 13)', () => {
+  it('подмена адреса алиасом объясняется по факту от раннера, а адрес остаётся внешним', async () => {
+    // Раннер отдаёт тот адрес, который назвал человек (иначе внутренний уедет в
+    // startUrl записанного сценария), а подмену сообщает отдельным полем.
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: null })),
+      command: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787' }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
+    fireEvent.change(address, { target: { value: 'http://89.125.68.35:8787/' } })
+    fireEvent.keyDown(address, { key: 'Enter' })
+    expect(await screen.findByText(/страница загружена с voicechat:8787/)).toBeInTheDocument()
+    expect((screen.getByLabelText('Адрес страницы') as HTMLInputElement).value).toBe('http://89.125.68.35:8787/')
+  })
+
+  it('уход с проверяемого сайта виден и на стенде с алиасом', async () => {
+    // Раньше подмену вычисляли по расхождению хостов, и на стенде с алиасом
+    // предупреждение «ушли с сайта» не показывалось никогда: любой чужой адрес
+    // тоже объявлялся «подменой алиасом».
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787' })),
+      command: vi.fn(async () => meta({ currentUrl: 'https://accounts.google.com/', aliasedHost: undefined }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
+    fireEvent.change(address, { target: { value: 'https://accounts.google.com/' } })
+    fireEvent.keyDown(address, { key: 'Enter' })
+    expect(await screen.findByText(/ушла с проверяемого сайта/)).toBeInTheDocument()
+  })
+
+  it('уход с проверяемого сайта показывается тревогой', async () => {
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+      command: vi.fn(async () => meta({ currentUrl: 'https://accounts.example.com/signin' }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('ушла с проверяемого сайта')
+  })
+
+  it('показывает, что последнее действие сделала модель', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ lastActor: 'assistant' })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    expect(await screen.findByText('последнее действие — модели')).toBeInTheDocument()
+  })
+
+  it('история адресов даёт вернуться на посещённое', async () => {
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+      command: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/#/projects' }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    const history = await screen.findByLabelText('Где были')
+    fireEvent.change(history, { target: { value: 'http://89.125.68.35:8787/' } })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'navigate', url: 'http://89.125.68.35:8787/' }
+    })))
+  })
+
+  it('тестовая учётка подставляется в форму, а нераспознанная форма объясняется', async () => {
+    const command = vi.fn(async (_id: string, req: { command: { type: string; action?: { selector?: string } } }) =>
+      req.command.action?.selector === 'input[type=password]' ? { ok: false, error: 'локатор не найден' } : meta())
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} testUsers={[{ name: 'tester', password: 'secret', role: 'user' }]} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Войти как'), { target: { value: 'tester' } })
+    // Эвристика по типам полей может не подойти чужой форме — тогда честный
+    // отказ, а не вид, будто вошли.
+    expect(await screen.findByText(/Поле пароля не найдено/)).toBeInTheDocument()
+  })
+
+  it('без тестовых учёток селектор входа не показывается', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser()} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    expect(screen.queryByLabelText('Войти как')).not.toBeInTheDocument()
+  })
+})
+
+describe('сценарий как настоящий тест (круг 14)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+  const bridgeWith = (over: Record<string, unknown> = {}): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element: { ...element, ...over } }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const record = async (browser: RendererBrowserBridge, props: Record<string, unknown> = {}): Promise<void> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} {...props} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByDisplayValue('Нажать «Создать»')
+  }
+
+  it('предупреждает, что сценарий без проверок ничего не докажет', async () => {
+    await record(bridgeWith())
+    expect(screen.getByText(/Ни одной проверки/)).toBeInTheDocument()
+  })
+
+  it('ожидание вешается на последний шаг и предупреждение уходит', async () => {
+    await record(bridgeWith())
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Задача создана' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
+    expect(await screen.findByText('ждём «Задача создана»')).toBeInTheDocument()
+    expect(screen.queryByText(/Ни одной проверки/)).not.toBeInTheDocument()
+  })
+
+  it('неоднозначный селектор объясняется отдельно от ненадёжного', async () => {
+    await record(bridgeWith({ selector: 'button[aria-label="Закрыть"]', stability: 'label', matches: 3 }))
+    expect(screen.getByText(/Неоднозначных шагов: 1/)).toBeInTheDocument()
+  })
+
+  it('шаг можно убрать: промах мышью не стоит всей записи', async () => {
+    await record(bridgeWith())
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать шаг «Нажать «Создать»»' }))
+    await waitFor(() => expect(screen.queryByDisplayValue('Нажать «Создать»')).not.toBeInTheDocument())
+  })
+
+  it('сохранение в проект отдаёт сценарий и сообщает об успехе', async () => {
+    const onSaveScenario = vi.fn(async () => {})
+    await record(bridgeWith(), { onSaveScenario })
+    // С круга 18 сценарий без единой проверки в проект не уезжает.
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Задача создана' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
+    await waitFor(() => expect(onSaveScenario).toHaveBeenCalledWith(expect.objectContaining({
+      startUrl: 'http://89.125.68.35:8787/',
+      steps: [expect.objectContaining({ action: { kind: 'click', selector: '#create' } })]
+    })))
+    expect(await screen.findByText('Сценарий сохранён в настройках проекта')).toBeInTheDocument()
+  })
+
+  it('отказ сохранения показывается, а не теряется', async () => {
+    await record(bridgeWith(), { onSaveScenario: vi.fn(async () => { throw new Error('Недостаточно прав') }) })
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Готово' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
+    expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()
+  })
+})
+
+describe('запись как черновик, который правят (круг 15)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+  const bridge = (): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const frameOf = (): HTMLElement => {
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    return frame
+  }
+
+  const start = async (browser: RendererBrowserBridge): Promise<HTMLElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} onSaveScenario={vi.fn(async () => {})} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    return frameOf()
+  }
+
+  it('правый клик и двойной записываются отдельными видами', async () => {
+    const frame = await start(bridge())
+    fireEvent.contextMenu(frame, { clientX: 50, clientY: 30 })
+    expect(await screen.findByDisplayValue('Нажать правой кнопкой «Создать»')).toBeInTheDocument()
+    fireEvent.click(frame, { detail: 1, clientX: 50, clientY: 30 })
+    fireEvent.click(frame, { detail: 2, clientX: 50, clientY: 30 })
+    fireEvent.doubleClick(frame, { detail: 2, clientX: 50, clientY: 30 })
+    expect(await screen.findByDisplayValue('Двойной клик «Создать»')).toBeInTheDocument()
+  })
+
+  it('прокрутка сливается в один шаг', async () => {
+    const frame = await start(bridge())
+    fireEvent.wheel(frame, { deltaY: 300 })
+    fireEvent.wheel(frame, { deltaY: 200 })
+    expect(await screen.findByDisplayValue('Прокрутить на 500 px')).toBeInTheDocument()
+  })
+
+  it('название шага правится на месте', async () => {
+    const frame = await start(bridge())
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    const title = await screen.findByDisplayValue('Нажать «Создать»')
+    fireEvent.change(title, { target: { value: 'Открыть карточку задачи' } })
+    expect(await screen.findByDisplayValue('Открыть карточку задачи')).toBeInTheDocument()
+  })
+
+  it('пустой сценарий не сохраняется молча', async () => {
+    const onSaveScenario = vi.fn(async () => {})
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} onSaveScenario={onSaveScenario} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    // В записи только шаг-переход, который уходит в startUrl: шагов ноль.
+    fireEvent.click(await screen.findByRole('button', { name: 'Сохранить в проект' }))
+    // Круг 18: список проблем вместо одной фразы — их может быть несколько.
+    expect(await screen.findByText(/В сценарии нет ни одного шага/)).toBeInTheDocument()
+    expect(onSaveScenario).not.toHaveBeenCalled()
+  })
+
+  it('«Начать заново» оставляет запись включённой', async () => {
+    const frame = await start(bridge())
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByDisplayValue('Нажать «Создать»')
+    fireEvent.click(screen.getByRole('button', { name: 'Начать заново' }))
+    await waitFor(() => expect(screen.queryByDisplayValue('Нажать «Создать»')).not.toBeInTheDocument())
+    // Кнопка записи по-прежнему в состоянии «пишем», а не сброшена.
+    expect(screen.getByRole('button', { name: /Записывается/ })).toBeInTheDocument()
+  })
+})
+
+describe('прогон записанного сценария в панели (круг 17)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+
+  const bridge = (fail = false): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+      if (req.command.type === 'selector' && req.command.action?.kind === 'describe') return { ok: true, element }
+      if (req.command.type === 'selector' && req.command.action?.kind === 'click') return fail ? { ok: false, error: 'Timeout 5000ms exceeded' } : { ok: true }
+      return meta({ currentUrl: 'http://89.125.68.35:8787/' })
+    }) as never
+  })
+
+  const recordOne = async (browser: RendererBrowserBridge): Promise<void> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByDisplayValue('Нажать «Создать»')
+  }
+
+  it('успешный прогон отмечает шаг прямо в списке', async () => {
+    await recordOne(bridge())
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    expect(await screen.findByText('прогон: ок')).toBeInTheDocument()
+  })
+
+  it('провал показывает причину и подсказку, а не голый текст Playwright', async () => {
+    await recordOne(bridge(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    expect(await screen.findByText(/прогон: Timeout 5000ms exceeded/)).toBeInTheDocument()
+    expect(await screen.findByText(/уточните селектор/)).toBeInTheDocument()
+  })
+
+  it('без шагов прогон недоступен', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    // В записи только шаг-перехода, который уходит в startUrl.
+    expect(await screen.findByRole('button', { name: 'Прогнать сценарий' })).toBeDisabled()
+  })
+})
+
+describe('сценарий как редактируемый артефакт (круг 18)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+  const bridge = (): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const saved = [{ name: 'Вход', startUrl: 'http://89.125.68.35:8787/', steps: [{ id: 'step-1', title: 'Открыть доску', action: { kind: 'click' as const, selector: '#board' }, expectText: 'Доска' }] }]
+
+  it('сохранённый сценарий подгружается и его можно править', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenarios={saved} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
+    expect(await screen.findByDisplayValue('Открыть доску')).toBeInTheDocument()
+    // Стартовый адрес возвращается шагом-переходом, иначе он потеряется.
+    expect(screen.getByDisplayValue('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
+  })
+
+  it('после загрузки кнопка исчезает: запись уже есть', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenarios={saved} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
+    await screen.findByDisplayValue('Открыть доску')
+    expect(screen.queryByLabelText('Загрузить сценарий')).not.toBeInTheDocument()
+  })
+
+  it('сценарий без проверок не сохраняется и объясняет почему', async () => {
+    const onSaveScenario = vi.fn(async () => {})
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} onSaveScenario={onSaveScenario} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByDisplayValue('Нажать «Создать»')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
+    // Одна надпись — предупреждение при записи, вторая — отказ сохранения.
+    expect(await screen.findByText(/Сценарий не сохранён:.*Ни одной проверки/)).toBeInTheDocument()
+    expect(onSaveScenario).not.toHaveBeenCalled()
+  })
+})
+
+describe('честные предупреждения и прогон до шага (круг 19)', () => {
+  const bridgeWithElement = (over: Record<string, unknown>): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element: { selector: '#a', stability: 'id', tag: 'button', text: 'Кнопка', matches: 1, rect: { x: 0, y: 0, width: 10, height: 10 }, ...over } }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const recordOne = async (browser: RendererBrowserBridge): Promise<HTMLElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 5, clientY: 5 })
+    await screen.findByDisplayValue('Нажать «Кнопка»')
+    return frame
+  }
+
+  it('селектор, не находящий ничего, предупреждает громко', async () => {
+    await recordOne(bridgeWithElement({ matches: 0 }))
+    expect(await screen.findByText(/Сломанных шагов: 1/)).toBeInTheDocument()
+  })
+
+  it('исправный шаг не вызывает предупреждений о поломке', async () => {
+    await recordOne(bridgeWithElement({}))
+    expect(screen.queryByText(/Сломанных шагов/)).not.toBeInTheDocument()
+  })
+
+  it('прогон до выбранного шага останавливается на нём', async () => {
+    const browser = bridgeWithElement({})
+    const frame = await recordOne(browser)
+    fireEvent.click(frame, { clientX: 5, clientY: 5 })
+    await waitFor(() => expect(screen.getAllByDisplayValue('Нажать «Кнопка»')).toHaveLength(2))
+    const commandsBefore = (browser.command as ReturnType<typeof vi.fn>).mock.calls.length
+    // Второй пункт списка — первый исполнимый шаг (первый пункт это переход).
+    fireEvent.click(screen.getAllByRole('button', { name: /Прогнать до шага/ })[1])
+    await waitFor(() => expect(screen.getAllByText('прогон: ок')).toHaveLength(1))
+    // Считаем именно клики по странице: их должен быть ровно один, иначе прогон
+    // ушёл дальше указанного шага.
+    const clicks = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+      .slice(commandsBefore)
+      .filter(([, req]) => (req as { command: { type: string; action?: { kind?: string } } }).command.action?.kind === 'click')
+    expect(clicks).toHaveLength(1)
+  })
+})
+
+describe('достоверность прогона записи (цикл проверки 10)', () => {
+  it('ошибка стартового перехода останавливает прогон до кликов', async () => {
+    const actions: string[] = []
+    const browser = fakeBrowser({ command: vi.fn(async (_id, request) => {
+      const command = request.command
+      actions.push(command.type === 'selector' ? command.action.kind : command.type)
+      if (command.type === 'navigate') throw new Error('Адрес недоступен')
+      return { ok: true }
+    }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} savedScenarios={[{ name: 'Вход', startUrl: 'https://project.test', steps: [{ id: 'step-1', title: 'Нажать', action: { kind: 'click', selector: '#button' }, expectText: 'Готово' }] }]} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    expect(await screen.findByText('Стартовый адрес не открылся: Адрес недоступен')).toBeInTheDocument()
+    expect(actions).not.toContain('click')
+    expect(screen.queryAllByText(/прогон: ок/)).toHaveLength(0)
+  })
+
+  it('первое ожидание на переходе действительно выполняется в панели', async () => {
+    const browser = fakeBrowser({ command: vi.fn(async (_id, request) => {
+      if (request.command.type === 'selector' && request.command.action.kind === 'read') return { ok: true, text: 'Готово' }
+      return meta()
+    }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Готово' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'selector', action: { kind: 'read', limit: 20_000 } } })))
+    expect(await screen.findByText('прогон: ок')).toBeInTheDocument()
+  })
+})
+
+it('передаёт управление человеку и возвращает модели отдельными командами', async () => {
+  const browser = fakeBrowser({ command: vi.fn(async (_id, req) => meta({ control: req.command.type === 'control' ? req.command.owner : 'shared' })) })
+  render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Взять управление' }))
+  expect(await screen.findByText(/Управление у вас/)).toBeInTheDocument()
+  expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'control', owner: 'user' } }))
+  fireEvent.click(screen.getByRole('button', { name: 'Вернуть управление модели' }))
+  await waitFor(() => expect(screen.queryByText(/Управление у вас/)).not.toBeInTheDocument())
+})
+
+it('отмена ожидающих команд не скрывает ещё выполняющийся запрос', async () => {
+  let finish!: (value: BrowserSessionMetadata) => void
+  const browser = fakeBrowser({ command: vi.fn((_id, req) => req.command.type === 'reload' ? new Promise<BrowserSessionMetadata>(resolve => { finish = resolve }) : Promise.resolve(meta())) })
+  render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+  await screen.findByAltText('Кадр Chromium')
+  fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Отменить ожидающие команды' }))
+  await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'cancel' } })))
+  expect(screen.getByText('Выполняется…')).toBeInTheDocument()
+  finish(meta())
+  await waitFor(() => expect(screen.queryByText('Выполняется…')).not.toBeInTheDocument())
+})

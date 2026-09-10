@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import type { CxProject, CxSession, CxItem, CxItemKind } from '@shared/codexSessions'
 import { Markdown } from './Markdown'
 import { Button } from '@voicechat/ui-kit'
-import { ToolFrame } from './ToolFrame'
+import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 
 export interface CodexObserverProps {
   /** Размещение: модалка из меню (по умолчанию) или страница контентной колонки. */

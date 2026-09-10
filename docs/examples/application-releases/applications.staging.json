@@ -1,0 +1,69 @@
+{
+  "projectId": "REPLACE_PROJECT_ID",
+  "environment": "staging",
+  "projectName": "voicechat-app-staging",
+  "composeFiles": [
+    "compose.json"
+  ],
+  "envFile": "release.env",
+  "stateDir": "state",
+  "health": {
+    "voicechat": {
+      "port": 8080,
+      "path": "/api/health"
+    },
+    "make": {
+      "port": 8080,
+      "path": "/v1/health"
+    },
+    "image-studio": {
+      "port": 8080,
+      "path": "/v1/health"
+    },
+    "playwright-reader": {
+      "port": 8080,
+      "path": "/v1/health"
+    },
+    "browser-runner": {
+      "port": 8080,
+      "path": "/v1/health",
+      "tokenEnv": "VC_BROWSER_RUNNER_TOKEN"
+    },
+    "runner-work": {
+      "port": 8080,
+      "path": "/v1/health",
+      "tokenEnv": "VC_RUNNER_TOKEN"
+    },
+    "runner-personal": {
+      "port": 8080,
+      "path": "/v1/health",
+      "tokenEnv": "VC_RUNNER_TOKEN"
+    },
+    "stt-runner": {
+      "port": 8080,
+      "path": "/v1/health",
+      "tokenEnv": "VC_STT_RUNNER_TOKEN"
+    },
+    "tts-runner": {
+      "port": 8080,
+      "path": "/v1/health",
+      "tokenEnv": "VC_TTS_RUNNER_TOKEN"
+    },
+    "make-ui": {
+      "port": 8080,
+      "path": "/v1/health"
+    },
+    "image-studio-ui": {
+      "port": 8080,
+      "path": "/v1/health"
+    },
+    "playwright-reader-ui": {
+      "port": 8080,
+      "path": "/v1/health"
+    },
+    "web-reader-ui": {
+      "port": 8080,
+      "path": "/v1/health"
+    }
+  }
+}

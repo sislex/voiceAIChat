@@ -18,9 +18,9 @@ import {
   type Command,
   type CommandGroup,
   type CommandHit
-} from '../lib/commands'
+} from '@voicechat/ui-foundation/runtime'
 import { formatCombo } from '../lib/hotkeys'
-import { useCommandRegistry } from '../lib/useCommands'
+import { useCommandRegistry } from '@voicechat/ui-foundation/runtime'
 import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 

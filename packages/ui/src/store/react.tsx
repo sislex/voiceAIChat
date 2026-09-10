@@ -18,7 +18,7 @@ import {
 import type { Store } from './createStore'
 import type { AppRuntime, AppRuntimeDeps, RealtimeConnect } from '../runtime/appRuntime'
 import { createAppRuntime } from '../runtime/appRuntime'
-import { createBrowserClients, createBrowserRealtime, type BrowserClientOverrides } from '../clients'
+import { createBrowserClients, createBrowserRealtime, type BrowserClientOverrides } from '../clients/index'
 import type { PipelineDelays } from './mockPipeline'
 
 const RuntimeContext = createContext<AppRuntime | null>(null)

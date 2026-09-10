@@ -14,7 +14,7 @@ import {
   expectNoCriticalViolations,
   expectNoViolations,
   iconButtonProblems
-} from './a11y'
+} from '@voicechat/ui-foundation/test/a11y'
 import { IconButton } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { LoginScreen } from '../components/LoginScreen'

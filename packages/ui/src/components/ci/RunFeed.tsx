@@ -4,7 +4,7 @@
 // при монтировании, отписка при закрытии; REST-подгрузка как фолбэк.
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { usePolling } from '../../lib/usePolling'
+import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 import { createPortal } from 'react-dom'
 import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
 import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
@@ -23,8 +23,8 @@ import { useConfirm } from '@voicechat/ui-kit'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
-import { loadView, type LoadStatus } from '../../lib/loadState'
-import { useCommandSource } from '../../lib/useCommands'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
+import { useCommandSource } from '@voicechat/ui-foundation/runtime'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 

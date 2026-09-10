@@ -2016,7 +2016,7 @@ fi`
     if (!value || value.length > 1000) return 'Команда пустая или слишком длинная.'
     if (/[\n\r;&|><`]/.test(value) || value.includes('$(')) return 'Shell-конвейеры и подстановки в точечной проверке запрещены.'
     if (!isVerificationCommand({ script: value })) return 'Разрешены только тестовые команды.'
-    if (/affected-check|typecheck|\blint\b|\bbuild\b/i.test(value)) return 'Полный гейт, typecheck, lint и build запускает только workflow.'
+    if (/affected-check|gate:(?:app|changed|fast|all)|typecheck|\blint\b|\bbuild\b/i.test(value)) return 'Полный гейт, typecheck, lint и build запускает только workflow.'
     if (!/(?:\.(?:test|spec)\.[cm]?[jt]sx?\b|(?:^|\s)-t(?:\s|=)|--testNamePattern|--runTestsByPath)/i.test(value)) {
       return 'Укажите конкретный test-файл или test name.'
     }

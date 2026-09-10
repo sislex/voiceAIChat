@@ -5,7 +5,7 @@ import { render } from '../test/uiRender'
 import type { ProjectDetail, ProjectInvitation } from '@shared/projects'
 import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/projectTypes'
 import { ProjectSettings, type ProjectSettingsProps } from './ProjectSettings'
-import { createFakeCi } from '../test/fakeApi'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
 function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
   return {

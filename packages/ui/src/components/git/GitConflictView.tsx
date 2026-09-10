@@ -10,7 +10,7 @@
 import { useState } from 'react'
 import { Button, EmptyState } from '@voicechat/ui-kit'
 import type { GitConflictStages, GitConflictSide } from '@shared/gitWorkspace'
-import { CodeDiff } from '../CodeDiff'
+import { CodeDiff } from '@voicechat/ui-foundation/components/CodeDiff'
 
 export interface GitConflictViewProps {
   stages: GitConflictStages

@@ -39,6 +39,7 @@ export interface ServerConfig {
    * сервером. Задаётся только через env (VC_WEB_DIR) — в dev/тестах не задан, чтобы
    * не мешать Vite. В Docker указывает на скопированный билд.
    */
+  applicationFrontends?: Record<string, string>
   webDir?: string
   /** Каталог standalone Web Recorder, раздаваемый под /web-recorder/. */
   webRecorderDir?: string
@@ -261,6 +262,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
+    applicationFrontends: env.VC_APPLICATION_FRONTENDS ? JSON.parse(env.VC_APPLICATION_FRONTENDS) as Record<string, string> : undefined,
     imageStudioMode: env.VC_IMAGE_STUDIO_MODE === 'remote' ? 'remote' : 'embedded',
     imageStudioUrl: env.VC_IMAGE_STUDIO_URL,
     makeMode: env.VC_MAKE_MODE === 'remote' ? 'remote' : 'embedded',
