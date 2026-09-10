@@ -19,6 +19,17 @@ function fixture(target: { sessionId: string; conversationKey: string } | null =
 }
 
 describe('действия модели через приложение', () => {
+  it('управление вкладками авторизует цель, сохраняет incarnation и прокси машины', async () => {
+    const { service, runner, core } = fixture()
+    await service.control('ann', 'c', { type: 'newTab', url: 'http://dev.machine.internal:5173/' })
+    expect(core.modelTarget).toHaveBeenCalledWith('ann', 'c')
+    expect(runner.command).toHaveBeenLastCalledWith('c', expect.objectContaining({ actor: 'assistant', incarnation: 'inc', command: { type: 'newTab', url: 'http://core:8787/api/preview?url=http%3A%2F%2Fdev.machine.internal%3A5173%2F' } }))
+    await service.control('ann', 'c', { type: 'selectTab', tabId: 'popup' })
+    expect(runner.command).toHaveBeenLastCalledWith('c', expect.objectContaining({ command: { type: 'selectTab', tabId: 'popup' } }))
+    expect(await fixture(null).service.control('ann', 'c', { type: 'status' })).toBeNull()
+    vi.mocked(runner.command).mockRejectedValueOnce(new Error('stale_tab'))
+    expect(await service.control('ann', 'c', { type: 'closeTab', tabId: 'gone' })).toEqual({ ok: false, error: 'stale_tab' })
+  })
   it('сохраняет id сессии, авторизует прокси машины и возвращает результат чтения модели', async () => {
     const { service, runner, core } = fixture()
     expect(await service.execute('ann', 'c', { kind: 'read' })).toEqual({ ok: true, result: { ok: true, text: 'Текст из Chromium' } })

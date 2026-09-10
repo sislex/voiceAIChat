@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { BrowserSessionMetadata } from '@shared/types'
 import { BrowserSessionPane } from './BrowserSessionPane'
+import { expectNoCriticalViolations } from '../test/a11y'
 
 const meta = (over: Partial<BrowserSessionMetadata> = {}): BrowserSessionMetadata => ({
   id: 'c1', conversationId: 'c1', incarnation: 'inc-1', state: 'ready', activeTabId: 't1', tabs: [],
@@ -25,6 +26,24 @@ function fakeBrowser(over: Partial<RendererBrowserBridge> = {}): RendererBrowser
 afterEach(cleanup)
 
 describe('BrowserSessionPane', () => {
+  it('после закрытия всех вкладок позволяет человеку создать новую', async () => {
+    const empty = meta({ activeTabId: null, tabs: [], currentUrl: null })
+    const browser = fakeBrowser({ start: vi.fn(async () => empty) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const create = await screen.findByLabelText('Новая вкладка')
+    await expectNoCriticalViolations()
+    expect((screen.getByLabelText('Назад') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(create)
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'newTab' } })))
+  })
+  it('адрес в пустой панели открывает новую вкладку вместо stale_tab', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ activeTabId: null, currentUrl: null, tabs: [] })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByText('Все вкладки закрыты')
+    fireEvent.change(screen.getByLabelText('Адрес страницы'), { target: { value: 'example.com' } })
+    fireEvent.keyDown(screen.getByLabelText('Адрес страницы'), { key: 'Enter' })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'newTab', url: 'https://example.com' } })))
+  })
   it('стартует сессию, показывает кадр и адрес открытой страницы', async () => {
     const browser = fakeBrowser()
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)

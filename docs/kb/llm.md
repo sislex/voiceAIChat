@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-09
-checked: f5f68e75
+updated: 2026-09-10
+checked: 48012c1e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -571,6 +571,13 @@ heredoc — то есть к поведению, ради отмены кото�
 02.08 шесть отклонённых вызовов файловых инструментов и 54 чтения файлов через
 `bash`). Поэтому `claudeArgs` кладёт в allow-list ВСЕ инструменты сервера
 `remote`, а хинт называет их модели.
+
+С 2026-09-10 браузерные `tabs`, `new-tab`, `select-tab`, `close-tab`, `reload`,
+`stop-loading` также входят в allow-list Claude при подключённом preview MCP,
+если список включён из-за remote или `VC_KB_TOOL_ALLOWLIST=1`. Это касается и
+обычного Reader-чата, и QA-поверхности Chromium. Сервис проверяет доступ к
+Chromium-цели и не исполняет эти команды в iframe. Аргументы обоих вариантов
+хода покрыты `apps/llm-runner/src/cli/claudeCli.test.ts`; тест не запускает настоящий CLI.
 
 **Одной директивы мало.** Правки после этого переехали на `edit` целиком, а
 чтения — нет: модели удобно одной командой скомбинировать поиск с чтением. Гейт

@@ -213,4 +213,39 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     expect(text).toContain('http://forms.reader.test/next')
     expect(text).toContain('Следующая страница')
   })
+
+  it('модель ведёт несколько вкладок и popup, человек восстанавливает пустую панель', async () => {
+    type Tabs = { activeTabId: string; incarnation: string; tabs: Array<{ id: string; openerTabId?: string }> }
+    const tabs = async () => JSON.parse(await mcp('tabs')) as Tabs
+    await mcp('viewport', { width: 390 })
+    const created = JSON.parse(await mcp('new-tab', { url: 'http://forms.reader.test/' })) as Tabs
+    const opener = created.activeTabId
+    expect(JSON.parse(await mcp('evaluate', { code: 'innerWidth' }))).toMatchObject({ value: 390 })
+    await mcp('click', { selector: '#popup' })
+    await expect.poll(async () => (await tabs()).tabs.some(tab => tab.openerTabId === opener)).toBe(true)
+    const child = (await tabs()).tabs.find(tab => tab.openerTabId === opener)!
+    await mcp('select-tab', { tabId: child.id })
+    expect(await mcp('read')).toContain('Переход завершён')
+    expect(JSON.parse(await mcp('close-tab', { tabId: child.id }))).toMatchObject({ activeTabId: opener })
+    await mcp('type', { selector: '#target', text: 'Черновик до перезагрузки' })
+    await mcp('reload')
+    expect(JSON.parse(await mcp('evaluate', { code: 'document.querySelector("#target").value' }))).toMatchObject({ value: '' })
+    expect(JSON.parse(await mcp('stop-loading'))).toMatchObject({ incarnation: created.incarnation, activeTabId: opener })
+    expect(await mcp('read')).toContain('Формы Reader')
+    await mcp('viewport', { width: 1280 })
+    await capture('07-tabs-and-popup-through-mcp')
+    for (const tab of (await tabs()).tabs) await mcp('close-tab', { tabId: tab.id })
+    await expect.poll(() => page.getByText('Все вкладки закрыты', { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    await page.getByRole('button', { name: 'Новая вкладка', exact: true }).click()
+    await expect.poll(async () => (await tabs()).tabs.length).toBe(1)
+    await expect.poll(() => page.getByText('Все вкладки закрыты', { exact: true }).count()).toBe(0)
+    await mcp('close-tab', { tabId: (await tabs()).activeTabId })
+    await expect.poll(() => page.getByText('Все вкладки закрыты', { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    await page.getByLabel('Адрес страницы', { exact: true }).fill('http://forms.reader.test/')
+    await page.getByLabel('Адрес страницы', { exact: true }).press('Enter')
+    await expect.poll(async () => (await tabs()).tabs.length).toBe(1)
+    expect(await mcp('read')).toContain('Формы Reader')
+    await capture('08-human-recovers-empty-tabs')
+  })
+
 })

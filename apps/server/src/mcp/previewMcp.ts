@@ -1,4 +1,4 @@
-import type { BrowserActionOutcome } from '@voicechat/shared'
+import type { BrowserActionOutcome, BrowserControlCommand } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
 // пользователя (открыть URL, найти элемент, клик, ввод текста, структурированное
 // чтение DOM). Сама страница живёт в браузере пользователя, поэтому сервер не
@@ -190,6 +190,8 @@ export interface RegisterPreviewMcpOptions {
    * недоступность раннера возвращается ошибкой, без переключения в relay.
    */
   browserExecutor?: (userId: string, conversationId: string, action: PreviewAction) => Promise<BrowserActionOutcome | null>
+  /** Вкладки и загрузка Chromium; обычному iframe этот порт недоступен. */
+  browserControl?: (userId: string, conversationId: string, command: BrowserControlCommand) => Promise<BrowserActionOutcome | null>
   /**
    * Снимок из изолированного Chromium. Отдельно от `browserExecutor`, потому что
    * возвращает картинку `dataUrl`, а не структуру действия; `null` — «этот
@@ -240,6 +242,43 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         return toolResult(outcome)
       }
       const L = PREVIEW_ACTION_LIMITS
+      // Одинаковое разрешение машины для open и new-tab: доступ берётся из хода.
+      const resolveUrl = async (url: string): Promise<{ url: string } | { error: string }> => {
+        if (!isHttpUrl(url)) return { error: 'Разрешены только HTTP и HTTPS адреса с протоколом.' }
+        const parsed = new URL(url)
+        if (parsed.hostname === MACHINE_PREVIEW_ALIAS_HOST) {
+          const agentId = await (entry && opts.context ? opts.context.machineOf(entry) : null)
+          if (!agentId) return { error: 'У этого разговора нет доступной машины — выбери машину в настройках разговора, чтобы открывать её тестовое окружение.' }
+          parsed.hostname = agentId + MACHINE_PREVIEW_SUFFIX
+          return { url: parsed.toString() }
+        }
+        return { url }
+      }
+      const control = async (command: BrowserControlCommand): Promise<ReturnType<typeof toolResult>> => {
+        if (!entry) return noContext
+        const result = await opts.browserControl?.(entry.userId, entry.conversationId, command)
+        return toolResult(result ?? { ok: false, error: 'Эта команда доступна только для Playwright Reader или Chromium-проверки задачи.' })
+      }
+      for (const [name, type, description] of [
+        ['tabs', 'status', 'Список вкладок Playwright Reader: id, URL, заголовок, активная вкладка и openerTabId всплывающего окна. Не меняет активную вкладку.'],
+        ['reload', 'reload', 'Перезагрузить активную вкладку Playwright Reader и дождаться DOM.'],
+        ['stop-loading', 'stop', 'Остановить загрузку активной страницы Playwright Reader, сохранив вкладку и браузерную сессию.']
+      ] as const) server.registerTool(name, { description, inputSchema: {} }, async () => control({ type }))
+      for (const [name, type, description] of [
+        ['select-tab', 'selectTab', 'Выбрать вкладку Playwright Reader по id из tabs. Последующие действия и чтение выполняются в ней.'],
+        ['close-tab', 'closeTab', 'Закрыть вкладку Playwright Reader по id из tabs. После popup вернуться к открывшей его вкладке, если она жива.']
+      ] as const) server.registerTool(name, {
+        description, inputSchema: { tabId: z.string().min(1).max(256).describe('id вкладки из tabs') }
+      }, async ({ tabId }) => control({ type, tabId }))
+      server.registerTool('new-tab', {
+        description: 'Открыть и выбрать новую вкладку Playwright Reader. URL необязателен (пустая вкладка); HTTP/HTTPS и machine.internal работают как в open.',
+        inputSchema: { url: z.string().max(L.url).optional() }
+      }, async ({ url }) => {
+        if (!entry) return noContext
+        if (url === undefined) return control({ type: 'newTab' })
+        const target = await resolveUrl(url)
+        return 'error' in target ? toolResult({ ok: false, error: target.error }) : control({ type: 'newTab', url: target.url })
+      })
 
       server.registerTool(
         'open',
@@ -251,25 +290,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           inputSchema: { url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
         },
         async ({ url }) => {
-          if (!isHttpUrl(url)) {
-            return { content: [{ type: 'text', text: 'Разрешены только HTTP и HTTPS адреса с протоколом.' }], isError: true }
-          }
-          let target = url
-          const parsed = new URL(url)
-          // Алиас «машина разговора»: канонизируем до <agentId>.machine.internal,
-          // чтобы страница и все её под-запросы держали конкретную машину.
-          if (parsed.hostname === MACHINE_PREVIEW_ALIAS_HOST) {
-            const agentId = await (entry && opts.context ? opts.context.machineOf(entry) : null)
-            if (!agentId) {
-              return {
-                content: [{ type: 'text', text: 'У этого разговора нет доступной машины — выбери машину в настройках разговора, чтобы открывать её тестовое окружение.' }],
-                isError: true
-              }
-            }
-            parsed.hostname = agentId + MACHINE_PREVIEW_SUFFIX
-            target = parsed.toString()
-          }
-          return run({ kind: 'open', url: target })
+          const target = await resolveUrl(url)
+          return 'error' in target ? toolResult({ ok: false, error: target.error }) : run({ kind: 'open', url: target.url })
         }
       )
 

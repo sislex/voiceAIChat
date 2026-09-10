@@ -7,8 +7,14 @@ import { BROWSER_COMMAND_BODY_LIMIT } from './browserLimits'
 export const INTERNAL_PLAYWRIGHT_READER_CORE_PATH = '/internal/playwright-reader/core'
 export const INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH = '/internal/playwright-reader/service'
 export const PLAYWRIGHT_READER_CORE_METHODS = ['conversation', 'modelTarget', 'issuePreviewRunKey', 'logBrowserShot'] as const
-export const PLAYWRIGHT_READER_SERVICE_METHODS = ['execute', 'screenshot'] as const
+export const PLAYWRIGHT_READER_SERVICE_METHODS = ['execute', 'screenshot', 'control'] as const
 export const PLAYWRIGHT_READER_RPC_BODY_LIMIT = BROWSER_COMMAND_BODY_LIMIT
+
+/** Управление Chromium отдельно от действий iframe: вкладки существуют у раннера. */
+export type BrowserControlCommand =
+  | { type: 'status' | 'reload' | 'stop' }
+  | { type: 'newTab'; url?: string }
+  | { type: 'selectTab' | 'closeTab'; tabId: string }
 
 export interface BrowserActionOutcome {
   ok: boolean

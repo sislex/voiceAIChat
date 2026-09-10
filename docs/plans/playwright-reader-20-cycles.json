@@ -389,7 +389,7 @@
     },
     {
       "number": 3,
-      "status": "in_progress",
+      "status": "complete",
       "startedAt": "2026-09-09T23:23:24.358846+00:00",
       "items": [
         {
@@ -566,13 +566,236 @@
           "log": "/tmp/voicechat-reader-cycle-03-upload-isolated.log"
         }
       },
-      "validatedAt": "2026-09-10T00:02:16.493126+00:00"
+      "validatedAt": "2026-09-10T00:02:16.493126+00:00",
+      "completedAt": "2026-09-10T00:03:09.644769+00:00",
+      "commit": "48012c1e1773523ce8cabd2bb4902fb9d1de7d60"
     },
     {
       "number": 4,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "in_progress",
+      "startedAt": "2026-09-10T00:03:09.644769+00:00",
+      "items": [
+        {
+          "id": "04-01",
+          "title": "Список вкладок модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-02",
+          "title": "Новая вкладка модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-03",
+          "title": "Выбор вкладки модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-04",
+          "title": "Закрытие вкладки модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-05",
+          "title": "Перезагрузка модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-06",
+          "title": "Остановка загрузки модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-07",
+          "title": "Связь popup с открывшей вкладкой",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-08",
+          "title": "Возврат из popup к открывшей вкладке",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-09",
+          "title": "Размер новой вкладки совпадает с текущим viewport",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-10",
+          "title": "Открытие новой вкладки из пустой панели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384,
+          "followup": {
+            "startedAt": "2026-09-10T00:16:14.005014+00:00",
+            "endedAt": "2026-09-10T00:18:24.685034+00:00",
+            "detail": "Корректная ARIA-роль пустой панели, вход адресом без activeTabId создаёт новую вкладку, история и reload отключены без страницы; регрессии axe и E2E.",
+            "durationSeconds": 131
+          }
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-09T23:56:00.949529+00:00",
+        "items": [
+          "Список вкладок модели",
+          "Новая вкладка модели",
+          "Выбор вкладки модели",
+          "Закрытие вкладки модели",
+          "Перезагрузка модели",
+          "Остановка загрузки модели",
+          "Связь popup с открывшей вкладкой",
+          "Возврат из popup к открывшей вкладке",
+          "Размер новой вкладки совпадает с текущим viewport",
+          "Открытие новой вкладки из пустой панели"
+        ],
+        "observations": {
+          "newTabViewport": {
+            "reported": {
+              "width": 390,
+              "height": 844
+            },
+            "actual": {
+              "width": 1280,
+              "height": 800
+            }
+          },
+          "selectedOldTabFocused": true
+        },
+        "rejected": [
+          "Потеря фокуса при selectTab не воспроизведена"
+        ]
+      },
+      "validation": {
+        "popupBaseline": {
+          "log": "/tmp/voicechat-reader-cycle-04-popup-baseline.log",
+          "openerMissing": true,
+          "returnsToWrongTab": true
+        },
+        "baseline": {
+          "liveFailed": 3,
+          "liveControlPassed": 1,
+          "uiFailed": 1,
+          "missingToolFailed": 6
+        },
+        "focused": {
+          "runnerPassed": 4,
+          "uiPassed": 56,
+          "mcpPassed": 40,
+          "remotePassed": 12,
+          "typecheck": "Reader, browser-runner, server exit 0"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "passed": 7,
+          "durationMs": 20500,
+          "log": "/tmp/voicechat-reader-cycle-04-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-04",
+          "visuallyInspected": [
+            "07-tabs-and-popup-through-mcp.png",
+            "08-human-recovers-empty-tabs.png"
+          ],
+          "initial": {
+            "exitCode": 0,
+            "passed": 7,
+            "durationMs": 17400,
+            "log": "/tmp/voicechat-reader-cycle-04-e2e.log",
+            "artifacts": "/tmp/voicechat-reader-audit/cycle-04",
+            "visuallyInspected": [
+              "07-tabs-and-popup-through-mcp.png",
+              "08-human-recovers-empty-tabs.png"
+            ]
+          }
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-04-fast-verified.log",
+          "attempts": [
+            {
+              "exitCode": 1,
+              "log": "/tmp/voicechat-reader-cycle-04-fast.log",
+              "reason": "Тест shared ожидал старый список RPC без control."
+            },
+            {
+              "exitCode": 1,
+              "log": "/tmp/voicechat-reader-cycle-04-fast-final.log",
+              "reason": "12 a11y-проверок сториз нашли пустой tablist с кнопкой. Пустому контейнеру присвоена роль group; добавлена axe-проверка восстановительной кнопки."
+            }
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-09-10T00:19:41.709463+00:00",
+          "endedAt": "2026-09-10T00:27:10.444614+00:00",
+          "durationMs": 448732,
+          "passed": 7285,
+          "skipped": 45,
+          "failed": 0
+        },
+        "appUnit": {
+          "passed": 20,
+          "exitCode": 0,
+          "durationMs": 3750
+        },
+        "a11y": {
+          "exitCode": 0,
+          "readerStoriesPassed": 13,
+          "targetedTotalPassed": 32,
+          "log": "/tmp/voicechat-reader-cycle-04-a11y-final.log"
+        },
+        "cli": {
+          "exitCode": 0,
+          "passed": 17,
+          "durationMs": 1120,
+          "log": "/tmp/voicechat-reader-cycle-04-cli.log",
+          "scope": "Проверены аргументы Claude на подставном spawn; browser MCP и Chromium проверены отдельно реально."
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T00:28:32.829321+00:00",
+          "endedAt": "2026-09-10T00:34:35.234333+00:00",
+          "durationMs": 362428,
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-04-gate.log",
+          "passedWorkspaceTests": 7616
+        }
+      },
+      "validatedAt": "2026-09-10T00:35:44.429097+00:00"
     },
     {
       "number": 5,
@@ -754,6 +977,18 @@
       "cycle": 3,
       "phase": "validation-complete",
       "detail": "Полный gate exit 0 (7600 тестов, web, Storybook). Последовательный fast gate exit 0 (7269 passed, 45 skipped, 0 failed), 506500 мс. Таймаут 8 МиБ не повторился; без ослабления теста. Связь с нагрузкой наблюдается, точная причина таймаута не установлена."
+    },
+    {
+      "at": "2026-09-10T00:16:14.005014+00:00",
+      "cycle": 4,
+      "phase": "gate-repair",
+      "detail": "Новая пустая строка вкладок нарушала aria-required-children. Исправление входит в 04-10, не считается отдельным улучшением."
+    },
+    {
+      "at": "2026-09-10T00:23:31.255046+00:00",
+      "cycle": 4,
+      "phase": "cli-integration",
+      "detail": "Новые 6 команд добавлены в явный allow-list preview Claude CLI (и panel, и chromium). Исправление сделано до начала full package gate runner; этот пакет уже выбран гейтом. 17 адресных CLI-тестов прошли."
     }
   ],
   "backlogEvidence": [

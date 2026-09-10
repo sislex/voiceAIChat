@@ -29,6 +29,21 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
     return { target, session }
   }
   const service: PlaywrightReaderService = {
+    async control(userId, conversationId, command) {
+      try {
+        const active = await start(userId, conversationId)
+        if (!active) return null
+        const result = await runner!.command(active.target.sessionId, {
+          requestId: randomUUID(), incarnation: active.session.incarnation, actor: 'assistant',
+          command: command.type === 'newTab' && command.url
+            ? { ...command, url: machinePreviewUrl(runnerFacingBase, command.url) } : command
+        })
+        if ('ok' in result && !result.ok) return { ok: false, error: result.error ?? 'Команда Chromium не выполнена' }
+        return { ok: true, result }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Команда Chromium не выполнена' }
+      }
+    },
     async execute(userId, conversationId, action) {
       try {
         const active = await start(userId, conversationId)
