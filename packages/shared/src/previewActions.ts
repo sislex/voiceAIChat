@@ -1,3 +1,4 @@
+import { BROWSER_EVALUATE_CODE_LIMIT, normalizeBrowserEvaluateOptions, type BrowserEvaluateOptions } from './browserEvaluation'
 import { normalizeBrowserDiagnosticOptions, type BrowserConsoleOptions, type BrowserNetworkOptions } from './browserDiagnostics'
 // Управление открытым сайтом в панели превью и чтение его DOM из хода модели.
 //
@@ -43,7 +44,7 @@ export const PREVIEW_ACTION_LIMITS = {
   /** Отдельный кап результата со снимком (dataUrl не влезает в resultJson). */
   screenshotJson: 2_000_000,
   /** Код evaluate и сериализованное значение его результата. */
-  evaluateCode: 4_000,
+  evaluateCode: BROWSER_EVALUATE_CODE_LIMIT,
   evaluateValue: 8_000,
   /** Файл upload: до 8 МиБ бинарных данных с учётом увеличения в base64. */
   uploadBase64: Math.ceil(BROWSER_UPLOAD_LIMIT_BYTES / 3) * 4,
@@ -97,7 +98,7 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Журнал console.log/info/warn/error страницы: фильтр по подстроке и уровню. */
   | ({ kind: 'console'; diagnostic?: boolean } & Omit<BrowserConsoleOptions, 'regex'>)
   /** Выполнить JS в контексте страницы; результат сериализуется JSON (кап evaluateValue). */
-  | { kind: 'evaluate'; code: string; diagnostic?: boolean }
+  | ({ kind: 'evaluate'; diagnostic?: boolean } & BrowserEvaluateOptions)
   /** Перетаскивание pointer-событиями (или HTML5 DnD у draggable) от from к to. */
   | { kind: 'drag'; from: PreviewDragPoint; to: PreviewDragPoint; diagnostic?: boolean }
   /** Установить значение сложного контрола: select (по value или подписи option), checkbox/radio (checked), date/range (value). */
@@ -461,7 +462,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         logLimit(value.limit)
       )
     case 'evaluate':
-      return bounded(value.code, L.evaluateCode)
+      try { normalizeBrowserEvaluateOptions(value as unknown as BrowserEvaluateOptions); return true } catch { return false }
     case 'drag':
       return isDragPoint(value.from) && isDragPoint(value.to)
     case 'set':

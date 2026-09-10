@@ -3,7 +3,7 @@
   "branch": "feat/playwright-reader-20-cycles",
   "requestedCycles": 20,
   "itemsPerCycle": 10,
-  "status": "in_progress",
+  "status": "stopped_by_user",
   "timingConvention": "UTC; интервалы исследования/реализации/проверки измеряются по часам. Несколько пунктов общей реализации помечаются группой; время группы не суммируется по пунктам.",
   "cycles": [
     {
@@ -3165,37 +3165,237 @@
         "fastSkipped": 45,
         "fullPassed": 7975
       },
-      "completedAt": "2026-09-10T06:41:04.538803+00:00"
+      "completedAt": "2026-09-10T06:41:04.538803+00:00",
+      "commit": "e4b6b1a7"
     },
     {
       "number": 16,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T06:42:14.960216+00:00",
+      "items": [
+        {
+          "id": "16-01",
+          "title": "Асинхронный evaluate завершается по ограничению времени",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-02",
+          "title": "Бесконечный JavaScript прерывается с восстановлением управления",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-03",
+          "title": "Отменённый evaluate освобождает ожидающий ответ и remote handles",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-04",
+          "title": "Та же защита работает в обычных и OOP iframe",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-05",
+          "title": "Ожидание ответа на JavaScript-диалог не расходует время evaluate",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-06",
+          "title": "Большое и экранированное значение помещается в MCP с признаком сокращения",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-07",
+          "title": "Циклы и специальные JS-типы сохраняют читаемую структуру",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-08",
+          "title": "DOM-узел возвращает описание элемента вместо пустого маркера",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-09",
+          "title": "Статус остаётся доступен при занятом JavaScript благодаря ограниченному чтению заголовка",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-10",
+          "title": "Код/timeout валидируются до исполнения, расширение явно требует актуальный Chromium",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T06:37:10.281863+00:00",
+        "candidateItems": [
+          "Асинхронный evaluate завершается по ограничению времени",
+          "Бесконечный JavaScript прерывается с восстановлением управления",
+          "Отменённый evaluate освобождает ожидающий ответ и remote handles",
+          "Та же защита работает в обычных и OOP iframe",
+          "Ожидание ответа на JavaScript-диалог не расходует время evaluate",
+          "Большое и экранированное значение помещается в MCP с признаком сокращения",
+          "Циклы и специальные JS-типы сохраняют читаемую структуру",
+          "DOM-узел возвращает описание элемента вместо пустого маркера",
+          "Статус остаётся доступен при занятом JavaScript благодаря ограниченному чтению заголовка",
+          "Код/timeout валидируются до исполнения, расширение явно требует актуальный Chromium"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-16-baseline.json",
+        "draft": "/tmp/voicechat-reader-cycle-16-draft",
+        "prototype": "/tmp/voicechat-reader-cycle-16-prototype.json",
+        "notes": [
+          "Исследование вне checkout во время гейтов15; подготовка не суммируется с гейтами.",
+          "Raw Runtime.evaluate timeout останавливает sync, но не awaitPromise; terminateExecution не снимает сам по себе ожидающий RPC.",
+          "Двухфазный JSHandle (сначала holder, затем run) + cancel завершает оба await и позволяет dispose. Однофазная версия оставляла sync-RPC pending.",
+          "CDP newCDPSession(frame) работает для OOP iframe; для in-process поднимаемся к ближайшему отдельному родителю/Page. Проверено localhost vs127.",
+          "Прототип реального Chromium: async/sync timeout,10 повторов cleanup, обычное значение, BigInt,cycle,Node,Map,escaped budget,getter без вызова, prompt400мс при лимите150мс,same-process+OOP iframe — всё прошло.",
+          "Сериализатор renderer должен быть JS-телом new Function, иначе tsx добавляет __name.",
+          "На момент прототипа типы/options/MCP guard/status title deadline/full regressions ещё не были реализованы; в цикле16 интеграция выполнена.",
+          "В async timeout нельзя отменить уже начатые fetch/timers пользовательского кода; ответ должен явно говорить проверить состояние перед повтором.",
+          "Дополнительный backlog: JSHandles console.args после сериализации следует освобождать; проверить в следующем ресурсном цикле.",
+          "Прототип дополнен проверкой pendingReads=0 после sync timeout, handle отвергает повторный evaluate после dispose, page.isClosed=false и evaluate1+2=3. Проверка /disposed/ была слишком узкой: текущий Playwright отвечает Target page/context/browser closed для закрытого канала JSHandle; проверяем отказ handle и работоспособность страницы отдельно."
+        ]
+      },
+      "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+      "implementationDurationSeconds": 905,
+      "verification": {
+        "native": "27 sessionEvaluation +4 lifecycle;18 dialogs,15 diagnostics,8 inspect,1 tsx runtime;5 scenarioPlayback после исправления подготовки данных",
+        "shared": "57 tests,8 new evaluation",
+        "mcp": "116 tests",
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T07:00:05.376835+00:00",
+          "endedAt": "2026-09-10T07:01:32.104725+00:00",
+          "durationMs": 86727
+        },
+        "e2ePassed": 29,
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-16",
+        "screenshots": [
+          "37-evaluate-make-recovered",
+          "39-evaluate-dialog-paused",
+          "38-evaluate-human-dialog"
+        ],
+        "notes": [
+          "Четыре старых unit evaluate заменены native проверками реальной структуры/циклов/лимита/ошибки.",
+          "Первый native65/65. Расширенный27тестов:1 lifecycle ожидал обязательное создание handle при чужом busyJS; требование теста неверно. Проверка заменена детерминированным поздним RPC-ответом; новые29/29 прошли.",
+          "Первый E2E28/29: старая диагностика открыта до наблюдения выбранной моделью вкладки. Артефакт показывает последующее правильное скрытие панели при переключении. Тест ждёт aria-selected нужной вкладки; E2E29/29.",
+          "Обычный tsx+Chromium runtime проверяет теперь и timeout, и Map с BigInt.",
+          "Строгие CSP/Trusted Types и зависший Proxy serializer проверены в настоящем Chromium.",
+          "Финальный $ref — JSON Pointer от корня ответа (/value/...); отдельные регрессии точек, slash/тильды и Map. 27/27 native и E2E29/29 после правки.",
+          "Первый gate:fast exit1: четыре старых scenarioPlayback передавали код длиной20–40тыс., отклоняемый общим лимитом4000. Длинный текст теперь создаётся внутри страницы коротким выражением; успех подготовки обязателен. Все5 адресных регрессий прошли. Повторные гейты запущены последовательно."
+        ],
+        "e2eTestDurationSeconds": 71.44,
+        "failedFastGate": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T06:57:22.690860+00:00",
+          "endedAt": "2026-09-10T07:06:47.092945+00:00",
+          "durationMs": 564401
+        },
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T07:10:46.100058+00:00",
+          "endedAt": "2026-09-10T07:19:51.755385+00:00",
+          "durationMs": 545654
+        },
+        "fastPassed": 7684,
+        "fastSkipped": 45,
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T07:19:51.757277+00:00",
+          "endedAt": "2026-09-10T07:36:26.168480+00:00",
+          "durationMs": 994405
+        },
+        "fullPassed": 8015
+      },
+      "followupFixes": [
+        {
+          "recordedAt": "2026-09-10T07:12:18.989757+00:00",
+          "detail": "Уточнение JSON Pointer и подготовка больших документов в регрессиях; дополнительные проверки и гейты указаны отдельно от первоначальных905с интеграции.",
+          "startedAt": "2026-09-10T06:57:20.370927+00:00",
+          "codeCompletedAt": "2026-09-10T07:10:24.879162+00:00",
+          "elapsedSeconds": 785,
+          "timingNote": "Интервал уточнения JSON Pointer, дополнительных проверок и исправления fixture. Включает ожидание первого fast gate; не суммировать с его длительностью."
+        }
+      ],
+      "completedAt": "2026-09-10T07:36:32.584781+00:00",
+      "elapsedSeconds": 3258,
+      "commitSubject": "fix(reader): bound evaluation and preserve structured results (cycle 16)"
     },
     {
       "number": 17,
-      "status": "pending",
+      "status": "cancelled_by_user",
       "startedAt": null,
-      "items": []
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
     },
     {
       "number": 18,
-      "status": "pending",
+      "status": "cancelled_by_user",
       "startedAt": null,
-      "items": []
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
     },
     {
       "number": 19,
-      "status": "pending",
+      "status": "cancelled_by_user",
       "startedAt": null,
-      "items": []
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
     },
     {
       "number": 20,
-      "status": "pending",
+      "status": "cancelled_by_user",
       "startedAt": null,
-      "items": []
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
     }
   ],
   "events": [
@@ -3293,6 +3493,12 @@
       "cycle": 4,
       "phase": "cli-integration",
       "detail": "Новые 6 команд добавлены в явный allow-list preview Claude CLI (и panel, и chromium). Исправление сделано до начала full package gate runner; этот пакет уже выбран гейтом. 17 адресных CLI-тестов прошли."
+    },
+    {
+      "at": "2026-09-10T07:12:18.989757+00:00",
+      "cycle": 16,
+      "phase": "scope-change",
+      "detail": "Пользователь попросил закончить текущий цикл и остановиться. Циклы17–20 отменены; подготовительные наблюдения сохранены как неисправленные, без реализации."
     }
   ],
   "backlogEvidence": [
@@ -3308,5 +3514,27 @@
       "source": "/tmp/voicechat-reader-audit/cycle-01/external-instagram.png",
       "issue": "DCL и успешный read с пустым текстом не означают готовность SPA."
     }
-  ]
+  ],
+  "stopAfterCycle": 16,
+  "scopeChange": {
+    "recordedAt": "2026-09-10T07:12:18.989757+00:00",
+    "instruction": "Закончи этот цикл и остановись",
+    "remainingCycles": "Отменены пользователем; самостоятельно не продолжать."
+  },
+  "unimplementedObservations": {
+    "collectedBeforeStopRequest": true,
+    "nativeEvidence": "/tmp/voicechat-reader-cycle-17-native-baseline.json",
+    "clientEvidence": "/tmp/voicechat-reader-cycle-17-client-baseline.json",
+    "facts": [
+      "Неизвестный command возвращает ready; неизвестный inspect с selector читает styles.",
+      "resize DPR2 сообщает2, фактический window.devicePixelRatio1 в текущей и новой вкладке.",
+      "После resize width=-1 и отказа Playwright метаданные содержат width=-1.",
+      "Styles CSS custom property50000: JSON50034 символа, не помещается в MCP. Raw pseudo не действует.",
+      "stop-loading при evaluate timeout1000мс занимает975мс.",
+      "HTTP timeout80мс: ответ с задержанным телом успешно прочитан за262/253/253мс. Один signal накопил1/2/3 abort listeners."
+    ]
+  },
+  "completedCycles": 16,
+  "completedItems": 160,
+  "stoppedAt": "2026-09-10T07:36:32.584781+00:00"
 }

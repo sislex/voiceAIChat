@@ -1,3 +1,4 @@
+import { BROWSER_EVALUATE_MIN_TIMEOUT, BROWSER_EVALUATE_MAX_TIMEOUT, normalizeBrowserEvaluateOptions } from '@voicechat/shared'
 import { browserDiagnosticsRequireChromium, normalizeBrowserDiagnosticOptions } from '@voicechat/shared'
 import { BROWSER_DOWNLOAD_MODEL_CHUNK, BROWSER_DOWNLOAD_TEXT_CHUNK, isBrowserDownloadInfo, isBrowserDownloadListResult, isBrowserDownloadReadResult } from '@voicechat/shared'
 import { BROWSER_DIALOG_ANSWER_LIMIT, normalizeBrowserDialogAnswer, isBrowserDialogListResult, isBrowserSessionMetadata } from '@voicechat/shared'
@@ -243,6 +244,9 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         if (action.kind === 'console' || action.kind === 'network') {
           try { normalizeBrowserDiagnosticOptions(action) } catch (error) { return toolResult({ ok: false, error: String(error) }) }
         }
+        if (action.kind === 'evaluate') {
+          try { normalizeBrowserEvaluateOptions(action) } catch (error) { return toolResult({ ok: false, error: String(error) }) }
+        }
         // Playwright Reader исполняет действие на сервере; остальные разговоры —
         // в браузере пользователя, как раньше.
         const direct = await opts.browserExecutor?.(entry.userId, entry.conversationId, action)
@@ -250,8 +254,10 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           const result = direct.result
           if (!result || !('cursor' in result) || typeof result.cursor !== 'number' || !(action.kind === 'console' ? 'console' in result && Array.isArray(result.console) : 'network' in result && Array.isArray(result.network))) return toolResult({ ok: false, error: 'Раннер не подтвердил расширенное чтение журнала. Обновите browser-runner.' })
         }
+        if (direct?.ok && action.kind === 'evaluate' && action.timeoutMs !== undefined && (!direct.result || !('valueFormat' in direct.result) || !('elapsedMs' in direct.result))) return toolResult({ ok: false, error: 'Раннер не подтвердил ограничение evaluate. Обновите browser-runner.' })
         if (direct) return toolResult(direct)
         if ((action.kind === 'console' || action.kind === 'network') && browserDiagnosticsRequireChromium(action)) return toolResult({ ok: false, error: 'Вкладки, курсор и расширенные фильтры журналов доступны только в Playwright Reader или Chromium-проверке.' })
+        if (action.kind === 'evaluate' && action.timeoutMs !== undefined) return toolResult({ ok: false, error: 'timeoutMs evaluate доступен только в Playwright Reader или Chromium-проверке.' })
         if (action.frame !== undefined) return toolResult({ ok: false, error: 'frame доступен только в Playwright Reader или Chromium-проверке.' })
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
         return toolResult(outcome)
@@ -574,13 +580,15 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Выполнить JavaScript в контексте открытой в превью страницы и получить JSON результата (await для промисов). ' +
-            'Для чтения состояния приложения, вызова функций страницы и нестандартных контролов, недоступных click/type.',
+            'Для чтения состояния приложения, вызова функций страницы и нестандартных контролов, недоступных click/type. ' +
+            'Chromium: по умолчанию 5000мс без ожидания ответа на диалог. valueFormat=json сохраняет JSON, preview помечает специальные типы через $type/$ref (JSON Pointer в ответе), preview-json — неполный JSON-префикс; truncated сообщает сокращение. Для полного значения запрашивай нужную часть. DOM-узел возвращает описание, Map/Set и циклы читаются структурно.',
           inputSchema: { frame: frameSchema,
             code: z.string().min(1).max(L.evaluateCode).describe('JS-выражение или код; результат сериализуется JSON'),
+            timeoutMs: z.number().int().min(BROWSER_EVALUATE_MIN_TIMEOUT).max(BROWSER_EVALUATE_MAX_TIMEOUT).optional().describe('Лимит исполнения Chromium; async-операции страницы после таймаута могут продолжиться, проверь состояние перед повтором'),
             confirm: z.boolean().optional().describe('true — пользователь явно подтвердил изменение страницы/хранилища/сети')
           }
         },
-        async ({ frame, code, confirm }) => {
+        async ({ frame, code, confirm, timeoutMs }) => {
           if (!entry) return noContext
           const verdict = await opts.context?.gateEvaluate?.(entry, code, confirm === true)
           req.log.info({ event: 'reader.evaluate', userId: entry.userId, conversationId: entry.conversationId, allowed: verdict?.allowed ?? true, confirmed: confirm === true, reason: verdict?.reason }, 'reader evaluate gate')
@@ -588,7 +596,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             const prefix = verdict.needsConfirmation ? 'Требуется подтверждение пользователя. ' : 'Отклонено политикой проекта. '
             return { content: [{ type: 'text', text: prefix + (verdict.reason ?? '') }], isError: true }
           }
-          return run({ kind: 'evaluate', ...(frame !== undefined ? { frame } : {}), code })
+          return run({ kind: 'evaluate', ...(frame !== undefined ? { frame } : {}), code, ...(timeoutMs !== undefined ? { timeoutMs } : {}) })
         }
       )
 

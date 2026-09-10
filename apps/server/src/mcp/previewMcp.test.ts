@@ -254,6 +254,30 @@ describe('previewMcp — инструменты browser', () => {
     expect(control).toHaveBeenCalledWith(U, CONV, command)
   })
 
+  it('evaluate передаёт deadline и сохраняет формат сложного результата', async () => {
+    const executor = vi.fn(async () => ({ ok: true, result: { ok: true, value: { $type: 'bigint', value: '123' }, valueFormat: 'preview' as const, valueType: 'bigint', elapsedMs: 5 } }))
+    await makeApp(undefined, { browserExecutor: executor })
+    const result = await call('evaluate', { code: '123n', timeoutMs: 500 })
+    expect(result.isError).not.toBe(true)
+    expect(JSON.parse(result.text).valueFormat).toBe('preview')
+    expect(executor).toHaveBeenCalledWith(U, CONV, { kind: 'evaluate', code: '123n', timeoutMs: 500 })
+  })
+  it('deadline evaluate не теряется в fallback и старом раннере', async () => {
+    const executor = vi.fn(async () => null as any)
+    await makeApp(undefined, { browserExecutor: executor })
+    const forwarded = vi.fn(); client = forwarded
+    expect(await call('evaluate', { code: '1+2', timeoutMs: 500 })).toMatchObject({ isError: true, text: expect.stringContaining('Chromium') })
+    expect(forwarded).not.toHaveBeenCalled()
+    executor.mockResolvedValue({ ok: true, result: { ok: true, value: 3 } })
+    expect(await call('evaluate', { code: '1+2', timeoutMs: 500 })).toMatchObject({ isError: true, text: expect.stringContaining('не подтвердил') })
+  })
+  it.each([{ code: ' ' }, { code: '1+2', timeoutMs: -1 }, { code: '1+2', timeoutMs: 15001 }])('невалидный evaluate не исполняется: %j', async args => {
+    const executor = vi.fn(async () => null)
+    await makeApp(undefined, { browserExecutor: executor })
+    expect((await call('evaluate', args)).isError).toBe(true)
+    expect(executor).not.toHaveBeenCalled()
+  })
+
   it('диагностика передаёт вкладку и курсор в Chromium', async () => {
     const executor = vi.fn(async () => ({ ok: true, result: { ok: true, console: [], cursor: 17, total: 0 } }))
     await makeApp(undefined, { browserExecutor: executor })

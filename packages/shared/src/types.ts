@@ -1,3 +1,4 @@
+import type { BrowserEvaluateOptions, BrowserEvaluationSummary } from './browserEvaluation'
 import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from './browserDiagnostics'
 import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
 import type { BrowserDialogAnswer, BrowserDialogInfo } from './browserDialogs'
@@ -306,7 +307,7 @@ export type BrowserInspectAction =
    * опасного кода) стоит на уровне MCP-инструмента, до выбора транспорта, и
    * действует на этот путь так же, как на превью пользователя.
    */
-  | { kind: 'evaluate'; code: string }
+  | ({ kind: 'evaluate' } & BrowserEvaluateOptions)
 
 export interface BrowserConsoleEntry extends BrowserLogContext {
   level: string; text: string; at: number
@@ -331,7 +332,7 @@ export interface BrowserNetworkEntry extends BrowserLogContext {
   redirectedTo?: string
 }
 
-export interface BrowserInspectResult extends BrowserLogSummary {
+export interface BrowserInspectResult extends BrowserLogSummary, BrowserEvaluationSummary {
   ok: boolean
   page?: { url: string; title: string }
   frame?: BrowserFrameContext

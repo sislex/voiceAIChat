@@ -109,7 +109,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     case 'evaluate':
       // Гейт политики и подтверждение опасного кода стоят выше, на самом
       // MCP-инструменте, — до выбора транспорта. Здесь дублировать нечего.
-      return { kind: 'command', command: { type: 'inspect', action: { kind: 'evaluate', code: action.code } } }
+      return { kind: 'command', command: { type: 'inspect', action: { kind: 'evaluate', code: action.code, ...(action.timeoutMs !== undefined ? { timeoutMs: action.timeoutMs } : {}) } } }
     case 'hover':
       return {
         kind: 'command',
