@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 150e59f4
+checked: 3ff911b2
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -133,6 +133,22 @@ XHTML и CSS прокси переписывает URL ресурсов, ссы�
 запись пользовательских действий через `postMessage`, а на `pagehide` снимает их
 обработчики. UI-поведение и семантика сценариев — в [ui.md](ui.md#веб-превью), путь
 контракта — в `packages/shared/src/protocol.ts`.
+
+Текущее приложение доступно по `https://app.internal/` без операторского алиаса.
+`ReaderCore.projectResource` доставляет ресурс встроенному Fastify через app.inject
+(`readerBridge/projectResource.ts`), standalone вызывает тот же порт по RPC. Это
+всегда своё ядро: путь не выбирает сетевой хост. Host имеет логическое значение
+app.internal для генерируемых приложением абсолютных ссылок. Авторизация вложенной
+страницы отдельная — только её Bearer/cookies, внешняя сессия не подставляется.
+Бинарное тело сохраняется в base64-контракте, ответ ограничен 5 MiB.
+`previewProjectLoader.ts` обрабатывает до пяти внутренних redirect с cookie/hash,
+сохраняет метод/тело 307/308, ограничивает всю цепочку 10 секундами и прекращает её
+после позднего ответа. Служебные /internal, /mcp и рекурсивные /api/preview закрыты;
+встроенная diagnostics остаётся специальным разрешённым ресурсом. Ответы приложения
+имеют private,no-store. UI канонизирует скопированный собственный URL до доставки;
+сервер также распознаёт точный Host текущего запроса. Проверки: previewProject.test,
+projectResource.test, previewProjectLoader.test, readerRemote.integration и
+webReaderOwnProject/webReaderProject.e2e.test.ts (реальный вход без aliases).
 
 Алиасы Web Reader читаются в `reader/module.ts` непосредственно из
 `process.env.VC_BROWSER_HOST_ALIASES` при создании локального модуля. Передача

@@ -30,7 +30,7 @@ describe('Reader: вход на собственную страницу прое
       cwd: join(ROOT, 'apps/server'),
       env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
         VC_WEB_DIR: join(ROOT, 'apps/web/dist'), VC_WEB_RECORDER_DIR: join(ROOT, 'apps/web-recorder/dist'),
-        VC_ADMIN_PASSWORD: PASSWORD, VC_BROWSER_HOST_ALIASES: `93.184.216.34:8787=127.0.0.1:${port}` },
+        VC_ADMIN_PASSWORD: PASSWORD, VC_BROWSER_HOST_ALIASES: '' },
       stdio: 'ignore'
     })
     await vi.waitFor(async () => {
@@ -48,7 +48,7 @@ describe('Reader: вход на собственную страницу прое
     await api('/api/settings', 'PUT', { onboarded: true, theme: 'green' })
     const conversation = await api('/api/conversations', 'POST', { title: 'Reader project QA', assistantKind: 'web-recorder' })
     const id = conversation.id ?? conversation.conversation.id
-    await api(`/api/conversations/${id}/preview-url`, 'POST', { previewUrl: 'http://93.184.216.34:8787/#/machines' })
+    await api(`/api/conversations/${id}/preview-url`, 'POST', { previewUrl: 'https://app.internal/#/machines' })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     page.setDefaultTimeout(10_000)
@@ -76,7 +76,7 @@ describe('Reader: вход на собственную страницу прое
     const saved = page.waitForResponse(response => response.url().startsWith(base + '/api/conversations/') && response.url().endsWith('/preview-url') && response.request().method() === 'POST')
     await site.getByRole('button', { name: 'Закрыть', exact: true }).click()
     expect((await saved).ok()).toBe(true)
-    await expect.poll(() => recorder.getByRole('textbox', { name: 'Адрес превью' }).inputValue()).toBe('http://93.184.216.34:8787/#/')
+    await expect.poll(() => recorder.getByRole('textbox', { name: 'Адрес превью' }).inputValue()).toBe('https://app.internal/#/')
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     expect(await site.locator('html').evaluate(() => performance.timeOrigin)).toBe(originTime)
     if (process.env.VC_VISUAL_ARTIFACTS) {

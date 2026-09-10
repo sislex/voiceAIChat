@@ -553,3 +553,16 @@ it('запись сохраняет исходный адрес сценария
   expect(localStorage.getItem('voicechat.reader.scenario.v2:https://shop.example/')).toContain('#go')
   expect(localStorage.getItem('voicechat.reader.scenario.v2:https://shop.example/#/next')).toBeNull()
 })
+
+
+describe('текущее приложение в Reader', () => {
+  it('кнопка проекта работает из пустой панели', () => {
+    render(<Recorder />); fromHost({ ...init, previewUrl: null })
+    fireEvent.click(screen.getByRole('button', { name: 'Текущий проект' }))
+    expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).src).toContain(encodeURIComponent('https://app.internal/'))
+  })
+  it('адрес host из команды сохраняет deep link на постоянном origin', () => {
+    render(<Recorder />); fromHost({ ...init, previewUrl: window.location.origin + '/#/machines' })
+    expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).src).toContain(encodeURIComponent('https://app.internal/#/machines'))
+  })
+})

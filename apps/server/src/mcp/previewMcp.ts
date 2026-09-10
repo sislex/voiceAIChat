@@ -247,6 +247,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата. ' +
             'Только HTTP/HTTPS. Тестовое окружение на машине этого разговора открывается адресом ' +
+            'https://app.internal/ — текущее приложение с любым путём или #/маршрутом; ' +
             'http://machine.internal:<порт>/ — запрос уйдёт на 127.0.0.1:<порт> машины.',
           inputSchema: { url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
         },
