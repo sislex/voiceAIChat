@@ -12,6 +12,7 @@ import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
 import { startReaderFramesFixture } from '../apps/browser-runner/src/test/readerFrames.js'
+import { startReaderDownloadsFixture } from '../apps/browser-runner/src/test/readerDownloads.js'
 import { startReaderDialogsFixture } from '../apps/browser-runner/src/test/readerDialogs.js'
 import { startReaderInputFixture } from '../apps/browser-runner/src/test/readerInput.js'
 import { startReaderProfileFixture } from '../apps/browser-runner/src/test/readerProfile.js'
@@ -38,6 +39,7 @@ let frameSite: Awaited<ReturnType<typeof startReaderFramesFixture>> | undefined
 let profileSite: Awaited<ReturnType<typeof startReaderProfileFixture>> | undefined
 let inputSite: Awaited<ReturnType<typeof startReaderInputFixture>> | undefined
 let dialogSite: Awaited<ReturnType<typeof startReaderDialogsFixture>> | undefined
+let downloadSite: Awaited<ReturnType<typeof startReaderDownloadsFixture>> | undefined
 const chats: Record<string, string> = {}
 const browserTrace: Array<Record<string, unknown>> = []
 const browserFailures: Array<{ path: string; status: number; body: string }> = []
@@ -94,7 +96,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     profileSite = await startReaderProfileFixture()
     inputSite = await startReaderInputFixture()
     dialogSite = await startReaderDialogsFixture()
-    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['dialog.reader.test', new URL(dialogSite.origin).host], ['input.reader.test', new URL(inputSite.origin).host], ['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
+    downloadSite = await startReaderDownloadsFixture()
+    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['downloads.reader.test', new URL(downloadSite.origin).host], ['dialog.reader.test', new URL(dialogSite.origin).host], ['input.reader.test', new URL(inputSite.origin).host], ['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
@@ -157,6 +160,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     browserTrace.push({ at: Date.now(), event: 'visibility', hidden: await page.evaluate(() => document.hidden) })
     await writeFile(join(artifacts, 'browser-trace.json'), JSON.stringify(browserTrace.slice(-100), null, 2))
     await writeFile(join(artifacts, 'pending-dialogs.json'), await mcp('dialogs'))
+    await writeFile(join(artifacts, 'chromium-console.json'), await mcp('console'))
   })
 
   afterAll(async () => {
@@ -174,6 +178,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await profileSite?.close()
     await inputSite?.close()
     await dialogSite?.close()
+    await downloadSite?.close()
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
@@ -623,6 +628,70 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await page.getByRole('dialog', { name: 'Покинуть страницу?' }).getByRole('button', { name: 'Покинуть страницу', exact: true }).click()
     await expect.poll(async () => JSON.parse(await mcp('tabs')).currentUrl).toBe('http://dialog.reader.test/next')
     await capture('31-human-chose-navigation')
+  })
+
+  it('модель скачивает отчёт, дочитывает файл и открывает прямой адрес вложения', async () => {
+    await mcp('open', { url: 'http://downloads.reader.test/' })
+    await mcp('click', { selector: '#file' })
+    let file: { id: string; state: string; filename: string } | undefined
+    await expect.poll(async () => { file = JSON.parse(await mcp('downloads')).downloads.find((item: { filename: string }) => item.filename === 'Отчёт.txt'); return file?.state }).toBe('completed')
+    let text = '', offset = 0
+    for (let i = 0; i < 6; i++) {
+      const part = JSON.parse(await mcp('read-download', { downloadId: file!.id, offset }))
+      text += part.text
+      if (part.nextOffset === undefined) break
+      offset = part.nextOffset
+    }
+    expect(text).toBe('Начало 😀\n' + 'Строка отчёта\n'.repeat(2200) + 'Конец')
+    await mcp('open', { url: 'http://downloads.reader.test/file' })
+    expect(JSON.parse(await mcp('downloads')).total).toBe(2)
+    await capture('32-model-downloaded-report')
+  })
+
+  it('панель сохраняет исходный бинарный файл, отменяет поток и удаляет скачивание', async () => {
+    await mcp('click', { selector: '#binary' })
+    let file: { id: string; state: string; filename: string } | undefined
+    await expect.poll(async () => { file = JSON.parse(await mcp('downloads')).downloads.find((item: { filename: string }) => item.filename === 'data.bin'); return file?.state }).toBe('completed')
+    expect(Buffer.from(JSON.parse(await mcp('read-download', { downloadId: file!.id, encoding: 'base64' })).base64, 'base64')).toEqual(Buffer.from([0,255,1,2,3,128]))
+    await page.getByRole('button', { name: /^Скачивания/ }).click()
+    const panel = page.getByRole('region', { name: 'Скачивания', exact: true })
+    const pending = page.waitForEvent('download')
+    await panel.getByRole('button', { name: 'Скачать data.bin', exact: true }).click()
+    const saved = await pending
+    expect(saved.suggestedFilename()).toBe('data.bin')
+    const stream = await saved.createReadStream(); if (!stream) throw new Error('Saved file unavailable')
+    const parts: Buffer[] = []; for await (const part of stream) parts.push(Buffer.from(part))
+    expect(Buffer.concat(parts)).toEqual(Buffer.from([0,255,1,2,3,128]))
+    await mcp('click', { selector: '#slow' })
+    await panel.getByRole('button', { name: 'Отменить скачивание slow.bin', exact: true }).click()
+    await expect.poll(async () => JSON.parse(await mcp('downloads')).downloads.find((item: { filename: string }) => item.filename === 'slow.bin')?.state).toBe('canceled')
+    await panel.getByRole('button', { name: 'Удалить скачивание data.bin', exact: true }).click()
+    await expect.poll(async () => JSON.parse(await mcp('downloads')).downloads.some((item: { id: string }) => item.id === file!.id)).toBe(false)
+    const missing = await mcpReply('read-download', { downloadId: file!.id }, true)
+    expect(missing.content.map(item => item.text).join(' ')).toContain('stale_download')
+    await capture('33-human-download-controls')
+  })
+
+  it('экспорт Blob из настоящего iframe Make доступен модели как файл', async () => {
+    await api(`/api/make/${chats.make}/file`, 'PUT', { path: 'index.html', content: `<!doctype html><title>Экспорт проекта</title><h1>Файл из Make</h1><button id="export" onclick="const link=document.createElement('a');link.href=window.URL.createObjectURL(new Blob(['Проект Make 😀'],{type:'text/plain'}));link.download='make-export.txt';link.click()">Экспортировать проект</button>` })
+    await mcp('open', { url: `${base}/#/make/${chats.make}` })
+    // Предыдущая проверка reset-session очищает cookie loopback-хоста, включая
+    // тестовый вход ядра на другом порту. Вход здесь проверяется заново.
+    await mcp('wait', { selector: '.app--make, input[aria-label="Пользователь"]' })
+    if (JSON.parse(await mcp('evaluate', { code: 'Boolean(document.querySelector(\'input[aria-label="Пользователь"]\'))' })).value) {
+      await mcp('type', { selector: 'input[aria-label="Пользователь"]', text: 'admin' })
+      await mcp('type', { selector: 'input[aria-label="Пароль"]', text: PASSWORD })
+      await mcp('click', { selector: 'button[type="submit"]' })
+    }
+    await mcp('wait', { selector: '.make-frame' })
+    let frame: string[] = []
+    await expect.poll(async () => { frame = JSON.parse(await mcp('frames')).frames.find((item: { url: string }) => item.url.includes(`/api/preview/make/${chats.make}/`))?.path ?? []; return frame.length }).toBeGreaterThan(0)
+    await mcp('wait', { frame, text: 'Файл из Make' })
+    await mcp('click', { frame, selector: '#export' })
+    let file: { id: string; state: string } | undefined
+    await expect.poll(async () => { file = JSON.parse(await mcp('downloads')).downloads.find((item: { filename: string }) => item.filename === 'make-export.txt'); return file?.state }).toBe('completed')
+    expect(JSON.parse(await mcp('read-download', { downloadId: file!.id })).text).toBe('Проект Make 😀')
+    await capture('34-make-export-download')
   })
 
 })

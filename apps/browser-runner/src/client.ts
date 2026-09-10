@@ -1,3 +1,4 @@
+import type { BrowserDownloadResult } from '@voicechat/shared'
 import type { BrowserProfileMode, BrowserSiteDataResetResult, BrowserDialogListResult } from '@voicechat/shared'
 // HTTP-клиент сервера к browser-runner (apps/browser-runner). Сервер сам Chromium
 // не запускает — он оркеструет чужой сервис: поднимает сессию на разговор,
@@ -18,7 +19,7 @@ export interface BrowserRunnerClientOptions {
 }
 
 /** Что возвращает раннер на команду — зависит от её типа. */
-export type BrowserRunnerCommandResult = BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult
+export type BrowserRunnerCommandResult = BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult
 
 /** Ошибка вызова раннера с кодом, пригодным для маппинга в HTTP-статус роута. */
 export class BrowserRunnerError extends Error {

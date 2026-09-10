@@ -148,7 +148,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'close-tab', 'console', 'dialogs', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'cancel-download', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it.each([
@@ -307,6 +307,37 @@ describe('previewMcp — инструменты browser', () => {
     const reset = await call('reset-session', { host: 'agent-1.machine.internal' })
     expect(reset.text).toContain('Сброшено cookie: 2')
     expect(clears).toEqual(['agent-1.machine.internal'])
+  })
+
+  it('каталог и чтение файла маршрутизируются по подписанному разговору', async () => {
+    const download = { id: 'd', tabId: 't', filename: 'file.txt', url: 'https://site.test/export', state: 'completed' as const, bytes: 3, startedAt: 1 }
+    const control = vi.fn().mockResolvedValueOnce({ ok: true, result: { ok: true, downloads: [download], total: 1, offset: 0 } }).mockResolvedValueOnce({ ok: true, result: { ok: true, download, encoding: 'text', text: 'abc', offset: 0, total: 3 } })
+    await makeApp(undefined, { browserControl: control })
+    expect(JSON.parse((await call('downloads', { tabId: 't', offset: 0 })).text).downloads[0]).toEqual(download)
+    expect(control).toHaveBeenLastCalledWith(U, CONV, { type: 'downloads', tabId: 't', offset: 0 })
+    expect(JSON.parse((await call('read-download', { downloadId: 'd', encoding: 'text', offset: 0 })).text).text).toBe('abc')
+    expect(control).toHaveBeenLastCalledWith(U, CONV, { type: 'readDownload', downloadId: 'd', encoding: 'text', offset: 0 })
+  })
+
+  it.each(['downloads', 'read-download', 'cancel-download', 'delete-download'])('старый ready не подтверждает %s', async name => {
+    await makeApp(undefined, { browserControl: vi.fn(async () => ({ ok: true, result: { state: 'ready' } })) as never })
+    expect((await call(name, name === 'downloads' ? {} : { downloadId: 'd' })).isError).toBe(true)
+  })
+
+  it('порция бинарного файла для модели ограничивается до вызова раннера', async () => {
+    const control = vi.fn(async () => null)
+    await makeApp(undefined, { browserControl: control })
+    expect((await call('read-download', { downloadId: 'd', encoding: 'base64', limit: 8193 })).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
+  })
+
+  it.each(['cancel-download', 'delete-download'])('%s требует подтверждения конкретного файла', async name => {
+    const download = { id: 'd', tabId: 't', filename: 'file.txt', url: '', state: 'canceled' as const, startedAt: 1 }
+    const result = name === 'cancel-download' ? { ok: true, download } : { ok: true, deletedDownloadId: 'd' }
+    const control = vi.fn().mockResolvedValueOnce({ ok: true, result }).mockResolvedValueOnce({ ok: true, result: { ...result, download: { ...download, id: 'wrong' }, deletedDownloadId: 'wrong' } })
+    await makeApp(undefined, { browserControl: control })
+    expect((await call(name, { downloadId: 'd' })).isError).not.toBe(true)
+    expect((await call(name, { downloadId: 'd' })).isError).toBe(true)
   })
 
   it('dialogs возвращает диалог конкретной вкладки без контекста прокси', async () => {

@@ -1430,11 +1430,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               title="Превью проекта"
               src={previewSrc}
               onLoad={restorePageState}
-              sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
+              sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"
               style={frameWidth ? { width: `${frameWidth}px` } : device === 'all' ? { width: '1200px' } : undefined}
             />}
             {device === 'all' && previewReady && SYNC_WIDTHS.map((w, i) => (
-              <iframe key={`${previewRev}-${w}`} ref={(el) => { syncFramesRef.current[i] = el }} className="make-frame make-frame--sync" title={`Превью ${w}px`} src={previewSrc} sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin" style={{ width: `${w}px` }} />
+              <iframe key={`${previewRev}-${w}`} ref={(el) => { syncFramesRef.current[i] = el }} className="make-frame make-frame--sync" title={`Превью ${w}px`} src={previewSrc} sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads" style={{ width: `${w}px` }} />
             ))}
           </div>
           {commentsOpen && (
@@ -1704,7 +1704,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             <>
               <div className="make-split-handle" role="separator" aria-label="Граница код/превью" aria-orientation="vertical" aria-valuenow={splitPct} onPointerDown={beginSplitDrag} />
               <div className="make-split-preview" data-testid="make-split-preview">
-                <iframe key={previewRev} className="make-frame" title="Превью рядом" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups" src={previewSrc} />
+                <iframe key={previewRev} className="make-frame" title="Превью рядом" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads" src={previewSrc} />
               </div>
             </>
           )}
@@ -1787,7 +1787,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 key={`${story.file}:${story.name}:${previewRev}`}
                 className="make-story-frame"
                 title={`Стори ${story.name}`}
-                sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
+                sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"
                 src={`${base}__stories__?file=${encodeURIComponent(story.file)}&story=${encodeURIComponent(story.name)}&rev=${previewRev}`}
               />
             ) : storyFiles && storyFiles.length > 0 ? (

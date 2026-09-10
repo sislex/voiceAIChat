@@ -2768,13 +2768,206 @@
         "typecheckExitCode": 0,
         "runnerTests": 251
       },
-      "endedAt": "2026-09-10T05:20:30.733957+00:00"
+      "endedAt": "2026-09-10T05:20:30.733957+00:00",
+      "commit": "88775719"
     },
     {
       "number": 14,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T05:21:08.418836+00:00",
+      "items": [
+        {
+          "id": "14-01",
+          "title": "HTTP-вложения и экспорт скачиваются в Chromium",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-02",
+          "title": "Экспорт проекта через Blob доступен с исходным именем файла",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-03",
+          "title": "Модель видит каталог скачиваний, состояния и вкладки",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-04",
+          "title": "Модель читает текстовые файлы частями без потери Unicode",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-05",
+          "title": "Модель получает бинарные байты, пользователь сохраняет файл из панели",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-06",
+          "title": "Незавершённое скачивание можно отменить",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-07",
+          "title": "Скачанный файл можно удалить с очисткой его данных",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-08",
+          "title": "Переход к URL вложения подтверждает скачивание вместо ложной ошибки страницы",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-09",
+          "title": "Идентификатор файла ограничен сессией, вкладки и устаревшие файлы проверяются",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-10",
+          "title": "Размер, число скачиваний и завершение сессии ограничивают удержание ресурсов",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T05:08:46.989056+00:00",
+        "candidateItems": [
+          "HTTP-вложения и экспорт скачиваются в Chromium",
+          "Экспорт проекта через Blob доступен с исходным именем файла",
+          "Модель видит каталог скачиваний, состояния и вкладки",
+          "Модель читает текстовые файлы частями без потери Unicode",
+          "Модель получает бинарные байты, пользователь сохраняет файл из панели",
+          "Незавершённое скачивание можно отменить",
+          "Скачанный файл можно удалить с очисткой его данных",
+          "Переход к URL вложения подтверждает скачивание вместо ложной ошибки страницы",
+          "Идентификатор файла ограничен сессией, вкладки и устаревшие файлы проверяются",
+          "Размер, число скачиваний и завершение сессии ограничивают удержание ресурсов"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-14-baseline.json",
+        "draft": "/tmp/voicechat-reader-cycle-14-draft",
+        "proof": "/tmp/voicechat-reader-cycle-14-fixed.json",
+        "liveLimit": "/tmp/voicechat-reader-cycle-14-live-limit.json",
+        "notes": [
+          "Исследование и прототип в /tmp во время гейтов13, без правок checkout до88775719.",
+          "Нативный HTTP и Blob исходно отвечают failure acceptDownloads:true; переход attachment бросает Download is starting, downloads пока возвращает общийready.",
+          "Прототип получает HTTP/Blob/бинарный файл, читает UTF-8 и base64, отменяет slow; не интегрированы shared/MCP/UI/полная валидация.",
+          "CDP Browser.downloadProgress нужно включить в собственной browser CDP session через setDownloadBehavior с тем же downloadsPath, что Playwright; без команды события не приходят.",
+          "Живой лимит8192 байт прервал бесконечный поток за513мс; итог failed/canceled. Нужны типизированные регрессии, cleanupdownloadsPath и финальный лимит по stat.",
+          "Первый Blob-пробник был неверен: внутри inline onclick URL разрешается в document.URL, а не window.URL. Исправлен fixture; не считать это багом Reader.",
+          "Каталог/содержимое ограничить JSON-бюджетом, поддержать pagination и ошибки старого раннера.",
+          "MCPbase64 небольшими порциями; панель собирает файл более крупными порциями без передачи пути файловой системы."
+        ],
+        "preparedAt": "2026-09-10T05:21:08.418836+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+      "sharedImplementationDurationSeconds": 1419,
+      "validation": {
+        "nativeTests": 18,
+        "nativeDurationMs": 6820,
+        "uiTests": 100,
+        "makeUiTests": 79,
+        "sharedTests": 4,
+        "mcpTests": 103,
+        "e2eTests": 25,
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:40:37.216086+00:00",
+          "endedAt": "2026-09-10T05:41:06.688879+00:00",
+          "durationMs": 29473
+        },
+        "e2eFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T05:35:49.483546+00:00",
+          "endedAt": "2026-09-10T05:36:23.276942+00:00",
+          "durationMs": 33793
+        },
+        "webBuildExitCode": 0,
+        "typecheckExitCode": 0,
+        "visual": [
+          "33-human-download-controls.png",
+          "34-make-export-download.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-14",
+        "corrections": [
+          "Первый E2E24/25: финальный Make требовал нового входа после reset cookie loopback-хоста; вход явно добавлен.",
+          "Два отдельных Make E2E затем подтвердили недоступность экспорта из sandbox. Новый DOM-assert allow-downloads красный до исправления, зелёный после;79 Make UI и25 E2E прошли.",
+          "Нативная проверка девятого потока упиралась в шесть HTTP/1 соединений одного origin. Проверена на девяти отдельных портах: реальный лимит Reader8 срабатывает.",
+          "DOM-фейк canceled наследовал bytes готового файла, текст проверки уточнён; типизация Blob уточнена до Uint8Array<ArrayBuffer>, URL-моки получили override и this.",
+          "Добавлена очистка старых собственных UUID-каталогов после захвата Chromium-профиля; отдельный native-тест прошёл после E2E."
+        ],
+        "limitations": [
+          "64 МиБ на файл,8 активных скачиваний,32 записи; текстUTF-8 до8 МиБ.",
+          "Каталог временный, удаляется при остановке/перезапуске Reader; сохранённый пользователем файл остаётся на его устройстве.",
+          "MCP получает текст/base64; извлечение содержимого PDF/Office специально не реализовано.",
+          "Проверялись собственный Make и локальные HTTP/Blob/бинарные/медленные ресурсы, а не авторизованные Gmail-вложения."
+        ],
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:44:48.682616+00:00",
+          "endedAt": "2026-09-10T05:48:34.102560+00:00",
+          "durationMs": 225420
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:49:59.521191+00:00",
+          "endedAt": "2026-09-10T05:54:53.360474+00:00",
+          "durationMs": 293839
+        },
+        "fastTests": {
+          "passed": 7599,
+          "skipped": 45
+        },
+        "gateTests": 7930
+      },
+      "endedAt": "2026-09-10T05:55:52.643161+00:00"
     },
     {
       "number": 15,

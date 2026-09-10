@@ -31,6 +31,7 @@ describe('MakePane', () => {
     const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
     expect(frame.getAttribute('src')).toBe(`/api/preview/make/${CONV}/index.html?rev=0`)
     expect(frame.getAttribute('sandbox')).toContain('allow-scripts')
+    expect(frame.getAttribute('sandbox')).toContain('allow-downloads')
     await userEvent.click(screen.getByRole('button', { name: 'Телефон' }))
     expect((screen.getByTitle('Превью проекта') as HTMLIFrameElement).style.width).toBe('390px')
     await userEvent.click(screen.getByRole('button', { name: 'Обновить превью' }))

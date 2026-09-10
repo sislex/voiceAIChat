@@ -1,3 +1,4 @@
+import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
 import type { BrowserDialogAnswer, BrowserDialogInfo } from './browserDialogs'
 import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserProfile'
 // Общие типы, разделяемые между main, preload и renderer.
@@ -157,6 +158,8 @@ export interface BrowserError {
 }
 
 export interface BrowserSessionMetadata {
+  downloads?: BrowserDownloadInfo[]
+  downloadCount?: number
   dialogs?: BrowserDialogInfo[]
   dialogCount?: number
   profileMode?: BrowserProfileMode
@@ -348,6 +351,7 @@ export type BrowserCommand = BrowserFrameTarget & (
   /** Пассивное наблюдение: адрес и вкладки обновляются и после действий модели. */
   | { type: 'status' }
   | { type: 'frames' }
+  | BrowserDownloadCommand
   | { type: 'dialogs'; tabId?: string }
   | ({ type: 'handleDialog' } & BrowserDialogAnswer)
   | ({ type: 'clearSiteData' } & BrowserSiteDataResetOptions)

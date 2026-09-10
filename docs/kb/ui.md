@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-10
-checked: 3fae59bd
+checked: 88775719
 areas:
   - packages/admin-app/src
   - packages/app-shell
@@ -1217,7 +1217,10 @@ diff-UI (своя вёрстка, свои токены, своя доступн
 (WS `make.changed`). Три режима:
 
 - **Превью** — same-origin iframe на `REST.makePreview(conv)` + `index.html?rev=N`
-  (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"`).
+  (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"`).
+  `allow-downloads` с2026-09-10 разрешает кнопкам HTTP/Blob-экспорта работать внутри
+  интерактивных превью, включая открытие Make через Playwright Reader.
+  Проверка: `e2e/playwrightReader.e2e.test.ts` скачивает и читает экспорт проекта.
   Перед первой загрузкой — cookie-гейт `ensurePreview` (тот же `session:ensurePreview`,
   что у Web Reader: iframe не шлёт Bearer). Пресеты ширины ПК/Планшет/Телефон, ⟳, открыть в
   новой вкладке, ⛶ на весь экран, **⌖ «Выбрать элемент»**: сервер инъецирует в HTML скрипт

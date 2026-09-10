@@ -1,3 +1,4 @@
+import { BROWSER_DOWNLOAD_MODEL_CHUNK, BROWSER_DOWNLOAD_TEXT_CHUNK, isBrowserDownloadInfo, isBrowserDownloadListResult, isBrowserDownloadReadResult } from '@voicechat/shared'
 import { BROWSER_DIALOG_ANSWER_LIMIT, normalizeBrowserDialogAnswer, isBrowserDialogListResult, isBrowserSessionMetadata } from '@voicechat/shared'
 import { isBrowserSiteDataResetResult, normalizeBrowserSiteDataReset } from '@voicechat/shared'
 import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, BrowserModelScreenshotOptions } from '@voicechat/shared'
@@ -277,6 +278,41 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       ] as const) server.registerTool(name, {
         description, inputSchema: { tabId: z.string().min(1).max(256).describe('id вкладки из tabs') }
       }, async ({ tabId }) => control({ type, tabId }))
+      server.registerTool('downloads', {
+        description: 'Скачивания Chromium: id, имя, исходный URL, вкладка, состояние и размер готового файла. HTTP-вложения и Blob-экспорт страницы; downloadId затем передаётся read-download. Возвращает nextOffset для продолжения списка.',
+        inputSchema: { tabId: z.string().min(1).max(200).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(32).optional() }
+      }, async options => {
+        if (!entry) return noContext
+        const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'downloads', ...options })
+        if (!result) return toolResult({ ok: false, error: 'Скачивания доступны только в Playwright Reader или Chromium-проверке.' })
+        if (result.ok && !isBrowserDownloadListResult(result.result)) return toolResult({ ok: false, error: 'Раннер не поддерживает каталог скачиваний.' })
+        return toolResult(result)
+      })
+      server.registerTool('read-download', {
+        description: 'Прочитать готовый файл из downloads. text — UTF-8 (до 8 МиБ), offset в UTF-16 позициях; base64 — исходные байты, offset в байтах. Используй nextOffset до его отсутствия; бинарные файлы читай base64. Файлы живут до остановки сессии, лимит файла64 МиБ.',
+        inputSchema: { downloadId: z.string().min(1).max(200), encoding: z.enum(['text', 'base64']).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(BROWSER_DOWNLOAD_TEXT_CHUNK).optional() }
+      }, async options => {
+        if (!entry) return noContext
+        if (options.encoding === 'base64' && options.limit !== undefined && options.limit > BROWSER_DOWNLOAD_MODEL_CHUNK) return toolResult({ ok: false, error: 'Порция base64 для модели — до8192 байт.' })
+        const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'readDownload', ...options })
+        if (!result) return toolResult({ ok: false, error: 'Чтение скачанного файла доступно только в Playwright Reader или Chromium-проверке.' })
+        if (result.ok && (!isBrowserDownloadReadResult(result.result) || result.result.download.id !== options.downloadId)) return toolResult({ ok: false, error: 'Раннер не подтвердил содержимое выбранного файла.' })
+        return toolResult(result)
+      })
+      for (const [name, type, description] of [
+        ['cancel-download', 'cancelDownload', 'Отменить незавершённое скачивание по id. Если файл успел завершиться, возвращается completed.'],
+        ['delete-download', 'deleteDownload', 'Удалить скачивание и его временный файл из этой сессии; незавершённое сначала отменяется.']
+      ] as const) server.registerTool(name, { description, inputSchema: { downloadId: z.string().min(1).max(200) } }, async ({ downloadId }) => {
+        if (!entry) return noContext
+        const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type, downloadId })
+        if (!result) return toolResult({ ok: false, error: 'Управление скачиваниями доступно только в Playwright Reader или Chromium-проверке.' })
+        const value = result.result
+        const confirmed = value && 'ok' in value && value.ok === true && (type === 'deleteDownload'
+          ? 'deletedDownloadId' in value && value.deletedDownloadId === downloadId
+          : 'download' in value && isBrowserDownloadInfo(value.download) && value.download.id === downloadId)
+        if (result.ok && !confirmed) return toolResult({ ok: false, error: 'Раннер не подтвердил изменение скачивания.' })
+        return toolResult(result)
+      })
       server.registerTool('dialogs', {
         description: 'Открытые JavaScript-диалоги Chromium: id, вкладка, тип, сообщение и исходный текст prompt. Диалог ждёт явного ответа handle-dialog; tabId сужает список.',
         inputSchema: { tabId: z.string().min(1).max(200).optional() }
