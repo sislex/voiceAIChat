@@ -44,6 +44,8 @@ services:
       HOST: 0.0.0.0
       PORT: "8787"
       VC_DATA_DIR: /data
+      # Web Reader использует те же разрешённые алиасы, что и browser-runner.
+      VC_BROWSER_HOST_ALIASES: ${VC_BROWSER_HOST_ALIASES:-}
       # Make — отдельный сервис (docs/plans/make-standalone.md): ядро переправляет
       # ему /api/make/*, превью и публикации, а исполнителю отдаёт его адрес MCP.
       # Токен и секрет общие с сервисом make; для прода задай случайные в .env.
@@ -364,6 +366,7 @@ services:
       HOST: 0.0.0.0
       PORT: "8795"
       VC_DATA_DIR: /data
+      VC_BROWSER_HOST_ALIASES: ${VC_BROWSER_HOST_ALIASES:-}
       VC_CORE_URL: http://voicechat:8787
       # Задать VC_MACHINES_URL=http://machines:8793, если машины тоже вынесены; пусто — машины у ядра.
       VC_MACHINES_URL: ${VC_READER_MACHINES_URL:-}

@@ -131,7 +131,8 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const access = props.llmAccess ?? []
   const models = llm.provider === 'codex' ? allowedModels(access, 'codex') : allowedModels(access, 'claude')
   const changeProvider = (provider: 'claude' | 'codex'): void => {
-    setLlm({ ...llm, provider, model: provider === 'codex' ? CODEX_MODELS[0].id : DEFAULT_CI_CLAUDE_MODEL }); setLlmSaved(false)
+    const model = allowedModels(access, provider)[0]?.id ?? (provider === 'codex' ? CODEX_MODELS[0].id : DEFAULT_CI_CLAUDE_MODEL)
+    setLlm({ ...llm, provider, model }); setLlmSaved(false)
   }
   const saveLlm = (): void => {
     void window.ci?.putTaskCiLlm(props.projectId, props.taskId, llm).then(() => { setLlmSaved(true); setLlmOverridden(true) })

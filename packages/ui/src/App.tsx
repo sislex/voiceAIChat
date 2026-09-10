@@ -998,7 +998,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [compactChat, sidebarOpen])
-  const [conversationSettingsTarget, setConversationSettingsTarget] = useState<{ id: string; conversation: Conversation | null } | null>(null)
+  const [conversationSettingsTarget, setConversationSettingsTarget] = useState<{ id: string; conversation: Conversation | null; allowInactive?: boolean } | null>(null)
   const conversationSettingsRequest = useRef(0)
   const contextSettingsRouteAttempt = useRef<string | null>(null)
   const [createChatOpen, setCreateChatOpen] = useState(false)
@@ -1701,19 +1701,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     conversationSettingsRequest.current++
     setConversationSettingsTarget(null)
   }, [])
-  const openConversationSettings = useCallback(async (id: string): Promise<void> => {
+  const openConversationSettings = useCallback(async (id: string, taskProjectId?: string): Promise<void> => {
     const request = ++conversationSettingsRequest.current
-    setConversationSettingsTarget({ id, conversation: null })
+    const allowInactive = Boolean(taskProjectId)
+    setConversationSettingsTarget({ id, conversation: null, allowInactive })
     void projectsActions.refreshProjects()
     try {
       const known = chat.activeConversation?.id === id ? chat.activeConversation : chat.conversations.find((entry) => entry.id === id)
-      const result = await api['conversations:get']({
-        id,
-        scope: known?.scope ?? 'chat',
-        ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {})
-      })
+      const scope = taskProjectId ? 'kanban' : known?.scope ?? 'chat'
+      const projectId = taskProjectId ?? (known?.scope === 'kanban' ? known.projectId : undefined)
+      const result = await api['conversations:get']({ id, scope, ...(scope === 'kanban' && projectId ? { projectId } : {}) })
       if (request !== conversationSettingsRequest.current) return
-      if (activeConversationIdRef.current !== id || !result || result.conversation.id !== id) {
+      if ((!allowInactive && activeConversationIdRef.current !== id) || !result || result.conversation.id !== id) {
         setConversationSettingsTarget(null)
         if (!result) toast.error('Настройки недоступны: разговор удалён или недоступен.')
         return
@@ -1748,7 +1747,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [chat.activeId, chatRoute, conversationSettingsTarget?.id, openConversationSettings])
   useEffect(() => {
     if (conversationSettingsTarget?.conversation || !conversationSettingsTarget) return
-    if (chat.activeId !== conversationSettingsTarget.id) closeConversationSettings()
+    if (!conversationSettingsTarget.allowInactive && chat.activeId !== conversationSettingsTarget.id) closeConversationSettings()
   }, [chat.activeId, closeConversationSettings, conversationSettingsTarget])
   // Каталог результатов активного чата — для чипа в шапке; обновляется при смене чата, закрытии настроек и после хода.
   const [activeStorage, setActiveStorage] = useState<ChatStorageView | null>(null)
@@ -3017,6 +3016,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onOpenChat={(taskId) => void projectsActions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
               onOpenMake={(conversationId) => navigate(`/make/${conversationId}`)}
               onEnsureChat={(taskId) => void projectsActions.ensureTaskChat(taskId)}
+              onOpenConversationSettings={(conversationId, projectId) => void openConversationSettings(conversationId, projectId)}
               ciSummaries={projects.ciSummaries}
               onStartCi={async (taskId) => { if (routeProjectId) { const run = await projectsActions.startCiRun(routeProjectId, taskId); if (run) projectsActions.openCiRun(run.id) } }}
               onStartCiParallel={async (taskId) => { if (routeProjectId) { const run = await projectsActions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }); if (run) projectsActions.openCiRun(run.id) } }}
