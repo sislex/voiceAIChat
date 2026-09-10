@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE } from '@shared/previewInspector'
 import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
@@ -330,4 +330,96 @@ describe('Recorder: подтверждённый адрес навигации',
     fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'javascript:alert(1)' })
     expect(sent(post).find(message => message.kind === 'page-status')).toMatchObject({ url: 'https://shop.example/' })
   })
+})
+
+describe('Reader: адрес и состояния загрузки', () => {
+  it('адрес без схемы открывается и сохраняется как HTTPS', () => {
+    const post = vi.spyOn(window, 'postMessage'); render(<Recorder />); fromHost({ ...init, previewUrl: null })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Адрес превью' }), { target: { value: 'gmail.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(sent(post)).toContainEqual(expect.objectContaining({ kind: 'save-url', url: 'https://gmail.com/' }))
+  })
+  it('относительный путь разрешается от текущей подтверждённой страницы', () => {
+    render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/catalog/page' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Адрес превью' }), { target: { value: '../next' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).getAttribute('src')).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/next'))
+  })
+  it('обновление использует живой адрес после SPA-перехода', () => {
+    render(<Recorder />); fromHost(init); const old = screen.getByTitle('Предпросмотр сайта')
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/new#/tab' })
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить страницу' }))
+    const next = screen.getByTitle('Предпросмотр сайта'); expect(next).not.toBe(old)
+    expect(next.getAttribute('src')).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/new#/tab'))
+  })
+  it('индикатор загрузки исчезает после ready', () => {
+    render(<Recorder />); fromHost(init); expect(screen.getByRole('status').textContent).toContain('Загружаем')
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE }); expect(screen.queryByText('Загружаем страницу…')).toBeNull()
+  })
+  it('ошибка ответа видна пользователю и host; повтор создаёт новую загрузку', async () => {
+    const post = vi.spyOn(window, 'postMessage'); render(<Recorder />); fromHost(init)
+    const old = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const document = old.contentDocument!; document.open(); document.write('{"message":"Сайт не ответил"}'); document.close(); fireEvent.load(old)
+    expect((await screen.findByRole('alert')).textContent).toContain('Сайт не ответил')
+    expect(sent(post)).toContainEqual(expect.objectContaining({ kind: 'page-status', status: 'error' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    expect(screen.getByTitle('Предпросмотр сайта')).not.toBe(old); expect(screen.queryByRole('alert')).toBeNull()
+  })
+  it('зависшая загрузка завершается сообщением, таймеры очищаются при unmount', () => {
+    vi.useFakeTimers()
+    try {
+      const view = render(<Recorder />); fromHost(init)
+      act(() => { vi.advanceTimersByTime(12_000) })
+      expect(screen.getByRole('alert').textContent).toContain('время ожидания')
+      view.unmount(); act(() => { vi.advanceTimersByTime(10) }); expect(vi.getTimerCount()).toBe(0)
+      const next = render(<Recorder />); fromHost(init); next.unmount(); act(() => { vi.advanceTimersByTime(10) }); expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+  it('отложенный onLoad старого iframe не сообщает ошибку нового адреса', () => {
+    vi.useFakeTimers()
+    try {
+      render(<Recorder />); fromHost(init); fireEvent.load(screen.getByTitle('Предпросмотр сайта'))
+      fromHost({ type, ...ids, kind: 'set-url', url: 'https://new.example/' })
+      act(() => { vi.advanceTimersByTime(100) }); expect(screen.queryByRole('alert')).toBeNull()
+    } finally { vi.useRealTimers() }
+  })
+})
+describe('Reader: инструменты и viewport', () => {
+  it('редактирование, выбор и захват не остаются активными одновременно', () => {
+    render(<Recorder />); fromHost(init)
+    const inspect = screen.getByRole('button', { name: '⌖ Выбор элемента', hidden: true }), edit = screen.getByRole('button', { name: '✎ Редактировать', hidden: true }), capture = screen.getByRole('button', { name: '📸 Область', hidden: true })
+    fireEvent.click(inspect); expect(inspect.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(edit); expect(inspect.getAttribute('aria-pressed')).toBe('false'); expect(edit.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(capture); expect(edit.getAttribute('aria-pressed')).toBe('false'); expect(capture.getAttribute('aria-pressed')).toBe('true')
+  })
+  it('Escape закрывает меню, возвращает фокус и выключает интерактивный режим', () => {
+    render(<Recorder />); fromHost(init)
+    const summary = screen.getByLabelText('Инструменты страницы', { selector: 'summary' }), details = summary.parentElement as HTMLDetailsElement
+    fromHost({ type, ...ids, kind: 'inspector-state', enabled: true }); details.open = true
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(details.open).toBe(false); expect(document.activeElement).toBe(summary)
+    expect(screen.getByRole('button', { name: '⌖ Выбор элемента', hidden: true }).getAttribute('aria-pressed')).toBe('false')
+  })
+  it('клик за пределами меню закрывает его', () => {
+    render(<Recorder />); const details = document.querySelector('details')!; details.open = true
+    fireEvent.pointerDown(screen.getByRole('textbox', { name: 'Адрес превью' })); expect(details.open).toBe(false)
+  })
+  it('широкий viewport не получает max-width, сжимающий тестовую страницу', () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'command', requestId: 'wide', action: { kind: 'viewport', width: 1024 } })
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    expect(frame.style.width).toBe('1024px'); expect(frame.style.minWidth).toBe('1024px'); expect(frame.style.maxWidth).toBe('')
+    expect(frame.parentElement?.className).toBe('webpreview-viewport')
+  })
+})
+
+
+it('старый onLoad не объявляет ошибкой новый медленный переход', async () => {
+  vi.useFakeTimers()
+  render(<Recorder />); fromHost(init)
+  fireEvent.load(screen.getByTitle('Предпросмотр сайта'))
+  fromPage({ type: 'voicechat.preview.page-loading.v1' })
+  await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next' })
+  cleanup(); vi.useRealTimers()
 })
