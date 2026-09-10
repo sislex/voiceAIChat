@@ -1,12 +1,13 @@
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { PreviewAction } from '@shared/previewActions'
+import type { RendererPreviewBridge } from '@shared/ipc'
 import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
 
 // Большие задержки пайплайна: асинхронные этапы не срабатывают за время теста,
@@ -144,16 +145,19 @@ describe('App — онбординг первого запуска', () => {
 describe('App — действия модели в веб-превью (мост window.preview)', () => {
   interface BridgeAction { conversationId: string; requestId: string; action: PreviewAction }
   interface BridgeResult { requestId: string; ok: boolean; result?: unknown; error?: string }
+  type BridgeChanged = Parameters<NonNullable<RendererPreviewBridge['onChanged']>>[0]
 
   /** Ставит фейковый мост и возвращает способ отправить действие + ответы. */
-  function installPreviewBridge(): { emit: (m: BridgeAction) => void; results: BridgeResult[] } {
+  function installPreviewBridge(): { emit: (m: BridgeAction) => void; changed: BridgeChanged; results: BridgeResult[] } {
     let onAction: ((m: BridgeAction) => void) | undefined
+    let onChanged: BridgeChanged | undefined
     const results: BridgeResult[] = []
     ;(window as { preview?: unknown }).preview = {
       onAction: (cb: (m: BridgeAction) => void) => { onAction = cb; return () => { onAction = undefined } },
+      onChanged: (cb: BridgeChanged) => { onChanged = cb; return () => { onChanged = undefined } },
       result: (m: BridgeResult) => results.push(m)
     }
-    return { emit: (m) => onAction?.(m), results }
+    return { emit: (m) => onAction?.(m), changed: (m) => onChanged?.(m), results }
   }
 
   afterEach(() => { delete (window as { preview?: unknown }).preview; delete (window as { browser?: unknown }).browser; window.location.hash = '' })
@@ -207,6 +211,35 @@ describe('App — действия модели в веб-превью (мост
     const init = post.mock.calls.map(([message]) => message as { kind?: string; conversationId?: string; registrationId?: string }).find((message) => message.kind === 'init')!
     return { post, ids: { conversationId: init.conversationId!, registrationId: init.registrationId! } }
   }
+
+  it.each(['HTTP', 'без Web Crypto'])('Reader сохраняет историю и повторяет действие: %s', async (environment) => {
+    const cryptoApi = globalThis.crypto
+    vi.stubGlobal('crypto', environment === 'HTTP' ? { getRandomValues: cryptoApi.getRandomValues.bind(cryptoApi) } : undefined)
+    try {
+      const api = createFakeApi([])
+      await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+      const chat = await api['conversations:create']({ title: 'Reader HTTP', assistantKind: 'web-recorder' })
+      window.location.hash = `#/web-reader/${chat.id}`
+      const bridge = installPreviewBridge()
+      const view = render(<App api={api} delays={SLOW} />)
+      const frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
+      const { post, ids } = await handshakeReader(frame)
+      fromReader(frame, { ...ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+      const change = { conversationId: chat.id, address: 'https://shop.example/', title: 'Shop', navigated: false }
+      act(() => {
+        bridge.changed({ ...change, conversationId: 'other', action: { kind: 'click', text: 'Чужая кнопка' } })
+        bridge.changed({ ...change, action: { kind: 'errors' } })
+        bridge.changed({ ...change, action: { kind: 'errors' } })
+      })
+      const history = await screen.findByRole('region', { name: 'Действия ассистента' })
+      expect(within(history).getAllByRole('listitem')).toHaveLength(2)
+      expect(within(history).queryByText('Нажал Чужая кнопка')).not.toBeInTheDocument()
+      await userEvent.click(within(history).getAllByRole('button', { name: 'Повторить' })[0])
+      await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'command', action: { kind: 'errors' }, requestId: expect.any(String) }), window.location.origin))
+      expect(screen.getByTitle('Web Reader')).toBe(frame)
+      view.unmount()
+    } finally { vi.unstubAllGlobals() }
+  })
 
   // WebReaderFrame + preview-мост живут на маршруте web-reader; Playwright Reader
   // теперь монтирует BrowserSessionPane поверх browser-runner (см. BrowserSessionPane.dom.test).
