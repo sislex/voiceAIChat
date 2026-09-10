@@ -103,7 +103,7 @@ export async function runScenarioStep(
   let truncated = false
   for (;;) {
     try {
-      const read = await send({ type: 'selector', action: { kind: 'read', limit: EXPECT_READ_LIMIT } }) as BrowserSelectorResult
+      const read = await send({ type: 'selector', ...(step.action.frame !== undefined ? { frame: step.action.frame } : {}), action: { kind: 'read', limit: EXPECT_READ_LIMIT } }) as BrowserSelectorResult
       pageText = typeof read?.text === 'string' ? read.text : ''
       truncated = read?.truncated === true
     } catch (error) {

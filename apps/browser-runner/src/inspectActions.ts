@@ -11,9 +11,12 @@ export interface InspectLogs {
 }
 
 /** Минимум от Playwright для вычисленных стилей и произвольного кода. */
+interface InspectLocator {
+  first(): InspectLocator
+  evaluate(fn: (node: unknown, arg: unknown) => unknown, arg?: unknown, options?: { timeout?: number }): Promise<unknown>
+}
 export interface InspectPage {
-  evaluate<T>(fn: (arg: { selector: string; properties: string[] }) => T, arg: { selector: string; properties: string[] }): Promise<T>
-  /** Код строкой — так модель присылает `evaluate`. */
+  locator(selector: string): InspectLocator
   evaluate(fn: string): Promise<unknown>
 }
 
@@ -67,19 +70,18 @@ export async function runInspectAction(logs: InspectLogs, page: InspectPage, act
   try {
     // Тело исполняется в браузере, а у пакета нет библиотеки DOM (это Node-сервис),
     // поэтому нужные глобальные объявляются здесь узкими типами.
-    const styles = await page.evaluate(({ selector, properties }) => {
+    const styles = await page.locator(action.selector).first().evaluate((node, argument) => {
+      const properties = argument as string[]
       const scope = globalThis as unknown as {
-        document: { querySelector(value: string): unknown }
         getComputedStyle(node: unknown): { getPropertyValue(name: string): string }
       }
-      const node = scope.document.querySelector(selector)
       if (!node) return null
       const computed = scope.getComputedStyle(node)
       const keys = properties.length ? properties : ['display', 'position', 'color', 'background-color', 'font-size', 'width', 'height']
       const out: Record<string, string> = {}
       for (const key of keys) out[key] = computed.getPropertyValue(key)
       return out
-    }, { selector: action.selector, properties: action.properties ?? [] })
+    }, action.properties ?? [], { timeout: 5000 }) as Record<string, string> | null
     if (!styles) return { ok: false, error: `Узел ${action.selector} не найден` }
     return { ok: true, styles }
   } catch (err) {

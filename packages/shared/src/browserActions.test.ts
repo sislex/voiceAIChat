@@ -126,3 +126,22 @@ describe('действия, добавленные кругом 9', () => {
       .toMatchObject({ command: { type: 'selector', action: { kind: 'upload', selector: '#file', name: 'a.png', mimeType: 'image/png' } } })
   })
 })
+
+
+it('сохраняет frame для навигации, DOM, ожидания и осмотра', () => {
+  for (const action of [
+    { kind: 'open' as const, url: 'https://child.test/' },
+    { kind: 'read' as const }, { kind: 'wait' as const, predicate: 'window.ready' },
+    { kind: 'evaluate' as const, code: 'location.href' }, { kind: 'styles' as const, selector: '#item' }
+  ]) {
+    const plan = planModelAction({ ...action, frame: ['#preview', '#child'] })
+    expect(plan).toMatchObject({ kind: 'command', command: { frame: ['#preview', '#child'] } })
+  }
+})
+
+it('frame не превращает координаты или общий фокус в действие по родительской странице', () => {
+  for (const action of [
+    { kind: 'press' as const, key: 'Enter' }, { kind: 'back' as const }, { kind: 'console' as const },
+    { kind: 'drag' as const, from: { x: 1, y: 2 }, to: { x: 3, y: 4 } }
+  ]) expect(planModelAction({ ...action, frame: '#preview' })).toMatchObject({ kind: 'unsupported' })
+})

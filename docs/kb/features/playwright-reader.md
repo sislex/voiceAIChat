@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-10
-checked: b5e6fe3a
+checked: 30d04e5b
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -9,6 +9,7 @@ areas:
   - apps/server/src/playwrightReaderBridge
   - apps/server/src/routes/browserShots.ts
   - packages/shared/src/playwrightReader.ts
+  - packages/shared/src/browserFrames.ts
   - packages/shared/src/types.ts
   - packages/shared/src/ipc.ts
   - packages/playwright-reader-app
@@ -396,7 +397,7 @@ hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт ме�
 Пустой `innerText` не подменяется исходниками script/style из `textContent`.
 Реализация — `apps/browser-runner/src/pageReading.ts`, контракт —
 `BrowserSelectorResult` в shared. Ссылки и адреса iframe восстанавливают публичные
-host aliases так же, как URL страницы. Каталог iframe не означает чтение их DOM.
+host aliases так же, как URL страницы. Поле read.frames перечисляет iframe текущего DOM; их содержимое читается явно через frame, а живое дерево и адреса после редиректов возвращает отдельный инструмент frames.
 
 `read` принимает `limit` (100–20 000, по умолчанию 4000) и `offset`; возвращает
 `total`, `offset`, а при остатке — `truncated` и `nextOffset`. Структурированные
@@ -494,6 +495,53 @@ MCP-инструмента, **до** выбора транспорта, поэт
 подтверждение опасного кода применяются к браузерному пути сами — второго гейта
 писать не пришлось. Раннер сериализует результат и режет его по 20 000 символов:
 в лог рана и в ответ модели уходит текст.
+
+### Вложенные документы (цикл проверки 09, 2026-09-10)
+
+`frames` возвращает живые iframe активной вкладки: path, фактический публичный URL,
+заголовок, name и visible. Каталог ограничен 100 документами, восемью уровнями и
+24 000 символами JSON; total/truncated сообщают усечение. Видимость вложенного
+iframe учитывает родительский. `read.frames.src` остаётся атрибутом DOM и может
+отличаться от адреса после редиректа. Контракт — `browserFrames.ts`, дерево и
+разрешение пути — `apps/browser-runner/src/frames.ts`.
+
+Модель передаёт `frame` как один селектор iframe или цепочку path от frames.
+DOM-действия, read/find/a11y, wait, evaluate, styles, open и screenshot работают
+в выбранном документе, включая другой origin и вложенные iframe. Селекторы в
+результате относительны ему, верхняя страница остаётся page, выбранная — frame
+в ответе. Метаданные вычисляются после действия; detached отмечает удалённый
+документ. Путь заново разрешается перед каждым действием, поэтому замена iframe
+в SPA не оставляет старый handle. Несколько совпадений, пустая цепочка и элемент,
+не являющийся iframe, дают ошибку, без действия на родительской странице.
+
+`open` с frame меняет только iframe и использует ту же проверку URL и host aliases.
+Ожидание использует локальные URL/loadState/predicate, включая время поиска самого
+iframe в общий срок. JS predicate/evaluate проходят прежнюю проектную политику
+MCP. `press` с frame требует selector, drag — два селектора; координаты, общие
+логи и управление вкладками не принимают frame. Fallback в Web Reader с frame
+явно отклоняется. Новый MCP styles читает вычисленные свойства через локатор,
+поэтому принимает и селекторы Shadow DOM. frames/styles включены в Claude allow-list.
+
+Снимок frame показывает видимую область iframe; selector ограничивает её элементом.
+Большой элемент обрезается пересечением с окнами iframe и верхней страницы,
+метаданные сообщают clipped и реальные координаты документа. Нативный снимок
+body внутри iframe был проверен: за границей окна он рисует пустоту. Поэтому
+fullPage и rect вместе с frame явно отклоняются. Таймаут общий для поиска iframe,
+прокрутки и снимка; frame/clipped доходят через HTTP-заголовок и порт приложения в MCP.
+
+Координатное describe раскрывает iframe через Playwright Frame, не через
+запрещённый cross-origin contentDocument, и учитывает рамку и CSS scale.
+Описание содержит относительный selector и цепочку frame; recordClick/recordType
+копируют её в шаг. runScenarioStep читает ожидаемый текст в том же frame.
+Первый open с frame остаётся шагом, не заменяя startUrl верхнего документа.
+Закрытые shadow roots и запись внутри повёрнутого iframe не поддерживаются;
+для повёрнутого iframe описание возвращает явную ошибку.
+
+Регрессии — `sessionFrames.test.ts`: два HTTP-origin, редирект вложенного документа,
+формы, стиль Shadow DOM, замена iframe, масштаб, снимки и воспроизведение сценария.
+E2E создаёт настоящую форму Make через REST в временном проекте, открывает Make
+в Reader, находит его iframe через frames и вводит/нажимает/читает через MCP.
+Отдельный E2E проверяет два вложенных документа и снимок с усечением.
 
 ### Вкладки модели и popup (цикл 04, 2026-09-10)
 

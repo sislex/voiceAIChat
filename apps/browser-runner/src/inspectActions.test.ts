@@ -16,7 +16,10 @@ const logs = (): InspectLogs => ({
     { method: 'POST', url: 'https://a.b/api/save', status: 500, ok: false, at: 2 }
   ]
 })
-const page = (result: unknown = { display: 'flex' }): InspectPage => ({ evaluate: vi.fn(async () => result as never) })
+const page = (result: unknown = { display: 'flex' }): InspectPage => {
+  const locator = { first: () => locator, evaluate: vi.fn(async () => result) }
+  return { evaluate: vi.fn(async () => result), locator: () => locator }
+}
 
 describe('осмотр страницы', () => {
   it('консоль фильтруется по уровню', async () => {

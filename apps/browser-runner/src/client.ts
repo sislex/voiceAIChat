@@ -6,7 +6,7 @@
 // одному владельцу — проверяется до вызова), userKey = uid, conversationKey =
 // conversationId. Раннер сверяет пару при повторном старте (identity mismatch).
 
-import { BROWSER_SCREENSHOT_HEADER, type BrowserScreenshotMetadata, type BrowserCommandRequest, type BrowserInspectResult, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@voicechat/shared'
+import { BROWSER_SCREENSHOT_HEADER, type BrowserScreenshotMetadata, type BrowserFramesResult, type BrowserCommandRequest, type BrowserInspectResult, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@voicechat/shared'
 
 export interface BrowserRunnerClientOptions {
   baseUrl: string
@@ -17,7 +17,7 @@ export interface BrowserRunnerClientOptions {
 }
 
 /** Что возвращает раннер на команду — зависит от её типа. */
-export type BrowserRunnerCommandResult = BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult
+export type BrowserRunnerCommandResult = BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult
 
 /** Ошибка вызова раннера с кодом, пригодным для маппинга в HTTP-статус роута. */
 export class BrowserRunnerError extends Error {

@@ -1,4 +1,4 @@
-import type { BrowserActionOutcome, BrowserControlCommand, BrowserModelScreenshotOptions } from '@voicechat/shared'
+import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, BrowserModelScreenshotOptions } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
 // пользователя (открыть URL, найти элемент, клик, ввод текста, структурированное
 // чтение DOM). Сама страница живёт в браузере пользователя, поэтому сервер не
@@ -240,10 +240,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         // в браузере пользователя, как раньше.
         const direct = await opts.browserExecutor?.(entry.userId, entry.conversationId, action)
         if (direct) return toolResult(direct)
+        if (action.frame !== undefined) return toolResult({ ok: false, error: 'frame доступен только в Playwright Reader или Chromium-проверке.' })
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
         return toolResult(outcome)
       }
       const L = PREVIEW_ACTION_LIMITS
+      const frameSchema = z.union([z.string().trim().min(1).max(L.selector), z.array(z.string().trim().min(1).max(L.selector)).min(1).max(8)]).optional().describe('Селектор iframe или цепочка вложенных iframe из frames. Только Chromium; без параметра — верхняя страница.')
       // Одинаковое разрешение машины для open и new-tab: доступ берётся из хода.
       const resolveUrl = async (url: string): Promise<{ url: string } | { error: string }> => {
         if (!isHttpUrl(url)) return { error: 'Разрешены только HTTP и HTTPS адреса с протоколом.' }
@@ -262,6 +264,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         return toolResult(result ?? { ok: false, error: 'Эта команда доступна только для Playwright Reader или Chromium-проверки задачи.' })
       }
       for (const [name, type, description] of [
+        ['frames', 'frames', 'Живые iframe выбранной вкладки: frame path, фактический URL после редиректа, заголовок, имя и видимость. Передавай path как frame последующим инструментам.'],
         ['tabs', 'status', 'Список вкладок Playwright Reader: id, URL, заголовок, активная вкладка и openerTabId всплывающего окна. Не меняет активную вкладку.'],
         ['reload', 'reload', 'Перезагрузить активную вкладку Playwright Reader и дождаться DOM.'],
         ['stop-loading', 'stop', 'Остановить загрузку активной страницы Playwright Reader, сохранив вкладку и браузерную сессию.']
@@ -289,11 +292,11 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата. ' +
             'Только HTTP/HTTPS. Тестовое окружение на машине этого разговора открывается адресом ' +
             'http://machine.internal:<порт>/ — запрос уйдёт на 127.0.0.1:<порт> машины.',
-          inputSchema: { url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
+          inputSchema: { frame: frameSchema, url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
         },
-        async ({ url }) => {
+        async ({ frame, url }) => {
           const target = await resolveUrl(url)
-          return 'error' in target ? toolResult({ ok: false, error: target.error }) : run({ kind: 'open', url: target.url })
+          return 'error' in target ? toolResult({ ok: false, error: target.error }) : run({ kind: 'open', ...(frame !== undefined ? { frame } : {}), url: target.url })
         }
       )
 
@@ -303,16 +306,16 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Навести курсор на элемент открытой в превью страницы (pointer/mouse-события): раскрывает выпадающие ' +
             'меню и hover-состояния. Нужен selector или text.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
             text: z.string().max(L.text).optional().describe('Видимый текст элемента')
           }
         },
-        async ({ selector, text }) => {
+        async ({ frame, selector, text }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
-          return run({ kind: 'hover', ...(selector ? { selector } : {}), ...(text ? { text } : {}) })
+          return run({ kind: 'hover', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(text ? { text } : {}) })
         }
       )
 
@@ -322,17 +325,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Прокрутить открытую в превью страницу или контейнер: to — к краю, dy — на пиксели (отрицательное — вверх). ' +
             'Полезно для лент с ленивой подгрузкой. Возвращает позицию прокрутки.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера (без него — окно)'),
             to: z.enum(['top', 'bottom']).optional().describe('Прокрутить к началу или концу'),
             dy: z.number().optional().describe('Сдвиг в пикселях (отрицательное значение — вверх)')
           }
         },
-        async ({ selector, to, dy }) => {
+        async ({ frame, selector, to, dy }) => {
           if (to === undefined && typeof dy !== 'number') {
             return { content: [{ type: 'text', text: 'Укажи to (top|bottom) или dy (пиксели).' }], isError: true }
           }
-          return run({ kind: 'scroll', ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}) })
+          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}) })
         }
       )
 
@@ -342,12 +345,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Нажать клавишу на открытой в превью странице (keydown+keyup): Escape, Enter, Tab, ArrowDown и т. п. ' +
             'selector фокусирует элемент перед нажатием; без него — активный элемент страницы.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             key: z.string().min(1).max(32).describe('Имя клавиши как в KeyboardEvent.key (Escape, Enter, ArrowDown, a…)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя')
           }
         },
-        async ({ key, selector }) => run({ kind: 'press', key, ...(selector ? { selector } : {}) })
+        async ({ frame, key, selector }) => run({ kind: 'press', ...(frame !== undefined ? { frame } : {}), key, ...(selector ? { selector } : {}) })
       )
 
       server.registerTool(
@@ -357,7 +360,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'Скриншот открытой в превью страницы: элемента по CSS-селектору, области rect (координаты документа) ' +
             'или видимой части без аргументов. В Chromium доступны fullPage, animations и timeoutMs. ' +
             'Снимок Chromium имеет CSS-масштаб 1:1 с координатами действий. Возвращает картинку и контекст страницы.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента для снимка'),
             rect: z.object({ x: z.number().finite().nonnegative(), y: z.number().finite().nonnegative(), width: z.number().finite().positive(), height: z.number().finite().positive() }).optional().describe('Область в координатах документа страницы'),
             fullPage: z.boolean().optional().describe('Вся страница Chromium, включая область ниже окна'),
@@ -365,7 +368,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             timeoutMs: z.number().int().min(100).max(30000).optional().describe('Ожидание снимка Chromium, включая шрифты; по умолчанию 10000 мс')
           }
         },
-        async ({ selector, rect, fullPage, animations, timeoutMs }) => {
+        async ({ frame, selector, rect, fullPage, animations, timeoutMs }) => {
           if (!entry) return noContext
           if ([Boolean(selector), Boolean(rect), fullPage === true].filter(Boolean).length > 1) return toolResult({ ok: false, error: 'Выбери один режим снимка: selector, rect или fullPage' })
           // Единственный инструмент со своим транспортом: он отдаёт картинку, а
@@ -373,18 +376,19 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           // в Playwright Reader снимок уходил в браузер пользователя, где
           // страницы этого разговора нет, и модель оставалась без вида страницы.
           const direct = await opts.browserScreenshot?.(entry.userId, entry.conversationId, {
+            ...(frame !== undefined ? { frame } : {}),
             ...(selector ? { selector } : {}), ...(rect ? { rect } : {}),
             ...(fullPage !== undefined ? { fullPage } : {}), ...(animations ? { animations } : {}),
             ...(timeoutMs !== undefined ? { timeoutMs } : {})
           })
-          if (!direct && (fullPage || animations || timeoutMs !== undefined)) return toolResult({ ok: false, error: 'fullPage, animations и timeoutMs доступны только в Playwright Reader или Chromium-проверке.' })
+          if (!direct && (frame !== undefined || fullPage || animations || timeoutMs !== undefined)) return toolResult({ ok: false, error: 'frame, fullPage, animations и timeoutMs доступны только в Playwright Reader или Chromium-проверке.' })
           const outcome = direct ?? await opts.relay.request(entry.userId, entry.conversationId, {
             kind: 'screenshot',
             ...(selector ? { selector } : {}),
             ...(rect ? { rect } : {})
           }, opts.timeoutMs)
           if (!outcome.ok) return toolResult(outcome)
-          const result = outcome.result as { dataUrl?: string; page?: { url: string; title: string }; rect?: { x: number; y: number; width: number; height: number } } | undefined
+          const result = outcome.result as BrowserImageResult | undefined
           const match = typeof result?.dataUrl === 'string' ? /^data:(image\/[a-z+]+);base64,(.+)$/.exec(result.dataUrl) : null
           if (!match) {
             return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
@@ -393,7 +397,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           return {
             content: [
               { type: 'image' as const, data: match[2], mimeType: match[1] },
-              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${result?.page ? `\nСтраница: ${JSON.stringify(result.page)}` : ''}` }
+              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${result?.page ? `\nСтраница: ${JSON.stringify(result.page)}` : ''}${result?.frame ? `\nДокумент iframe: ${JSON.stringify(result.frame)}` : ''}${result?.clipped ? '\nЭлемент выходит за границы iframe; показана только видимая часть.' : ''}` }
             ]
           }
         }
@@ -418,7 +422,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'В Chromium доступны state, enabled, editable, checked, value, count, URL, loadState и predicate. ' +
             'Условия делят один таймаут до 30000 мс (по умолчанию 5000). Ответ сообщает время ожидания. ' +
             'load не ждёт будущие запросы SPA: для них используй содержимое или predicate.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('Селектор ожидаемого элемента'),
             text: z.string().max(L.text).optional().describe('Текст элемента или текст внутри selector'),
             state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional().describe('Состояние элемента; по умолчанию visible, при count проверяется наличие узлов'),
@@ -436,7 +440,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         async (options) => {
           if (!isBrowserWaitOptions(options)) return { content: [{ type: 'text', text: 'Укажи selector/text или url/loadState/predicate и совместимые условия ожидания.' }], isError: true }
           const action = { kind: 'wait' as const, ...options }
-          if (browserWaitRequiresChromium(options)) {
+          if (options.frame !== undefined || browserWaitRequiresChromium(options)) {
             if (!entry) return noContext
             if (options.predicate) {
               // Повторяющееся условие не должно обходить project gate evaluate.
@@ -502,18 +506,23 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         async ({ pattern, level, clear, limit }) => run({ kind: 'console', ...(pattern ? { pattern } : {}), ...(level ? { level } : {}), ...(clear !== undefined ? { clear } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
       )
 
+      server.registerTool('styles', {
+        description: 'Вычисленные CSS-свойства элемента. selector принимает целиком результат find/read, включая Shadow DOM; frame выбирает вложенный документ Chromium.',
+        inputSchema: { frame: frameSchema, selector: z.string().min(1).max(L.selector), properties: z.array(z.string().min(1).max(128)).max(50).optional() }
+      }, async ({ frame, selector, properties }) => run({ kind: 'styles', selector, ...(frame !== undefined ? { frame } : {}), ...(properties ? { properties } : {}) }))
+
       server.registerTool(
         'evaluate',
         {
           description:
             'Выполнить JavaScript в контексте открытой в превью страницы и получить JSON результата (await для промисов). ' +
             'Для чтения состояния приложения, вызова функций страницы и нестандартных контролов, недоступных click/type.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             code: z.string().min(1).max(L.evaluateCode).describe('JS-выражение или код; результат сериализуется JSON'),
             confirm: z.boolean().optional().describe('true — пользователь явно подтвердил изменение страницы/хранилища/сети')
           }
         },
-        async ({ code, confirm }) => {
+        async ({ frame, code, confirm }) => {
           if (!entry) return noContext
           const verdict = await opts.context?.gateEvaluate?.(entry, code, confirm === true)
           req.log.info({ event: 'reader.evaluate', userId: entry.userId, conversationId: entry.conversationId, allowed: verdict?.allowed ?? true, confirmed: confirm === true, reason: verdict?.reason }, 'reader evaluate gate')
@@ -521,7 +530,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             const prefix = verdict.needsConfirmation ? 'Требуется подтверждение пользователя. ' : 'Отклонено политикой проекта. '
             return { content: [{ type: 'text', text: prefix + (verdict.reason ?? '') }], isError: true }
           }
-          return run({ kind: 'evaluate', code })
+          return run({ kind: 'evaluate', ...(frame !== undefined ? { frame } : {}), code })
         }
       )
 
@@ -536,14 +545,14 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Перетащить элемент открытой в превью страницы (канбан, сортировка, слайдеры): pointer-события ' +
             'от from к to (или HTML5 DnD у draggable-элементов). Точка — {selector} или {x, y}.',
-          inputSchema: { from: dragPoint.describe('Откуда'), to: dragPoint.describe('Куда') }
+          inputSchema: { frame: frameSchema, from: dragPoint.describe('Откуда'), to: dragPoint.describe('Куда') }
         },
-        async ({ from, to }) => {
+        async ({ frame, from, to }) => {
           const valid = (p: { selector?: string; x?: number; y?: number }): boolean => Boolean(p.selector) || (typeof p.x === 'number' && typeof p.y === 'number')
           if (!valid(from) || !valid(to)) {
             return { content: [{ type: 'text', text: 'У from и to укажи selector либо пару x и y.' }], isError: true }
           }
-          return run({ kind: 'drag', from, to })
+          return run({ kind: 'drag', ...(frame !== undefined ? { frame } : {}), from, to })
         }
       )
 
@@ -553,17 +562,17 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Установить значение сложного контрола формы на открытой в превью странице: select (value или видимая подпись option), ' +
             'checkbox/radio (checked), date/range/текстовые поля (value). События input/change диспатчатся как при живом вводе.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор контрола'),
             value: z.string().max(L.text).optional().describe('Значение (для select — value или подпись option)'),
             checked: z.boolean().optional().describe('Для checkbox/radio')
           }
         },
-        async ({ selector, value, checked }) => {
+        async ({ frame, selector, value, checked }) => {
           if (value === undefined && checked === undefined) {
             return { content: [{ type: 'text', text: 'Укажи value или checked.' }], isError: true }
           }
-          return run({ kind: 'set', selector, ...(value !== undefined ? { value } : {}), ...(checked !== undefined ? { checked } : {}) })
+          return run({ kind: 'set', ...(frame !== undefined ? { frame } : {}), selector, ...(value !== undefined ? { value } : {}), ...(checked !== undefined ? { checked } : {}) })
         }
       )
 
@@ -573,14 +582,14 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Загрузить файл в input type=file открытой в превью страницы: содержимое передаётся base64 (до 8 МиБ). ' +
             'Диспатчит input/change как при выборе файла пользователем.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор input type=file'),
             name: z.string().min(1).max(255).describe('Имя файла (например report.csv)'),
             base64: z.string().max(L.uploadBase64).describe('Содержимое файла в base64; пустая строка — файл нулевой длины'),
             mimeType: z.string().max(100).optional().describe('MIME-тип (по умолчанию application/octet-stream)')
           }
         },
-        async ({ selector, name, base64, mimeType }) => run({ kind: 'upload', selector, name, base64, ...(mimeType ? { mimeType } : {}) })
+        async ({ frame, selector, name, base64, mimeType }) => run({ kind: 'upload', ...(frame !== undefined ? { frame } : {}), selector, name, base64, ...(mimeType ? { mimeType } : {}) })
       )
 
       server.registerTool(
@@ -600,12 +609,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Дерево доступности открытой в превью страницы: роли и имена элементов, как их видит скринридер ' +
             '(button «Сохранить», textbox «Пароль»), с селекторами для click/type. Компактнее read для навигации по UI.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
             limit: z.number().positive().max(L.a11yNodes).optional().describe(`Максимум узлов (по умолчанию ${L.a11yNodes})`)
           }
         },
-        async ({ selector, limit }) => run({ kind: 'a11y', ...(selector ? { selector } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
+        async ({ frame, selector, limit }) => run({ kind: 'a11y', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
       )
 
       server.registerTool(
@@ -680,13 +689,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'Структурированное содержимое открытой в превью страницы: заголовки, ссылки, кнопки, поля ввода ' +
             'и текстовая выжимка. Chromium также описывает таблицы и iframe. selector ограничивает чтение поддеревом. ' +
             'Для длинного текста повторяй read с offset из nextOffset; structureTruncated означает, что структуру лучше читать по selector.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
             limit: z.number().int().min(100).max(20_000).optional().describe('Символов текста в порции (по умолчанию 4000)'),
             offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Начальная позиция текста; продолжение берётся из nextOffset')
           }
         },
-        async ({ selector, limit, offset }) => run({ kind: 'read', ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}) })
+        async ({ frame, selector, limit, offset }) => run({ kind: 'read', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(limit !== undefined ? { limit } : {}), ...(offset !== undefined ? { offset } : {}) })
       )
 
       server.registerTool(
@@ -695,19 +704,19 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Найти элементы на открытой в превью странице по видимому тексту или CSS-селектору. ' +
             'Возвращает селекторы для click/type. Нужен text или selector.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             text: z.string().max(L.text).optional().describe('Видимый текст элемента (регистр не важен)'),
             selector: z.string().max(L.selector).optional().describe('CSS-селектор'),
             limit: z.number().optional().describe(`Максимум элементов (по умолчанию ${L.findDefault}, не больше ${L.findMax})`),
             visibleOnly: z.boolean().optional().describe('Исключить скрытые элементы до применения лимита')
           }
         },
-        async ({ text, selector, limit, visibleOnly }) => {
+        async ({ frame, text, selector, limit, visibleOnly }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи text или selector.' }], isError: true }
           }
           return run({
-            kind: 'find',
+            kind: 'find', ...(frame !== undefined ? { frame } : {}),
             ...(text ? { text } : {}),
             ...(selector ? { selector } : {}),
             ...(typeof limit === 'number' ? { limit } : {}),
@@ -723,7 +732,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             'Клик по элементу открытой в превью страницы: по CSS-селектору или по видимому тексту ' +
             '(кликается ближайший кликабельный элемент). Нужен selector или text. ' +
             'dblclick — двойной, button: right — контекстное меню, modifiers — клик с зажатыми клавишами.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
             text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
             button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
@@ -731,12 +740,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ selector, text, button, dblclick, modifiers }) => {
+        async ({ frame, selector, text, button, dblclick, modifiers }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
           return run({
-            kind: 'click',
+            kind: 'click', ...(frame !== undefined ? { frame } : {}),
             ...(selector ? { selector } : {}),
             ...(text ? { text } : {}),
             ...(button ? { button } : {}),
@@ -751,13 +760,13 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Ввести текст в поле открытой в превью страницы (CSS-селектор поля). submit: true — отправить форму после ввода.',
-          inputSchema: {
+          inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).describe('CSS-селектор поля ввода'),
             text: z.string().max(L.text).describe('Текст для ввода'),
             submit: z.boolean().optional().describe('Отправить форму после ввода')
           }
         },
-        async ({ selector, text, submit }) => run({ kind: 'type', selector, text, ...(submit !== undefined ? { submit } : {}) })
+        async ({ frame, selector, text, submit }) => run({ kind: 'type', ...(frame !== undefined ? { frame } : {}), selector, text, ...(submit !== undefined ? { submit } : {}) })
       )
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
