@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 22208a32
+checked: d4bf0c9f
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -203,6 +203,23 @@ redirect сохраняются до следующего запроса. HTTP r
 более строгий upstream no-store сохраняется до браузера. Мутации очищают старые
 ресурсы машины. HTTP-регрессии — `previewCache.integration.test.ts`, браузерные —
 `e2e/webReaderCache.e2e.test.ts`.
+
+Текстовый ответ декодирует `previewResponse.ts`: BOM имеет приоритет, затем HTTP
+charset, meta charset/http-equiv HTML, декларация XML или CSS @charset; fallback
+UTF-8. Переписанные HTML/CSS/JS всегда объявляются браузеру как UTF-8. JSON и бинарь
+не проходят текстовое преобразование, в том числе при чтении собственного ядра.
+Gzip/br/deflate распаковываются до переписывания в каждом транспорте; заголовок
+Content-Encoding снимается, лимит 5 MiB проверяется и после распаковки. Повреждённый
+поток, неподдерживаемое сжатие и превышение лимита возвращают понятную ошибку;
+пустой HEAD/204 не отправляется в декомпрессор.
+
+Общая политика redirect сохраняет PUT/HEAD и 307/308 с телом; 301/302 переводят
+в GET только POST, 303 — всё кроме HEAD. После сброса тела удаляются его заголовки,
+при смене origin — авторизация; неявный fragment наследуется, явный пустой сбрасывает
+его. Локальный адрес машины и HTTP app.internal сначала возвращаются к логическому
+origin, чтобы не потерять авторизацию собственного сайта. Не-HTTP redirect закрыт.
+Проверки: `previewResponse.test.ts`, `previewResponse.integration.test.ts`,
+`webReaderEncoding.e2e.test.ts`.
 
 DOM-действия click/type/set используют `previewInteractions.ts`: выбирается
 единственная видимая цель, а неоднозначность возвращает кандидатов вместо первого
