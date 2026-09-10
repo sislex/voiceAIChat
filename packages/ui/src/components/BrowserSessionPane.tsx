@@ -1,3 +1,4 @@
+import { BrowserDownloadsPane } from './BrowserDownloadsPane'
 import { BrowserSiteDialog } from './BrowserSiteDialog'
 import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/browserInput'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
@@ -108,6 +109,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const [message, setMessage] = useState<string>('')
   // Журналы страницы: раннер копит их с открытия, но до круга 11 показать их
   // было негде — человек видел белый экран и не знал, что упал запрос.
+  const [downloadsOpen, setDownloadsOpen] = useState(false)
   const [diagnostics, setDiagnostics] = useState<{ console: BrowserConsoleEntry[]; network: BrowserNetworkEntry[] } | null>(null)
   // Запись сценария: ради неё Reader и делается инструментом автотестов —
   // человек проходит путь руками, а на выходе воспроизводимые шаги.
@@ -632,6 +634,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         </label>
       )}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadDiagnostics()}>Ошибки страницы</Button>
+      <Button size="sm" variant={downloadsOpen ? 'primary' : 'ghost'} disabled={phase !== 'ready'} aria-expanded={downloadsOpen} onClick={() => setDownloadsOpen(value => !value)}>Скачивания{meta?.downloadCount ? ` (${meta.downloadCount})` : ''}</Button>
       {/* Профиль persistent, поэтому «выйти и посмотреть экран входа» иначе
           нечем: перезапуск сессии куки не трогает. */}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready' || busy} onClick={() => void (async () => {
@@ -705,6 +708,14 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       }} />}
       {busy && !activeDialog && <span className="playwright-reader-busy" role="status">Выполняется…</span>}
     </div>
+    {downloadsOpen && <BrowserDownloadsPane downloads={meta?.downloads ?? []} count={meta?.downloadCount ?? 0} onCommand={async command => {
+      if (!browser || !incarnation.current) throw new Error('Браузер недоступен')
+      const generation = alive.current
+      const result = await browser.command(conversationId, { incarnation: incarnation.current, command })
+      if (generation !== alive.current) throw new Error('Сессия изменилась')
+      if (command.type === 'cancelDownload' || command.type === 'deleteDownload') void refreshFrame(true)
+      return result
+    }} />}
     {steps.length > 0 && (
       <div className="playwright-reader-record" role="region" aria-label="Записанный сценарий">
         <div className="playwright-reader-record__head">

@@ -1,3 +1,5 @@
+import { BrowserDownloads } from './downloads.js'
+import { browserDownloadList, type BrowserDownloadResult } from '@voicechat/shared'
 import { BrowserDialogs } from './dialogs.js'
 import { boundedBrowserDialogs, type BrowserDialogListResult } from '@voicechat/shared'
 import { runBrowserInput } from './inputActions.js'
@@ -7,7 +9,7 @@ import { readReaderProfile, writeReaderProfile } from './profileState.js'
 import { resolveFrame, framePage, listFrames, framePath } from './frames.js'
 import { describeFramePoint } from './frameDescription.js'
 import { captureFrame } from './frameCapture.js'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, readdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
@@ -18,6 +20,8 @@ import { runInspectAction } from './inspectActions.js'
 import { capturePage, type BrowserCapture } from './screenshots.js'
 
 interface Session {
+  downloads: BrowserDownloads
+  downloadsPath: string
   dialogs: BrowserDialogs
   id: string
   userKey: string
@@ -129,17 +133,27 @@ export class BrowserSessionManager {
     const profileMode = request.profileMode ?? 'ephemeral'
     const saved = profileMode === 'persistent' ? await readReaderProfile(path) : null
     const viewport = request.viewport ?? saved?.viewport ?? { width: 1280, height: 800, deviceScaleFactor: 1 }
+    const downloadsPath = path + '/reader-downloads-' + randomUUID()
     const context = await chromium.launchPersistentContext(path, {
+      downloadsPath,
       headless: true,
       viewport: { width: viewport.width, height: viewport.height },
       deviceScaleFactor: viewport.deviceScaleFactor,
-      acceptDownloads: false,
+      acceptDownloads: true,
       permissions: [],
       serviceWorkers: 'allow'
-    })
+    }).catch(async error => { await rm(downloadsPath, { recursive: true, force: true }).catch(() => undefined); throw error })
     try {
+      // После захвата Chromium-профиля прежней живой сессии здесь уже нет.
+      // Удаляем только свои UUID-каталоги, оставшиеся после аварийного выхода.
+      for (const entry of await readdir(path, { withFileTypes: true })) {
+        const stale = path + '/' + entry.name
+        if (entry.isDirectory() && /^reader-downloads-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.name) && stale !== downloadsPath) await rm(stale, { recursive: true, force: true })
+      }
       const session: Session = {
         dialogs: new BrowserDialogs(),
+        downloads: new BrowserDownloads(url => this.publicUrl(url)),
+        downloadsPath,
         id: request.sessionId,
         userKey: request.userKey,
         conversationKey: request.conversationKey,
@@ -156,6 +170,7 @@ export class BrowserSessionManager {
         origins: new Set(saved?.origins ?? []), bootstrapCookies: [],
         lastUsedAt: Date.now()
       }
+      await session.downloads.attachLimits(context, downloadsPath)
       await context.route('**/*', async (route) => {
         try {
           const requested = validatePublicUrl(route.request().url(), this.allowedTargets)
@@ -186,6 +201,7 @@ export class BrowserSessionManager {
         session.pageIds.set(page, id)
         session.pages.set(id, page)
         session.dialogs.register(page, id)
+        session.downloads.register(page, id)
         page.on('close', () => {
           session.pages.delete(id)
           session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id, session.openerIds.get(id))
@@ -217,7 +233,7 @@ export class BrowserSessionManager {
       session.activeTabId = register(initial)
       context.on('page', (page) => register(page))
       const entry = this.sessions.get(request.sessionId)
-      context.on('close', () => { if (this.sessions.get(request.sessionId) === entry) this.sessions.delete(request.sessionId) })
+      context.on('close', () => { if (this.sessions.get(request.sessionId) === entry) this.sessions.delete(request.sessionId); void rm(downloadsPath, { recursive: true, force: true }).catch(() => undefined) })
       if (saved?.cookies.length) await context.addCookies(saved.cookies).catch(() => undefined)
       await this.applyCookies(session, request.cookies)
       if (saved?.url && saved.url !== 'about:blank') {
@@ -228,6 +244,7 @@ export class BrowserSessionManager {
       return session
     } catch (error) {
       await context.close().catch(() => undefined)
+      await rm(downloadsPath, { recursive: true, force: true }).catch(() => undefined)
       if (profileMode !== 'persistent') await rm(path, { recursive: true, force: true }).catch(() => undefined)
       throw error
     }
@@ -266,6 +283,7 @@ export class BrowserSessionManager {
         catch (error) { saveError = error }
       }
       await session.context.close()
+      if (session.downloadsPath) await rm(session.downloadsPath, { recursive: true, force: true }).catch(() => undefined)
       if (session.profileMode !== 'persistent') await rm(session.profileDir, { recursive: true, force: true }).catch(() => undefined)
       if (this.sessions.get(sessionId) === pending) this.sessions.delete(sessionId)
       if (saveError) throw new Error('Профиль Reader не удалось сохранить')
@@ -291,11 +309,19 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult | BrowserDownloadResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
     const command = request.command
+    if (['downloads', 'readDownload', 'cancelDownload', 'deleteDownload'].includes(command.type) && command.frame !== undefined) throw new Error('Скачивания принадлежат вкладке; frame здесь не поддерживается')
+    if (command.type === 'downloads') {
+      if (command.tabId !== undefined && !session.pages.has(command.tabId) && !session.downloads.list(command.tabId).length) throw new Error('stale_tab')
+      return browserDownloadList(session.downloads.list(), command)
+    }
+    if (command.type === 'readDownload') return session.downloads.read(command.downloadId, command)
+    if (command.type === 'cancelDownload') { const result = await session.downloads.cancel(command.downloadId); session.lastActor = request.actor; return result }
+    if (command.type === 'deleteDownload') { const result = await session.downloads.remove(command.downloadId); session.lastActor = request.actor; return result }
     if ((command.type === 'dialogs' || command.type === 'handleDialog') && command.frame !== undefined) throw new Error('Диалоги принадлежат вкладке; frame здесь не поддерживается')
     if (command.type === 'dialogs') {
       if (command.tabId !== undefined && !session.pages.has(command.tabId)) throw new Error('stale_tab')
@@ -333,7 +359,7 @@ export class BrowserSessionManager {
       await created.setViewportSize(session.viewport)
       const id = session.pageIds.get(created) ?? randomUUID()
       session.pageIds.set(created, id); session.pages.set(id, created); session.activeTabId = id
-      if (url) await created.goto(url, NAVIGATION_OPTIONS)
+      if (url) await session.downloads.navigate(created, () => created.goto(url, NAVIGATION_OPTIONS))
       return this.metadata(session)
     }
     if (command.type === 'selectTab' || command.type === 'closeTab') {
@@ -356,7 +382,7 @@ export class BrowserSessionManager {
       const selected = await resolveFrame(page, command.frame, timeout)
       let result: BrowserSelectorResult | BrowserInspectResult
       if (command.type === 'navigate') {
-        await selected.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), { ...NAVIGATION_OPTIONS, timeout: Math.max(1, deadline - performance.now()) })
+        await session.downloads.navigate(page, () => selected.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), { ...NAVIGATION_OPTIONS, timeout: Math.max(1, deadline - performance.now()) }))
         result = { ok: true }
       } else if (command.type === 'selector') {
         if (command.action.kind === 'describe') throw new Error('describe использует координаты всей страницы и автоматически определяет frame')
@@ -370,10 +396,10 @@ export class BrowserSessionManager {
       else throw new Error('Эта команда не поддерживает frame')
       return { ...result, page: { url: this.publicUrl(page.url()), title: await page.title().catch(() => '') }, frame: { path: framePath(command.frame), url: this.publicUrl(selected.url()), title: await selected.title().catch(() => ''), ...(selected.isDetached() ? { detached: true } : {}) } }
     }
-    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), NAVIGATION_OPTIONS)
-    else if (command.type === 'back') await page.goBack(NAVIGATION_OPTIONS)
-    else if (command.type === 'forward') await page.goForward(NAVIGATION_OPTIONS)
-    else if (command.type === 'reload') await page.reload(NAVIGATION_OPTIONS)
+    if (command.type === 'navigate') await session.downloads.navigate(page, () => page.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), NAVIGATION_OPTIONS))
+    else if (command.type === 'back') await session.downloads.navigate(page, () => page.goBack(NAVIGATION_OPTIONS))
+    else if (command.type === 'forward') await session.downloads.navigate(page, () => page.goForward(NAVIGATION_OPTIONS))
+    else if (command.type === 'reload') await session.downloads.navigate(page, () => page.reload(NAVIGATION_OPTIONS))
     else if (command.type === 'stop') await page.evaluate('window.stop()')
     else if (command.type === 'resize') {
       session.viewport = { ...session.viewport, ...command.viewport }
@@ -443,6 +469,8 @@ export class BrowserSessionManager {
     return {
       id: session.id,
       profileMode: session.profileMode,
+      downloads: browserDownloadList(session.downloads.list()).downloads,
+      downloadCount: session.downloads.list().length,
       dialogs: boundedBrowserDialogs(session.dialogs.list(), session.activeTabId).dialogs,
       dialogCount: session.dialogs.list().length,
       conversationId: session.conversationKey,

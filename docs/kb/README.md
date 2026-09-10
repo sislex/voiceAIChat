@@ -9,39 +9,39 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 79 коммит(ов) в areas после сверки: 13ac0bd2 feat(reader): persist browser profiles and clear site data (cycle 11) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-09 | ⚠ 11 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-01 | ⚠ 80 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-09 | ⚠ 12 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-07 | ⚠ 24 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-08 | ⚠ 3 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-09 | ⚠ 9 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-09 | ⚠ 10 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-09 | ⚠ 3 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 9 коммит(ов) в areas после сверки: dd98671b fix(reader): preserve scenario assertions and reject false successes (cycle 10) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-09 | ⚠ 10 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 146 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 129 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 130 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 296 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 193 коммит(ов) в areas после сверки: 13ac0bd2 feat(reader): persist browser profiles and clear site data (cycle 11) … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 194 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 74 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 89 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-10 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1302 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 50 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 17 коммит(ов) в areas после сверки: 13ac0bd2 feat(reader): persist browser profiles and clear site data (cycle 11) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1303 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 51 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 18 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 54 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 90 коммит(ов) в areas после сверки: 13ac0bd2 feat(reader): persist browser profiles and clear site data (cycle 11) … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 306 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-05 | ⚠ 91 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 307 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-31 | ⚠ 18 коммит(ов) в areas после сверки: f6bada65 merge: согласовать Playwright Reader с актуальным main … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-10 | ✓ |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-08 | ⚠ 17 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-08 | ⚠ 18 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 214 коммит(ов) в areas после сверки: a7e8e5b4 CHAT-431 restrict release machines and remember selection … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-09 | ⚠ 11 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 11 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-09 | ⚠ 16 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-09 | ⚠ 16 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-09 | ⚠ 12 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 12 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-09 | ⚠ 17 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-09 | ⚠ 17 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 195 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 8 коммит(ов) в areas после сверки: 13ac0bd2 feat(reader): persist browser profiles and clear site data (cycle 11) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 9 коммит(ов) в areas после сверки: 88775719 feat(reader): support explicit responses to site dialogs … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 147 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-10 | ⚠ 10 коммит(ов) в areas после сверки: bdb1706c fix(reader): preserve pointer and keyboard input semantics (cycle 12) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-10 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-08, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -64,9 +64,10 @@
 
 ## Журнал сессий
 
-Всего записей: 694. Последние:
+Всего записей: 695. Последние:
 
 - [2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md](log/2026-09-10-alexeys-macbook-air-2-reader-responsibilities.md) — Назначение Web Reader и Playwright Reader
+- [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-14.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-14.md) — playwright-reader-cycle-14
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-13.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-13.md) — playwright-reader-cycle-13
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-12.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-12.md) — playwright-reader-cycle-12
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-11.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-11.md) — playwright-reader-cycle-11
@@ -75,7 +76,6 @@
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-08.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-08.md) — Playwright Reader — цикл 08, компоненты и цели действий
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-07.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-07.md) — Playwright Reader — цикл 07, ожидание готовности
 - [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-06.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-06.md) — Playwright Reader — цикл 06, чтение и поиск
-- [2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-05.md](log/2026-09-10-alexeys-macbook-air-2-playwright-reader-cycle-05.md) — Playwright Reader — цикл 05, точность снимков модели
 
 ## Исторические планы
 
