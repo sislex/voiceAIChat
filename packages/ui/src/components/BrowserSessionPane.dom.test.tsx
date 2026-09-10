@@ -115,9 +115,12 @@ describe('BrowserSessionPane', () => {
     await waitFor(() => expect(browser.command).toHaveBeenCalled())
     const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
     expect(calls[0][1].command.action).toMatchObject({ type: 'click', button: 'right', clickCount: 1 })
-    fireEvent.doubleClick(frame, { clientX: 10, clientY: 10 })
-    await waitFor(() => expect(calls.length).toBeGreaterThan(1))
-    expect(calls[calls.length - 1][1].command.action).toMatchObject({ button: 'left', clickCount: 2 })
+    // Настоящий dblclick предваряется двумя click с detail 1 и 2.
+    fireEvent.click(frame, { detail: 1, clientX: 10, clientY: 10 })
+    fireEvent.click(frame, { detail: 2, clientX: 10, clientY: 10 })
+    fireEvent.doubleClick(frame, { detail: 2, clientX: 10, clientY: 10 })
+    await waitFor(() => expect(calls.length).toBe(3))
+    expect(calls[calls.length - 1][1].command.action).toMatchObject({ button: 'left', detail: 2 })
   })
 
   it('переключатель размера окна шлёт resize', async () => {
@@ -576,7 +579,9 @@ describe('запись как черновик, который правят (к�
     const frame = await start(bridge())
     fireEvent.contextMenu(frame, { clientX: 50, clientY: 30 })
     expect(await screen.findByDisplayValue('Нажать правой кнопкой «Создать»')).toBeInTheDocument()
-    fireEvent.doubleClick(frame, { clientX: 50, clientY: 30 })
+    fireEvent.click(frame, { detail: 1, clientX: 50, clientY: 30 })
+    fireEvent.click(frame, { detail: 2, clientX: 50, clientY: 30 })
+    fireEvent.doubleClick(frame, { detail: 2, clientX: 50, clientY: 30 })
     expect(await screen.findByDisplayValue('Двойной клик «Создать»')).toBeInTheDocument()
   })
 

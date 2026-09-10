@@ -36,13 +36,14 @@ export function stepTitle(element: BrowserElementDescription, kind: 'click' | 't
   return kind === 'type' ? `Ввести в ${what}` : `${CLICK_VERB[click]} ${what}`
 }
 
-export function recordClick(steps: RecordedStep[], element: BrowserElementDescription, click: ClickKind = 'left'): RecordedStep[] {
+export function recordClick(steps: RecordedStep[], element: BrowserElementDescription, click: ClickKind = 'left', modifiers: Array<'shift' | 'ctrl' | 'alt' | 'meta'> = []): RecordedStep[] {
   return [...steps, {
     id: nextStepId(steps),
     title: stepTitle(element, 'click', click),
     action: {
       kind: 'click',
       selector: element.selector,
+      ...(modifiers.length ? { modifiers } : {}),
       ...(element.frame ? { frame: [...element.frame] } : {}),
       ...(click === 'right' ? { button: 'right' as const } : {}),
       ...(click === 'double' ? { dblclick: true } : {})
@@ -52,28 +53,33 @@ export function recordClick(steps: RecordedStep[], element: BrowserElementDescri
   }]
 }
 
+/** Второй физический click панели завершает двойной клик. В записи он
+ * заменяет первый шаг, иначе воспроизведение нажало бы трижды. */
+export function recordPointerClick(steps: RecordedStep[], element: BrowserElementDescription, click: ClickKind, modifiers: Array<'shift' | 'ctrl' | 'alt' | 'meta'> = [], detail?: number): RecordedStep[] {
+  const last = steps.at(-1)
+  if (detail === 2 && click === 'left' && last?.action.kind === 'click' && !last.action.dblclick && !last.action.button && last.action.selector === element.selector && JSON.stringify(last.action.frame ?? []) === JSON.stringify(element.frame ?? []) && JSON.stringify(last.action.modifiers ?? []) === JSON.stringify(modifiers)) {
+    return [...steps.slice(0, -1), { ...last, title: stepTitle(element, 'click', 'double'), action: { ...last.action, dblclick: true } }]
+  }
+  return recordClick(steps, element, click, modifiers)
+}
+
 /**
  * Прокрутка одним шагом, а не по одному на каждый щелчок колеса. Человек крутит
  * десяток раз подряд, и без слияния сценарий превратился бы в простыню
  * бессмысленных шагов.
  */
-export function recordScroll(steps: RecordedStep[], deltaY: number): RecordedStep[] {
+export function recordScroll(steps: RecordedStep[], deltaY: number, deltaX = 0): RecordedStep[] {
   const last = steps.at(-1)
-  if (last && !last.expectText && !last.expectAbsentText && last.action.kind === 'scroll' && !last.action.selector && last.action.frame === undefined && typeof last.action.dy === 'number') {
-    const merged = last.action.dy + deltaY
-    // Прокрутил вниз и обратно — шаг схлопнулся в ноль: такое действие ничего не
-    // делает, а в сценарии выглядит осмысленным. Убираем его целиком.
-    if (merged === 0) return steps.slice(0, -1)
-    return steps.map((step, index) => (index === steps.length - 1
-      ? { ...step, title: `Прокрутить на ${merged} px`, action: { kind: 'scroll' as const, dy: merged } }
-      : step))
+  const title = (x: number, y: number) => x ? `Прокрутить: x ${x}, y ${y} px` : `Прокрутить на ${y} px`
+  if (last && !last.expectText && !last.expectAbsentText && last.action.kind === 'scroll' && !last.action.selector && last.action.frame === undefined && last.action.to === undefined && (typeof last.action.dy === 'number' || typeof last.action.dx === 'number')) {
+    const dy = (last.action.dy ?? 0) + deltaY, dx = (last.action.dx ?? 0) + deltaX
+    if (dy === 0 && dx === 0) return steps.slice(0, -1)
+    return [...steps.slice(0, -1), { ...last, title: title(dx, dy), action: { kind: 'scroll', dy, ...(dx ? { dx } : {}) } }]
   }
-  if (deltaY === 0) return steps
+  if (deltaY === 0 && deltaX === 0) return steps
   return [...steps, {
-    id: nextStepId(steps),
-    title: `Прокрутить на ${deltaY} px`,
-    action: { kind: 'scroll', dy: deltaY },
-    stability: 'id'
+    id: nextStepId(steps), title: title(deltaX, deltaY),
+    action: { kind: 'scroll', dy: deltaY, ...(deltaX ? { dx: deltaX } : {}) }, stability: 'id'
   }]
 }
 

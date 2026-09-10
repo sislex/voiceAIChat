@@ -12,6 +12,7 @@ import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
 import { startReaderFramesFixture } from '../apps/browser-runner/src/test/readerFrames.js'
+import { startReaderInputFixture } from '../apps/browser-runner/src/test/readerInput.js'
 import { startReaderProfileFixture } from '../apps/browser-runner/src/test/readerProfile.js'
 import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
 import { BROWSER_UPLOAD_LIMIT_BYTES } from '../packages/shared/src/browserLimits'
@@ -34,7 +35,9 @@ let auth = ''
 let forms: Awaited<ReturnType<typeof startReaderFormsFixture>> | undefined
 let frameSite: Awaited<ReturnType<typeof startReaderFramesFixture>> | undefined
 let profileSite: Awaited<ReturnType<typeof startReaderProfileFixture>> | undefined
+let inputSite: Awaited<ReturnType<typeof startReaderInputFixture>> | undefined
 const chats: Record<string, string> = {}
+const browserFailures: Array<{ path: string; status: number; body: string }> = []
 
 async function freePort(): Promise<number> {
   const socket = createServer()
@@ -84,7 +87,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     forms = await startReaderFormsFixture()
     frameSite = await startReaderFramesFixture()
     profileSite = await startReaderProfileFixture()
-    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
+    inputSite = await startReaderInputFixture()
+    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['input.reader.test', new URL(inputSite.origin).host], ['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
@@ -113,7 +117,17 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     turn = createPreviewTurnTokens(MCP_SECRET).issue({ userId: 'admin', conversationId })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
-    await page.addInitScript(token => localStorage.setItem('vc.session.token', token), token)
+    page.on('response', response => {
+      if (response.status() < 400 || !response.url().includes('/api/browser/')) return
+      void response.text().then(body => browserFailures.push({ path: new URL(response.url()).pathname, status: response.status(), body: body.slice(0, 1000) })).catch(() => undefined)
+    })
+    await page.addInitScript(token => {
+      // Унаследованный вход переносится в cookie один раз. Повторная запись
+      // Bearer при каждом reload искусственно запускала миграцию заново.
+      if (sessionStorage.getItem('reader-test-initialized')) return
+      localStorage.setItem('vc.session.token', token)
+      sessionStorage.setItem('reader-test-initialized', '1')
+    }, token)
     await page.goto(`${base}/#/playwright-reader/${conversationId}`)
     await page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).waitFor()
     await vi.waitFor(async () => expect(await page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).isEnabled()).toBe(true), { timeout: 15_000 })
@@ -124,6 +138,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await mkdir(artifacts, { recursive: true })
     await page.screenshot({ path: join(artifacts, 'failure.png'), fullPage: true })
     await writeFile(join(artifacts, 'failure.txt'), await page.locator('body').innerText())
+    await writeFile(join(artifacts, 'browser-failures.json'), JSON.stringify(browserFailures, null, 2))
   })
 
   afterAll(async () => {
@@ -139,6 +154,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await forms?.close()
     await frameSite?.close()
     await profileSite?.close()
+    await inputSite?.close()
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
@@ -458,9 +474,11 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await mcp('wait', { selector: '.chat-page' })
     await page.getByRole('button', { name: 'Телефон', exact: true }).click()
     await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'innerWidth' })).value).toBe(390)
+    const priorIncarnation = JSON.parse(await mcp('tabs')).incarnation
     await page.getByRole('button', { name: 'Перезапустить', exact: true }).click()
     await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).isEnabled(), { timeout: 15000 }).toBe(true)
     await mcp('wait', { selector: '.chat-page' })
+    expect(JSON.parse(await mcp('tabs')).incarnation).not.toBe(priorIncarnation)
     expect(JSON.parse(await mcp('evaluate', { code: 'innerWidth' })).value).toBe(390)
     expect(await page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).inputValue()).toBe(url)
     await page.reload()
@@ -475,9 +493,11 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await mcp('open', { url: 'http://profile.reader.test/account#details' })
     await mcp('click', { selector: '#login' })
     await mcp('wait', { text: 'Тестовый вход сохранён' })
+    const priorIncarnation = JSON.parse(await mcp('tabs')).incarnation
     await page.getByRole('button', { name: 'Перезапустить', exact: true }).click()
     await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).isEnabled(), { timeout: 15000 }).toBe(true)
     await mcp('wait', { selector: '#login' })
+    expect(JSON.parse(await mcp('tabs')).incarnation).not.toBe(priorIncarnation)
     const before = JSON.parse(await mcp('evaluate', { code: 'window.profileState()' })).value
     expect(before).toMatchObject({ cookies: { session: true, persistent: true, path: true }, local: 'test-user', databases: ['reader-auth'], caches: ['reader-cache'], workers: 1 })
     const cleared = JSON.parse(await mcp('reset-session', { host: 'profile.reader.test' }))
@@ -496,6 +516,48 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await expect.poll(async () => (await mcp('read')).includes('Вход не выполнен'), { timeout: 10000 }).toBe(true)
     expect(JSON.parse(await mcp('evaluate', { code: 'window.profileState()' })).value).toMatchObject({ cookies: { session: false, persistent: false, path: false }, local: null, session: null, databases: [], caches: [], workers: 0 })
     await capture('25-profile-cleared-from-panel')
+  })
+
+  it('панель передаёт колесо, сочетания клавиш, paste и двойной клик без лишних событий', async () => {
+    await mcp('open', { url: 'http://input.reader.test/' })
+    await page.getByRole('button', { name: 'Десктоп', exact: true }).click()
+    await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'innerWidth' })).value).toBe(1280)
+    const frame = page.locator('img[alt="Кадр Chromium"]')
+    await expect.poll(() => frame.evaluate(image => (image as HTMLImageElement).naturalWidth), { timeout: 10000 }).toBe(1280)
+    const point = async (x: number, y: number) => {
+      const box = await frame.boundingBox()
+      if (!box) throw new Error('Кадр недоступен')
+      return { x: box.x + x * box.width / 1280, y: box.y + y * box.height / 800 }
+    }
+    const wheel = await point(400, 250)
+    await page.mouse.move(wheel.x, wheel.y)
+    await page.mouse.wheel(80, 180)
+    await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: '({ left: document.querySelector("#pane").scrollLeft, top: document.querySelector("#pane").scrollTop })' })).value, { timeout: 10000 }).toEqual({ left: 80, top: 180 })
+    const field = await point(90, 30)
+    await page.mouse.click(field.x, field.y)
+    await frame.press('ControlOrMeta+a')
+    await frame.press('A')
+    await frame.press('Z')
+    await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'document.querySelector("#field").value' })).value).toBe('AZ')
+    const message = await point(750, 60)
+    await page.mouse.click(message.x, message.y)
+    await frame.evaluate(element => {
+      const data = new DataTransfer(); data.setData('text/plain', 'Письмо\n😀')
+      element.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: data }))
+    })
+    await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'document.querySelector("#message").value' })).value).toBe('Письмо\n😀')
+    await mcp('evaluate', { code: 'events=[]' })
+    const button = await point(330, 40)
+    await page.mouse.dblclick(button.x, button.y)
+    await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'events.filter(e=>e.type==="click").length' })).value).toBe(2)
+    expect(JSON.parse(await mcp('evaluate', { code: 'events.filter(e=>e.type==="dblclick").length' })).value).toBe(1)
+    await capture('26-keyboard-paste-doubleclick')
+  })
+
+  it('модель прокручивает обе оси контейнера и получает фактическую позицию', async () => {
+    expect(JSON.parse(await mcp('scroll', { selector: '#pane', dx: 170, dy: 20 }))).toMatchObject({ ok: true, scrolled: { left: 250, top: 200 } })
+    expect(JSON.parse(await mcp('scroll', { frame: '#frame', selector: '#pane', dx: 250, dy: 40 }))).toMatchObject({ ok: true, scrolled: { left: 250, top: 40 } })
+    await capture('27-horizontal-scroll')
   })
 
 })

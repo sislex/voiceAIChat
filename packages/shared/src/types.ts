@@ -192,8 +192,8 @@ export type BrowserInputAction =
   | { type: 'mouseMove'; x: number; y: number }
   | { type: 'mouseDown'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
   | { type: 'mouseUp'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
-  | { type: 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right'; clickCount?: 1 | 2 }
-  | { type: 'wheel'; deltaX: number; deltaY: number }
+  | { type: 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'>; detail?: 1 | 2 }
+  | { type: 'wheel'; deltaX: number; deltaY: number; x?: number; y?: number }
   | { type: 'drag'; from: { x: number; y: number }; to: { x: number; y: number } }
   | { type: 'type'; text: string }
   | { type: 'press'; key: string }
@@ -209,7 +209,7 @@ export type BrowserInputAction =
 export type BrowserSelectorAction =
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }
   | { kind: 'press'; selector: string; key: string }
-  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dy?: number }
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number }
   | { kind: 'type'; selector: string; text: string; submit?: boolean }
   | { kind: 'read'; selector?: string; limit?: number; offset?: number }
   | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean }
@@ -247,6 +247,7 @@ export interface BrowserSelectorResult {
   total?: number
   offset?: number
   nextOffset?: number
+  scrolled?: { top: number; left: number; maxTop: number; maxLeft: number }
   waitedMs?: number
   headings?: Array<{ level: number; text: string }>
   links?: Array<{ text: string; href: string }>

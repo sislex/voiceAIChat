@@ -324,19 +324,20 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'scroll',
         {
           description:
-            'Прокрутить открытую в превью страницу или контейнер: to — к краю, dy — на пиксели (отрицательное — вверх). ' +
+            'Прокрутить открытую в превью страницу или контейнер: to — к краю, dx/dy — по горизонтали/вертикали в пикселях. ' +
             'Полезно для лент с ленивой подгрузкой. Возвращает позицию прокрутки.',
           inputSchema: { frame: frameSchema,
             selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера (без него — окно)'),
             to: z.enum(['top', 'bottom']).optional().describe('Прокрутить к началу или концу'),
-            dy: z.number().optional().describe('Сдвиг в пикселях (отрицательное значение — вверх)')
+            dx: z.number().min(-100000).max(100000).optional().describe('Горизонтальный сдвиг в пикселях, отрицательное — влево'),
+            dy: z.number().min(-100000).max(100000).optional().describe('Вертикальный сдвиг в пикселях, отрицательное — вверх')
           }
         },
-        async ({ frame, selector, to, dy }) => {
-          if (to === undefined && typeof dy !== 'number') {
-            return { content: [{ type: 'text', text: 'Укажи to (top|bottom) или dy (пиксели).' }], isError: true }
+        async ({ frame, selector, to, dx, dy }) => {
+          if (to === undefined && typeof dy !== 'number' && typeof dx !== 'number') {
+            return { content: [{ type: 'text', text: 'Укажи to (top|bottom), dx или dy (пиксели).' }], isError: true }
           }
-          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}) })
+          return run({ kind: 'scroll', ...(frame !== undefined ? { frame } : {}), ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}), ...(typeof dx === 'number' ? { dx } : {}) })
         }
       )
 
