@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Dialog, Page } from 'playwright'
+import type { Dialog, Page, Frame } from 'playwright'
 
 import {
   BROWSER_DIALOG_DEFAULT_LIMIT,
@@ -25,7 +25,8 @@ export class BrowserDialogs {
   private readonly entries = new Map<string, PendingDialog>()
   private readonly byPage = new WeakMap<Page, PendingDialog>()
   private readonly listeners = new Set<(entry: PendingDialog) => void>()
-  private readonly titles = new WeakMap<Page, string>()
+  private readonly titles = new WeakMap<Page | Frame, string>()
+  private readonly titleRequests = new WeakMap<Page | Frame, Promise<string>>()
   register(page: Page, tabId: string): void {
     page.on('dialog', (dialog) => {
       const previous = this.byPage.get(page)
@@ -62,15 +63,21 @@ export class BrowserDialogs {
   forPage(page: Page): BrowserDialogInfo | undefined {
     return this.byPage.get(page)?.info
   }
-  async title(page: Page): Promise<string> {
-    if (this.byPage.has(page)) return this.titles.get(page) ?? ''
-    try {
-      const title = await this.run(page, () => page.title())
-      this.titles.set(page, title)
-      return title
-    } catch {
-      return this.titles.get(page) ?? ''
+  async title(page: Page, source: Page | Frame = page): Promise<string> {
+    if (this.byPage.has(page)) return this.titles.get(source) ?? ''
+    let pending = this.titleRequests.get(source)
+    if (!pending) {
+      pending = this.run(page, () => source.title())
+        .then(title => { this.titles.set(source, title); return title })
+        .catch(() => this.titles.get(source) ?? '')
+        .finally(() => { if (this.titleRequests.get(source) === pending) this.titleRequests.delete(source) })
+      this.titleRequests.set(source, pending)
     }
+    // Один зависший renderer не должен скрывать вкладки, диалоги и управление.
+    // Повторный status разделяет прежний запрос, не накапливает новые title RPC.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try { return await Promise.race([pending, new Promise<string>(resolve => { timer = setTimeout(() => resolve(this.titles.get(source) ?? ''), 200) })]) }
+    finally { if (timer) clearTimeout(timer) }
   }
   async handle(answer: BrowserDialogAnswer): Promise<void> {
     const { dialogId, accept, promptText } = normalizeBrowserDialogAnswer(answer)

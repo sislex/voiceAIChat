@@ -25,6 +25,10 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 20))
   } while (Date.now() < deadline)
   assert.deepEqual(result.console![0].args![1], { nested: { detail: 'Вложенные данные' }, items: [1, 2, 3] })
+  const limited = await send({ type: 'inspect', action: { kind: 'evaluate', code: 'while(true){}', timeoutMs: 100 } }) as BrowserInspectResult
+  assert.equal(limited.timedOut, true)
+  const value = await send({ type: 'inspect', action: { kind: 'evaluate', code: 'new Map([["Reader",123n]])' } }) as BrowserInspectResult
+  assert.deepEqual(value.value, { $type: 'Map', size: 1, entries: [['Reader', { $type: 'bigint', value: '123' }]] })
   console.log('tsx console arguments verified')
 } finally {
   await manager.close()

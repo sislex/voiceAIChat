@@ -1,3 +1,4 @@
+import { runEvaluation } from './evaluation.js'
 import { BrowserDiagnostics } from './diagnostics.js'
 import { BrowserDownloads } from './downloads.js'
 import { browserDownloadList, type BrowserDownloadResult } from '@voicechat/shared'
@@ -386,9 +387,9 @@ export class BrowserSessionManager {
         if (content.frames) content.frames = content.frames.map(frame => ({ ...frame, src: frame.src ? this.publicUrl(frame.src) : '' }))
         if (command.action.kind === 'wait' && content.ok) content.waitedMs = Math.round(performance.now() - started)
         result = content
-      } else if (command.type === 'inspect') result = await runInspectAction({ console: session.console, network: session.network }, selected, command.action)
+      } else if (command.type === 'inspect') result = command.action.kind === 'evaluate' ? await runEvaluation(page, selected, command.action, () => Boolean(session.dialogs.forPage(page))) : await runInspectAction({ console: session.console, network: session.network }, selected, command.action)
       else throw new Error('Эта команда не поддерживает frame')
-      return { ...result, page: { url: this.publicUrl(page.url()), title: await page.title().catch(() => '') }, frame: { path: framePath(command.frame), url: this.publicUrl(selected.url()), title: await selected.title().catch(() => ''), ...(selected.isDetached() ? { detached: true } : {}) } }
+      return { ...result, page: { url: this.publicUrl(page.url()), title: await session.dialogs.title(page) }, frame: { path: framePath(command.frame), url: this.publicUrl(selected.url()), title: await session.dialogs.title(page, selected), ...(selected.isDetached() ? { detached: true } : {}) } }
     }
     if (command.type === 'navigate') await session.downloads.navigate(page, () => page.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), NAVIGATION_OPTIONS))
     else if (command.type === 'back') await session.downloads.navigate(page, () => page.goBack(NAVIGATION_OPTIONS))
@@ -404,9 +405,9 @@ export class BrowserSessionManager {
       const result = command.action.kind === 'describe' ? await describeFramePoint(page, command.action.x, command.action.y) : await runSelectorAction(page, command.action, raw => this.publicUrl(raw))
       if (result.links) result.links = result.links.map(link => ({ ...link, href: this.publicUrl(link.href) }))
       if (result.frames) result.frames = result.frames.map(frame => ({ ...frame, src: frame.src ? this.publicUrl(frame.src) : '' }))
-      return { ...result, page: { url: this.publicUrl(page.url()), title: await page.title().catch(() => '') } }
+      return { ...result, page: { url: this.publicUrl(page.url()), title: await session.dialogs.title(page) } }
     } else if (command.type === 'inspect') {
-      return runInspectAction({ console: session.console, network: session.network }, page, command.action)
+      return command.action.kind === 'evaluate' ? runEvaluation(page, page.mainFrame(), command.action, () => Boolean(session.dialogs.forPage(page))) : runInspectAction({ console: session.console, network: session.network }, page, command.action)
     } else if (command.type === 'screenshot') {
       return capturePage(page, command, (raw) => this.publicUrl(raw))
     }

@@ -21,28 +21,8 @@ export interface InspectPage {
   evaluate(fn: string): Promise<unknown>
 }
 
-/** Значение из страницы обязано пережить JSON: у результата может не быть
- *  структуры, а лог рана и ответ модели — текст. */
-const EVALUATE_VALUE_LIMIT = 20_000
-function serializeEvaluated(value: unknown): unknown {
-  if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
-    return typeof value === 'string' && value.length > EVALUATE_VALUE_LIMIT ? `${value.slice(0, EVALUATE_VALUE_LIMIT)}…` : value
-  }
-  try {
-    const json = JSON.stringify(value)
-    if (json === undefined) return null
-    return json.length > EVALUATE_VALUE_LIMIT ? `${json.slice(0, EVALUATE_VALUE_LIMIT)}…` : JSON.parse(json)
-  } catch { return String(value).slice(0, EVALUATE_VALUE_LIMIT) }
-}
-
-export async function runInspectAction(logs: InspectLogs, page: InspectPage, action: BrowserInspectAction): Promise<BrowserInspectResult> {
+export async function runInspectAction(logs: InspectLogs, page: InspectPage, action: Exclude<BrowserInspectAction, { kind: 'evaluate' }>): Promise<BrowserInspectResult> {
   if (action.kind === 'console' || action.kind === 'network') return readBrowserDiagnostics(logs, action)
-  if (action.kind === 'evaluate') {
-    // Гейт (политика проекта, подтверждение опасного кода) стоит выше — на
-    // MCP-инструменте, до выбора транспорта, поэтому здесь его не дублируем.
-    try { return { ok: true, value: serializeEvaluated(await page.evaluate(action.code)) } }
-    catch (err) { return { ok: false, error: err instanceof Error ? err.message.split('\n')[0] : 'Код не выполнен' } }
-  }
   try {
     // Тело исполняется в браузере, а у пакета нет библиотеки DOM (это Node-сервис),
     // поэтому нужные глобальные объявляются здесь узкими типами.

@@ -1,3 +1,4 @@
+export * from './browserEvaluation'
 export * from './browserDiagnostics'
 export * from './browserDownloads'
 // @voicechat/shared — общие типы, контракт протокола и чистая логика,
