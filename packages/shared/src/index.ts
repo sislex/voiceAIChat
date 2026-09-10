@@ -102,3 +102,6 @@ export * from './imageStudioInternal'
 export * from './browserFrames'
 export * from './browserProfile'
 export * from './browserDialogs'
+export * from './webRecorderScenario'
+
+export * from './previewProject'

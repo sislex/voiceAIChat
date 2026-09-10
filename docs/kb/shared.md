@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-09-09
-checked: c8fcb5e8
+updated: 2026-09-10
+checked: 11105f5c
 areas:
   - packages/shared/src
 ---
@@ -23,6 +23,7 @@ areas:
 | `types.ts` | Разговоры, сообщения, настройки, пользователь, провайдеры и модели, метаданные/usage хода, статусы разговора. |
 | `imageStudioInternal.ts` | Внутренние пути и лимиты отдельной студии картинок, тело запроса генерации с исходником/референсами и его валидатор. |
 | `protocol.ts` | Имена REST-путей, JSON-сообщения `/ws`, бинарные кадры, активные ходы и ответы API. |
+| `webRecorder.ts`, `webRecorderScenario.ts` | Контракт host/Recorder, шаги сценария и чистая нормализация/лимиты/склейка записи. |
 | `ipc.ts` | Полный набор мостов `window.*`; компоненты UI знают только эти формы. |
 | `agentProtocol.ts` | Протокол `/agent`, политика выполнения, файловые операции, PTY, телеметрия и сведения о машине. |
 | `projects.ts`, `kb.ts`, `admin.ts`, `auth.ts` | Контракты проектов/канбана, базы знаний, администрирования и входа. |
@@ -36,9 +37,22 @@ areas:
 | `sentences.ts`, `textPrep.ts` | Отделение произносимого текста от Markdown/служебных блоков и подготовка фраз для TTS. |
 | `pcm.ts`, `format.ts`, `export.ts` | PCM/WAV-утилиты, форматирование и экспорт разговора. |
 
+`normalizeWebRecorderStep` отбрасывает повреждённые поля и принудительно стирает
+текст sensitive-шага. `parseWebRecorderScenario` принимает до 1 МБ JSON и первые
+200 элементов, пропуская невалидные; поля ограничены общими лимитами previewActions.
+`appendWebRecorderStep` склеивает только соседние type одного поля до submit;
+после click/submit граница сохраняется. Эти функции не зависят от DOM/Storage.
+Запись v2 по полному URL, миграция legacy и интерфейс — в `apps/web-recorder`.
+
 ## Базовая модель данных
 
-`Conversation` хранит серверные настройки конкретного чата: цель выполнения (`execTarget`), рабочий каталог, выбранные skills, LLM provider/model, permission mode, режим KB, проект и lifecycle-статус. Настройки чата намеренно отделены от глобального `Settings`: изменение одного разговора не меняет другие. Для веб-превью `previewUrl` — override разговора, а `projectPreviewUrl` — проектный fallback в том же снапшоте; override имеет приоритет. `ProjectSummary.previewUrl` хранит проектный адрес по умолчанию. Вид разговора типизирован: `assistantKind` — это `AssistantKind | null`, а не свободная строка. Рядом в `types.ts` лежат контракты браузерной сессии Playwright Reader (`Browser*`) и чистые функции для кадров и координат — они описаны в [features/playwright-reader.md](features/playwright-reader.md).
+`previewActions.ts` описывает структурированные read/find/a11y-результаты Web Reader:
+доступная подпись `label` у поля, необязательные disabled/readOnly/checked/expanded/
+selected/required/invalid у описания элемента и узла a11y. `checked` допускает
+`mixed`; остальные состояния логические. Ограничения чтения и алгоритм подписей
+описаны в `server-internals.md` в разделе прокси веб-превью.
+
+`Conversation` хранит серверные настройки конкретного чата: цель выполнения (`execTarget`), рабочий каталог, выбранные skills, LLM provider/model, permission mode, режим KB, проект и lifecycle-статус. Настройки чата намеренно отделены от глобального `Settings`: изменение одного разговора не меняет другие. Для Web Reader `previewEngine` выбирает proxy/chromium (старые разговоры — proxy); необязательный аргумент `conversations:setPreviewUrl` сохраняет выбор, а `isChromiumReaderConversation` определяет исполнителя модели. Команда BrowserCommand `status` читает метаданные без изменения lastActor; screenshot моста может вернуть page.url/title. Для веб-превью `previewUrl` — override разговора, а `projectPreviewUrl` — проектный fallback в том же снапшоте; override имеет приоритет. `ProjectSummary.previewUrl` хранит проектный адрес по умолчанию. Вид разговора типизирован: `assistantKind` — это `AssistantKind | null`, а не свободная строка. Рядом в `types.ts` лежат контракты браузерной сессии Playwright Reader (`Browser*`) и чистые функции для кадров и координат — они описаны в [features/playwright-reader.md](features/playwright-reader.md).
 
 Каждый разговор обязательно несёт `ConversationScope`: `chat`, `kanban`, `make`, `console`, `playwright-reader` или `web-reader`. Это не декоративный тип, а часть контекста доступа: серверные список, поиск и получение истории сначала ограничиваются `userId` и точным `scope`, а для `kanban` требуют ещё совпадающий доступный `projectId`; без проекта kanban-запрос и создание отклоняются. Обычные вызовы без области совместимо означают `chat`, поэтому общий список больше не смешивает мастерские. Контракт аргументов находится в `packages/shared/src/ipc.ts`, серверная проверка — в `apps/server/src/routes/rest.ts` и `apps/server/src/db/database.ts`.
 
@@ -145,3 +159,12 @@ Stream-парсеры принимают строки событий CLI и но
 зависимость). Без явной локали браузер отдаёт `8/28/2026`, где день и месяц не
 различить — поэтому `toLocaleDateString()` без аргументов в интерфейсе не
 используем.
+
+### Текущее приложение в Reader
+
+`previewProject.ts`: `READER_PROJECT_ORIGIN=https://app.internal`, типы
+ReaderProjectRequest/Response и проверки адресов. readerProjectUrl переводит HTTP
+алиас и точный origin текущего приложения в постоянный HTTPS origin, сохраняя
+path/query/hash. isReaderProjectPath исключает служебные RPC/MCP и рекурсию preview.
+Контракт ресурса содержит только method/path/headers/bodyBase64, адрес транспорта
+ему не передаётся. Он одинаков для встроенного Reader и отдельного процесса.

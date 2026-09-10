@@ -86,7 +86,7 @@ const agent: AgentInfo = makeAgent({
   policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [{ name: 'build', command: 'npm run build' }] }
 })
 const conversation = makeConversation({ id: 'c1', title: 'Старое имя', messageCount: 0, execTarget: 'm1' })
-const settings = { llmProvider: 'claude', model: 'opus[1m]', codexModel: 'gpt-5.6-sol', permissionMode: 'bypassPermissions' } as const
+const settings = { llmEngineId: null, llmProvider: 'claude', model: 'opus[1m]', codexModel: 'gpt-5.6-sol', permissionMode: 'bypassPermissions' } as const
 
 describe('ConversationSettings', () => {
   it('сохраняет название, машину, директорию и выбранные навыки', async () => {
@@ -99,7 +99,7 @@ describe('ConversationSettings', () => {
     await screen.findByText('/home/u/project')
     fireEvent.click(screen.getByRole('button', { name: 'Выбрать эту папку' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], permissionMode: null, kbContextMode: 'auto', projectId: null }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], permissionMode: null, kbContextMode: 'auto', projectId: null, llmEngineId: null, llmProvider: null, llmModel: null }))
   })
 
   it('показывает кнопку самодиагностики чата и запускает её', async () => {
@@ -134,14 +134,29 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onAddSkill).toHaveBeenCalledWith('m1', { name: 'test', command: 'npm test' }))
   })
 
-  // @testCase TC-REG-CONVERSATION-NO-LLM
-  it('не показывает и не сохраняет LLM-поля разговора', async () => {
+  // @testCase TC-UI-02
+  it('показывает LLM только во вкладке «Общие», а ContextInspector оставляет контекстной вкладке', async () => {
+    const originalApi = window.api
+    window.api = { ...(window.api ?? {}), 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    expect(screen.queryByText('LLM')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: 'Движок разговора' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('LLM').length).toBeGreaterThan(0)
+    expect(screen.getByRole('combobox', { name: 'Исполнитель разговора' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Провайдер разговора' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Модель разговора' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
+    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Провайдер разговора' })).not.toBeInTheDocument())
+    window.api = originalApi
+  })
+
+  // @testCase TC-UI-03
+  it('сохраняет LLM-переопределение и сбрасывает все три поля до null', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const overridden = { ...conversation, llmEngineId: 'codex-engine', llmProvider: 'codex' as const, llmModel: 'gpt-5.6-sol' }
+    render(<ConversationSettings conversation={overridden} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Сбросить и наследовать' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.not.objectContaining({ llmProvider: expect.anything(), llmModel: expect.anything() })))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ llmEngineId: null, llmProvider: null, llmModel: null })))
   })
 
   it('сохраняет режим прав разговора и показывает действующий режим', async () => {
@@ -225,11 +240,11 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ execTarget: null })))
   })
 
-  it('открывает использование БЗ из вкладки «Общее» без сохранения настроек', () => {
+  it('открывает использование БЗ из вкладки «Общие» без сохранения настроек', () => {
     const onOpenKbUsage = vi.fn()
     const onSave = vi.fn()
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onOpenKbUsage={onOpenKbUsage} onClose={vi.fn()} />)
-    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Общие' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Использование базы знаний' }))
     expect(onOpenKbUsage).toHaveBeenCalledOnce()
     expect(onSave).not.toHaveBeenCalled()
@@ -285,7 +300,7 @@ describe('ConversationSettings', () => {
       promptPreview: emptyPreview
     }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     expect(await screen.findByRole('heading', { name: 'Что получит ИИ в следующем сообщении' })).toBeInTheDocument()
     const launch = screen.getByRole('heading', { name: 'Как будет запущен ответ' }).closest('section')
     expect(launch).toHaveTextContent('claude')
@@ -323,18 +338,18 @@ describe('ConversationSettings', () => {
       promptPreview: emptyPreview
     }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     expect((await screen.findByText('Машина недоступна')).closest('aside')).toHaveTextContent('Машина отключена от сети.')
     expect(screen.getByText('Модель из конфигурации CLI')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Перейти к настройкам разговора' }))
-    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Общие' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, owner: 'admin', foreign: false, lastTurn: null, turnSizes: [], changes: [], disallowedTools: [], cliMcpServers: [], warnings: [], promptPreview: emptyPreview }) } as never
     window.location.hash = '#/chat/c1/context/disappeared'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Контекст' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByRole('heading', { name: 'Источник не найден' })).toBeInTheDocument()
     expect(window.location.hash).toBe('#/chat/c1/context/disappeared')
     fireEvent.click(screen.getByRole('button', { name: '← Ко всем источникам' }))
@@ -349,7 +364,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:setContextItem': setContextItem } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const toggle = await screen.findByRole('checkbox', { name: 'Учитывать «Предпочтения ответа» в этом разговоре' })
     expect(toggle).toBeChecked()
@@ -373,7 +388,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     expect(await screen.findByTestId('context-prompt-preview')).toHaveTextContent('Обращение к пользователю: Тест.')
     expect(screen.getByTestId('context-prompt-size')).toHaveTextContent('1 блок(ов)')
     expect(screen.getByTestId('context-prompt-size')).toHaveTextContent('≈8 токенов')
@@ -388,7 +403,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ personalizationEnabled: false })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     const knowledge = (await screen.findByRole('heading', { name: 'Что ИИ будет знать' })).closest('section')!
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск по источникам контекста' }), { target: { value: 'платформы' } })
@@ -410,7 +425,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ viewerRole: 'developer' })), 'conversations:setExecTarget': setExecTarget } as never
     const { unmount } = render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     expect(await screen.findByTestId('context-role-hint')).toHaveTextContent('не связано с безопасностью')
     // Режим доступа — безопасность: обычный пользователь его только видит.
     expect(screen.getByTestId('context-permission-readonly')).toHaveTextContent('Только планирование')
@@ -422,7 +437,7 @@ describe('ConversationSettings', () => {
 
     window.api = { ...window.api, 'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ viewerRole: 'admin' })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     expect(await screen.findByTestId('context-role-hint')).toHaveTextContent('Вы администратор')
     expect(screen.getByRole('combobox', { name: 'Режим доступа' })).toBeInTheDocument()
   })
@@ -434,7 +449,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:contextKbPreview': kbPreview } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     const area = await screen.findByRole('textbox', { name: /Черновик сообщения/ })
 
     // Пустой черновик считать нечего — кнопка выключена.
@@ -470,7 +485,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:setContextItem': setContextItem } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Пункт с замком в массовое действие не попадает: его и нельзя выключить.
     fireEvent.click(await screen.findByRole('button', { name: 'Выключить необязательное (1)' }))
@@ -493,7 +508,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:agentsChain': agentsChain } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Само по себе чтение не запускается: файл лежит на чужой машине.
     expect(await screen.findByRole('heading', { name: 'Цепочка AGENTS.md' })).toBeInTheDocument()
@@ -513,7 +528,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})),
       'conversations:agentsChain': vi.fn().mockResolvedValue({ machineName: null, workdir: '/srv/app', files: [], unavailable: 'Машина недоступна: прочитать файлы её директории нельзя.' }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Прочитать с машины' }))
     expect(await screen.findByTestId('context-agents-unavailable')).toHaveTextContent('Машина недоступна')
   })
@@ -522,7 +537,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     const meta = await screen.findByTestId('context-lastturn-meta')
     expect(meta).toHaveTextContent('≈12 токенов')
     expect(meta).toHaveTextContent('продолжение сессии движка')
@@ -543,7 +558,7 @@ describe('ConversationSettings', () => {
         ]
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const warnings = await screen.findByTestId('context-warnings')
     expect(warnings).toHaveTextContent('Персонализация выключена')
@@ -559,7 +574,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     const summary = await screen.findByTestId('context-summary')
     expect(summary).toHaveTextContent('≈8 токенов в 1 блок(ах)')
     expect(summary).toHaveTextContent('в прошлый ход ушло ≈12')
@@ -577,7 +592,7 @@ describe('ConversationSettings', () => {
         ]
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     const log = await screen.findByTestId('context-changes')
     expect(log).toHaveTextContent('Журнал изменений контекста')
     fireEvent.click(within(log).getByText('Журнал изменений контекста'))
@@ -604,7 +619,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(snapshotWithInstruction()) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} chatInstructions={instructions} onSaveInstruction={onSaveInstruction} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Заголовок пункта встречается в нескольких списках — берём первую кнопку
     // «провалиться» с этим названием: все они ведут в одну карточку.
@@ -630,7 +645,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       otherConversations={[{ id: 'c2', title: 'Рабочий чат' }, { id: 'c3', title: 'Черновики' }]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.change(await screen.findByRole('combobox', { name: 'Скопировать контекст из разговора' }), { target: { value: 'c3' } })
     // Копирование перезаписывает набор целиком, поэтому спрашивает подтверждение.
@@ -651,7 +666,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(snapshot) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     const section = (await screen.findByRole('heading', { name: 'Что ИИ будет знать' })).closest('section')!
     const openTitles = (): string[] => within(section).getAllByRole('button')
       .map((node) => node.textContent ?? '').filter((text) => text.includes('Почему:'))
@@ -676,7 +691,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={onSavePresets}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.change(await screen.findByRole('combobox', { name: 'Применить пресет контекста' }), { target: { value: 'p1' } })
     // Пресет применяется подтверждением предпросмотра, а не выбором в списке.
@@ -700,7 +715,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       draftAttachments={[{ name: 'схема.png', status: 'ready' }, { name: 'лог.txt', status: 'processing' }]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Файлы приложены к неотправленному сообщению — серверный снимок их не знает.
     const draft = await screen.findByTestId('context-draft-attachments')
@@ -722,7 +737,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={onSavePresets}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const list = await screen.findByTestId('context-presets')
     fireEvent.click(within(list).getByText('Пресеты контекста'))
@@ -751,7 +766,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       chatInstructions={[]} onSaveInstruction={vi.fn()} onAddInstruction={onAddInstruction}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const add = await screen.findByRole('button', { name: 'Добавить инструкцию' })
     expect(add).toBeDisabled()
@@ -767,7 +782,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const preview = await screen.findByTestId('context-prompt-preview')
     expect(preview).not.toHaveTextContent('1. Персонализация')
@@ -788,7 +803,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       otherConversations={[{ id: 'c2', title: 'Рабочий чат' }]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.change(await screen.findByRole('combobox', { name: 'Сравнить контекст с разговором' }), { target: { value: 'c2' } })
     const card = await screen.findByTestId('context-diff')
@@ -812,7 +827,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={onSavePresets}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Ответ на «почему модель не читает файлы» — списком, а не поиском по пунктам.
     expect(await screen.findByTestId('context-disallowed')).toHaveTextContent('mcp__remote__bash, mcp__kb__search')
@@ -831,7 +846,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={onClose} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const search = await screen.findByRole('searchbox', { name: 'Поиск по источникам контекста' })
     fireEvent.change(search, { target: { value: 'платформ' } })
@@ -850,7 +865,7 @@ describe('ConversationSettings', () => {
       otherConversations={[{ id: 'c2', title: 'Рабочий чат' }, { id: 'c3', title: 'Черновики' }]}
       onCopyContextTo={onCopyContextTo}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const presets = await screen.findByTestId('context-presets')
     fireEvent.click(within(presets).getByText('Пресеты контекста'))
@@ -876,7 +891,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       chatInstructions={[]} onSaveInstruction={vi.fn()} onAddInstruction={vi.fn()} onOpenInstructionSettings={onOpenInstructionSettings}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Открыть общие настройки инструкций' }))
     expect(onOpenInstructionSettings).toHaveBeenCalledOnce()
@@ -895,7 +910,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(snapshot) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // «Выключено в настройках» ≠ «Не настроено»: инструкция есть, но отключена везде.
     // «Инструкции чата» встречается и в свёртке, и в фильтре групп — берём свёртку.
@@ -931,7 +946,7 @@ describe('ConversationSettings', () => {
     window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(snapshot), 'conversations:setContextItem': setContextItem } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Без пометки легко решить, что правишь свой контекст.
     const foreign = await screen.findByTestId('context-foreign')
@@ -963,7 +978,7 @@ describe('ConversationSettings', () => {
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
       defaultPresetId={null} onSetDefaultPreset={onSetDefaultPreset}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const presets = await screen.findByTestId('context-presets')
     fireEvent.click(within(presets).getByText('Пресеты контекста'))
@@ -990,7 +1005,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.change(await screen.findByRole('combobox', { name: 'Применить пресет контекста' }), { target: { value: 'p1' } })
     // Выбор пресета сам ничего не меняет: сначала видно, что именно он сделает.
@@ -1011,7 +1026,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     fireEvent.change(await screen.findByRole('combobox', { name: 'Применить пресет контекста' }), { target: { value: 'p1' } })
     const panel = await screen.findByTestId('context-preset-preview')
     fireEvent.click(within(panel).getByRole('button', { name: 'Отмена' }))
@@ -1031,7 +1046,7 @@ describe('ConversationSettings', () => {
       'conversations:setContextItem': setContextItem } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const log = await screen.findByTestId('context-changes')
     fireEvent.click(within(log).getByRole('button', { name: 'Отменить' }))
@@ -1045,7 +1060,7 @@ describe('ConversationSettings', () => {
       'conversations:setContextItem': setContextItem } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Учитывать «Предпочтения ответа» в этом разговоре' }))
     const diff = await screen.findByTestId('context-session-diff')
@@ -1061,7 +1076,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // «Обращение» есть только в тексте блока промпта, не в названии источника.
     fireEvent.change(await screen.findByRole('searchbox', { name: 'Поиск по источникам контекста' }), { target: { value: 'Обращение' } })
@@ -1084,7 +1099,7 @@ describe('ConversationSettings', () => {
       'conversations:setContextItem': setContextItem } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     expect(screen.queryByTestId('context-group-bulk')).not.toBeInTheDocument()
     fireEvent.change(await screen.findByRole('combobox', { name: 'Фильтр по группе источников' }), { target: { value: 'instructions' } })
@@ -1098,7 +1113,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ costUsd: 0.008 })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Единственный блок промпта — этот пункт, значит доля 100% и вся стоимость.
     expect(await screen.findByText('тяжёлый · 100%')).toBeInTheDocument()
@@ -1111,7 +1126,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const section = await screen.findByTestId('context-excluded') as HTMLDetailsElement
     expect(section).not.toHaveAttribute('open')
@@ -1130,7 +1145,7 @@ describe('ConversationSettings', () => {
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const total = await screen.findByTestId('context-turn-total')
     expect(total.textContent).toContain('Всего в следующий ход: ≈2000 токенов')
@@ -1144,7 +1159,7 @@ describe('ConversationSettings', () => {
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     expect((await screen.findByTestId('context-turn-total')).textContent).toContain('история заново не уходит')
   })
 
@@ -1155,7 +1170,7 @@ describe('ConversationSettings', () => {
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     const models = await screen.findByTestId('context-cost-models')
     expect(models.textContent).toContain('haiku: ≈$0.0013 за ход')
   })
@@ -1165,7 +1180,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Пункт встречается и в списке источников, и в сводке «не попадёт»:
     // открываем первый — тот, что в основном списке.
@@ -1189,7 +1204,7 @@ describe('ConversationSettings', () => {
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const log = await screen.findByTestId('context-changes')
     expect(within(log).getAllByRole('listitem')).toHaveLength(2)
@@ -1210,7 +1225,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Показать границы блоков' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Скопировать блок' }))
@@ -1226,7 +1241,7 @@ describe('ConversationSettings', () => {
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Скопировать сводку' }))
     await waitFor(() => expect(writeText).toHaveBeenCalled())
@@ -1247,7 +1262,7 @@ describe('ConversationSettings', () => {
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const log = await screen.findByTestId('context-changes')
     const rows = (): string[] => within(log).getAllByRole('listitem').map((node) => node.textContent ?? '')
@@ -1270,7 +1285,7 @@ describe('ConversationSettings', () => {
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
       defaultPresetId="p1" onSetDefaultPreset={vi.fn()}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     // Пресет гасит персонализацию, а в разговоре она включена — это отличие.
     const diff = await screen.findByTestId('context-preset-diff')
@@ -1284,7 +1299,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Раскрыть все разделы' }))
     await waitFor(() => expect(screen.getByTestId('context-excluded')).toHaveAttribute('open'))
@@ -1309,7 +1324,7 @@ describe('ConversationSettings', () => {
       'conversations:contextSnapshot': vi.fn().mockResolvedValue(withSilent) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     expect(await screen.findByText('в этом чате не уходит')).toBeInTheDocument()
   })
@@ -1323,7 +1338,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={vi.fn()}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     await screen.findByTestId('context-summary')
 
     // Самый большой экран раздела до этого проверялся только сториз-прогоном.
@@ -1348,7 +1363,7 @@ describe('ConversationSettings', () => {
       })) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     const total = await screen.findByTestId('context-turn-total')
     expect(total.textContent).toContain('столько же уходит каждым следующим ходом')
@@ -1372,7 +1387,7 @@ describe('ConversationSettings', () => {
       'kanbanAssistant:setAutonomy': setAutonomy } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="developer" settings={settings} projects={[]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
 
     fireEvent.click((await screen.findAllByRole('button', { name: /Автопилот/ }))[0]!)
     // Правка доступна обычному пользователю: доска — данные проекта, не безопасность.
@@ -1389,7 +1404,7 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
       chatInstructions={[{ id: 'custom-1', title: 'Своя', description: '', text: 'текст', enabled: true }]}
       fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст' }))
     await screen.findByTestId('context-summary')
 
     fireEvent.click(screen.getByRole('button', { name: 'Свернуть все' }))

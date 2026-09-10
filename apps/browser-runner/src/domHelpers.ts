@@ -1,6 +1,13 @@
 // Эти функции сериализуются в Chromium. Обход composed tree нужен компонентам
 // с открытым Shadow DOM: обычные querySelectorAll/innerText теряют их содержимое.
 export const DOM_HELPERS = String.raw`
+  const referenceOf = node => {
+    const state = globalThis.__voicechatReaderReferences ??= { nodes: new WeakMap(), prefix: Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-'), next: 0 };
+    let ref = state.nodes.get(node);
+    if (!ref) { ref = state.prefix + '-' + (++state.next); state.nodes.set(node, ref); }
+    node.setAttribute('data-voicechat-reader-ref', ref);
+    return '[data-voicechat-reader-ref="' + ref + '"]';
+  };
   const identityOf = node => {
     const parts = [];
     for (let current = node; current && current.nodeType === 1;) {

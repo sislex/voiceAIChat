@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-09-10
-checked: 88775719
+checked: 9724b402
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -62,10 +62,7 @@ areas:
 напрямую, а неполный или неизвестный маршрут общих настроек нормализуется к нему.
 Из общего каталога и с фильтрацией через `llm:access` строятся пользовательские
 селекторы в `SettingsModal` (включая AI-помощника) и CI-компонентах.
-`ConversationSettings` LLM-поля разговора не отображает и не сохраняет: его
-`onSave` меняет название, машину, рабочий каталог, навыки, режим прав, контекст БЗ
-и проект; имеющиеся `llmProvider` и `llmModel` он только передаёт инспектору
-контекста. У
+`ConversationSettings` редактирует LLM-переопределение конкретного разговора на адресуемой вкладке `/chat/:id/settings/general`: общий `LlmSettingsEditor` показывает исполнитель, провайдер и модель, а `showEngine` сохраняет видимость селектора даже при пустом каталоге персональных engine. Изменение записывает `llmEngineId`, `llmProvider` и `llmModel` только в разговор. Сброс выключает override и при сохранении передаёт для всех трёх полей `null`; это возвращает динамическое наследование эффективных проектных/пользовательских настроек. Вкладка `/chat/:id/settings/context` содержит `ContextInspector`, а legacy `/chat/:id/context` заменяется этим каноническим адресом. У
 Claude это `default` («Default (recommended)» — модель выбирает сам CLI),
 `opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`: id уходит в
 `claude --model` как есть, включая суффикс окна `[1m]`. У Codex —

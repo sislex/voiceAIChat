@@ -189,3 +189,18 @@ it('длинное исходное значение prompt показывает
   await handle(item, true)
   expect(await read()).toBe('Я'.repeat(3000))
 })
+
+
+it('очередь позволяет выбрать существующую вкладку, пока в прежней открыт диалог', async () => {
+  const firstTab = meta.activeTabId
+  const other = (await send({ type: 'newTab', url: 'http://dialog.reader.test/other' })) as BrowserSessionMetadata
+  if (!firstTab || !other.activeTabId) throw new Error('Стенд не создал обе вкладки')
+  await send({ type: 'selectTab', tabId: firstTab })
+  await click('confirm')
+  const [dialog] = await dialogs()
+  const selected = (await send({ type: 'selectTab', tabId: other.activeTabId })) as BrowserSessionMetadata
+  expect(selected.activeTabId).toBe(other.activeTabId)
+  expect(selected.dialogs).toHaveLength(1)
+  expect(await read()).toBe('Ready')
+  await handle(dialog, false)
+})

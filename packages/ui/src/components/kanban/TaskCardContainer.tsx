@@ -219,7 +219,7 @@ export function TaskCardContainer(props: TaskCardContainerProps): JSX.Element {
   const renderPanel = (tab: TaskCardTab): ReactNode => {
     const shared = { projectId: props.task.projectId, taskId: props.task.id }
     const runActive = Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(props.task.activeMergeRunId)
-    if (tab === 'chat') return <TaskChatPanel projectId={props.task.projectId} taskId={props.task.id} />
+    if (tab === 'chat') return <TaskChatPanel projectId={props.task.projectId} taskId={props.task.id} onOpenConversationSettings={props.onOpenConversationSettings} />
     if (tab === 'preparation') return <TaskPreparationTab
       {...shared} liveRunId={props.task.taskPreparationRunId} liveStatus={props.task.taskPreparationStatus}
       loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation}

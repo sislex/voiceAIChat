@@ -1,6 +1,6 @@
 // REST-оркестрация Playwright Reader: сервер держит изолированную Chromium-сессию
 // разговора в browser-runner. Доступ строго свой — сессия привязана к разговору
-// (владение проверяется по БД), и только к разговорам типа playwright-reader.
+// (владение проверяется по БД), и только при выбранном движке Chromium.
 // Ключи изоляции раннера: sessionId = conversationId, userKey = uid.
 //
 // Без сконфигурированного раннера роуты отвечают 501 — UI показывает «Chromium
@@ -8,7 +8,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
-  isPlaywrightReaderConversation,
+  isChromiumReaderConversation, isBrowserSessionMetadata,
   BROWSER_COMMAND_BODY_LIMIT,
   machinePreviewUrl,
   type BrowserCommand,
@@ -47,11 +47,11 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   // Общая проверка: разговор существует, принадлежит пользователю и это
   // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.
-  const guard = async (req: FastifyRequest, id: string): Promise<string> => {
+  const guard = async (req: FastifyRequest, id: string, stopping = false): Promise<string> => {
     if (!runner) throw new BrowserRunnerError(501, 'Browser Runner не настроен на этом сервере')
     const conversation = await core.conversation(uid(req), id)
     if (!conversation) throw new BrowserRunnerError(404, 'Разговор не найден')
-    if (!isPlaywrightReaderConversation(conversation)) throw new BrowserRunnerError(403, 'Изолированный Chromium доступен только в Playwright Reader-разговоре')
+    if (!isChromiumReaderConversation(conversation) && !(stopping && conversation.assistantKind === 'web-recorder')) throw new BrowserRunnerError(403, 'Для этого разговора не выбран Chromium')
     return id
   }
 
@@ -104,7 +104,17 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
         actor: 'user',
         command: { ...options, type: 'screenshot' }
       })
-      return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}` }
+      // Координаты и страница снимка принадлежат самому кадру; статус нужен для управления очередью.
+      let page = shot.metadata?.page
+      let control: 'shared' | 'user' | undefined, queuedCommands: number | undefined
+      try {
+        const metadata = await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command: { type: 'status' } })
+        if (isBrowserSessionMetadata(metadata)) {
+          control = metadata.control; queuedCommands = metadata.queuedCommands
+          if (!page && metadata.currentUrl) page = { url: metadata.currentUrl, title: metadata.title ?? '' }
+        }
+      } catch { /* Готовый кадр остаётся полезным при недоступном status. */ }
+      return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`, ...(page ? { page } : {}), ...(control ? { control } : {}), ...(typeof queuedCommands === 'number' ? { queuedCommands } : {}) }
     } catch (err) {
       return fail(reply, err)
     }
@@ -112,7 +122,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   app.delete<{ Params: { id: string } }>('/api/browser/:id', async (req, reply) => {
     try {
-      const id = await guard(req, req.params.id)
+      const id = await guard(req, req.params.id, true)
       return { stopped: await runner!.stop(id) }
     } catch (err) {
       return fail(reply, err)

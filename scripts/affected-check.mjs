@@ -44,7 +44,7 @@ export const PACKAGES = [
   { id: 'agent', path: 'apps/agent', workspace: '@voicechat/agent', dependsOn: ['shared'] },
   // `ui` тут не из package.json, а из tsconfig `paths` и alias в vite.config.ts.
   { id: 'web', path: 'apps/web', workspace: '@voicechat/web', dependsOn: ['chat-app', 'shared', 'ui'] },
-  { id: 'web-recorder', path: 'apps/web-recorder', workspace: '@voicechat/web-recorder', dependsOn: ['shared', 'ui'] },
+  { id: 'web-recorder', path: 'apps/web-recorder', workspace: '@voicechat/web-recorder', dependsOn: ['shared', 'ui', 'ui-kit'] },
   // Вне npm-workspaces: свой node_modules с Electron, поэтому запуск через --prefix.
   // `manualGate` — их не втягивает замыкание потребителей: корневой `npm install`
   // их не ставит, и на машине без локального install гейт падал бы на чужой правке

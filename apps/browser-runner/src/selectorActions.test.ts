@@ -9,7 +9,7 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
   const self: SelectorLocator = {
     first: () => self,
     all: async () => [self],
-    count: async () => 1,
+    count: async () => (await self.all()).length,
     isEnabled: async () => true,
     isEditable: async () => true,
     isChecked: async () => false,
@@ -192,7 +192,29 @@ describe('описание элемента и прокрутка (круг 12)'
 
   it('scrollTo сообщает, что элемента нет, а не молчит', async () => {
     expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => true) }), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
-    expect(await runSelectorAction(page(locator({ scrollIntoViewIfNeeded: async () => { throw new Error('Элемент #нет не найден') } })), { kind: 'scrollTo', selector: '#нет' }))
+    expect(await runSelectorAction(page(locator({ evaluate: async () => { throw new Error('Элемент #нет не найден') } })), { kind: 'scrollTo', selector: '#нет' }))
       .toEqual({ ok: false, error: 'Элемент #нет не найден' })
+  })
+})
+
+describe('однозначные цели', () => {
+  it('не нажимает ни одну из двух видимых кнопок', async () => {
+    const a = locator(), b = locator()
+    const result = await runSelectorAction(page(locator({ all: async () => [a, b] })), { kind: 'click', selector: 'button' })
+    expect(result.error).toContain('несколько')
+    expect(a.click).not.toHaveBeenCalled()
+    expect(b.click).not.toHaveBeenCalled()
+  })
+  it('пропускает скрытую копию поля', async () => {
+    const hidden = locator({ isVisible: async () => false }), visible = locator()
+    expect(await runSelectorAction(page(locator({ all: async () => [hidden, visible], filter: () => visible })), { kind: 'type', selector: 'input', text: 'ok' })).toEqual({ ok: true })
+    expect(hidden.fill).not.toHaveBeenCalled()
+    expect(visible.fill).toHaveBeenCalledWith('ok', expect.anything())
+  })
+  it('скрытый file input допустим, неоднозначный upload запрещён', async () => {
+    const a = locator({ isVisible: async () => false }), b = locator()
+    const action = { kind: 'upload' as const, selector: 'input', name: 'a', base64: 'YQ==' }
+    expect(await runSelectorAction(page(a), action)).toEqual({ ok: true })
+    expect((await runSelectorAction(page(locator({ all: async () => [a, b] })), action)).error).toContain('несколько')
   })
 })

@@ -124,6 +124,12 @@ export interface PreviewActionElement {
   /** ARIA-роль или тип поля ввода — чем элемент является для пользователя. */
   role?: string
   disabled?: boolean
+  readOnly?: boolean
+  checked?: boolean | 'mixed'
+  expanded?: boolean
+  selected?: boolean
+  required?: boolean
+  invalid?: boolean
 }
 
 export interface PreviewPageInfo {
@@ -155,7 +161,7 @@ export interface PreviewReadResult {
   headings: { level: number; text: string }[]
   links: { text: string; href: string }[]
   buttons: string[]
-  inputs: { selector: string; type: string; name: string; placeholder: string; value: string }[]
+  inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; expanded?: boolean; selected?: boolean; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean }[]
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
   total?: number
@@ -297,6 +303,13 @@ export interface PreviewViewportResult {
 
 /** Узел дерева доступности: роль и имя как их видит скринридер. */
 export interface PreviewA11yNode {
+  disabled?: boolean
+  readOnly?: boolean
+  checked?: boolean | 'mixed'
+  expanded?: boolean
+  selected?: boolean
+  required?: boolean
+  invalid?: boolean
   role: string
   name: string
   selector: string
@@ -615,6 +628,7 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'viewport {width} — ширина превью в px (0 — адаптив) для проверки мобильной вёрстки; ' +
     'a11y {selector?} — дерево доступности (роли и имена, как их видит скринридер). ' +
     'Тестовое окружение, запущенное на машине этого разговора (dev-сервер репозитория, feature-preview), открывай ' +
+    'Текущее приложение открывай по https://app.internal/ (путь и #/маршрут сохраняются); вход выполняется внутри страницы. Dev-сервер машины — ' +
     'адресом http://machine.internal:<порт>/ — прокси доставит запрос на 127.0.0.1:<порт> машины разговора; ' +
     'типовой цикл: поправь код в репозитории машины, запусти или перезапусти dev-сервер, открой machine.internal и проверь фичу. ' +
     'Тестовые учётные записи проекта для входа в окружение возвращает инструмент test-users — логинься ими через type/click.' +

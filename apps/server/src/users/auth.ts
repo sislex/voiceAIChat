@@ -445,12 +445,13 @@ export async function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret
    */
   const authenticate: AuthenticateFn = async (req) => {
     const url = req.url.split('?')[0]!
-    // Порядок: Bearer (desktop/агенты/старые клиенты) → cookie-сессия (web, п.5) → preview-cookie (iframe).
+    // На точном пути превью Strict-cookie панели имеет приоритет: форма вложенного сайта
+    // не владеет CSRF оболочки. Обычные API по-прежнему требуют CSRF своей cookie-сессии.
     // Cookie авторизует мутации только с CSRF-заголовком, равным читаемой cookie: чужой сайт cookie отправит, заголовок — нет.
     let token = bearer(req)
     let viaCookie = false
-    if (!token) { token = readCookie(req, SESSION_COOKIE); viaCookie = Boolean(token) }
     if (!token) token = previewSession(req, url)
+    if (!token) { token = readCookie(req, SESSION_COOKIE); viaCookie = Boolean(token) }
     const runUser = await (token || !options.previewRunKeys ? null : previewRunUser(db, req, url, options.previewRunKeys))
     // Путь запоминаем в сессии: в списке устройств он отвечает на вопрос «а что
     // это устройство вообще делает», когда вход выглядит подозрительно.

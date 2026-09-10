@@ -7,7 +7,7 @@ import { DOM_HELPERS } from './domHelpers.js'
  * Строка со стрелочной функцией в evaluate лишь возвращает функцию, не вызывает. */
 export const findElements = new Function('nodes', 'limit', `
   ${DOM_HELPERS}
-  return { total: nodes.length, ...(nodes.length > limit ? { truncated: true } : {}), matches: nodes.slice(0, limit).map(node => ({ ...targetOf(node), text: textOf(node).slice(0, 200), visible: visible(node) })) };
+  return { total: nodes.length, ...(nodes.length > limit ? { truncated: true } : {}), matches: nodes.slice(0, limit).map(node => ({ selector: referenceOf(node), text: textOf(node).slice(0, 200), visible: visible(node) })) };
 `) as (nodes: unknown[], limit: unknown) => ReadContent
 
 export const readPage = new Function('scope', 'options', `

@@ -116,6 +116,8 @@ export interface TaskModalProps {
    * карточки задачи, чтобы у неё сразу был чат (идемпотентно на сервере).
    */
   onEnsureChat?: (taskId: string) => void
+  /** Открыть отдельную страницу настроек связанного task-разговора. */
+  onOpenConversationSettings?: (conversationId: string, projectId: string) => void
   /** Сводка последнего CI-рана задачи и переходы в его ленту. */
   ciSummary?: CiRunSummary
   onStartCi?: (taskId: string) => void | Promise<void>
@@ -298,7 +300,7 @@ function ModelWorkDisclosure({
  * Task-scoped adapter for the regular chat surface.  The conversation is never
  * navigated to: only task-bound history from the current project is loaded.
  */
-export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId: string }): JSX.Element {
+export function TaskChatPanel({ projectId, taskId, onOpenConversationSettings }: { projectId: string; taskId: string; onOpenConversationSettings?: (conversationId: string, projectId: string) => void }): JSX.Element {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
@@ -416,7 +418,7 @@ export function TaskChatPanel({ projectId, taskId }: { projectId: string; taskId
       title="AI-чат задачи"
       conversationId={conversationId}
       permissionMode={permissionMode}
-      onOpenConversationSettings={() => undefined}
+      onOpenConversationSettings={() => conversationId && onOpenConversationSettings?.(conversationId, projectId)}
       state={voiceState}
       messages={messages}
       loadingMessages={loading}
@@ -1247,7 +1249,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section>}
         {!props.draft && <>
         <section className="task-tab-panel task-chat-tab" data-testid="task-chat-panel" {...panelProps('chat')}>
-          {activeTab === 'chat' && <TaskChatPanel projectId={task.projectId} taskId={task.id} />}
+          {activeTab === 'chat' && <TaskChatPanel projectId={task.projectId} taskId={task.id} onOpenConversationSettings={props.onOpenConversationSettings} />}
         </section>
         <section className="task-tab-panel" data-testid="task-timeline-panel" {...panelProps('timeline')}>
           <PanelHeading title="Временная шкала" description="Этапы задачи, попытки внутри них и время, потраченное на каждую." />

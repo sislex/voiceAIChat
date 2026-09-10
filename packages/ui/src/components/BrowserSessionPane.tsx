@@ -49,6 +49,8 @@ const STATE_LABELS: Record<string, string> = {
 
 export interface BrowserSessionPaneProps {
   conversationId: string
+  initialUrl?: string | null
+  onPageChange?: (url: string) => void | Promise<void>
   browser?: RendererBrowserBridge
   /** Приложить кадр к сообщению чата: панель отдаёт data-URL, хост решает, что с ним делать. */
   onAttachFrame?: (dataUrl: string) => void
@@ -91,7 +93,7 @@ export function BrowserSessionPane(props: BrowserSessionPaneProps): JSX.Element 
   return <BrowserSessionPaneSession key={props.conversationId} {...props} />
 }
 
-function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios }: BrowserSessionPaneProps): JSX.Element {
+function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios, initialUrl, onPageChange }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop' | null>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
@@ -157,6 +159,30 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   // Флаг актуальности: смена разговора или размонтирование отменяет поздние ответы.
   const alive = useRef(0)
 
+  const openingUrl = useRef(initialUrl), pageCallback = useRef(onPageChange)
+  openingUrl.current = initialUrl; pageCallback.current = onPageChange
+  const savedPage = useRef<string | null>(initialUrl ?? null), addressFocused = useRef(false)
+  const saveQueue = useRef(Promise.resolve())
+  const observePage = useCallback((page: { url: string; title: string }): void => {
+    let url = page.url
+    try { const value = new URL(url); if (value.pathname === '/api/preview' && value.searchParams.has('url')) url = value.searchParams.get('url')! } catch { return }
+    if (!/^https?:\/\//.test(url)) return
+    if (!origin.current || origin.current === 'about:blank') origin.current = url
+    setMeta(current => current ? { ...current, currentUrl: url, title: page.title, tabs: current.tabs.map(tab => tab.id === current.activeTabId ? { ...tab, url, title: page.title } : tab) } : current)
+    setHistory(current => pushHistory(current, url))
+    if (!addressFocused.current && !addressDirty.current) setAddress(url)
+    if (savedPage.current === url) return
+    savedPage.current = url
+    const save = pageCallback.current, generation = alive.current
+    saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
+      if (generation !== alive.current) return
+      try { await save?.(url) } catch {
+        if (generation === alive.current) { if (savedPage.current === url) savedPage.current = null; setMessage('Не удалось сохранить адрес. Повторю при следующем обновлении страницы.') }
+      }
+    })
+  }, [])
+
+
   const applyMeta = useCallback((next: BrowserSessionMetadata): void => {
     if (activeTab.current !== next.activeTabId || (incarnation.current && incarnation.current !== next.incarnation)) {
       diagnosticRequest.current++
@@ -166,11 +192,12 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     incarnation.current = next.incarnation
     dialogOpen.current = Boolean(next.dialogs?.some(dialog => dialog.tabId === next.activeTabId))
     setMeta(next)
+    if (next.currentUrl) observePage({ url: next.currentUrl, title: next.title ?? '' })
     setViewportId(VIEWPORTS.find(viewport => viewport.viewport.width === next.viewport.width && viewport.viewport.height === next.viewport.height)?.id ?? null)
-    if (!addressDirty.current) setAddress(isWebAddress(next.currentUrl) ? next.currentUrl : '')
+    if (!addressDirty.current && !addressFocused.current) setAddress(isWebAddress(next.currentUrl) ? next.currentUrl : '')
     setHistory((current) => pushHistory(current, next.currentUrl))
     if (!origin.current && isWebAddress(next.currentUrl)) origin.current = next.currentUrl
-  }, [])
+  }, [observePage])
 
   const refreshFrame = useCallback((observe = false): Promise<void> => {
     if (!browser || !incarnation.current || (!observe && dialogOpen.current)) return Promise.resolve()
@@ -196,7 +223,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         }
         if (dialogOpen.current) { frameFailures.current = 0; setFrameError(''); return }
         const shot = await browser.screenshot(conversationId, { incarnation: currentIncarnation, ...(tabId ? { tabId } : {}), format: 'jpeg', quality: 82 })
-        if (current()) { setFrame(shot.dataUrl); frameFailures.current = 0; setFrameError('') }
+        if (current()) {
+          setFrame(shot.dataUrl); frameFailures.current = 0; setFrameError('')
+          if (shot.control) setMeta(value => value ? { ...value, control: shot.control, queuedCommands: shot.queuedCommands } : value)
+          if (shot.page) observePage(shot.page)
+        }
       } catch (err) {
         if (current() && ++frameFailures.current >= 3) setFrameError(`Кадр не обновляется: ${err instanceof Error ? err.message : 'нет связи с Chromium'}. Повторяем подключение…`)
       } finally {
@@ -205,29 +236,29 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     })
     frameRequest.current = request
     return request.promise
-  }, [browser, conversationId, applyMeta])
+  }, [browser, conversationId, applyMeta, observePage])
 
   // Старт сессии на монтирование/смену разговора; stop — на уходе.
   useEffect(() => {
     const generation = ++alive.current
+    busyRequests.current = { generation, count: 0 }; setBusy(false)
     incarnation.current = null
     setPhase('starting'); setFrame(null); setMeta(null); setMessage('')
-    if (!browser) { setPhase('unavailable'); setMessage('Изолированный Chromium недоступен: browser-runner не настроен на сервере. Используйте Web Reader для доступных через прокси страниц или попросите администратора задать VC_BROWSER_RUNNER_URL и VC_BROWSER_RUNNER_TOKEN.'); return }
-    void browser.start(conversationId).then(
-      (started) => {
+    if (!browser) { setPhase('unavailable'); setMessage('Полный браузер недоступен на сервере. В Web Reader можно выбрать быстрый просмотр; для полного браузера требуется настройка администратором.'); return }
+    void browser.start(conversationId).then(async started => {
+      if (generation !== alive.current) return
+      incarnation.current = started.incarnation
+      if ((!started.currentUrl || started.currentUrl === 'about:blank') && openingUrl.current) {
+        const next = await browser.command(conversationId, { incarnation: started.incarnation, command: { type: 'navigate', url: openingUrl.current } })
         if (generation !== alive.current) return
-        incarnation.current = started.incarnation
-        applyMeta(started); setPhase('ready')
-        void refreshFrame()
-      },
-      (err: unknown) => {
-        if (generation !== alive.current) return
-        const text = err instanceof Error ? err.message : 'Не удалось запустить Chromium'
-        // 501 от сервера означает «раннер не настроен» — это недоступность, не сбой.
-        setPhase(/не настроен|недоступен/i.test(text) ? 'unavailable' : 'error')
-        setMessage(text)
+        if (isBrowserSessionMetadata(next)) started = next
       }
-    )
+      applyMeta(started); setPhase('ready'); void refreshFrame()
+    }).catch((err: unknown) => {
+      if (generation !== alive.current) return
+      const text = err instanceof Error ? err.message : 'Не удалось запустить Chromium'
+      setPhase(/не настроен|недоступен/i.test(text) ? 'unavailable' : 'error'); setMessage(text)
+    })
     return () => {
       alive.current++
       if (browser && incarnation.current) void browser.stop(conversationId).catch(() => undefined)
@@ -294,7 +325,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       // `inspect` — журналы. Обновляем состояние только по метаданным.
       if (command.type === 'handleDialog' && (!isBrowserSessionMetadata(next) || !Array.isArray(next.dialogs))) throw new Error('Сайт не подтвердил ответ. Обновите состояние и повторите.')
       if (isBrowserSessionMetadata(next)) applyMeta(next)
-      await refreshFrame()
+      if (command.type !== 'cancel' && command.type !== 'control') await refreshFrame()
       return next
     } catch (err) {
       if (generation === alive.current) {
@@ -372,6 +403,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const restartSession = (): void => {
     if (!browser) return
     const generation = ++alive.current
+    busyRequests.current = { generation, count: 0 }; setBusy(false)
     incarnation.current = null
     addressDirty.current = false
     frameFailures.current = 0
@@ -442,6 +474,10 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     if (!url) return
     const full = withScheme(url)
     addressDirty.current = false
+    // После Enter адрес уже отправлен: фокус кадра позволяет показывать
+    // последующие переходы модели и сразу вводить текст на самой странице.
+    addressFocused.current = false
+    imgRef.current?.focus()
     // Происхождение первого открытого адреса — то, с чем сверяемся дальше:
     // уход на другой хост посреди проверки почти всегда промах или редирект.
     if (!origin.current) origin.current = full
@@ -572,6 +608,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         aria-label="Адрес страницы"
         placeholder="https://…"
         value={address}
+        onFocus={() => { addressFocused.current = true }}
+        onBlur={() => { addressFocused.current = false }}
         disabled={phase !== 'ready'}
         onChange={(event) => { addressDirty.current = true; setAddress(event.target.value) }}
         onKeyDown={(event) => {
@@ -611,6 +649,11 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       )}
       {meta?.title && <span className="playwright-reader-title" title={meta.title}>{meta.title}</span>}
       {/* Сессия одна на разговор: без этого непонятно, кто увёл страницу. */}
+      {phase === 'ready' && (!meta?.currentUrl || meta.currentUrl === 'about:blank') && <span className="playwright-reader-quick-sites">
+        <Button size="sm" variant="ghost" onClick={() => void run({ type: 'navigate', url: 'https://app.internal/' })}>Текущий проект</Button>
+        <Button size="sm" variant="ghost" onClick={() => void run({ type: 'navigate', url: 'https://mail.google.com/' })}>Gmail</Button>
+        <Button size="sm" variant="ghost" onClick={() => void run({ type: 'navigate', url: 'https://www.instagram.com/' })}>Instagram</Button>
+      </span>}
       {meta?.lastActor && (
         <span className="playwright-reader-actor" data-actor={meta.lastActor}>
           {meta.lastActor === 'assistant' ? 'последнее действие — модели' : 'последнее действие — ваше'}
@@ -671,7 +714,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       </span>
       {/* Долгая навигация ничем не отличалась от зависшей: прервать её было
           нечем, оставался только перезапуск всей сессии. */}
-      {busy && <Button size="sm" variant="ghost" onClick={() => void run({ type: 'stop' })}>Прервать</Button>}
+      <Button size="sm" variant="ghost" disabled={!busy} onClick={() => void run({ type: 'stop' })}>Прервать</Button>
+      <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'control', owner: meta?.control === 'user' ? 'shared' : 'user' })}>
+        {meta?.control === 'user' ? 'Вернуть управление модели' : 'Взять управление'}
+      </Button>
+      {meta?.control === 'user' && <span role="status">Управление у вас. Действия модели приостановлены.</span>}
+      {/* Место кнопок постоянно: иначе кадр сдвигается между двумя кликами. */}
+      <Button size="sm" variant="ghost" disabled={!busy} onClick={() => void run({ type: 'cancel' })}>Отменить ожидающие команды</Button>
       {/* Зависшую страницу иначе не выкинуть: stop звался только при уходе с экрана. */}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={restartSession}>Перезапустить</Button>
     </div>
