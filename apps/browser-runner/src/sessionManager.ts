@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
 import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
+import { BrowserCommandQueue } from './commandQueue.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
 
@@ -12,6 +13,7 @@ interface Session {
   userKey: string
   conversationKey: string
   incarnation: string
+  queue: BrowserCommandQueue
   context: BrowserContext
   pages: Map<string, Page>
   pageIds: WeakMap<Page, string>
@@ -63,6 +65,7 @@ export interface StartSessionRequest {
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, Promise<Session>>()
+  private readonly stopping = new Map<string, Promise<boolean>>()
 
   private readonly allowedTargets: Set<string>
 
@@ -80,6 +83,8 @@ export class BrowserSessionManager {
   }
 
   async start(request: StartSessionRequest): Promise<BrowserSessionMetadata> {
+    // Тот же каталог профиля нельзя открывать, пока прежний Chromium его закрывает.
+    await this.stopping.get(request.sessionId)
     let pending = this.sessions.get(request.sessionId)
     if (!pending) {
       pending = this.create(request)
@@ -113,6 +118,7 @@ export class BrowserSessionManager {
       conversationKey: request.conversationKey,
       incarnation: randomUUID(),
       context,
+      queue: new BrowserCommandQueue(),
       pages: new Map(),
       pageIds: new WeakMap(),
       console: [],
@@ -192,10 +198,20 @@ export class BrowserSessionManager {
   }
 
   async stop(sessionId: string): Promise<boolean> {
+    const closing = this.stopping.get(sessionId)
+    if (closing) return closing
+    const operation = this.stopSession(sessionId)
+    this.stopping.set(sessionId, operation)
+    try { return await operation } finally { this.stopping.delete(sessionId) }
+  }
+
+  private async stopSession(sessionId: string): Promise<boolean> {
     const pending = this.sessions.get(sessionId)
     if (!pending) return false
     this.sessions.delete(sessionId)
     const session = await pending
+    session.queue.cancel()
+    // Закрытие контекста прерывает и зависшее действие, очередь больше не запускается.
     await session.context.close()
     // Каталог профиля детерминирован от пары ключей, а у QA-рана вторым ключом
     // идёт id прогона — значит, каждый прогон оставлял бы свой каталог навсегда.
@@ -221,6 +237,20 @@ export class BrowserSessionManager {
   async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
+    session.lastUsedAt = Date.now()
+    if (request.command.type === 'control' || request.command.type === 'cancel') {
+      if (request.actor !== 'user') throw new Error('human_control: Управление может передать только пользователь')
+      if (request.command.type === 'control') {
+        if (request.command.owner !== 'shared' && request.command.owner !== 'user') throw new Error('invalid_control')
+        session.queue.control(request.command.owner)
+      } else session.queue.cancel()
+      return this.metadata(session)
+    }
+    if (request.command.type === 'status') return this.metadata(session)
+    return session.queue.enqueue(request.actor, () => this.execute(session, request), request.command.type === 'screenshot')
+  }
+
+  private async execute(session: Session, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
     if (request.command.type !== 'status' && request.command.type !== 'screenshot') session.lastActor = request.actor
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
     // разбор журналов и снимок экрана возвращаются раньше метаданных, а именно
@@ -331,6 +361,7 @@ export class BrowserSessionManager {
       conversationId: session.conversationKey,
       incarnation: session.incarnation,
       state: 'ready',
+      control: session.queue.owner, queuedCommands: session.queue.size,
       activeTabId: session.activeTabId,
       tabs,
       viewport: session.viewport,

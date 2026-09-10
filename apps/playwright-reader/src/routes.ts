@@ -98,11 +98,12 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
       })
       // Адрес может измениться действием модели или самой страницы между пользовательскими командами.
       let page: { url: string; title: string } | undefined
+      let control: 'shared' | 'user' | undefined, queuedCommands: number | undefined
       try {
         const metadata = await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command: { type: 'status' } })
-        if (isBrowserSessionMetadata(metadata) && metadata.currentUrl) page = { url: metadata.currentUrl, title: metadata.title ?? '' }
+        if (isBrowserSessionMetadata(metadata)) { control = metadata.control; queuedCommands = metadata.queuedCommands; if (metadata.currentUrl) page = { url: metadata.currentUrl, title: metadata.title ?? '' } }
       } catch { /* Кадр остаётся полезным, если чтение метаданных попало на навигацию. */ }
-      return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`, ...(page ? { page } : {}) }
+      return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`, ...(page ? { page } : {}), ...(control ? { control } : {}), ...(typeof queuedCommands === 'number' ? { queuedCommands } : {}) }
     } catch (err) {
       return fail(reply, err)
     }
