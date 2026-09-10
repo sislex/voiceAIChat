@@ -41,6 +41,11 @@ describe('перевод действий модели для Playwright Reader'
     expect(planModelAction({ kind: 'find', selector: 'button', visibleOnly: true })).toMatchObject({ command: { action: { kind: 'find', selector: 'button', visibleOnly: true } } })
   })
 
+  it('все условия wait переходят в команду, diagnostic остаётся у хоста', () => {
+    const conditions = { selector: '#input', text: 'Готово', enabled: true, editable: true, checked: false, value: '', count: 1, url: '**/ready', loadState: 'load' as const, predicate: 'window.appReady', timeoutMs: 30000 }
+    expect(planModelAction({ kind: 'wait', ...conditions, diagnostic: true })).toEqual({ kind: 'command', command: { type: 'selector', action: { kind: 'wait', ...conditions } } })
+  })
+
   it('прокрутка сохраняет край и контейнер вместо фиксированного шага колеса', () => {
     expect(planModelAction({ kind: 'scroll', to: 'bottom' })).toMatchObject({
       command: { type: 'selector', action: { kind: 'scroll', to: 'bottom' } }

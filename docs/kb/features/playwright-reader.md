@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-10
-checked: c36ed3eb
+checked: f93ee2ca
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -412,6 +412,25 @@ host aliases так же, как URL страницы. Каталог iframe н�
 действия. Скрипты локатора передаются Playwright как функции, собранные из
 констант: строка со стрелочной функцией сама по себе не вызывает эту функцию.
 Живые проверки — `readingActions.test.ts` и E2E `playwrightReader.e2e.test.ts`.
+
+С 2026-09-10 (цикл проверки 07) `wait` Chromium понимает условия готовности:
+текст внутри selector, состояния attached/detached/visible/hidden, enabled,
+editable, checked, value, count, URL с шаблоном `*`, domcontentloaded/load и
+синхронный predicate приложения. Контракт и проверка сочетаний —
+`packages/shared/src/browserWaiting.ts`, исполнение — `apps/browser-runner/src/waiting.ts`.
+Публичный URL проверяется после восстановления host alias, включая hash-маршрут.
+`count` включает скрытые узлы, ноль поддерживается; неявная видимость требуется
+только без count. Пустое value и булево false сохраняют свой смысл.
+
+Условия делят общий timeoutMs (до 30 000 мс, по умолчанию 5000), результат сообщает
+waitedMs. Перед возвратом завершаются все запущенные ожидания; handle predicate
+освобождается. Predicate проходит project gate evaluate без подтверждения
+изменяющих действий; операция и последующее ожидание остаются отдельными шагами.
+Predicate может быть выражением или функцией без аргументов;
+Promise отклоняется явно, чтобы его truthy-объект не выдавался за готовность.
+Сам по себе load не ждёт будущие запросы SPA — модель ждёт содержимое или флаг
+готовности. Обычный iframe wait сохраняется, расширенные условия требуют Chromium
+и явно отказывают при попытке перейти к прежнему relay вместо их исполнения.
 
 Ложатся напрямую: `open`, `back`, `forward`, `click`, `type`, `read`, `find`,
 `wait`, `scroll`, `press`,

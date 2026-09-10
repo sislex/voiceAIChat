@@ -12,6 +12,7 @@
 
 import type { BrowserActionOutcome } from './playwrightReader'
 import { BROWSER_UPLOAD_LIMIT_BYTES } from './browserLimits'
+import { isBrowserWaitOptions, type BrowserWaitOptions } from './browserWaiting'
 
 export const PREVIEW_ACTION_COMMAND_TYPE = 'voicechat.preview.action.v1' as const
 export const PREVIEW_ACTION_RESULT_TYPE = 'voicechat.preview.action-result.v1' as const
@@ -82,7 +83,7 @@ export type PreviewAction =
   /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
   | { kind: 'errors'; clear?: boolean; diagnostic?: boolean }
   /** Дождаться появления элемента (selector или видимый text) с таймаутом. */
-  | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number; diagnostic?: boolean }
+  | ({ kind: 'wait'; diagnostic?: boolean } & BrowserWaitOptions)
   /** Назад по истории внутренней страницы (переход подтверждается page-ready). */
   | { kind: 'back'; diagnostic?: boolean }
   /** Вперёд по истории внутренней страницы (симметрично back). */
@@ -431,12 +432,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'errors':
       return value.clear === undefined || typeof value.clear === 'boolean'
     case 'wait':
-      return (
-        optBounded(value.selector, L.selector) &&
-        optBounded(value.text, L.text) &&
-        (value.selector !== undefined || value.text !== undefined) &&
-        (value.timeoutMs === undefined || (typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs) && value.timeoutMs > 0 && value.timeoutMs <= 8_000))
-      )
+      return isBrowserWaitOptions(value)
     case 'back':
     case 'forward':
     case 'edits':
@@ -579,7 +575,10 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     'В Chromium fullPage снимает всю страницу, animations: disabled стабилизирует кадр; timeoutMs ограничивает ожидание, по умолчанию 10000 мс. ' +
     'Координаты снимка Chromium и действий — CSS px; rect задаётся в координатах документа; ' +
     'errors {clear?} — накопленные ошибки страницы (JS-исключения, console.error, упавшие запросы) — проверяй их после действий при тестировании; ' +
-    'wait {selector|text, timeoutMs?} — дождаться появления элемента (асинхронные SPA); back/forward — по истории страницы; ' +
+    'wait {selector|text, timeoutMs?} — дождаться появления элемента; в Chromium selector вместе с text ждёт текст внутри элемента. ' +
+    'Дополнительные условия wait в Chromium: state (attached/detached/visible/hidden), enabled, editable, checked, value, count, url (шаблон с *), loadState (domcontentloaded/load), predicate (синхронное JS-условие). ' +
+    'Условия делят один timeoutMs до 30000 мс; count включает скрытые узлы, по умолчанию видимость проверяется только без count. Для SPA жди нужное содержимое или predicate, один load не означает готовность приложения. ' +
+    'back/forward — по истории страницы; ' +
     'В Playwright Reader и Chromium-проверке также доступны tabs — список вкладок с id; new-tab {url?}; ' +
     'select-tab {tabId}; close-tab {tabId}; reload — перезагрузка; stop-loading — остановка загрузки без закрытия сессии. ' +
     'После открытия popup вызови tabs, найди его по openerTabId и выбери select-tab перед чтением или вводом. ' +

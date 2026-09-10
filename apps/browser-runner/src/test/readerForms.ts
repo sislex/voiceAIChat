@@ -1,11 +1,13 @@
 // Общий браузерный стенд раннера и E2E: события и выбранные файлы наблюдаемы
 // снаружи через текст страницы, без подмены Playwright-локаторов.
 import { createServer } from 'node:http'
+import { waitingFixtureHtml } from './readerWaiting.js'
 import { readingFixtureHtml } from './readerReading.js'
 
 export async function startReaderFormsFixture() {
   const app = createServer((req, res) => {
     res.setHeader('content-type', 'text/html; charset=utf-8')
+    if (req.url === '/waiting') { res.end(waitingFixtureHtml()); return }
     if (req.url === '/reading') { res.end(readingFixtureHtml()); return }
     if (req.url === '/next') { res.end('<!doctype html><title>Следующая страница</title><h1>Переход завершён</h1>'); return }
     if (req.url === '/capture') {

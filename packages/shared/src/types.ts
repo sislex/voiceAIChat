@@ -1,5 +1,6 @@
 // Общие типы, разделяемые между main, preload и renderer.
 
+import type { BrowserWaitOptions } from './browserWaiting'
 import type { PreviewElementPayload } from './previewInspector'
 
 /** Состояния голосового пайплайна. */
@@ -209,7 +210,7 @@ export type BrowserSelectorAction =
   | { kind: 'type'; selector: string; text: string; submit?: boolean }
   | { kind: 'read'; selector?: string; limit?: number; offset?: number }
   | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean }
-  | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number }
+  | ({ kind: 'wait' } & BrowserWaitOptions)
   /** Наведение курсора: выпадающие меню и тултипы иначе не открыть. */
   | { kind: 'hover'; selector?: string; text?: string }
   /** Сложный контрол: select по значению или подписи, checkbox/radio, date/range. */
@@ -242,6 +243,7 @@ export interface BrowserSelectorResult {
   total?: number
   offset?: number
   nextOffset?: number
+  waitedMs?: number
   headings?: Array<{ level: number; text: string }>
   links?: Array<{ text: string; href: string }>
   buttons?: string[]

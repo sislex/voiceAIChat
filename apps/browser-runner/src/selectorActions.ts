@@ -1,23 +1,24 @@
-import { BROWSER_UPLOAD_LIMIT_BYTES, type BrowserElementDescription, type BrowserSelectorAction, type BrowserSelectorResult } from '@voicechat/shared'
+import { BROWSER_UPLOAD_LIMIT_BYTES, isBrowserWaitOptions, type BrowserElementDescription, type BrowserSelectorAction, type BrowserSelectorResult } from '@voicechat/shared'
 import { describeElementScript, scrollToScript } from './describeElement.js'
 import { findElements, readPage, readBounds, type ReadContent } from './pageReading.js'
+import { waitForConditions, type WaitLocator, type WaitPage } from './waiting.js'
 
 /**
  * Минимум от Playwright, который нужен селекторным действиям. Узкий тип вместо
  * `Page` — чтобы логику можно было проверить без Chromium: тесты подставляют
  * фейковые локаторы.
  */
-export interface SelectorLocator {
+export interface SelectorLocator extends WaitLocator {
   first(): SelectorLocator
   all(): Promise<SelectorLocator[]>
-  filter(options: { visible: boolean }): SelectorLocator
+  filter(options: { visible?: boolean; hasText?: string }): SelectorLocator
   evaluateAll(script: string | ((nodes: unknown[], arg: unknown) => unknown), arg?: unknown): Promise<unknown>
   click(options?: { timeout?: number; button?: 'left' | 'right'; clickCount?: number; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }): Promise<void>
   press(key: string, options?: { timeout?: number }): Promise<void>
   fill(value: string, options?: { timeout?: number }): Promise<void>
   innerText(options?: { timeout?: number }): Promise<string>
   isVisible(): Promise<boolean>
-  waitFor(options?: { state?: 'visible'; timeout?: number }): Promise<void>
+  waitFor(options?: { state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout?: number }): Promise<void>
   hover(options?: { timeout?: number }): Promise<void>
   selectOption(value: string, options?: { timeout?: number }): Promise<unknown>
   check(options?: { timeout?: number }): Promise<void>
@@ -27,7 +28,7 @@ export interface SelectorLocator {
   evaluate(fn: string | ((node: unknown, arg: unknown) => unknown), arg?: unknown, options?: { timeout?: number }): Promise<unknown>
   setInputFiles(files: { name: string; mimeType: string; buffer: Buffer }, options?: { timeout?: number }): Promise<void>
 }
-export interface SelectorPage {
+export interface SelectorPage extends WaitPage {
   locator(selector: string): SelectorLocator
   getByText(text: string, options?: { exact?: boolean }): SelectorLocator
   keyboard: { press(key: string): Promise<void> }
@@ -44,11 +45,15 @@ export interface SelectorPage {
 /** Потолок загрузки: содержимое едет в JSON, base64 раздувает его на треть. */
 const UPLOAD_LIMIT_BYTES = BROWSER_UPLOAD_LIMIT_BYTES
 
-export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction): Promise<BrowserSelectorResult> {
+export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction, publicUrl: (raw: string) => string = raw => raw): Promise<BrowserSelectorResult> {
   const timeout = 'timeoutMs' in action && typeof action.timeoutMs === 'number' ? Math.min(Math.max(action.timeoutMs, 100), 30_000) : 5_000
   const locate = (selector?: string, text?: string): SelectorLocator | null =>
     selector ? page.locator(selector) : text ? page.getByText(text, { exact: false }) : null
   try {
+    if (action.kind === 'wait') {
+      if (!isBrowserWaitOptions(action)) return { ok: false, error: 'Некорректные или несовместимые условия ожидания' }
+      return await waitForConditions(page, action, publicUrl)
+    }
     if (action.kind === 'click') {
       const target = locate(action.selector, action.text)
       if (!target) return { ok: false, error: 'Нужен selector или text' }
@@ -148,10 +153,7 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const result = await filtered.evaluateAll(findElements, limit) as ReadContent
       return { ok: true, ...result }
     }
-    const target = locate(action.selector, action.text)
-    if (!target) return { ok: false, error: 'Нужен selector или text' }
-    await target.first().waitFor({ state: 'visible', timeout })
-    return { ok: true }
+    return { ok: false, error: 'Неизвестное селекторное действие' }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message.split('\n')[0] : 'Действие не выполнено' }
   }

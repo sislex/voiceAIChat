@@ -162,6 +162,46 @@ describe('previewMcp — инструменты browser', () => {
   })
 
   it.each([
+    { selector: '#status', text: 'Готово' }, { selector: '#spinner', state: 'hidden' },
+    { selector: '#send', enabled: true }, { selector: '#field', editable: true },
+    { selector: '#check', checked: false }, { selector: '#field', value: '' },
+    { selector: '.row', count: 0 }, { url: '**/ready' },
+    { loadState: 'load' }, { predicate: 'window.appReady' }
+  ])('условие ожидания %j передаётся в Chromium', async (options) => {
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true, waitedMs: 12 } }))
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call('wait', { ...options, timeoutMs: 30000 })).isError).not.toBe(true)
+    expect(execute).toHaveBeenCalledWith(U, CONV, { kind: 'wait', ...options, timeoutMs: 30000 })
+  })
+
+  it('расширенный wait не превращается в прежний поиск iframe', async () => {
+    const forwarded = vi.fn()
+    await makeApp(undefined, { browserExecutor: async () => null })
+    client = forwarded
+    const result = await call('wait', { selector: '#spinner', state: 'hidden' })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('Playwright Reader')
+    expect(forwarded).not.toHaveBeenCalled()
+  })
+
+  it('wait отклоняет противоречивые условия без вызова браузера', async () => {
+    const execute = vi.fn(async () => null)
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call('wait', { selector: '.row', count: 0, state: 'visible' })).isError).toBe(true)
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('predicate не обходит проектную политику evaluate', async () => {
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true, waitedMs: 1 } }))
+    const gate = vi.fn(async (_entry: unknown, code: string) => ({ allowed: code === 'window.appReady', needsConfirmation: code !== 'window.appReady' }))
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], gateEvaluate: gate }, { browserExecutor: execute })
+    expect((await call('wait', { predicate: 'document.body.remove()' })).isError).toBe(true)
+    expect(execute).not.toHaveBeenCalled()
+    expect((await call('wait', { predicate: 'window.appReady' })).isError).not.toBe(true)
+    expect(gate).toHaveBeenLastCalledWith(expect.objectContaining({ userId: U, conversationId: CONV }), 'window.appReady', false)
+  })
+
+  it.each([
     ['tabs', {}, { type: 'status' }],
     ['new-tab', { url: 'https://example.com/' }, { type: 'newTab', url: 'https://example.com/' }],
     ['select-tab', { tabId: 't2' }, { type: 'selectTab', tabId: 't2' }],
