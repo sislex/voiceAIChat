@@ -35,7 +35,7 @@ import { createOperationsStore, type OperationsStore } from '../store/domains/op
 import { createAdminStore, type AdminStore } from '@voicechat/admin-app'
 import { createProjectsStore, type ProjectsStore } from '../store/domains/projectsStore'
 import { createBrowserReduxDevToolsDiagnostics, type StoreDiagnostics } from '../store/devtools'
-import { SETTINGS_UPDATE_KEY } from '../store/contracts'
+import { SETTINGS_UPDATE_KEY } from '@voicechat/ui-foundation/persistence'
 
 /** Входящие realtime-кадры: их владельца знает только runtime. */
 export interface RealtimeHandlers {

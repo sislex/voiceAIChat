@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
 import type { ProjectMachine } from '@shared/projects'
-import { makeAgent, makeOfflineAgent } from '../test/fixtures'
+import { makeAgent, makeOfflineAgent } from '../test/fixtures/index'
 import { ProjectMachinesSettings } from './ProjectMachinesSettings'
 
 const machines: ProjectMachine[] = [

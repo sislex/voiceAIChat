@@ -2,7 +2,7 @@
 // содержимое, плюс крайние случаи раздела (нет проектов, проект не найден).
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import { KanbanBoard } from './kanban'
+import { KanbanBoard } from './kanban/index'
 import { makeBoard, makeDefaultColumns, makeMembers, makeTask, noopHandlers } from './kanban/fixtures'
 import { ProjectNotFoundPage, ProjectPage, ProjectsEmptyPage, type ProjectSection } from './ProjectPage'
 

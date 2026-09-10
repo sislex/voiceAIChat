@@ -1,3 +1,5 @@
+import { registerApplicationReleaseRoutes } from '../routes/applicationReleases.js'
+import { ApplicationReleaseManager, createApplicationReleaseRuntime } from '../releases/applicationReleaseManager.js'
 // Сборка канбан-кластера: хуки модели, подготовка задач, менеджер ранов CI, QA-стадии, релизы,
 // мерж-раны, автопилот, запуск ранов из MCP и оркестрация планов. Раньше всё это лежало прямо в
 // `buildServer` (~1 000 строк) и замыкалось на его локальные переменные; теперь зависимости от ядра
@@ -40,7 +42,7 @@ import { AgentCommandExecutor } from '../ci/executor.js'
 import type { KanbanCore } from './core.js'
 import type { KanbanService } from './service.js'
 import { createOrchestrationManager } from '../orchestration/runManager.js'
-import type { MakeService } from '@voicechat/make'
+import type { MakeService } from '@voicechat/make-contracts'
 import { RemoteLlmClient } from '../llm/remoteClient.js'
 import type { LlmClient } from '../claude/types.js'
 import { type KbUsageTracker } from '../kb/usage.js'
@@ -758,9 +760,18 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     // корректной версии в пределах health-check бюджета, а не падает мгновенно.
     if(project.productionEnvironmentMode==='managed'){try{return (await managedEnvironments.resolve(release.triggeredBy,release.projectId,'production',{requireOnline:false})).target}catch{return null}}
     if(!project.productionCheckoutPath)return null
-    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
+    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run gate:all', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
   registerReleaseRoutes(app, db, releaseManager, managedEnvironments, machines)
+  const applicationReleases = new ApplicationReleaseManager(db, createApplicationReleaseRuntime({
+    exec: async (target, command, timeoutMs, onChunk) => {
+      let output = ''
+      const result = await machines.execStream(target.agentId, command, timeoutMs, chunk => { output += chunk; onChunk?.(chunk) })
+      return { ...result, output }
+    }
+  }))
+  registerApplicationReleaseRoutes(app, db, applicationReleases, releaseManager, managedEnvironments)
+
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, testFix: ciModelHooks.testFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => machines.isOnline(id), platformOf: (id) => machines.platformOf(id), policyOf: (id) => machines.policyOf(id), fsRead: (id, path) => machines.fsRead(id, path), fsWrite: (id, path, data) => machines.fsWrite(id, path, data), fsDelete: (id, path) => machines.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)
   registerInvitationRoutes(app, db, { mailer, publicUrl: config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })

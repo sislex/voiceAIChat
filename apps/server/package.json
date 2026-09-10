@@ -32,7 +32,8 @@
     "postcss-value-parser": "4.2.0",
     "sharp": "^0.34.5",
     "zod": "^4.4.3",
-    "tough-cookie": "5.1.2"
+    "tough-cookie": "5.1.2",
+    "@voicechat/make-contracts": "*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

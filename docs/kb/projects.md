@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-09
-checked: a553394c
+updated: 2026-09-10
+checked: 8c54ade4
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -22,7 +22,7 @@ areas:
   - packages/ui/src/components/kanban
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/ipc.ts
-  - packages/ui/src/lib/dnd.ts
+  - packages/ui-foundation/src/lib/dnd.ts
   - packages/ui/src/lib/useDismissibleMenu.ts
   - packages/ui/src/store/domains/projectsStore.ts
   - packages/ui/src/components/ConversationSettings.tsx
@@ -1082,7 +1082,7 @@ DOM-узлы доски, колонок и карточек сохраняют �
 
 ### Перетаскивание карточек и колонок
 
-Механизм один на мышь, палец и стилус — pointer-события (`packages/ui/src/lib/dnd.ts`),
+Механизм один на мышь, палец и стилус — pointer-события (`packages/ui-foundation/src/lib/dnd.ts`),
 без внешних dnd-библиотек. Нативный HTML5 DnD (`application/x-task` /
 `application/x-column`) убран целиком: мобильные браузеры не генерируют
 `dragstart`/`drop`, поэтому на телефоне и планшете доска была нередактируемой.

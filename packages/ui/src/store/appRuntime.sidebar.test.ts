@@ -11,8 +11,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { CONVERSATIONS_REFRESH_DEBOUNCE_MS } from '@voicechat/chat-app'
 import { createTestStore, type TestStore } from '../test/appHarness'
-import { createFakeApi, createFakeCi, type FakeApi } from '../test/fakeApi'
-import { makeLogLine, makeRun, makeStep } from '../test/fixtures'
+import { createFakeApi, createFakeCi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
+import { makeLogLine, makeRun, makeStep } from '../test/fixtures/index'
 import type { CiRunSummary, CiStatus } from '@shared/ci'
 import type { Message } from '@shared/types'
 

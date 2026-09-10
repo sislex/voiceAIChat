@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "runtime": [
+    "ENV PORT=8800 VC_AUTOMATION_DATA_DIR=/data"
+  ]
+}

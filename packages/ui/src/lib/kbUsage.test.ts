@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { Message } from '@shared/types'
 import { estimateKbTokens } from '@shared/kb'
 import { applyKbUsageFrame, aggregateKbUsage, buildKbUsageFromMessages, kbUsageShare, kbUsageSnapshot, mergeKbUsage } from './kbUsage'
-import { KB_T0, makeKbQueries, makeKbQuery, makeKbSection, makeKbUsageReport } from '../test/fixtures'
+import { KB_T0, makeKbQueries, makeKbQuery, makeKbSection, makeKbUsageReport } from '../test/fixtures/index'
 
 /** Ответ модели с сохранённым авто-контекстом БЗ в meta.request. */
 function aiWithKb(id: string, over: { chars?: number; createdAt?: number; promptChars?: number } = {}): Message {

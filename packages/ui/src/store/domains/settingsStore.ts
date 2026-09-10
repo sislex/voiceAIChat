@@ -22,8 +22,8 @@ import { DEFAULT_SETTINGS } from '@shared/types'
 import type { MicDevice } from '../../audio/microphones'
 import type { SettingsClient, SttPort, TtsPort } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
-import type { EffectiveVoiceSettings } from '../contracts'
-import { THEME_KEY, userThemeKey } from '../contracts'
+import type { EffectiveVoiceSettings } from '@voicechat/ui-foundation/persistence'
+import { THEME_KEY, userThemeKey } from '@voicechat/ui-foundation/persistence'
 
 
 

@@ -12,7 +12,7 @@ import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { ErrorState } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import type { ProjectFeature, ProjectFeatureSet } from '@shared/projectTypes'
-import { ToolFrame } from './ToolFrame'
+import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { SidebarToggle } from './ui/IconButton'
 
 /** Раздел страницы проекта — он же вкладка в шапке. */

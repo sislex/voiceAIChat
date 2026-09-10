@@ -2,7 +2,7 @@
 // ответа Claude — чтобы весь UX-цикл (listening → transcribing → thinking →
 // speaking → idle) работал без реального ML. Реальные Whisper/Claude — Шаги 7–8.
 
-import type { LiveSegment } from '../lib/view'
+import type { LiveSegment } from '@voicechat/ui-foundation/lib/view'
 
 /** Задержки этапов пайплайна (мс). Переопределяются в тестах на малые значения. */
 export interface PipelineDelays {

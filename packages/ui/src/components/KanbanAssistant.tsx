@@ -13,7 +13,7 @@ import type { LlmEngineOption } from '@shared/admin'
 import type { RendererApi } from '@shared/ipc'
 import { browserId } from '@shared/browserId'
 import { formatDate } from '../lib/dateFormat'
-import { projectAssistantChatKey } from '../store/contracts'
+import { projectAssistantChatKey } from '@voicechat/ui-foundation/persistence'
 import { WidgetProposalCard } from './WidgetAssistantFrame'
 import { Markdown } from './Markdown'
 

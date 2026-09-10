@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/shared'
 import { describe, expect, it } from 'vitest'
 import type { KbDocument } from '@shared/kb'
-import { createFakeApi } from '../test/fakeApi'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { KnowledgeBase } from './KnowledgeBase'
 
 describe('KnowledgeBase', () => {

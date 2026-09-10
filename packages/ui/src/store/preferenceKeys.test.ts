@@ -10,10 +10,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PREFERENCE_KEYS } from './contracts'
+import { PREFERENCE_KEYS } from '@voicechat/ui-foundation/persistence'
 
 const SRC = join(process.cwd(), 'src')
-const CONTRACTS = join(SRC, 'store', 'contracts.ts')
+const CONTRACTS = join(process.cwd(), '../ui-foundation/src/persistence.ts')
+const OWNERS = [SRC, ...['ui-foundation', 'make-app', 'image-studio-app', 'playwright-reader-app', 'web-reader-app'].map(name => join(process.cwd(), '..', name, 'src'))]
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -33,7 +34,7 @@ describe('ключи предпочтений', () => {
 
   it('не задаются литералом мимо contracts.ts', () => {
     const offenders: string[] = []
-    for (const file of sourceFiles(SRC)) {
+    for (const file of OWNERS.flatMap(sourceFiles)) {
       if (file === CONTRACTS) continue
       const source = readFileSync(file, 'utf8')
       // Литерал ключа рядом с обращением к хранилищу: именно он теряется молча.

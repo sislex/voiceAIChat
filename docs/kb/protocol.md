@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-09
-checked: 41e07830
+updated: 2026-09-10
+checked: 8c54ade4
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -438,7 +438,7 @@ csrf», а `POST …/qa/integration/runs` — 403. Регрессия закре
 | `POST …/git/push` | `HEAD:refs/heads/<branch>` + сверка SHA в origin |
 
 Каналы моста — `projects:git*` (`packages/shared/src/ipc.ts`, реализация
-`packages/ui/src/remote/httpApi.ts`, фейк `packages/ui/src/test/fakeApi.ts`).
+`packages/ui/src/remote/httpApi.ts`, фейк `packages/ui-foundation/src/test/fakeApi.ts`).
 WS-сообщений у панели нет: состояние перечитывается кнопкой «Обновить» и после каждой
 мутации (сервер возвращает свежий статус в ответе — иначе UI на секунду показывал бы
 устаревшее состояние).

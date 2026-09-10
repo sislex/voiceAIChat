@@ -10,7 +10,7 @@ import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { buildServer } from '../apps/server/src/server.js'
 import { loadConfig } from '../apps/server/src/config.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
-import type { BrowserCommand, BrowserSessionMetadata } from '../packages/shared/src/types'
+import type { BrowserCommand, BrowserSessionMetadata } from '@voicechat/shared/types'
 
 let app: FastifyInstance, runner: FastifyInstance, site: FastifyInstance, browser: Browser, page: Page
 let base: string, token: string, id: string, data: string, native: BrowserSessionMetadata

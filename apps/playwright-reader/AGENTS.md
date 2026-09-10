@@ -34,7 +34,7 @@ Caddy отправляет `/api/browser/*` напрямую, ядро такж�
 
 ## Проверки
 
-`npm run gate:fast`. Unit-тесты рядом с исходниками; проверки ядра и приложений на
+`npm run gate:app -- playwright-reader`; в разработке — `npm run gate:fast`. Unit-тесты рядом с исходниками; проверки ядра и приложений на
 реальных HTTP-портах — `apps/server/src/playwrightReaderBridge/remote.integration.test.ts`.
 Реальный Chromium в этих тестах не запускается.
 

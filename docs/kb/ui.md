@@ -1,8 +1,14 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-10
-checked: 7b2c3283
+checked: 8c54ade4
 areas:
+  - packages/make-app
+  - packages/image-studio-app
+  - packages/ui-foundation
+  - scripts/application-frontend.mjs
+  - scripts/application-frontend-server.mjs
+  - apps/server/src/routes/applicationFrontends.ts
   - packages/admin-app/src
   - packages/app-shell
   - packages/ui/src
@@ -31,6 +37,50 @@ areas:
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
+
+Сохранением записанного QA-сценария в настройки проекта владеет host
+(`lib/scenarioPlacement.ts`). Recorder приложения не импортируется оболочкой:
+`lazyScreens.test.ts` проверяет также вспомогательные runtime-импорты, чтобы
+правка логики панели не требовала сборки web.
+
+## Независимые артефакты продуктовых панелей
+
+`MakePane`/`MakeSharedView`, `ImageStudioPane` и `BrowserSessionPane` вместе с
+тестами, историями и своими стилями принадлежат `make-app`, `image-studio-app` и
+`playwright-reader-app`. `WebReaderFrame` остаётся в `web-reader-app`. Общие редакторы,
+ToolFrame, popup, предпочтения и тестовые порты находятся в `ui-foundation`;
+`packages/ui` владеет общим App, чатом, навигацией, стором и транспортными адаптерами.
+
+Реальный `App.tsx` подключает четыре панели через `createApplicationPanel`, включая
+surface `shared` у Make; их исходники не импортируются в bundle оболочки.
+`installRemoteBridges` на web и desktop настраивает один `applicationHost` адресом
+HTTP-сервера. Он читает `/applications/<id>/manifest.json`, проверяет диапазон host
+API, загружает JS/CSS по SRI и сверяет регистрацию версии/SHA. React, UI-kit и общие
+реестры команд/маршрута предоставляет оболочка: второго контекста React нет.
+Ошибка загрузки или render одной панели показывает локальный повтор и сохраняет чат.
+
+`npm run build:frontends` собирает все панели; `npm run -w @voicechat/make-app build`
+— только Make UI. У каждого есть `frontend.tsx`, `panelContract.ts`, `panel.css` и
+`release.json`. IIFE/CSS получают hashed имена и SHA-384 integrity. Monaco workers
+вычисляют адрес от URL собственного скрипта, а при другом origin (в том числе
+Desktop `file://`) запускаются через blob с `importScripts`. Ссылка на manifest
+не кешируется; старые assets самостоятельного контейнера сохраняются в его
+собственном `VC_DATA_DIR/assets`, чтобы открытые вкладки переживали замену версии.
+Автоматического GC этого кеша нет; при очистке учитывают живые вкладки и окно rollback.
+
+В разработке сервер читает `packages/*-app/dist`; `dev:web` делает начальную сборку
+панелей и следит за их изменениями отдельным управляемым процессом. Для самостоятельной
+работы: `npm run gate:app -- make-ui` и `npm run -w @voicechat/make-app dev`.
+Панельный E2E использует fixture host и не пересобирает web. На площадке
+`VC_APPLICATION_FRONTENDS` — JSON-карта id → URL своих статических контейнеров;
+ядро раздаёт их через тот же `/applications` gateway. Пустая карта сохраняет
+локальный fallback общего Docker-образа; неизвестное приложение/путь не получает SPA.
+При сборке вне Git локальный manifest явно имеет `development:true, commit:null`;
+OCI-выпуск приложения требует настоящий полный SHA.
+
+Сценарии SRI/смены версии, четырёх реальных панелей, Desktop URL и Monaco находятся
+в `e2e/applicationFrontend.e2e.test.ts`. Для публикации UI используются те же
+catalog/build/matrix/deploy инструменты, что у backend: [релизы](features/releases.md).
 
 ## Мобильная раскладка раздела «Проекты»
 
@@ -1134,7 +1184,7 @@ chat store. Пока выбор сохраняется, селектор заб�
 
 Список этого режима — отдельное состояние `playwrightReaderConversations` в `chatStore`, которое строится из того же полного ответа `conversations:list` и по тем же правилам, что `readerConversations`: фильтр проекта и активный поиск сайдбара на него не влияют, удаление чата вычищает оба списка. Предикат `isPlaywrightReaderConversation` в `chatStore` смотрит только на `assistantKind === 'playwright-reader'` и не принимает легаси-чаты с `previewUrl`, поэтому два reader-списка не пересекаются. Эффект маршрута повторяет reader-логику: найденный по ID чат выбирается через `selectConversation`, иначе адрес заменяется первым чатом из списка, и только при пустом списке создаётся новый — под in-flight флагом `playwrightReaderCreating`, который проверяется и в самом эффекте, чтобы React не создал второй разговор. Имя нового чата — «Playwright Reader N»; общая для обоих видов нумерация теперь ищет **первый свободный** номер по существующим именам (прежний `nextReaderNumber` с максимумом удалён), поэтому после удаления «Web Reader 1» следующий чат снова получит номер 1.
 
-Правая панель Playwright Reader — `BrowserSessionPane` (`packages/ui/src/components/BrowserSessionPane.tsx`) поверх реального изолированного Chromium из `apps/browser-runner` через мост `window.browser` (REST-оркестрация на сервере). Эта же панель доступна внутри Web Reader при `previewEngine: chromium`; быстрый режим использует `WebReaderFrame` (iframe поверх `/api/preview`): панель Playwright показывает пиксельные кадры настоящего браузера (поллинг `screenshot` = screencast), навигацию/back/forward/reload и пользовательский ввод (клик по кадру пересчитывается `scaleBrowserCoordinates` в координаты вьюпорта, набор текста — командой `type`). Детали серверной связки — [features/playwright-reader.md](features/playwright-reader.md), раздел «Связка оркестрация + панель». Инструменты модели `mcp__browser__*` вызывают `PlaywrightReaderService` приложения `apps/playwright-reader` через общий MCP `/mcp/preview`; `PreviewActionRelay` обслуживает обычную панель Web Reader. REST `/api/browser/*` тоже принадлежит новому приложению (embedded/remote, как Make); публичный URL и мост `window.browser` сохраняются. Проект Playwright-разговора можно менять в настройках. Панель ищется в DOM/тестах по `aria-label="Browser session"` (не по «Web Reader»). Ранее неиспользованные правила `.playwright-browser-pane`/`.playwright-reader-header` теперь задействованы `BrowserSessionPane` (+ добавлены `.playwright-browser-viewport`/`.playwright-browser-input`). Восстановление после refresh держится на `initialChatId`: `useVoiceStore` получает `routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId`, поэтому чат из адреса становится активным сразу. Split-раскладка общая с Web Reader: тот же стейт вкладок `chatView`, тот же `resizePreview` и ключ `localStorage` `voicechat.previewWidth`. Регрессии — `BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx`.
+Правая панель Playwright Reader — `BrowserSessionPane` (`packages/playwright-reader-app/src/components/BrowserSessionPane.tsx`) поверх реального изолированного Chromium из `apps/browser-runner` через мост `window.browser` (REST-оркестрация на сервере). Эта же панель доступна внутри Web Reader при `previewEngine: chromium`; быстрый режим использует `WebReaderFrame` (iframe поверх `/api/preview`): панель Playwright показывает пиксельные кадры настоящего браузера (поллинг `screenshot` = screencast), навигацию/back/forward/reload и пользовательский ввод (клик по кадру пересчитывается `scaleBrowserCoordinates` в координаты вьюпорта, набор текста — командой `type`). Детали серверной связки — [features/playwright-reader.md](features/playwright-reader.md), раздел «Связка оркестрация + панель». Инструменты модели `mcp__browser__*` вызывают `PlaywrightReaderService` приложения `apps/playwright-reader` через общий MCP `/mcp/preview`; `PreviewActionRelay` обслуживает обычную панель Web Reader. REST `/api/browser/*` тоже принадлежит новому приложению (embedded/remote, как Make); публичный URL и мост `window.browser` сохраняются. Проект Playwright-разговора можно менять в настройках. Панель ищется в DOM/тестах по `aria-label="Browser session"` (не по «Web Reader»). Ранее неиспользованные правила `.playwright-browser-pane`/`.playwright-reader-header` теперь задействованы `BrowserSessionPane` (+ добавлены `.playwright-browser-viewport`/`.playwright-browser-input`). Восстановление после refresh держится на `initialChatId`: `useVoiceStore` получает `routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId`, поэтому чат из адреса становится активным сразу. Split-раскладка общая с Web Reader: тот же стейт вкладок `chatView`, тот же `resizePreview` и ключ `localStorage` `voicechat.previewWidth`. Регрессии — `BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx`.
 
 Обычный сайдбар эти чаты пока не прячет: он фильтрует список условием «не `web-recorder` и без `previewUrl`», под которое Playwright-чаты не попадают, — «Playwright Reader N» видны в общем списке бесед. Привязка Playwright-чата к проекту **разрешена** (прежний серверный запрет в `setConversationProject` снят): смена проекта в настройках сохраняется штатно, а `chatStore.setConversationProject` обновляет запись сразу в `conversations`, `readerConversations` и `playwrightReaderConversations`, чтобы селектор ридера не показывал устаревшее.
 
@@ -1216,7 +1266,7 @@ diff-UI (своя вёрстка, свои токены, своя доступн
 адаптивным композером и однострочным заголовком защищают
 `packages/ui/src/styles/chatMakeLayout.test.ts` и browser-сценарии в `e2e/make.e2e.test.ts`.
 
-Правая панель — `MakePane` (`packages/ui/src/components/MakePane.tsx`, сториз `Make/MakePane`,
+Правая панель — `MakePane` (`packages/make-app/src/components/MakePane.tsx`, сториз `Make/MakePane`,
 тест `MakePane.dom.test.tsx`). Данные — `window.api['make:*']` (REST) и `window.make.onChanged`
 (WS `make.changed`). Три режима:
 
@@ -1396,7 +1446,7 @@ args в стори. Enum-подобные args: раннер собирает с
 сториз — верхняя полоса 38 % высоты, редактор/раннер — под ней; пресеты ширины превью скрыты.
 
 **Вкладка «Репозиторий»: компоненты реального проекта** (`mode: 'project'`, компонент
-`packages/ui/src/components/MakeProjectComponents.tsx`, сториз `Make/ProjectComponents`,
+`packages/make-app/src/components/MakeProjectComponents.tsx`, сториз `Make/ProjectComponents`,
 тест `MakeProjectComponents.dom.test.tsx`). Появляется только у Make-чата, привязанного к
 проекту: `App.tsx` отдаёт `MakePane` проп `projectId` из `activeConversation.projectId`, и
 без него таба нет — компонентам репозитория неоткуда взяться. Панель не трогает песочницу:
@@ -1460,7 +1510,7 @@ UI показывает отдельный блок «В очереди» с о�
 
 На мобильном экране шапка и однострочный композер уплотнены без изменения desktop-раскладки: основные действия `VoiceBar` используют общие `Button`/`IconButton` и модификаторы `.vc-btn`, а круглые кнопки имеют контейнер 32×32 px. Мобильные отступы продолжают учитывать `env(safe-area-inset-*)`; auto-grow многострочного ввода сохранён, а раскрытый textarea занимает доступную высоту поверх чата и остаётся выше экранной клавиатуры. Разметка и состояния находятся в `packages/ui/src/components/VoiceBar.tsx` и `packages/ui/src/components/ChatColumn.tsx`, размеры и mobile media rules — в `packages/ui/src/styles/app.css`.
 
-Каждая сохранённая пользовательская и AI-реплика имеет одинаковое действие копирования, передающее полный исходный `m.text` в общий `copyText`. Галочка на конкретном сообщении появляется на 1,5 секунды только после результата `true`. `packages/ui/src/lib/clipboard.ts` сначала использует Clipboard API, при отказе или недоступности пробует существующий `document.execCommand('copy')`, а окончательный сбой возвращает `false`; обработчик в `ChatColumn` также поглощает отклонение Promise, поэтому ложного подтверждения и необработанного rejection нет.
+Каждая сохранённая пользовательская и AI-реплика имеет одинаковое действие копирования, передающее полный исходный `m.text` в общий `copyText`. Галочка на конкретном сообщении появляется на 1,5 секунды только после результата `true`. `packages/ui-foundation/src/lib/clipboard.ts` сначала использует Clipboard API, при отказе или недоступности пробует существующий `document.execCommand('copy')`, а окончательный сбой возвращает `false`; обработчик в `ChatColumn` также поглощает отклонение Promise, поэтому ложного подтверждения и необработанного rejection нет.
 
 Пользовательская отмена завершает CLI, игнорирует поздние токены, сохраняет непустой partial AI-сообщением с `meta.interrupted` и автоматически продвигает первый элемент очереди. «Отправить сейчас» во время активного хода работает иначе: `mergeQueuedTurnIntoMessage` одной SQLite-транзакцией удаляет активную и выбранную ожидающую реплики, создаёт новую объединённую пользовательскую реплику с новым id в конце истории, удаляет строку очереди и сбрасывает CLI-сессию. Текст, attachment metadata и upload-id складываются в порядке активная реплика → новая реплика без дедупликации. `TurnManager` отменяет старый процесс без сохранения partial, рассылает обновлённое сообщение и запускает объединённый payload заново; короткий guard `restarting` делает повторное нажатие идемпотентным и не позволяет случайно продвинуть следующий элемент. Без активного хода действие ставит выбранный элемент первым и запускает его. После обычного терминального успеха или пользовательской отмены `dispatchNext` атомарно публикует первый элемент через `takeQueuedTurn`, удаляет его из очереди и запускает подготовку следующего хода в microtask. После ошибки очередь остаётся на паузе до явной реакции пользователя. Таблицы очереди и `conversation_turn_control` переживают reconnect и штатный restart сервера.
 
@@ -1574,7 +1624,7 @@ Partial STT обновляет живые сегменты; final формиру
 
 `App.tsx` соединяет основной layout и глобальные popup-поверхности. `Sidebar` показывает разговоры, поиск, фильтр проекта и режим работы чата; его карточки только открывают или удаляют разговор, а не переименовывают его. В строке заголовка справа остаётся серверная суммарная стоимость: точная компактная сумма выводится только при `Conversation.costStatus === 'known'`, `partial` обозначается нейтральным тире, а `unknown` скрывается. Форматирование сохраняет до четырёх значащих цифр и до восьми знаков после запятой, поэтому ненулевая малая сумма не превращается в `$0`. Заголовок занимает сжимаемую flex-область с ellipsis, стоимость не сжимается. После сохранённого сообщения в `claude.done` `chatStore` повторно получает список разговоров, поэтому агрегат меняется без reload; ошибка refresh сохраняется как неблокирующее состояние списка. Переименование доступно только из шапки открытого чата через `ChatColumn.onRenameTitle`. Пункт «История LLM» открывает объединённый `EnginesObserver` по неизменному `#/claude-code`; он показывает сессии Claude/Codex, их модель, токены и оценку стоимости, а его `ToolFrame` носит то же название. `ChatColumn` рендерит timeline, streaming response, activity/usage и edit/delete действия. `VoiceBar` содержит композер, вложения, микрофон и cancel.
 
-**Шапка и подвал ответа ассистента (`ChatColumn`, класс `.msg-head`).** У живого ответа (готовим/стрим) шапку даёт `liveHead()` по пропу `liveTarget` из `claude.start` (движок, модель по наведению, машина); без него — прежняя догадка по `aiLabel`/`execTarget`. В шапке слева — движок (`engineLabel`) с используемой моделью (`meta.model ?? meta.request.model`), которая по умолчанию скрыта (`.msg-model { display:none }`) и появляется при наведении на движок (плюс `title`); сразу за движком/моделью — **машина выполнения** (`.msg-machine-head`: имя агента по `execTarget`, «Без машины» для `none`, «Сервер» иначе — перенесена сюда из подвала); затем селект «Вид ответа» (список `TIMELINE_MODES`; переключается и во время ответа — для живого хода это `liveMode`, для завершённого — `modeById`). Крайнее правое сверху — **время начала ответа** (`clockTime(createdAt − durationMs)`, формат ЧЧ:ММ:СС, тултип полной даты). Иконка **«Копировать ответ»** теперь **внутри пузыря** `.bub` (класс `.copymsg`, тот же глиф `⧉`/`✓` и тот же угол, что у копии кода `.copycode`; проявляется по ховеру пузыря). В подвале (`.mfoot`) слева — блок токенов `.msgact-tokens`, и это **сам `MessageMeta`**: `<button aria-label="Сведения об ответе">` (`formatLiveUsage` внутри; наведение/фокус — тултип-сводка `meta-tip`, клик — модалка «Что было отправлено модели»; отдельной иконки ℹ больше нет). Внутри блока и **ориентировочная стоимость** `.msgact-cost` (`messageCost` из `lib/view.ts`: реальная `meta.costUsd` показывается как есть, иначе расчётная по `estimateCostUsd`/`packages/shared/src/pricing.ts` с «≈»); стоимость дублируется строкой в тултипе/модалке `MessageMeta`. Правая группа `.mfoot-right` (`margin-left:auto`): озвучить, удалить и **крайним правым — время окончания** (`clockTime(createdAt)`, тот же формат ЧЧ:ММ:СС). Прежние `.msg-machine`/`.msg-mode`/`.msg-cost` из подвала удалены. У живого (стримящегося) хода в подвале — таймер «Отвечает: мм:сс» (`formatElapsed`) в той же `.mfoot-right`, обновляется раз в секунду (эффект по `hasStream`, старт — `streamStartRef`). Чистые хелпера — `clockTime`/`dateTimeTooltip`/`formatElapsed`/`messageCost` в `packages/ui/src/lib/view.ts` (тесты — `view.test.ts`, разметка/поведение — `ChatColumn.dom.test.tsx`).
+**Шапка и подвал ответа ассистента (`ChatColumn`, класс `.msg-head`).** У живого ответа (готовим/стрим) шапку даёт `liveHead()` по пропу `liveTarget` из `claude.start` (движок, модель по наведению, машина); без него — прежняя догадка по `aiLabel`/`execTarget`. В шапке слева — движок (`engineLabel`) с используемой моделью (`meta.model ?? meta.request.model`), которая по умолчанию скрыта (`.msg-model { display:none }`) и появляется при наведении на движок (плюс `title`); сразу за движком/моделью — **машина выполнения** (`.msg-machine-head`: имя агента по `execTarget`, «Без машины» для `none`, «Сервер» иначе — перенесена сюда из подвала); затем селект «Вид ответа» (список `TIMELINE_MODES`; переключается и во время ответа — для живого хода это `liveMode`, для завершённого — `modeById`). Крайнее правое сверху — **время начала ответа** (`clockTime(createdAt − durationMs)`, формат ЧЧ:ММ:СС, тултип полной даты). Иконка **«Копировать ответ»** теперь **внутри пузыря** `.bub` (класс `.copymsg`, тот же глиф `⧉`/`✓` и тот же угол, что у копии кода `.copycode`; проявляется по ховеру пузыря). В подвале (`.mfoot`) слева — блок токенов `.msgact-tokens`, и это **сам `MessageMeta`**: `<button aria-label="Сведения об ответе">` (`formatLiveUsage` внутри; наведение/фокус — тултип-сводка `meta-tip`, клик — модалка «Что было отправлено модели»; отдельной иконки ℹ больше нет). Внутри блока и **ориентировочная стоимость** `.msgact-cost` (`messageCost` из `lib/view.ts`: реальная `meta.costUsd` показывается как есть, иначе расчётная по `estimateCostUsd`/`packages/shared/src/pricing.ts` с «≈»); стоимость дублируется строкой в тултипе/модалке `MessageMeta`. Правая группа `.mfoot-right` (`margin-left:auto`): озвучить, удалить и **крайним правым — время окончания** (`clockTime(createdAt)`, тот же формат ЧЧ:ММ:СС). Прежние `.msg-machine`/`.msg-mode`/`.msg-cost` из подвала удалены. У живого (стримящегося) хода в подвале — таймер «Отвечает: мм:сс» (`formatElapsed`) в той же `.mfoot-right`, обновляется раз в секунду (эффект по `hasStream`, старт — `streamStartRef`). Чистые хелпера — `clockTime`/`dateTimeTooltip`/`formatElapsed`/`messageCost` в `packages/ui-foundation/src/lib/view.ts` (тесты — `view.test.ts`, разметка/поведение — `ChatColumn.dom.test.tsx`).
 
 ### Адаптивный композер `VoiceBar`
 
@@ -1776,14 +1826,19 @@ Browser-действие от моста исполняется только к�
 
 **Настройки стека Make.** `MakeNotesDialog` — единое окно «Настройки проекта»: одним сохранением `make:setNotes` меняются заметки, режим ассистента, stack (`HTML+CSS`, `HTML+CSS+JS`, React, Angular) и uiKit (своя система или Bootstrap). Если изменён именно stack, перед сохранением появляется отдельный выбор: оставить существующие файлы и сохранить только настройку либо сохранить настройку и применить стартовый шаблон; во втором случае сервер предварительно делает снимок «До смены стека».
 
-`MakePane` загружает настройки через `make:notes`, показывает в шапке кликабельный нормализованный бейдж из `makeStackLabel` (например, «React · Bootstrap») и оставляет в диалоге шаблонов только совместимые с текущим stack. `MakeSharedView` получает stack/uiKit в `MakeSharedState` и показывает такой же read-only бейдж, без действий настройки и выбора шаблонов. Источники поведения — `packages/ui/src/components/MakeNotesDialog.tsx`, `MakePane.tsx` и `MakeSharedView.tsx`.
+Angular-шаблон в `packages/shared/src/make.ts` сначала импортирует закреплённый
+`zone.js@0.14.10`, затем compiler и запускает standalone JIT. Без Zone.js обычный
+`bootstrapApplication` завершался ошибкой NG0908 в настоящем браузере.
+
+
+`MakePane` загружает настройки через `make:notes`, показывает в шапке кликабельный нормализованный бейдж из `makeStackLabel` (например, «React · Bootstrap») и оставляет в диалоге шаблонов только совместимые с текущим stack. `MakeSharedView` получает stack/uiKit в `MakeSharedState` и показывает такой же read-only бейдж, без действий настройки и выбора шаблонов. Источники поведения — `packages/make-app/src/components/MakeNotesDialog.tsx`, `MakePane.tsx` и `MakeSharedView.tsx`.
 
 **Read-only шаринг (п.33).** В диалоге публикации блок «Только чтение внутри ChatAI»: «Создать ссылку для чтения» / «Копировать» / «Отозвать» (`make:share`/`make:unshare`). Маршрут `#/make-shared/<token>` — утилитная страница (`HOST_UTILITY_PAGES`), рендерит `MakeSharedView`: шапка с названием и бейджем «только чтение · владелец», вкладки Превью (iframe на `REST.makeSharedPreview`), Код (дерево + `CodeEditor readOnly` — новый проп, Monaco `readOnly`, textarea `readOnly`) и Снимки. Это отдельный экран, а не `MakePane` с флагом: у панели десятки действий записи, прятать их все дороже, чем показать три вкладки чтения. Именной доступ (roadmap-3 п.6): в диалоге публикации блок «Именной доступ» — список грантов, форма «логин + роль», ✕; у редактора `MakeSharedView` показывает бейдж «редактор», редактор кода не read-only, «Сохранить» (и Ctrl/Cmd+S) пишет через `make:write` с `conversationId` из `MakeSharedState`.
 
 **Мобильный редактор (п.34).** `CodeEditor` выбирает реализацию через `shouldUseFallbackEditor(isJsdom, phone)`, где `phone = useMediaQuery(PHONE_EDITOR_QUERY)` (`(max-width: 600px)`): на телефоне рендерится `FallbackEditor` (textarea + подсветка, шрифт 16px — иначе iOS Safari приближает страницу при фокусе), Monaco не загружается вовсе. В режиме «Код» `MakePane` при том же условии добавляет класс `.make-code--phone`: дерево скрыто CSS, над редактором — `<select aria-label="Файл проекта">` по текстовым файлам и «+ Файл». Проверять мобильную вёрстку в Chrome-расширении удобнее через iframe шириной 400px с адресом приложения — `resize_window` вьюпорт не меняет.
 
 **Дизайн ↔ карточка доски.** В панели Make пункт меню «⋯» → «🗂 Задачи проекта»
-открывает `MakeTaskLinksDialog` (`packages/ui/src/components/MakeTaskLinksDialog.tsx`):
+открывает `MakeTaskLinksDialog` (`packages/make-app/src/components/MakeTaskLinksDialog.tsx`):
 связанные карточки проекта, переход на доску (`onOpenTask` → `#/projects/<id>/task/<taskId>`)
 и связывание открытой страницы (`selectedPath` подставляется в поле). Обратная сторона —
 секция «Дизайн» в карточке (`kanban/TaskDesigns.tsx`). Диалог не знает ни проекта, ни прав:
@@ -2929,7 +2984,7 @@ changed_in_project / both / missing_*` считаются сравнением �
 (kind/scope `images`, заголовки «Картинки N»), селектор чата в шапке, ленивый
 `ImageStudioPane` справа (маунт только при `readerSurfaceReady`), пункт
 «Студия картинок» в сайдбаре и подпись мобильной вкладки «Галерея». Панель
-(`packages/ui/src/components/ImageStudioPane.tsx`) — одна форма промпта с двумя
+(`packages/image-studio-app/src/components/ImageStudioPane.tsx`) — одна форма промпта с двумя
 режимами: без выбора «Нарисовать» (создаёт новый файл), с выбранной миниатюрой
 «Изменить выбранную» (результат сохраняется НОВЫМ файлом через freeName,
 оригинал не трогается). Плюс загрузка с диска, инлайн-переименование, удаление
@@ -3949,7 +4004,7 @@ callback отсутствует или завершился ошибкой, ди
 предлагает «Своя система» и Bootstrap 5.3. Поэтому Bootstrap сохраняется как
 `uiKit=bootstrap` вместе с любым выбранным `stack`, а не подменяет стек.
 Источник вариантов, начальной загрузки и dirty-state —
-`packages/ui/src/components/MakeNotesDialog.tsx`.
+`packages/make-app/src/components/MakeNotesDialog.tsx`.
 
 Сохранение использует существующий `make:setNotes` и передаёт заметки, режим,
 `stack` и `uiKit`. Изменение только стилевой базы сохраняется сразу. Если
@@ -3962,20 +4017,20 @@ callback отсутствует или завершился ошибкой, ди
 ошибки сохранения или шаблона действие можно повторить.
 
 Обязательный DOM-набор
-`packages/ui/src/components/MakeNotesDialog.dom.test.tsx` покрывает выбор
+`packages/make-app/src/components/MakeNotesDialog.dom.test.tsx` покрывает выбор
 `stack/uiKit`, независимое сохранение Bootstrap, оба исхода подтверждения и
 его закрытие без записи, применение шаблона, ошибки загрузки, сохранения и
 шаблона и повторную попытку (сценарии TC-1—TC-5, TC-7 и полный контракт
 TC-UI-01/02, TC-INT-01, TC-NEG-01). Регрессия бейджа настроек после выбора
 Bootstrap проверяется в
-`packages/ui/src/components/MakePane.dom.test.tsx`. Серверный TC-6 в
+`packages/make-app/src/components/MakePane.dom.test.tsx`. Серверный TC-6 в
 `apps/server/src/make/workspace.test.ts` фиксирует значения по умолчанию
 `balanced/html-js/none` для отсутствующего или повреждённого
 `.make/settings.json` и нормализацию неизвестных `stack/uiKit` без
 перезаписи исходного файла.
 
 Для визуальной проверки есть Storybook-история `Make/MakeNotesDialog` в
-`packages/ui/src/components/MakeNotesDialog.stories.tsx`: она показывает
+`packages/make-app/src/components/MakeNotesDialog.stories.tsx`: она показывает
 загруженный диалог, проверяет четыре стека, отдельные варианты стилевой базы и
 открытие подтверждения, а также содержит состояния загрузки и ошибки загрузки.
 Обязательный повторный Component QA после восстановления доступности машины

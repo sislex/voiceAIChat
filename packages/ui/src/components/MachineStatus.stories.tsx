@@ -14,7 +14,7 @@ import {
   makePolicy,
   makeTelemetry,
   makeWindowsDegradedAgent
-} from '../test/fixtures'
+} from '../test/fixtures/index'
 
 const meta: Meta<typeof MachineStatus> = {
   title: 'Machines/MachineStatus',

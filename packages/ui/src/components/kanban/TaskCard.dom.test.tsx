@@ -5,8 +5,8 @@ import userEvent from '@testing-library/user-event'
 import { render } from '../../test/uiRender'
 import type { Task } from '@shared/projects'
 import type { CiRun, CiRunSummary } from '@shared/ci'
-import { createFakeCi } from '../../test/fakeApi'
-import { expectNoViolations } from '../../test/a11y'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { TaskCard, type TaskCardProps } from './TaskCard'
 
 function mkTask(over: Partial<Task> = {}): Task {

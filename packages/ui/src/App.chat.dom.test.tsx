@@ -1,8 +1,9 @@
+import './test/applicationPanels'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App, { openWebReaderWorkspace } from './App'
-import { createFakeApi, type FakeApi } from './test/fakeApi'
+import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { DEFAULT_AGENT_POLICY, type AgentInfo } from '@shared/agentProtocol'
 

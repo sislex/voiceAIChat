@@ -5,7 +5,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, userEvent, within } from '@storybook/test'
 import { MessageImage } from './MessageImage'
-import { makeAgent, makeMachineOps, PLOT_SVG_BASE64 } from '../test/fixtures'
+import { makeAgent, makeMachineOps, PLOT_SVG_BASE64 } from '../test/fixtures/index'
 
 /** Чтение, которое никогда не отвечает — состояние «файл ещё не готов». */
 const pendingOps = makeMachineOps({ read: () => new Promise(() => {}) })

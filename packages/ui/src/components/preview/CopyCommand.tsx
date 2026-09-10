@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@voicechat/ui-kit'
-import { copyText } from '../../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 
 type CopyState = 'idle' | 'copying' | 'copied' | 'failed'
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { MergePanel } from './MergePanel'
-import { createFakeCi } from '../../test/fakeApi'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { MergeMachinesResponse, MergeRun } from '@shared/merge'
 import type { CiTaskMachines } from '@shared/ci'
 

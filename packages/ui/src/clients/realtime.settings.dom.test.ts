@@ -4,7 +4,7 @@
 
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { createBrowserRealtime } from './realtime'
-import { SETTINGS_UPDATE_KEY } from '../store/contracts'
+import { SETTINGS_UPDATE_KEY } from '@voicechat/ui-foundation/persistence'
 import type { RealtimeHandlers } from '../runtime/appRuntime'
 
 /** Пустые обработчики: тесту важен только `settingsChanged`. */

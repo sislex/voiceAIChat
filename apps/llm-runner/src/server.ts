@@ -1,3 +1,4 @@
+import { applicationRuntimeMetadata } from '@voicechat/shared'
 import { randomUUID } from 'node:crypto'
 import type { ServerResponse } from 'node:http'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
@@ -161,7 +162,7 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
     stopped: runs.cancel(req.params.id)
   }))
 
-  app.get(LLM_RUNNER.health, async () => health())
+  app.get(LLM_RUNNER.health, async () => ({ application: applicationRuntimeMetadata('llm-runner', process.env), ...await health() }))
 
   app.get<{ Querystring: { userId?: string } }>(RUNNER_AUTH_STATUS_PATH, async (req, reply) => {
     const userId = requireUserId(req, reply)

@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
-import type { ReaderHostBridge, ReaderHostRegistration } from '../packages/web-reader-app/src/hostBridge'
+import type { ReaderHostBridge, ReaderHostRegistration } from '@voicechat/web-reader-app/hostBridge'
 
 type TestWindow = Window & { readerTest: { bridge: ReaderHostBridge; registrations: Array<ReaderHostRegistration | null>; sent: unknown[]; broken: boolean } }
 let app: FastifyInstance, browser: Browser, page: Page, base: string

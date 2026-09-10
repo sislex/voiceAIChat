@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { usePolling } from '../../lib/usePolling'
+import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
 import type { ProjectMachine } from '@shared/projects'
 import { isPreviewBusy, previewActions } from '@shared/preview'

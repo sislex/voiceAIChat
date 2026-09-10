@@ -1,0 +1,210 @@
+{
+  "services": {
+    "voicechat": {
+      "image": "${VC_IMAGE_CORE:?set core baseline digest}",
+      "ports": [
+        "127.0.0.1:8799:8080"
+      ],
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_ADMIN_PASSWORD": "${VC_ADMIN_PASSWORD:?set VC_ADMIN_PASSWORD}",
+        "VC_INTERNAL_TOKEN": "${VC_INTERNAL_TOKEN:?set VC_INTERNAL_TOKEN}",
+        "VC_MCP_SECRET": "${VC_MCP_SECRET:?set VC_MCP_SECRET}",
+        "VC_APPLICATION_FRONTENDS": "{\"make-ui\": \"http://make-ui:8080\", \"image-studio-ui\": \"http://image-studio-ui:8080\", \"playwright-reader-ui\": \"http://playwright-reader-ui:8080\", \"web-reader-ui\": \"http://web-reader-ui:8080\"}",
+        "VC_MAKE_MODE": "remote",
+        "VC_MAKE_URL": "http://make:8080",
+        "VC_IMAGE_STUDIO_MODE": "remote",
+        "VC_IMAGE_STUDIO_URL": "http://image-studio:8080",
+        "VC_PLAYWRIGHT_READER_MODE": "remote",
+        "VC_PLAYWRIGHT_READER_URL": "http://playwright-reader:8080",
+        "VC_BROWSER_RUNNER_URL": "http://browser-runner:8080",
+        "VC_BROWSER_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}",
+        "VC_STT_RUNNER_URL": "http://stt-runner:8080",
+        "VC_STT_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}",
+        "VC_TTS_RUNNER_URL": "http://tts-runner:8080",
+        "VC_TTS_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}",
+        "VC_LLM_RUNNER_CLAUDE_URL": "http://runner-work:8080",
+        "VC_LLM_RUNNER_CODEX_URL": "http://runner-work:8080",
+        "VC_LLM_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+      },
+      "volumes": [
+        "core-data:/data"
+      ]
+    },
+    "make": {
+      "image": "${VC_IMAGE_MAKE:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_CORE_URL": "http://voicechat:8080",
+        "VC_INTERNAL_TOKEN": "${VC_INTERNAL_TOKEN:?set VC_INTERNAL_TOKEN}",
+        "VC_MCP_SECRET": "${VC_MCP_SECRET:?set VC_MCP_SECRET}"
+      },
+      "volumes": [
+        "make-data:/data"
+      ]
+    },
+    "image-studio": {
+      "image": "${VC_IMAGE_IMAGE_STUDIO:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_CORE_URL": "http://voicechat:8080",
+        "VC_INTERNAL_TOKEN": "${VC_INTERNAL_TOKEN:?set VC_INTERNAL_TOKEN}",
+        "VC_MCP_SECRET": "${VC_MCP_SECRET:?set VC_MCP_SECRET}"
+      },
+      "volumes": [
+        "image-studio-data:/data"
+      ]
+    },
+    "playwright-reader": {
+      "image": "${VC_IMAGE_PLAYWRIGHT_READER:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_CORE_URL": "http://voicechat:8080",
+        "VC_INTERNAL_TOKEN": "${VC_INTERNAL_TOKEN:?set VC_INTERNAL_TOKEN}",
+        "VC_MCP_SECRET": "${VC_MCP_SECRET:?set VC_MCP_SECRET}",
+        "VC_BROWSER_RUNNER_URL": "http://browser-runner:8080",
+        "VC_BROWSER_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+      },
+      "volumes": [
+        "playwright-reader-data:/data"
+      ]
+    },
+    "browser-runner": {
+      "image": "${VC_IMAGE_BROWSER_RUNNER:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_BROWSER_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+      },
+      "volumes": [
+        "browser-runner-data:/data"
+      ]
+    },
+    "runner-work": {
+      "image": "${VC_IMAGE_LLM_RUNNER:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+      },
+      "volumes": [
+        "runner-work-data:/data",
+        "runner-work-claude:/home/node/.claude",
+        "runner-work-codex:/home/node/.codex"
+      ]
+    },
+    "runner-personal": {
+      "image": "${VC_IMAGE_LLM_RUNNER:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+      },
+      "volumes": [
+        "runner-personal-data:/data",
+        "runner-personal-claude:/home/node/.claude",
+        "runner-personal-codex:/home/node/.codex"
+      ]
+    },
+    "stt-runner": {
+      "image": "${VC_IMAGE_STT_RUNNER:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_STT_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+      },
+      "volumes": [
+        "stt-runner-data:/data",
+        "stt-models:/models"
+      ]
+    },
+    "tts-runner": {
+      "image": "${VC_IMAGE_TTS_RUNNER:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data",
+        "VC_TTS_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+      },
+      "volumes": [
+        "tts-runner-data:/data"
+      ]
+    },
+    "make-ui": {
+      "image": "${VC_IMAGE_MAKE_UI:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data"
+      },
+      "volumes": [
+        "make-ui-data:/data"
+      ]
+    },
+    "image-studio-ui": {
+      "image": "${VC_IMAGE_IMAGE_STUDIO_UI:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data"
+      },
+      "volumes": [
+        "image-studio-ui-data:/data"
+      ]
+    },
+    "playwright-reader-ui": {
+      "image": "${VC_IMAGE_PLAYWRIGHT_READER_UI:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data"
+      },
+      "volumes": [
+        "playwright-reader-ui-data:/data"
+      ]
+    },
+    "web-reader-ui": {
+      "image": "${VC_IMAGE_WEB_READER_UI:?set immutable digest}",
+      "environment": {
+        "PORT": "8080",
+        "HOST": "0.0.0.0",
+        "VC_DATA_DIR": "/data"
+      },
+      "volumes": [
+        "web-reader-ui-data:/data"
+      ]
+    }
+  },
+  "volumes": {
+    "core-data": {},
+    "make-data": {},
+    "image-studio-data": {},
+    "playwright-reader-data": {},
+    "browser-runner-data": {},
+    "runner-work-data": {},
+    "runner-work-claude": {},
+    "runner-work-codex": {},
+    "runner-personal-data": {},
+    "runner-personal-claude": {},
+    "runner-personal-codex": {},
+    "stt-runner-data": {},
+    "stt-models": {},
+    "tts-runner-data": {},
+    "make-ui-data": {},
+    "image-studio-ui-data": {},
+    "playwright-reader-ui-data": {},
+    "web-reader-ui-data": {}
+  }
+}

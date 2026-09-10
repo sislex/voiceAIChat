@@ -22,6 +22,7 @@ let browser: Browser
 let page: Page
 let token = ''
 let conversationId = ''
+const browserDiagnostics: string[] = []
 
 async function waitHealth(): Promise<void> {
   for (let i = 0; i < 60; i++) {
@@ -55,6 +56,8 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     await api(`/api/make/${conversationId}/template`, { method: 'POST', body: JSON.stringify({ templateId: 'react-ts' }) })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    page.on('pageerror', error => browserDiagnostics.push(error.message))
+    page.on('requestfailed', request => browserDiagnostics.push(`${request.method()} ${new URL(request.url()).pathname}: ${request.failure()?.errorText}`))
     await page.goto(`${BASE}/`)
     await page.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
     // Смена только хэша не перезагружает документ — приложение уже стартовало без токена; нужен reload.
@@ -150,7 +153,9 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     expect((await api(`/api/make/${conversationId}/notes`, { method: 'PUT', body: JSON.stringify({ stack: 'angular', uiKit: 'none' }) })).ok).toBe(true)
     expect((await api(`/api/make/${conversationId}/template`, { method: 'POST', body: JSON.stringify({ templateId: 'angular' }) })).ok).toBe(true)
     await page.goto(`${BASE}/#/make/${conversationId}`)
+    await page.reload()
+    await page.getByRole('tab', { name: 'Превью', exact: true }).click()
     const frame = page.frameLocator('.make-frame')
-    await expect.poll(() => frame.locator('h1').textContent().catch(() => null), { timeout: 60_000 }).toBe('Angular работает')
+    try { await expect.poll(() => frame.locator('h1').textContent().catch(() => null), { timeout: 60_000 }).toBe('Angular работает') } catch (error) { console.error('Angular browser diagnostics', browserDiagnostics); throw error }
   })
 })

@@ -115,6 +115,7 @@ export interface DesktopMigrationResult {
 }
 
 export interface HealthResponse {
+  application?: import('./applicationRelease').ApplicationRuntimeMetadata
   ok: true
   /** Номер версии собранного релиза; null, если release-метаданные не переданы. */
   version: string | null
@@ -553,6 +554,9 @@ export const REST = {
   ciSuggestions: '/api/ci/suggestions',
   ciSuggestion: (id: string) => `/api/ci/suggestions/${encodeURIComponent(id)}`,
   ciWorkspaces: '/api/ci/workspaces',
+  projectApplicationCatalog: (id: string) => `/api/projects/${encodeURIComponent(id)}/application-releases/catalog`,
+  projectApplicationReleases: (id: string) => `/api/projects/${encodeURIComponent(id)}/application-releases`,
+  projectApplicationEnvironment: (id: string, environment: import('./applicationDeployment').ApplicationEnvironmentName) => `/api/projects/${encodeURIComponent(id)}/application-releases/environments/${encodeURIComponent(environment)}`,
   projectReleaseBranches: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/branches`,
   projectReleaseMachines: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/machines`,
   projectReleases: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases`,

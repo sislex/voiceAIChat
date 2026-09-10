@@ -7,7 +7,7 @@
 
 import type { VoiceState } from '@shared/types'
 import { issueKey } from '@shared/projects'
-import type { Command } from './commands'
+import type { Command } from '@voicechat/ui-foundation/runtime'
 import type { HotkeyBinding } from './useHotkeys'
 
 /** Минимальные формы данных: приносить сюда типы стора незачем. */

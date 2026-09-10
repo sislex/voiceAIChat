@@ -3849,338 +3849,87 @@ button.conscmd:hover {
 /* Массовые действия по выбранной группе стоят в одном ряду с общими. */
 .context-group-bulk { display: inline-flex; gap: var(--space-1); flex-wrap: wrap; }
 /* Студия картинок: панель-галерея справа от чата (раскладка как у Make). */
-.image-studio { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 14px; overflow: auto; }
-.image-studio-toolbar { display: grid; gap: 8px; }
-.image-studio-toolbar textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--panel, #fff); color: inherit; font: inherit; resize: vertical; }
-.image-studio-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.image-studio-filename { font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); width: 170px; min-width: 0; }
-.image-studio-grid--dense { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
-.image-studio-fresh { position: absolute; top: 6px; right: 6px; font-size: 10px; line-height: 1; padding: 3px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); }
-.image-studio-thumb { position: relative; }
 /* Шахматка под превью: прозрачность PNG видна, а не сливается с фоном. */
-.image-studio-thumb img, .image-studio-full {
-  background-image: conic-gradient(var(--surface-hover) 25%, transparent 25% 50%, var(--surface-hover) 50% 75%, transparent 75%);
-  background-size: 16px 16px;
-}
 /* Фон лайтбокса переключаемый: у прозрачного PNG светлые и тёмные края
    читаются только на контрастной подложке, а шахматка мешает оценить цвет. */
-.image-studio-bg--light .image-studio-full { background-image: none; background-color: #fff; }
-.image-studio-bg--dark .image-studio-full { background-image: none; background-color: #14161a; }
 /* Тот же переключатель — для сетки: сравнивать прозрачные картинки удобнее
    на одном фоне, а не на шахматке под каждой. */
-.image-studio-bg--light .image-studio-thumb img { background-image: none; background-color: #fff; }
-.image-studio-bg--dark .image-studio-thumb img { background-image: none; background-color: #14161a; }
-@media (max-width: 720px) {
-  .image-studio-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
-  .image-studio-actions { flex-wrap: wrap; }
-  .image-studio-filename { width: 100%; }
-}
-.image-studio-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.image-studio-chip { font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-dim); cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.image-studio-chip:hover { background: var(--surface-hover); color: var(--text); }
-.image-studio-chip { display: inline-flex; align-items: center; gap: 4px; }
-.image-studio-chip--pinned { border-color: var(--accent); color: var(--text); }
-.image-studio-chip-text, .image-studio-chip-pin { font: inherit; background: none; border: none; color: inherit; cursor: pointer; padding: 0; }
-.image-studio-chip-pin:hover { color: var(--accent); }
 /* Строка фильтра переносится: кнопок в ней больше десятка (сортировка, архив,
    публикация, корзина, мультивыбор), и без переноса flex сжимал поле поиска до
    двух десятков пикселей — печатать в нём было нельзя. */
-.image-studio-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; }
-.image-studio-filter input { flex: 1 1 200px; min-width: 160px; font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
-.image-studio-dim { color: var(--text-dim); font-size: 11px; }
 /* Подсветка совпадений поиска в имени файла. */
-.image-studio-hit { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 /* Подсветка совпадений поиска в имени файла. */
-.image-studio-hit { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
-.image-studio--drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
-.image-studio-actions select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
-.image-studio-progress { margin: 6px 0 0; font-size: 12px; color: var(--text-dim); }
-.image-studio-card--ghost { opacity: 0.75; }
-.image-studio-thumb--ghost { display: block; }
-.image-studio-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); padding: 4px 2px 0; cursor: pointer; }
-.image-studio-zoom-stage { overflow: hidden; touch-action: none; }
-.image-studio-zoom-stage img { transition: transform 80ms linear; transform-origin: center center; }
-@media (prefers-reduced-motion: reduce) { .image-studio-zoom-stage img { transition: none; } }
-.image-studio-annotate-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.image-studio-annotate img { user-select: none; }
-.image-studio-annotate-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.image-studio-pen { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
-.image-studio-pen--active { border-color: var(--text); }
-.image-studio-crop-stage { position: relative; cursor: crosshair; touch-action: none; }
-.image-studio-crop-stage img { user-select: none; }
 /* Направляющие третей в режиме обрезки: две линии по каждой оси. */
-.image-studio-thirds {
-  position: absolute; inset: 0; pointer-events: none;
-  background:
-    linear-gradient(to right, transparent calc(33.333% - 1px), rgba(255, 255, 255, 0.45) calc(33.333% - 1px) calc(33.333% + 1px), transparent calc(33.333% + 1px)),
-    linear-gradient(to right, transparent calc(66.666% - 1px), rgba(255, 255, 255, 0.45) calc(66.666% - 1px) calc(66.666% + 1px), transparent calc(66.666% + 1px)),
-    linear-gradient(to bottom, transparent calc(33.333% - 1px), rgba(255, 255, 255, 0.45) calc(33.333% - 1px) calc(33.333% + 1px), transparent calc(33.333% + 1px)),
-    linear-gradient(to bottom, transparent calc(66.666% - 1px), rgba(255, 255, 255, 0.45) calc(66.666% - 1px) calc(66.666% + 1px), transparent calc(66.666% + 1px));
-  mix-blend-mode: difference;
-}
-.image-studio-crop-box { position: absolute; border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); pointer-events: none; }
-.image-studio-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 2px 0; }
-.image-studio-wipe { display: grid; gap: 8px; }
-.image-studio-wipe-stage { position: relative; }
-.image-studio-wipe-stage img { display: block; width: 100%; max-height: 60vh; object-fit: contain; background: var(--surface); border-radius: var(--radius-medium); }
-.image-studio-wipe-stage img + img { position: absolute; inset: 0; }
 /* Наложение: разница пикселей на чёрном фоне — совпадающее гаснет. */
-.image-studio-wipe-stage--blend { background: #000; cursor: default; }
-.image-studio-wipe-stage--blend img + img { mix-blend-mode: difference; }
-.image-studio-wipe-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
-.image-studio-wipe input[type='range'] { width: 100%; }
 /* Сетка сравнения трёх-четырёх картинок: подписи-ссылки под каждой. */
-.image-studio-compare-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.image-studio-compare-grid figure { margin: 0; min-width: 0; display: grid; gap: 4px; justify-items: center; }
-.image-studio-compare-grid img { max-width: 100%; max-height: 30vh; object-fit: contain; background: var(--surface); border-radius: var(--radius-medium); }
-.image-studio-compare-grid figcaption { font-size: 11px; text-align: center; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.image-studio-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.image-studio-compare figure { margin: 0; min-width: 0; }
-.image-studio-compare figcaption { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.image-studio-trash { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; font-size: 12px; }
 /* Панель свойств лайтбокса: пары «поле — значение» в две колонки, заметка
    отдельной строкой под ними. */
-.image-studio-props { margin-top: 10px; font-size: 12px; color: var(--text); display: grid; gap: 8px; }
-.image-studio-props dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
-.image-studio-props dt { color: var(--text-dim); }
-.image-studio-props dd { margin: 0; word-break: break-word; }
 /* Кнопки-ссылки свойств («Скопировать сводку», «Что внутри файла», «Показать в
    сетке») — прямые ячейки грида: без `justify-self` они растягивались на всю
    ширину и подпись вставала по центру, а соседние «Показать палитру» и
    «Показать гистограмму» (внутри своих обёрток) оставались слева. Разнобой
    виден только глазами — в разметке и тестах всё «на месте». */
-.image-studio-props > .image-studio-cancel { justify-self: start; text-align: left; }
-.image-studio-note { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 /* Заметка под картинкой: видна без раскрытия свойств. */
-.image-studio-note-line { word-break: break-word; }
 /* Полный экран лайтбокса: картинка занимает весь кадр, тёмный фон. */
-.imgbody--fullscreen { background: #0b0c0f; display: grid; place-items: center; padding: 16px; }
-.imgbody--fullscreen .image-studio-full { max-height: 92vh; }
 /* Гистограмма яркости: столбики от тени слева к свету справа. */
-.image-studio-histogram-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.image-studio-histogram { display: inline-flex; align-items: flex-end; gap: 1px; height: 36px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
-.image-studio-histogram span { display: block; width: 3px; background: var(--accent); border-radius: 1px 1px 0 0; }
 /* Палитра картинки: круглые образцы цвета, клик копирует hex. */
-.image-studio-palette { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.image-studio-swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); cursor: pointer; padding: 0; }
 /* Поле подписи в строке инструментов карточки. */
 /* Поле запрета и чипы частых запретов — одной строкой, с переносом. */
-.image-studio-negative { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
-.image-studio-negative .image-studio-chip { font-size: 11px; padding: 2px 8px; }
-.image-studio-caption-row { display: inline-flex; gap: 4px; align-items: center; }
-.image-studio-caption-row input { width: 140px; min-width: 0; font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
-.image-studio-note input { flex: 1 1 220px; min-width: 0; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); }
 /* Контекстное меню карточки: fixed по точке клика, поверх сетки. */
-.image-studio-menu { position: fixed; z-index: 1300; min-width: 200px; display: grid; padding: 4px; gap: 1px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--panel, var(--surface)); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); }
-.image-studio-menu button { font: inherit; font-size: 13px; text-align: left; padding: 6px 10px; border: 0; border-radius: 6px; background: none; color: var(--text); cursor: pointer; }
-.image-studio-menu button:hover, .image-studio-menu button:focus-visible { background: var(--surface-hover); }
 /* Шпаргалка клавиш галереи: комбинация слева, смысл справа. */
-.image-studio-keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 10px; font-size: 13px; }
-.image-studio-keys dt { color: var(--text-dim); white-space: nowrap; }
-.image-studio-keys dd { margin: 0; }
-.image-studio-composer-toggle { justify-self: start; }
 /* Поле поиска с крестиком очистки: крестик лежит внутри рамки поля. */
-.image-studio-search { position: relative; display: flex; flex: 1 1 200px; min-width: 160px; }
-.image-studio-search input { flex: 1 1 auto; padding-right: 26px; }
-.image-studio-search-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--text-dim); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 6px; }
-.image-studio-search-clear:hover { color: var(--text); }
 /* Лупа: круг с трёхкратным фрагментом под курсором. Курсор в центре круга,
    поэтому смещаем его на половину диаметра. */
-.image-studio-loupe {
-  position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px;
-  border: 2px solid var(--accent); border-radius: 50%;
-  background-repeat: no-repeat; background-color: var(--panel, #fff);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 25%); pointer-events: none; z-index: 3;
-}
 /* Координаты и цвет под курсором — строкой под картинкой. */
-.image-studio-probe { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
-.image-studio-swatch-inline { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border); }
 /* Дерево версий в свойствах: строки с отступом по уровню правки. */
-.image-studio-versions { display: grid; gap: 2px; font-size: 12px; }
 /* Журнал операций: строка — что сделали, когда и кнопка отмены. */
-.image-studio-journal { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; }
-.image-studio-journal li { display: flex; align-items: center; gap: 8px; }
-.image-studio-journal li > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.image-studio-journal li > span:nth-child(2) { flex: 0 0 auto; font-size: 12px; }
 /* Контактный лист: на печать уходит только сетка, без полей ввода и кнопок.
    Печатаем из режима `image-studio--print`, чтобы не ломать экранный вид. */
-@media print {
-  .image-studio--print .image-studio-toolbar,
-  .image-studio--print .image-studio-filter,
-  .image-studio--print .image-studio-trash,
-  .image-studio--print .image-studio-card-actions,
-  .image-studio--print .image-studio-check { display: none !important; }
-  .image-studio--print { overflow: visible !important; height: auto !important; }
-  .image-studio--print .image-studio-grid { grid-template-columns: repeat(3, 1fr) !important; }
-  .image-studio--print .image-studio-thumb img { max-height: 200px; object-fit: contain; }
-}
 /* Мигание карточки после автопрокрутки: без него непонятно, куда именно
    привели — на экране одинаковые превью. */
 @keyframes image-studio-flash { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 3px transparent; } }
-.image-studio-card--flash { animation: image-studio-flash 1.2s ease-out 2; border-radius: var(--radius-medium); }
 /* Значок «расширение врёт»: жёлтый треугольник в углу подписи. */
-.image-studio-warn { color: #b8860b; cursor: help; }
 /* Инверсия просмотра лайтбокса: только на экране, файл не меняется. */
-.image-studio-full[data-inverted] { filter: invert(1); }
 /* Точка «файл в наборе»: маленькая метка в углу превью, не перекрывающая бейдж
    «новое» (он в правом верхнем углу). */
-.image-studio-in-set { position: absolute; left: 6px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--panel, #fff); }
 /* Гистограммы по каналам: три полосы одна под другой, каждая своего цвета —
    так перекос («ушло в синеву») виден сразу, без чтения цифр. */
-.image-studio-channels { display: grid; gap: 2px; }
-.image-studio-histogram--r span { background: #d9534f; }
-.image-studio-histogram--g span { background: #4c9a53; }
-.image-studio-histogram--b span { background: #4a7fd1; }
-.image-studio-channels .image-studio-histogram { height: 18px; }
 /* Направляющие обрезки: трети (по умолчанию), центр и золотое сечение.
    Линии те же, что у третей (белые в difference-режиме) — меняются только
    позиции, поэтому переопределяем один background-image. */
-.image-studio-thirds--center {
-  background-image:
-    linear-gradient(to right, transparent calc(50% - 1px), rgba(255, 255, 255, 0.45) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
-    linear-gradient(to bottom, transparent calc(50% - 1px), rgba(255, 255, 255, 0.45) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px));
-}
-.image-studio-thirds--golden {
-  background-image:
-    linear-gradient(to right, transparent calc(38.2% - 1px), rgba(255, 255, 255, 0.45) calc(38.2% - 1px) calc(38.2% + 1px), transparent calc(38.2% + 1px)),
-    linear-gradient(to right, transparent calc(61.8% - 1px), rgba(255, 255, 255, 0.45) calc(61.8% - 1px) calc(61.8% + 1px), transparent calc(61.8% + 1px)),
-    linear-gradient(to bottom, transparent calc(38.2% - 1px), rgba(255, 255, 255, 0.45) calc(38.2% - 1px) calc(38.2% + 1px), transparent calc(38.2% + 1px)),
-    linear-gradient(to bottom, transparent calc(61.8% - 1px), rgba(255, 255, 255, 0.45) calc(61.8% - 1px) calc(61.8% + 1px), transparent calc(61.8% + 1px));
-}
 /* Лента кадров лайтбокса: одна прокручиваемая строка миниатюр, текущий кадр
    обведён рамкой акцентного цвета. */
-.image-studio-strip { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; scrollbar-width: thin; }
-.image-studio-strip > span { flex: 0 0 auto; line-height: 0; }
-.image-studio-strip-item { flex: 0 0 auto; padding: 0; border: 2px solid transparent; border-radius: var(--radius-medium); background: none; cursor: pointer; line-height: 0; }
-.image-studio-strip-item img { width: 56px; height: 56px; object-fit: cover; border-radius: calc(var(--radius-medium) - 2px); display: block; }
-.image-studio-strip-item--current { border-color: var(--accent); }
-.image-studio-strip-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* «Наверх» висит над сеткой у правого нижнего угла панели: у неё своя
    прокрутка, поэтому кнопка sticky внутри панели, а не fixed на экране. */
-.image-studio-to-top { position: sticky; bottom: 12px; align-self: flex-end; z-index: 2; box-shadow: 0 2px 8px rgb(0 0 0 / 18%); }
 /* Список сохранённых видов: имя кнопкой, условия приглушённо, крестик справа. */
-.image-studio-views { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; }
-.image-studio-views li { display: flex; align-items: center; gap: 8px; }
-.image-studio-views li > span { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Поле заметки в отдельном окне: три строки — обычная длина заметки, дальше скролл. */
-.image-studio-note-field { width: 100%; box-sizing: border-box; min-height: 72px; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); background: var(--panel, #fff); color: inherit; font: inherit; resize: vertical; }
 /* Поле переноса пометок: моноширинный JSON на всю ширину окна. */
-.image-studio-marks { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); resize: vertical; }
 /* Полоска пакетной операции: сколько файлов уже сделано. */
-.image-studio-batch-bar { display: block; height: 3px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
-.image-studio-batch-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 120ms linear; }
-@media (prefers-reduced-motion: reduce) { .image-studio-batch-bar span { transition: none; } }
 /* Группы галереи по датам: заголовок и своя сетка под ним. */
-.image-studio-group { display: grid; gap: 8px; margin-top: 12px; }
-.image-studio-group-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 /* Распорка виртуальной сетки: держит высоту прокрутки за неотрисованные строки. */
-.image-studio-spacer { grid-column: 1 / -1; }
 /* Маркер конца страницы: наблюдатель ловит его появление в видимой области. */
-.image-studio-more { display: flex; justify-content: center; padding: 4px 0; }
 /* Поле шаблона пакетного переименования: узкое и не растягивается, иначе
    правило поиска (flex: 1 1 200px) раздуло бы его на всю строку. */
-.image-studio-rename-batch { display: inline-flex; gap: 4px; align-items: center; }
-.image-studio-filter .image-studio-rename-batch input { flex: 0 0 auto; width: 120px; min-width: 0; font-size: 12px; padding: 4px 8px; }
-.image-studio-selected-chip { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 12px; color: var(--text-dim); }
-.image-studio-selected-chip img { width: 28px; height: 28px; object-fit: cover; border-radius: 6px; background: var(--surface); }
-.image-studio-quota-bar { height: 4px; border-radius: 999px; background: var(--surface-hover); margin-top: 10px; overflow: hidden; }
-.image-studio-quota-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
-.image-studio-quota-bar--warn { background: var(--danger) !important; }
-.image-studio-versions { word-break: break-word; }
-.image-studio-quota--warn { color: var(--danger); }
-.image-studio-cancel { font: inherit; font-size: 12px; border: none; background: none; color: var(--accent); cursor: pointer; text-decoration: underline; padding: 0; }
-.image-studio-origin { font-size: 12px; color: var(--text-dim); margin: 8px 0 0; word-break: break-word; }
-.image-studio-quota { margin: 10px 0 0; font-size: 12px; color: var(--text-dim); }
-.image-studio-full { max-width: 100%; max-height: 100%; object-fit: contain; }
-.image-studio-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
-.image-studio-card { display: grid; gap: 6px; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); padding: 8px; }
-.image-studio-card--selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.image-studio-thumb { display: block; width: 100%; aspect-ratio: 1; border: 0; padding: 0; background: var(--surface-hover); border-radius: 8px; overflow: hidden; cursor: pointer; }
-.image-studio-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* «Целиком»: широкий баннер и портрет в квадратной карточке теряли половину
    кадра — по кнопке ▢/▣ сетка показывает картинку без обрезки. Фон не трогаем:
    его задаёт переключатель фона сетки (шахматка/светлый/тёмный). */
-.image-studio-grid--fit .image-studio-thumb img { object-fit: contain; }
 /* Мелкие карточки: подпись 11 px, иначе имя вроде «баннер-обложка.png» в
    104 px не читается вовсе — обрезается на третьем символе. */
-.image-studio-grid--dense .image-studio-name { font-size: 11px; }
 /* Раскрытый ящик отбора отделён подложкой: иначе шесть селектов сливаются с
    кнопками порядка и групп в одну неразборчивую строку. */
 /* Раскрытая часть мультирежима: своя строка с подложкой — иначе двадцать
    контролов сливаются с кнопками выбора и удаления. */
 /* Справочник студии: длинный текст с картинками — читаемая ширина строки и
    снимки во всю ширину окна, чтобы мелкие подписи на них не терялись. */
-.image-studio-guide { display: grid; gap: 20px; max-width: 860px; }
-.image-studio-guide-lead { margin: 0; color: var(--text-dim); }
-.image-studio-guide-toc { display: flex; flex-wrap: wrap; gap: 8px 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border-soft); }
-.image-studio-guide-toc a { color: var(--accent); font-size: 13px; text-decoration: none; }
-.image-studio-guide-toc a:hover, .image-studio-guide-toc a:focus-visible { text-decoration: underline; }
-.image-studio-guide-section { display: grid; gap: 10px; scroll-margin-top: 8px; }
-.image-studio-guide-section h3 { margin: 0; font-size: 15px; }
-.image-studio-guide-section ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
-.image-studio-guide-section li { line-height: 1.45; }
-.image-studio-guide-shot {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-medium);
-  background: var(--surface);
-}
-
-.image-studio-batch-more {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-medium);
-  background: var(--surface);
-}
-.image-studio-filter-box {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  padding: 4px 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-medium);
-  background: var(--surface);
-}
 /* Меню «Ещё…» тулбара: якорь — своя обёртка, а не вся панель. Имя не
    `image-studio-more` — тот класс занят кнопкой «Показать ещё» под сеткой. */
-.image-studio-toolbar-more, .image-studio-viewer-more { position: relative; display: inline-flex; }
 /* Имя файла в шапке лайтбокса бывает в сто символов: обрезаем, чтобы кнопки
    не уезжали за край. Полное имя остаётся в тултипе и в свойствах. */
-.util-embed--img .mdh { overflow: hidden; max-width: min(60%, 640px); text-overflow: ellipsis; white-space: nowrap; }
-.image-studio-viewer-menu { position: absolute; top: calc(100% + 6px); right: 0; left: auto; max-height: 60vh; overflow: auto; }
-.image-studio-toolbar-menu { position: absolute; top: calc(100% + 4px); right: 0; left: auto; }
-.image-studio-drop-hint {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  padding: 8px 12px;
-  border: 1px dashed var(--accent);
-  border-radius: var(--radius-medium);
-  background: var(--accent-soft, var(--surface));
-  color: var(--text);
-  font-size: 13px;
-  text-align: center;
-}
-.image-studio-thumb-loading { display: grid; place-items: center; height: 100%; color: var(--text-dim); }
 /* Имя — своей строкой над кнопками. В одну строку с ними оно не живёт: круги
    улучшений довели ряд действий до восьми иконок (~170 px), и во flex-строке
    карточки (~160 px) имя ужималось до нулевой ширины — галерея месяцами
    показывала картинки без подписей. */
-.image-studio-meta { display: grid; gap: 4px; min-width: 0; }
-.image-studio-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.image-studio-card-actions { display: flex; flex-wrap: wrap; gap: 2px; }
-.image-studio-rename { display: flex; gap: 4px; align-items: center; }
-.image-studio-rename input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: 6px; background: var(--panel, #fff); color: inherit; font: inherit; }
-.image-studio-rename { flex-wrap: wrap; }
-.image-studio-rename input[aria-invalid='true'] { border-color: var(--danger); }
 /* Ошибка имени — под полем, на всю ширину строки переименования. */
-.image-studio-rename-error { flex: 1 0 100%; font-size: 11px; color: var(--danger); }
 
 /* Вкладка «Активность» карточки: три ленты (комментарии, история, ворклог). */
 .task-activity-panel { display: grid; gap: 12px; }
@@ -4202,19 +3951,6 @@ button.conscmd:hover {
 @media (max-width: 720px) { .task-act-worklog-form { grid-template-columns: 1fr; } }
 
 /* Диалог «Компоненты из проекта»: две колонки — файлы машины и связи. */
-.make-sync { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
-.make-sync h3 { margin: 0 0 8px; font-size: 14px; }
-.make-sync-list { display: grid; gap: 2px; max-height: 320px; overflow: auto; border: 1px solid var(--border-soft); border-radius: var(--radius-medium); padding: 6px; }
-.make-sync-dir { display: block; width: 100%; padding: 6px 8px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; border-radius: 6px; }
-.make-sync-dir:hover { background: var(--surface-hover); }
-.make-sync-file { display: flex; gap: 8px; align-items: center; padding: 6px 8px; }
-.make-sync-link { display: flex; gap: 8px; align-items: center; padding: 6px 8px; }
-.make-sync-path { font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
-.make-sync-status { margin-left: auto; color: var(--text-dim); font-size: 12px; white-space: nowrap; }
-.make-sync-status[data-status='edited_in_make'] { color: var(--accent); }
-.make-sync-status[data-status='changed_in_project'], .make-sync-status[data-status='both'] { color: var(--danger); }
-.make-sync-actions { margin-top: 10px; display: flex; gap: 8px; }
-@media (max-width: 720px) { .make-sync { grid-template-columns: 1fr; } }
 
 /* Блок предпросмотра с шапкой: заголовок, размер и «скопировать блок». */
 .context-block { margin-bottom: var(--space-2); }
@@ -4320,27 +4056,14 @@ button.conscmd:hover {
 /* ---- Картинка от модели в сообщении (ToolFrame + просмотрщик) ---- */
 /* Карточка подстраивается под картинку, а не растягивается на всю ширину пузыря:
    узкая иллюстрация не должна висеть в пустой рамке (как в ChatGPT). */
-.util-embed--img {
-  max-height: none;
-  width: fit-content;
-  max-width: 100%;
-}
-.imgbody {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
 /* Центрируем **только сцену с картинкой**: кадр 400×300 в окне на 940 стоял в
    левом верхнем углу и читался как «сломалось». Через `align-items: center` на
    всём теле это делать нельзя — тогда по центру уезжают и панель свойств, и
    подсказки, и строки разметки (поймано глазами: список свойств встал по
    середине окна). */
-.imgbody > .image-studio-zoom-stage { margin-inline: auto; }
 /* Тело лайтбокса тянется на всю рамку, а сцена с картинкой центрируется в
    остатке: иначе кадр с подписями висел вверху, а внизу оставалась пустота
    в половину окна. */
-.util-embed--img .imgbody { flex: 1 1 auto; }
-.util-embed--img .imgbody > .image-studio-zoom-stage { margin-block: auto; }
 /* Превью: кликабельная кнопка без «кнопочного» вида. */
 .imgprev {
   display: block;
@@ -4455,14 +4178,6 @@ button.conscmd:hover {
 }
 
 /* Разворот: тёмное полотно во всю карточку, картинка вписана по размеру. */
-.util-embed--img.util-embed--fs {
-  width: auto;
-}
-.util-embed--img.util-embed--fs .imgbody {
-  flex: 1;
-  min-height: 0;
-  background: #14140f;
-}
 .imgsurf {
   display: flex;
   align-items: center;
@@ -5327,13 +5042,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-designs-error { margin: 0; font-size: 12px; color: var(--danger); }
 
 /* Панель Make: связанные карточки доски и форма связывания открытой страницы. */
-.make-task-links-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.make-task-links-list li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-soft); border-radius: 4px; padding: 6px 8px; font-size: 13px; }
-.make-task-links__key { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
-.make-task-links__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-task-links__path { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
-.make-task-links-form { display: grid; gap: 8px; }
-.make-task-links-form label { display: grid; gap: 3px; font-size: 13px; }
 
 /* Колонка свойств прижата к краям карточки (отрицательные поля гасят padding
    .jmodal): по макету это панель во всю высоту с полем-строкой
@@ -6876,34 +6584,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .app--web-reader > .chat-split, .app--playwright-reader > .chat-split, .app--image-studio > .chat-split { grid-column: 1; }
 .app--console-reader > .chat-split, .app--make > .chat-split { grid-column: 2; }
 .playwright-reader-selector > strong, .workshop-selector > strong { white-space: nowrap; }
-.playwright-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
-.playwright-reader-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-.playwright-reader-header [role='status'] { margin-left: auto; color: var(--text-dim); }
-.playwright-reader-header input[type='url'] { flex: 1 1 auto; min-width: 0; }
-.playwright-browser-viewport { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--bg); }
-.playwright-browser-input { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); }
-.playwright-reader-address { flex: 1 1 auto; min-width: 0; }
 /* Вторая строка шапки: размер окна, снимок в чат и состояние сессии. Разнесены с
    адресной строкой намеренно — шесть контролов в один ряд не помещались на 390px. */
-.playwright-reader-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2, 8px);
-  padding: 6px 10px; border-bottom: 1px solid var(--border-soft, var(--border)); }
-.playwright-reader-viewports { display: inline-flex; gap: var(--space-1, 4px); }
-.playwright-reader-title { max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 12px; }
-.playwright-reader-state { margin-left: auto; color: var(--text-dim); font-size: 12px; }
 /* Вкладки: `meta.tabs` приходили и не показывались, вторую было нечем открыть. */
-.playwright-reader-tabs { display: flex; align-items: center; gap: var(--space-1, 4px); overflow-x: auto;
-  padding: 4px 8px; border-bottom: 1px solid var(--border-soft, var(--border)); }
-.playwright-reader-tab { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
-.playwright-reader-tab button[role='tab'] { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  border: 1px solid var(--border); border-radius: var(--radius-medium); background: none; color: var(--text-dim);
-  font: inherit; font-size: 12px; padding: 4px 8px; cursor: pointer; }
-.playwright-reader-tab.is-active button[role='tab'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 /* Ошибка команды: retryable приходил в BrowserError и терялся. */
-.playwright-reader-error { display: flex; align-items: center; gap: var(--space-2, 8px); padding: 8px 10px;
-  border-top: 1px solid var(--danger); background: var(--surface-danger, var(--surface)); color: var(--text); font-size: 13px; }
 /* Кадр — область ввода: он принимает фокус, поэтому обязан его показывать. */
-.playwright-browser-viewport { position: relative; }
-.playwright-browser-viewport img:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* Отметка «выполняется» поверх кадра: во время навигации кадр ещё старый. */
 /* Каталог под кадром оставляет доступными страницу и чат во время сохранения. */
 .playwright-downloads { flex: 0 1 auto; max-height: 260px; overflow: auto; padding: 10px; border-top: 1px solid var(--border); }
@@ -6920,22 +6605,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .playwright-site-dialog input { box-sizing: border-box; width: 100%; padding: 8px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
 .playwright-site-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .playwright-site-dialog-note { font-size: 12px; color: var(--text-dim); }
-.playwright-reader-busy { position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: var(--radius-medium);
-  background: var(--surface); border: 1px solid var(--border); color: var(--text-dim); font-size: 12px; }
-
-@media (max-width: 720px) {
-  .playwright-reader-tools .vc-btn { min-height: 40px; }
-  .playwright-reader-tabs button { min-height: 40px; }
-  .playwright-reader-error .vc-btn { min-height: 40px; }
-  .playwright-reader-header .vc-btn { min-height: 40px; min-width: 40px; }
-  .playwright-reader-address { min-height: 40px; }
-  .playwright-browser-input input { min-height: 40px; }
-  .playwright-browser-input .vc-btn { min-height: 40px; }
-}
-.playwright-browser-input input[type='text'] { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 768px) {
-  .chat-split-chat, .playwright-browser-pane { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
-  .chat-split--chat .playwright-browser-pane, .chat-split--preview .chat-split-chat { display: none; }
+  .chat-split-chat { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
+  .chat-split--preview .chat-split-chat { display: none; }
 }
 .chat-page > .chat-split-chat, .chat-page > .chat-split-chat > .main { height: 100%; }
 .web-recorder-selector { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }
@@ -6945,7 +6617,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split { grid-column: 2; display: flex; min-width: 0; min-height: 0; height: 100%; overflow: hidden; overflow: clip; }
 .app--web-reader > .chat-split { grid-column: 1; }
 .chat-split-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 360px; min-height: 0; }
-.chat-split-chat > .web-recorder-selector, .chat-split-chat > .make-selector { flex: none; }
+.chat-split-chat > .web-recorder-selector { flex: none; }
 .chat-split-chat > .main { flex: 1 1 auto; min-height: 0; height: auto; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
@@ -6985,7 +6657,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   display: flex;
   background: var(--panel);
 }
-.workshop-side-host > .console-browser-pane, .workshop-side-host > .image-studio {
+.workshop-side-host > .console-browser-pane {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
@@ -7064,25 +6736,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media (prefers-reduced-motion: reduce) {
   .workshop-divider::before, .workshop-divider__handle { transition: none; }
 }
-.webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
-.webpreview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
-.webpreview-address { flex: 1; min-width: 0; }
-.webpreview-inspector-toggle[aria-pressed='true'] { border-color: var(--accent); background: var(--surface-selected); color: var(--accent); }
 .previewchip { max-width: min(100%, 520px); }
 .message-preview-context { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12px; }
 .message-preview-context summary { cursor: pointer; overflow: hidden; padding: 7px 9px; text-overflow: ellipsis; white-space: nowrap; }
 .message-preview-context pre { max-height: 280px; margin: 0; padding: 9px; overflow: auto; border-top: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
-.webpreview-address input { box-sizing: border-box; width: 100%; height: 100%; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
-.webpreview-error { margin: 0; padding: 6px 10px; color: var(--danger); font-size: 12px; }
-.webpreview-scenario { max-height: 180px; overflow: auto; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; }
-.webpreview-scenario-header { display: flex; align-items: center; gap: 6px; }
-.webpreview-scenario ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; }
-.webpreview-scenario li { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.webpreview-scenario li[data-status='passed'] { color: var(--success, #22863a); }
-.webpreview-scenario li[data-status='failed'] { color: var(--danger); }
-.webpreview-scenario input { min-width: 0; flex: 1; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); font: inherit; padding: 3px 5px; }
-.webpreview-scenario em { white-space: nowrap; color: var(--text-dim); }
-.webpreview-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: white; }
 .webpreview-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--text-dim); text-align: center; }
 .chat-split-tabs { display: none; }
 .chat-split-tabs > div { display: contents; }
@@ -7725,221 +7382,30 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media(prefers-reduced-motion:reduce){.clarification-notification{scroll-behavior:auto}}
 
 /* ---- Make: панель проекта (превью / код / история) ------------------------ */
-.make-pane { flex: 0 1 var(--preview-width); width: var(--preview-width); max-width: 100%; min-width: 320px; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--panel); }
-.make-pane--fs { position: fixed; inset: 0; z-index: 60; min-width: 0; width: auto; }
-@media (max-width: 768px) {
-  .make-pane { flex: 1 1 auto; width: 100%; min-width: 0; }
-  .chat-split--chat .make-pane { display: none; }
-}
-.make-head { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.make-head-spacer { flex: 1 1 auto; }
-.make-tabs { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
-.make-tab { border: 0; background: transparent; padding: 4px 10px; border-radius: 6px; font: inherit; font-size: 13px; color: var(--text-dim); cursor: pointer; }
-.make-tab.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-.make-devices { display: inline-flex; gap: 2px; }
-.make-device { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; color: var(--text-dim); }
-.make-device.on { color: var(--text); }
-.make-device.on { border-color: var(--border); background: var(--surface); }
-.make-inspect.on { background: var(--accent); color: var(--accent-fg) !important; }
-.make-error { margin: 0; padding: 8px 12px; color: #b3261e; background: #fdecea; font-size: 13px; }
-.make-preview { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #e9ecf1; }
-.make-selected { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12px; }
-.make-selected-sel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
-.make-selected-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
-.make-selected-actions { display: inline-flex; gap: 4px; align-items: center; }
-.make-frame-host { flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; overflow: auto; padding: 0; }
-.make-frame-host--tablet, .make-frame-host--mobile { padding: 16px; }
-.make-frame { border: 0; width: 100%; height: 100%; background: #fff; flex: 0 0 auto; }
-.make-frame-host--tablet .make-frame, .make-frame-host--mobile .make-frame { border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18); height: calc(100% - 0px); }
-.make-code { flex: 1 1 auto; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); overflow: hidden; }
-.make-tree { border-right: 1px solid var(--border); overflow: auto; padding: 6px 4px; font-size: 13px; }
-.make-tree-dir { margin: 6px 6px 2px; font-size: 11px; color: var(--text-dim); text-transform: none; }
-.make-tree-item { display: flex; align-items: center; border-radius: 6px; }
-.make-tree-item.on { background: var(--surface); }
-.make-tree-file { flex: 1 1 auto; text-align: left; border: 0; background: transparent; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-tree-actions { display: none; gap: 0; }
-.make-tree-item:hover .make-tree-actions, .make-tree-item.on .make-tree-actions { display: inline-flex; }
-.make-editor { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.make-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); font-size: 12px; }
-.make-editor-state { color: var(--text-dim); }
-.make-binary { display: grid; place-items: center; gap: 10px; padding: 20px; overflow: auto; background: repeating-conic-gradient(var(--surface-hover) 0 25%, transparent 0 50%) 0 0 / 20px 20px; }
-.make-binary img { max-width: 100%; max-height: 60vh; image-rendering: auto; box-shadow: 0 1px 6px rgb(0 0 0 / 0.15); }
-.make-binary-ref { font-size: 12px; color: var(--text-dim); }
-.make-editor-state.dirty { color: #b26a00; }
 /* Редактор: pre с подсветкой и прозрачный textarea совмещены пиксель в пиксель — одинаковые
    шрифт, отступы, tab-size и перенос; фон тёмный в обеих темах под палитру github-dark. */
-.make-editor-body { position: relative; flex: 1 1 auto; min-height: 0; background: #0d1117; }
-.make-highlight, .make-textarea { position: absolute; inset: 0; margin: 0; padding: 10px 12px; font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; tab-size: 2; white-space: pre; overflow: auto; box-sizing: border-box; }
-.make-highlight { pointer-events: none; color: #c9d1d9; background: transparent; }
-.make-highlight code { font: inherit; white-space: inherit; }
-.make-textarea { width: 100%; height: 100%; resize: none; border: 0; outline: none; background: transparent; color: transparent; caret-color: #e6edf3; }
-.make-textarea::selection { background: rgb(56 139 253 / 0.4); }
-.make-textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
-.make-code--drop .make-tree { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--surface-hover); }
-.make-drop-hint { margin: 6px; padding: 8px; border-radius: 8px; background: var(--accent); color: var(--accent-fg); font-size: 12px; text-align: center; }
-.make-history { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.make-snapshots { list-style: none; margin: 0; padding: 6px 10px; overflow: auto; flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; }
-.make-snapshot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
-.make-snapshot-meta { display: grid; gap: 2px; min-width: 0; }
-.make-snapshot-meta small { color: var(--text-dim); }
-.make-history-foot { padding: 8px 10px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
-.make-ask { display: grid; gap: 10px; }
-.make-ask-field { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }
-.make-ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.make-issues { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; font-size: 12px; background: #eef7ee; border-bottom: 1px solid var(--border-soft); }
-.make-issues--bad { background: #fdf1ec; }
-.make-issues ul { margin: 0; padding-left: 16px; flex: 1 1 auto; display: grid; gap: 2px; }
-.make-issues > span { flex: 1 1 auto; }
-.make-issue-path { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 600; color: var(--accent); cursor: pointer; }
-.make-publish { display: grid; gap: 10px; min-width: 0; }
-.make-publish-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.make-publish-link code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
-.make-templates { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.make-template { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
-.make-template-meta { display: grid; gap: 2px; }
-.make-template-meta small { color: var(--text-dim); }
 /* min-width здесь только для десктопа: на телефоне порог 40px задаёт ui-kit, а
    правило секции перебивало его по специфичности. */
-.make-head .vc-btn--icon { color: var(--text); font-size: 17px; line-height: 1; }
-@media (min-width: 641px) { .make-head .vc-btn--icon { min-width: 30px; } }
-.make-head .vc-btn--icon:disabled { opacity: .5; }
 
 /* Make: поиск в дереве, результаты по содержимому, вкладка «Компоненты». */
-.make-search { display: flex; align-items: center; gap: 6px; padding: 2px 4px 6px; }
-.make-search-input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }
-.make-search-state { font-size: 11px; color: var(--text-dim); }
-.make-matches { border-bottom: 1px solid var(--border-soft); margin-bottom: 4px; padding-bottom: 4px; }
-.make-match { display: grid; gap: 2px; width: 100%; text-align: left; border: 0; background: transparent; padding: 5px 8px; font: inherit; color: var(--text); cursor: pointer; border-radius: 6px; }
-.make-match:hover { background: var(--surface-hover); }
-.make-match-path { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-match-line { color: var(--text-dim); }
-.make-match-text { font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-tree-file--dim { color: var(--text-dim); font-size: 12px; }
-.make-stories { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(150px, 220px) 1fr; }
-.make-story-host { position: relative; min-height: 0; display: flex; flex-direction: column; background: repeating-conic-gradient(var(--surface-hover) 0 25%, transparent 0 50%) 0 0 / 20px 20px; }
-.make-story-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: transparent; }
 
 /* Телефон: дерево файлов/сториз становится верхней полосой, редактор и раннер — под ней. */
-@media (max-width: 768px) {
-  .make-code, .make-stories { grid-template-columns: 1fr; grid-template-rows: minmax(0, 38%) 1fr; }
-  .make-tree { border-right: 0; border-bottom: 1px solid var(--border); }
-  .make-head { gap: 4px; padding: 6px 8px; }
-  .make-head .vc-btn { padding-inline: 8px; }
-  .make-devices { display: none; }
-  .make-pane--fs { z-index: 60; }
-}
 
 /* Controls стори: панель под раннером, поля по типу значения arg. */
-.make-controls { flex: 0 0 auto; max-height: 40%; overflow: auto; border-top: 1px solid var(--border); background: var(--panel); padding: 8px 12px; font-size: 13px; }
-.make-controls-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.make-controls-actions { display: inline-flex; gap: 6px; }
-.make-controls-empty { margin: 0; color: var(--text-dim); font-size: 12.5px; }
-.make-controls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; }
-.make-control { display: grid; grid-template-columns: minmax(70px, 40%) 1fr; align-items: center; gap: 8px; }
-.make-control > span { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-control input[type='text'], .make-control input[type='number'] { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }
-.make-control input[type='checkbox'] { justify-self: start; width: 16px; height: 16px; }
-.make-control--ro code { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Make: стартовые идеи (как главная Figma Make) и диалог «Идеи». */
-.make-starters { padding: 10px 14px 6px; border-bottom: 1px solid var(--border-soft); }
-.make-starters-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 13px; }
-.make-starters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
-.make-starter { display: grid; gap: 2px; text-align: left; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); font: inherit; color: var(--text); cursor: pointer; }
-.make-starter:hover { background: var(--surface-hover); border-color: var(--accent); }
-.make-starter-title { font-size: 13px; font-weight: 600; }
-.make-starter-group { font-size: 11px; color: var(--text-dim); }
-.make-ideas-lead { margin: 0 0 10px; color: var(--text-dim); font-size: 13px; }
-.make-ideas-group h3 { margin: 12px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
-.make-idea { display: grid; gap: 3px; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; background: var(--surface); font: inherit; color: var(--text); cursor: pointer; }
-.make-idea:hover { background: var(--surface-hover); border-color: var(--accent); }
-.make-idea strong { font-size: 13px; }
-.make-idea span { font-size: 12px; color: var(--text-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.make-control select { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }
 
 /* Monaco: обёртка @monaco-editor/react задаёт height:100%, поэтому контейнеру нужна явная высота — абсолютное позиционирование внутри flex-ячейки. */
-.make-monaco { position: relative; flex: 1 1 auto; min-height: 0; background: #1e1e1e; }
-.make-monaco > section { position: absolute !important; inset: 0; }
-.make-monaco-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #c9d1d9; font-size: 13px; }
 
 /* Make: вкладки открытых файлов и автосохранение. */
-.make-tabs-bar { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 4px; min-height: 32px; }
-.make-file-tab { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; border-right: 1px solid var(--border-soft); color: var(--text-dim); }
-.make-file-tab.on { background: var(--panel); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
-.make-file-tab-name { border: 0; background: transparent; font: inherit; font-size: 12.5px; color: inherit; cursor: pointer; padding: 6px 4px; white-space: nowrap; }
-.make-file-tab-dirty { margin-left: 4px; color: var(--accent); font-size: 10px; }
-.make-file-tab .vc-btn--icon { opacity: .6; }
-.make-file-tab:hover .vc-btn--icon, .make-file-tab.on .vc-btn--icon { opacity: 1; }
-.make-editor-tools { display: inline-flex; align-items: center; gap: 10px; }
-.make-autosave { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); font-size: 12px; cursor: pointer; }
 
 /* Make: консоль превью, ассеты, diff снимков, импорт/экспорт. */
-.make-console { flex: 0 0 auto; border-top: 1px solid var(--border); background: var(--panel); font-size: 12.5px; }
-.make-console-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px; }
-.make-console-toggle { border: 0; background: transparent; font: inherit; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; }
-.make-console-count { color: var(--text-dim); }
-.make-console-errors { color: var(--danger); font-weight: 600; }
-.make-console-actions { display: inline-flex; gap: 6px; }
-.make-console-lines { list-style: none; margin: 0; padding: 0 10px 8px; max-height: 30vh; overflow: auto; display: grid; gap: 2px; }
-.make-console-line { display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: baseline; }
-.make-console-line code { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
-.make-console-level { font-size: 10px; text-transform: uppercase; color: var(--text-dim); }
-.make-console-line--error .make-console-level, .make-console-line--error code { color: var(--danger); }
-.make-console-line--warn .make-console-level { color: #b26a00; }
-.make-console-empty { color: var(--text-dim); font-size: 12px; }
-.make-assets { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.make-asset { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; align-items: center; border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
-.make-asset-thumb { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 8px; background: repeating-conic-gradient(var(--surface-hover) 0 25%, transparent 0 50%) 0 0 / 14px 14px; overflow: hidden; font-size: 11px; color: var(--text-dim); }
-.make-asset-thumb img { max-width: 100%; max-height: 100%; }
-.make-asset-meta { display: grid; gap: 2px; min-width: 0; }
-.make-asset-meta code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
-.make-asset-meta small { color: var(--text-dim); }
-.make-asset-actions { display: inline-flex; gap: 4px; align-items: center; }
-.make-snapshot { flex-wrap: wrap; }
-.make-snapshot-actions { display: inline-flex; gap: 6px; }
-.make-diff { list-style: none; margin: 6px 0 0; padding: 0; flex: 1 0 100%; display: grid; gap: 4px; }
-.make-diff-row { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 8px; align-items: center; font-size: 12.5px; padding: 2px 0; }
-.make-diff-status { font-size: 11px; text-transform: uppercase; color: var(--text-dim); }
-.make-diff-row--added .make-diff-status { color: #1a7f37; }
-.make-diff-row--removed .make-diff-status { color: var(--danger); }
-.make-diff-row--changed .make-diff-status { color: #b26a00; }
-.make-diff-row small { color: var(--text-dim); }
-.make-diff-note { margin: 6px 0 0; flex: 1 0 100%; color: var(--text-dim); font-size: 12.5px; }
-.make-export-options { display: grid; gap: 8px; }
-.make-import-mode { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin: 0 0 12px; display: grid; gap: 6px; }
-.make-import-mode legend { font-size: 12px; color: var(--text-dim); padding: 0 4px; }
-.make-import-mode label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
-.make-import-block { margin-bottom: 12px; }
-.make-import-block h3 { margin: 0 0 4px; font-size: 13px; }
-.make-import-block p { margin: 0 0 6px; color: var(--text-dim); font-size: 12.5px; }
-.make-import-url { display: flex; gap: 6px; }
-.make-import-url input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--surface); color: var(--text); }
 
 /* Make: diff-вью файла из снимка. */
-.make-diff-file { border: 0; background: transparent; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
-.make-diff-file code { color: inherit; text-decoration: underline dotted; }
-.make-monaco--diff { height: 60vh; min-height: 320px; }
-.make-diff-fallback { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 60vh; overflow: auto; }
-.make-diff-fallback pre { margin: 0; padding: 8px; font-size: 12px; background: #0d1117; color: #c9d1d9; border-radius: 8px; overflow: auto; }
-.make-diff-removed { background: rgb(248 81 73 / .25); display: inline-block; width: 100%; }
-.make-diff-added { background: rgb(63 185 80 / .25); display: inline-block; width: 100%; }
 
 /* Make: предложение исправить ошибки консоли после правки. */
-.make-autofix { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 12px; border-top: 1px solid var(--border); background: rgb(248 81 73 / .08); font-size: 12.5px; flex-wrap: wrap; }
-.make-autofix code { font-size: 12px; color: var(--danger); }
-.make-autofix-actions { display: inline-flex; gap: 6px; align-items: center; }
 
 /* Make: панель стилей выбранного элемента. */
-.make-style { border-bottom: 1px solid var(--border); padding: 8px 12px; background: var(--panel); font-size: 12.5px; }
-.make-style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 12px; }
-.make-style-field { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 6px; }
-.make-style-field > span:first-child { color: var(--text-dim); }
-.make-style-field input[type='text'], .make-style-field select { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }
-.make-style-color { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.make-style-color input[type='color'] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; }
-.make-style-color code { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-style-actions { display: flex; gap: 6px; margin-top: 8px; }
-@media (max-width: 768px) { .make-style-grid { grid-template-columns: 1fr; } }
 
 /* Monaco использует классы .main/.left/.right в строках подсказок — наши глобальные правила раскладки
    (.main { height: 100vh; flex-direction: column }) ломали suggest-widget: текст уезжал ниже строки. */
@@ -7947,375 +7413,99 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .monaco-editor .monaco-list-row .left, .monaco-editor .monaco-list-row .right { height: auto; }
 
 /* Controls: диапазон, цвет, JSON. */
-.make-control-range { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-.make-control-range input[type='range'] { flex: 1 1 auto; min-width: 0; }
-.make-control-range output { font-size: 12px; color: var(--text-dim); min-width: 28px; text-align: right; }
-.make-control-color { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.make-control-color input[type='color'] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; }
-.make-control-color code { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-control--json { align-items: start; }
-.make-control-json { display: grid; gap: 4px; min-width: 0; }
-.make-control-json textarea { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: 12px/1.4 'SF Mono', ui-monospace, Menlo, Consolas, monospace; background: var(--surface); color: var(--text); resize: vertical; }
-.make-control-json textarea[aria-invalid='true'] { border-color: var(--danger); }
-.make-control-error { color: var(--danger); font-size: 11px; }
 
 /* Публикация: выбор версии. */
-.make-publish-pin { display: grid; gap: 6px; margin: 10px 0; min-width: 0; }
-.make-publish-pin label { font-size: 12px; color: var(--text-dim); }
-.make-publish-pin select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--surface); color: var(--text); }
 
 /* Поиск и замена по проекту. */
-.make-replace { display: flex; align-items: center; gap: 6px; padding: 0 4px 6px; }
 
 /* Перенос файлов между папками дерева. */
-.make-tree--dragging .make-tree-group { outline: 1px dashed var(--border); outline-offset: -2px; border-radius: 8px; }
-.make-tree-group--drop { background: var(--surface-hover); outline-color: var(--accent) !important; }
-.make-tree-item--drag { opacity: .5; }
-.make-tree-item { touch-action: pan-y; }
 
 /* Inline-команда ассистенту (Cmd+K). */
-.make-inline { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12.5px; }
-.make-inline-scope { color: var(--text-dim); white-space: nowrap; }
-.make-inline input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--panel); color: var(--text); }
 
 /* Локальная история правок файла. */
-.make-local-history { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; }
-.make-local-version { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; background: var(--panel); font: inherit; color: var(--text); cursor: pointer; }
-.make-local-version:hover { border-color: var(--accent); }
-.make-local-version small { color: var(--text-dim); }
 
 /* Вкладка «Сеть» под превью. */
-.make-console-tabs { display: inline-flex; gap: 10px; }
-.make-console-toggle.on { font-weight: 600; }
-.make-network-row { display: grid; grid-template-columns: 40px 48px 1fr auto; gap: 8px; align-items: baseline; font-size: 12px; }
-.make-network-status { font-variant-numeric: tabular-nums; color: #1a7f37; }
-.make-network-row--bad .make-network-status, .make-network-row--bad .make-network-url { color: var(--danger); }
-.make-network-method { color: var(--text-dim); font-size: 11px; }
-.make-network-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-network-row small { color: var(--text-dim); }
 
 /* Язык превью. */
-.make-lang { border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; background: var(--surface); color: var(--text); max-width: 96px; }
-@media (max-width: 768px) { .make-lang { display: none; } }
 
 /* Проверка доступности превью. */
-.make-a11y { border-top: 1px solid var(--border); background: var(--panel); padding: 6px 12px; font-size: 12.5px; max-height: 32vh; overflow: auto; }
-.make-a11y--bad { background: rgb(248 81 73 / .06); }
-.make-a11y-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.make-a11y-actions { display: inline-flex; gap: 6px; align-items: center; }
-.make-a11y-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
-.make-a11y-row { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 8px; align-items: center; }
-.make-a11y-impact { font-size: 10px; text-transform: uppercase; color: var(--text-dim); }
-.make-a11y-row--critical .make-a11y-impact, .make-a11y-row--serious .make-a11y-impact { color: var(--danger); font-weight: 600; }
-.make-a11y-help { border: 0; background: transparent; padding: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; text-decoration: underline dotted; }
-.make-a11y-row small { color: var(--text-dim); }
-.make-a11y-row a { color: var(--text-dim); text-decoration: none; }
 
 /* Визуальные снимки стори. */
-.make-shots { border-top: 1px solid var(--border); background: var(--panel); padding: 6px 12px; font-size: 12px; }
-.make-shots-strip { display: flex; gap: 8px; align-items: center; overflow-x: auto; }
-.make-shot { display: grid; gap: 2px; border: 2px solid var(--border); border-radius: 8px; padding: 2px; background: var(--surface); cursor: pointer; font: inherit; color: var(--text-dim); }
-.make-shot.on { border-color: var(--accent); }
-.make-shot img { width: 96px; height: 60px; object-fit: cover; border-radius: 4px; background: #fff; }
-.make-shots-hint { color: var(--text-dim); }
-.make-shots-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-.make-shots-compare figure { margin: 0; display: grid; gap: 4px; }
-.make-shots-compare img { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-.make-shots-compare figcaption { color: var(--text-dim); text-align: center; }
 
 /* Статус play-функции у стори. */
-.make-play { margin-left: 6px; font-size: 11px; }
-.make-play--passed { color: #1a7f37; }
-.make-play--failed { color: var(--danger); }
-.make-play--pending { color: var(--text-dim); }
-
-.make-library-item { grid-template-columns: 1fr auto; }
 
 /* Дизайн-токены Make (п.23) */
-.make-tokens-group { margin-top: var(--space-3); }
-.make-tokens-group h4 { margin: 0 0 var(--space-1); font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
-.make-tokens { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
-.make-token { display: grid; grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1.4fr) auto; align-items: center; gap: var(--space-2); }
-.make-token-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-token input[type='color'] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-small); background: none; }
-.make-token-swatch { width: 28px; height: 28px; border-radius: var(--radius-small); border: 1px solid var(--border); }
-.make-token-value, .make-token-add input { min-width: 0; font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); color: var(--text); }
-.make-token-add { display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-2); margin-top: var(--space-3); }
-@media (max-width: 720px) {
-  .make-token { grid-template-columns: 1fr auto auto; }
-  .make-token-value { grid-column: 1 / -1; }
-  .make-token-add { grid-template-columns: 1fr; }
-}
 
 /* Стоимость проекта Make в шапке (п.24) */
-.make-cost { display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px; border-radius: 999px; background: var(--surface-hover); color: var(--text); font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; cursor: help; }
-.make-cost small { font: inherit; font-weight: 400; color: var(--text-dim); }
-@media (max-width: 720px) { .make-cost small { display: none; } }
 
 /* Публикация: адрес, пароль, просмотры (п.25) */
-.make-publish-access { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
-.make-publish-access .make-ask-field span small { display: block; color: var(--text-dim); font-size: 11px; }
-.make-publish-views { margin: 0; }
 
 /* Место проекта Make (п.30) */
-.make-usage { display: grid; gap: var(--space-2); }
-.make-usage-bar { display: flex; height: 10px; border-radius: 999px; background: var(--surface-hover); overflow: hidden; }
-.make-usage-seg { display: block; height: 100%; }
-.make-usage-seg--files, .make-usage-legend i.make-usage-seg--files { background: var(--accent); }
-.make-usage-seg--snaps, .make-usage-legend i.make-usage-seg--snaps { background: #f0a020; }
-.make-usage-seg--shots, .make-usage-legend i.make-usage-seg--shots { background: #a06cd5; }
-.make-usage-total { margin: 0; font-size: 13px; }
-.make-usage-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12px; color: var(--text-dim); }
-.make-usage-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
-.make-usage-clean { border: 1px solid var(--border); border-radius: var(--radius-medium); padding: var(--space-2) var(--space-3); display: grid; gap: var(--space-1); margin: 0; }
-.make-usage-clean legend { font-size: 12px; color: var(--text-dim); padding: 0 4px; }
-.make-usage-opt { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
-.make-usage-keep { width: 56px; padding: 2px 6px; }
 
 /* Комментарии к элементам превью (п.32) */
-.make-preview-split { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-2); min-height: 0; flex: 1; }
-.make-preview-split > .make-frame-host { min-width: 0; }
-.make-comments { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); border-left: 1px solid var(--border); background: var(--surface); min-height: 0; overflow: auto; font-size: 13px; }
-.make-comments-head { display: flex; align-items: center; gap: var(--space-2); }
-.make-comments-head small { color: var(--text-dim); }
-.make-comment-form { display: grid; gap: var(--space-1); }
-.make-comment-form textarea { resize: vertical; font: inherit; font-size: 13px; }
-.make-comment-target { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); }
-.make-comment-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
-.make-comment { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; padding: var(--space-1) 0; border-top: 1px solid var(--border-soft); }
-.make-comment.resolved { opacity: .6; }
-.make-comment-pin { width: 24px; height: 24px; border-radius: 12px; border: 0; background: var(--danger); color: var(--danger-fg); font: 600 12px/24px inherit; cursor: pointer; }
-.make-comment.resolved .make-comment-pin { background: var(--text-dim); }
-.make-comment-body { min-width: 0; display: grid; gap: 2px; }
-.make-comment-body p { margin: 0; white-space: pre-wrap; word-break: break-word; }
-.make-comment-body small { color: var(--text-dim); font-size: 11px; }
-.make-comment-el { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.make-comment-actions { display: inline-flex; gap: 2px; align-items: center; }
-@media (max-width: 720px) {
-  .make-preview-split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
-  .make-comments { border-left: 0; border-top: 1px solid var(--border); max-height: 45%; }
-}
 
 /* Read-only шаринг Make (п.33) */
-.make-share { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border-soft); display: grid; gap: var(--space-1); }
-.make-share h4 { margin: 0; font-size: 13px; }
-.make-shared { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
-.make-shared-head { flex-wrap: wrap; }
-.make-shared-title { font-size: 14px; }
-.make-shared-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface-hover); color: var(--text-dim); }
-.make-shared .make-frame-host { flex: 1; min-height: 0; }
-.make-shared-code { flex: 1; min-height: 0; }
-.make-snaps { list-style: none; margin: 0; padding: var(--space-3); display: grid; gap: var(--space-1); }
-.make-snap { display: grid; gap: 2px; padding: var(--space-2); border: 1px solid var(--border-soft); border-radius: var(--radius-medium); }
-.make-snap small { color: var(--text-dim); }
 
 /* Мобильный редактор Make (п.34): ≤600px — список файлов вместо дерева, textarea вместо Monaco */
-.make-file-picker { display: flex; gap: var(--space-2); align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.make-file-picker select { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); color: var(--text); }
 @media (max-width: 600px) {
-  .make-code--phone { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-  .make-code--phone .make-tree { display: none; }
   /* 16px — иначе iOS Safari приближает страницу при фокусе в поле. */
-  .make-code--phone .make-textarea, .make-code--phone .make-highlight { font-size: 16px; line-height: 1.45; }
-  .make-code--phone .make-editor-head { flex-wrap: wrap; row-gap: 4px; }
 }
 
 /* PWA в экспорте (п.35) */
-.make-export-pwa { display: flex; gap: 8px; align-items: flex-start; margin-top: var(--space-2); font-size: 12.5px; color: var(--text-dim); }
-.make-export-pwa input { margin-top: 2px; }
 
 /* Ревизия стилей Make: меню «⋯» в шапке, отступы диалогов, читаемый мелкий текст */
-.make-more { position: relative; flex: 0 0 auto; }
-.make-more-menu { min-width: 240px; right: 0; }
-.make-more-menu hr { border: 0; border-top: 1px solid var(--border-soft); margin: 4px 0; }
-.make-more-menu > button[disabled] { opacity: .5; cursor: default; }
-.make-more-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 13px; }
-.make-more-row .make-lang { display: inline-block; }
-.make-dialog .fsub, .make-dialog .make-ask-field, .make-dialog .make-publish-pin label { font-size: 12.5px; line-height: 1.45; }
-.make-dialog .tin, .make-dialog textarea.tin { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13.5px; background: var(--surface); color: var(--text); }
-.make-dialog .tin:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-.make-dialog .make-ask-field span { font-weight: 500; color: var(--text); }
-.make-comments-head { flex-wrap: wrap; }
-@media (max-width: 720px) {
-  .make-head .make-devices, .make-head .make-cost { display: none; }
-  .make-head { gap: 4px; }
-  .make-tab { padding: 4px 8px; font-size: 12.5px; }
-}
 
 /* Обёртка превью (комментарии справа): без неё iframe терял высоту, когда панель комментариев закрыта. */
-.make-preview-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
-.make-preview-body > .make-frame-host { flex: 1 1 auto; min-width: 0; }
-.make-preview-body.make-preview-split { display: grid; }
-.make-share, .make-publish-link { min-width: 0; }
-.make-publish-link code { white-space: normal; overflow-wrap: anywhere; }
 /* Токены на телефоне: имя · образец · ✕ в одной строке, значение — под ними на всю ширину. */
-@media (max-width: 720px) {
-  .make-token { grid-template-columns: 1fr auto auto; }
-  .make-token-name { grid-column: 1; }
-  .make-token input[type='color'], .make-token-swatch { grid-column: 2; }
-  .make-token .vc-btn { grid-column: 3; }
-  .make-token-value { grid-column: 1 / -1; }
-}
 
 /* Визуальный diff хода Make (roadmap-2 п.8) */
-.make-turn-diff { display: flex; align-items: center; gap: var(--space-2); padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12.5px; }
-.make-turn-diff-thumbs { display: inline-flex; gap: 6px; border: 0; background: none; padding: 0; cursor: zoom-in; }
-.make-turn-diff-thumbs span { display: grid; justify-items: center; gap: 2px; font-size: 11px; color: var(--text-dim); }
-.make-turn-diff-thumbs img { height: 44px; width: 70px; object-fit: cover; object-position: top; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
-.make-turn-diff-big { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
-.make-turn-diff-big figure { margin: 0; display: grid; gap: 6px; }
-.make-turn-diff-big img { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-.make-turn-diff-big figcaption { text-align: center; color: var(--text-dim); font-size: 12px; }
-@media (max-width: 720px) { .make-turn-diff-big { grid-template-columns: 1fr; } }
 
 /* Вкладка файла, только что записанного ассистентом (roadmap-2 п.10) */
-.make-file-tab--flash { animation: make-tab-flash 1.8s ease-out; }
 @keyframes make-tab-flash { 0% { background: var(--accent); color: var(--accent-fg); } 100% { background: transparent; color: inherit; } }
-@media (prefers-reduced-motion: reduce) { .make-file-tab--flash { animation: none; box-shadow: inset 0 -2px 0 var(--accent); } }
 
 /* История публикаций (roadmap-2 п.11) */
-.make-publish-history summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); }
-.make-publish-history ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
-.make-publish-history li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
-.make-publish-history small { color: var(--text-dim); }
 
 /* Дизайн-кит в библиотеке (roadmap-2 п.13) */
-.make-kit-actions { justify-content: flex-start; margin-bottom: var(--space-2); }
-.make-kit-badge { margin-left: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); vertical-align: middle; }
 
 /* Presence и мягкая блокировка файла (roadmap-2 п.14) */
-.make-presence { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-hover); color: var(--text); white-space: nowrap; cursor: help; }
-.make-lock { padding: 6px 12px; font-size: 12.5px; background: #fff4e5; color: #7a4b00; border-bottom: 1px solid #f3d9a4; }
-[data-theme='dark'] .make-lock { background: #3a2a10; color: #f5d9a8; border-color: #5a4320; }
-@media (max-width: 720px) { .make-head .make-presence { display: none; } }
 
 /* Аналитика публикации (roadmap-3 п.3) */
-.make-publish-stats { display: grid; gap: 4px; }
-.make-publish-bars { display: flex; align-items: flex-end; gap: 3px; height: 36px; padding: 2px 0; }
-.make-publish-bar { flex: 1 1 0; min-width: 4px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }
 
 /* Комментарии на телефоне — нижняя шторка (roadmap-3 п.4) */
 @media (max-width: 720px) {
-  .make-preview-body.make-preview-split { display: flex; }
-  .make-comments { position: fixed; left: 0; right: 0; bottom: 0; max-height: 60vh; z-index: 55; border-top: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18); padding-top: 18px; }
-  .make-comments::before { content: ''; position: absolute; top: 6px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
   /* 36px было ниже порога попадания пальцем, а шторка комментариев — экран
      именно для телефона. Минимум даёт ui-kit, здесь дублировать нечего. */
 }
 
 /* Именной доступ (roadmap-3 п.6) */
-.make-grants { display: grid; gap: var(--space-1); margin-top: var(--space-2); }
-.make-grants ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.make-grants li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
-.make-grants li span { color: var(--text-dim); flex: 1; }
-.make-grant-add { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
-.make-grant-add select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 
 /* Тесты компонентов (roadmap-4 п.3) */
-.make-tests-frame { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; }
-.make-tests { border-bottom: 1px solid var(--border); background: var(--surface); padding: 6px 12px; font-size: 12.5px; max-height: 40vh; overflow: auto; }
-.make-tests-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.make-tests-head small { color: var(--text-dim); }
-.make-tests ul { list-style: none; margin: 0; padding: 0; }
-.make-tests-file { padding: 4px 0; border-top: 1px solid var(--border-soft); }
-.make-tests-file-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.make-tests-file-head code { font-size: 12px; }
-.make-test { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 2px 0 2px 12px; }
-.make-test--passed { color: #067647; }
-.make-test--failed { color: #b42318; }
-.make-test--pending { color: var(--text-dim); }
-.make-test small { color: var(--text-dim); }
-.make-test pre { flex-basis: 100%; margin: 0; font-size: 11.5px; white-space: pre-wrap; color: #b42318; }
 
 /* Память проекта и режим ассистента (roadmap-4 пп.6–7) */
-.make-mode-picker { border: 1px solid var(--border); border-radius: var(--radius-medium); padding: var(--space-2) var(--space-3); margin: 0 0 var(--space-2); display: grid; gap: 6px; }
-.make-mode-picker legend { font-size: 12px; color: var(--text-dim); padding: 0 4px; }
-.make-mode { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
-.make-mode span { display: grid; }
-.make-mode small { color: var(--text-dim); font-size: 12px; }
-.make-notes-text { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, Menlo, monospace; resize: vertical; }
 
 /* Чипы «следующий шаг» (roadmap-4 п.8) */
-.make-next { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12.5px; }
-.make-next-label { color: var(--text-dim); }
-.make-next-chip { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
-.make-next-chip:hover { background: var(--surface-hover); }
 
 /* Inline-diff правок ассистента (roadmap-4 п.9) */
-.make-line-changed { background: rgba(80, 160, 255, .14); }
-.make-line-changed-gutter { background: #4f7cff; width: 3px !important; margin-left: 3px; }
-.make-changed-note { font-size: 12px; color: var(--text-dim); padding: 4px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.make-link { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
 
 /* Мультивыбор в дереве Make (roadmap-4 п.10) */
-.make-tree-item--picked { background: color-mix(in srgb, var(--accent) 14%, transparent); outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
-.make-bulk { display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 4px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12px; }
-.make-bulk-count { flex: 1; color: var(--text-dim); }
 
 /* Предпросмотр замены (roadmap-4 п.11) */
-.make-match-text--before { text-decoration: line-through; opacity: .6; display: block; }
-.make-match-text--after { display: block; color: var(--accent); }
 
 /* Замечания линтера (roadmap-4 п.12) */
-.make-issues--warn { background: #fff8e6; }
-.make-issue--warn { opacity: .9; }
-.make-issue-rule { color: var(--text-dim); font-size: 11px; }
 
 /* Сплит «код | превью» и zen (roadmap-4 п.16) */
-.make-code--split { grid-template-columns: minmax(150px, 220px) 55fr 6px 45fr; }
-.make-split-handle { cursor: col-resize; background: var(--border); touch-action: none; }
-.make-split-handle:hover { background: var(--accent); }
-.make-split-preview { min-width: 0; min-height: 0; display: flex; background: #e9ecf1; border-left: 1px solid var(--border); }
-.make-split-preview .make-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #fff; }
-.make-pane--zen .make-head, .make-pane--zen .make-error { display: none; }
-.make-code--zen { grid-template-columns: 1fr; }
-.make-code--zen .make-tree { display: none; }
 
 /* Три ширины рядом (roadmap-4 п.21) */
-.make-frame-host--all { display: flex; align-items: stretch; gap: 12px; overflow: auto; padding: 8px; }
-.make-frame-host--all .make-frame { flex: 0 0 auto; height: auto; min-height: 100%; }
 
 /* Карта различий снимков (roadmap-4 п.24) */
-.make-shots-diff--bad { color: #c0392b; font-weight: 600; }
-.make-shots-diff--ok { color: #2e7d32; }
 
 /* Контраст токенов (roadmap-4 п.25) */
-.make-contrast-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.make-contrast-swatch { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 24px; border-radius: 4px; border: 1px solid var(--border); font-weight: 600; font-size: 12px; }
-.make-contrast-ratio { margin-left: auto; font-variant-numeric: tabular-nums; }
-.make-contrast-level { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #e6f4ea; color: #2e7d32; }
-.make-contrast-row--large .make-contrast-level { background: #fff4e0; color: #b26a00; }
-.make-contrast-row--bad .make-contrast-level { background: #fdecea; color: #c0392b; }
-
-.make-token-tools { display: flex; gap: 6px; margin: 8px 0 4px; }
 
 /* Таблица моков (roadmap-4 п.29) */
-.make-mock-table { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 12px; font-size: 13px; }
-.make-mock-table table { border-collapse: collapse; min-width: 100%; }
-.make-mock-table th, .make-mock-table td { border: 1px solid var(--border); padding: 0; text-align: left; vertical-align: middle; }
-.make-mock-table th { background: var(--surface); padding: 4px 6px; font-weight: 600; white-space: nowrap; }
-.make-mock-table th span { margin-right: 4px; }
-.make-mock-table td input { width: 100%; min-width: 80px; border: 0; padding: 5px 6px; font: inherit; background: transparent; color: inherit; box-sizing: border-box; }
-.make-mock-table td input:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
-.make-mock-table-actions { width: 32px; text-align: center; }
-.make-mock-table-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.make-mock-table-col { display: flex; gap: 4px; }
-.make-mock-table-col input { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
-.make-mock-table-hint { flex-basis: 100%; font-size: 11px; color: var(--text-dim); }
-.make-mock-table-empty { padding: 12px; color: var(--text-dim); }
-.make-mock-view { display: inline-flex; gap: 2px; margin-right: 8px; }
 
 /* Комментарии зрителей (roadmap-4 п.34) */
-.make-comment--pending { background: #fff8e6; border-left: 3px solid #f0ad4e; }
-.make-comment-pending-count { color: #b26a00; }
 
 /* Сравнение версий публикации (roadmap-4 п.37) */
-.make-version-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.make-version-grid figure { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.make-version-grid figcaption { font-size: 12px; color: var(--text-dim); }
-.make-version-grid iframe { width: 100%; height: 420px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-.make-version-grid img { width: 100%; border: 1px solid var(--border); border-radius: 8px; }
-.make-version-grid figure:last-child:nth-child(3) { grid-column: 1 / -1; }
 
 /* Диск с данными Make в админке (roadmap-4 п.40) */
 .uusage-disk--alert { color: #c0392b; font-weight: 600; }
@@ -8525,7 +7715,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
      человек решает, вступать ли в проект, а они были 25px. Экран в прогон не
      попадал, пока у пользователя не появилось живое приглашение. */
   .proj-invites-inbox__actions .vc-btn { min-height: 40px; }
-  .invite-card .make-link { display: inline-flex; align-items: center; min-height: 44px; }
 }
 
 /* «Сохранить проект как подтип» на вкладке «Общее». */
@@ -8775,61 +7964,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 /* Свёрнутое меню инструментов страницы Web Reader (Сессия, инспектор, правка,
    область, запись сценария) — чтобы тулбар не переполнял узкую панель превью. */
-.webpreview-tools { position: relative; flex: none; }
-.webpreview-tools > summary { list-style: none; cursor: pointer; user-select: none; }
-.webpreview-tools > summary::-webkit-details-marker { display: none; }
-.webpreview-tools > summary[data-active] { border-color: var(--accent); color: var(--accent); }
-.webpreview-tools__menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 4px; min-width: 200px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 32px rgba(31, 35, 48, .16); }
-.webpreview-tools__menu .vc-btn { justify-content: flex-start; text-align: left; }
 
 /* Диагностика страницы в Playwright Reader: ошибки консоли и неуспешные
    запросы. Раннер копил их с круга 5, но показать было негде. */
-.playwright-reader-keys { display: inline-flex; gap: var(--space-050); }
-.playwright-reader-testusers { display: inline-flex; align-items: center; gap: var(--space-050); font-size: 12px; color: var(--text-dim); }
-.playwright-reader-actor { font-size: 11px; color: var(--text-dim); }
-.playwright-reader-actor[data-actor='assistant'] { color: var(--accent); }
 
 /* Где мы находимся: подмена адреса алиасом, уход с проверяемого сайта и история. */
-.playwright-reader-where { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); padding: var(--space-050) var(--space-150); border-bottom: 1px solid var(--border-soft); font-size: 12px; }
-.playwright-reader-where__note { color: var(--text-dim); }
-.playwright-reader-where__note[role='alert'] { color: var(--ci-progress); }
-.playwright-reader-where__history { display: inline-flex; align-items: center; gap: var(--space-050); margin-left: auto; color: var(--text-dim); }
-.playwright-reader-where__history select { max-width: 16rem; }
 
 /* Запись сценария автотеста прямо из работы руками. */
-.playwright-reader-record { display: flex; flex-direction: column; gap: var(--space-100); padding: var(--space-100) var(--space-150); border-top: 1px solid var(--border); background: var(--panel); max-height: 30vh; overflow: auto; }
-.playwright-reader-record__head { display: flex; align-items: center; gap: var(--space-100); flex-wrap: wrap; }
-.playwright-reader-record__head strong { flex: 1 1 auto; }
-.playwright-reader-record__warn { margin: 0; color: var(--ci-progress); font-size: 12px; }
-.playwright-reader-record__list { list-style: decimal; margin: 0; padding-left: var(--space-150); display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; }
-.playwright-reader-record__list li { overflow-wrap: anywhere; }
-.playwright-reader-record__list code { display: block; color: var(--text-dim); }
-.playwright-reader-record__row { display: flex; align-items: center; gap: var(--space-100); justify-content: space-between; }
 /* Название шага правится на месте: оно же читается в отчёте этапа. */
-.playwright-reader-record__title { flex: 1 1 auto; min-width: 0; border: 1px solid transparent; border-radius: var(--radius-medium); padding: var(--space-050); background: transparent; color: var(--text); font: inherit; }
-.playwright-reader-record__title:hover, .playwright-reader-record__title:focus { border-color: var(--border); background: var(--surface); }
-.playwright-reader-record__check { color: var(--ci-success); font-style: normal; }
 /* Итог прогона записанного сценария — прямо у шага, а не отдельным отчётом. */
-.playwright-reader-record__result { display: block; font-style: normal; }
-.playwright-reader-record__result--ok { color: var(--ci-success); }
-.playwright-reader-record__result--fail { color: var(--danger); }
-.playwright-reader-record__time { color: var(--text-dim); font-size: 12px; }
-.playwright-reader-record__name { display: flex; flex-direction: column; gap: var(--space-050); flex: 1 1 12rem; font-size: 12px; color: var(--text-dim); }
-.playwright-reader-record__name input { min-width: 0; width: 100%; box-sizing: border-box; }
-.playwright-reader-record__expect { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-100); }
-.playwright-reader-record__expect label { flex: 1 1 14rem; display: flex; flex-direction: column; gap: var(--space-050); }
-.playwright-reader-record__expect input { min-width: 0; width: 100%; box-sizing: border-box; }
 /* Ненадёжный селектор виден в списке, а не только в общем предупреждении. */
-.playwright-reader-record__list li[data-stability='path'] code { color: var(--ci-progress); }
-
-.playwright-reader-diagnostics { display: flex; flex-direction: column; gap: var(--space-100); padding: var(--space-100) var(--space-150); border-top: 1px solid var(--border); background: var(--panel); max-height: 30vh; overflow: auto; }
-.playwright-reader-diagnostics > p { margin: 0; }
-.playwright-reader-diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
-.playwright-reader-diagnostics__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-100); }
-.playwright-reader-diagnostics__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; }
-.playwright-reader-diagnostics__list li { overflow-wrap: anywhere; }
-.playwright-reader-diagnostics__list li[data-kind='console'] { color: var(--danger); }
-.playwright-reader-diagnostics__list li[data-kind='network'] code { color: var(--danger); font-weight: 600; }
 
 /* Вердикт этапа Automated QA: раньше здесь показывался JSON.stringify, теперь —
    итог, причина, шаги и снимок. Цвета берутся из токенов, чтобы тёмная тема
@@ -9313,44 +8457,20 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Режим «Проект» в Make: компоненты рабочей копии, Storybook на машине, правка файла.
    Раскладка повторяет «Компоненты»: список слева, кадр или редактор справа. */
-.mpc { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.mpc-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--border); }
-.mpc-ws { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mpc-ws-label { color: var(--text-dim); font-size: 12px; }
-.mpc-ws select { max-width: 260px; }
-.mpc-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(180px, 280px) 1fr; }
-.mpc-list { min-height: 0; overflow: auto; border-right: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.mpc-search { width: 100%; }
-.mpc-skeletons { display: flex; flex-direction: column; gap: 6px; }
-.mpc-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.mpc-item > button { width: 100%; text-align: left; background: none; border: 0; color: inherit; padding: 6px 8px; border-radius: var(--radius-medium); cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
-.mpc-item > button:hover { background: var(--surface-hover); }
-.mpc-item--on > button { background: var(--surface-selected); }
-.mpc-item-title { font-size: 13px; }
-.mpc-item-path { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mpc-stories { list-style: none; margin: 2px 0 6px; padding: 0 0 0 10px; display: flex; flex-direction: column; gap: 2px; }
-.mpc-story { width: 100%; text-align: left; background: none; border: 0; color: var(--text-dim); padding: 4px 8px; border-radius: var(--radius-medium); cursor: pointer; font-size: 12px; }
-.mpc-story:hover { background: var(--surface-hover); }
-.mpc-story--on { background: var(--surface-selected); color: var(--text); }
-.mpc-note { margin: 4px 0 0; font-size: 11px; color: var(--text-dim); }
-.mpc-access { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
-.mpc-main { min-height: 0; display: flex; flex-direction: column; }
-.mpc-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.mpc-tabs > button { background: none; border: 0; color: var(--text-dim); padding: 4px 10px; border-radius: var(--radius-medium); cursor: pointer; }
-.mpc-tabs > button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); }
-.mpc-tabs > button:disabled { opacity: .5; cursor: default; }
-.mpc-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: var(--bg); }
-.mpc-editor { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.mpc-editor-head { display: flex; align-items: center; gap: var(--space-2); padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.mpc-editor-path { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mpc-log { max-height: 50vh; overflow: auto; white-space: pre-wrap; font-size: 12px; background: var(--surface-hover); padding: 8px; border-radius: var(--radius-medium); }
-.mpc-ticket-note { margin: 0 0 var(--space-2); color: var(--text-dim); font-size: 13px; }
-.mpc-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--space-2); }
-.mpc-field > span { font-size: 12px; color: var(--text-dim); }
-.mpc-ticket-paths { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--text-dim); }
 
 @media (max-width: 768px) {
-  .mpc-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 38%) 1fr; }
-  .mpc-list { border-right: 0; border-bottom: 1px solid var(--border); }
-  .mpc-ws select { max-width: 150px; }
 }
+
+/* Таблица версий должна оставаться читаемой и на узком окне desktop. */
+.application-release-center { display: grid; gap: 1rem; min-width: 0; }
+.application-release-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; margin-block: .75rem; }
+.application-release-controls label { display: grid; gap: .35rem; flex: 1 1 14rem; }
+.application-release-controls input, .application-release-controls select { min-height: 2.4rem; width: 100%; }
+.application-release-form { display: grid; gap: .75rem; }
+.application-release-table { overflow-x: auto; }
+.application-release-table table { width: 100%; border-collapse: collapse; }
+.application-release-table th, .application-release-table td { text-align: left; padding: .5rem; }
+.application-release-table input { width: 7rem; }
+.application-release-list { display: grid; gap: 1rem; padding-left: 1.5rem; }
+.application-release-center pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow-y: auto; }
+.application-release-center code { overflow-wrap: anywhere; }

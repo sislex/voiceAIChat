@@ -19,7 +19,7 @@ import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import type { KbUsageTracker } from '../kb/usage.js'
 import type { VoiceChatDb } from '../db/database.js'
-import type { MakeService } from '@voicechat/make'
+import type { MakeService } from '@voicechat/make-contracts'
 import type { CommandExecutor, CiModelContext, CiFixContext, CiModelWorkHook, CiModelSummaryHook, CiFixHook, CiKbUpdateHook } from './types.js'
 import {
   EMPTY_CHANGES, KB_DIFF_SCRIPT, KB_FILE_TOPICS_SCRIPT, KB_REPO_ROOT_CHECK_SCRIPT, KB_UPDATE_TIMEOUT_MS, MAX_PROMPT_GAPS, affectedProjectDocs, formatKbUpdateSummary,
@@ -330,7 +330,7 @@ export function automationHint(readiness: import('@voicechat/shared').Developmen
 }
 
 const DEVELOPMENT_FAST_GATE_HINT =
-  'Перед завершением работы запусти быстрый гейт задачи (`npm run gate:fast`): он проверяет только связанные с текущими изменениями тесты и типы. Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай — они выполняются на следующих шагах workflow; не отдавай работу с падающими проверками.'
+  'Перед завершением работы запусти быстрый гейт задачи (`npm run gate:fast`): он выбирает приложения по рабочему диффу и проверяет их тесты, типы и необходимые контракты. Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай — они выполняются на следующих шагах workflow; не отдавай работу с падающими проверками.'
 
 function taskPrompt(ctx: CiModelContext, mode: CiRunMode, readiness: import('@voicechat/shared').DevelopmentReadiness | null): string {
   const tail = mode === 'plan'

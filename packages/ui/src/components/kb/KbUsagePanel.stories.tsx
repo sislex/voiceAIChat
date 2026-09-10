@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { KbUsagePanel } from './KbUsagePanel'
 import { emptyKbUsageCache } from '../../lib/kbUsage'
-import { makeKbProjectCache, makeKbQuery, makeKbStatus, makeKbUsageCache } from '../../test/fixtures'
+import { makeKbProjectCache, makeKbQuery, makeKbStatus, makeKbUsageCache } from '../../test/fixtures/index'
 
 const EMPTY_TOTALS = {
   queries: 0, delivered: 0, empty: 0, errors: 0, toolQueries: 0, sections: 0, documents: 0,

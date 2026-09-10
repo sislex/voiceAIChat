@@ -41,7 +41,8 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",
     "rehype-highlight": "^7.0.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "@voicechat/ui-foundation": "*"
   },
   "devDependencies": {
     "@storybook/addon-a11y": "^8.6.18",
@@ -62,6 +63,8 @@
     "storybook": "^8.6.14",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@voicechat/make-app": "*",
+    "@voicechat/image-studio-app": "*"
   }
 }

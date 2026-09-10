@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, userEvent, within } from '@storybook/test'
 import { CiSlotEditor } from './CiSlotEditor'
-import { makeCommands } from '../../test/fixtures'
+import { makeCommands } from '../../test/fixtures/index'
 
 const commands = makeCommands()
 

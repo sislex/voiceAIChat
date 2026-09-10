@@ -1,9 +1,17 @@
-# @voicechat/ui — весь интерфейс
+# @voicechat/ui — оболочка, чат и host API
 
-Один React-UI на web и desktop. **Транспорт-нейтрален**: ни один компонент не
+Один React-host на web и desktop. **Транспорт-нейтрален**: ни один компонент не
 знает про REST, WS или IPC — только мосты `window.api/audio/stt/claude/tts/cc/
 codex/agents/session/fs/pty`, формы которых описаны в `@shared/ipc`. Мосты
 устанавливает приложение-хост (`installRemoteBridges` для web, preload для desktop).
+
+Продуктовые `MakePane`/`MakeSharedView`, `ImageStudioPane`, `BrowserSessionPane` и
+`WebReaderFrame` живут в собственных пакетах и загружаются `runtime/applicationHost.tsx`
+через manifest/SRI. Не возвращай runtime-импорт панели в `App.tsx`: только
+`createApplicationPanel` и `import type` её `panelContract`. Общие CodeEditor,
+ToolFrame, PopupFrame и ключи предпочтений принадлежат `@voicechat/ui-foundation`.
+Host API версии `APPLICATION_HOST_API_VERSION` предоставляет общий React/UI-kit и
+реестры `ui-foundation/runtime`; изменение этого порта требует проверки потребителей.
 
 ## Устройство
 
@@ -15,7 +23,7 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   **Хранилища не импортируют друг друга** — соседа им даёт порт от
   `runtime/appRuntime.ts` (он же ведёт bootstrap, маршрутизацию WS-кадров,
   logout и dispose). Общие ключи localStorage и голосовой срез настроек — в
-  `store/contracts.ts`. Внешний мир — только через доменные клиенты
+  `@voicechat/ui-foundation/persistence` (в `store/contracts.ts` остался реэкспорт). Внешний мир — только через доменные клиенты
   (`clients/types.ts`), их адаптеры к `window.*` — `clients/browser.ts` и
   `clients/realtime.ts`. React подключается через `store/react.tsx`
   (`useChat(selector)`, `useVoice(selector)`, … + `use*Actions`); универсального

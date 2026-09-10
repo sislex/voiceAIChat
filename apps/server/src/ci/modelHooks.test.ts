@@ -545,7 +545,7 @@ describe('инструменты БЗ в остальных ходах рана'
     // На development-этапе модель запускает только узкий гейт текущего worktree:
     // полный affected-check принадлежит следующим шагам workflow.
     expect(rec.last()!.prompt).toContain('запусти быстрый гейт задачи (`npm run gate:fast`)')
-    expect(rec.last()!.prompt).toContain('проверяет только связанные с текущими изменениями тесты и типы')
+    expect(rec.last()!.prompt).toContain('выбирает приложения по рабочему диффу и проверяет их тесты, типы и необходимые контракты')
     expect(rec.last()!.prompt).toContain('Полный `npm run affected-check`, `npm run gate` и сырой `npm test` на этапе разработки не запускай')
   })
 })

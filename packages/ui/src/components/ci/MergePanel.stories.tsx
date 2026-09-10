@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import type { MergeRun, TaskRepository } from '@shared/merge'
 import { MergePanel } from './MergePanel'
-import { createFakeCi } from '../../test/fakeApi'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 
 const stagesDone = [
   { stage: 'checking', status: 'passed', startedAt: 1, finishedAt: 2, durationMs: 700, exitCode: null, timedOut: false, message: 'Серверные проверки пройдены', log: '' },

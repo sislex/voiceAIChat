@@ -4,7 +4,7 @@
 // половина машин офлайн, а состояние git читается уже после выбора копии.
 import { Button, EmptyState, ErrorState, Skeleton, StatusPill } from '@voicechat/ui-kit'
 import type { GitWorkspaceRef } from '@shared/gitWorkspace'
-import { loadView, type LoadStatus } from '../../lib/loadState'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { gitWorkspaceLabel } from './gitLabels'
 
 export interface GitWorkspaceListProps {

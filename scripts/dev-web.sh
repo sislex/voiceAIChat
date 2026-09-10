@@ -41,6 +41,9 @@ PIPER_VOICES="$ROOT/apps/desktop/resources/piper-voices"
 [ -f "$PIPER_BIN" ] && export VC_PIPER_BIN="$PIPER_BIN" || true
 [ -d "$PIPER_VOICES" ] && export VC_PIPER_VOICES_DIR="$PIPER_VOICES" || true
 
+# Панели собираются самостоятельно и читаются сервером из своих dist.
+npm run build:frontends
+
 PIDS=()
 stop_tree() {
   local pid="$1"
@@ -59,6 +62,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+npm run dev:frontends -- --skip-initial &
+PIDS+=("$!")
 
 echo "[dev-web] стартую сервер (http://127.0.0.1:$API_PORT)…"
 npm run -w @voicechat/server dev &

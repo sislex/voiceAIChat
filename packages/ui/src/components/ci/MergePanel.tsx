@@ -3,7 +3,7 @@ import { formatDateTime } from '../../lib/dateFormat'
 import type { MergeMachineReadiness, MergeRun, TaskRepository } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
-import { loadView, type LoadStatus } from '../../lib/loadState'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { MERGE_STATUS_LABEL, MergeRunFeed, mergeStatusTone } from './MergeRunFeed'
 import { StatusPill, type StatusTone } from '@voicechat/ui-kit'
 

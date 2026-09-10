@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-08-28
-checked: ceeaca5c
+updated: 2026-09-10
+checked: 8c54ade4
 areas:
   - packages/shared/src/preview.ts
   - packages/shared/src/projects.ts
@@ -14,7 +14,7 @@ areas:
   - apps/server/src/routes/featurePreview.ts
   - packages/ui/src/components/preview
   - packages/ui/src/remote/featurePreviewBridge.ts
-  - packages/ui/src/lib/clipboard.ts
+  - packages/ui-foundation/src/lib/clipboard.ts
   - apps/desktop/src/renderer/src/main.tsx
   - packages/ui/src/components/ProjectSettings.tsx
   - compose.preview.yml
@@ -61,7 +61,7 @@ Feature-preview — отдельное управляемое окружение
 
 Если локального companion нет или автоматический туннель завершается ошибкой, сервер может вернуть ручной SSH fallback. Адрес и пользователь берутся только из явно сохранённых `project_machines.ssh_host` и `project_machines.ssh_user`, редактируемых в настройках машины проекта; `agentId` не используется как SSH-hostname. Для команды сервер заранее подбирает свободный локальный порт, а remote port берёт из host-порта выбранного app или Storybook и формирует только `ssh -N -L <localPort>:127.0.0.1:<remotePort> <sshUser>@<sshHost>`. При отсутствующих или небезопасных настройках команда не создаётся, а UI просит заполнить SSH hostname/IP и SSH-пользователя. Пароли, токены и содержимое приватных ключей в этот сценарий не сохраняются и не передаются.
 
-Ручная команда остаётся выделяемым текстом и копируется компонентом `packages/ui/src/components/preview/CopyCommand.tsx` через общий `copyText` из `packages/ui/src/lib/clipboard.ts`. Helper сначала вызывает Clipboard API, а при его отсутствии, отказе или ошибке использует временный textarea и `document.execCommand('copy')`, всегда удаляя поле. Пока попытка выполняется, кнопка заблокирована; успех на две секунды меняет подпись на «Скопировано» и объявляется через `aria-live`, полный отказ показывается рядом и допускает повторную попытку. Изменение или исчезновение команды и размонтирование сбрасывают состояние и очищают таймер; завершение устаревшего async-вызова не обновляет компонент.
+Ручная команда остаётся выделяемым текстом и копируется компонентом `packages/ui/src/components/preview/CopyCommand.tsx` через общий `copyText` из `packages/ui-foundation/src/lib/clipboard.ts`. Helper сначала вызывает Clipboard API, а при его отсутствии, отказе или ошибке использует временный textarea и `document.execCommand('copy')`, всегда удаляя поле. Пока попытка выполняется, кнопка заблокирована; успех на две секунды меняет подпись на «Скопировано» и объявляется через `aria-live`, полный отказ показывается рядом и допускает повторную попытку. Изменение или исчезновение команды и размонтирование сбрасывают состояние и очищают таймер; завершение устаревшего async-вызова не обновляет компонент.
 
 ## Карточка задачи
 

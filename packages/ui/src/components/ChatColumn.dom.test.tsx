@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ChatColumn } from './ChatColumn'
 import type { Message } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
-import { makeAiMessage, makeChatPair, makeMachineOps, makeUserMessage } from '../test/fixtures'
+import { makeAiMessage, makeChatPair, makeMachineOps, makeUserMessage } from '../test/fixtures/index'
 
 // Лента — общая фикстура (её же показывают сториз Chat/ChatColumn): вопрос
 // пользователя и ответ модели с markdown-разметкой.

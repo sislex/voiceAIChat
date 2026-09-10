@@ -207,7 +207,7 @@ export interface CiCommandInput {
  * зависимостей модели по-прежнему доступна.
  */
 const VERIFICATION_RE =
-  /\b(vitest|jest|affected-check)\b|\b(npm|pnpm|yarn)\s+(run\s+)?(-w\s+\S+\s+|--workspace[=\s]\S+\s+)?(test|typecheck|lint)([:\w-]*)\b/i
+  /\b(vitest|jest|affected-check|gate:app|gate:changed|gate:fast|gate:all)\b|\b(npm|pnpm|yarn)\s+(run\s+)?(-w\s+\S+\s+|--workspace[=\s]\S+\s+)?(test|typecheck|lint)([:\w-]*)\b/i
 
 /** Команда — прогон гейта (по флагу справочника или по тексту команды)? */
 export function isVerificationCommand(cmd: { isTest?: boolean; name?: string | null; script?: string | null }): boolean {
@@ -2159,6 +2159,6 @@ export function compareFixFailureFingerprints(
 export function isSafeTargetedTestCommand(command: string): boolean {
   const value = command.trim()
   if (!value || /[;&|><`\n\r]|\$\(|\b(?:merge|deploy|rm\s+-rf|git\s+(?:clean|reset))\b/i.test(value)) return false
-  if (/affected-check|\bnpm\s+(?:run\s+)?(?:test|build|typecheck)\s*$/i.test(value)) return false
+  if (/affected-check|gate:(?:app|changed|fast|all)|\bnpm\s+(?:run\s+)?(?:test|build|typecheck)\s*$/i.test(value)) return false
   return /(?:\.test\.[a-z0-9]+|\.spec\.[a-z0-9]+|--testnamepattern|--test-name-pattern|-t\s+\S|typecheck\b.*(?:-w|--workspace|--project))/i.test(value)
 }

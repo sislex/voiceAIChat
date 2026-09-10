@@ -6,7 +6,7 @@
 // их в настройках конкретного проекта значило бы прятать общий каталог внутри
 // частного случая.
 import { useMemo, useState } from 'react'
-import { loadView, type LoadStatus } from '../lib/loadState'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { Button, EmptyState, ErrorState, IconButton, Skeleton } from '@voicechat/ui-kit'
 import {
   PROJECT_FEATURES,
