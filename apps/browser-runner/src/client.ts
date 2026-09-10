@@ -6,7 +6,7 @@
 // одному владельцу — проверяется до вызова), userKey = uid, conversationKey =
 // conversationId. Раннер сверяет пару при повторном старте (identity mismatch).
 
-import type { BrowserCommandRequest, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserViewport } from '@voicechat/shared'
+import { BROWSER_SCREENSHOT_HEADER, type BrowserScreenshotMetadata, type BrowserCommandRequest, type BrowserInspectResult, type BrowserSelectorResult, type BrowserSessionMetadata, type BrowserViewport } from '@voicechat/shared'
 
 export interface BrowserRunnerClientOptions {
   baseUrl: string
@@ -47,7 +47,7 @@ export interface BrowserRunnerClient {
    * `as unknown as …` — то есть тип не помогал, а мешал.
    */
   command(sessionId: string, request: BrowserCommandRequest, signal?: AbortSignal): Promise<BrowserRunnerCommandResult>
-  screenshot(sessionId: string, request: BrowserCommandRequest, signal?: AbortSignal): Promise<{ buffer: Buffer; mimeType: string }>
+  screenshot(sessionId: string, request: BrowserCommandRequest, signal?: AbortSignal): Promise<{ buffer: Buffer; mimeType: string; metadata?: BrowserScreenshotMetadata }>
   stop(sessionId: string): Promise<boolean>
 }
 
@@ -117,7 +117,8 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
       if (!res.ok) throw await asError(res)
       const mimeType = res.headers.get('content-type') ?? 'image/png'
       const buffer = Buffer.from(await res.arrayBuffer())
-      return { buffer, mimeType }
+      const metadata = screenshotMetadata(res.headers.get(BROWSER_SCREENSHOT_HEADER))
+      return { buffer, mimeType, ...(metadata ? { metadata } : {}) }
     },
     async stop(sessionId) {
       const res = await call(`/v1/sessions/${encodeURIComponent(sessionId)}`, 'DELETE')
@@ -126,4 +127,16 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
       return data.stopped === true
     }
   }
+}
+
+/** Старый раннер и повреждённый заголовок оставляют картинку без выдуманных координат. */
+function screenshotMetadata(raw: string | null): BrowserScreenshotMetadata | undefined {
+  if (!raw || raw.length > 8192) return undefined
+  try {
+    const value = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as BrowserScreenshotMetadata
+    const rect = value?.rect
+    if (typeof value?.page?.url !== 'string' || typeof value.page.title !== 'string' || !['css', 'device'].includes(value.scale)) return undefined
+    if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) return undefined
+    return value
+  } catch { return undefined }
 }

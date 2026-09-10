@@ -13,7 +13,7 @@ function fixture(target: { sessionId: string; conversationKey: string } | null =
   }
   const runner: BrowserRunnerClient = {
     start: vi.fn(async () => meta), command: vi.fn(async () => ({ ok: true, text: 'Текст из Chromium' })),
-    screenshot: vi.fn(async () => ({ buffer: Buffer.from('PNG'), mimeType: 'image/png' })), stop: vi.fn(async () => true)
+    screenshot: vi.fn(async () => ({ buffer: Buffer.from('PNG'), mimeType: 'image/png', metadata: { page: { url: 'https://example.com/captured', title: 'Снятая страница' }, rect: { x: 40, y: 900, width: 160, height: 90 }, scale: 'css' as const } })), stop: vi.fn(async () => true)
   }
   return { core, runner, service: createPlaywrightReaderModule({ core, runner, runnerFacingBase: 'http://core:8787/' }).service }
 }
@@ -61,8 +61,17 @@ describe('действия модели через приложение', () => 
   it('снимок проверки использует профиль задачи и возвращает PNG вместе с записью кадра у ядра', async () => {
     const { service, runner, core } = fixture({ sessionId: 'task-t1', conversationKey: 'task-t1' })
     const outcome = await service.screenshot('ann', 'c', { selector: '#form' })
-    expect(runner.screenshot).toHaveBeenCalledWith('task-t1', expect.objectContaining({ actor: 'assistant', incarnation: 'inc', command: { type: 'screenshot', format: 'png', selector: '#form' } }))
+    expect(runner.screenshot).toHaveBeenCalledWith('task-t1', expect.objectContaining({ actor: 'assistant', incarnation: 'inc', command: { type: 'screenshot', format: 'png', scale: 'css', selector: '#form' } }))
     expect(core.logBrowserShot).toHaveBeenCalledWith('ann', 'c', Buffer.from('PNG').toString('base64'))
-    expect(outcome).toMatchObject({ ok: true, result: { dataUrl: 'data:image/png;base64,UE5H', page: { title: 'Страница' } } })
+    expect(outcome).toMatchObject({ ok: true, result: { dataUrl: 'data:image/png;base64,UE5H', page: { title: 'Снятая страница' }, rect: { x: 40, y: 900, width: 160, height: 90 } } })
+  })
+
+  it('передаёт параметры снимка и не выдумывает область для старого раннера', async () => {
+    const { service, runner } = fixture()
+    vi.mocked(runner.screenshot).mockResolvedValueOnce({ buffer: Buffer.from('PNG'), mimeType: 'image/png' })
+    const result = await service.screenshot('ann', 'c', { fullPage: true, animations: 'disabled', timeoutMs: 500 })
+    expect(runner.screenshot).toHaveBeenCalledWith('c', expect.objectContaining({ command: { type: 'screenshot', format: 'png', scale: 'css', fullPage: true, animations: 'disabled', timeoutMs: 500 } }))
+    expect(result?.result).not.toHaveProperty('rect')
+    expect(result?.result).not.toHaveProperty('page')
   })
 })

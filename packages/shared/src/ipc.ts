@@ -5,6 +5,7 @@ import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState,
 import type { MakeReplacePreviewLine } from './makeSearch'
 import type {
   BrowserCommand,
+  BrowserScreenshotOptions,
   BrowserSessionMetadata,
   BrowserSelectorResult,
   BrowserInspectResult,
@@ -1062,12 +1063,9 @@ export interface RendererAuthBridge {
  * В desktop отсутствует.
  */
 export type RendererBrowserCommand = Exclude<BrowserCommand, { type: 'screenshot' }>
-export interface RendererBrowserScreenshotOptions {
+export interface RendererBrowserScreenshotOptions extends BrowserScreenshotOptions {
   incarnation: string
   tabId?: string
-  fullPage?: boolean
-  format?: 'png' | 'jpeg' | 'webp'
-  quality?: number
 }
 export interface RendererBrowserBridge {
   /** Идемпотентно поднимает Chromium-сессию разговора и возвращает её метаданные. */

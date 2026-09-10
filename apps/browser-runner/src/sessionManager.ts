@@ -6,6 +6,7 @@ import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, 
 import { aliasTargets, applyHostAlias, browserTarget, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
+import { capturePage, type BrowserCapture } from './screenshots.js'
 
 interface Session {
   id: string
@@ -224,7 +225,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -289,11 +290,7 @@ export class BrowserSessionManager {
     } else if (command.type === 'inspect') {
       return runInspectAction({ console: session.console, network: session.network }, page, command.action)
     } else if (command.type === 'screenshot') {
-      const options = { type: command.format === 'jpeg' ? 'jpeg' as const : command.format === 'webp' ? 'webp' as const : 'png' as const, quality: command.format === 'png' ? undefined : command.quality }
-      // Снимок узла: раньше на запрос по селектору отдавался весь вьюпорт с
-      // оговоркой в тексте — у Playwright для этого есть locator.screenshot().
-      if (command.selector) return page.locator(command.selector).first().screenshot({ ...options, timeout: 10_000 })
-      return page.screenshot({ ...options, fullPage: command.fullPage })
+      return capturePage(page, command, (raw) => this.publicUrl(raw))
     }
     return await this.metadata(session)
   }

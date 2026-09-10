@@ -1,6 +1,6 @@
 // Граница приложения Playwright Reader: пользовательский REST остаётся /api/browser,
 // а ядро и отдельный процесс обмениваются только этими RPC и результатами действий.
-import type { BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata } from './types'
+import type { BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
 import type { PreviewActionResult } from './previewActions'
 import { BROWSER_COMMAND_BODY_LIMIT } from './browserLimits'
 
@@ -16,9 +16,13 @@ export type BrowserControlCommand =
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
 
+export type BrowserModelScreenshotOptions = Pick<BrowserScreenshotOptions, 'selector' | 'rect' | 'fullPage' | 'animations' | 'timeoutMs'>
+/** Старый раннер может вернуть только изображение: неизвестные размеры не выдумываем. */
+export interface BrowserImageResult extends Partial<BrowserScreenshotMetadata> { dataUrl: string }
+
 export interface BrowserActionOutcome {
   ok: boolean
-  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult
+  result?: PreviewActionResult | BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserImageResult
   error?: string
 }
 
