@@ -1,3 +1,4 @@
+import { isBrowserSiteDataResetResult, normalizeBrowserSiteDataReset } from '@voicechat/shared'
 import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, BrowserModelScreenshotOptions } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
 // пользователя (открыть URL, найти элемент, клик, ввод текста, структурированное
@@ -632,16 +633,28 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'reset-session',
         {
           description:
-            'Сбросить cookie-сессии превью (логины в окружениях/сайтах): без host — все, с host — только один сайт. ' +
+            'Сбросить вход в сайты: в Chromium очищаются cookie, localStorage, IndexedDB, кеш и service workers; в Web Reader — cookie прокси. Без host — все сайты сессии, с host — один домен. ' +
             'Используй, чтобы перелогиниться под другим тестовым пользователем.',
           inputSchema: { host: z.string().max(255).optional().describe('Домен сайта (например agent-1.machine.internal); без него — все сайты') }
         },
         async ({ host }) => {
           if (!entry) return noContext
+          let options
+          try { options = normalizeBrowserSiteDataReset({ scope: 'all', ...(host !== undefined ? { host } : {}) }) }
+          catch (error) { return toolResult({ ok: false, error: error instanceof Error ? error.message : 'Некорректный host' }) }
+          const browser = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'clearSiteData', ...options })
+          if (browser) {
+            if (!browser.ok) return toolResult(browser)
+            if (!isBrowserSiteDataResetResult(browser.result)) return toolResult({ ok: false, error: 'Раннер не подтвердил очистку данных сайта' })
+            // Машинные превью дополнительно держат cookie удалённого сайта в
+            // серверном jar, поэтому одной очистки Chromium им недостаточно.
+            opts.context?.clearCookies?.(entry, options.host)
+            return toolResult(browser)
+          }
           if (!opts.context?.clearCookies) {
             return { content: [{ type: 'text', text: 'Сброс сессий недоступен на этом сервере.' }], isError: true }
           }
-          const cleared = opts.context.clearCookies(entry, host)
+          const cleared = opts.context.clearCookies(entry, options.host)
           return { content: [{ type: 'text', text: `Сброшено cookie: ${cleared}. Открой страницу заново (open), чтобы увидеть разлогиненное состояние.` }] }
         }
       )

@@ -309,6 +309,40 @@ describe('previewMcp — инструменты browser', () => {
     expect(clears).toEqual(['agent-1.machine.internal'])
   })
 
+  it('reset-session очищает Chromium и jar прокси после подтверждённого успеха', async () => {
+    const result = { ok: true, clearedCookies: 3, clearedOrigins: ['https://mail.example.com'] }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    const clearCookies = vi.fn(() => 2)
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], clearCookies }, { browserControl: control })
+    expect((await call('reset-session', { host: 'MAIL.EXAMPLE.COM' })).isError).not.toBe(true)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'clearSiteData', scope: 'all', host: 'mail.example.com' })
+    expect(clearCookies).toHaveBeenCalledWith(expect.objectContaining({ userId: U, conversationId: CONV }), 'mail.example.com')
+  })
+
+  it('reset-session доступен нативному Reader без контекста Web Reader', async () => {
+    const result = { ok: true, clearedCookies: 0, clearedOrigins: [] }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    await makeApp(undefined, { browserControl: control })
+    expect(JSON.parse((await call('reset-session')).text)).toEqual(result)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'clearSiteData', scope: 'all' })
+  })
+
+  it.each([{ ok: false, error: 'CDP недоступен' }, { ok: true, result: { state: 'ready' } }])('ошибка нативной очистки не выдаётся за успех jar: %j', async outcome => {
+    const clearCookies = vi.fn(() => 2)
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], clearCookies }, { browserControl: vi.fn(async () => outcome) as never })
+    expect((await call('reset-session')).isError).toBe(true)
+    expect(clearCookies).not.toHaveBeenCalled()
+  })
+
+  it('ошибочный host не вызывает очистку ни в Chromium, ни в jar', async () => {
+    const clearCookies = vi.fn(() => 2)
+    const control = vi.fn(async () => null)
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], clearCookies }, { browserControl: control })
+    expect((await call('reset-session', { host: 'https://mail.example.com' })).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
+    expect(clearCookies).not.toHaveBeenCalled()
+  })
+
   it('environment без окружений объясняет, как их поднять', async () => {
     await makeApp({ machineOf: async () => null, testUsersOf: async () => [], environmentsOf: async () => [], clearCookies: () => 0 })
     const result = await call('environment')

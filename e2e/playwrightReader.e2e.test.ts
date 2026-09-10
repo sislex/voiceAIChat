@@ -12,6 +12,7 @@ import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
 import { startReaderFramesFixture } from '../apps/browser-runner/src/test/readerFrames.js'
+import { startReaderProfileFixture } from '../apps/browser-runner/src/test/readerProfile.js'
 import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
 import { BROWSER_UPLOAD_LIMIT_BYTES } from '../packages/shared/src/browserLimits'
 import { runScenarioStep, type ScenarioSend } from '../packages/shared/src/scenarioStep'
@@ -32,6 +33,7 @@ let turn = ''
 let auth = ''
 let forms: Awaited<ReturnType<typeof startReaderFormsFixture>> | undefined
 let frameSite: Awaited<ReturnType<typeof startReaderFramesFixture>> | undefined
+let profileSite: Awaited<ReturnType<typeof startReaderProfileFixture>> | undefined
 const chats: Record<string, string> = {}
 
 async function freePort(): Promise<number> {
@@ -81,7 +83,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     base = `http://127.0.0.1:${port}`
     forms = await startReaderFormsFixture()
     frameSite = await startReaderFramesFixture()
-    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
+    profileSite = await startReaderProfileFixture()
+    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
@@ -135,6 +138,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     }
     await forms?.close()
     await frameSite?.close()
+    await profileSite?.close()
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
@@ -446,6 +450,52 @@ describe('Playwright Reader: настоящий интерфейс и инстр
       expect(await page.getByText('прогон: ок', { exact: true }).count()).toBe(0)
       await capture('22-scenario-blocked-navigation')
     } finally { await page.unroute(pattern); await page.getByLabel('Очистить запись', { exact: true }).click() }
+  })
+
+  it('вход в собственный проект, URL и размер окна сохраняются после перезапуска и открытия панели', async () => {
+    const url = `${base}/#/chat/${chats.chat}`
+    await mcp('open', { url })
+    await mcp('wait', { selector: '.chat-page' })
+    await page.getByRole('button', { name: 'Телефон', exact: true }).click()
+    await expect.poll(async () => JSON.parse(await mcp('evaluate', { code: 'innerWidth' })).value).toBe(390)
+    await page.getByRole('button', { name: 'Перезапустить', exact: true }).click()
+    await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).isEnabled(), { timeout: 15000 }).toBe(true)
+    await mcp('wait', { selector: '.chat-page' })
+    expect(JSON.parse(await mcp('evaluate', { code: 'innerWidth' })).value).toBe(390)
+    expect(await page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).inputValue()).toBe(url)
+    await page.reload()
+    await page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).waitFor()
+    await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).isEnabled(), { timeout: 15000 }).toBe(true)
+    await mcp('wait', { selector: '.chat-page' })
+    expect(JSON.parse(await mcp('evaluate', { code: 'innerWidth' })).value).toBe(390)
+    await capture('23-project-persistent-login')
+  })
+
+  it('модель восстанавливает сессионную cookie, затем полностью очищает данные сайта', async () => {
+    await mcp('open', { url: 'http://profile.reader.test/account#details' })
+    await mcp('click', { selector: '#login' })
+    await mcp('wait', { text: 'Тестовый вход сохранён' })
+    await page.getByRole('button', { name: 'Перезапустить', exact: true }).click()
+    await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).isEnabled(), { timeout: 15000 }).toBe(true)
+    await mcp('wait', { selector: '#login' })
+    const before = JSON.parse(await mcp('evaluate', { code: 'window.profileState()' })).value
+    expect(before).toMatchObject({ cookies: { session: true, persistent: true, path: true }, local: 'test-user', databases: ['reader-auth'], caches: ['reader-cache'], workers: 1 })
+    const cleared = JSON.parse(await mcp('reset-session', { host: 'profile.reader.test' }))
+    // Стенды используют один loopback host с разными портами: cookie не разделяются по порту.
+    expect(cleared).toMatchObject({ ok: true, clearedOrigins: ['http://profile.reader.test'] })
+    expect(cleared.clearedCookies).toBeGreaterThanOrEqual(3)
+    const after = JSON.parse(await mcp('evaluate', { code: 'window.profileState()' })).value
+    expect(after).toMatchObject({ cookies: { session: false, persistent: false, path: false }, local: null, databases: [], caches: [], workers: 0 })
+    if (artifacts) await writeFile(join(artifacts, '24-profile-reset.json'), JSON.stringify({ before, cleared, after }, null, 2))
+  })
+
+  it('кнопка панели очищает cookie и хранилища с перезагрузкой страницы', async () => {
+    await mcp('click', { selector: '#login' })
+    await mcp('wait', { text: 'Тестовый вход сохранён' })
+    await page.getByRole('button', { name: 'Очистить сессию сайта', exact: true }).click()
+    await expect.poll(async () => (await mcp('read')).includes('Вход не выполнен'), { timeout: 10000 }).toBe(true)
+    expect(JSON.parse(await mcp('evaluate', { code: 'window.profileState()' })).value).toMatchObject({ cookies: { session: false, persistent: false, path: false }, local: null, session: null, databases: [], caches: [], workers: 0 })
+    await capture('25-profile-cleared-from-panel')
   })
 
 })

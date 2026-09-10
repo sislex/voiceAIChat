@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { BrowserRunnerClient } from '@voicechat/browser-runner/client'
-import type { PlaywrightReaderCore } from './core.js'
+import type { BrowserModelTarget, PlaywrightReaderCore } from './core.js'
 import { createPlaywrightReaderModule } from './module.js'
 
 const meta = { id: 'c', conversationId: 'c', incarnation: 'inc', state: 'ready' as const, activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: 'https://example.com/', title: 'Страница' }
-function fixture(target: { sessionId: string; conversationKey: string } | null = { sessionId: 'c', conversationKey: 'c' }) {
+function fixture(target: BrowserModelTarget | null = { sessionId: 'c', conversationKey: 'c', profileMode: 'persistent' }) {
   const core: PlaywrightReaderCore = {
     conversation: async () => ({ assistantKind: 'playwright-reader' }),
     modelTarget: vi.fn(async () => target),
@@ -34,7 +34,7 @@ describe('действия модели через приложение', () => 
     const { service, runner, core } = fixture()
     expect(await service.execute('ann', 'c', { kind: 'read' })).toEqual({ ok: true, result: { ok: true, text: 'Текст из Chromium' } })
     expect(core.modelTarget).toHaveBeenCalledWith('ann', 'c')
-    expect(runner.start).toHaveBeenCalledWith({ sessionId: 'c', conversationKey: 'c', userKey: 'ann', cookies: [{ name: 'vc_preview_run', value: 'preview-key', url: 'http://core:8787/api/preview' }] })
+    expect(runner.start).toHaveBeenCalledWith({ sessionId: 'c', conversationKey: 'c', profileMode: 'persistent', userKey: 'ann', cookies: [{ name: 'vc_preview_run', value: 'preview-key', url: 'http://core:8787/api/preview' }] })
     await service.execute('ann', 'c', { kind: 'open', url: 'http://dev.machine.internal:5173/' })
     expect(runner.command).toHaveBeenLastCalledWith('c', expect.objectContaining({ incarnation: 'inc', actor: 'assistant', command: { type: 'navigate', url: 'http://core:8787/api/preview?url=http%3A%2F%2Fdev.machine.internal%3A5173%2F' } }))
   })

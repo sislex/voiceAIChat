@@ -1,3 +1,4 @@
+import type { BrowserSiteDataResetResult } from './browserProfile'
 import type { BrowserFramesResult } from './browserFrames'
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
@@ -1079,7 +1080,7 @@ export interface RendererBrowserBridge {
    * поиска, а `inspect` — журналы страницы. Из-за этого панель не могла
    * показать ошибки страницы, не соврав компилятору.
    */
-  command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult>
+  command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult>
   /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
   screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string }>
   /** Закрывает Chromium-сессию разговора. */

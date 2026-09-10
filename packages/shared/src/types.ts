@@ -1,3 +1,4 @@
+import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserProfile'
 // Общие типы, разделяемые между main, preload и renderer.
 
 import type { BrowserFrameContext, BrowserFrameTarget } from './browserFrames'
@@ -154,6 +155,7 @@ export interface BrowserError {
 }
 
 export interface BrowserSessionMetadata {
+  profileMode?: BrowserProfileMode
   id: string
   conversationId: string
   incarnation: string
@@ -341,6 +343,7 @@ export type BrowserCommand = BrowserFrameTarget & (
   /** Пассивное наблюдение: адрес и вкладки обновляются и после действий модели. */
   | { type: 'status' }
   | { type: 'frames' }
+  | ({ type: 'clearSiteData' } & BrowserSiteDataResetOptions)
   | { type: 'navigate'; url: string }
   | { type: 'selector'; action: BrowserSelectorAction }
   | { type: 'inspect'; action: BrowserInspectAction }

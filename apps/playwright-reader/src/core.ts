@@ -1,6 +1,7 @@
-import type { Conversation } from '@voicechat/shared'
+import type { BrowserProfileMode, Conversation } from '@voicechat/shared'
 
 export interface BrowserModelTarget {
+  profileMode?: BrowserProfileMode
   sessionId: string
   conversationKey: string
 }

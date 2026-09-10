@@ -1,3 +1,6 @@
+import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
+import { clearSiteData, httpOrigin } from './siteData.js'
+import { readReaderProfile, writeReaderProfile } from './profileState.js'
 import { resolveFrame, framePage, listFrames, framePath } from './frames.js'
 import { describeFramePoint } from './frameDescription.js'
 import { captureFrame } from './frameCapture.js'
@@ -25,8 +28,11 @@ interface Session {
   /** Кольцевые журналы страницы: без них модели нечем проверять поведение. */
   console: BrowserConsoleEntry[]
   network: BrowserNetworkEntry[]
-  /** Каталог профиля: после остановки его надо удалить, иначе том растёт. */
+  /** QA удаляет каталог; Reader сохраняет авторизацию между открытиями панели. */
   profileDir: string
+  profileMode: BrowserProfileMode
+  origins: Set<string>
+  bootstrapCookies: Array<{ name: string; host: string }>
   /** Последнее обращение — по нему сборщик находит брошенные сессии. */
   lastUsedAt: number
   /** Кто выполнял последнюю команду: человек из панели или модель. */
@@ -63,6 +69,7 @@ export interface StartSessionCookie {
 }
 
 export interface StartSessionRequest {
+  profileMode?: BrowserProfileMode
   sessionId: string
   userKey: string
   conversationKey: string
@@ -72,6 +79,8 @@ export interface StartSessionRequest {
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, Promise<Session>>()
+  private readonly stopping = new Map<string, Promise<boolean>>()
+  private closing = false
 
   private readonly allowedTargets: Set<string>
 
@@ -88,25 +97,34 @@ export class BrowserSessionManager {
   }
 
   async start(request: StartSessionRequest): Promise<BrowserSessionMetadata> {
+    const profileMode = normalizeBrowserProfileMode(request.profileMode)
+    const cookies = this.validCookies(request.cookies)
+    if (this.closing) throw new Error('browser manager is closing')
+    const stopping = this.stopping.get(request.sessionId)
+    if (stopping) await stopping
+    if (this.closing) throw new Error('browser manager is closing')
     let pending = this.sessions.get(request.sessionId)
     if (!pending) {
-      pending = this.create(request)
+      pending = this.create({ ...request, profileMode, cookies })
       this.sessions.set(request.sessionId, pending)
-      pending.catch(() => this.sessions.delete(request.sessionId))
+      pending.catch(() => { if (this.sessions.get(request.sessionId) === pending) this.sessions.delete(request.sessionId) })
     }
     const session = await pending
+    if (this.stopping.has(request.sessionId)) throw new Error('not_ready')
     if (session.userKey !== request.userKey || session.conversationKey !== request.conversationKey) throw new Error('session identity mismatch')
     // Идемпотентный start переиспользует живую сессию, но ключ доступа сервер
     // выдаёт заново: без повторной установки в профиле осталась бы прошлая
     // cookie, и прокси превью ответил бы 401 посреди рана.
-    await this.applyCookies(session, request.cookies)
+    await this.applyCookies(session, cookies)
     return await this.metadata(session)
   }
 
   private async create(request: StartSessionRequest): Promise<Session> {
-    const viewport = request.viewport ?? { width: 1280, height: 800, deviceScaleFactor: 1 }
     const path = profilePath(this.profilesRoot, request.userKey, request.conversationKey)
     await mkdir(path, { recursive: true, mode: 0o700 })
+    const profileMode = request.profileMode ?? 'ephemeral'
+    const saved = profileMode === 'persistent' ? await readReaderProfile(path) : null
+    const viewport = request.viewport ?? saved?.viewport ?? { width: 1280, height: 800, deviceScaleFactor: 1 }
     const context = await chromium.launchPersistentContext(path, {
       headless: true,
       viewport: { width: viewport.width, height: viewport.height },
@@ -115,102 +133,140 @@ export class BrowserSessionManager {
       permissions: [],
       serviceWorkers: 'allow'
     })
-    const session: Session = {
-      id: request.sessionId,
-      userKey: request.userKey,
-      conversationKey: request.conversationKey,
-      incarnation: randomUUID(),
-      context,
-      pages: new Map(),
-      pageIds: new WeakMap(),
-      openerIds: new Map(),
-      console: [],
-      network: [],
-      activeTabId: '',
-      viewport,
-      profileDir: path,
-      lastUsedAt: Date.now()
-    }
-    await context.route('**/*', async (route) => {
-      try {
-        const requested = validatePublicUrl(route.request().url(), this.allowedTargets)
-        // Алиас применяется после проверки: во внутреннюю сеть пускает оператор
-        // списком пар, а не пользователь адресом.
-        const aliased = applyHostAlias(requested, this.hostAliases)
-        // Цель алиаса разрешена явно: её назвал оператор, а не пользователь
-        // адресом. Проверку приватных сетей для остальных адресов не трогаем.
-        if (this.allowedTargets.has(browserTarget(aliased))) {
-          return aliased.toString() === requested.toString() ? route.continue() : route.continue({ url: aliased.toString() })
-        }
-        // Несуществующий домен и запрещённый политикой — разные беды, и раньше
-        // обе давали ERR_BLOCKED_BY_CLIENT: человек думал, что его адрес в
-        // чёрном списке, хотя тот просто не резолвится.
-        let addresses
-        try { addresses = await lookup(aliased.hostname.replace(/^\[|\]$/g, ''), { all: true, verbatim: true }) }
-        catch { return route.abort('namenotresolved') }
-        if (addresses.some((entry) => isBlockedAddress(entry.address))) return route.abort('blockedbyclient')
-        return route.continue()
-      } catch {
-        return route.abort('blockedbyclient')
+    try {
+      const session: Session = {
+        id: request.sessionId,
+        userKey: request.userKey,
+        conversationKey: request.conversationKey,
+        incarnation: randomUUID(),
+        context,
+        pages: new Map(),
+        pageIds: new WeakMap(),
+        openerIds: new Map(),
+        console: [],
+        network: [],
+        activeTabId: '',
+        viewport,
+        profileDir: path, profileMode,
+        origins: new Set(saved?.origins ?? []), bootstrapCookies: [],
+        lastUsedAt: Date.now()
       }
-    })
-    const register = (page: Page): string => {
-      const known = session.pageIds.get(page)
-      if (known) return known
-      const id = randomUUID()
-      session.pageIds.set(page, id)
-      session.pages.set(id, page)
-      page.on('close', () => {
-        session.pages.delete(id)
-        session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id, session.openerIds.get(id))
-        session.openerIds.delete(id)
+      await context.route('**/*', async (route) => {
+        try {
+          const requested = validatePublicUrl(route.request().url(), this.allowedTargets)
+          // Алиас применяется после проверки: во внутреннюю сеть пускает оператор
+          // списком пар, а не пользователь адресом.
+          const aliased = applyHostAlias(requested, this.hostAliases)
+          // Цель алиаса разрешена явно: её назвал оператор, а не пользователь
+          // адресом. Проверку приватных сетей для остальных адресов не трогаем.
+          if (this.allowedTargets.has(browserTarget(aliased))) {
+            return aliased.toString() === requested.toString() ? route.continue() : route.continue({ url: aliased.toString() })
+          }
+          // Несуществующий домен и запрещённый политикой — разные беды, и раньше
+          // обе давали ERR_BLOCKED_BY_CLIENT: человек думал, что его адрес в
+          // чёрном списке, хотя тот просто не резолвится.
+          let addresses
+          try { addresses = await lookup(aliased.hostname.replace(/^\[|\]$/g, ''), { all: true, verbatim: true }) }
+          catch { return route.abort('namenotresolved') }
+          if (addresses.some((entry) => isBlockedAddress(entry.address))) return route.abort('blockedbyclient')
+          return route.continue()
+        } catch {
+          return route.abort('blockedbyclient')
+        }
       })
-      page.on('popup', (popup) => session.openerIds.set(register(popup), id))
-      // Журналы собираются с момента открытия страницы: спросить их задним
-      // числом нельзя, а этапу автотестов нужны именно они.
-      page.on('console', (message) => {
-        session.console.push({ level: message.type(), text: message.text().slice(0, 2000), at: Date.now() })
-        if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
-      })
-      page.on('response', (response) => {
-        session.network.push({
-          method: response.request().method(), url: response.url().slice(0, 500),
-          status: response.status(), ok: response.ok(), at: Date.now()
+      const register = (page: Page): string => {
+        const known = session.pageIds.get(page)
+        if (known) return known
+        const id = randomUUID()
+        session.pageIds.set(page, id)
+        session.pages.set(id, page)
+        page.on('close', () => {
+          session.pages.delete(id)
+          session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id, session.openerIds.get(id))
+          session.openerIds.delete(id)
         })
-        if (session.network.length > LOG_LIMIT) session.network.splice(0, session.network.length - LOG_LIMIT)
-      })
-      page.on('pageerror', (err) => {
-        session.console.push({ level: 'error', text: String(err.message).slice(0, 2000), at: Date.now() })
-        if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
-      })
-      return id
+        page.on('framenavigated', frame => { const origin = httpOrigin(frame.url()); if (origin) session.origins.add(origin) })
+        page.on('popup', (popup) => session.openerIds.set(register(popup), id))
+        // Журналы собираются с момента открытия страницы: спросить их задним
+        // числом нельзя, а этапу автотестов нужны именно они.
+        page.on('console', (message) => {
+          session.console.push({ level: message.type(), text: message.text().slice(0, 2000), at: Date.now() })
+          if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
+        })
+        page.on('response', (response) => {
+          session.network.push({
+            method: response.request().method(), url: response.url().slice(0, 500),
+            status: response.status(), ok: response.ok(), at: Date.now()
+          })
+          if (session.network.length > LOG_LIMIT) session.network.splice(0, session.network.length - LOG_LIMIT)
+        })
+        page.on('pageerror', (err) => {
+          session.console.push({ level: 'error', text: String(err.message).slice(0, 2000), at: Date.now() })
+          if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
+        })
+        return id
+      }
+      for (const page of context.pages()) register(page)
+      const initial = context.pages()[0] ?? await context.newPage()
+      session.activeTabId = register(initial)
+      context.on('page', (page) => register(page))
+      const entry = this.sessions.get(request.sessionId)
+      context.on('close', () => { if (this.sessions.get(request.sessionId) === entry) this.sessions.delete(request.sessionId) })
+      if (saved?.cookies.length) await context.addCookies(saved.cookies).catch(() => undefined)
+      await this.applyCookies(session, request.cookies)
+      if (saved?.url && saved.url !== 'about:blank') {
+        try { await initial.goto(applyHostAlias(validatePublicUrl(saved.url, this.allowedTargets), this.hostAliases).toString(), { ...NAVIGATION_OPTIONS, timeout: 10000 }) }
+        catch (error) { session.console.push({ level: 'warning', text: `Последняя страница не восстановлена: ${error instanceof Error ? error.message.split('\n')[0] : 'ошибка перехода'}`, at: Date.now() }) }
+      }
+      return session
+    } catch (error) {
+      await context.close().catch(() => undefined)
+      if (profileMode !== 'persistent') await rm(path, { recursive: true, force: true }).catch(() => undefined)
+      throw error
     }
-    for (const page of context.pages()) register(page)
-    const initial = context.pages()[0] ?? await context.newPage()
-    session.activeTabId = register(initial)
-    context.on('page', (page) => register(page))
-    context.on('close', () => this.sessions.delete(request.sessionId))
-    return session
   }
 
-  /** Пустой и битый список молча пропускаем: cookie — не причина ронять сессию. */
+  private validCookies(cookies: StartSessionCookie[] | undefined): StartSessionCookie[] {
+    if (cookies === undefined) return []
+    if (!Array.isArray(cookies)) throw new Error('invalid session cookies')
+    for (const cookie of cookies) {
+      if (!cookie || typeof cookie.name !== 'string' || !cookie.name || typeof cookie.value !== 'string' || /[\r\n;]/.test(cookie.name) || /[\r\n]/.test(cookie.value) || typeof cookie.url !== 'string') throw new Error('invalid session cookies')
+      try { validatePublicUrl(cookie.url, this.allowedTargets) } catch { throw new Error('invalid session cookie URL') }
+    }
+    return cookies.map(cookie => ({ ...cookie }))
+  }
+
+  /** Весь вход уже проверен до запуска Chromium; здесь обновляется ключ прокси. */
   private async applyCookies(session: Session, cookies: StartSessionCookie[] | undefined): Promise<void> {
     if (!cookies?.length) return
-    const valid = cookies.filter((cookie) => cookie && typeof cookie.name === 'string' && typeof cookie.value === 'string' && typeof cookie.url === 'string')
-    if (!valid.length) return
-    await session.context.addCookies(valid.map((cookie) => ({ name: cookie.name, value: cookie.value, url: cookie.url })))
+    await session.context.addCookies(cookies.map(cookie => ({ name: cookie.name, value: cookie.value, url: cookie.url })))
+    session.bootstrapCookies = cookies.map(cookie => ({ name: cookie.name, host: new URL(cookie.url).hostname }))
   }
 
   async stop(sessionId: string): Promise<boolean> {
+    const current = this.stopping.get(sessionId)
+    if (current) return current
     const pending = this.sessions.get(sessionId)
     if (!pending) return false
-    this.sessions.delete(sessionId)
-    const session = await pending
-    await session.context.close()
-    // Каталог профиля детерминирован от пары ключей, а у QA-рана вторым ключом
-    // идёт id прогона — значит, каждый прогон оставлял бы свой каталог навсегда.
-    await rm(session.profileDir, { recursive: true, force: true }).catch(() => undefined)
-    return true
+    // Новый start ждёт закрытия и очистки каталога. Старый close не должен
+    // удалить уже запущенную новую incarnation или её файлы.
+    const task = (async () => {
+      const session = await pending.catch(() => null)
+      if (!session) return false
+      let saveError: unknown
+      if (session.profileMode === 'persistent') {
+        try { await writeReaderProfile(session.profileDir, { cookies: await session.context.cookies(), origins: [...session.origins], viewport: session.viewport, url: this.publicUrl(session.pages.get(session.activeTabId)?.url() ?? 'about:blank') }) }
+        catch (error) { saveError = error }
+      }
+      await session.context.close()
+      if (session.profileMode !== 'persistent') await rm(session.profileDir, { recursive: true, force: true }).catch(() => undefined)
+      if (this.sessions.get(sessionId) === pending) this.sessions.delete(sessionId)
+      if (saveError) throw new Error('Профиль Reader не удалось сохранить')
+      return true
+    })()
+    this.stopping.set(sessionId, task)
+    void task.finally(() => { if (this.stopping.get(sessionId) === task) this.stopping.delete(sessionId) }).catch(() => undefined)
+    return task
   }
 
   /**
@@ -228,7 +284,7 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -263,6 +319,7 @@ export class BrowserSessionManager {
       else await target.close()
       return this.metadata(session)
     }
+    if (command.type === 'clearSiteData') return clearSiteData(session, session.pages.get(request.tabId ?? session.activeTabId), command, raw => this.publicUrl(raw))
     const tabId = request.tabId ?? session.activeTabId
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
@@ -343,11 +400,16 @@ export class BrowserSessionManager {
   count(): number { return this.sessions.size }
 
   async close(): Promise<void> {
-    await Promise.all([...this.sessions.keys()].map((id) => this.stop(id)))
+    this.closing = true
+    const results = await Promise.allSettled([...this.sessions.keys()].map((id) => this.stop(id)).concat([...this.stopping.values()]))
+    const failed = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failed.length) throw new AggregateError(failed.map(result => result.reason), 'Не все Chromium-сессии закрылись')
   }
 
   private async require(id: string): Promise<Session> {
+    if (this.stopping.has(id)) throw new Error('not_ready')
     const session = await this.sessions.get(id)
+    if (this.stopping.has(id)) throw new Error('not_ready')
     if (!session) throw new Error('not_found')
     return session
   }
@@ -370,6 +432,7 @@ export class BrowserSessionManager {
     const aliasedHost = rawActive && this.publicUrl(rawActive) !== rawActive ? this.hostOf(rawActive) : ''
     return {
       id: session.id,
+      profileMode: session.profileMode,
       conversationId: session.conversationKey,
       incarnation: session.incarnation,
       state: 'ready',

@@ -64,7 +64,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
     try {
       const id = await guard(req, req.params.id)
       const viewport = normalizeViewport(req.body?.viewport)
-      return await runner!.start({ sessionId: id, userKey: uid(req), conversationKey: id, ...(viewport ? { viewport } : {}), cookies: await previewSessionCookies(core, uid(req), runnerFacingBase) })
+      return await runner!.start({ sessionId: id, userKey: uid(req), conversationKey: id, profileMode: 'persistent', ...(viewport ? { viewport } : {}), cookies: await previewSessionCookies(core, uid(req), runnerFacingBase) })
     } catch (err) {
       return fail(reply, err)
     }
