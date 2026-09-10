@@ -1420,13 +1420,200 @@
           "log": "/tmp/voicechat-reader-cycle-07-gate.log"
         }
       },
-      "endedAt": "2026-09-10T02:17:25.863104+00:00"
+      "endedAt": "2026-09-10T02:17:25.863104+00:00",
+      "commit": "b5e6fe3a"
     },
     {
       "number": 8,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T02:18:27.712843+00:00",
+      "items": [
+        {
+          "id": "08-01",
+          "title": "Структурированное чтение открытого Shadow DOM",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-02",
+          "title": "Видимый текст компонентов и слотов без повторов",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-03",
+          "title": "Селектор найденного узла различает light DOM и Shadow DOM",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-04",
+          "title": "Запись клика внутри вложенных shadow roots",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-05",
+          "title": "Запись одинаковых кнопок воспроизводит нужную",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-06",
+          "title": "Глубокий текст сохраняет интерактивного предка",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-07",
+          "title": "Прокрутка принимает селекторы Playwright и Shadow DOM",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-08",
+          "title": "selector и text совместно ограничивают click, hover и find",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-09",
+          "title": "aria-labelledby разрешается внутри root поля",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-10",
+          "title": "Недоступность поля учитывает disabled fieldset",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        }
+      ],
+      "research": {
+        "evidence": "/tmp/voicechat-reader-cycle-08-baseline.log",
+        "nativeBaseline": {
+          "failed": 10,
+          "durationMs": 3960,
+          "log": "/tmp/voicechat-reader-cycle-08-native-baseline.log"
+        },
+        "prototype": {
+          "passed": 10,
+          "durationMs": 15920,
+          "log": "/tmp/voicechat-reader-cycle-08-draft-native.log"
+        },
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T02:11:41.244792+00:00",
+          "endedAt": "2026-09-10T02:18:27.712843+00:00",
+          "detail": "Черновики вне checkout во время полного гейта 07; интервалы пересекаются."
+        },
+        "rejected": [
+          {
+            "hypothesis": "Внешний light DOM #action всегда кликает соседнюю shadow кнопку",
+            "observation": "Простой случай прошёл; сбой воспроизведён с совпадающим id внутри слота того же host."
+          }
+        ]
+      },
+      "validation": {
+        "focused": {
+          "passed": 58,
+          "durationMs": 2700,
+          "typecheckExitCode": 0,
+          "log": "/tmp/voicechat-reader-cycle-08-native-final.log"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:22:04.124699+00:00",
+          "endedAt": "2026-09-10T02:22:18.576762+00:00",
+          "durationMs": 14452,
+          "status": "passed",
+          "passed": 11,
+          "vitestDurationMs": 14080,
+          "log": "/tmp/voicechat-reader-cycle-08-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-08",
+          "visuallyInspected": [
+            "16-model-shadow-components.png"
+          ],
+          "initialAttempt": {
+            "exitCode": 1,
+            "startedAt": "2026-09-10T02:19:33.198240+00:00",
+            "endedAt": "2026-09-10T02:19:58.024062+00:00",
+            "durationMs": 24825,
+            "log": "/tmp/voicechat-reader-cycle-08-e2e.log",
+            "reason": "Новая проверка позиционного identity отказала при обновлении DOM собственного сайта; уточнение теперь сохраняет уникальный селектор и один раз перечитывает исчезнувший результат. Добавлены 2 живые регрессии."
+          }
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:23:22.547226+00:00",
+          "endedAt": "2026-09-10T02:30:43.302828+00:00",
+          "durationMs": 440753,
+          "status": "passed",
+          "passed": 7360,
+          "skipped": 45,
+          "log": "/tmp/voicechat-reader-cycle-08-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:31:02.339269+00:00",
+          "endedAt": "2026-09-10T02:40:23.213844+00:00",
+          "durationMs": 560897,
+          "status": "passed",
+          "passed": 7691,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-08-gate.log"
+        },
+        "external": {
+          "log": "/tmp/voicechat-reader-cycle-08-external.log",
+          "results": "/tmp/voicechat-reader-audit/cycle-08/external-results.json",
+          "gmail": {
+            "opened": true,
+            "readMs": 36,
+            "publicForm": true
+          },
+          "instagram": {
+            "opened": true,
+            "readMs": 256,
+            "publicFormAndCookieDialog": true
+          },
+          "visuallyInspected": [
+            "external-gmail.png",
+            "external-instagram.png"
+          ],
+          "authenticatedAccountsUsed": false
+        }
+      },
+      "endedAt": "2026-09-10T02:41:25.656495+00:00"
     },
     {
       "number": 9,

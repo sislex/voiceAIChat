@@ -565,6 +565,9 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     opening +
     'open {url} — открыть сайт в превью; read {selector?, limit?, offset?} — структурированное содержимое страницы ' +
     '(заголовки, ссылки, кнопки, поля ввода); nextOffset продолжает длинный текст. find {text|selector, limit?, visibleOnly?} — найти элементы; ' +
+    'В Chromium read включает открытый Shadow DOM и слоты; закрытые roots недоступны. ' +
+    'Селекторы из read/find передавай в следующее действие целиком, включая >> nth; после изменения DOM повтори поиск. ' +
+    'В Chromium selector вместе с text ограничивает click, hover и find текстом внутри селектора. ' +
     'click {selector|text} — клик по элементу; type {selector, text, submit?} — ввести текст в поле. ' +
     'Действия выполняются только на странице, открытой в превью активного чата пользователя. ' +
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +

@@ -292,6 +292,29 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await capture('15-model-waits-for-ready-page')
   })
 
+  it('модель читает компоненты Shadow DOM и нажимает именно найденную кнопку', async () => {
+    await mcp('open', { url: 'http://forms.reader.test/shadow' })
+    const contents = JSON.parse(await mcp('read')) as BrowserSelectorResult
+    expect(contents.headings).toContainEqual({ level: 2, text: 'Теневая форма' })
+    expect(contents.text).toContain('Вложенная кнопка')
+    expect(contents.text!.split('Действие из слота')).toHaveLength(2)
+    expect(contents.text).not.toContain('Скрытый текст компонента')
+    expect(contents.inputs).toContainEqual(expect.objectContaining({ selector: '#disabled-field', disabled: true }))
+    const field = contents.inputs!.find(input => input.label === 'Внутренняя подпись')!
+    await mcp('type', { selector: field.selector, text: 'Модель внутри компонента' })
+    expect(JSON.parse(await mcp('read', { selector: field.selector }))).toMatchObject({ text: 'Модель внутри компонента' })
+    for (const [text, expected] of [['Теневое действие', 'shadow'], ['Действие из слота', 'slot'], ['Вложенная кнопка', 'nested']]) {
+      const found = JSON.parse(await mcp('find', { text })) as BrowserSelectorResult
+      await mcp('click', { selector: found.matches![0].selector })
+      expect(JSON.parse(await mcp('read', { selector: '#result' }))).toMatchObject({ text: expected })
+    }
+    await mcp('click', { selector: '.repeat', text: 'Вторая' })
+    expect(JSON.parse(await mcp('read', { selector: '#result' }))).toMatchObject({ text: 'second' })
+    await mcp('scroll', { to: 'top' })
+    await capture('16-model-shadow-components')
+    if (artifacts) await writeFile(join(artifacts, '16-model-shadow-read.json'), JSON.stringify(contents, null, 2))
+  })
+
   it('модель получает нужную область и полную страницу с точными метаданными снимка', async () => {
     await mcp('open', { url: 'http://forms.reader.test/capture' })
     const shot = async (args: Record<string, unknown>, name: string) => {
