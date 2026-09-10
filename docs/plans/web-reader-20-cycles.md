@@ -358,3 +358,25 @@ ready в App DOM; следующие (03:32:49–03:35:22, 153,626 с;
 | 08 | Изоляция экземпляров, закрытие и общий HTTP/MCP reset | unit/integration |
 | 09 | Регистр Set-Cookie и повреждённые отдельные значения не теряют соседние | unit + Chromium |
 | 10 | Cookie промежуточного redirect попадает в следующий запрос | Chromium |
+
+## Цикл 13 — интерфейсы Storage и IndexedDB
+
+Статус: готов. Коммит 12: `544ecfc5`.
+60 unit, typecheck и 31 Chromium — код 0. Fast
+04:57:22.296–04:59:31.612 (129,316 с), полный gate
+04:59:31.613–05:08:23.272 (531,660 с) — оба код 0.
+Подготовка вне дерева и 10 unit + 10 Chromium завершены 04:14:25; typecheck — код 0.
+Применение в ветке 04:56:19. Время общее для связанных правок контекстного скрипта.
+
+| № | Исправление | Проверка |
+|---|---|---|
+| 01 | Чтение сохранённых ключей через свойства Storage | unit + Chromium |
+| 02 | Присваивание свойства переживает reload | unit + Chromium |
+| 03 | delete/clear не затрагивают host и другой origin | unit + Chromium |
+| 04 | Enumeration, JSON, has и length отражают только значения сайта | unit + Chromium |
+| 05 | Сохранены prototype/instanceof и identity методов | unit + Chromium |
+| 06 | Методы проверяют аргументы и приводят индекс key | unit + Chromium |
+| 07 | События storage изолированы и имеют логические ключи/URL | unit + Chromium |
+| 08 | indexedDB.databases не перечисляет чужие базы | Chromium |
+| 09 | IDBDatabase.name и deleteDatabase используют исходное имя | Chromium |
+| 10 | SecurityError getter не ломает загрузку остальных мостов | unit + Chromium |
