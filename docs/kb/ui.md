@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-10
-checked: 4be6ddac
+checked: ab93e3a5
 areas:
   - packages/admin-app/src
   - packages/app-shell
@@ -2236,7 +2236,7 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 
 ### Независимый Веб-рекордер и контракт хоста
 
-Веб-рекордер собирается и запускается отдельно как workspace `@voicechat/web-recorder` (`apps/web-recorder`, Vite, порт dev `5274`). Его entry `src/main.tsx` монтирует собственный `Recorder`, а состояние открытого URL, записи и редактирования сценария остаётся внутри этого приложения. Для общих токенов и классов рекордер подключает `@voicechat/ui/app.css`; компоненты и store ChatAI он не импортирует.
+Веб-рекордер собирается и запускается отдельно как workspace `@voicechat/web-recorder` (`apps/web-recorder`, Vite, порт dev `5274`). Его entry `src/main.tsx` монтирует собственный `Recorder`, а состояние открытого URL, записи и редактирования сценария остаётся внутри этого приложения. Standalone-документ имеет doctype, `lang=ru` и viewport meta. Для reset, токенов и классов рекордер подключает `@voicechat/ui/styles.css`, `@voicechat/ui/app.css` и локальный `recorder.css`; кнопки — из `@voicechat/ui-kit` (прямая workspace-зависимость также внесена в `scripts/affected-check.mjs`). Компоненты и store ChatAI он не импортирует.
 
 ChatAI показывает только iframe-host `WebReaderFrame` (`packages/web-reader-app/src/WebReaderFrame.tsx`); адрес standalone build — `/web-recorder/`. Весь lifecycle host-стороны живёт в React-free ядре `createReaderHostBridge` (`packages/web-reader-app/src/hostBridge.ts`): автомат `booting → ready → page-loading → page-ready → error → disposed`, очередь DOM-команд до готовности страницы, 10-секундные таймеры pending-запросов и ротация регистрации. Платформа инъецируется: `WebReaderFrame` получает проп `platform` (`origin` + `subscribeMessages`) от host-а и не трогает `window` сам (гейт `npm run frontend:static` запрещает `window.*` в product-пакетах). Перед первой отправкой непустого `conversationUrl ?? projectUrl` host вызывает доступный в web session-мосте `ensurePreview()`, который по текущему Bearer-токену выпускает HttpOnly-cookie `vc_preview_session`. Пока Promise выполняется, recorder shell остаётся смонтированным, но получает только пустой URL, а host показывает статус подключения. `false` и rejection показывают понятную ошибку с кнопкой «Повторить»; retry заново вызывает `ensurePreview()`. Только успешный актуальный async-результат разблокирует target URL; смена URL и размонтирование инвалидируют прежний результат. При пустом URL запрос не выполняется, а в окружениях без `ensurePreview` host сохраняет desktop-совместимость без cookie-гейта.
 
@@ -2301,6 +2301,22 @@ host сохраняет новый URL разговора, а `WebReaderFrame` �
 barrel `@voicechat/web-reader-app` возвращал весь ленивый экран в основной чанк
 (сторож — `lazyScreens.test.ts`). В reader.changed relay берёт
 адрес/заголовок как из result.url/title, так и из result.page у DOM-команд.
+
+Адресная строка Reader принимает домен без схемы (HTTPS для публичного сайта,
+HTTP для machine.internal/localhost и нестандартного порта), а относительные
+пути, query и hash разрешает от последнего подтверждённого URL. Это помощник
+`readerAddress.ts`; сообщения host-контракта по-прежнему требуют HTTP(S) URL.
+Обновление использует текущий адрес после SPA-перехода. Загрузка видна в панели;
+непрочитанный ответ/таймаут показан с повтором. Отложенные проверки onLoad и
+watchdog очищаются при закрытии; поколение загрузки меняется также на
+page-loading/ready, поэтому старый onLoad не отменяет новый медленный переход.
+
+Инспектор, редактор и захват области взаимоисключаются. Меню закрывается по
+внешнему клику, потере фокуса и Escape; Escape возвращает фокус на summary и
+выключает интерактивные режимы. Выбранная ширина iframe сохраняется даже в узкой
+панели через горизонтальный scroll контейнера; мобильная адресная строка занимает
+свою строку, элементы тулбара имеют высоту не менее 36 px. Регрессии —
+`Recorder.dom.test.tsx`, `readerAddress.test.ts`, `e2e/webReaderUi.e2e.test.ts`.
 
 ### Запись и повторный запуск сценария
 

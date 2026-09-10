@@ -1,5 +1,7 @@
+import { Button, IconButton } from '@voicechat/ui-kit'
+import { normalizeReaderAddress } from './readerAddress'
 import { useEffect, useRef, useState } from 'react'
-import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE, type PreviewDomAction } from '@shared/previewActions'
+import { PREVIEW_ACTION_LIMITS, PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE, type PreviewDomAction } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, PREVIEW_INSPECTOR_MESSAGE_TYPE, isPreviewInspectorCommand } from '@shared/previewInspector'
 import {
   WEB_RECORDER_CAPABILITIES,
@@ -52,6 +54,11 @@ export function Recorder(): JSX.Element {
   const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
   const [viewport, setViewport] = useState('')
+  const [loadState, setLoadState] = useState<'empty' | 'loading' | 'ready' | 'error'>('empty')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const toolsMenu = useRef<HTMLDetailsElement>(null)
+  const loadGeneration = useRef(0)
+  const loadTimers = useRef(new Set<ReturnType<typeof setTimeout>>())
   // Значения секретных шагов на время запуска: не сохраняются и не покидают Reader.
   const [secretValues, setSecretValues] = useState<Record<number, string>>({})
   const frame = useRef<HTMLIFrameElement>(null); const pageReady = useRef(false); const currentUrl = useRef<string | null>(null)
@@ -72,7 +79,9 @@ export function Recorder(): JSX.Element {
     window.parent.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, conversationId: ids.conversationId, registrationId: ids.registrationId, ...message }, sameOrigin)
   }
   const applyUrl = (next: string | null): void => {
+    loadGeneration.current++
     pageReady.current = false
+    setLoadState(next ? 'loading' : 'empty'); setLoadError(null)
     currentUrl.current = next
     if (next) setFrameKey((value) => value + 1)
     setUrl(next); setDraft(next ?? ''); setError(null)
@@ -120,6 +129,7 @@ export function Recorder(): JSX.Element {
         return
       }
       if (message.kind === 'inspector-state') {
+        if (message.enabled) { setEditing(false); setCapturing(false) }
         setInspecting(message.enabled)
         frame.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: message.enabled }, sameOrigin)
         return
@@ -140,12 +150,14 @@ export function Recorder(): JSX.Element {
       if (message.kind === 'dispose') {
         reply({ kind: 'disposed' })
         session.current = null
+        pageReady.current = false; setLoadState('empty'); setLoadError(null)
         setDisposed(true)
       }
     }
     const receivePage = (data: unknown): void => {
       const message = data as { type?: unknown; requestId?: unknown; ok?: unknown; result?: unknown; error?: unknown; payload?: unknown; step?: unknown; enabled?: unknown; url?: unknown }
       if (message?.type === PREVIEW_PAGE_READY_TYPE) {
+        loadGeneration.current++
         let next = typeof message.url === 'string' && message.url.length <= 4096 ? validUrl(message.url) : null
         if (next) {
           const reported = new URL(next)
@@ -161,6 +173,7 @@ export function Recorder(): JSX.Element {
           setDraft(draft => draft === previous ? next : draft)
         }
         pageReady.current = true
+        setLoadState('ready'); setLoadError(null)
         reply({ kind: 'page-status', status: 'ready', url: currentUrl.current })
         const state = modes.current
         for (const [type, enabled] of [[RECORD, state.recording], [PREVIEW_INSPECTOR_COMMAND_TYPE, state.inspecting], [EDIT, state.editing], [CAPTURE, state.capturing]] as const) {
@@ -168,7 +181,7 @@ export function Recorder(): JSX.Element {
         }
         return
       }
-      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { pageReady.current = false; reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
+      if (message?.type === PREVIEW_PAGE_LOADING_TYPE) { loadGeneration.current++; pageReady.current = false; setLoadState('loading'); setLoadError(null); reply({ kind: 'page-status', status: 'loading', url: currentUrl.current }); return }
       if (message?.type === PREVIEW_ACTION_RESULT_TYPE && typeof message.requestId === 'string') {
         const diagnostic = diagnosticStarts.current.get(message.requestId)
         if (diagnostic) {
@@ -238,16 +251,56 @@ export function Recorder(): JSX.Element {
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: RECORD, enabled: recording }, sameOrigin) }, [recording, url])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: EDIT, enabled: editing }, sameOrigin) }, [editing, url])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: CAPTURE, enabled: capturing }, sameOrigin) }, [capturing, url])
-  const open = (): void => {
-    const next = validUrl(draft)
-    if (draft && !next) { setError('Введите адрес с протоколом http:// или https://'); return }
-    applyUrl(next)
-    reply({ kind: 'save-url', url: next })
+  const closeTools = (): void => { if (toolsMenu.current) toolsMenu.current.open = false }
+  const activateMode = (mode: 'inspect' | 'edit' | 'capture' | null): void => {
+    setInspecting(mode === 'inspect'); setEditing(mode === 'edit'); setCapturing(mode === 'capture')
+    closeTools()
   }
-  const toggleInspector = (): void => {
-    const next = !inspecting
-    setInspecting(next)
-    frame.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: next }, sameOrigin)
+  useEffect(() => {
+    const outside = (event: PointerEvent): void => { if (toolsMenu.current && !toolsMenu.current.contains(event.target as Node)) closeTools() }
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      if (toolsMenu.current?.open) { closeTools(); toolsMenu.current.querySelector('summary')?.focus() }
+      setInspecting(false); setEditing(false); setCapturing(false)
+    }
+    window.addEventListener('pointerdown', outside); window.addEventListener('keydown', escape); window.addEventListener('blur', closeTools)
+    return () => { window.removeEventListener('pointerdown', outside); window.removeEventListener('keydown', escape); window.removeEventListener('blur', closeTools) }
+  }, [])
+  useEffect(() => { frame.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: inspecting }, sameOrigin) }, [inspecting, url])
+  const open = (): void => {
+    const result = normalizeReaderAddress(draft, currentUrl.current)
+    if (result.error) { setError(result.error); return }
+    applyUrl(result.url)
+    reply({ kind: 'save-url', url: result.url })
+  }
+  const reload = (): void => { if (currentUrl.current) applyUrl(currentUrl.current) }
+  const failLoad = (message: string): void => {
+    pageReady.current = false; setLoadState('error'); setLoadError(message)
+    reply({ kind: 'page-status', status: 'error', url: currentUrl.current, error: message })
+  }
+  useEffect(() => {
+    if (!url || loadState !== 'loading') return
+    const timer = setTimeout(() => { if (!pageReady.current) failLoad('Страница не стала доступна за время ожидания. Попробуйте обновить её.') }, 12_000)
+    loadTimers.current.add(timer)
+    return () => { clearTimeout(timer); loadTimers.current.delete(timer) }
+  }, [frameKey, url, loadState])
+  useEffect(() => () => { for (const timer of loadTimers.current) clearTimeout(timer); loadTimers.current.clear() }, [])
+  const loaded = (target: HTMLIFrameElement): void => {
+    // Отложенный callback старого iframe не должен портить состояние нового open.
+    const expected = currentUrl.current
+    const generation = loadGeneration.current
+    const timer = setTimeout(() => {
+      loadTimers.current.delete(timer)
+      if (generation !== loadGeneration.current || frame.current !== target || currentUrl.current !== expected || pageReady.current) return
+      try { if (target.contentDocument?.URL === 'about:blank') return } catch { /* страница могла сменить origin */ }
+      let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'
+      try {
+        const body = target.contentDocument?.body?.textContent?.trim()
+        if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message }
+      } catch { /* не-JSON страница без клиентского моста */ }
+      failLoad(message)
+    }, 100)
+    loadTimers.current.add(timer)
   }
   const run = (): void => {
     if (!frame.current?.contentWindow || !url) return
@@ -286,33 +339,36 @@ export function Recorder(): JSX.Element {
   if (disposed) return <section className="webpreview" aria-label="Web Reader"><div className="webpreview-empty" role="status">Панель Web Reader отключена host-приложением</div></section>
   return <section className="webpreview" aria-label="Web Reader">
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-label="Назад" title="Назад" onClick={() => historyGo(-1)}>‹</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</button>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
-      <button className="vc-btn vc-btn--secondary">Открыть</button>
+      <IconButton variant="secondary" type="button" disabled={!url} aria-label="Назад" title="Назад" onClick={() => historyGo(-1)}>‹</IconButton>
+      <IconButton variant="secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</IconButton>
+      <IconButton variant="secondary" aria-label="Обновить страницу" title="Обновить страницу" disabled={!url} onClick={reload}>↻</IconButton>
+      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={PREVIEW_ACTION_LIMITS.url} value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
+      <Button variant="secondary" type="submit">Открыть</Button>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
       {/* Инструменты страницы собраны в свёрнутое меню, чтобы тулбар не переполнял
           узкую панель превью. Активные режимы подсвечивают саму сводку меню. */}
-      <details className="webpreview-tools">
+      <details ref={toolsMenu} className="webpreview-tools">
         <summary className="vc-btn vc-btn--secondary" aria-label="Инструменты страницы" data-active={(inspecting || editing || capturing || recording) || undefined}>Инструменты ▾</summary>
         <div className="webpreview-tools__menu" role="group" aria-label="Инструменты страницы">
-          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</button>
-          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={toggleInspector}>⌖ Выбор элемента</button>
-          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => setEditing((value) => !value)}>✎ Редактировать</button>
-          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => setCapturing((value) => !value)}>📸 Область</button>
-          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
+          <Button variant="secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</Button>
+          <Button variant="secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={() => activateMode(inspecting ? null : 'inspect')}>⌖ Выбор элемента</Button>
+          <Button variant="secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => activateMode(editing ? null : 'edit')}>✎ Редактировать</Button>
+          <Button variant="secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => activateMode(capturing ? null : 'capture')}>📸 Область</Button>
+          <Button variant="secondary" type="button" disabled={!url} aria-pressed={recording} onClick={() => { setRecording((value) => !value); closeTools() }}>{recording ? 'Остановить запись' : 'Записать сценарий'}</Button>
         </div>
       </details>
     </form>
+    {loadState === 'loading' && <div className="webpreview-load-status" role="status" aria-live="polite">Загружаем страницу…</div>}
+    {loadError && <div className="webpreview-error webpreview-load-error" role="alert"><span>{loadError}</span><Button size="sm" onClick={reload}>Повторить загрузку</Button></div>}
     {error && <p className="webpreview-error" role="alert">{error}</p>}
     {diagnostics && <section className="webpreview-scenario" aria-label="Диагностика Web Reader">
       <strong>Диагностика: {diagnostics.length} шаг.</strong>
       <ol>{diagnostics.map((step) => <li key={step.requestId} data-status={step.ok ? 'passed' : 'failed'}>{step.ok ? '✓' : '✕'} <code>{step.action}</code> — {step.durationMs} мс</li>)}</ol>
     </section>}
     {steps.length > 0 && <section className="webpreview-scenario" aria-label="Сценарий автотеста">
-      <button className="vc-btn vc-btn--secondary" onClick={run}>Запустить</button>
-      <button className="vc-btn vc-btn--secondary" type="button" onClick={exportPlaywright}>Экспорт в Playwright</button>
-      <button className="vc-btn vc-btn--secondary" type="button" onClick={() => { setSteps([]); setSecretValues({}) }}>Очистить</button>
+      <Button variant="secondary" onClick={run}>Запустить</Button>
+      <Button variant="secondary" type="button" onClick={exportPlaywright}>Экспорт в Playwright</Button>
+      <Button variant="secondary" type="button" onClick={() => { setSteps([]); setSecretValues({}) }}>Очистить</Button>
       <ol>
       {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
         {step.kind === 'type' && !step.sensitive && <input aria-label={'Значение шага ' + (index + 1)} value={step.text} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
@@ -320,6 +376,7 @@ export function Recorder(): JSX.Element {
         {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохраняется</em>}</li>)}
     </ol></section>}
-    {url ? <iframe key={frameKey} ref={frame} className="webpreview-frame" style={viewport ? { width: viewport + 'px', maxWidth: '100%', margin: '0 auto', display: 'block' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={() => { setTimeout(() => { if (pageReady.current) return; let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'; try { const body = frame.current?.contentDocument?.body?.textContent?.trim(); if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message } } catch { /* не-JSON страница без клиентского моста */ }; reply({ kind: 'page-status', status: 'error', url, error: message }) }, 0) }} onError={() => { pageReady.current = false; reply({ kind: 'page-status', status: 'error', url, error: 'Не удалось загрузить сайт: сетевая ошибка.' }) }} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+    {url ? <div className="webpreview-viewport"><iframe key={frameKey} ref={frame} className="webpreview-frame" style={viewport ? { width: viewport + 'px', minWidth: viewport + 'px', flex: 'none' } : undefined} src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={event => loaded(event.currentTarget)} onError={() => failLoad('Не удалось загрузить сайт: сетевая ошибка.')} /></div> : <div className="webpreview-empty">Укажите адрес сайта или проекта</div>}
+
   </section>
 }
