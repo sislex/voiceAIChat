@@ -2554,13 +2554,221 @@
         },
         "gateTests": 7838
       },
-      "endedAt": "2026-09-10T04:48:26.620412+00:00"
+      "endedAt": "2026-09-10T04:48:26.620412+00:00",
+      "commit": "bdb1706c"
     },
     {
       "number": 13,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T04:49:02.323439+00:00",
+      "items": [
+        {
+          "id": "13-01",
+          "title": "Сообщения alert доступны модели вместо незаметного закрытия",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-02",
+          "title": "Модель явно принимает или отменяет confirm",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-03",
+          "title": "Модель вводит ответ prompt с видимым исходным значением",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-04",
+          "title": "Подтверждение ухода сохраняет или покидает текущую страницу по решению пользователя",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-05",
+          "title": "Действие с открывшимся диалогом возвращает управление модели без зависания",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-06",
+          "title": "Статус и список вкладок читаются при заблокированном JavaScript",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-07",
+          "title": "Панель показывает диалог и позволяет ответить вручную",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-08",
+          "title": "Диалоги привязаны к вкладке, соседние вкладки остаются управляемыми",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-09",
+          "title": "Устаревший id диалога и неверный prompt ответ отвергаются без побочного действия",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-10",
+          "title": "Диалог при начальной загрузке и закрытии вкладки не теряется, остановка освобождает ресурсы",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T04:41:41.410118+00:00",
+        "candidateItems": [
+          "Сообщения alert доступны модели вместо незаметного закрытия",
+          "Модель явно принимает или отменяет confirm",
+          "Модель вводит ответ prompt с видимым исходным значением",
+          "Подтверждение ухода сохраняет или покидает текущую страницу по решению пользователя",
+          "Действие с открывшимся диалогом возвращает управление модели без зависания",
+          "Статус и список вкладок читаются при заблокированном JavaScript",
+          "Панель показывает диалог и позволяет ответить вручную",
+          "Диалоги привязаны к вкладке, соседние вкладки остаются управляемыми",
+          "Устаревший id диалога и неверный prompt ответ отвергаются без побочного действия",
+          "Диалог при начальной загрузке и закрытии вкладки не теряется, остановка освобождает ресурсы"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-13-draft",
+        "baseline": "/tmp/voicechat-reader-cycle-13-baseline.json",
+        "notes": [
+          "Черновик13 вне checkout во время гейтов12; не интегрировать до коммита12.",
+          "Playwright без dialog listener автоматически dismiss; после регистрации listener DOM-actions/title могут блокироваться, требуется interruptible command wrapper + cached titles.",
+          "refreshFrame уже получает status перед screenshot при observe=true; добавить пропуск shot активного modal, не менять на параллельный опрос.",
+          "Нужны dialogs/handle-dialog control/MCP/CLI allowlist; обязательный opaque id+incarnation и prompt validation.",
+          "Не принимать диалог автоматически: явный ответ модели/человека.",
+          "handle-dialog должен идти вне raw input queue, иначе click ждёт диалог и очередь заблокирует ответ.",
+          "Диалоги цепочки требуют условного удаления старой записи, чтобы accept первого не удалил второй.",
+          "metadata.title должен гоняться с новым dialog-событием даже после предварительной проверки; кеш только для modal/ошибки.",
+          "Начальный goto профиля также прерывается dialog, чтобы start не ждал10сек.",
+          "Перед интеграцией: bounded dialog list+truncated, проверка таба/аргументов+in-flight handle, явные shared-типы без any."
+        ],
+        "prototype": {
+          "path": "/tmp/voicechat-reader-cycle-13-draft",
+          "proof": "/tmp/voicechat-reader-cycle-13-fixed.json",
+          "result": "alert вернул управление за214ms, confirm40ms, prompt24ms; явные ответы дали alert completed,confirm:true,prompt:Новое имя; отказ beforeunload оставил прежний URL.",
+          "notes": [
+            "Исходный beforeunload переход прошёл без выбора; не утверждать, что он auto-dismissed, наблюдение — страница ушла.",
+            "title теперь защищается dialog race, иначе событие между pending-check и page.title могло подвесить status.",
+            "В прототипе ещё any и локальные типы; shared-контракт обязателен до интеграции.",
+            "UI/MCP/CLI, bounded dialog lists и native regression suite ещё не готовы."
+          ],
+          "nativeTests": {
+            "passed": 14,
+            "durationMs": 4230,
+            "log": "/tmp/voicechat-reader-cycle-13-native-fixed.log"
+          },
+          "baselineLog": "/tmp/voicechat-reader-cycle-13-native-baseline.log"
+        },
+        "preparedAt": "2026-09-10T04:48:26.621884+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+      "sharedImplementationDurationSeconds": 1244,
+      "validation": {
+        "nativeTests": 18,
+        "runnerTestsBeforeAdditional": 247,
+        "uiTests": 84,
+        "mcpTests": 95,
+        "sharedTests": 4,
+        "e2eTests": 22,
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:08:33.777120+00:00",
+          "endedAt": "2026-09-10T05:09:01.101001+00:00",
+          "durationMs": 27324
+        },
+        "e2eFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T05:03:47.008472+00:00",
+          "endedAt": "2026-09-10T05:04:42.889250+00:00",
+          "durationMs": 55880
+        },
+        "webBuildExitCode": 0,
+        "serverTypecheckExitCode": 0,
+        "visual": [
+          "28-confirm-awaits-answer.png",
+          "30-human-prompt.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-13",
+        "corrections": [
+          "Первичный root typecheck: неполные новые metadata-фейки. Добавлены conversationId/currentUrl/title/activeTabId; package typecheck зелёный, полный гейт далее.",
+          "Первый E2E21/22 и два узких прогона1/2: после ручного ответа пропадал polling из-за ошибочного guard dialogOpen в effect. Задержанный ответ воспроизвёл дефект DOM-тестом; исправление прошло84 UI и22 E2E.",
+          "Первый native13/14: ожидаемое сообщение ошибки теста согласовано с promptText-валидацией."
+        ],
+        "limitations": [
+          "Только JavaScript-диалоги, не HTTP-auth и браузерные разрешения.",
+          "Действие с открытым диалогом возвращает управление с ошибкой-описанием; модель проверяет итог после ответа.",
+          "Снимок под диалогом может быть прежним, поскольку Chromium блокирует новый."
+        ],
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:09:46.874785+00:00",
+          "endedAt": "2026-09-10T05:13:27.641161+00:00",
+          "durationMs": 220765
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:14:58.974289+00:00",
+          "endedAt": "2026-09-10T05:19:44.260795+00:00",
+          "durationMs": 285284
+        },
+        "fastTests": {
+          "passed": 7553,
+          "skipped": 45
+        },
+        "gateTests": 7884,
+        "typecheckExitCode": 0,
+        "runnerTests": 251
+      },
+      "endedAt": "2026-09-10T05:20:30.733957+00:00"
     },
     {
       "number": 14,

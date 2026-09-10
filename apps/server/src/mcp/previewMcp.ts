@@ -1,3 +1,4 @@
+import { BROWSER_DIALOG_ANSWER_LIMIT, normalizeBrowserDialogAnswer, isBrowserDialogListResult, isBrowserSessionMetadata } from '@voicechat/shared'
 import { isBrowserSiteDataResetResult, normalizeBrowserSiteDataReset } from '@voicechat/shared'
 import type { BrowserActionOutcome, BrowserImageResult, BrowserControlCommand, BrowserModelScreenshotOptions } from '@voicechat/shared'
 // MCP-эндпоинт «browser»: инструменты модели для управления панелью веб-превью
@@ -276,6 +277,27 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       ] as const) server.registerTool(name, {
         description, inputSchema: { tabId: z.string().min(1).max(256).describe('id вкладки из tabs') }
       }, async ({ tabId }) => control({ type, tabId }))
+      server.registerTool('dialogs', {
+        description: 'Открытые JavaScript-диалоги Chromium: id, вкладка, тип, сообщение и исходный текст prompt. Диалог ждёт явного ответа handle-dialog; tabId сужает список.',
+        inputSchema: { tabId: z.string().min(1).max(200).optional() }
+      }, async ({ tabId }) => {
+        if (!entry) return noContext
+        const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'dialogs', ...(tabId ? { tabId } : {}) })
+        if (!result) return toolResult({ ok: false, error: 'Диалоги доступны только в Playwright Reader или Chromium-проверке.' })
+        if (result.ok && !isBrowserDialogListResult(result.result)) return toolResult({ ok: false, error: 'Раннер не поддерживает диалоги сайтов.' })
+        return toolResult(result)
+      })
+      server.registerTool('handle-dialog', {
+        description: 'Ответить на конкретный диалог из dialogs: accept=true принять, false отменить. promptText только для принятия prompt; без него сохраняется исходное значение, пустая строка очищает. После ответа проверь результат действия на странице.',
+        inputSchema: { dialogId: z.string().min(1).max(200), accept: z.boolean(), promptText: z.string().max(BROWSER_DIALOG_ANSWER_LIMIT).optional() }
+      }, async ({ dialogId, accept, promptText }) => {
+        if (!entry) return noContext
+        try { normalizeBrowserDialogAnswer({ dialogId, accept, promptText }) } catch (error) { return toolResult({ ok: false, error: error instanceof Error ? error.message : 'Некорректный ответ' }) }
+        const result = await opts.browserControl?.(entry.userId, entry.conversationId, { type: 'handleDialog', dialogId, accept, ...(promptText !== undefined ? { promptText } : {}) })
+        if (!result) return toolResult({ ok: false, error: 'Ответ на диалог доступен только в Playwright Reader или Chromium-проверке.' })
+        if (result.ok && (!isBrowserSessionMetadata(result.result) || !Array.isArray(result.result.dialogs))) return toolResult({ ok: false, error: 'Раннер не подтвердил ответ на диалог.' })
+        return toolResult(result)
+      })
       server.registerTool('new-tab', {
         description: 'Открыть и выбрать новую вкладку Playwright Reader. URL необязателен (пустая вкладка); HTTP/HTTPS и machine.internal работают как в open.',
         inputSchema: { url: z.string().max(L.url).optional() }

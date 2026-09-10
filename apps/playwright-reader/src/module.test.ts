@@ -19,6 +19,16 @@ function fixture(target: BrowserModelTarget | null = { sessionId: 'c', conversat
 }
 
 describe('действия модели через приложение', () => {
+  it('диалоги маршрутизируются в авторизованную сессию и сохраняют ошибку открытого диалога', async () => {
+    const { service, runner } = fixture()
+    await service.control('ann', 'c', { type: 'dialogs', tabId: 't' })
+    expect(runner.command).toHaveBeenLastCalledWith('c', expect.objectContaining({ incarnation: 'inc', actor: 'assistant', command: { type: 'dialogs', tabId: 't' } }))
+    await service.control('ann', 'c', { type: 'handleDialog', dialogId: 'd', accept: true, promptText: '' })
+    expect(runner.command).toHaveBeenLastCalledWith('c', expect.objectContaining({ command: { type: 'handleDialog', dialogId: 'd', accept: true, promptText: '' } }))
+    vi.mocked(runner.command).mockRejectedValueOnce(new Error('Открыт диалог confirm (id: d)'))
+    expect(await service.execute('ann', 'c', { kind: 'click', selector: '#save' })).toEqual({ ok: false, error: 'Открыт диалог confirm (id: d)' })
+  })
+
   it('управление вкладками авторизует цель, сохраняет incarnation и прокси машины', async () => {
     const { service, runner, core } = fixture()
     await service.control('ann', 'c', { type: 'newTab', url: 'http://dev.machine.internal:5173/' })

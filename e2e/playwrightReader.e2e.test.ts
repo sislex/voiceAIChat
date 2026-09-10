@@ -12,6 +12,7 @@ import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
 import { startReaderFramesFixture } from '../apps/browser-runner/src/test/readerFrames.js'
+import { startReaderDialogsFixture } from '../apps/browser-runner/src/test/readerDialogs.js'
 import { startReaderInputFixture } from '../apps/browser-runner/src/test/readerInput.js'
 import { startReaderProfileFixture } from '../apps/browser-runner/src/test/readerProfile.js'
 import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
@@ -36,7 +37,9 @@ let forms: Awaited<ReturnType<typeof startReaderFormsFixture>> | undefined
 let frameSite: Awaited<ReturnType<typeof startReaderFramesFixture>> | undefined
 let profileSite: Awaited<ReturnType<typeof startReaderProfileFixture>> | undefined
 let inputSite: Awaited<ReturnType<typeof startReaderInputFixture>> | undefined
+let dialogSite: Awaited<ReturnType<typeof startReaderDialogsFixture>> | undefined
 const chats: Record<string, string> = {}
+const browserTrace: Array<Record<string, unknown>> = []
 const browserFailures: Array<{ path: string; status: number; body: string }> = []
 
 async function freePort(): Promise<number> {
@@ -54,7 +57,7 @@ async function api(path: string, method: string, body: unknown) {
   return response.json()
 }
 
-async function mcpReply(name: string, args: Record<string, unknown> = {}) {
+async function mcpReply(name: string, args: Record<string, unknown> = {}, expectedError = false) {
   const response = await fetch(`${base}/mcp/preview?k=${MCP_SECRET}&turn=${encodeURIComponent(turn)}`, {
     method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
@@ -62,7 +65,8 @@ async function mcpReply(name: string, args: Record<string, unknown> = {}) {
   expect(response.status).toBe(200)
   const body = await response.json() as { result?: { isError?: boolean; content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> }; error?: unknown }
   expect(body.error).toBeUndefined()
-  expect(body.result?.isError, JSON.stringify(body)).not.toBe(true)
+  if (expectedError) expect(body.result?.isError, JSON.stringify(body)).toBe(true)
+  else expect(body.result?.isError, JSON.stringify(body)).not.toBe(true)
   return body.result!
 }
 
@@ -81,6 +85,7 @@ async function capture(name: string): Promise<void> {
 
 describe('Playwright Reader: настоящий интерфейс и инструменты модели', () => {
   beforeAll(async () => {
+    if (artifacts) await mkdir(artifacts, { recursive: true })
     dataDir = await mkdtemp(join(tmpdir(), 'vc-reader-e2e-'))
     const port = await freePort()
     base = `http://127.0.0.1:${port}`
@@ -88,7 +93,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     frameSite = await startReaderFramesFixture()
     profileSite = await startReaderProfileFixture()
     inputSite = await startReaderInputFixture()
-    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['input.reader.test', new URL(inputSite.origin).host], ['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
+    dialogSite = await startReaderDialogsFixture()
+    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['dialog.reader.test', new URL(dialogSite.origin).host], ['input.reader.test', new URL(inputSite.origin).host], ['profile.reader.test', new URL(profileSite.origin).host], ['forms.reader.test', new URL(forms.origin).host], ['frames.reader.test', new URL(frameSite.origin).host], ['child.reader.test', new URL(frameSite.childOrigin).host]]), idleMs: 0 })
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
@@ -117,7 +123,16 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     turn = createPreviewTurnTokens(MCP_SECRET).issue({ userId: 'admin', conversationId })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
+    page.on('pageerror', error => browserTrace.push({ at: Date.now(), event: 'pageerror', message: error.message }))
+    page.on('request', request => {
+      if (!request.url().includes('/api/browser/')) return
+      browserTrace.push({ at: Date.now(), event: 'request', path: new URL(request.url()).pathname, command: request.postDataJSON()?.command?.type })
+    })
     page.on('response', response => {
+      if (response.url().includes('/api/browser/')) void response.json().then(body => {
+        browserTrace.push({ at: Date.now(), event: 'response', path: new URL(response.url()).pathname, status: response.status(), dialogs: body.dialogs?.map((item: { id: string; type: string }) => ({ id: item.id, type: item.type })) })
+      }).catch(() => undefined)
+
       if (response.status() < 400 || !response.url().includes('/api/browser/')) return
       void response.text().then(body => browserFailures.push({ path: new URL(response.url()).pathname, status: response.status(), body: body.slice(0, 1000) })).catch(() => undefined)
     })
@@ -139,6 +154,9 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await page.screenshot({ path: join(artifacts, 'failure.png'), fullPage: true })
     await writeFile(join(artifacts, 'failure.txt'), await page.locator('body').innerText())
     await writeFile(join(artifacts, 'browser-failures.json'), JSON.stringify(browserFailures, null, 2))
+    browserTrace.push({ at: Date.now(), event: 'visibility', hidden: await page.evaluate(() => document.hidden) })
+    await writeFile(join(artifacts, 'browser-trace.json'), JSON.stringify(browserTrace.slice(-100), null, 2))
+    await writeFile(join(artifacts, 'pending-dialogs.json'), await mcp('dialogs'))
   })
 
   afterAll(async () => {
@@ -155,6 +173,7 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await frameSite?.close()
     await profileSite?.close()
     await inputSite?.close()
+    await dialogSite?.close()
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
@@ -558,6 +577,52 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     expect(JSON.parse(await mcp('scroll', { selector: '#pane', dx: 170, dy: 20 }))).toMatchObject({ ok: true, scrolled: { left: 250, top: 200 } })
     expect(JSON.parse(await mcp('scroll', { frame: '#frame', selector: '#pane', dx: 250, dy: 40 }))).toMatchObject({ ok: true, scrolled: { left: 250, top: 40 } })
     await capture('27-horizontal-scroll')
+  })
+
+  it('модель получает confirm и prompt, человек видит их и результат явного ответа', async () => {
+    await mcp('open', { url: 'http://dialog.reader.test/' })
+    const started = Date.now()
+    const blocked = await mcpReply('click', { selector: '#confirm' }, true)
+    expect(blocked.content.map(item => item.text).join(' ')).toContain('Открыт диалог confirm')
+    expect(Date.now() - started).toBeLessThan(3000)
+    const confirmation = JSON.parse(await mcp('dialogs')).dialogs[0]
+    expect(confirmation).toMatchObject({ type: 'confirm', message: 'Подтвердить действие?' })
+    await page.getByRole('dialog', { name: 'Диалог сайта' }).waitFor()
+    if (artifacts) await page.screenshot({ path: join(artifacts, '28-confirm-awaits-answer.png'), fullPage: true })
+    await mcp('handle-dialog', { dialogId: confirmation.id, accept: false })
+    await expect.poll(async () => page.getByRole('dialog', { name: 'Диалог сайта' }).count(), { timeout: 10000 }).toBe(0)
+    expect(await mcp('read', { selector: '#result' })).toContain('confirm:false')
+    await mcpReply('click', { selector: '#prompt' }, true)
+    const prompt = JSON.parse(await mcp('dialogs')).dialogs[0]
+    expect(prompt.defaultValue).toBe('Черновик')
+    await mcp('handle-dialog', { dialogId: prompt.id, accept: true, promptText: 'Документ модели' })
+    expect(await mcp('read', { selector: '#result' })).toContain('prompt:Документ модели')
+    await capture('29-model-answered-prompt')
+  })
+
+  it('панель отвечает на alert и prompt, затем оставляет защищённую страницу открытой', async () => {
+    await mcpReply('click', { selector: '#alert' }, true)
+    let dialog = page.getByRole('dialog', { name: 'Диалог сайта' })
+    await dialog.getByRole('button', { name: 'ОК', exact: true }).click()
+    await expect.poll(async () => JSON.parse(await mcp('dialogs')).total).toBe(0)
+    expect(await mcp('read', { selector: '#result' })).toContain('alert completed')
+    await mcpReply('click', { selector: '#prompt' }, true)
+    expect(JSON.parse(await mcp('dialogs')).dialogs[0]?.type).toBe('prompt')
+    dialog = page.getByRole('dialog', { name: 'Диалог сайта' })
+    await dialog.getByLabel('Ответ сайту').fill('Название пользователя')
+    if (artifacts) await page.screenshot({ path: join(artifacts, '30-human-prompt.png'), fullPage: true })
+    await dialog.getByRole('button', { name: 'ОК', exact: true }).click()
+    await expect.poll(async () => JSON.parse(await mcp('dialogs')).total).toBe(0)
+    expect(await mcp('read', { selector: '#result' })).toContain('prompt:Название пользователя')
+    await mcp('click', { selector: '#guard' })
+    await mcpReply('open', { url: 'http://dialog.reader.test/next' }, true)
+    await page.getByRole('dialog', { name: 'Покинуть страницу?' }).getByRole('button', { name: 'Остаться' }).click()
+    await expect.poll(async () => JSON.parse(await mcp('dialogs')).total).toBe(0)
+    expect(JSON.parse(await mcp('tabs')).currentUrl).toBe('http://dialog.reader.test/')
+    await mcpReply('open', { url: 'http://dialog.reader.test/next' }, true)
+    await page.getByRole('dialog', { name: 'Покинуть страницу?' }).getByRole('button', { name: 'Покинуть страницу', exact: true }).click()
+    await expect.poll(async () => JSON.parse(await mcp('tabs')).currentUrl).toBe('http://dialog.reader.test/next')
+    await capture('31-human-chose-navigation')
   })
 
 })

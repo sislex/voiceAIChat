@@ -98,3 +98,4 @@ export * from './imageStudioInternal'
 
 export * from './browserFrames'
 export * from './browserProfile'
+export * from './browserDialogs'

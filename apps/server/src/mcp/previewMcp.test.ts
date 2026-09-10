@@ -148,7 +148,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'close-tab', 'console', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'close-tab', 'console', 'dialogs', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it.each([
@@ -307,6 +307,35 @@ describe('previewMcp — инструменты browser', () => {
     const reset = await call('reset-session', { host: 'agent-1.machine.internal' })
     expect(reset.text).toContain('Сброшено cookie: 2')
     expect(clears).toEqual(['agent-1.machine.internal'])
+  })
+
+  it('dialogs возвращает диалог конкретной вкладки без контекста прокси', async () => {
+    const result = { ok: true as const, dialogs: [{ id: 'd', tabId: 't', type: 'prompt' as const, message: 'Имя', defaultValue: 'Черновик', openedAt: 1 }], total: 1 }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    await makeApp(undefined, { browserControl: control })
+    expect(JSON.parse((await call('dialogs', { tabId: 't' })).text)).toEqual(result)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'dialogs', tabId: 't' })
+  })
+
+  it.each([true, false])('handle-dialog передаёт явный ответ %s', async accept => {
+    const result = { id: 'c', conversationId: 'c', currentUrl: null, title: null, incarnation: 'i', state: 'ready' as const, activeTabId: '', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, dialogs: [] }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    await makeApp(undefined, { browserControl: control })
+    const args = { dialogId: 'd', accept, ...(accept ? { promptText: '' } : {}) }
+    expect((await call('handle-dialog', args)).isError).not.toBe(true)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'handleDialog', ...args })
+  })
+
+  it.each(['dialogs', 'handle-dialog'])('старый раннер не подтверждает %s общим ready', async name => {
+    await makeApp(undefined, { browserControl: vi.fn(async () => ({ ok: true, result: { state: 'ready' } })) as never })
+    expect((await call(name, name === 'dialogs' ? {} : { dialogId: 'd', accept: true })).isError).toBe(true)
+  })
+
+  it.each([{ dialogId: 'd', accept: false, promptText: 'ignored' }, { dialogId: 'd' }, { dialogId: '', accept: true }, { dialogId: 'd', accept: 'true' }, { dialogId: 'd', accept: true, promptText: 'x'.repeat(20001) }])('невалидный ответ не отправляется в браузер', async args => {
+    const control = vi.fn(async () => null)
+    await makeApp(undefined, { browserControl: control })
+    expect((await call('handle-dialog', args)).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
   })
 
   it('reset-session очищает Chromium и jar прокси после подтверждённого успеха', async () => {

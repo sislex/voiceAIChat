@@ -1,3 +1,4 @@
+import { BrowserSiteDialog } from './BrowserSiteDialog'
 import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/browserInput'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
@@ -137,6 +138,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   /** Имя записываемого сценария: в наборе их нечем различать. */
   const [scenarioName, setScenarioName] = useState('')
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
+  const activeDialog = meta?.dialogs?.find(dialog => dialog.tabId === meta.activeTabId)
+  const dialogOpen = useRef(false)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
   const addressDirty = useRef(false)
@@ -152,6 +155,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
 
   const applyMeta = useCallback((next: BrowserSessionMetadata): void => {
     incarnation.current = next.incarnation
+    dialogOpen.current = Boolean(next.dialogs?.some(dialog => dialog.tabId === next.activeTabId))
     setMeta(next)
     setViewportId(VIEWPORTS.find(viewport => viewport.viewport.width === next.viewport.width && viewport.viewport.height === next.viewport.height)?.id ?? null)
     if (!addressDirty.current) setAddress(isWebAddress(next.currentUrl) ? next.currentUrl : '')
@@ -160,7 +164,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   }, [])
 
   const refreshFrame = useCallback((observe = false): Promise<void> => {
-    if (!browser || !incarnation.current) return Promise.resolve()
+    if (!browser || !incarnation.current || (!observe && dialogOpen.current)) return Promise.resolve()
     const generation = alive.current
     if (frameRequest.current?.generation === generation) return frameRequest.current.promise
     const revision = frameRevision.current
@@ -181,6 +185,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             tabId = next.activeTabId
           }
         }
+        if (dialogOpen.current) { frameFailures.current = 0; setFrameError(''); return }
         const shot = await browser.screenshot(conversationId, { incarnation: currentIncarnation, ...(tabId ? { tabId } : {}), format: 'jpeg', quality: 82 })
         if (current()) { setFrame(shot.dataUrl); frameFailures.current = 0; setFrameError('') }
       } catch (err) {
@@ -278,12 +283,15 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       if (generation !== alive.current) return
       // Метаданные приходят не на всякую команду: `selector` отдаёт чтение,
       // `inspect` — журналы. Обновляем состояние только по метаданным.
+      if (command.type === 'handleDialog' && (!isBrowserSessionMetadata(next) || !Array.isArray(next.dialogs))) throw new Error('Сайт не подтвердил ответ. Обновите состояние и повторите.')
       if (isBrowserSessionMetadata(next)) applyMeta(next)
       await refreshFrame()
       return next
     } catch (err) {
       if (generation === alive.current) {
-        setMessage(err instanceof Error ? err.message : 'Команда не выполнена')
+        const detail = err instanceof Error ? err.message : 'Команда не выполнена'
+        setMessage(detail.startsWith('Открыт диалог ') ? 'Ответьте на диалог сайта, чтобы продолжить.' : detail)
+        if (detail.startsWith('Открыт диалог ')) void refreshFrame(true)
         // `BrowserError.retryable` говорит, есть ли смысл в повторе. Раньше он
         // приходил и терялся: человеку показывали текст без выхода.
         const code = (err as { code?: unknown })?.code
@@ -306,6 +314,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   }
 
   const clickAt = (event: ReactMouseEvent<HTMLImageElement>, button: 'left' | 'right', clickCount: 1 | 2): void => {
+    if (dialogOpen.current) return
     const point = pointFromEvent(event)
     if (!point) return
     const modifiers: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> = []
@@ -333,7 +342,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
 
   // Колесо: страница длиннее вьюпорта иначе недостижима — прокрутить её было нечем.
   const onFrameWheel = (event: ReactWheelEvent<HTMLImageElement>): void => {
-    if (phase !== 'ready') return
+    if (phase !== 'ready' || dialogOpen.current) return
     event.preventDefault()
     const point = pointFromEvent(event)
     if (!point) return
@@ -343,7 +352,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   }
 
   const onFrameKeyDown = (event: ReactKeyboardEvent<HTMLImageElement>): void => {
-    if (phase !== 'ready') return
+    if (phase !== 'ready' || dialogOpen.current) return
     const action = frameKeyAction({ ...event, isComposing: event.nativeEvent.isComposing })
     if (!action) return
     event.preventDefault()
@@ -423,7 +432,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
 
   const submitTyping = (): void => {
     const generation = alive.current
-    if (!typing || typingSubmission.current === generation) return
+    if (!typing || dialogOpen.current || typingSubmission.current === generation) return
     const submitted = typing
     typingSubmission.current = generation
     void (async () => {
@@ -522,8 +531,9 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
               role="tab"
               aria-selected={tab.id === meta?.activeTabId}
               title={tab.url}
+              aria-label={tab.dialogId ? `${tab.title || tab.url || 'Без названия'} — ожидает ответа` : undefined}
               onClick={() => void run({ type: 'selectTab', tabId: tab.id })}
-            >{tab.title || tab.url || 'Без названия'}</button>
+            >{tab.dialogId && <span aria-hidden="true">● </span>}{tab.title || tab.url || 'Без названия'}</button>
             {tabs.length > 1 && (
               <IconButton size="sm" aria-label={`Закрыть вкладку ${tab.title || tab.url}`} title="Закрыть вкладку"
                 onClick={() => void run({ type: 'closeTab', tabId: tab.id })}>✕</IconButton>
@@ -667,7 +677,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             ref={imgRef}
             src={frame}
             alt="Кадр Chromium"
-            tabIndex={0}
+            tabIndex={activeDialog ? -1 : 0}
+            aria-disabled={Boolean(activeDialog)}
             role="application"
             aria-label="Страница в Chromium: клик, прокрутка и клавиатура работают прямо здесь"
             onClick={(event) => clickAt(event, 'left', 1)}
@@ -675,7 +686,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             onWheel={onFrameWheel}
             onKeyDown={onFrameKeyDown}
             onPaste={(event) => {
-              if (phase !== 'ready') return
+              if (phase !== 'ready' || dialogOpen.current) return
               const text = event.clipboardData.getData('text/plain')
               if (!text) return
               event.preventDefault()
@@ -685,8 +696,14 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
           />
         : phase === 'ready' && tabs.length === 0
           ? <EmptyState title="Все вкладки закрыты" description="Откройте новую вкладку кнопкой + над адресом страницы." />
-          : <div className="webpreview-empty" role="status">Запуск изолированного Chromium…</div>}
-      {busy && <span className="playwright-reader-busy" role="status">Выполняется…</span>}
+          : <div className="webpreview-empty" role="status">{activeDialog ? 'Страница ожидает ответа' : 'Запуск изолированного Chromium…'}</div>}
+      {activeDialog && <BrowserSiteDialog key={activeDialog.id} dialog={activeDialog} onAnswer={async answer => {
+        const result = await run({ type: 'handleDialog', ...answer })
+        const error = scenarioCommandError(result)
+        if (error) throw new Error(error)
+        if (!isBrowserSessionMetadata(result) || !Array.isArray(result.dialogs)) throw new Error('Сайт не подтвердил ответ. Обновите состояние и повторите.')
+      }} />}
+      {busy && !activeDialog && <span className="playwright-reader-busy" role="status">Выполняется…</span>}
     </div>
     {steps.length > 0 && (
       <div className="playwright-reader-record" role="region" aria-label="Записанный сценарий">
@@ -824,12 +841,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         type="text"
         aria-label="Ввод текста в страницу"
         placeholder="Текст в активное поле"
+        readOnly={Boolean(activeDialog)}
         value={typing}
         disabled={phase !== 'ready'}
         onChange={(event) => setTyping(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter') submitTyping() }}
       />
-      <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !typing} onClick={submitTyping}>Ввести</Button>
+      <Button size="sm" variant="secondary" disabled={phase !== 'ready' || Boolean(activeDialog) || !typing} onClick={submitTyping}>Ввести</Button>
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key: 'Enter' } })}>Enter</Button>
     </div>
     {frameError && <div className="playwright-reader-message" role="status">{frameError}</div>}

@@ -160,7 +160,7 @@ export function claudeArgs(req: LlmRequest): string[] {
       allowed.push('mcp__browser__open', 'mcp__browser__read', 'mcp__browser__find', 'mcp__browser__click', 'mcp__browser__type')
       // Вкладки адресуются авторизованной Chromium-цели: в обычном iframe
       // сервис явно откажет. Новые инструменты должны работать и в Reader-чате.
-      allowed.push('mcp__browser__reset-session', 'mcp__browser__frames', 'mcp__browser__styles', 'mcp__browser__tabs', 'mcp__browser__new-tab', 'mcp__browser__select-tab', 'mcp__browser__close-tab', 'mcp__browser__reload', 'mcp__browser__stop-loading')
+      allowed.push('mcp__browser__dialogs', 'mcp__browser__handle-dialog', 'mcp__browser__reset-session', 'mcp__browser__frames', 'mcp__browser__styles', 'mcp__browser__tabs', 'mcp__browser__new-tab', 'mcp__browser__select-tab', 'mcp__browser__close-tab', 'mcp__browser__reload', 'mcp__browser__stop-loading')
       // Браузерная проверка задачи живёт без пользователя рядом, поэтому её
       // рабочий набор шире: неодобренный инструмент в headless объявлен, но
       // каждый вызов упирается в разрешение — снаружи это выглядит как

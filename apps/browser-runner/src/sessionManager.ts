@@ -1,3 +1,5 @@
+import { BrowserDialogs } from './dialogs.js'
+import { boundedBrowserDialogs, type BrowserDialogListResult } from '@voicechat/shared'
 import { runBrowserInput } from './inputActions.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
@@ -16,6 +18,7 @@ import { runInspectAction } from './inspectActions.js'
 import { capturePage, type BrowserCapture } from './screenshots.js'
 
 interface Session {
+  dialogs: BrowserDialogs
   id: string
   userKey: string
   conversationKey: string
@@ -136,6 +139,7 @@ export class BrowserSessionManager {
     })
     try {
       const session: Session = {
+        dialogs: new BrowserDialogs(),
         id: request.sessionId,
         userKey: request.userKey,
         conversationKey: request.conversationKey,
@@ -181,6 +185,7 @@ export class BrowserSessionManager {
         const id = randomUUID()
         session.pageIds.set(page, id)
         session.pages.set(id, page)
+        session.dialogs.register(page, id)
         page.on('close', () => {
           session.pages.delete(id)
           session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id, session.openerIds.get(id))
@@ -216,7 +221,8 @@ export class BrowserSessionManager {
       if (saved?.cookies.length) await context.addCookies(saved.cookies).catch(() => undefined)
       await this.applyCookies(session, request.cookies)
       if (saved?.url && saved.url !== 'about:blank') {
-        try { await initial.goto(applyHostAlias(validatePublicUrl(saved.url, this.allowedTargets), this.hostAliases).toString(), { ...NAVIGATION_OPTIONS, timeout: 10000 }) }
+        const savedUrl = saved.url
+        try { await session.dialogs.run(initial, () => initial.goto(applyHostAlias(validatePublicUrl(savedUrl, this.allowedTargets), this.hostAliases).toString(), { ...NAVIGATION_OPTIONS, timeout: 10000 })) }
         catch (error) { session.console.push({ level: 'warning', text: `Последняя страница не восстановлена: ${error instanceof Error ? error.message.split('\n')[0] : 'ошибка перехода'}`, at: Date.now() }) }
       }
       return session
@@ -285,7 +291,24 @@ export class BrowserSessionManager {
     return stale
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult | BrowserDialogListResult> {
+    const session = await this.require(sessionId)
+    if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
+    session.lastUsedAt = Date.now()
+    const command = request.command
+    if ((command.type === 'dialogs' || command.type === 'handleDialog') && command.frame !== undefined) throw new Error('Диалоги принадлежат вкладке; frame здесь не поддерживается')
+    if (command.type === 'dialogs') {
+      if (command.tabId !== undefined && !session.pages.has(command.tabId)) throw new Error('stale_tab')
+      return boundedBrowserDialogs(session.dialogs.list(command.tabId), session.activeTabId)
+    }
+    if (command.type === 'handleDialog') { await session.dialogs.handle(command); session.lastActor = request.actor; return this.metadata(session) }
+    if (command.type === 'status' || command.type === 'selectTab' || (command.type === 'inspect' && ['console', 'network'].includes(command.action.kind))) return this.executeCommand(sessionId, request)
+    const targetId = command.type === 'closeTab' ? command.tabId : request.tabId ?? session.activeTabId
+    const page = command.type === 'newTab' ? undefined : session.pages.get(targetId)
+    return session.dialogs.run(page, () => this.executeCommand(sessionId, request), command.type === 'closeTab')
+  }
+
+  private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
@@ -317,7 +340,7 @@ export class BrowserSessionManager {
       const target = session.pages.get(command.tabId)
       if (!target || target.isClosed()) throw new Error('stale_tab')
       if (command.type === 'selectTab') session.activeTabId = command.tabId
-      else await target.close()
+      else await target.close({ runBeforeUnload: !session.dialogs.forPage(target) })
       return this.metadata(session)
     }
     if (command.type === 'clearSiteData') return clearSiteData(session, session.pages.get(request.tabId ?? session.activeTabId), command, raw => this.publicUrl(raw))
@@ -409,8 +432,9 @@ export class BrowserSessionManager {
   private async metadata(session: Session): Promise<BrowserSessionMetadata> {
     session.lastUsedAt = Date.now()
     const tabs: BrowserTab[] = await Promise.all([...session.pages].map(async ([id, page]) => ({
-      id, url: this.publicUrl(page.url()), title: await page.title().catch(() => ''), active: id === session.activeTabId,
-      ...(session.openerIds.get(id) ? { openerTabId: session.openerIds.get(id) } : {})
+      id, url: this.publicUrl(page.url()), title: await session.dialogs.title(page), active: id === session.activeTabId,
+      ...(session.openerIds.get(id) ? { openerTabId: session.openerIds.get(id) } : {}),
+      ...(session.dialogs.forPage(page) ? { dialogId: session.dialogs.forPage(page)!.id } : {})
     })))
     const active = tabs.find((tab) => tab.active)
     const activePage = session.pages.get(session.activeTabId)
@@ -419,6 +443,8 @@ export class BrowserSessionManager {
     return {
       id: session.id,
       profileMode: session.profileMode,
+      dialogs: boundedBrowserDialogs(session.dialogs.list(), session.activeTabId).dialogs,
+      dialogCount: session.dialogs.list().length,
       conversationId: session.conversationKey,
       incarnation: session.incarnation,
       state: 'ready',
