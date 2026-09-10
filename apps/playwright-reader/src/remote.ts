@@ -5,6 +5,7 @@ import type { PlaywrightReaderService } from './service.js'
 export function createRemotePlaywrightReader(opts: { baseUrl: string; token: string; fetchImpl?: typeof fetch }): PlaywrightReaderService {
   const rpc = createRpcClient({ ...opts, path: INTERNAL_PLAYWRIGHT_READER_SERVICE_PATH, timeoutMs: 120_000 })
   return {
+    control: (...args) => rpc('control', ...args),
     execute: (...args) => rpc('execute', ...args),
     screenshot: (...args) => rpc('screenshot', ...args)
   }

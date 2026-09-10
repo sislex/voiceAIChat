@@ -7,19 +7,21 @@ const type = WEB_RECORDER_MESSAGE_TYPE
 function harness(overrides: { conversationId?: string } = {}) {
   let seq = 0
   const sent: WebRecorderHostMessage[] = []
+  const saves: Array<string | null> = []
   const registrations: (ReaderHostRegistration | null)[] = []
   const bridge = createReaderHostBridge({
     conversationId: overrides.conversationId ?? 'conv-1',
     newId: () => `id-${++seq}`,
     send: (message) => sent.push(message),
     capabilities: ['mcp-actions'],
+    onSaveUrl: url => saves.push(url),
     onRegistration: (registration) => registrations.push(registration)
   })
   const ready = (ids: { conversationId?: string | null; registrationId?: string | null } = {}) =>
     bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: ids.conversationId ?? null, registrationId: ids.registrationId ?? null, capabilities: ['read'] })
   const from = (registrationId: string, message: object) =>
     bridge.receive({ type, conversationId: 'conv-1', registrationId, ...message })
-  return { bridge, sent, registrations, ready, from }
+  return { bridge, sent, registrations, ready, from, saves }
 }
 
 beforeEach(() => vi.useFakeTimers())
@@ -219,4 +221,117 @@ describe('диагностика и запись', () => {
     expect(h.sent.some((m) => m.kind === 'inspector-state' && m.enabled)).toBe(true)
     expect(h.sent.some((m) => m.kind === 'recording-state' && m.enabled)).toBe(true)
   })
+})
+
+describe('host: адрес живой страницы и сохранение навигации', () => {
+  it('сохраняет новый URL ровно один раз и использует его при повторном init', () => {
+    const h = harness()
+    h.bridge.setUrl('https://shop.example/'); h.ready()
+    const registrationId = h.bridge.registrationId()!
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/next' })
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/next' })
+    expect(h.saves).toEqual(['https://shop.example/next'])
+    h.ready({ conversationId: 'conv-1', registrationId })
+    expect(h.sent.at(-1)).toMatchObject({ kind: 'init', previewUrl: 'https://shop.example/next' })
+  })
+  it('open возвращает конечный адрес после redirect', async () => {
+    const h = harness(); h.ready()
+    const pending = h.bridge.run({ kind: 'open', url: 'https://shop.example/login' })
+    h.from(h.bridge.registrationId()!, { kind: 'page-status', status: 'ready', url: 'https://shop.example/account' })
+    await expect(pending).resolves.toEqual({ ok: true, result: { url: 'https://shop.example/account' } })
+    h.bridge.dispose()
+  })
+  it('подтверждение ручного open не дублирует сохранение URL', () => {
+    const h = harness(); h.ready()
+    const registrationId = h.bridge.registrationId()!
+    h.from(registrationId, { kind: 'save-url', url: 'https://shop.example/' })
+    h.from(registrationId, { kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    expect(h.saves).toEqual(['https://shop.example/'])
+  })
+})
+
+describe('команды при смене страницы и регистрации', () => {
+  it.each(['empty', 'loading', 'error'] as const)('viewport исполняется при состоянии %s без готового документа', async status => {
+    const h = harness(); h.ready(); const id = h.bridge.registrationId()!
+    h.from(id, { kind: 'page-status', status, url: status === 'empty' ? null : 'https://example.test/', ...(status === 'error' ? { error: 'offline' } : {}) })
+    const result = h.bridge.run({ kind: 'viewport', width: 375 })
+    const command = h.sent.find(message => message.kind === 'command')!
+    expect(command).toMatchObject({ kind: 'command', action: { kind: 'viewport', width: 375 } })
+    if (command.kind === 'command') h.from(id, { kind: 'result', requestId: command.requestId, ok: true, result: { width: 375 } })
+    await expect(result).resolves.toMatchObject({ ok: true }); h.bridge.dispose()
+  })
+  it('следующий open отменяет прежний open и его очередь DOM', async () => {
+    const h = harness(); h.ready()
+    const old = h.bridge.run({ kind: 'open', url: 'https://first.test/' })
+    const stale = h.bridge.run({ kind: 'click', selector: '#danger' })
+    const next = h.bridge.run({ kind: 'open', url: 'https://second.test/' })
+    await expect(old).resolves.toMatchObject({ ok: false }); await expect(stale).resolves.toMatchObject({ ok: false })
+    await vi.advanceTimersByTimeAsync(0)
+    h.from(h.bridge.registrationId()!, { kind: 'page-status', status: 'ready', url: 'https://second.test/' })
+    await expect(next).resolves.toMatchObject({ ok: true, result: { url: 'https://second.test/' } })
+    expect(h.sent.filter(message => message.kind === 'command')).toHaveLength(0)
+    expect(h.sent.filter(message => message.kind === 'set-url' && message.url)).toEqual([expect.objectContaining({ url: 'https://second.test/' })]); h.bridge.dispose()
+  })
+  it('dispose не оставляет микрозадачу open, способную оживить iframe', async () => {
+    const h = harness(); h.ready(); const pending = h.bridge.run({ kind: 'open', url: 'https://late.test/' })
+    h.bridge.dispose(); const count = h.sent.length
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.sent).toHaveLength(count); await expect(pending).resolves.toMatchObject({ ok: false })
+  })
+  it('очистка страницы немедленно отклоняет pending', async () => {
+    const h = harness(); h.ready(); h.bridge.setUrl('https://example.test/')
+    const pending = h.bridge.run({ kind: 'read' }); h.bridge.setUrl(null)
+    await expect(pending).resolves.toMatchObject({ ok: false, error: expect.stringContaining('закрыта') }); h.bridge.dispose()
+  })
+  it('смена адреса не переносит ожидающий click на другой документ', async () => {
+    const h = harness(); h.ready(); h.bridge.setUrl('https://first.test/')
+    const pending = h.bridge.run({ kind: 'click', selector: '#confirm' }); h.bridge.setUrl('https://second.test/')
+    h.from(h.bridge.registrationId()!, { kind: 'page-status', status: 'ready', url: 'https://second.test/' })
+    await expect(pending).resolves.toMatchObject({ ok: false }); expect(h.sent.some(message => message.kind === 'command')).toBe(false); h.bridge.dispose()
+  })
+  it('сохранённый handle старой регистрации не исполняет новые команды', async () => {
+    const h = harness(); h.ready(); const old = h.registrations.at(-1)!; h.ready()
+    h.from(h.bridge.registrationId()!, { kind: 'page-status', status: 'ready', url: 'https://example.test/' })
+    await expect(old.run({ kind: 'click', selector: '#confirm' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('устарела') })
+    const count = h.sent.length; old.beginDiagnostics(); expect(h.sent).toHaveLength(count); h.bridge.dispose()
+  })
+  it('ready с ID другого разговора не меняет регистрацию', () => {
+    const h = harness(); h.ready(); const id = h.bridge.registrationId()!
+    h.ready({ conversationId: 'another-conversation', registrationId: id })
+    h.ready({ conversationId: 'another-conversation', registrationId: 'other-boot' })
+    expect(h.sent.filter(message => message.kind === 'init')).toHaveLength(1); expect(h.bridge.registrationId()).toBe(id); h.bridge.dispose()
+  })
+  it('ошибка postMessage даёт результат модели и закрывает pending', async () => {
+    let seq = 0, broken = false
+    const bridge = createReaderHostBridge({ conversationId: 'conv-1', newId: () => String(++seq), send: () => { if (broken) throw new Error('transport closed') } })
+    bridge.receive({ type, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: [] })
+    broken = true
+    await expect(bridge.run({ kind: 'open', url: 'https://example.test/' })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('передать') })
+    expect(vi.getTimerCount()).toBe(0); expect(() => bridge.dispose()).not.toThrow()
+  })
+  it('disposed от Reader снимает регистрацию и ожидания host', async () => {
+    const h = harness(); h.ready(); const id = h.bridge.registrationId()!; h.bridge.setUrl('https://example.test/')
+    const pending = h.bridge.run({ kind: 'read' }); h.from(id, { kind: 'disposed' })
+    await expect(pending).resolves.toMatchObject({ ok: false }); expect(h.bridge.getStatus()).toBe('disposed'); expect(h.registrations.at(-1)).toBeNull()
+  })
+  it('запрошенные host режимы восстанавливаются после перезагрузки shell', () => {
+    const h = harness(); h.bridge.setInspector(true); h.bridge.setRecording(true); h.ready(); h.sent.length = 0; h.ready()
+    expect(h.sent).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'inspector-state', enabled: true }), expect.objectContaining({ kind: 'recording-state', enabled: true })])); h.bridge.dispose()
+  })
+})
+
+it('промежуточный empty от reset open не отказывает следующему read', async () => {
+  const h = harness(); h.ready(); const id = h.bridge.registrationId()!
+  const open = h.bridge.run({ kind: 'open', url: 'https://example.test/' })
+  h.from(id, { kind: 'page-status', status: 'empty', url: null })
+  expect(h.bridge.getStatus()).toBe('page-loading')
+  const read = h.bridge.run({ kind: 'read' }); h.bridge.dispose()
+  await expect(open).resolves.toMatchObject({ ok: false }); await expect(read).resolves.toMatchObject({ error: expect.stringContaining('закрыта') })
+})
+it('ручной адрес Reader отменяет очередь прежнего model open', async () => {
+  const h = harness(); h.ready(); const id = h.bridge.registrationId()!
+  const open = h.bridge.run({ kind: 'open', url: 'https://model.test/' })
+  h.from(id, { kind: 'save-url', url: 'https://manual.test/' })
+  await expect(open).resolves.toMatchObject({ ok: false }); await vi.advanceTimersByTimeAsync(0)
+  expect(h.sent.some(message => message.kind === 'set-url' && message.url === 'https://model.test/')).toBe(false); h.bridge.dispose()
 })

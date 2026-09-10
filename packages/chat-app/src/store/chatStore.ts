@@ -275,7 +275,7 @@ export interface ChatActions {
     llmEngineId?: string | null
   ): Promise<void>
   setConversationProject(id: string, projectId: string | null): Promise<void>
-  setConversationPreviewUrl(id: string, previewUrl: string | null): Promise<void>
+  setConversationPreviewUrl(id: string, previewUrl: string | null, previewEngine?: 'proxy' | 'chromium'): Promise<void>
   setConversationStatus(id: string, status: ConversationStatus): Promise<void>
   fetchConversationMachines(id: string, projectId?: string | null): Promise<AgentInfo[]>
   setSearchQuery(query: string): Promise<void>
@@ -1863,9 +1863,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           ...(getState().activeId === id ? { activeConversation: conversation } : {})
         })
       },
-      async setConversationPreviewUrl(id, previewUrl) {
-        const conversation = await client['conversations:setPreviewUrl']({ id, previewUrl })
+      async setConversationPreviewUrl(id, previewUrl, previewEngine) {
+        const conversation = await client['conversations:setPreviewUrl']({ id, previewUrl, ...(previewEngine ? { previewEngine } : {}) })
         setState({
+          ...(getState().activeId === id ? { activeConversation: conversation } : {}),
           conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)),
           // previewUrl меняет принадлежность к reader-чатам.
           readerConversations: isReaderConversation(conversation)

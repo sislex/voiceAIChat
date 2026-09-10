@@ -1,3 +1,14 @@
+import { decodePreviewText, decodePreviewResponse, isPreviewText, previewContentType, previewRedirect, PreviewResponseError } from './previewResponse.js'
+import { previewKeyboardHelpers } from './previewKeyboard.js'
+import { previewReadingHelpers } from './previewReading.js'
+import { previewResourceScript } from './previewResources.js'
+import { READER_PROJECT_ORIGIN, readerProjectUrl, type ReaderProjectRequest, type ReaderProjectResponse } from '@voicechat/shared'
+import { loadPreviewProject, ProjectPreviewError } from './previewProjectLoader.js'
+import { previewInteractionHelpers } from './previewInteractions.js'
+import { previewStorageScript } from './previewStorage.js'
+import { PreviewCookieStore, responseSetCookies } from './previewCookies.js'
+import { rewritePreviewCss } from './previewStyles.js'
+import { previewNavigationScript } from './previewNavigation.js'
 import { lookup } from 'node:dns/promises'
 import type { LookupAddress } from 'node:dns'
 import { request as httpRequest } from 'node:http'
@@ -9,59 +20,20 @@ import { createHash } from 'node:crypto'
 import { uid } from '../users/auth.js'
 import { applyHostAlias, type HostAliases } from '@voicechat/browser-runner/security'
 import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../util/publicHost.js'
+import { rewritePreviewModules, rewritePreviewImportMap } from './previewModules.js'
+import { rewritePreviewHtml } from './previewHtml.js'
+import { canReadPreviewCache, canStorePreviewCache } from './previewCachePolicy.js'
 import { MachineResponseCache, isCacheableMachineResponse } from './machineCache.js'
 
 const MAX_REDIRECTS = 5
 const MAX_BYTES = 5 * 1024 * 1024
 const TIMEOUT_MS = 10_000
 
-type StoredCookie = { name: string; value: string; domain: string; path: string; secure: boolean; expires?: number }
-const cookiesByUser = new Map<string, StoredCookie[]>()
-
-function parseCookie(line: string, url: URL): StoredCookie | null {
-  const [pair, ...attributes] = line.split(';').map((part) => part.trim())
-  const split = pair.indexOf('=')
-  if (split < 1) return null
-  const cookie: StoredCookie = { name: pair.slice(0, split), value: pair.slice(split + 1), domain: url.hostname, path: url.pathname.replace(/\/[^/]*$/, '/') || '/', secure: false }
-  for (const attribute of attributes) {
-    const [key, ...rest] = attribute.split('=')
-    const value = rest.join('=').trim()
-    switch (key.toLowerCase()) {
-      case 'domain': if (value) cookie.domain = value.replace(/^\./, '').toLowerCase(); break
-      case 'path': if (value.startsWith('/')) cookie.path = value; break
-      case 'secure': cookie.secure = true; break
-      case 'max-age': { const seconds = Number(value); if (Number.isFinite(seconds)) cookie.expires = Date.now() + seconds * 1000; break }
-      case 'expires': { const expires = Date.parse(value); if (!Number.isNaN(expires)) cookie.expires = expires; break }
-    }
-  }
-  if (url.hostname !== cookie.domain && !url.hostname.endsWith('.' + cookie.domain)) return null
-  return cookie
-}
-
-export function storeResponseCookies(userId: string, url: URL, setCookie: string | string[] | undefined): void {
-  const lines = setCookie === undefined ? [] : Array.isArray(setCookie) ? setCookie : [setCookie]
-  const cookies = (cookiesByUser.get(userId) ?? []).filter((cookie) => !cookie.expires || cookie.expires > Date.now())
-  for (const line of lines) {
-    const cookie = parseCookie(line, url)
-    if (!cookie) continue
-    const index = cookies.findIndex((item) => item.name === cookie.name && item.domain === cookie.domain && item.path === cookie.path)
-    if (cookie.expires !== undefined && cookie.expires <= Date.now()) { if (index >= 0) cookies.splice(index, 1) }
-    else if (index >= 0) cookies[index] = cookie
-    else cookies.push(cookie)
-  }
-  cookiesByUser.set(userId, cookies)
-}
-
-export function requestCookieHeader(userId: string, url: URL): string | undefined {
-  const cookies = (cookiesByUser.get(userId) ?? []).filter((cookie) => !cookie.expires || cookie.expires > Date.now())
-  cookiesByUser.set(userId, cookies)
-  const value = cookies.filter((cookie) =>
-    (url.protocol === 'https:' || !cookie.secure) &&
-    (url.hostname === cookie.domain || url.hostname.endsWith('.' + cookie.domain)) &&
-    url.pathname.startsWith(cookie.path)
-  ).sort((a, b) => b.path.length - a.path.length).map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
-  return value || undefined
-}
+// Экспорт совместимости для чистых тестов; живые маршруты получают свой контейнер.
+const legacyCookies = new PreviewCookieStore()
+export const storeResponseCookies = legacyCookies.store.bind(legacyCookies)
+export const requestCookieHeader = legacyCookies.header.bind(legacyCookies)
+export const clearPreviewCookies = legacyCookies.clear.bind(legacyCookies)
 
 export class PreviewProxyError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -91,6 +63,9 @@ export interface PreviewMachineBridge {
 }
 
 export interface PreviewProxyDeps {
+  projectResource?: (request: ReaderProjectRequest) => Promise<ReaderProjectResponse>
+  /** Изолированный контейнер; тесты могут передать его явно. */
+  cookies?: PreviewCookieStore
   /** Разрешённые оператором пары VC_BROWSER_HOST_ALIASES; пользователь их не задаёт. */
   hostAliases?: HostAliases
   machines?: {
@@ -101,7 +76,8 @@ export interface PreviewProxyDeps {
 }
 
 function headerValue(headers: Record<string, string | string[]>, name: string): string | undefined {
-  const value = headers[name] ?? headers[name.toLowerCase()]
+  const key = Object.keys(headers).find(key => key.toLowerCase() === name.toLowerCase())
+  const value = key === undefined ? undefined : headers[key]
   return Array.isArray(value) ? value[0] : value
 }
 
@@ -135,20 +111,22 @@ function proxyUrl(value: string, base: URL): string {
 export const PREVIEW_INSPECTOR_SCRIPT_ID = 'voicechat-preview-inspector'
 
 /** Emulates a browser origin while the rendered document safely stays on ChatAI origin. */
-export function previewContextScript(base: string): string {
+export function previewContextScript(base: string, documentBase = base): string {
   const baseUrl = new URL(base)
-  const key = JSON.stringify(`voicechat.preview.context.v1:${baseUrl.origin}:`)
+  const key = `voicechat.preview.context.v1:${baseUrl.origin}:`
   const fallbackBase = JSON.stringify(baseUrl.toString())
-  return `<script>(()=>{const p=${key},nativeLocal=window.localStorage,nativeSession=window.sessionStorage;
-const storage=(native)=>({get length(){return Object.keys(native).filter(k=>k.startsWith(p)).length},key(i){return Object.keys(native).filter(k=>k.startsWith(p))[i]?.slice(p.length)??null},getItem(k){return native.getItem(p+String(k))},setItem(k,v){native.setItem(p+String(k),String(v))},removeItem(k){native.removeItem(p+String(k))},clear(){Object.keys(native).filter(k=>k.startsWith(p)).forEach(k=>native.removeItem(k))}});
-for(const [name,native] of [['localStorage',nativeLocal],['sessionStorage',nativeSession]])try{Object.defineProperty(window,name,{configurable:true,value:storage(native)})}catch{}
-const nativeIdb=window.indexedDB;if(nativeIdb)try{Object.defineProperty(window,'indexedDB',{configurable:true,value:new Proxy(nativeIdb,{get(target,key){const value=Reflect.get(target,key,target);if(key==='open'||key==='deleteDatabase')return (name,...args)=>value.call(target,p+String(name),...args);return typeof value==='function'?value.bind(target):value}})})}catch{}
+  return `<script>(()=>{${previewStorageScript(key)}
 const fallbackBase=${fallbackBase};
+// URL ответа может отличаться после redirect; runtime должен видеть ту же базу,
+// что и переписанные HTML-ресурсы. replaceState не добавляет пустой шаг назад.
+try{const outer=new URL(location.href);if(outer.pathname==='/api/preview'&&outer.searchParams.has('url')){const final=new URL(fallbackBase);if(outer.hash)final.hash=outer.hash;outer.searchParams.set('url',final.toString());outer.hash=final.hash;history.replaceState(history.state,'',outer.toString())}}catch{}
 const currentBase=()=>{try{const u=new URL(location.href);const t=u.searchParams.get('url');if(u.pathname==='/api/preview'&&t)return t}catch{}return fallbackBase};
+const documentBase=${JSON.stringify(documentBase)};
 const toProxy=(value)=>{const s=String(value);
 try{const local=new URL(s,location.href);if(local.origin===location.origin&&local.pathname==='/api/preview'&&local.searchParams.has('url'))return s}catch{}
-try{const u=new URL(s,currentBase());if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())}catch{}
+try{const u=new URL(s,documentBase===fallbackBase?currentBase():documentBase);if(u.protocol==='http:'||u.protocol==='https:')return '/api/preview?url='+encodeURIComponent(u.toString())+u.hash}catch{}
 return s};
+${previewResourceScript()}
 const cleanHeaders=(headers)=>{const h=new Headers(headers||undefined);const auth=h.get('authorization');if(auth!==null){h.delete('authorization');h.set('x-preview-authorization',auth)}return h};
 const nativeFetch=typeof window.fetch==='function'?window.fetch.bind(window):null;
 if(nativeFetch)window.fetch=function(input,init){
@@ -172,8 +150,9 @@ try{const nativeAssign=location.assign.bind(location);Object.defineProperty(loca
 try{const nativeLocReplace=location.replace.bind(location);Object.defineProperty(location,'replace',{configurable:true,value:(value)=>nativeLocReplace(toProxy(String(value)))})}catch{}
 try{const hrefDescriptor=Object.getOwnPropertyDescriptor(location,'href');if(hrefDescriptor&&hrefDescriptor.set&&hrefDescriptor.configurable){const setHref=hrefDescriptor.set.bind(location),getHref=hrefDescriptor.get?hrefDescriptor.get.bind(location):()=>String(location);Object.defineProperty(location,'href',{configurable:true,get:getHref,set:(value)=>setHref(toProxy(String(value)))})}}catch{}
 if(window.history)try{const nativePush=history.pushState.bind(history),nativeReplaceState=history.replaceState.bind(history);
-history.pushState=(state,title,url)=>nativePush(state,title,url==null?url:toProxy(String(url)));
-history.replaceState=(state,title,url)=>nativeReplaceState(state,title,url==null?url:toProxy(String(url)))}catch{}
+history.pushState=(state,title,url)=>{nativePush(state,title,url==null?url:toProxy(String(url)));dispatchEvent(new Event('voicechat.preview.navigation'))};
+history.replaceState=(state,title,url)=>{nativeReplaceState(state,title,url==null?url:toProxy(String(url)));dispatchEvent(new Event('voicechat.preview.navigation'))}}catch{}
+${previewNavigationScript()}
 // Deep-link: фрагмент реального адреса (#/machines) не доезжает до iframe-документа
 // (он живёт внутри query ?url=...) — восстанавливаем его для hash-роутеров SPA.
 try{const target=new URL(currentBase());if(target.hash&&!location.hash)location.hash=target.hash}catch{}
@@ -224,7 +203,7 @@ const styles=(el)=>{const s=getComputedStyle(el);return {
 const payload=(el)=>{const r=el.getBoundingClientRect(),data={};for(const a of [...el.attributes])if(a.name.startsWith('data-')&&Object.keys(data).length<ARRAY_LIMIT)data[a.name]=a.value.slice(0,TEXT_LIMIT);return {
   tag:el.localName,id:el.id,classes:[...el.classList].slice(0,ARRAY_LIMIT),dataAttributes:data,selector:uniqueSelector(el),ancestors:ancestors(el),
   rect:{x:r.x,y:r.y,top:r.top,right:r.right,bottom:r.bottom,left:r.left,width:r.width,height:r.height},
-  pageUrl:location.href,viewport:{width:innerWidth,height:innerHeight},outerHTML:el.outerHTML.slice(0,HTML_LIMIT),
+  pageUrl:pageInfo().url,viewport:{width:innerWidth,height:innerHeight},outerHTML:el.outerHTML.slice(0,HTML_LIMIT),
   text:(el.innerText||el.textContent||'').trim().slice(0,TEXT_LIMIT),styles:styles(el)
 }};
 const move=(e)=>{if(!active)return;const el=e.target;if(el instanceof Element&&!el.closest('[data-voicechat-inspector]'))draw(el)};
@@ -233,7 +212,6 @@ const key=(e)=>{if(active&&e.key==='Escape'){e.preventDefault();disable();parent
 const enable=()=>{if(active)return;active=true;document.addEventListener('pointerover',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true)};
 const disable=()=>{active=false;selected=null;document.removeEventListener('pointerover',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);hide()};
 const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1', READY='voicechat.preview.page-ready.v1', LOADING='voicechat.preview.page-loading.v1', RECORD='voicechat.preview.record.v1';
-parent.postMessage({type:READY,url:location.href},location.origin);
 addEventListener('beforeunload',()=>parent.postMessage({type:LOADING,url:location.href},location.origin));
 // ---- Буферы страницы: ошибки (errors), сеть (network) и консоль (console) ----
 const pageErrors=[];const ERRORS_CAP=100;
@@ -262,13 +240,16 @@ function unproxyLazy(value){return typeof unproxy==='function'?unproxy(value):St
 const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
 const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],input,select,textarea,label,summary,[onclick]';
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
-const pageInfo=()=>({url:unproxy(location.href),title:document.title||''});
+const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url);target.hash=location.hash;url=target.toString()}catch{}return {url,title:document.title||''}};
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
+${previewInteractionHelpers()}
+${previewReadingHelpers()}
+${previewKeyboardHelpers()}
 const describe=(el)=>{
-  const d={selector:uniqueSelector(el),tag:el.localName,text:textOf(el).slice(0,EL_TEXT)};
+  const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el)};
   const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
   const role=el.getAttribute('role')||(el.localName==='input'?(el.type||'text'):'');if(role)d.role=role;
-  if(el.disabled===true)d.disabled=true;
+  Object.assign(d,controlState(el));
   return d
 };
 const bySelector=(selector)=>{let list;try{list=document.querySelectorAll(selector)}catch{throw new Error('Некорректный CSS-селектор: '+selector)}return [...list].filter(el=>!el.closest('[data-voicechat-inspector]'))};
@@ -277,8 +258,8 @@ const byText=(text)=>{
   if(!q)return[];
   const all=[];
   for(const el of document.querySelectorAll('body *')){
-    if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}')continue;
-    const t=textOf(el);
+    if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}'||!actionVisible(el))continue;
+    const t=accessibleName(el)||textOf(el);
     if(!t||t.length>300||!t.toLowerCase().includes(q))continue;
     all.push(el)
   }
@@ -287,7 +268,7 @@ const byText=(text)=>{
   const clickable=(el)=>el.matches(CLICKABLE)||el.closest(CLICKABLE)?0:1;
   return deepest.sort((a,b)=>(exact(a)-exact(b))||(clickable(a)-clickable(b)))
 };
-const findTargets=(action)=>action.selector?bySelector(action.selector):byText(action.text||'');
+const findTargets=(action)=>(action.selector?bySelector(action.selector):byText(action.text||'')).filter(action.kind==='find'?readingVisible:actionVisible);
 const clickTarget=(el)=>{const host=el.matches(CLICKABLE)?el:(el.closest(CLICKABLE)||el);return host};
 const setNativeValue=(el,value)=>{
   const proto=el.localName==='textarea'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
@@ -296,44 +277,40 @@ const setNativeValue=(el,value)=>{
 };
 const run=(action)=>{
   if(action.kind==='find'){
-    const found=findTargets(action);
+    const found=findTargets(action).filter(el=>!action.visibleOnly||(typeof el.checkVisibility==='function'?el.checkVisibility({visibilityProperty:true}):getComputedStyle(el).display!=='none'&&getComputedStyle(el).visibility!=='hidden'));
     const limit=Math.max(1,Math.min(FIND_MAX,typeof action.limit==='number'?Math.floor(action.limit):10));
-    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length}
+    return {page:pageInfo(),elements:found.slice(0,limit).map(describe),total:found.length,...(found.length>limit?{truncated:true}:{})}
   }
   if(action.kind==='click'){
-    const found=findTargets(action);
-    if(!found.length)throw new Error('Элемент не найден: '+(action.selector||action.text));
-    const el=clickTarget(found[0]);
+    const el=chooseTarget(action,true);actionable(el);
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
-    const info=describe(el);
-    const mods=Array.isArray(action.modifiers)?action.modifiers:[];
-    const fancy=action.button==='right'||action.dblclick===true||mods.length>0;
-    if(!fancy){typeof el.click==='function'?el.click():el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return {page:pageInfo(),clicked:info}}
-    // el.click() не передаёт кнопку и модификаторы — полный событийный путь.
-    const r=el.getBoundingClientRect();
-    const base={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,shiftKey:mods.includes('shift'),ctrlKey:mods.includes('ctrl'),altKey:mods.includes('alt'),metaKey:mods.includes('meta'),button:action.button==='right'?2:0};
-    el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true},base)));
-    el.dispatchEvent(new MouseEvent('mousedown',base));
-    el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerup',Object.assign({pointerId:1,isPrimary:true},base)));
-    el.dispatchEvent(new MouseEvent('mouseup',base));
-    if(action.button==='right'){el.dispatchEvent(new MouseEvent('contextmenu',base))}
-    else{
-      el.dispatchEvent(new MouseEvent('click',base));
-      if(action.dblclick){el.dispatchEvent(new MouseEvent('click',Object.assign({detail:2},base)));el.dispatchEvent(new MouseEvent('dblclick',Object.assign({detail:2},base)))}
+    const info=describe(el),mods=Array.isArray(action.modifiers)?action.modifiers:[];
+    const r=el.getBoundingClientRect(),right=action.button==='right';
+    const base={bubbles:true,cancelable:true,composed:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,shiftKey:mods.includes('shift'),ctrlKey:mods.includes('ctrl'),altKey:mods.includes('alt'),metaKey:mods.includes('meta'),button:right?2:0};
+    const count=action.dblclick&&!right?2:1;
+    for(let index=1;index<=count;index++){
+      const down=el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true,buttons:right?2:1,detail:index},base)));
+      const mouse=down&&el.dispatchEvent(new MouseEvent('mousedown',Object.assign({buttons:right?2:1,detail:index},base)));
+      if(mouse)el.focus&&el.focus({preventScroll:true});
+      el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerup',Object.assign({pointerId:1,isPrimary:true,buttons:0,detail:index},base)));
+      if(down)el.dispatchEvent(new MouseEvent('mouseup',Object.assign({buttons:0,detail:index},base)));
+      el.dispatchEvent(new MouseEvent(right?'contextmenu':'click',Object.assign({buttons:0,detail:index},base)))
     }
+    if(count===2)el.dispatchEvent(new MouseEvent('dblclick',Object.assign({buttons:0,detail:2},base)));
     return {page:pageInfo(),clicked:info}
   }
   if(action.kind==='type'){
-    const found=bySelector(action.selector);
-    if(!found.length)throw new Error('Поле не найдено: '+action.selector);
-    const el=found[0];
+    const el=chooseTarget(action);actionable(el,true);
     const editable=el.isContentEditable;
     if(!editable&&el.localName!=='input'&&el.localName!=='textarea'&&el.localName!=='select')throw new Error('Элемент не является полем ввода: '+action.selector);
+    validateInput(el,action.text);
+    const option=el.localName==='select'?selectOption(el,action.text):null;
     el.focus&&el.focus();
+    if(!el.dispatchEvent(inputEvent('beforeinput',action.text,true)))throw new Error('Страница отклонила ввод');
     if(editable){el.textContent=action.text}
-    else if(el.localName==='select'){el.value=action.text}
+    else if(option){el.value=option.value}
     else setNativeValue(el,action.text);
-    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(inputEvent('input',action.text));
     el.dispatchEvent(new Event('change',{bubbles:true}));
     let submitted=false;
     if(action.submit){
@@ -366,8 +343,9 @@ const run=(action)=>{
     if(action.to==='top')el.scrollTop=0;
     else if(action.to==='bottom')el.scrollTop=el.scrollHeight;
     else if(typeof action.dy==='number')el.scrollTop=el.scrollTop+action.dy;
+    if(typeof action.dx==='number')el.scrollLeft=el.scrollLeft+action.dx;
     el.dispatchEvent(new Event('scroll',{bubbles:true}));
-    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop:Math.max(0,el.scrollHeight-el.clientHeight)}}
+    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop:Math.max(0,el.scrollHeight-el.clientHeight),maxLeft:Math.max(0,el.scrollWidth-el.clientWidth)}}
   }
   if(action.kind==='errors'){
     const errors=pageErrors.slice(-50).map((e)=>({kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{})}));
@@ -463,15 +441,10 @@ const run=(action)=>{
     })
   }
   if(action.kind==='set'){
-    const found=bySelector(action.selector);
-    if(!found.length)throw new Error('Элемент не найден: '+action.selector);
-    const el=found[0];
+    const el=chooseTarget(action);actionable(el);
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     if(el.localName==='select'){
-      const options=[...el.options];
-      const wanted=String(action.value??'');
-      const target=options.find((o)=>o.value===wanted)||options.find((o)=>textOf(o).toLowerCase()===wanted.toLowerCase());
-      if(!target)throw new Error('Опция не найдена: '+wanted);
+      const target=selectOption(el,action.value??'');
       el.value=target.value;
       el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
       return {page:pageInfo(),set:describe(el),value:el.value}
@@ -479,10 +452,13 @@ const run=(action)=>{
     if(el.localName==='input'&&(el.type==='checkbox'||el.type==='radio')){
       const want=action.checked!==undefined?action.checked:true;
       // Нативный клик сам обновляет checked и шлёт input/change/click.
+      if(el.type==='radio'&&el.checked&&!want)throw new Error('Radio нельзя снять кликом — выберите другую опцию группы');
       if(el.checked!==want)el.click();
+      if(el.checked!==want)throw new Error('Страница отклонила изменение переключателя');
       return {page:pageInfo(),set:describe(el),value:String(el.checked)}
     }
     if(el.localName==='input'||el.localName==='textarea'){
+      actionable(el,true);validateInput(el,String(action.value??''));
       setNativeValue(el,String(action.value??''));
       el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
       return {page:pageInfo(),set:describe(el),value:String(el.value).slice(0,EL_TEXT)}
@@ -505,57 +481,15 @@ const run=(action)=>{
     return {page:pageInfo(),uploaded:{selector:uniqueSelector(el),name:action.name,size:bytes.length}}
   }
   if(action.kind==='a11y'){
-    let scope=document.body||document.documentElement;
-    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
-    const roleOf=(el)=>{
-      const explicit=el.getAttribute('role');if(explicit)return explicit;
-      const tag=el.localName;
-      if(tag==='a'&&el.hasAttribute('href'))return 'link';
-      if(tag==='button')return 'button';
-      if(tag==='select')return 'combobox';
-      if(tag==='textarea')return 'textbox';
-      if(tag==='img')return 'img';
-      if(tag==='nav')return 'navigation';
-      if(tag==='main')return 'main';
-      if(tag==='header')return 'banner';
-      if(tag==='footer')return 'contentinfo';
-      if(tag==='form')return 'form';
-      if(tag==='table')return 'table';
-      if(tag==='li')return 'listitem';
-      if(tag==='ul'||tag==='ol')return 'list';
-      if(/^h[1-6]$/.test(tag))return 'heading';
-      if(tag==='input'){const t=el.type||'text';if(t==='checkbox'||t==='radio')return t;if(t==='submit'||t==='button')return 'button';if(t==='range')return 'slider';if(t==='hidden')return '';return 'textbox'}
-      return ''
-    };
-    const nameOf=(el)=>{
-      const aria=el.getAttribute('aria-label');if(aria)return aria;
-      const labelledBy=el.getAttribute('aria-labelledby');
-      if(labelledBy){const ref=document.getElementById(labelledBy.split(/\\s+/)[0]);if(ref)return textOf(ref)}
-      if(el.localName==='img')return el.getAttribute('alt')||'';
-      if(el.localName==='input'||el.localName==='select'||el.localName==='textarea'){
-        if(el.labels&&el.labels.length)return textOf(el.labels[0]);
-        return el.getAttribute('placeholder')||el.name||''
-      }
-      return textOf(el)
-    };
-    const visible=(el)=>typeof el.checkVisibility==='function'?el.checkVisibility():true;
-    const limit=Math.max(1,Math.min(200,typeof action.limit==='number'?Math.floor(action.limit):200));
+    const scope=readingScope(action),limit=Math.max(1,Math.min(200,typeof action.limit==='number'?Math.floor(action.limit):200));
     const nodes=[];let total=0;
     const walk=(el,level)=>{
-      for(const child of el.children){
-        if(child.closest('[data-voicechat-inspector]')||child.localName==='script'||child.localName==='style')continue;
-        const role=roleOf(child);
-        let next=level;
-        if(role&&visible(child)){
-          total++;
-          if(nodes.length<limit)nodes.push({role,name:nameOf(child).slice(0,EL_TEXT),selector:uniqueSelector(child),level});
-          next=level+1
-        }
-        walk(child,next)
-      }
+      if(!accessibleVisible(el))return;
+      const role=accessibleRole(el);let next=level;
+      if(role){total++;if(nodes.length<limit)nodes.push({role,name:accessibleName(el),selector:uniqueSelector(el),level,...controlState(el)});next++}
+      for(const child of el.children)walk(child,next)
     };
-    walk(scope,0);
-    return {page:pageInfo(),nodes,total}
+    walk(scope,0);return {page:pageInfo(),nodes,total}
   }
   if(action.kind==='edits'){
     const edits=loadEdits();
@@ -579,38 +513,25 @@ const run=(action)=>{
     return captureArea(rect,1400).then((dataUrl)=>({page:pageInfo(),rect,dataUrl}))
   }
   if(action.kind==='press'){
-    let el=document.activeElement&&document.activeElement!==document.body?document.activeElement:document.body;
-    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];el.focus&&el.focus()}
-    const opts={key:action.key,bubbles:true,cancelable:true};
-    el.dispatchEvent(new KeyboardEvent('keydown',opts));
-    el.dispatchEvent(new KeyboardEvent('keyup',opts));
-    return {page:pageInfo(),pressed:{key:action.key,selector:el===document.body?'body':uniqueSelector(el)}}
+    const el=action.selector?chooseTarget(action):(document.activeElement||document.body);
+    if(action.selector){actionable(el);el.focus&&el.focus()}
+    return {page:pageInfo(),pressed:performKey(el,action.key)}
   }
   if(action.kind==='read'){
-    let scope=document.body||document.documentElement;
-    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
-    const headings=[...scope.querySelectorAll('h1,h2,h3,h4,h5,h6')].slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:textOf(h).slice(0,EL_TEXT)}));
-    const links=[];const seen=new Set();
-    for(const a of scope.querySelectorAll('a[href]')){
-      if(links.length>=LINKS)break;
-      const t=textOf(a).slice(0,EL_TEXT);const href=unproxy(a.getAttribute('href'));
-      if(!t||seen.has(t+'|'+href))continue;seen.add(t+'|'+href);links.push({text:t,href})
-    }
-    const buttons=[...scope.querySelectorAll('button,[role=button],input[type=submit],input[type=button]')].map(b=>textOf(b).slice(0,EL_TEXT)||(b.value||'').slice(0,EL_TEXT)).filter(Boolean).slice(0,BUTTONS);
-    const inputs=[...scope.querySelectorAll('input,textarea,select')].slice(0,INPUTS).map(i=>({
-      selector:uniqueSelector(i),
-      type:i.localName==='input'?(i.type||'text'):i.localName,
-      name:i.name||'',
-      placeholder:i.getAttribute('placeholder')||'',
-      value:i.type==='password'?'':String(i.value||'').slice(0,EL_TEXT)
-    }));
-    return {page:pageInfo(),headings,links,buttons,inputs,text:textOf(scope).slice(0,SNIPPET)}
+    const scope=readingScope(action);
+    const headings=scopeElements(scope,'h1,h2,h3,h4,h5,h6').slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:readableText(h,EL_TEXT)}));
+    const links=[],seen=new Set();
+    for(const a of scopeElements(scope,'a[href]')){if(links.length>=LINKS)break;const text=accessibleName(a),href=unproxy(a.getAttribute('href'));if(!text||seen.has(text+'|'+href))continue;seen.add(text+'|'+href);links.push({text,href})}
+    const buttons=scopeElements(scope,'button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image]').map(el=>accessibleName(el)).filter(Boolean).slice(0,BUTTONS);
+    const inputs=scopeElements(scope,'input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el)}));
+    const text=readableText(scope,Number.MAX_SAFE_INTEGER),offset=action.offset??0,limit=action.limit??SNIPPET,end=Math.min(text.length,offset+limit);
+    return {page:pageInfo(),headings,links,buttons,inputs,text:text.slice(offset,end),total:text.length,offset,...(end<text.length?{truncated:true,nextOffset:end}:{})}
   }
   throw new Error('Неизвестное действие')
 };
 const reply=(requestId,ok,payload)=>parent.postMessage(ok?{type:RESULT,requestId,ok:true,result:payload}:{type:RESULT,requestId,ok:false,error:String(payload).slice(0,2000)},location.origin);
 let recording=false,diagnosticRunning=false,lastRecordedClickAt=0;
-const sensitive=(el)=>el.localName==='input'&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
+const sensitive=(el)=>['input','textarea'].includes(el.localName)&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
 const record=(step)=>{if(recording&&!diagnosticRunning&&!editActive)parent.postMessage({type:RECORD,step},location.origin)};
 const recordClick=(e)=>{const el=e.target instanceof Element?clickTarget(e.target):null;if(el&&!el.closest('[data-voicechat-inspector]')){lastRecordedClickAt=Date.now();record({kind:'click',selector:uniqueSelector(el),text:textOf(el).slice(0,EL_TEXT)})}};
 const recordInput=(e)=>{const el=e.target instanceof Element?e.target:null;if(!el||el.closest('[data-voicechat-inspector]')||!el.matches('input,textarea,select,[contenteditable=true]'))return;record({kind:'type',selector:uniqueSelector(el),text:sensitive(el)?'':String(el.value===undefined?el.textContent||'':el.value).slice(0,2000),sensitive:sensitive(el)})};
@@ -826,28 +747,29 @@ const message=(e)=>{
     finally{diagnosticRunning=false}
   }
 };
-addEventListener('message',message);addEventListener('pagehide',()=>{disable();disableEdit();disableCapture();setRecording(false);removeEventListener('message',message)},{once:true});
+const ready=()=>parent.postMessage({type:READY,...pageInfo()},location.origin);
+addEventListener('message',message);
+for(const event of ['hashchange','popstate','voicechat.preview.navigation'])addEventListener(event,ready);
+// BFCache сохраняет документ после pagehide: восстанавливаем его обработчик.
+addEventListener('pageshow',()=>{addEventListener('message',message);ready()});
+addEventListener('pagehide',()=>{disable();disableEdit();disableCapture();setRecording(false);removeEventListener('message',message)});
+ready();
 })();<\/script>`
 }
 
-export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = isMachinePreviewHost(base.hostname)): Buffer {
-  let text = body.toString('utf8')
-  const rewriteCssUrls = (css: string): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
+export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = true): Buffer {
+  if (!isPreviewText(type)) return body
+  let text = decodePreviewText(body, type)
+  const rewriteCssUrls = (css: string, targetBase = base): string => rewritePreviewCss(css, targetBase, proxyUrl)
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
-    text = text.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)content-security-policy\1[^>]*>/gi, '')
-      // target=_blank выпрыгивал бы из iframe в голую вкладку прокси.
-      .replace(/\starget\s*=\s*(["'])_blank\1/gi, '')
-      .replace(/\b(href|src|action|poster)\s*=\s*(["'])(.*?)\2/gi, (_m, name, quote, value) => name + '=' + quote + proxyUrl(value, base) + quote)
-      .replace(/\bsrcset\s*=\s*(["'])(.*?)\1/gi, (_m, quote, value) => 'srcset=' + quote + value.split(',').map((part: string) => {
-        const [url, ...descriptor] = part.trim().split(/\s+/)
-        return proxyUrl(url, base) + (descriptor.length ? ' ' + descriptor.join(' ') : '')
-      }).join(', ') + quote)
-      .replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi, (_m, open, css, close) => open + rewriteCssUrls(css) + close)
-      .replace(/\bstyle\s*=\s*(["'])(.*?)\1/gi, (_m, quote, value) => 'style=' + quote + rewriteCssUrls(value) + quote)
-    const context = previewContextScript(base.toString())
-    const inspector = previewInspectorScript()
-    text = /<head\b[^>]*>/i.test(text) ? text.replace(/<head\b[^>]*>/i, (head) => head + context) : context + text
-    text = /<\/body\s*>/i.test(text) ? text.replace(/<\/body\s*>/i, inspector + '</body>') : text + inspector
+    text = rewritePreviewHtml(text, base, {
+      url: proxyUrl,
+      css: rewriteCssUrls,
+      module: rewriteModuleSpecifiers,
+      importMap: (source, mapBase) => rewritePreviewImportMap(source, mapBase, proxyUrl),
+      context: (documentBase) => previewContextScript(base.toString(), documentBase.toString()),
+      inspector: previewInspectorScript()
+    })
   }
   if (/text\/css/i.test(type)) text = rewriteCssUrls(text)
   // ESM-модули dev-сервера на машине. Их импорты браузер резолвит сам: `/@vite/client`
@@ -869,12 +791,7 @@ export function isMachinePreviewHost(hostname: string): boolean {
  * статике они и не встречаются.
  */
 export function rewriteModuleSpecifiers(code: string, base: URL): string {
-  const path = "(\\.{0,2}/[^'\"\n]*)"
-  const rewrite = (prefix: string, quote: string, value: string): string => prefix + quote + proxyUrl(value, base) + quote
-  return code
-    .replace(new RegExp(`(\\bfrom\\s*)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
-    .replace(new RegExp(`(\\bimport\\s*\\(\\s*)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
-    .replace(new RegExp(`(\\bimport\\s+)(['"])${path}\\2`, 'g'), (_m, prefix, quote, value) => rewrite(prefix, quote, value))
+  return rewritePreviewModules(code, base, proxyUrl)
 }
 
 /**
@@ -899,7 +816,7 @@ export function upstreamRequestHeaders(incoming: NodeJS.Dict<string | string[]>)
   return headers
 }
 
-async function get(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map()): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function get(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map(), cookies: PreviewCookieStore = legacyCookies): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   // Проверяем исходный адрес на каждом редиректе. Только операторский алиас
   // разрешает внутренний транспорт; прямое обращение к его цели остаётся закрытым.
   await assertPublicHost(url.hostname)
@@ -909,7 +826,7 @@ async function get(url: URL, userId: string, method = 'GET', body?: string | Buf
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
     const request = transport(target, {
       method,
-      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...headers, ...(requestCookieHeader(userId, url) ? { cookie: requestCookieHeader(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)) }) },
+      headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...headers, ...(cookies.header(userId, url) ? { cookie: cookies.header(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)) }) },
       timeout: TIMEOUT_MS,
       lookup(hostname, options, callback) {
         void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
@@ -924,31 +841,30 @@ async function get(url: URL, userId: string, method = 'GET', body?: string | Buf
           callback(null, result.address, result.family)
         }, (err) => callback(err, options.all ? [] : '', 4))
       }
-    }, (response) => resolve({ response, finalUrl: url }))
+    }, (response) => {
+      // Промежуточный redirect часто устанавливает сессию для следующего запроса.
+      cookies.store(userId, url, responseSetCookies(response.headers))
+      resolve({ response, finalUrl: url })
+    })
     request.once('timeout', () => request.destroy(new PreviewProxyError(504, 'Сайт не ответил вовремя')))
     request.once('error', reject)
     request.end(body)
   })
 }
 
-async function load(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map()): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function load(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map(), cookies: PreviewCookieStore = legacyCookies): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   let current = url
   let currentMethod = method
   let currentBody = body
   let currentHeaders = headers
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-    const result = await get(current, userId, currentMethod, currentBody, currentHeaders, hostAliases)
+    const result = await get(current, userId, currentMethod, currentBody, currentHeaders, hostAliases, cookies)
     const location = result.response.headers.location
     if (!location || ![301, 302, 303, 307, 308].includes(result.response.statusCode ?? 0)) return result
     result.response.resume()
     if (redirects === MAX_REDIRECTS) throw new PreviewProxyError(502, 'Слишком много перенаправлений')
-    if ([301, 302, 303].includes(result.response.statusCode ?? 0) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
-      currentMethod = 'GET'
-      currentBody = undefined
-      currentHeaders = { ...currentHeaders }
-      delete currentHeaders['content-type']
-    }
-    current = new URL(location, current)
+    const next = previewRedirect(current, location, result.response.statusCode!, currentMethod, currentBody, currentHeaders)
+    current = next.url; currentMethod = next.method; currentBody = next.body; currentHeaders = next.headers
     if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new PreviewProxyError(400, 'Разрешены только HTTP и HTTPS')
   }
   throw new PreviewProxyError(502, 'Не удалось загрузить сайт')
@@ -1000,12 +916,13 @@ async function loadViaMachine(
   url: URL,
   method: string,
   body: string | Buffer | undefined,
-  incomingHeaders: Record<string, string | string[]>
+  incomingHeaders: Record<string, string | string[]>,
+  cookies: PreviewCookieStore
 ): Promise<{ status: number; headers: Record<string, string | string[]>; body: Buffer; finalUrl: URL }> {
   let current = url
   let currentMethod = method
   let currentBody = body
-  const headers = { ...incomingHeaders }
+  let headers = { ...incomingHeaders }
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
     const agentId = machineAgentIdOf(current.hostname)
     if (!agentId) throw new PreviewProxyError(502, 'Тестовое окружение перенаправило наружу — открой внешний адрес напрямую')
@@ -1013,7 +930,7 @@ async function loadViaMachine(
     if (!deps.bridge.isOnline(agentId)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
     const secure = current.protocol === 'https:'
     const port = current.port ? Number(current.port) : secure ? 443 : 80
-    const cookie = requestCookieHeader(userId, current)
+    const cookie = cookies.header(userId, current)
     let response: AgentHttpResponse
     try {
       response = await deps.bridge.http(agentId, {
@@ -1027,36 +944,20 @@ async function loadViaMachine(
     } catch (err) {
       throw new PreviewProxyError(502, err instanceof Error ? err.message : 'Тестовое окружение недоступно')
     }
-    storeResponseCookies(userId, current, response.headers['set-cookie'])
+    cookies.store(userId, current, responseSetCookies(response.headers))
     const location = headerValue(response.headers, 'location')
     if (location && [301, 302, 303, 307, 308].includes(response.status)) {
       const next = new URL(location, current)
-      // Окружение знает себя как 127.0.0.1/localhost — возвращаем редирект на мост той же машины.
+      // Сначала возвращаем логический host: локальный redirect не меняет origin сайта.
       if (next.hostname === '127.0.0.1' || next.hostname === 'localhost') next.hostname = agentId + MACHINE_PREVIEW_SUFFIX
-      if ([301, 302, 303].includes(response.status) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
-        currentMethod = 'GET'
-        currentBody = undefined
-        delete headers['content-type']
-      }
-      current = next
+      const redirect = previewRedirect(current, next.toString(), response.status, currentMethod, currentBody, headers)
+      currentMethod = redirect.method; currentBody = redirect.body; headers = redirect.headers
+      current = redirect.url
       continue
     }
     return { status: response.status, headers: response.headers, body: Buffer.from(response.bodyBase64, 'base64'), finalUrl: current }
   }
   throw new PreviewProxyError(502, 'Слишком много перенаправлений')
-}
-
-/** Сколько cookie снято; host сужает сброс до одного сайта (домен + поддомены). */
-export function clearPreviewCookies(userId: string, host?: string): number {
-  const cookies = cookiesByUser.get(userId) ?? []
-  if (!host) {
-    cookiesByUser.delete(userId)
-    return cookies.length
-  }
-  const target = host.toLowerCase()
-  const kept = cookies.filter((cookie) => cookie.domain !== target && !target.endsWith('.' + cookie.domain) && !cookie.domain.endsWith('.' + target))
-  cookiesByUser.set(userId, kept)
-  return cookies.length - kept.length
 }
 
 /**
@@ -1069,11 +970,10 @@ export function clearPreviewCookies(userId: string, host?: string): number {
  * Ответы машины кэшируются на минуту: dev-сервер Storybook отдаёт сотни модулей, и
  * каждый идёт до машины через мост агента. Кэш общий на процесс, ключ включает машину.
  */
-const machineCache = new MachineResponseCache()
 /** Минута в браузере: столько же живёт серверная запись, дольше держать опасно. */
-const MACHINE_CACHE_CONTROL = 'private, max-age=60'
+const MACHINE_CACHE_CONTROL = 'private, no-cache'
 
-const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'etag', 'last-modified'])
+const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'content-encoding', 'etag', 'last-modified'])
 
 /** Человеческая страница вместо JSON-ошибки: она открывается прямо в кадре. */
 export function previewErrorPage(message: string): string {
@@ -1092,11 +992,15 @@ export function previewErrorPage(message: string): string {
 }
 
 export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
+  // Экземпляры Reader могут иметь разные мосты/права; кэш не переживает их lifecycle.
+  const machineCache = new MachineResponseCache()
+  const cookies = deps.cookies ?? new PreviewCookieStore()
+  app.addHook('onClose', async () => { cookies.clearAll() })
   // Сброс сессий окружений: удобно перелогиниться под другим тестовым
   // пользователем. Авторизуется preview-cookie (кнопка «Сессия» в Reader) или Bearer.
   app.post<{ Body: { host?: string } }>('/api/preview/reset-cookies', async (req) => {
     const host = typeof req.body?.host === 'string' && req.body.host.length <= 255 ? req.body.host : undefined
-    return { cleared: clearPreviewCookies(uid(req), host) }
+    return { cleared: cookies.clear(uid(req), host) }
   })
   app.get<{ Querystring: { page?: string } }>('/api/preview/diagnostics', async (req, reply) =>
     reply.type('text/html; charset=utf-8').send(previewDiagnosticsHtml(req.query.page === 'destination'))
@@ -1109,7 +1013,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
     scope.all<{ Querystring: { url?: string }; Body: string | Buffer }>('/api/preview', async (req, reply) => {
       let url: URL
       try {
-        url = new URL(req.query.url ?? '')
+        url = new URL(readerProjectUrl(req.query.url ?? '', req.protocol + '://' + req.headers.host))
         if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error()
       } catch {
         return reply.code(400).send({ error: 'invalid_url', message: 'Разрешены только HTTP и HTTPS адреса' })
@@ -1117,19 +1021,39 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
       try {
         // Самодиагностика не выполняет сетевой запрос: принимается только точный
         // same-origin внутренний маршрут и проходит через тот же rewrite/DOM bridge.
-        if (url.pathname === '/api/preview/diagnostics' && url.host === req.headers.host) {
+        if (url.pathname === '/api/preview/diagnostics' && (url.host === req.headers.host || url.origin === READER_PROJECT_ORIGIN)) {
           const source = Buffer.from(previewDiagnosticsHtml(url.searchParams.get('page') === 'destination'))
           const rewritten = rewritePreviewBody(source, 'text/html; charset=utf-8', url)
           return reply.type('text/html; charset=utf-8').send(rewritten)
         }
         const userId = uid(req)
         const body = (typeof req.body === 'string' || Buffer.isBuffer(req.body)) && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
+        if (url.origin === READER_PROJECT_ORIGIN) {
+          if (!deps.projectResource) throw new PreviewProxyError(502, 'Текущее приложение недоступно этому Reader')
+          const project = await loadPreviewProject(deps.projectResource, cookies, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
+          const type = headerValue(project.headers, 'content-type') ?? 'application/octet-stream'
+          const decoded = await decodePreviewResponse(project.body, headerValue(project.headers, 'content-encoding'))
+          const rewritten = rewritePreviewBody(decoded, type, project.finalUrl)
+          reply.code(project.status)
+          for (const [name, value] of Object.entries(project.headers)) {
+            if (!DROPPED_RESPONSE_HEADERS.has(name.toLowerCase()) && name.toLowerCase() !== 'location') reply.header(name, value)
+          }
+          reply.header('content-type', previewContentType(type))
+          reply.header('cache-control', 'private, no-store')
+          reply.header('content-length', String(rewritten.length))
+          return reply.send(rewritten)
+        }
         // Тестовые окружения машин: доставка через компаньон-агента, не сетью.
         const machineAgent = machineAgentIdOf(url.hostname)
         if (machineAgent) {
           if (!deps.machines) throw new PreviewProxyError(502, 'Мост машин недоступен на этом сервере')
+          // Проверка нужна и на cache hit: доступ могли отозвать после первой загрузки.
+          if (!(await deps.machines.canUse(userId, machineAgent))) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
+          if (!deps.machines.bridge.isOnline(machineAgent)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
+          if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) machineCache.dropAgent(machineAgent)
           const cacheUrl = url.toString()
-          const cached = req.method === 'GET' ? machineCache.get(machineAgent, cacheUrl) : null
+          const cacheAllowed = canReadPreviewCache(req.method, req.headers, Boolean(cookies.header(userId, url)))
+          const cached = cacheAllowed ? machineCache.get(machineAgent, cacheUrl, userId) : null
           // Браузер уже держит эту версию — отвечаем 304 и не идём на машину вовсе.
           if (cached && String(req.headers['if-none-match'] ?? '') === cached.etag) {
             reply.code(304)
@@ -1145,49 +1069,47 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
             reply.header('content-length', String(cached.body.length))
             return reply.send(cached.body)
           }
-          const machine = await loadViaMachine(deps.machines, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
+          const machine = await loadViaMachine(deps.machines, userId, url, req.method, body, upstreamRequestHeaders(req.headers), cookies)
           const machineType = headerValue(machine.headers, 'content-type') ?? 'application/octet-stream'
           // JS у машины переписывается тоже: dev-сервер отдаёт ESM с абсолютными
           // импортами, и без правки они ушли бы на origin ChatAI.
-          const machineBody = /text\/(html|css)|application\/xhtml\+xml|javascript|ecmascript/i.test(machineType)
-            ? rewritePreviewBody(machine.body, machineType, machine.finalUrl)
-            : machine.body
+          const decoded = await decodePreviewResponse(machine.body, headerValue(machine.headers, 'content-encoding'))
+          const machineBody = rewritePreviewBody(decoded, machineType, machine.finalUrl)
           const headers: Record<string, string | string[]> = {}
           for (const [name, value] of Object.entries(machine.headers)) {
             if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase()) || name.toLowerCase() === 'location') continue
             headers[name] = value
           }
-          headers['content-type'] = machineType
+          headers['content-type'] = previewContentType(machineType)
+          // Браузер перепроверяет права даже пока серверная статика свежая.
+          // no-store апстрима строже: не ослабляем его до обычного revalidation.
+          headers['cache-control'] = /no-store/i.test(headerValue(machine.headers, 'cache-control') ?? '') ? 'private, no-store' : MACHINE_CACHE_CONTROL
           reply.code(machine.status)
           for (const [name, value] of Object.entries(headers)) reply.header(name, value)
-          if (isCacheableMachineResponse(req.method, machine.status, machineType, machineBody.length)) {
+          if (cacheAllowed && canStorePreviewCache(machine.headers) && isCacheableMachineResponse(req.method, machine.status, machineType, machineBody.length)) {
             // Валидатор считаем от переписанного тела: апстримовый etag ему не соответствует.
             const etag = `W/"${createHash('sha1').update(machineBody).digest('base64url')}"`
-            machineCache.put(machineAgent, cacheUrl, { status: machine.status, headers, body: machineBody, etag })
+            machineCache.put(machineAgent, cacheUrl, { status: machine.status, headers, body: machineBody, etag }, userId)
             reply.header('etag', etag)
             reply.header('cache-control', MACHINE_CACHE_CONTROL)
           }
           reply.header('content-length', String(machineBody.length))
           return reply.send(machineBody)
         }
-        const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers), deps.hostAliases)
-        storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
+        const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers), deps.hostAliases, cookies)
         const responseType = response.headers['content-type'] ?? 'application/octet-stream'
-        const responseBody = await readLimited(response)
-        const aliased = deps.hostAliases ? applyHostAlias(finalUrl, deps.hostAliases).host !== finalUrl.host : false
-        const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) || aliased && /javascript|ecmascript/i.test(responseType)
-          ? rewritePreviewBody(responseBody, responseType, finalUrl, aliased)
-          : responseBody
+        const responseBody = await decodePreviewResponse(await readLimited(response), response.headers['content-encoding'])
+        const rewritten = rewritePreviewBody(responseBody, responseType, finalUrl)
         reply.code(response.statusCode ?? 502)
         for (const [name, value] of Object.entries(response.headers)) {
           if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) continue
           reply.header(name, value)
         }
-        reply.header('content-type', responseType)
+        reply.header('content-type', previewContentType(responseType))
         reply.header('content-length', String(rewritten.length))
         return reply.send(rewritten)
       } catch (err) {
-        const known = err instanceof PreviewProxyError ? err : new PreviewProxyError(502, 'Сайт недоступен')
+        const known = (err instanceof PreviewProxyError || err instanceof ProjectPreviewError || err instanceof PreviewResponseError) ? err : new PreviewProxyError(502, 'Сайт недоступен')
         // Документ в iframe отвечать JSON-ом нельзя: пользователь видел сырой
         // `{"error":"preview_unavailable"}` вместо объяснения. Для кадров отдаём
         // страницу с причиной и кнопкой повтора, для fetch/XHR — прежний JSON.

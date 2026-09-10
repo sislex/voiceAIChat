@@ -2,7 +2,7 @@
 // панели ждёт клиента до `PREVIEW_ACTION_TIMEOUT_MS` у ядра, поэтому таймаут RPC берётся с запасом сверху;
 // кадр проверки — тело до нескольких мегабайт, ему тоже нужен долгий вызов.
 import { createRpcClient } from '@voicechat/shared'
-import type { PreviewAction, PreviewEnvironment } from '@voicechat/shared'
+import type { PreviewAction, PreviewEnvironment, ReaderProjectRequest, ReaderProjectResponse } from '@voicechat/shared'
 import { PREVIEW_ACTION_TIMEOUT_MS, type PreviewActionOutcome } from '../../mcp/previewMcp.js'
 import type { ReaderCore } from '../core.js'
 import { INTERNAL_READER_CORE_PATH } from '../internal.js'
@@ -39,6 +39,10 @@ export class HttpReaderCore implements ReaderCore {
   /** Ждём столько, сколько попросил вызывающий, плюс запас на сеть: таймаут — на каждый вызов свой. */
   previewAction(userId: string, conversationId: string, action: PreviewAction, timeoutMs?: number): Promise<PreviewActionOutcome> {
     return this.client((timeoutMs ?? PREVIEW_ACTION_TIMEOUT_MS) + 10_000)<PreviewActionOutcome>('previewAction', userId, conversationId, action, timeoutMs)
+  }
+
+  projectResource(request: ReaderProjectRequest): Promise<ReaderProjectResponse> {
+    return this.fast<ReaderProjectResponse>('projectResource', request)
   }
 
   issuePreviewRunKey(userId: string): Promise<string> {

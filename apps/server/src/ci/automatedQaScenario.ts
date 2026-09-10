@@ -11,7 +11,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { AutomatedQaScenario, AutomatedQaStepResult } from '@voicechat/shared'
-import { firstLine, runScenarioStep, type ScenarioSend } from '@voicechat/shared'
+import { firstLine, runScenarioStep, scenarioCommandError, type ScenarioSend } from '@voicechat/shared'
 import type { BrowserRunnerClient } from '../browser/runnerClient.js'
 
 export interface AutomatedQaScenarioInput {
@@ -119,7 +119,8 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       let expiredBudget = false
       try {
         try {
-          await send({ type: 'navigate', url: input.scenario.startUrl })
+          const error = scenarioCommandError(await send({ type: 'navigate', url: input.scenario.startUrl }))
+          if (error) throw new Error(error)
         } catch (error) {
           return { steps: [], screenshotUrl: null, pageErrors: [], blocked: `Стартовый адрес не открылся: ${firstLine(error)}` }
         }

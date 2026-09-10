@@ -15,7 +15,7 @@ describe('граница Playwright Reader', () => {
 
   it('RPC ограничен портами приложения, результаты Chromium проходят общий лимит MCP', () => {
     expect(PLAYWRIGHT_READER_CORE_METHODS).toEqual(['conversation', 'modelTarget', 'issuePreviewRunKey', 'logBrowserShot'])
-    expect(PLAYWRIGHT_READER_SERVICE_METHODS).toEqual(['execute', 'screenshot'])
+    expect(PLAYWRIGHT_READER_SERVICE_METHODS).toEqual(['execute', 'screenshot', 'control'])
     expect(previewResultJson({ ok: true, text: 'Страница' })).toBe('{"ok":true,"text":"Страница"}')
     expect(previewResultJson({ ok: true, text: 'x'.repeat(150_000) })).toBeNull()
   })

@@ -20,9 +20,15 @@ export function aliasNote(loaded: string, aliasedHost: string | null | undefined
   } catch { return null }
 }
 
+/** Пустая вкладка и служебные страницы не задают происхождение сайта проверки. */
+export function isWebAddress(url: string | null): url is string {
+  if (!url) return false
+  try { return ['http:', 'https:'].includes(new URL(url).protocol) } catch { return false }
+}
+
 /** История адресов сессии: без повторов подряд и с ограничением длины. */
 export function pushHistory(history: string[], url: string | null, limit = 20): string[] {
-  if (!url) return history
+  if (!isWebAddress(url)) return history
   if (history[0] === url) return history
   return [url, ...history.filter((item) => item !== url)].slice(0, limit)
 }
@@ -35,6 +41,6 @@ export function pushHistory(history: string[], url: string | null, limit = 20): 
 export function offOrigin(expected: string | null, actual: string | null, aliasExplains = false): boolean {
   // Подмена алиасом объясняет смену хоста сама: показывать рядом ещё и тревогу
   // «ушли с сайта» — значит пугать человека тем, что он сам и настроил.
-  if (aliasExplains || !expected || !actual) return false
+  if (aliasExplains || !isWebAddress(expected) || !isWebAddress(actual)) return false
   try { return new URL(expected).origin !== new URL(actual).origin } catch { return false }
 }

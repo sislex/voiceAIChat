@@ -1,0 +1,3540 @@
+{
+  "startedAt": "2026-09-09T22:23:57+00:00",
+  "branch": "feat/playwright-reader-20-cycles",
+  "requestedCycles": 20,
+  "itemsPerCycle": 10,
+  "status": "stopped_by_user",
+  "timingConvention": "UTC; интервалы исследования/реализации/проверки измеряются по часам. Несколько пунктов общей реализации помечаются группой; время группы не суммируется по пунктам.",
+  "cycles": [
+    {
+      "number": 1,
+      "status": "complete",
+      "startedAt": "2026-09-09T22:23:57+00:00",
+      "items": [
+        {
+          "id": "01-01",
+          "title": "Доверенный локальный origin и алиас открываются в Chromium",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-02",
+          "title": "Доверие внутреннему адресу ограничено настроенным портом",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-03",
+          "title": "Корректная подстановка и восстановление IPv6-алиасов",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-04",
+          "title": "Ошибочные host aliases не превращаются в неожиданные адреса",
+          "group": "navigation-policy",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:28:20.078589+00:00",
+          "implementationEndedAt": "2026-09-09T22:32:16.223806+00:00",
+          "validation": "16 alias + 9 policy checks; 2 live project-navigation checks passed"
+        },
+        {
+          "id": "01-05",
+          "title": "Неверный выбор вкладки не повреждает активную сессию",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-06",
+          "title": "Создание вкладки после закрытия последней",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-07",
+          "title": "Единое ожидание DOM при back/forward/reload/newTab",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-08",
+          "title": "JPEG-кадры передаются с правильным MIME-типом",
+          "group": "session-runtime",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:32:16.223806+00:00",
+          "implementationEndedAt": "2026-09-09T22:33:52.756731+00:00",
+          "validation": "7/7 live Chromium navigation/session/MIME tests passed"
+        },
+        {
+          "id": "01-09",
+          "title": "Ручной запуск Reader получает cookie доступа к превью проекта",
+          "group": "project-preview",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:33:52.756731+00:00",
+          "implementationEndedAt": "2026-09-09T22:37:01.133001+00:00",
+          "validation": "19/19 Playwright Reader application tests passed"
+        },
+        {
+          "id": "01-10",
+          "title": "Ручная навигация к machine.internal использует тот же прокси, что модель",
+          "group": "project-preview",
+          "status": "validated",
+          "implementationStartedAt": "2026-09-09T22:33:52.756731+00:00",
+          "implementationEndedAt": "2026-09-09T22:37:01.133001+00:00",
+          "validation": "19/19 Playwright Reader application tests passed"
+        }
+      ],
+      "validation": {
+        "fastGate": {
+          "exitCode": 0,
+          "relatedMs": 161405,
+          "typecheckMs": 7298,
+          "log": "/tmp/voicechat-reader-cycle-01-fast.log"
+        },
+        "browserRunnerLive": {
+          "passed": 7,
+          "durationMs": 2200
+        },
+        "appUnit": {
+          "passed": 19,
+          "durationMs": 1560
+        },
+        "browserE2E": {
+          "passed": 3,
+          "durationMs": 51810,
+          "log": "/tmp/voicechat-reader-cycle-01-e2e.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-01"
+        },
+        "fullGate": {
+          "status": "passed",
+          "attempts": [
+            {
+              "exitCode": 1,
+              "log": "/tmp/voicechat-reader-cycle-01-gate.log",
+              "failure": "Устаревшая проверка колонок ModelPricesPage в UsersAdmin.dom.test.tsx; обновлены названия, позиция четырёх тарифов и добавлено ожидание Standard / short context."
+            }
+          ],
+          "log": "/tmp/voicechat-reader-cycle-01-gate-final.log",
+          "exitCode": 0,
+          "passedWorkspaceTests": 7564,
+          "startedAt": "2026-09-09T22:50:59.153289+00:00",
+          "endedAt": "2026-09-09T22:58:32.744642+00:00",
+          "durationMs": 453591
+        },
+        "fastGateFinal": {
+          "exitCode": 0,
+          "relatedMs": 131514,
+          "typecheckMs": 4623,
+          "log": "/tmp/voicechat-reader-cycle-01-fast-final.log"
+        }
+      },
+      "externalChecks": [
+        {
+          "name": "example",
+          "url": "https://example.com/",
+          "startedAt": "2026-09-09T22:39:21.003Z",
+          "navigationOk": true,
+          "finalUrl": "https://example.com/",
+          "title": "Example Domain",
+          "read": {
+            "ok": true,
+            "text": "Example Domain\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\nLearn more"
+          },
+          "elapsedMs": 30451
+        },
+        {
+          "name": "gmail",
+          "url": "https://mail.google.com/",
+          "startedAt": "2026-09-09T22:39:51.455Z",
+          "navigationOk": true,
+          "finalUrl": "https://accounts.google.com/v3/signin/identifier?continue=https://mail.google.com/mail/u/0/&emr=1&followup=https://mail.google.com/mail/u/0/&osid=1&passive=1209600&service=mail&flowName=WebLiteSignIn&flowEntry=ServiceLogin&dsh=S-834899999:1788993592021366",
+          "title": "Gmail",
+          "read": {
+            "ok": true,
+            "text": "Sign in\n\nto continue to Gmail\n\nEmail or phone\n\nForgot email?\n\nNot your computer? Use a private browsing window to sign in. Learn more about using Guest mode\n\nNext\nCreate account\nAfrikaans\nazərbaycan\nbosanski\ncatalà\nČeština\nCymraeg\nDansk\nDeutsch\neesti\nEnglish (United Kingdom)\nEnglish (United States)\nEspañol (España)\nEspañol (Latinoamérica)\neuskara\nFilipino\nFrançais (Canada)\nFrançais (France)\nGaeilge\ngalego\nHrvatski\nIndonesia\nisiZulu\níslenska\nItaliano\nKiswahili\nlatviešu\nlietuvių\nmagyar\nMelayu\nNederlands\nnorsk\no‘zbek\npolski\nPortuguês (Brasil)\nPortuguês (Portugal)\nromână\nshqip\nSlovenčina\nslovenščina\nsrpski (latinica)\nSuomi\nSvenska\nTiếng Việt\nTürkçe\nΕλληνικά\nбеларуская\nбългарски\nкыргызча\nқазақ тілі\nмакедонски\nмонгол\nРусский\nсрпски (ћирилица)\nУкраїнська\nქართული\nհայերեն\n‫עברית‬‎\n‫اردو‬‎\n‫العربية‬‎\n‫فارسی‬‎\nአማርኛ\nनेपाली\nमराठी\nहिन्दी\nঅসমীয়া\nবাংলা\nਪੰਜਾਬੀ\nગુજરાતી\nଓଡ଼ିଆ\nதமிழ்\nతెలుగు\nಕನ್ನಡ\nമലയാളം\nසිංහල\nไทย\nລາວ\nမြန်မာ\nខ្មែរ\n한국어\n中文（香港）\n日本語\n简体中文\n繁體中文\nHelpPrivacyTerms"
+          },
+          "elapsedMs": 30906,
+          "scope": "Только публичная форма входа; доступ к почте не проверялся."
+        },
+        {
+          "name": "instagram",
+          "url": "https://www.instagram.com/",
+          "startedAt": "2026-09-09T22:40:22.361Z",
+          "navigationOk": true,
+          "finalUrl": "https://www.instagram.com/",
+          "title": "Instagram",
+          "read": {
+            "ok": true,
+            "text": ""
+          },
+          "elapsedMs": 18490,
+          "scope": "Первая навигация показала splash и пустое чтение; требуется ожидание готового содержимого, не считается проверкой работоспособности Instagram."
+        }
+      ],
+      "externalFollowUp": [
+        {
+          "name": "instagram",
+          "url": "https://www.instagram.com/",
+          "startedAt": "2026-09-09T22:41:51.482Z",
+          "diagnostics": {
+            "ok": true,
+            "console": []
+          },
+          "contentReady": true,
+          "navigationOk": true,
+          "finalUrl": "https://www.instagram.com/",
+          "title": "Instagram",
+          "read": {
+            "ok": true,
+            "text": "See everyday moments from your close friends.\nLog into Instagram\nMobile number, username or email\nPassword\nLog in\nForgot password?\nLog in with Facebook\nCreate new account\nMeta\nAbout\nBlog\nJobs\nHelp\nAPI\nPrivacy\nTerms\nLocations\nPopular\nInstagram Lite\nMeta AI\nMuse\nThreads\nContact Uploading & Non-Users\nMeta Verified\nEnglish\nAfrikaans\nالعربية\nČeština\nDansk\nDeutsch\nΕλληνικά\nEnglish\nEnglish (UK)\nEspañol (España)\nEspañol\nفارسی\nSuomi\nFrançais\nעברית\nBahasa Indonesia\nItaliano\n日本語\n한국어\nBahasa Melayu\nNorsk\nNederlands\nPolski\nPortuguês (Brasil)\nPortuguês (Portugal)\nРусский\nSvenska\nภาษาไทย\nFilipino\nTürkçe\n中文(简体)\n中文(台灣)\nবাংলা\nગુજરાતી\nहिन्दी\nHrvatski\nMagyar\nಕನ್ನಡ\nമലയാളം\nमराठी\nनेपाली\nਪੰਜਾਬੀ\nසිංහල\nSlovenčina\nதமிழ்\nతెలుగు\nاردو\nTiếng Việt\n中文(香港)\nБългарски\nFrançais (Canada)\nRomână\nСрпски\nУкраїнська\n© 2026 Instagram from Meta\nAfrikaans\nالعربية\nČeština\nDansk\nDeutsch\nΕλληνικά\nEnglish\nEnglish (UK)\nEspañol (España)\nEspañol\nفارسی\nSuomi\nFrançais\nעברית\nBahasa Indonesia\nItaliano\n日本語\n한국어\nBahasa Melayu\nNorsk\nNederlands\nP…",
+            "truncated": true
+          },
+          "elapsedMs": 5476,
+          "scope": "После ожидания готового текста доступна публичная форма входа Instagram; вход в аккаунт не выполнялся."
+        }
+      ],
+      "validatedAt": "2026-09-09T22:59:11.854857+00:00",
+      "commit": "3fae59bda4f9dedd4ee844710d52a6c3133b5575",
+      "completedAt": "2026-09-09T23:00:28.469392+00:00"
+    },
+    {
+      "number": 2,
+      "status": "complete",
+      "startedAt": "2026-09-09T23:00:28.469392+00:00",
+      "items": [
+        {
+          "id": "02-01",
+          "title": "Пассивное чтение состояния сессии без активной вкладки",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-02",
+          "title": "Обновление адреса, заголовка и вкладок после действий модели",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-03",
+          "title": "Снимки и фоновый опрос не стирают автора последнего действия",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-04",
+          "title": "about:blank не становится сайтом проверки и записью истории",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-05",
+          "title": "Черновик адреса сохраняется во время фонового обновления",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-06",
+          "title": "Один запрос кадра за раз и отбрасывание устаревшего ответа",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-07",
+          "title": "Опрос возвращается к 1200 мс после четырёх секунд активности",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-08",
+          "title": "Серия ошибок кадра видна пользователю, успешный кадр убирает предупреждение",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-09",
+          "title": "Смена разговора сбрасывает локальное состояние Reader",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        },
+        {
+          "id": "02-10",
+          "title": "Перезапуск сообщает отказ остановки и позволяет повторить",
+          "status": "validated",
+          "group": "session-observation",
+          "implementationStartedAt": "2026-09-09T23:00:28.469392+00:00",
+          "implementationEndedAt": "2026-09-09T23:09:08.092796+00:00",
+          "sharedGroupDurationSeconds": 520
+        }
+      ],
+      "validation": {
+        "regressionBaseline": {
+          "uiFailed": 9,
+          "runnerFailed": 2,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-02-ui-baseline.log",
+            "/tmp/voicechat-reader-cycle-02-runner-red.log"
+          ]
+        },
+        "uiFocused": {
+          "passed": 81,
+          "durationMs": 1820,
+          "log": "/tmp/voicechat-reader-cycle-02-ui-final.log"
+        },
+        "browserRunnerLive": {
+          "passed": 9,
+          "durationMs": 3420,
+          "log": "/tmp/voicechat-reader-cycle-02-runner.log"
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 29150
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-02-fast.log",
+          "exitCode": 0,
+          "passed": 7249,
+          "reportedTotal": 7294,
+          "durationMs": 318801
+        },
+        "browserE2E": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-02-e2e-verified.log",
+          "previousAttempt": {
+            "exitCode": 1,
+            "passed": 4,
+            "failed": 1,
+            "reason": "Селектор активной вкладки выбирал также вкладку чата (strict mode violation). Уточнена область tablist Вкладки страницы; дополнительно предел ожидания статуса сделан больше интервала опроса."
+          },
+          "exitCode": 0,
+          "passed": 5,
+          "durationMs": 13720,
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-02",
+          "attempts": [
+            {
+              "log": "/tmp/voicechat-reader-cycle-02-e2e.log",
+              "exitCode": 1,
+              "durationMs": 53200
+            },
+            {
+              "log": "/tmp/voicechat-reader-cycle-02-e2e-final.log",
+              "exitCode": 1,
+              "durationMs": 75700
+            },
+            {
+              "log": "/tmp/voicechat-reader-cycle-02-e2e-verified.log",
+              "exitCode": 0,
+              "durationMs": 13720
+            }
+          ]
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-02-gate.log",
+          "exitCode": 0,
+          "passedWorkspaceTests": 7580,
+          "startedAt": "2026-09-09T23:10:46.635562+00:00",
+          "endedAt": "2026-09-09T23:20:24.286594+00:00",
+          "durationMs": 577651
+        }
+      },
+      "validatedAt": "2026-09-09T23:21:09.144400+00:00",
+      "commit": "0c0437f7ef760fd04de9b32cfbd5fd7901efcf59",
+      "completedAt": "2026-09-09T23:23:24.358846+00:00"
+    },
+    {
+      "number": 3,
+      "status": "complete",
+      "startedAt": "2026-09-09T23:23:24.358846+00:00",
+      "items": [
+        {
+          "id": "03-01",
+          "title": "Модификаторы клика модели доходят до элемента",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-02",
+          "title": "Нажатие клавиши адресуется указанному селектору",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-03",
+          "title": "Прокрутка модели работает внутри указанного контейнера",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-04",
+          "title": "Переход к краю прокрутки достигает конца длинной страницы",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-05",
+          "title": "Изменение ширины моделью сохраняет высоту текущего окна",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-06",
+          "title": "Модель выполняет перетаскивание по координатам",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-07",
+          "title": "Ответ селекторного действия сообщает текущую страницу",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-08",
+          "title": "Загрузка пустого файла поддерживается по всему пути",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-09",
+          "title": "Повреждённый base64 отклоняется без тихой порчи файла",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        },
+        {
+          "id": "03-10",
+          "title": "Заявленные 8 МБ загрузки проходят MCP и HTTP раннера",
+          "status": "validated",
+          "group": "model-input",
+          "implementationStartedAt": "2026-09-09T23:23:24.358846+00:00",
+          "implementationEndedAt": "2026-09-09T23:36:59.947917+00:00",
+          "sharedGroupDurationSeconds": 816
+        }
+      ],
+      "rejectedHypotheses": [
+        "Выбор option по подписи уже работает в установленном Playwright; базовый живой тест прошёл.",
+        "Установка range и события input/change уже работают; базовый живой тест прошёл."
+      ],
+      "validation": {
+        "baseline": {
+          "initialFailed": 8,
+          "initialPassed": 2,
+          "replacementFailed": 2,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-03-baseline.log",
+            "/tmp/voicechat-reader-cycle-03-extra-baseline.log"
+          ]
+        },
+        "focusedRunner": {
+          "passed": 38,
+          "liveForms": 12,
+          "durationMs": 3980,
+          "log": "/tmp/voicechat-reader-cycle-03-forms-final.log"
+        },
+        "focusedShared": {
+          "passed": 46,
+          "durationMs": 572,
+          "log": "/tmp/voicechat-reader-cycle-03-shared.log"
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 16130
+        },
+        "browserE2E": {
+          "initialPassed": 6,
+          "initialDurationMs": 11790,
+          "initialLog": "/tmp/voicechat-reader-cycle-03-e2e.log",
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-03-e2e-verified.log",
+          "exitCode": 0,
+          "passed": 6,
+          "durationMs": 53100,
+          "actionsMs": 10190,
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-03",
+          "previousBuiltRun": {
+            "exitCode": 0,
+            "durationMs": 79320,
+            "log": "/tmp/voicechat-reader-cycle-03-e2e-final.log"
+          },
+          "harnessNote": "Chromium раннера закрывается до ядра. Улучшение времени не заявляется: длительность стенда меняется под параллельной нагрузкой."
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-03-fast-verified.log",
+          "previousAttempt": {
+            "exitCode": 1,
+            "reason": "scenarioStep.test.ts ожидал старый wheel вместо исправленного selector scroll."
+          },
+          "exitCode": 0,
+          "failedTest": "предельные 8 МБ через HTTP раннера",
+          "reason": "Таймаут 30 с в общем прогоне, отдельный и E2E проходили; причина проверяется.",
+          "previousFinalAttempt": {
+            "status": "failed",
+            "log": "/tmp/voicechat-reader-cycle-03-fast-final.log",
+            "exitCode": 1,
+            "failedTest": "предельные 8 МБ через HTTP раннера",
+            "reason": "Таймаут 30 с в общем прогоне, отдельный и E2E проходили; причина проверяется."
+          },
+          "passed": 7269,
+          "failed": 0,
+          "skipped": 45,
+          "durationMs": 506500,
+          "concurrency": "--jobs 1, Vitest forks/threads min 1 max 2"
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-03-gate.log",
+          "exitCode": 0,
+          "passedWorkspaceTests": 7600,
+          "exitEvidence": "Завершение PTY 45333: chunk 32a1a7, exit_code 0; сохранённый результат инструмента этой сессии."
+        },
+        "isolatedUpload": {
+          "exitCode": 0,
+          "testDurationMs": 2858,
+          "log": "/tmp/voicechat-reader-cycle-03-upload-isolated.log"
+        }
+      },
+      "validatedAt": "2026-09-10T00:02:16.493126+00:00",
+      "completedAt": "2026-09-10T00:03:09.644769+00:00",
+      "commit": "48012c1e1773523ce8cabd2bb4902fb9d1de7d60"
+    },
+    {
+      "number": 4,
+      "status": "complete",
+      "startedAt": "2026-09-10T00:03:09.644769+00:00",
+      "items": [
+        {
+          "id": "04-01",
+          "title": "Список вкладок модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-02",
+          "title": "Новая вкладка модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-03",
+          "title": "Выбор вкладки модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-04",
+          "title": "Закрытие вкладки модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-05",
+          "title": "Перезагрузка модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-06",
+          "title": "Остановка загрузки модели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-07",
+          "title": "Связь popup с открывшей вкладкой",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-08",
+          "title": "Возврат из popup к открывшей вкладке",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-09",
+          "title": "Размер новой вкладки совпадает с текущим viewport",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384
+        },
+        {
+          "id": "04-10",
+          "title": "Открытие новой вкладки из пустой панели",
+          "status": "validated",
+          "group": "tabs-control",
+          "implementationStartedAt": "2026-09-10T00:03:09.644769+00:00",
+          "implementationEndedAt": "2026-09-10T00:09:33.652509+00:00",
+          "sharedGroupDurationSeconds": 384,
+          "followup": {
+            "startedAt": "2026-09-10T00:16:14.005014+00:00",
+            "endedAt": "2026-09-10T00:18:24.685034+00:00",
+            "detail": "Корректная ARIA-роль пустой панели, вход адресом без activeTabId создаёт новую вкладку, история и reload отключены без страницы; регрессии axe и E2E.",
+            "durationSeconds": 131
+          }
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-09T23:56:00.949529+00:00",
+        "items": [
+          "Список вкладок модели",
+          "Новая вкладка модели",
+          "Выбор вкладки модели",
+          "Закрытие вкладки модели",
+          "Перезагрузка модели",
+          "Остановка загрузки модели",
+          "Связь popup с открывшей вкладкой",
+          "Возврат из popup к открывшей вкладке",
+          "Размер новой вкладки совпадает с текущим viewport",
+          "Открытие новой вкладки из пустой панели"
+        ],
+        "observations": {
+          "newTabViewport": {
+            "reported": {
+              "width": 390,
+              "height": 844
+            },
+            "actual": {
+              "width": 1280,
+              "height": 800
+            }
+          },
+          "selectedOldTabFocused": true
+        },
+        "rejected": [
+          "Потеря фокуса при selectTab не воспроизведена"
+        ]
+      },
+      "validation": {
+        "popupBaseline": {
+          "log": "/tmp/voicechat-reader-cycle-04-popup-baseline.log",
+          "openerMissing": true,
+          "returnsToWrongTab": true
+        },
+        "baseline": {
+          "liveFailed": 3,
+          "liveControlPassed": 1,
+          "uiFailed": 1,
+          "missingToolFailed": 6
+        },
+        "focused": {
+          "runnerPassed": 4,
+          "uiPassed": 56,
+          "mcpPassed": 40,
+          "remotePassed": 12,
+          "typecheck": "Reader, browser-runner, server exit 0"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "passed": 7,
+          "durationMs": 20500,
+          "log": "/tmp/voicechat-reader-cycle-04-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-04",
+          "visuallyInspected": [
+            "07-tabs-and-popup-through-mcp.png",
+            "08-human-recovers-empty-tabs.png"
+          ],
+          "initial": {
+            "exitCode": 0,
+            "passed": 7,
+            "durationMs": 17400,
+            "log": "/tmp/voicechat-reader-cycle-04-e2e.log",
+            "artifacts": "/tmp/voicechat-reader-audit/cycle-04",
+            "visuallyInspected": [
+              "07-tabs-and-popup-through-mcp.png",
+              "08-human-recovers-empty-tabs.png"
+            ]
+          }
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-04-fast-verified.log",
+          "attempts": [
+            {
+              "exitCode": 1,
+              "log": "/tmp/voicechat-reader-cycle-04-fast.log",
+              "reason": "Тест shared ожидал старый список RPC без control."
+            },
+            {
+              "exitCode": 1,
+              "log": "/tmp/voicechat-reader-cycle-04-fast-final.log",
+              "reason": "12 a11y-проверок сториз нашли пустой tablist с кнопкой. Пустому контейнеру присвоена роль group; добавлена axe-проверка восстановительной кнопки."
+            }
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-09-10T00:19:41.709463+00:00",
+          "endedAt": "2026-09-10T00:27:10.444614+00:00",
+          "durationMs": 448732,
+          "passed": 7285,
+          "skipped": 45,
+          "failed": 0
+        },
+        "appUnit": {
+          "passed": 20,
+          "exitCode": 0,
+          "durationMs": 3750
+        },
+        "a11y": {
+          "exitCode": 0,
+          "readerStoriesPassed": 13,
+          "targetedTotalPassed": 32,
+          "log": "/tmp/voicechat-reader-cycle-04-a11y-final.log"
+        },
+        "cli": {
+          "exitCode": 0,
+          "passed": 17,
+          "durationMs": 1120,
+          "log": "/tmp/voicechat-reader-cycle-04-cli.log",
+          "scope": "Проверены аргументы Claude на подставном spawn; browser MCP и Chromium проверены отдельно реально."
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T00:28:32.829321+00:00",
+          "endedAt": "2026-09-10T00:34:35.234333+00:00",
+          "durationMs": 362428,
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-04-gate.log",
+          "passedWorkspaceTests": 7616
+        }
+      },
+      "validatedAt": "2026-09-10T00:35:44.429097+00:00",
+      "completedAt": "2026-09-10T00:37:03.932291+00:00",
+      "commit": "e4e689586873701aa82d4636ad480d2fdd22fc5b"
+    },
+    {
+      "number": 5,
+      "status": "complete",
+      "startedAt": "2026-09-10T00:37:03.932291+00:00",
+      "items": [
+        {
+          "id": "05-01",
+          "title": "Снимок области rect доходит от MCP до Chromium",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-02",
+          "title": "Модель получает снимок всей страницы через fullPage",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-03",
+          "title": "Снимок модели содержит фактический URL и заголовок",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-04",
+          "title": "Координаты и размер снимка элемента соответствуют элементу",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-05",
+          "title": "Снимок прокрученного viewport сообщает координаты документа",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-06",
+          "title": "CSS-масштаб снимка модели соответствует координатам действий при DPR > 1",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-07",
+          "title": "PNG по умолчанию одинаково обрабатывает quality с явным PNG",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-08",
+          "title": "Конфликтующие режимы снимка не подменяются молча другим режимом",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-09",
+          "title": "Модель может отключить анимации для стабильного снимка",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        },
+        {
+          "id": "05-10",
+          "title": "Модель задаёт ограниченное ожидание снимка, включая загрузку шрифтов",
+          "status": "validated",
+          "group": "model-screenshots",
+          "implementationStartedAt": "2026-09-10T00:37:03.932291+00:00",
+          "implementationEndedAt": "2026-09-10T00:50:50.467611+00:00",
+          "sharedGroupDurationSeconds": 827
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T00:15:20.884998+00:00",
+        "items": [
+          "Снимок области rect доходит от MCP до Chromium",
+          "Модель получает снимок всей страницы через fullPage",
+          "Снимок модели содержит фактический URL и заголовок",
+          "Координаты и размер снимка элемента соответствуют элементу",
+          "Снимок прокрученного viewport сообщает координаты документа",
+          "CSS-масштаб снимка модели соответствует координатам действий при DPR > 1",
+          "PNG по умолчанию одинаково обрабатывает quality с явным PNG",
+          "Конфликтующие режимы снимка не подменяются молча другим режимом",
+          "Модель может отключить анимации для стабильного снимка",
+          "Модель задаёт ограниченное ожидание снимка, включая загрузку шрифтов"
+        ],
+        "evidence": [
+          "/tmp/voicechat-reader-cycle-05-image-baseline.log",
+          "MCP screenshot удаляет rect при вызове browserScreenshot; у сервиса только selector; его rect всегда 0,0,viewport; page берётся до screenshot и MCP не передаёт page модели."
+        ],
+        "rejected": [
+          "WebP уже поддерживается установленным Playwright, живой контроль прошёл."
+        ],
+        "nextResearch": [
+          "Проверить с реальными областями и шрифтами перед реализацией; для новых функций зафиксировать их отсутствие и регрессии."
+        ]
+      },
+      "validation": {
+        "baselineLogs": [
+          "/tmp/voicechat-reader-cycle-05-image-baseline.log",
+          "/tmp/voicechat-reader-cycle-05-font-baseline.log"
+        ],
+        "baseline": {
+          "liveFailed": 10,
+          "mcpFailed": 6,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-05-baseline.log",
+            "/tmp/voicechat-reader-cycle-05-mcp-baseline.log"
+          ]
+        },
+        "focused": {
+          "runnerPassed": 26,
+          "appPassed": 22,
+          "mcpPassed": 46,
+          "remotePassed": 12,
+          "typecheck": "browser-runner и server exit 0"
+        },
+        "browserE2E": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-05-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-05",
+          "exitCode": 0,
+          "passed": 8,
+          "durationMs": 38800,
+          "initialAttempt": {
+            "exitCode": 1,
+            "passed": 7,
+            "failed": 1,
+            "log": "/tmp/voicechat-reader-cycle-05-e2e.log",
+            "reason": "Высота тестового документа 1824 из-за схлопнувшегося отступа h1; ожидание 1800 заменено проверкой фактической scrollHeight и соответствия PNG/метаданных."
+          },
+          "visuallyInspected": [
+            "09-model-region.png",
+            "11-model-full-page.png"
+          ]
+        },
+        "fontFollowUp": {
+          "exitCode": 0,
+          "livePassed": 10,
+          "log": "/tmp/voicechat-reader-cycle-05-shots-final.log",
+          "detail": "Шрифт удерживается до явного завершения в тесте; проверены timeout и успешный следующий снимок после завершения ресурса."
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-05-fast.log",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T00:56:12.231089+00:00",
+          "endedAt": "2026-09-10T01:01:38.792164+00:00",
+          "durationMs": 326560,
+          "passed": 7304,
+          "skipped": 45,
+          "failed": 0
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-05-gate.log",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:03:07.255109+00:00",
+          "endedAt": "2026-09-10T01:13:25.699786+00:00",
+          "durationMs": 618441,
+          "passedWorkspaceTests": 7635
+        }
+      },
+      "validatedAt": "2026-09-10T01:14:23.319217+00:00",
+      "completedAt": "2026-09-10T01:14:23.319217+00:00",
+      "commit": "c36ed3eb12ae3e4e438a94289eff12dc72e4228b"
+    },
+    {
+      "number": 6,
+      "status": "complete",
+      "startedAt": "2026-09-10T01:15:20.933320+00:00",
+      "items": [
+        {
+          "id": "06-01",
+          "title": "Структурированное чтение заголовков, ссылок, кнопок и полей Chromium",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415,
+          "followup": {
+            "startedAt": "2026-09-10T01:34:11.781251+00:00",
+            "endedAt": "2026-09-10T01:35:17.140208+00:00",
+            "durationSeconds": 65,
+            "detail": "Пустой innerText не подменяется исходниками script/style. Регрессия воспроизведена; затем прошли 13/13 проверок чтения. Включает время двух проверок."
+          }
+        },
+        {
+          "id": "06-02",
+          "title": "Постраничное чтение длинного текста через limit и offset",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-03",
+          "title": "Чтение текущего видимого значения input, textarea и select",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-04",
+          "title": "Описание элемента не раскрывает значение поля пароля",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-05",
+          "title": "Кавычки и обратные слеши экранируются в селекторах атрибутов",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-06",
+          "title": "Результат поиска буквального текста пригоден для следующего действия",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-07",
+          "title": "Поиск сообщает общее число совпадений и усечение",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-08",
+          "title": "Поиск только видимых элементов фильтрует до применения лимита",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-09",
+          "title": "Структурированные таблицы с ограничением числа строк и колонок",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        },
+        {
+          "id": "06-10",
+          "title": "Каталог вложенных iframe для обнаружения превью и форм входа",
+          "status": "validated",
+          "group": "model-reading",
+          "implementationStartedAt": "2026-09-10T01:15:20.933320+00:00",
+          "implementationEndedAt": "2026-09-10T01:22:15.665042+00:00",
+          "sharedGroupDurationSeconds": 415
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T01:05:12.395333+00:00",
+        "items": [
+          "Структурированное чтение заголовков, ссылок, кнопок и полей Chromium",
+          "Постраничное чтение длинного текста через limit и offset",
+          "Чтение текущего видимого значения input, textarea и select",
+          "Описание элемента не раскрывает значение поля пароля",
+          "Кавычки и обратные слеши экранируются в селекторах атрибутов",
+          "Результат поиска буквального текста пригоден для следующего действия",
+          "Поиск сообщает общее число совпадений и усечение",
+          "Поиск только видимых элементов фильтрует до применения лимита",
+          "Структурированные таблицы с ограничением числа строк и колонок",
+          "Каталог вложенных iframe для обнаружения превью и форм входа"
+        ],
+        "evidence": "/tmp/voicechat-reader-cycle-06-baseline.log",
+        "observations": {
+          "passwordDescriptionLeaks": true,
+          "quotedAttributeMatches": 0,
+          "literalFindReplay": "Timeout 5000ms",
+          "readField": "empty",
+          "visibleOnlyIgnored": true,
+          "readStructureMissing": true,
+          "readOffsetIgnored": true
+        },
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T01:06:32.540907+00:00",
+          "endedAt": "2026-09-10T01:15:20.933320+00:00",
+          "detail": "Черновики стенда, регрессий и чтения готовились в /tmp во время полного гейта 05; в checkout перенесены только после его коммита. Интервал пересекается с проверкой 05, не суммировать как последовательное время."
+        }
+      },
+      "validation": {
+        "baseline": {
+          "liveFailed": 10,
+          "log": "/tmp/voicechat-reader-cycle-06-tests-baseline.log"
+        },
+        "focused": {
+          "runnerPassed": 44,
+          "nativeReadingPassed": 13,
+          "mcpPassed": 48,
+          "iframePassed": 33,
+          "sharedPassed": 46,
+          "runnerTypecheckExitCode": 0
+        },
+        "implementationCorrections": [
+          "Удалён остаток старой ветки find после переноса кода.",
+          "Строки-функции заменены сериализуемыми Function из констант: живой Chromium вернул undefined, поскольку строка лишь создаёт функцию. Скорректированы и вызовы evaluate в самом стенде."
+        ],
+        "browserE2E": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-06-e2e.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-06",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:21:41.596188+00:00",
+          "endedAt": "2026-09-10T01:22:06.171066+00:00",
+          "durationMs": 24575,
+          "passed": 9,
+          "vitestDurationMs": 23780,
+          "visuallyInspected": [
+            "14-model-structured-reading.png"
+          ]
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "buildDurationMs": 35350,
+          "log": "/tmp/voicechat-reader-cycle-06-build.log"
+        },
+        "fastGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-06-fast-verified.log",
+          "attempts": [
+            {
+              "exitCode": 2,
+              "startedAt": "2026-09-10T01:22:36.209760+00:00",
+              "endedAt": "2026-09-10T01:23:44.775722+00:00",
+              "durationMs": 68566,
+              "log": "/tmp/voicechat-reader-cycle-06-fast.log",
+              "reason": "После появления необязательного total у Chromium общий диагностический consumer должен проверить тип перед сравнением."
+            },
+            {
+              "exitCode": 2,
+              "startedAt": "2026-09-10T01:24:21.330736+00:00",
+              "endedAt": "2026-09-10T01:26:30.545939+00:00",
+              "durationMs": 129202,
+              "log": "/tmp/voicechat-reader-cycle-06-fast-final.log",
+              "reason": "Новый MCP fake вернул result без обязательного ok селекторного результата; исправлена форма тестового ответа."
+            }
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:27:56.577071+00:00",
+          "endedAt": "2026-09-10T01:37:49.921375+00:00",
+          "durationMs": 593341,
+          "passed": 7320,
+          "skipped": 45,
+          "failed": 0
+        },
+        "external": {
+          "exitCode": 0,
+          "log": "/tmp/voicechat-reader-cycle-06-external.log",
+          "scope": "Чистый профиль; публичные формы входа Gmail и Instagram, включая cookie dialog Instagram. Личные аккаунты не открывались.",
+          "gmailReadMs": 883,
+          "instagramReadMs": 1118,
+          "visuallyInspected": [
+            "external-gmail.png",
+            "external-instagram.png"
+          ]
+        },
+        "emptyDocument": {
+          "baselineFailed": 1,
+          "baselineLog": "/tmp/voicechat-reader-cycle-06-empty-baseline.log",
+          "passed": 13,
+          "log": "/tmp/voicechat-reader-cycle-06-reading-final-13.log",
+          "detail": "Правка внесена до этапа browser-runner текущего быстрого гейта; полный гейт ещё не начинался."
+        },
+        "fullGate": {
+          "status": "passed",
+          "log": "/tmp/voicechat-reader-cycle-06-gate.log",
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:38:18.779495+00:00",
+          "endedAt": "2026-09-10T01:47:11.925057+00:00",
+          "durationMs": 533136,
+          "passedWorkspaceTests": 7651
+        }
+      },
+      "validatedAt": "2026-09-10T01:48:24.739287+00:00",
+      "completedAt": "2026-09-10T01:48:24.739287+00:00",
+      "commit": "f93ee2ca2223244c0ca4e61d4d210d506e268511"
+    },
+    {
+      "number": 7,
+      "status": "complete",
+      "startedAt": "2026-09-10T01:48:51.435861+00:00",
+      "items": [
+        {
+          "id": "07-01",
+          "title": "Ожидание нужного текста внутри заданного элемента",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-02",
+          "title": "Ожидание появления, видимости, скрытия или удаления элемента",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-03",
+          "title": "Ожидание доступности кнопки или поля (enabled)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-04",
+          "title": "Ожидание возможности редактировать поле (editable)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-05",
+          "title": "Ожидание состояния флажка (checked)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-06",
+          "title": "Ожидание текущего значения контрола (value)",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-07",
+          "title": "Ожидание числа элементов, включая ноль",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-08",
+          "title": "Ожидание URL после редиректа или маршрута SPA",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-09",
+          "title": "Ожидание готовности документа или полной загрузки",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        },
+        {
+          "id": "07-10",
+          "title": "Ожидание условия JavaScript приложения",
+          "status": "complete",
+          "group": "page-readiness",
+          "implementationStartedAt": "2026-09-10T01:48:51.435861+00:00",
+          "implementationEndedAt": "2026-09-10T01:58:44.427306+00:00",
+          "sharedGroupDurationSeconds": 593
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T01:26:06.433129+00:00",
+        "items": [
+          "Ожидание нужного текста внутри заданного элемента",
+          "Ожидание появления, видимости, скрытия или удаления элемента",
+          "Ожидание доступности кнопки или поля (enabled)",
+          "Ожидание возможности редактировать поле (editable)",
+          "Ожидание состояния флажка (checked)",
+          "Ожидание текущего значения контрола (value)",
+          "Ожидание числа элементов, включая ноль",
+          "Ожидание URL после редиректа или маршрута SPA",
+          "Ожидание готовности документа или полной загрузки",
+          "Ожидание условия JavaScript приложения"
+        ],
+        "evidence": "/tmp/voicechat-reader-cycle-07-baseline.log",
+        "observations": {
+          "firstSevenReturnSuccessWhileConditionsFalse": true,
+          "urlLoadPredicateRequireIrrelevantSelector": true
+        },
+        "implementationNotes": [
+          "Использовать общий дедлайн для сочетаний условий; проверять таймаут и восстановление.",
+          "Новый расширенный wait доступен Chromium, явно отказывать при fallback в iframe; прежний wait iframe сохраняется.",
+          "URL проверять с восстановлением публичного host alias.",
+          "Новые функции не считаются готовыми до реального MCP/E2E и полного гейта."
+        ],
+        "prototype": {
+          "log": "/tmp/voicechat-reader-cycle-07-prototype-final.log",
+          "detail": "Черновой исполнитель проверен в Chromium вне checkout: ложные условия не проходят, URL/load/true predicate проходят, async predicate явно отклоняется. После пробы уточнены общий текст таймаута и count без неявного требования видимости."
+        },
+        "rejected": [
+          {
+            "hypothesis": "30-секундная задержка живых тестов вызвана закрытием HTTP стенда",
+            "observation": "Не воспроизведено: site.close 1 мс, browser.close 26 мс. Фикс не выполнялся.",
+            "log": "/tmp/voicechat-reader-fixture-close-timing.log"
+          }
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T01:29:37.838391+00:00",
+          "endedAt": "2026-09-10T01:48:51.435861+00:00",
+          "detail": "Черновики готовились и проверялись вне checkout во время гейтов 06; интервал пересекается с проверкой 06."
+        }
+      },
+      "validation": {
+        "baseline": {
+          "nativeFailed": 11,
+          "log": "/tmp/voicechat-reader-cycle-07-native-baseline.log"
+        },
+        "focused": {
+          "runnerPassed": 35,
+          "nativeWaitingPassed": 11,
+          "nativeWaitingDurationMs": 5580,
+          "sharedPassedBeforeMapperAddition": 50,
+          "mcpPassed": 61,
+          "typecheckAllExitCode": 0,
+          "serverTypecheckExitCode": 0
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 48710,
+          "log": "/tmp/voicechat-reader-cycle-07-build.log"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:56:45.159308+00:00",
+          "endedAt": "2026-09-10T01:57:00.163648+00:00",
+          "durationMs": 15004,
+          "status": "passed",
+          "passed": 10,
+          "vitestDurationMs": 14520,
+          "log": "/tmp/voicechat-reader-cycle-07-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-07",
+          "initialAttempt": {
+            "exitCode": 1,
+            "startedAt": "2026-09-10T01:54:21.993084+00:00",
+            "endedAt": "2026-09-10T01:54:41.817009+00:00",
+            "durationMs": 19824,
+            "log": "/tmp/voicechat-reader-cycle-07-e2e.log",
+            "reason": "Все новые ожидания прошли, служебный evaluate изменения DOM отклонён политикой приложения; в стенд добавлена кнопка очистки, E2E нажимает её обычным click."
+          },
+          "visuallyInspected": [
+            "15-model-waits-for-ready-page.png"
+          ]
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T01:59:18.489603+00:00",
+          "endedAt": "2026-09-10T02:07:05.436506+00:00",
+          "durationMs": 466944,
+          "status": "passed",
+          "passed": 7349,
+          "skipped": 45,
+          "log": "/tmp/voicechat-reader-cycle-07-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:07:48.435055+00:00",
+          "endedAt": "2026-09-10T02:16:47.768969+00:00",
+          "durationMs": 539330,
+          "status": "passed",
+          "passed": 7680,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-07-gate.log"
+        }
+      },
+      "endedAt": "2026-09-10T02:17:25.863104+00:00",
+      "commit": "b5e6fe3a"
+    },
+    {
+      "number": 8,
+      "status": "complete",
+      "startedAt": "2026-09-10T02:18:27.712843+00:00",
+      "items": [
+        {
+          "id": "08-01",
+          "title": "Структурированное чтение открытого Shadow DOM",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-02",
+          "title": "Видимый текст компонентов и слотов без повторов",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-03",
+          "title": "Селектор найденного узла различает light DOM и Shadow DOM",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-04",
+          "title": "Запись клика внутри вложенных shadow roots",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-05",
+          "title": "Запись одинаковых кнопок воспроизводит нужную",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-06",
+          "title": "Глубокий текст сохраняет интерактивного предка",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-07",
+          "title": "Прокрутка принимает селекторы Playwright и Shadow DOM",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-08",
+          "title": "selector и text совместно ограничивают click, hover и find",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-09",
+          "title": "aria-labelledby разрешается внутри root поля",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        },
+        {
+          "id": "08-10",
+          "title": "Недоступность поля учитывает disabled fieldset",
+          "status": "complete",
+          "group": "dom-targets",
+          "implementationStartedAt": "2026-09-10T02:18:27.712843+00:00",
+          "implementationEndedAt": "2026-09-10T02:23:21.552314+00:00",
+          "sharedGroupDurationSeconds": 294
+        }
+      ],
+      "research": {
+        "evidence": "/tmp/voicechat-reader-cycle-08-baseline.log",
+        "nativeBaseline": {
+          "failed": 10,
+          "durationMs": 3960,
+          "log": "/tmp/voicechat-reader-cycle-08-native-baseline.log"
+        },
+        "prototype": {
+          "passed": 10,
+          "durationMs": 15920,
+          "log": "/tmp/voicechat-reader-cycle-08-draft-native.log"
+        },
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T02:11:41.244792+00:00",
+          "endedAt": "2026-09-10T02:18:27.712843+00:00",
+          "detail": "Черновики вне checkout во время полного гейта 07; интервалы пересекаются."
+        },
+        "rejected": [
+          {
+            "hypothesis": "Внешний light DOM #action всегда кликает соседнюю shadow кнопку",
+            "observation": "Простой случай прошёл; сбой воспроизведён с совпадающим id внутри слота того же host."
+          }
+        ]
+      },
+      "validation": {
+        "focused": {
+          "passed": 58,
+          "durationMs": 2700,
+          "typecheckExitCode": 0,
+          "log": "/tmp/voicechat-reader-cycle-08-native-final.log"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:22:04.124699+00:00",
+          "endedAt": "2026-09-10T02:22:18.576762+00:00",
+          "durationMs": 14452,
+          "status": "passed",
+          "passed": 11,
+          "vitestDurationMs": 14080,
+          "log": "/tmp/voicechat-reader-cycle-08-e2e-final.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-08",
+          "visuallyInspected": [
+            "16-model-shadow-components.png"
+          ],
+          "initialAttempt": {
+            "exitCode": 1,
+            "startedAt": "2026-09-10T02:19:33.198240+00:00",
+            "endedAt": "2026-09-10T02:19:58.024062+00:00",
+            "durationMs": 24825,
+            "log": "/tmp/voicechat-reader-cycle-08-e2e.log",
+            "reason": "Новая проверка позиционного identity отказала при обновлении DOM собственного сайта; уточнение теперь сохраняет уникальный селектор и один раз перечитывает исчезнувший результат. Добавлены 2 живые регрессии."
+          }
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:23:22.547226+00:00",
+          "endedAt": "2026-09-10T02:30:43.302828+00:00",
+          "durationMs": 440753,
+          "status": "passed",
+          "passed": 7360,
+          "skipped": 45,
+          "log": "/tmp/voicechat-reader-cycle-08-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:31:02.339269+00:00",
+          "endedAt": "2026-09-10T02:40:23.213844+00:00",
+          "durationMs": 560897,
+          "status": "passed",
+          "passed": 7691,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-08-gate.log"
+        },
+        "external": {
+          "log": "/tmp/voicechat-reader-cycle-08-external.log",
+          "results": "/tmp/voicechat-reader-audit/cycle-08/external-results.json",
+          "gmail": {
+            "opened": true,
+            "readMs": 36,
+            "publicForm": true
+          },
+          "instagram": {
+            "opened": true,
+            "readMs": 256,
+            "publicFormAndCookieDialog": true
+          },
+          "visuallyInspected": [
+            "external-gmail.png",
+            "external-instagram.png"
+          ],
+          "authenticatedAccountsUsed": false
+        }
+      },
+      "endedAt": "2026-09-10T02:41:25.656495+00:00",
+      "commit": "30d04e5b"
+    },
+    {
+      "number": 9,
+      "status": "complete",
+      "startedAt": "2026-09-10T02:42:55.545174+00:00",
+      "items": [
+        {
+          "id": "09-01",
+          "title": "Каталог живых iframe с фактическим URL и цепочкой селекторов",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-02",
+          "title": "DOM-действия модели в явно выбранном iframe",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-03",
+          "title": "Вложенные iframe другого origin",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-04",
+          "title": "Ожидания URL/load/predicate выбранного документа",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-05",
+          "title": "evaluate в контексте выбранного документа",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-06",
+          "title": "Стили через локатор внутри iframe и Shadow DOM",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-07",
+          "title": "Снимок видимой области iframe или его элемента с честным усечением",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-08",
+          "title": "Навигация одного iframe с сохранением родительской страницы",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-09",
+          "title": "Запись координатного клика внутри iframe",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        },
+        {
+          "id": "09-10",
+          "title": "Воспроизведение записанного шага и его ожиданий внутри iframe",
+          "status": "validated",
+          "group": "frame-context",
+          "implementationStartedAt": "2026-09-10T02:42:55.545174+00:00",
+          "implementationEndedAt": "2026-09-10T02:59:41.097029+00:00",
+          "sharedGroupDurationSeconds": 1006,
+          "validation": "17/17 native iframe; 13/13 E2E с настоящим Make; адресные shared/MCP/UI/CLI; оба гейта exit 0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T02:33:44.982090+00:00",
+        "items": [
+          "Каталог живых iframe с фактическим URL и цепочкой селекторов",
+          "DOM-действия модели в явно выбранном iframe",
+          "Вложенные iframe другого origin",
+          "Ожидания URL/load/predicate выбранного документа",
+          "evaluate в контексте выбранного документа",
+          "Стили через локатор внутри iframe и Shadow DOM",
+          "Снимок видимой области iframe или его элемента с честным усечением",
+          "Навигация одного iframe с сохранением родительской страницы",
+          "Запись координатного клика внутри iframe",
+          "Воспроизведение записанного шага и его ожиданий внутри iframe"
+        ],
+        "evidence": [
+          "/tmp/voicechat-reader-cycle-09-probe.log",
+          "/tmp/voicechat-reader-cycle-09-description-probe.log",
+          "/tmp/voicechat-reader-cycle-09-capture-probe.log",
+          "/tmp/voicechat-reader-cycle-09-manager-probe.log"
+        ],
+        "observations": [
+          "Старые read/evaluate игнорируют frame и возвращают parent. describe возвращает iframe, не кнопку.",
+          "Прототип resolveFrame/framePage читает и действует внутри двух iframe разных origin; listFrames сообщает URL после редиректа.",
+          "describeFramePoint возвращает относительный selector и цепочку frame, включая масштабированный iframe.",
+          "Нативный body.screenshot у iframe выдаёт 1413px при окне500px, ниже кадра пустота (изображение просмотрено). Прототип captureFrame ограничивает кадр видимой областью и сообщает clipped:true."
+        ],
+        "limitations": [
+          "Закрытые shadow roots не поддерживаются; запись в повёрнутом iframe явно отказывает.",
+          "frame+fullPage/rect планируется отклонять, пока полная прокрутка вложенного документа не реализована.",
+          "Подготовка вне checkout во время гейтов 08; ничего из 09 ещё не интегрировано."
+        ],
+        "integrationNotes": [
+          "Shared first: BrowserFramePath/BrowserFrameContext/BrowserFramesResult; command frame?: on navigate/selector/inspect/screenshot; PreviewAction common frame optional; mapper preserves scope, rejects unsupported types.",
+          "MCP run must reject frame fallback to Web Reader; schemas+handler forwarding frame for DOM/open/evaluate/styles/wait/screenshot. frames control tool needs Claude allow-list.",
+          "wait predicate policy remains same before dispatch. screenshot result text must include frame and clipped metadata.",
+          "Frame selector adapter from frames.ts; keyboard from Page, rest bound Frame. Frame resolution strictly single target.",
+          "Styles currently document.querySelector; replace with locator.evaluate to support returned selectors.",
+          "RecordClick and recordType forward element.frame; scenarioStep assertion read uses step.action.frame.",
+          "Real Make E2E: PUT /api/make/${chats.make}/notes {stack:html-js,uiKit:none}, PUT /api/make/${chats.make}/file {path:index.html,content:...}. Open own Make route, enumerate frames, read/click/type in preview. No external network needed.",
+          "Screenshot timeout must be shared across resolveFrame, scroll and capture; prototype does not yet enforce overall deadline.",
+          "Frame capture uses root screenshot of visible intersection; normal capturePage validation currently private. Validate screenshot arguments before doing frame work when integrating.",
+          "Cycle08 must pass full gate and be committed before any09 checkout edits.",
+          "Прототип sessionManager.ts работает runtime, но типы ещё не обновлены: при интеграции не копировать его вслепую.",
+          "Frame/page metadata вычислять ПОСЛЕ действия; клик может перейти внутри frame или через target=_top. Добавить detached marker при исчезновении выбранного frame.",
+          "У scoped read ссылки/iframe.src тоже восстанавливать через publicUrl как у обычного чтения.",
+          "toScenario не должен выносить первый open с frame в startUrl: это навигация iframe, а не стартовой страницы.",
+          "Стек Make для формы html-js (не html, который запрещает JS); основной iframe .make-frame, src /api/preview/make/:id/.",
+          "Обнаружен отдельный долг для следующих циклов: scenarioStep трактует read.ok:false как пустой текст, что может ложно пропускать expectAbsentText. Нужна отдельная регрессия.",
+          "styles вообще не зарегистрирован в previewMcp.ts, хотя внутренний BrowserInspectAction его поддерживает. Добавить новый MCP tool styles, его тест и Claude allow-list вместе с frames.",
+          "Scoped inspect console/network не должны маркировать общие логи как логи frame: отклонять frame для этих действий до исполнения.",
+          "frame+press без selector и frame+drag по координатам отклонять mapper: координаты и общий фокус принадлежат всей Page.",
+          "Максимум frame path 8 уровней, selector ≤2000 каждый. screenshot header cap8192 может отбросить длинные метаданные; учитывать, не подменять факты."
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T02:26:45.485220+00:00",
+          "endedAt": "2026-09-10T02:42:55.545174+00:00",
+          "detail": "Подготовка и браузерные прототипы вне checkout во время гейтов 08; интервалы пересекаются."
+        }
+      },
+      "validation": {
+        "baseline": {
+          "nativeFailed": 11,
+          "durationMs": 1710,
+          "log": "/tmp/voicechat-reader-cycle-09-native-baseline.log"
+        },
+        "focused": {
+          "runnerPassed": 59,
+          "runnerDurationMs": 10300,
+          "framesFinalPassed": 17,
+          "framesFinalDurationMs": 3890,
+          "sharedPassed": 79,
+          "mcpPassed": 79,
+          "uiRecordingPassed": 34,
+          "cliPassed": 17,
+          "typecheckAllExitCode": 0,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-09-native-2.log",
+            "/tmp/voicechat-reader-cycle-09-native-final.log",
+            "/tmp/voicechat-reader-cycle-09-shared-2.log",
+            "/tmp/voicechat-reader-cycle-09-mcp-2.log",
+            "/tmp/voicechat-reader-cycle-09-recording.log",
+            "/tmp/voicechat-reader-cycle-09-cli.log"
+          ],
+          "initialCorrections": [
+            "TS narrowing результата selector/inspect уточнён перед полным typecheck.",
+            "Один новый MCP-тест не создавал Fastify после закрытия предыдущего теста; стенд исправлен, повтор 79/79."
+          ]
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 18540,
+          "log": "/tmp/voicechat-reader-cycle-09-build.log"
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:54:40.294210+00:00",
+          "endedAt": "2026-09-10T02:55:07.385705+00:00",
+          "durationMs": 27091,
+          "status": "passed",
+          "passed": 13,
+          "vitestDurationMs": 26010,
+          "log": "/tmp/voicechat-reader-cycle-09-e2e.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-09",
+          "visuallyInspected": [
+            "17-model-inside-make-preview.png",
+            "18-model-nested-frames.png",
+            "19-scoped-frame.png"
+          ]
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T02:59:44.683912+00:00",
+          "endedAt": "2026-09-10T03:09:31.456361+00:00",
+          "durationMs": 586725,
+          "status": "passed",
+          "passed": 7401,
+          "skipped": 45,
+          "failed": 0,
+          "log": "/tmp/voicechat-reader-cycle-09-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:09:45.507421+00:00",
+          "endedAt": "2026-09-10T03:19:14.327578+00:00",
+          "durationMs": 568815,
+          "status": "passed",
+          "passed": 7732,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-09-gate.log"
+        }
+      },
+      "endedAt": "2026-09-10T03:19:40.067330+00:00",
+      "durationSeconds": 2205,
+      "commit": "a5b4fde6"
+    },
+    {
+      "number": 10,
+      "status": "complete",
+      "startedAt": "2026-09-10T03:20:14.689236+00:00",
+      "items": [
+        {
+          "id": "10-01",
+          "title": "Действие без подтверждённого ответа не считается успешным",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-02",
+          "title": "Ошибка чтения не подтверждает отсутствие текста",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-03",
+          "title": "Ожидание на длинной странице и на границе порций текста",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-04",
+          "title": "Неполное чтение не даёт зелёную проверку отсутствия",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-05",
+          "title": "Опрос ожидания не выходит за свой бюджет дополнительным сном и чтением",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-06",
+          "title": "Ожидание первого перехода сохраняется и исполняется",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-07",
+          "title": "Прокрутка не стирает промежуточную проверку и чужой scope",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-08",
+          "title": "Идентификаторы записи остаются уникальными после загрузки и редактирования",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-09",
+          "title": "Некорректное действие отклоняется до сохранения и исполнения",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-10",
+          "title": "Отказ стартового перехода останавливает прогон в панели и QA",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T02:59:46.914255+00:00",
+        "preparedAt": "2026-09-10T03:17:31.760428+00:00",
+        "items": [
+          "Действие без подтверждённого ответа не считается успешным",
+          "Ошибка чтения не подтверждает отсутствие текста",
+          "Ожидание на длинной странице и на границе порций текста",
+          "Неполное чтение не даёт зелёную проверку отсутствия",
+          "Опрос ожидания не выходит за свой бюджет дополнительным сном и чтением",
+          "Ожидание первого перехода сохраняется и исполняется",
+          "Прокрутка не стирает промежуточную проверку и чужой scope",
+          "Идентификаторы записи остаются уникальными после загрузки и редактирования",
+          "Некорректное действие отклоняется до сохранения и исполнения",
+          "Отказ стартового перехода останавливает прогон в панели и QA"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-10-baseline.json",
+        "evidence": [
+          "9 воспроизведённых сбоев общих функций; отказ старта панели подтверждён по коду run/replay, DOM-регрессия подготовлена",
+          "26/26 тестов прототипа (634 мс)",
+          "5/5 настоящих Chromium-проверок длинных страниц, включая iframe"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-10-draft",
+        "limitations": [
+          "Подготовка вне checkout во время гейтов 09; интервалы пересекаются",
+          "Полное чтение ограничено 200000 символов; за пределом вердикт unverifiable",
+          "URL/размер проверяются между порциями, атомарность изменяемого DOM не заявляется",
+          "expectTimeoutMs ограничивает повторные попытки; отдельная команда ограничивается транспортом/раннером",
+          "Пакетная интеграция, UI-браузер, fast/full gate ещё не выполнены"
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T02:59:46.914255+00:00",
+          "endedAt": "2026-09-10T03:20:14.689236+00:00",
+          "detail": "Прототипы вне checkout параллельно гейтам 09; интервалы пересекаются."
+        }
+      },
+      "validation": {
+        "focused": {
+          "sharedPassed": 46,
+          "sharedDurationMs": 976,
+          "uiPassed": 100,
+          "uiDurationMs": 3470,
+          "qaPassed": 13,
+          "qaDurationMs": 11810,
+          "nativePassed": 5,
+          "nativeDurationMs": 3020,
+          "typecheckAllExitCode": 0,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-10-shared.log",
+            "/tmp/voicechat-reader-cycle-10-ui.log",
+            "/tmp/voicechat-reader-cycle-10-server.log",
+            "/tmp/voicechat-reader-cycle-10-native.log",
+            "/tmp/voicechat-reader-cycle-10-typecheck.log"
+          ]
+        },
+        "baseline": {
+          "logic": "/tmp/voicechat-reader-cycle-10-baseline.json",
+          "uiFailed": 1,
+          "uiDurationMs": 7850,
+          "uiLog": "/tmp/voicechat-reader-cycle-10-ui-baseline.log"
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 35450
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:25:06.536045+00:00",
+          "endedAt": "2026-09-10T03:25:28.607724+00:00",
+          "durationMs": 22071,
+          "status": "passed",
+          "passed": 15,
+          "vitestDurationMs": 21840,
+          "log": "/tmp/voicechat-reader-cycle-10-e2e-3.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-10",
+          "visuallyInspected": [
+            "20-scenario-make-footer.png",
+            "21-scenario-first-expectation.png",
+            "22-scenario-blocked-navigation.png"
+          ],
+          "initialCorrections": [
+            {
+              "passed": 14,
+              "failed": 1,
+              "log": "/tmp/voicechat-reader-cycle-10-e2e.log",
+              "reason": "Новый тест ожидал status панели 1000 мс, меньше интервала опроса; стенд исправлен на timeout 10000 мс."
+            },
+            "Вторая попытка ожидала title «Следующая страница» вместо текста body «Переход завершён». Панель правильно показала провал; исправлено ожидание нового теста."
+          ]
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:26:10.487366+00:00",
+          "endedAt": "2026-09-10T03:33:29.867021+00:00",
+          "durationMs": 439375,
+          "status": "passed",
+          "passed": 7436,
+          "skipped": 45,
+          "failed": 0,
+          "log": "/tmp/voicechat-reader-cycle-10-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:34:54.512136+00:00",
+          "endedAt": "2026-09-10T03:45:52.094689+00:00",
+          "durationMs": 657557,
+          "status": "passed",
+          "passed": 7767,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-10-gate.log"
+        }
+      },
+      "endedAt": "2026-09-10T03:47:08.286840+00:00",
+      "durationSeconds": 1614,
+      "commit": "dd98671b"
+    },
+    {
+      "number": 11,
+      "status": "complete",
+      "startedAt": "2026-09-10T03:47:58.670888+00:00",
+      "items": [
+        {
+          "id": "11-01",
+          "title": "Сохраняемый профиль Reader при одноразовом профиле QA",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-02",
+          "title": "Сессионные cookie переживают закрытие Chromium",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-03",
+          "title": "Последний адрес Reader восстанавливается после открытия панели",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-04",
+          "title": "Размер окна восстанавливается из профиля, явный выбор имеет приоритет",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-05",
+          "title": "Одновременные start/stop не теряют новую сессию и не удаляют её профиль",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-06",
+          "title": "Ошибочные cookie старта проверяются до запуска и не оставляют скрытый Chromium",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-07",
+          "title": "Очистка сайта удаляет HttpOnly-cookie",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-08",
+          "title": "Очистка сайта удаляет IndexedDB, CacheStorage и service workers",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-09",
+          "title": "MCP reset-session очищает фактический Chromium",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        },
+        {
+          "id": "11-10",
+          "title": "Панель использует полную очистку и прекращает reload при ошибке",
+          "status": "validated",
+          "group": "profile-and-site-data",
+          "implementationStartedAt": "2026-09-10T03:47:58.670888+00:00",
+          "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+          "sharedGroupDurationSeconds": 1315,
+          "validation": "16 native Chromium, 4 shared, 62 UI, 133 server/integration, 18 Reader, 17 CLI, 4 cookie; E2E18; fast/full exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T03:31:48.774036+00:00",
+        "baseline": "/tmp/voicechat-reader-cycle-11-probe.json",
+        "observations": [
+          "Точная кнопка UI очистила JS-cookie/localStorage, но сохранила HttpOnly session-cookie, IndexedDB auth-db и CacheStorage auth-cache.",
+          "CDP Storage.clearDataForOrigin плюс context.clearCookies удалили эти данные на локальном стенде.",
+          "Текущий stop/start потерял обе cookie и localStorage; profileMode persistent пока не существует и игнорируется.",
+          "Одновременные stop/start оба завершились, но процесс пробы остался жить после manager.close: прежний context.on(close) удаляет новую сессию из Map. Проба завершила JSON; её PID 5778 остановлен SIGTERM, чтобы не оставлять Chromium.",
+          "MCP reset-session по коду обращается только к WebReader clearCookies; UI исполняет script и reload даже после ошибки.",
+          "Reader и QA сейчас не различают срок жизни профиля. Core browserCheckTarget знает Reader/задачу; можно передавать явный profileMode."
+        ],
+        "status": "research_only",
+        "candidates": [
+          "Разделить сохраняемый профиль Reader и одноразовый QA",
+          "Сохранение сессионных cookie между остановками",
+          "Восстановление последнего адреса",
+          "Восстановление размера окна при повторном открытии панели",
+          "Сериализация start/stop и защита от старых close/catch",
+          "Полная очистка данных текущего сайта с HttpOnly/IndexedDB/CacheStorage/SW",
+          "MCP reset-session должен действовать в выбранном Chromium",
+          "Ошибка очистки не должна приводить к ложному успеху и reload"
+        ],
+        "notes": [
+          "Десять пунктов выбраны после прототипов; интеграция ещё не начата.",
+          "Другие процессы пользователя и voiceAIChat1 не трогать."
+        ],
+        "cleanup": "SIGTERM собственному PID5778 завершил пробу с задержкой. Защитная ветка SIGKILL по точному argv не исполнилась: к проверке процесс уже завершился. Другие процессы не тронуты.",
+        "raceEvidence": {
+          "path": "/tmp/voicechat-reader-cycle-11-race.json",
+          "iterations": 3,
+          "result": "Во всех трёх попытках stop/start fulfilled, но count=0 и новая incarnation получает not_found. Обе Chromium-context явно закрыты стендом."
+        },
+        "plannedItems": [
+          "Сохраняемый профиль Reader при одноразовом профиле QA",
+          "Сессионные cookie переживают закрытие Chromium",
+          "Последний адрес Reader восстанавливается после открытия панели",
+          "Размер окна восстанавливается из профиля, явный выбор имеет приоритет",
+          "Одновременные start/stop не теряют новую сессию и не удаляют её профиль",
+          "Ошибочные cookie старта проверяются до запуска и не оставляют скрытый Chromium",
+          "Очистка сайта удаляет HttpOnly-cookie",
+          "Очистка сайта удаляет IndexedDB, CacheStorage и service workers",
+          "MCP reset-session очищает фактический Chromium",
+          "Панель использует полную очистку и прекращает reload при ошибке"
+        ],
+        "prototype": {
+          "path": "/tmp/voicechat-reader-cycle-11-draft",
+          "raceFixed": "/tmp/voicechat-reader-cycle-11-race-fixed.json",
+          "result": "3/3: count=1 и новая incarnation ready после stop/start",
+          "implementedDraftOnly": [
+            "stopping Map; start ждёт закрытия/очистки; close/catch проверяют прежнюю запись; close ждёт остановки; нет новых стартов при закрытии manager",
+            "profileMode persistent/ephemeral; .reader-state.json c cookie, url, viewport (0600, atomic); восстановление ограничено 10с и прежней политикой URL",
+            "validCookies до запуска; create закрывает context при ошибке и чистит только ephemeral-профиль после успешного launch. Типизация/форматирование черновика ещё не проверены штатным typecheck."
+          ],
+          "notImplementedYet": [
+            "shared contracts и server/module/route профиль Reader/QA",
+            "полная очистка сайта и модель/панель",
+            "UI start без навязанного viewport, избегание двойного восстановления URL",
+            "последовательные регрессии, штатная типизация интегрированного кода, гейты"
+          ],
+          "cookieValidation": {
+            "baseline": "/tmp/voicechat-reader-cycle-11-cookie-start-baseline.log",
+            "fixed": "/tmp/voicechat-reader-cycle-11-cookie-start-fixed.log",
+            "result": "Неверный URL cookie: старый start отклоняется при count=1; прототип отклоняет до Chromium, count=0."
+          },
+          "profileFixed": {
+            "path": "/tmp/voicechat-reader-cycle-11-profile-fixed-2.json",
+            "result": "Без Set-Cookie при восстановлении сохранены session/persistent cookie, localStorage, URL auth.reader.test/ и viewport390x820. IndexedDB/CacheStorage в этой пробе были намеренно очищены до stop, их сохранение ещё отдельно не проверялось.",
+            "finalPath": "/tmp/voicechat-reader-cycle-11-profile-fixed-3.json",
+            "finalResult": "Повтор3 также сохранил IndexedDB retained-db и CacheStorage retained-cache; запущен после исправления validCookies и create cleanup."
+          },
+          "draftTypecheck": {
+            "exitCode": 0,
+            "log": "/tmp/voicechat-reader-cycle-11-draft-typecheck.log"
+          }
+        },
+        "designNotes": [
+          "profileMode по умолчанию ephemeral, Reader выставляет persistent и в REST-start, и в core.modelTarget/browserCheckTarget; QA сохраняет очистку профиля.",
+          "Cookie-file дополняет нативный persistent profile для cookie с expires=-1; хранить HttpOnly/secure/sameSite/partitionKey, не выводить значения.",
+          "Проба cookies после восстановления /seed была ложноположительной: /seed сам устанавливает cookie. Повтор2 перед stop открывает / без Set-Cookie и проверяет auto-restore URL/viewport.",
+          "Последнюю страницу восстанавливать после установки bootstrap cookie прокси; публичный alias сохранять, при старте снова validate/applyAlias.",
+          "MCP reset-session уже означает все сайты без host; для Chromium нужен соответствующий control, для панели — текущий origin. WebReader cookie jar тоже нужен проксированным машинным сайтам; не потерять прежний fallback.",
+          "Не сносить bootstrap cookie доступа к прокси как логин сайта: новая команда модели снова установит её, ручная панель иначе лишится доступа к превью.",
+          "Данные закрытых origin нужно учитывать при reset всех сайтов (tracking framenavigated + профиль); состояние одной текущей страницы недостаточно.",
+          "Cookie привязаны к host, не к порту; очистка host может затронуть cookie sibling-порта, это поведение браузера. Хранилища строго по origin.",
+          "Нельзя await undefined в начале start: это сдвигает резервирование pending за microtask и открывает race с немедленным stop. Черновик исправлен на условный await stopping.",
+          "Новые source-файлы и sessionManager пока только /tmp. Не копировать вслепую: 11-06..10 не реализованы, типы helper требуют ревью.",
+          "clearSiteData control: current (UI) или all+optional host (MCP прежняя семантика reset-session); отказ при unknown/unsupported response, чтобы старый runner не выдал ложный успех.",
+          "Сохранять service bootstrap cookie по name+hostname, не выводя value; очищать все paths HttpOnly-cookie совпадающего host/parent-domain, хранилища — по origin.",
+          "Панель start без VIEWPORT аргумента позволит восстановить размер; restart не должен открывать URL второй раз, если runner уже его восстановил.",
+          "MCP reset-session оставляет WebReader clearCookies fallback; Chromium reset и jar проксированных machine-сайтов требуют согласованного поведения.",
+          "Нужны отдельные тесты очистки чужого origin/профиля, service worker, host alias и bootstrap cookie.",
+          "На старте чтение профиля до launch, cookie восстановить перед bootstrap cookie и goto; .reader-state.json никогда не отправляется по API.",
+          "Пакетная интеграция цикла11 обязательно начинается с shared; inline profileMode в /tmp — лишь прототип."
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T03:31:48.774036+00:00",
+          "endedAt": "2026-09-10T03:47:58.670888+00:00",
+          "detail": "Прототипы вне checkout во время гейтов 10; интервалы пересекаются."
+        }
+      },
+      "validation": {
+        "native": {
+          "tests": 16,
+          "durationMs": 6040,
+          "log": "/tmp/voicechat-reader-cycle-11-native-3.log"
+        },
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:08:07.138125+00:00",
+          "endedAt": "2026-09-10T04:08:28.895950+00:00",
+          "durationMs": 21758
+        },
+        "e2eTests": 18,
+        "typecheckExitCode": 0,
+        "webBuildExitCode": 0,
+        "visual": [
+          "23-project-persistent-login.png",
+          "25-profile-cleared-from-panel.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-11",
+        "corrections": [
+          "Typecheck указал неизвестный ответ UI: добавлена object-проверка перед in.",
+          "Первый E2E: 17/18, точное число cookie заменено на >=3, поскольку стенды разных портов разделяют 127.0.0.1-cookie; отдельный native доказывает удаление ровно3.",
+          "Первый корневой адресный запуск Vitest не стартовал из-за min/max workers; тесты затем запущены из своих пакетов с обеими границами.",
+          "Первый gate:fast упал на двух прежних private applyCookies-тестах молчаливой фильтрации; теперь повреждённый список проверяется через public start с явным отказом до Chromium. Четыре cookie-теста прошли, повторный fast exit0."
+        ],
+        "fastAttempts": [
+          {
+            "exitCode": 1,
+            "startedAt": "2026-09-10T04:09:55.030763+00:00",
+            "endedAt": "2026-09-10T04:13:32.489337+00:00",
+            "durationMs": 217457
+          },
+          {
+            "exitCode": 0,
+            "startedAt": "2026-09-10T04:14:54.994525+00:00",
+            "endedAt": "2026-09-10T04:18:52.719879+00:00",
+            "durationMs": 237723
+          }
+        ],
+        "fastTests": {
+          "passed": 7465,
+          "skipped": 45
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:19:11.579998+00:00",
+          "endedAt": "2026-09-10T04:24:49.494466+00:00",
+          "durationMs": 337893
+        },
+        "gateTests": 7796
+      },
+      "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
+      "sharedImplementationDurationSeconds": 1315,
+      "endedAt": "2026-09-10T04:25:31.032514+00:00",
+      "commit": "13ac0bd2"
+    },
+    {
+      "number": 12,
+      "status": "complete",
+      "startedAt": "2026-09-10T04:26:23.601110+00:00",
+      "items": [
+        {
+          "id": "12-01",
+          "title": "Колесо прокручивает контейнер под текущим курсором",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-02",
+          "title": "Единицы wheel line/page переводятся в пиксели",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-03",
+          "title": "Модель прокручивает горизонтально страницы и контейнеры",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-04",
+          "title": "mouseDown/mouseUp используют переданные координаты",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-05",
+          "title": "Модификаторы клика сохраняются в Chromium",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-06",
+          "title": "Двойной клик панели даёт два click и один dblclick",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-07",
+          "title": "Комбинации клавиш и Delete/Home/End/PageUp/PageDown доступны в кадре",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-08",
+          "title": "Вставка текста из буфера работает в сфокусированном поле Chromium",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-09",
+          "title": "Неудачный ввод и новый текст не теряются из черновика панели",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-10",
+          "title": "Параллельные события ввода выполняются последовательно без смешивания модификаторов",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T04:12:58.199031+00:00",
+        "items": [
+          "Колесо прокручивает контейнер под текущим курсором",
+          "Единицы wheel line/page переводятся в пиксели",
+          "Модель прокручивает горизонтально страницы и контейнеры",
+          "mouseDown/mouseUp используют переданные координаты",
+          "Модификаторы клика сохраняются в Chromium",
+          "Двойной клик панели даёт два click и один dblclick",
+          "Комбинации клавиш и Delete/Home/End/PageUp/PageDown доступны в кадре",
+          "Вставка текста из буфера работает в сфокусированном поле Chromium",
+          "Неудачный ввод и новый текст не теряются из черновика панели",
+          "Параллельные события ввода выполняются последовательно без смешивания модификаторов"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-12-baseline.json",
+        "evidence": [
+          "wheel0 вместо180; horizontal0 вместо250; mousedown0,0 вместо100,10; shiftfalse; двойной клик4click+1dblclick",
+          "Код панели теряет ctrl/meta/shift у клавиш, не имеет onPaste, безусловно очищает typing после await"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-12-draft",
+        "notes": [
+          "Подготовка вне checkout во время гейтов11; интервалы пересекаются.",
+          "Горизонтальный scroll требует shared PreviewAction/валидатор/mapper/MCP/runner и честный WebReaderfallback.",
+          "Сохранение фактического текста в сценарии, IME и scoped scroll recording — следующие циклы, не заявлены здесь.",
+          "Для UI двойного клика второй физический click передаётся detail2 через mouse.down/up; native clickCount2 по-прежнему полный двойной клик модели."
+        ],
+        "draftValidation": {
+          "native": "/tmp/voicechat-reader-cycle-12-fixed-partial.json",
+          "uiBaseline": "/tmp/voicechat-reader-cycle-12-ui-baseline-2.log",
+          "uiFixed": "/tmp/voicechat-reader-cycle-12-ui-fixed.log",
+          "uiResult": "8/8 regressions red ->8/8 green,1.07s",
+          "helpers": "14/14,731ms",
+          "notIntegrated": [
+            "Shared contracts and raw input typing/validation",
+            "MCP dx+WebReader scroll",
+            "Recorder doubleclick/modifiers consistency",
+            "Native serialization tests and full E2E",
+            "All package typechecks and gates"
+          ],
+          "nativeResult": "9/9 native Chromium,6.14s; cursor/horizontal/down/up/modifiers/doubleclick/Unicode+ordering",
+          "compat": "Первичный совместимый UI-набор60/62; две synthetic doubleClick-проверки исправляются на настоящую последовательность click1,click2,dblclick. Результат последнего прогона см.log."
+        },
+        "preparedAt": "2026-09-10T04:25:31.034227+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+      "sharedImplementationDurationSeconds": 670,
+      "validation": {
+        "nativeTests": 9,
+        "runnerTargetedTests": 42,
+        "runnerDurationMs": 3310,
+        "uiTests": 114,
+        "bridgeTests": 2,
+        "sharedTests": 51,
+        "mcpTests": 104,
+        "e2eTests": 20,
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:35:15.111335+00:00",
+          "endedAt": "2026-09-10T04:35:40.438461+00:00",
+          "durationMs": 25327
+        },
+        "e2eFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T04:30:05.244830+00:00",
+          "endedAt": "2026-09-10T04:32:27.247674+00:00",
+          "durationMs": 142001
+        },
+        "typecheckExitCode": 0,
+        "webBuildExitCode": 0,
+        "visual": [
+          "26-keyboard-paste-doubleclick.png",
+          "27-horizontal-scroll.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-12",
+        "corrections": [
+          "Синтаксическая опечатка в новом shared-тесте и Playwright exact в Testing Library исправлены; shared51 и root typecheck3 exit0.",
+          "Две прежние synthetic doubleClick-проверки теперь отправляют реальную DOM-последовательность click1,click2,dblclick; текущие62 UI-регрессии прошли.",
+          "Первый E2E15/20: отказ403 при reload привёл к каскаду. Убрана искусственная повторная миграция legacy Bearer при каждом reload; диагностика пишет ошибочные browser-ответы.",
+          "Сопутствующий подтверждённый баг REST: stop не передавал CSRF и игнорировал HTTP-ошибки. Два теста красные до исправления, зелёные после; E2E теперь проверяет смену incarnation.",
+          "Учёт занятости полной страницы согласован с числом pending-команд."
+        ],
+        "limitations": [
+          "Сырые input сериализуются; selector/evaluate других клиентов не блокируются этой очередью.",
+          "IME intermediate keydown пропускается, полноценный composition не реализован.",
+          "Paste тестируется clipboardData-событием в реальном UI; системный буфер пользователя не изменялся.",
+          "Запись прокрутки вложенного контейнера и фактического appended текста — отдельный остающийся пробел, не заявлен исправленным здесь."
+        ],
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:37:34.179068+00:00",
+          "endedAt": "2026-09-10T04:41:15.942534+00:00",
+          "durationMs": 221761
+        },
+        "fastTests": {
+          "passed": 7507,
+          "skipped": 45
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:42:00.489105+00:00",
+          "endedAt": "2026-09-10T04:47:30.539205+00:00",
+          "durationMs": 330054
+        },
+        "gateTests": 7838
+      },
+      "endedAt": "2026-09-10T04:48:26.620412+00:00",
+      "commit": "bdb1706c"
+    },
+    {
+      "number": 13,
+      "status": "complete",
+      "startedAt": "2026-09-10T04:49:02.323439+00:00",
+      "items": [
+        {
+          "id": "13-01",
+          "title": "Сообщения alert доступны модели вместо незаметного закрытия",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-02",
+          "title": "Модель явно принимает или отменяет confirm",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-03",
+          "title": "Модель вводит ответ prompt с видимым исходным значением",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-04",
+          "title": "Подтверждение ухода сохраняет или покидает текущую страницу по решению пользователя",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-05",
+          "title": "Действие с открывшимся диалогом возвращает управление модели без зависания",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-06",
+          "title": "Статус и список вкладок читаются при заблокированном JavaScript",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-07",
+          "title": "Панель показывает диалог и позволяет ответить вручную",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-08",
+          "title": "Диалоги привязаны к вкладке, соседние вкладки остаются управляемыми",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-09",
+          "title": "Устаревший id диалога и неверный prompt ответ отвергаются без побочного действия",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        },
+        {
+          "id": "13-10",
+          "title": "Диалог при начальной загрузке и закрытии вкладки не теряется, остановка освобождает ресурсы",
+          "status": "validated",
+          "group": "browser-dialogs",
+          "implementationStartedAt": "2026-09-10T04:49:02.323439+00:00",
+          "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+          "sharedGroupDurationSeconds": 1244,
+          "validation": "18 Chromium;84 UI;95 MCP;4 shared;E2E22/22;fast7553/full7884,exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T04:41:41.410118+00:00",
+        "candidateItems": [
+          "Сообщения alert доступны модели вместо незаметного закрытия",
+          "Модель явно принимает или отменяет confirm",
+          "Модель вводит ответ prompt с видимым исходным значением",
+          "Подтверждение ухода сохраняет или покидает текущую страницу по решению пользователя",
+          "Действие с открывшимся диалогом возвращает управление модели без зависания",
+          "Статус и список вкладок читаются при заблокированном JavaScript",
+          "Панель показывает диалог и позволяет ответить вручную",
+          "Диалоги привязаны к вкладке, соседние вкладки остаются управляемыми",
+          "Устаревший id диалога и неверный prompt ответ отвергаются без побочного действия",
+          "Диалог при начальной загрузке и закрытии вкладки не теряется, остановка освобождает ресурсы"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-13-draft",
+        "baseline": "/tmp/voicechat-reader-cycle-13-baseline.json",
+        "notes": [
+          "Черновик13 вне checkout во время гейтов12; не интегрировать до коммита12.",
+          "Playwright без dialog listener автоматически dismiss; после регистрации listener DOM-actions/title могут блокироваться, требуется interruptible command wrapper + cached titles.",
+          "refreshFrame уже получает status перед screenshot при observe=true; добавить пропуск shot активного modal, не менять на параллельный опрос.",
+          "Нужны dialogs/handle-dialog control/MCP/CLI allowlist; обязательный opaque id+incarnation и prompt validation.",
+          "Не принимать диалог автоматически: явный ответ модели/человека.",
+          "handle-dialog должен идти вне raw input queue, иначе click ждёт диалог и очередь заблокирует ответ.",
+          "Диалоги цепочки требуют условного удаления старой записи, чтобы accept первого не удалил второй.",
+          "metadata.title должен гоняться с новым dialog-событием даже после предварительной проверки; кеш только для modal/ошибки.",
+          "Начальный goto профиля также прерывается dialog, чтобы start не ждал10сек.",
+          "Перед интеграцией: bounded dialog list+truncated, проверка таба/аргументов+in-flight handle, явные shared-типы без any."
+        ],
+        "prototype": {
+          "path": "/tmp/voicechat-reader-cycle-13-draft",
+          "proof": "/tmp/voicechat-reader-cycle-13-fixed.json",
+          "result": "alert вернул управление за214ms, confirm40ms, prompt24ms; явные ответы дали alert completed,confirm:true,prompt:Новое имя; отказ beforeunload оставил прежний URL.",
+          "notes": [
+            "Исходный beforeunload переход прошёл без выбора; не утверждать, что он auto-dismissed, наблюдение — страница ушла.",
+            "title теперь защищается dialog race, иначе событие между pending-check и page.title могло подвесить status.",
+            "В прототипе ещё any и локальные типы; shared-контракт обязателен до интеграции.",
+            "UI/MCP/CLI, bounded dialog lists и native regression suite ещё не готовы."
+          ],
+          "nativeTests": {
+            "passed": 14,
+            "durationMs": 4230,
+            "log": "/tmp/voicechat-reader-cycle-13-native-fixed.log"
+          },
+          "baselineLog": "/tmp/voicechat-reader-cycle-13-native-baseline.log"
+        },
+        "preparedAt": "2026-09-10T04:48:26.621884+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T05:09:45.974442+00:00",
+      "sharedImplementationDurationSeconds": 1244,
+      "validation": {
+        "nativeTests": 18,
+        "runnerTestsBeforeAdditional": 247,
+        "uiTests": 84,
+        "mcpTests": 95,
+        "sharedTests": 4,
+        "e2eTests": 22,
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:08:33.777120+00:00",
+          "endedAt": "2026-09-10T05:09:01.101001+00:00",
+          "durationMs": 27324
+        },
+        "e2eFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T05:03:47.008472+00:00",
+          "endedAt": "2026-09-10T05:04:42.889250+00:00",
+          "durationMs": 55880
+        },
+        "webBuildExitCode": 0,
+        "serverTypecheckExitCode": 0,
+        "visual": [
+          "28-confirm-awaits-answer.png",
+          "30-human-prompt.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-13",
+        "corrections": [
+          "Первичный root typecheck: неполные новые metadata-фейки. Добавлены conversationId/currentUrl/title/activeTabId; package typecheck зелёный, полный гейт далее.",
+          "Первый E2E21/22 и два узких прогона1/2: после ручного ответа пропадал polling из-за ошибочного guard dialogOpen в effect. Задержанный ответ воспроизвёл дефект DOM-тестом; исправление прошло84 UI и22 E2E.",
+          "Первый native13/14: ожидаемое сообщение ошибки теста согласовано с promptText-валидацией."
+        ],
+        "limitations": [
+          "Только JavaScript-диалоги, не HTTP-auth и браузерные разрешения.",
+          "Действие с открытым диалогом возвращает управление с ошибкой-описанием; модель проверяет итог после ответа.",
+          "Снимок под диалогом может быть прежним, поскольку Chromium блокирует новый."
+        ],
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:09:46.874785+00:00",
+          "endedAt": "2026-09-10T05:13:27.641161+00:00",
+          "durationMs": 220765
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:14:58.974289+00:00",
+          "endedAt": "2026-09-10T05:19:44.260795+00:00",
+          "durationMs": 285284
+        },
+        "fastTests": {
+          "passed": 7553,
+          "skipped": 45
+        },
+        "gateTests": 7884,
+        "typecheckExitCode": 0,
+        "runnerTests": 251
+      },
+      "endedAt": "2026-09-10T05:20:30.733957+00:00",
+      "commit": "88775719"
+    },
+    {
+      "number": 14,
+      "status": "complete",
+      "startedAt": "2026-09-10T05:21:08.418836+00:00",
+      "items": [
+        {
+          "id": "14-01",
+          "title": "HTTP-вложения и экспорт скачиваются в Chromium",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-02",
+          "title": "Экспорт проекта через Blob доступен с исходным именем файла",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-03",
+          "title": "Модель видит каталог скачиваний, состояния и вкладки",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-04",
+          "title": "Модель читает текстовые файлы частями без потери Unicode",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-05",
+          "title": "Модель получает бинарные байты, пользователь сохраняет файл из панели",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-06",
+          "title": "Незавершённое скачивание можно отменить",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-07",
+          "title": "Скачанный файл можно удалить с очисткой его данных",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-08",
+          "title": "Переход к URL вложения подтверждает скачивание вместо ложной ошибки страницы",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-09",
+          "title": "Идентификатор файла ограничен сессией, вкладки и устаревшие файлы проверяются",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        },
+        {
+          "id": "14-10",
+          "title": "Размер, число скачиваний и завершение сессии ограничивают удержание ресурсов",
+          "status": "validated",
+          "group": "browser-downloads",
+          "implementationStartedAt": "2026-09-10T05:21:08.418836+00:00",
+          "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+          "sharedGroupDurationSeconds": 1419,
+          "validation": "18 Chromium;100 UI Reader+79 Make;4 shared;103 MCP;E2E25/25;fast7599/full7930,exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T05:08:46.989056+00:00",
+        "candidateItems": [
+          "HTTP-вложения и экспорт скачиваются в Chromium",
+          "Экспорт проекта через Blob доступен с исходным именем файла",
+          "Модель видит каталог скачиваний, состояния и вкладки",
+          "Модель читает текстовые файлы частями без потери Unicode",
+          "Модель получает бинарные байты, пользователь сохраняет файл из панели",
+          "Незавершённое скачивание можно отменить",
+          "Скачанный файл можно удалить с очисткой его данных",
+          "Переход к URL вложения подтверждает скачивание вместо ложной ошибки страницы",
+          "Идентификатор файла ограничен сессией, вкладки и устаревшие файлы проверяются",
+          "Размер, число скачиваний и завершение сессии ограничивают удержание ресурсов"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-14-baseline.json",
+        "draft": "/tmp/voicechat-reader-cycle-14-draft",
+        "proof": "/tmp/voicechat-reader-cycle-14-fixed.json",
+        "liveLimit": "/tmp/voicechat-reader-cycle-14-live-limit.json",
+        "notes": [
+          "Исследование и прототип в /tmp во время гейтов13, без правок checkout до88775719.",
+          "Нативный HTTP и Blob исходно отвечают failure acceptDownloads:true; переход attachment бросает Download is starting, downloads пока возвращает общийready.",
+          "Прототип получает HTTP/Blob/бинарный файл, читает UTF-8 и base64, отменяет slow; не интегрированы shared/MCP/UI/полная валидация.",
+          "CDP Browser.downloadProgress нужно включить в собственной browser CDP session через setDownloadBehavior с тем же downloadsPath, что Playwright; без команды события не приходят.",
+          "Живой лимит8192 байт прервал бесконечный поток за513мс; итог failed/canceled. Нужны типизированные регрессии, cleanupdownloadsPath и финальный лимит по stat.",
+          "Первый Blob-пробник был неверен: внутри inline onclick URL разрешается в document.URL, а не window.URL. Исправлен fixture; не считать это багом Reader.",
+          "Каталог/содержимое ограничить JSON-бюджетом, поддержать pagination и ошибки старого раннера.",
+          "MCPbase64 небольшими порциями; панель собирает файл более крупными порциями без передачи пути файловой системы."
+        ],
+        "preparedAt": "2026-09-10T05:21:08.418836+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T05:44:47.608608+00:00",
+      "sharedImplementationDurationSeconds": 1419,
+      "validation": {
+        "nativeTests": 18,
+        "nativeDurationMs": 6820,
+        "uiTests": 100,
+        "makeUiTests": 79,
+        "sharedTests": 4,
+        "mcpTests": 103,
+        "e2eTests": 25,
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:40:37.216086+00:00",
+          "endedAt": "2026-09-10T05:41:06.688879+00:00",
+          "durationMs": 29473
+        },
+        "e2eFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T05:35:49.483546+00:00",
+          "endedAt": "2026-09-10T05:36:23.276942+00:00",
+          "durationMs": 33793
+        },
+        "webBuildExitCode": 0,
+        "typecheckExitCode": 0,
+        "visual": [
+          "33-human-download-controls.png",
+          "34-make-export-download.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-14",
+        "corrections": [
+          "Первый E2E24/25: финальный Make требовал нового входа после reset cookie loopback-хоста; вход явно добавлен.",
+          "Два отдельных Make E2E затем подтвердили недоступность экспорта из sandbox. Новый DOM-assert allow-downloads красный до исправления, зелёный после;79 Make UI и25 E2E прошли.",
+          "Нативная проверка девятого потока упиралась в шесть HTTP/1 соединений одного origin. Проверена на девяти отдельных портах: реальный лимит Reader8 срабатывает.",
+          "DOM-фейк canceled наследовал bytes готового файла, текст проверки уточнён; типизация Blob уточнена до Uint8Array<ArrayBuffer>, URL-моки получили override и this.",
+          "Добавлена очистка старых собственных UUID-каталогов после захвата Chromium-профиля; отдельный native-тест прошёл после E2E."
+        ],
+        "limitations": [
+          "64 МиБ на файл,8 активных скачиваний,32 записи; текстUTF-8 до8 МиБ.",
+          "Каталог временный, удаляется при остановке/перезапуске Reader; сохранённый пользователем файл остаётся на его устройстве.",
+          "MCP получает текст/base64; извлечение содержимого PDF/Office специально не реализовано.",
+          "Проверялись собственный Make и локальные HTTP/Blob/бинарные/медленные ресурсы, а не авторизованные Gmail-вложения."
+        ],
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:44:48.682616+00:00",
+          "endedAt": "2026-09-10T05:48:34.102560+00:00",
+          "durationMs": 225420
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T05:49:59.521191+00:00",
+          "endedAt": "2026-09-10T05:54:53.360474+00:00",
+          "durationMs": 293839
+        },
+        "fastTests": {
+          "passed": 7599,
+          "skipped": 45
+        },
+        "gateTests": 7930
+      },
+      "endedAt": "2026-09-10T05:55:52.643161+00:00",
+      "commit": "3cdaf23c"
+    },
+    {
+      "number": 15,
+      "status": "complete",
+      "startedAt": "2026-09-10T05:57:06.028766+00:00",
+      "items": [
+        {
+          "id": "15-01",
+          "title": "Сетевые сбои без HTTP-ответа видны модели и панели",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-02",
+          "title": "Незавершённые запросы, тип ресурса и длительность отражают реальную загрузку",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-03",
+          "title": "Журналы относятся к выбранной вкладке, общий обзор включается явно",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-04",
+          "title": "Адреса журналов используют публичные алиасы проекта",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-05",
+          "title": "Фильтры консоли правильно находят warn и буквальные подстроки",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-06",
+          "title": "Вложенные данные console и стек исключения доступны для диагностики",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-07",
+          "title": "Большие журналы помещаются в MCP и дочитываются порциями",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-08",
+          "title": "Повторное чтение получает только новые или обновлённые записи по курсору",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-09",
+          "title": "Очистка не удаляет непрочитанные записи других фильтров и вкладок",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        },
+        {
+          "id": "15-10",
+          "title": "Ошибка получения диагностики не выдаётся за отсутствие ошибок страницы",
+          "status": "complete",
+          "group": "browser-diagnostics",
+          "implementationStartedAt": "2026-09-10T05:57:06.028766+00:00",
+          "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+          "implementationDurationSeconds": 1870,
+          "timingNote": "Общий интервал связанной интеграции; не отдельная стоимость каждого пункта"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T05:45:06.334482+00:00",
+        "candidateItems": [
+          "Сетевые сбои без HTTP-ответа видны модели и панели",
+          "Незавершённые запросы, тип ресурса и длительность отражают реальную загрузку",
+          "Журналы относятся к выбранной вкладке, общий обзор включается явно",
+          "Адреса журналов используют публичные алиасы проекта",
+          "Фильтры консоли правильно находят warn и буквальные подстроки",
+          "Вложенные данные console и стек исключения доступны для диагностики",
+          "Большие журналы помещаются в MCP и дочитываются порциями",
+          "Повторное чтение получает только новые или обновлённые записи по курсору",
+          "Очистка не удаляет непрочитанные записи других фильтров и вкладок",
+          "Ошибка получения диагностики не выдаётся за отсутствие ошибок страницы"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-15-draft",
+        "baseline": "/tmp/voicechat-reader-cycle-15-baseline.json",
+        "uiBaseline": "/tmp/voicechat-reader-cycle-15-ui-baseline-2.log",
+        "evidence": [
+          "broken request отсутствует, pending показывает только document; timing/resource отсутствуют",
+          "network filter diag.reader.test пуст из-за физических127 URL",
+          "вторая вкладка получает console первой",
+          "Chrome warning не соответствует action.level warn; literal [x] ошибочно обрабатывается regex",
+          "вложенный объект печатается nested:Object; stack исключения отсутствует",
+          "100 записей дают195513 JSON-символов, previewResultJson=null",
+          "clear с level:error стирает и log/warn",
+          "DOM-регрессия реально красная: ok:false из инструмента показан как Страница не жаловалась."
+        ],
+        "notes": [
+          "Подготовка вне checkout во время гейтов14; не меняла код14.",
+          "Первый Vite-пробник не собрался из-за /tmp→/private/tmp; второй реально выполнил1 тест и подтвердил дефект.",
+          "Нативная диагностика: активная вкладка по умолчанию, explicit allTabs/tabId для остальных, source/frameURL полезны без управленияDOM.",
+          "План: sequence/cursor для обновлений, before для предыдущей порции, total/truncated/dropped; возвращать ограниченный полноценный JSON.",
+          "clear удаляет только возвращённые строки; невалидные фильтры/лимиты до мутации.",
+          "Модельный pattern соответствует описаниюMCP; raw inspect сохраняет legacy regex, mapper задаёт regex:false. Учитывать WebReaderfallback для расширенных опций.",
+          "Console structured args читать ограниченно и с deadline, чтобы диалог/renderer не блокировали журналы.",
+          "Извлечение response body, evaluate deadline и запись сценариев — другие циклы, не заявлены здесь."
+        ],
+        "preparedAt": "2026-09-10T05:57:06.028766+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T06:28:15.633240+00:00",
+      "implementationDurationSeconds": 1870,
+      "verification": {
+        "native": "15 Chromium + 12 inspect + 3 pure",
+        "shared": "59 tests incl10 diagnostics",
+        "ui": "92 Reader +8 final diagnostics",
+        "mcp": "111 tests",
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T06:20:21.221910+00:00",
+          "endedAt": "2026-09-10T06:20:53.212748+00:00",
+          "durationMs": 31991
+        },
+        "e2ePassed": 27,
+        "screenshots": [
+          "35-network-diagnostics",
+          "36-project-diagnostics-recovered"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-15",
+        "notes": [
+          "ПервыйE2E:26/27 из-за истории warn предыдущей страницы в тесте; новая вкладка изолирует fixture.",
+          "ВторойE2E:26/27, setTimeout исключение требует polling; stack присутствовал в артефакте.",
+          "E2E3:27/27; после визуальной проверки длинные строки свёрнуты, network сверху, свежие console первыми. E2E4:27/27,31,01с,кадры просмотрены.",
+          "ПослеE2E отдельно проверен флаг сокращения вложенных console args; полныйгейт проверит финальный код.",
+          "Первыйnative:25/26 из-за неверного имени mapper в новом тесте; исправлено. Перваяпроверкатипов выявиланесовпадения bridge/null инеполныйfixture MCP; исправлены.",
+          "Дополнительная проверка боевого tsx обнаружила __name в сериализованном callback: baseline красный, JS-тело через new Function исправлено; durable diagnosticsRuntime запускает tsx+Chromium и проверяет вложенные args. Первый gate:fast exit1 (250,21с) выявил изменение текста отказа frame; сохранена прежняя фраза, targeted frames и runtime зелёные. В промежуточном переносе JS-тела оставшийся generic Set<object> вызвал SyntaxError и был удалён до финальных проверок."
+        ],
+        "runtime": "tsx+Chromium, red→green, durable diagnosticsRuntime",
+        "fastFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T06:22:13.262209+00:00",
+          "endedAt": "2026-09-10T06:26:23.475786+00:00",
+          "durationMs": 250214
+        },
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T06:28:16.928913+00:00",
+          "endedAt": "2026-09-10T06:33:29.476338+00:00",
+          "durationMs": 312536
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T06:34:09.858655+00:00",
+          "endedAt": "2026-09-10T06:40:45.326822+00:00",
+          "durationMs": 395467
+        },
+        "fastPassed": 7644,
+        "fastSkipped": 45,
+        "fullPassed": 7975
+      },
+      "completedAt": "2026-09-10T06:41:04.538803+00:00",
+      "commit": "e4b6b1a7"
+    },
+    {
+      "number": 16,
+      "status": "complete",
+      "startedAt": "2026-09-10T06:42:14.960216+00:00",
+      "items": [
+        {
+          "id": "16-01",
+          "title": "Асинхронный evaluate завершается по ограничению времени",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-02",
+          "title": "Бесконечный JavaScript прерывается с восстановлением управления",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-03",
+          "title": "Отменённый evaluate освобождает ожидающий ответ и remote handles",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-04",
+          "title": "Та же защита работает в обычных и OOP iframe",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-05",
+          "title": "Ожидание ответа на JavaScript-диалог не расходует время evaluate",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-06",
+          "title": "Большое и экранированное значение помещается в MCP с признаком сокращения",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-07",
+          "title": "Циклы и специальные JS-типы сохраняют читаемую структуру",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-08",
+          "title": "DOM-узел возвращает описание элемента вместо пустого маркера",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-09",
+          "title": "Статус остаётся доступен при занятом JavaScript благодаря ограниченному чтению заголовка",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        },
+        {
+          "id": "16-10",
+          "title": "Код/timeout валидируются до исполнения, расширение явно требует актуальный Chromium",
+          "status": "verified",
+          "group": "bounded-evaluate",
+          "implementationStartedAt": "2026-09-10T06:42:14.960216+00:00",
+          "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+          "implementationDurationSeconds": 905,
+          "timingNote": "Общий интервал связанной интеграции; не складывать десять раз"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T06:37:10.281863+00:00",
+        "candidateItems": [
+          "Асинхронный evaluate завершается по ограничению времени",
+          "Бесконечный JavaScript прерывается с восстановлением управления",
+          "Отменённый evaluate освобождает ожидающий ответ и remote handles",
+          "Та же защита работает в обычных и OOP iframe",
+          "Ожидание ответа на JavaScript-диалог не расходует время evaluate",
+          "Большое и экранированное значение помещается в MCP с признаком сокращения",
+          "Циклы и специальные JS-типы сохраняют читаемую структуру",
+          "DOM-узел возвращает описание элемента вместо пустого маркера",
+          "Статус остаётся доступен при занятом JavaScript благодаря ограниченному чтению заголовка",
+          "Код/timeout валидируются до исполнения, расширение явно требует актуальный Chromium"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-16-baseline.json",
+        "draft": "/tmp/voicechat-reader-cycle-16-draft",
+        "prototype": "/tmp/voicechat-reader-cycle-16-prototype.json",
+        "notes": [
+          "Исследование вне checkout во время гейтов15; подготовка не суммируется с гейтами.",
+          "Raw Runtime.evaluate timeout останавливает sync, но не awaitPromise; terminateExecution не снимает сам по себе ожидающий RPC.",
+          "Двухфазный JSHandle (сначала holder, затем run) + cancel завершает оба await и позволяет dispose. Однофазная версия оставляла sync-RPC pending.",
+          "CDP newCDPSession(frame) работает для OOP iframe; для in-process поднимаемся к ближайшему отдельному родителю/Page. Проверено localhost vs127.",
+          "Прототип реального Chromium: async/sync timeout,10 повторов cleanup, обычное значение, BigInt,cycle,Node,Map,escaped budget,getter без вызова, prompt400мс при лимите150мс,same-process+OOP iframe — всё прошло.",
+          "Сериализатор renderer должен быть JS-телом new Function, иначе tsx добавляет __name.",
+          "На момент прототипа типы/options/MCP guard/status title deadline/full regressions ещё не были реализованы; в цикле16 интеграция выполнена.",
+          "В async timeout нельзя отменить уже начатые fetch/timers пользовательского кода; ответ должен явно говорить проверить состояние перед повтором.",
+          "Дополнительный backlog: JSHandles console.args после сериализации следует освобождать; проверить в следующем ресурсном цикле.",
+          "Прототип дополнен проверкой pendingReads=0 после sync timeout, handle отвергает повторный evaluate после dispose, page.isClosed=false и evaluate1+2=3. Проверка /disposed/ была слишком узкой: текущий Playwright отвечает Target page/context/browser closed для закрытого канала JSHandle; проверяем отказ handle и работоспособность страницы отдельно."
+        ]
+      },
+      "implementationEndedAt": "2026-09-10T06:57:20.370927+00:00",
+      "implementationDurationSeconds": 905,
+      "verification": {
+        "native": "27 sessionEvaluation +4 lifecycle;18 dialogs,15 diagnostics,8 inspect,1 tsx runtime;5 scenarioPlayback после исправления подготовки данных",
+        "shared": "57 tests,8 new evaluation",
+        "mcp": "116 tests",
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T07:00:05.376835+00:00",
+          "endedAt": "2026-09-10T07:01:32.104725+00:00",
+          "durationMs": 86727
+        },
+        "e2ePassed": 29,
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-16",
+        "screenshots": [
+          "37-evaluate-make-recovered",
+          "39-evaluate-dialog-paused",
+          "38-evaluate-human-dialog"
+        ],
+        "notes": [
+          "Четыре старых unit evaluate заменены native проверками реальной структуры/циклов/лимита/ошибки.",
+          "Первый native65/65. Расширенный27тестов:1 lifecycle ожидал обязательное создание handle при чужом busyJS; требование теста неверно. Проверка заменена детерминированным поздним RPC-ответом; новые29/29 прошли.",
+          "Первый E2E28/29: старая диагностика открыта до наблюдения выбранной моделью вкладки. Артефакт показывает последующее правильное скрытие панели при переключении. Тест ждёт aria-selected нужной вкладки; E2E29/29.",
+          "Обычный tsx+Chromium runtime проверяет теперь и timeout, и Map с BigInt.",
+          "Строгие CSP/Trusted Types и зависший Proxy serializer проверены в настоящем Chromium.",
+          "Финальный $ref — JSON Pointer от корня ответа (/value/...); отдельные регрессии точек, slash/тильды и Map. 27/27 native и E2E29/29 после правки.",
+          "Первый gate:fast exit1: четыре старых scenarioPlayback передавали код длиной20–40тыс., отклоняемый общим лимитом4000. Длинный текст теперь создаётся внутри страницы коротким выражением; успех подготовки обязателен. Все5 адресных регрессий прошли. Повторные гейты запущены последовательно."
+        ],
+        "e2eTestDurationSeconds": 71.44,
+        "failedFastGate": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T06:57:22.690860+00:00",
+          "endedAt": "2026-09-10T07:06:47.092945+00:00",
+          "durationMs": 564401
+        },
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T07:10:46.100058+00:00",
+          "endedAt": "2026-09-10T07:19:51.755385+00:00",
+          "durationMs": 545654
+        },
+        "fastPassed": 7684,
+        "fastSkipped": 45,
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T07:19:51.757277+00:00",
+          "endedAt": "2026-09-10T07:36:26.168480+00:00",
+          "durationMs": 994405
+        },
+        "fullPassed": 8015
+      },
+      "followupFixes": [
+        {
+          "recordedAt": "2026-09-10T07:12:18.989757+00:00",
+          "detail": "Уточнение JSON Pointer и подготовка больших документов в регрессиях; дополнительные проверки и гейты указаны отдельно от первоначальных905с интеграции.",
+          "startedAt": "2026-09-10T06:57:20.370927+00:00",
+          "codeCompletedAt": "2026-09-10T07:10:24.879162+00:00",
+          "elapsedSeconds": 785,
+          "timingNote": "Интервал уточнения JSON Pointer, дополнительных проверок и исправления fixture. Включает ожидание первого fast gate; не суммировать с его длительностью."
+        }
+      ],
+      "completedAt": "2026-09-10T07:36:32.584781+00:00",
+      "elapsedSeconds": 3258,
+      "commitSubject": "fix(reader): bound evaluation and preserve structured results (cycle 16)"
+    },
+    {
+      "number": 17,
+      "status": "cancelled_by_user",
+      "startedAt": null,
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
+    },
+    {
+      "number": 18,
+      "status": "cancelled_by_user",
+      "startedAt": null,
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
+    },
+    {
+      "number": 19,
+      "status": "cancelled_by_user",
+      "startedAt": null,
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
+    },
+    {
+      "number": 20,
+      "status": "cancelled_by_user",
+      "startedAt": null,
+      "items": [],
+      "reason": "Остановка после цикла 16 по прямому поручению пользователя"
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-09-09T22:26:38.145795+00:00",
+      "cycle": 1,
+      "phase": "baseline",
+      "detail": "Встроенный Browser недоступен (ошибка sandboxPolicy при двух подключениях); используется настоящий Chromium проекта. Существовавшие изменения — собственные уточнения KB из этой сессии."
+    },
+    {
+      "at": "2026-09-09T22:28:20.078589+00:00",
+      "cycle": 1,
+      "phase": "implementation-start",
+      "group": "navigation-policy",
+      "items": [
+        "01-01",
+        "01-02",
+        "01-03",
+        "01-04"
+      ],
+      "detail": "Базовый набор browser-runner: 96/96. Добавлены регрессии в настоящем Chromium."
+    },
+    {
+      "at": "2026-09-09T22:32:16.223806+00:00",
+      "cycle": 1,
+      "phase": "implementation-start",
+      "groups": [
+        "tabs",
+        "navigation-wait",
+        "screenshots"
+      ],
+      "items": [
+        "01-05",
+        "01-06",
+        "01-07",
+        "01-08"
+      ],
+      "detail": "4 независимых сбоя подтверждены настоящим Chromium после изоляции сессии каждого теста."
+    },
+    {
+      "at": "2026-09-09T22:33:52.756731+00:00",
+      "cycle": 1,
+      "phase": "implementation-start",
+      "group": "project-preview",
+      "items": [
+        "01-09",
+        "01-10"
+      ],
+      "detail": "Три регрессии REST воспроизводят отсутствие cookie и преобразования machine.internal для navigate/newTab."
+    },
+    {
+      "at": "2026-09-09T22:37:01.133001+00:00",
+      "cycle": 1,
+      "phase": "browser-e2e-start",
+      "detail": "Интеграция настоящего App, backend, browser-runner и MCP на изолированных портах."
+    },
+    {
+      "at": "2026-09-09T22:49:55.585215+00:00",
+      "cycle": 1,
+      "phase": "gate-repair",
+      "detail": "Один сбой полного гейта вне Reader: старый тест таблицы тарифов. Исправлено только ожидание теста по действующему компоненту; не учитывается среди 10 улучшений Reader."
+    },
+    {
+      "at": "2026-09-09T23:09:08.092796+00:00",
+      "cycle": 2,
+      "phase": "implementation-complete",
+      "detail": "Состояние и кадры синхронизированы; 9 регрессий UI и 2 раннера воспроизведены на предыдущей реализации. Визуально подтверждены актуальный URL Make, автор-модель, отсутствие ложного offOrigin и предупреждение при потере кадров."
+    },
+    {
+      "at": "2026-09-09T23:28:20.109611+00:00",
+      "cycle": 3,
+      "phase": "baseline",
+      "detail": "8/10 первоначальных живых проверок упали. Два работавших поведения исключены из счёта улучшений; добавлены сохранение высоты viewport и drag по координатам."
+    },
+    {
+      "at": "2026-09-09T23:43:18.525676+00:00",
+      "cycle": 3,
+      "phase": "gate-failure",
+      "detail": "Повторный gate:fast: 7268 passed, 1 failed (30-секундный таймаут живого теста upload). Параллельно шёл полный гейт; дальнейшие гейты запускаются последовательно с меньшим числом воркеров, без изменения состава проверок."
+    },
+    {
+      "at": "2026-09-10T00:02:16.493126+00:00",
+      "cycle": 3,
+      "phase": "validation-complete",
+      "detail": "Полный gate exit 0 (7600 тестов, web, Storybook). Последовательный fast gate exit 0 (7269 passed, 45 skipped, 0 failed), 506500 мс. Таймаут 8 МиБ не повторился; без ослабления теста. Связь с нагрузкой наблюдается, точная причина таймаута не установлена."
+    },
+    {
+      "at": "2026-09-10T00:16:14.005014+00:00",
+      "cycle": 4,
+      "phase": "gate-repair",
+      "detail": "Новая пустая строка вкладок нарушала aria-required-children. Исправление входит в 04-10, не считается отдельным улучшением."
+    },
+    {
+      "at": "2026-09-10T00:23:31.255046+00:00",
+      "cycle": 4,
+      "phase": "cli-integration",
+      "detail": "Новые 6 команд добавлены в явный allow-list preview Claude CLI (и panel, и chromium). Исправление сделано до начала full package gate runner; этот пакет уже выбран гейтом. 17 адресных CLI-тестов прошли."
+    },
+    {
+      "at": "2026-09-10T07:12:18.989757+00:00",
+      "cycle": 16,
+      "phase": "scope-change",
+      "detail": "Пользователь попросил закончить текущий цикл и остановиться. Циклы17–20 отменены; подготовительные наблюдения сохранены как неисправленные, без реализации."
+    }
+  ],
+  "backlogEvidence": [
+    {
+      "source": "/tmp/voicechat-reader-audit/cycle-01/02-project-make.png",
+      "issue": "Адресная строка Reader осталась на chat после перехода модели в Make."
+    },
+    {
+      "source": "/tmp/voicechat-reader-audit/cycle-01/02-project-make.png",
+      "issue": "about:blank принят за ожидаемый origin, собственный сайт ошибочно помечен уходом на другой сайт."
+    },
+    {
+      "source": "/tmp/voicechat-reader-audit/cycle-01/external-instagram.png",
+      "issue": "DCL и успешный read с пустым текстом не означают готовность SPA."
+    }
+  ],
+  "stopAfterCycle": 16,
+  "scopeChange": {
+    "recordedAt": "2026-09-10T07:12:18.989757+00:00",
+    "instruction": "Закончи этот цикл и остановись",
+    "remainingCycles": "Отменены пользователем; самостоятельно не продолжать."
+  },
+  "unimplementedObservations": {
+    "collectedBeforeStopRequest": true,
+    "nativeEvidence": "/tmp/voicechat-reader-cycle-17-native-baseline.json",
+    "clientEvidence": "/tmp/voicechat-reader-cycle-17-client-baseline.json",
+    "facts": [
+      "Неизвестный command возвращает ready; неизвестный inspect с selector читает styles.",
+      "resize DPR2 сообщает2, фактический window.devicePixelRatio1 в текущей и новой вкладке.",
+      "После resize width=-1 и отказа Playwright метаданные содержат width=-1.",
+      "Styles CSS custom property50000: JSON50034 символа, не помещается в MCP. Raw pseudo не действует.",
+      "stop-loading при evaluate timeout1000мс занимает975мс.",
+      "HTTP timeout80мс: ответ с задержанным телом успешно прочитан за262/253/253мс. Один signal накопил1/2/3 abort listeners."
+    ]
+  },
+  "completedCycles": 16,
+  "completedItems": 160,
+  "stoppedAt": "2026-09-10T07:36:32.584781+00:00"
+}

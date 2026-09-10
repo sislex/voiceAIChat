@@ -46,11 +46,16 @@ export function isBlockedAddress(address: string): boolean {
   return isPrivateNetworkHost(normalized)
 }
 
-export function validatePublicUrl(raw: string): URL {
+/** Доверие относится к host:port; соседние сервисы на том же хосте не разрешаются. */
+export function browserTarget(url: URL): string {
+  return `${url.hostname.toLowerCase()}:${url.port || (url.protocol === 'https:' ? '443' : '80')}`
+}
+
+export function validatePublicUrl(raw: string, trustedTargets: ReadonlySet<string> = new Set()): URL {
   const url = new URL(raw)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('only http/https navigation is allowed')
   const host = url.hostname.toLowerCase()
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || isBlockedAddress(host)) {
+  if (!trustedTargets.has(browserTarget(url)) && (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || isBlockedAddress(host))) {
     throw new Error('private network targets are blocked')
   }
   url.username = ''
@@ -71,12 +76,31 @@ export function validatePublicUrl(raw: string): URL {
  */
 export type HostAliases = Map<string, string>
 
+/** URL.host разбирается целиком: split(':') разрушает IPv6 и скрывает битый порт. */
+function parseAuthority(raw: string): { host: string; port: string } | null {
+  const match = /^(\[[^\]]+\]|[^:/?#@\s]+)(?::(\d+))?$/.exec(raw)
+  if (!match) return null
+  const port = match[2] ? String(Number(match[2])) : ''
+  if (port && (Number(port) < 1 || Number(port) > 65535)) return null
+  try {
+    const parsed = new URL(`http://${raw}/`)
+    if (!parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return null
+    return { host: parsed.hostname.toLowerCase(), port }
+  } catch { return null }
+}
+
+function authority(value: { host: string; port: string }): string {
+  return `${value.host}${value.port ? `:${value.port}` : ''}`
+}
+
 export function parseHostAliases(raw: string | undefined): HostAliases {
   const aliases: HostAliases = new Map()
   for (const item of (raw ?? '').split(',')) {
-    const [from, to] = item.split('=').map((part) => part.trim())
+    const parts = item.split('=')
+    if (parts.length !== 2) continue
+    const from = parseAuthority(parts[0].trim()), to = parseAuthority(parts[1].trim())
     if (!from || !to) continue
-    aliases.set(from.toLowerCase(), to)
+    aliases.set(authority(from), authority(to))
   }
   return aliases
 }
@@ -89,8 +113,11 @@ export function parseHostAliases(raw: string | undefined): HostAliases {
 export function aliasTargets(aliases: HostAliases): Set<string> {
   const targets = new Set<string>()
   for (const value of aliases.values()) {
-    targets.add(value.toLowerCase())
-    targets.add(value.split(':')[0].toLowerCase())
+    const parsed = parseAuthority(value)
+    if (!parsed) continue
+    // Без порта алиас указывает стандартный порт исходной HTTP/HTTPS-схемы,
+    // но никогда не открывает все порты внутреннего хоста.
+    for (const port of parsed.port ? [parsed.port] : ['80', '443']) targets.add(`${parsed.host}:${port}`)
   }
   return targets
 }
@@ -107,8 +134,7 @@ export function previewOriginTarget(raw: string | undefined): string | null {
   let url: URL
   try { url = new URL(raw) } catch { return null }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-  const port = url.port || (url.protocol === 'https:' ? '443' : '80')
-  return `${url.hostname.toLowerCase()}:${port}`
+  return browserTarget(url)
 }
 
 /**
@@ -125,12 +151,12 @@ export function restoreHostAlias(url: URL, aliases: HostAliases): URL {
   const defaultPort = url.protocol === 'https:' ? '443' : '80'
   const port = url.port || defaultPort
   for (const [key, target] of aliases) {
-    const [targetHost, targetPort] = target.split(':')
-    if (url.hostname.toLowerCase() !== targetHost.toLowerCase() || port !== (targetPort || defaultPort)) continue
+    const parsedTarget = parseAuthority(target), parsedKey = parseAuthority(key)
+    if (!parsedTarget || !parsedKey) continue
+    if (url.hostname.toLowerCase() !== parsedTarget.host || port !== (parsedTarget.port || defaultPort)) continue
     const next = new URL(url.toString())
-    const [keyHost, keyPort] = key.split(':')
-    next.hostname = keyHost
-    next.port = keyPort && keyPort !== defaultPort ? keyPort : ''
+    next.hostname = parsedKey.host
+    next.port = parsedKey.port || ''
     return next
   }
   return url
@@ -142,9 +168,10 @@ export function applyHostAlias(url: URL, aliases: HostAliases): URL {
   const port = url.port || (url.protocol === 'https:' ? '443' : '80')
   const target = aliases.get(`${url.hostname.toLowerCase()}:${port}`) ?? aliases.get(url.hostname.toLowerCase())
   if (!target) return url
+  const parsed = parseAuthority(target)
+  if (!parsed) throw new Error('invalid host alias target')
   const next = new URL(url.toString())
-  const [host, aliasPort] = target.split(':')
-  next.hostname = host
-  next.port = aliasPort ?? ''
+  next.hostname = parsed.host
+  next.port = parsed.port
   return next
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { aliasNote, offOrigin, pushHistory } from './readerAddress'
+import { aliasNote, isWebAddress, offOrigin, pushHistory } from './readerAddress'
+
+it.each(['about:blank', 'data:text/html,page', 'file:///tmp/page', 'не адрес', null])('служебный адрес %s не задаёт историю и origin', (url) => {
+  expect(isWebAddress(url)).toBe(false)
+  expect(pushHistory(['https://project.test/'], url)).toEqual(['https://project.test/'])
+  expect(offOrigin(url, 'https://project.test/')).toBe(false)
+  expect(offOrigin('https://project.test/', url)).toBe(false)
+})
 
 describe('aliasNote', () => {
   it('молчит, когда подмены не было', () => {

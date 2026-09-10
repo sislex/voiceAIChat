@@ -84,10 +84,10 @@ describe('проверки в сценарии (круг 14)', () => {
     expect(expectOnLastStep([], 'что-то')).toEqual([])
   })
 
-  it('удаление шага перенумеровывает остальные', () => {
+  it('удаление шага сохраняет идентификаторы остальных', () => {
     const steps = recordClick(recordClick(recordClick([], element()), element({ selector: '#b' })), element({ selector: '#c' }))
     const left = removeStep(steps, 'step-2')
-    expect(left.map((s) => s.id)).toEqual(['step-1', 'step-2'])
+    expect(left.map((s) => s.id)).toEqual(['step-1', 'step-3'])
     expect(left.map((s) => ('selector' in s.action ? s.action.selector : ''))).toEqual(['[data-testid="create"]', '#c'])
   })
 
@@ -230,5 +230,22 @@ describe('круг 29', () => {
     expect(expectOnStep(steps, 'a', 'Ошибка', true)[0].expectAbsentText).toBe('Ошибка')
     // Несуществующий шаг ничего не меняет: молча пометить чужой шаг хуже.
     expect(expectOnStep(steps, 'нет', 'Текст')).toEqual(steps)
+  })
+})
+
+
+describe('контекст iframe в записи', () => {
+  it('клик и ввод сохраняют независимую копию цепочки frame при экспорте', () => {
+    const frame = ['#preview', '#login']
+    const target = element({ frame, selector: '#email' })
+    const steps = recordType(recordClick([], target), target, 'test@example.test')
+    frame.push('#changed')
+    const scenario = toScenario(steps, 'https://project.test/')
+    for (const step of scenario.steps) expect(step.action.frame).toEqual(['#preview', '#login'])
+  })
+
+  it('переход первого iframe не заменяет стартовый адрес верхней страницы', () => {
+    const steps = [{ id: 'frame-open', title: 'Документ', action: { kind: 'open' as const, frame: '#preview', url: 'https://child.test/' }, stability: 'id' as const }]
+    expect(toScenario(steps, 'https://parent.test/')).toMatchObject({ startUrl: 'https://parent.test/', steps: [{ action: { kind: 'open', frame: '#preview', url: 'https://child.test/' } }] })
   })
 })

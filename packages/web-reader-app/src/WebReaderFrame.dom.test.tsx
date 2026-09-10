@@ -121,3 +121,101 @@ describe('WebReaderFrame', () => {
     expect(register.mock.calls.at(-1)?.[0]).toBeNull()
   })
 })
+
+describe('WebReaderFrame: эхо сохранённого адреса', () => {
+  it('сохранение навигации не запускает cookie-гейт и set-url снова', async () => {
+    const ensurePreview = vi.fn(async () => true)
+    const register = vi.fn<(registration: ReaderHostRegistration | null) => void>()
+    const onSave = vi.fn(async () => undefined)
+    const props = { platform, conversationId: 'navigation', conversationUrl: 'https://shop.example/', projectUrl: null, ensurePreview, onSave, onRegisterHost: register }
+    const view = render(<WebReaderFrame {...props} />)
+    const original = frameEl()
+    const post = vi.spyOn(original.contentWindow!, 'postMessage')
+    emit(readyMessage)
+    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'set-url', url: props.conversationUrl }), platform.origin))
+    const registrationId = register.mock.calls.at(-1)![0]!.registrationId
+    emit({ type, kind: 'page-status', conversationId: 'navigation', registrationId, status: 'ready', url: 'https://shop.example/next' })
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith('https://shop.example/next'))
+    post.mockClear()
+    view.rerender(<WebReaderFrame {...props} conversationUrl="https://shop.example/next" />)
+    await waitFor(() => expect(ensurePreview).toHaveBeenCalledTimes(1))
+    expect(post.mock.calls.filter(([message]) => (message as { kind?: string }).kind === 'set-url')).toHaveLength(0)
+    expect(frameEl()).toBe(original)
+  })
+  it('новый внешний адрес продолжает проходить cookie-гейт', async () => {
+    const ensurePreview = vi.fn(async () => true)
+    const props = { platform, conversationId: 'external', conversationUrl: 'https://shop.example/', projectUrl: null, ensurePreview, onSave: vi.fn(async () => undefined) }
+    const view = render(<WebReaderFrame {...props} />)
+    await waitFor(() => expect(ensurePreview).toHaveBeenCalledTimes(1))
+    view.rerender(<WebReaderFrame {...props} conversationUrl="https://other.example/" />)
+    await waitFor(() => expect(ensurePreview).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('WebReaderFrame: открытие моделью и сохранение', () => {
+  it('open из пустой панели ждёт cookie, сохраняет только подтверждённый конечный адрес', async () => {
+    let release!: (ok: boolean) => void
+    const ensurePreview = vi.fn(() => new Promise<boolean>(resolve => { release = resolve }))
+    const register = vi.fn<(registration: ReaderHostRegistration | null) => void>(), save = vi.fn(async () => {})
+    render(<WebReaderFrame platform={platform} conversationId="model" conversationUrl={null} projectUrl={null} ensurePreview={ensurePreview} onSave={save} onRegisterHost={register} />)
+    const post = vi.spyOn(frameEl().contentWindow!, 'postMessage'); emit(readyMessage)
+    const registration = register.mock.calls.at(-1)![0]!
+    const pending = registration.run({ kind: 'open', url: 'https://first.test/' })
+    await waitFor(() => expect(ensurePreview).toHaveBeenCalledOnce())
+    expect(save).not.toHaveBeenCalled(); expect(post.mock.calls.some(([m]) => (m as { url?: string }).url === 'https://first.test/')).toBe(false)
+    release(true)
+    await waitFor(() => expect(post.mock.calls.filter(([m]) => (m as { url?: string }).url === 'https://first.test/')).toHaveLength(1))
+    emit({ type, conversationId: 'model', registrationId: registration.registrationId, kind: 'page-status', status: 'ready', url: 'https://final.test/' })
+    await expect(pending).resolves.toMatchObject({ ok: true, result: { url: 'https://final.test/' } })
+    expect(save).toHaveBeenCalledTimes(1); expect(save).toHaveBeenCalledWith('https://final.test/')
+  })
+  it('отказ cookie модели виден даже у пустой страницы и повторяет тот же open', async () => {
+    const ensurePreview = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const register = vi.fn<(registration: ReaderHostRegistration | null) => void>(), save = vi.fn(async () => {})
+    render(<WebReaderFrame platform={platform} conversationId="model" conversationUrl={null} projectUrl={null} ensurePreview={ensurePreview} onSave={save} onRegisterHost={register} />)
+    const post = vi.spyOn(frameEl().contentWindow!, 'postMessage'); emit(readyMessage)
+    const registration = register.mock.calls.at(-1)![0]!
+    await expect(registration.run({ kind: 'open', url: 'https://retry.test/' })).resolves.toMatchObject({ ok: false })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось подготовить')
+    expect(save).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'set-url', url: 'https://retry.test/' }), platform.origin))
+    emit({ type, conversationId: 'model', registrationId: registration.registrationId, kind: 'page-status', status: 'ready', url: 'https://retry.test/' })
+    await waitFor(() => expect(save).toHaveBeenCalledWith('https://retry.test/'))
+  })
+  it('не сохраняет адрес страницы, которая вернула ошибку загрузки', async () => {
+    const register = vi.fn<(registration: ReaderHostRegistration | null) => void>(), save = vi.fn(async () => {})
+    render(<WebReaderFrame platform={platform} conversationId="model" conversationUrl={null} projectUrl={null} onSave={save} onRegisterHost={register} />)
+    emit(readyMessage); const registration = register.mock.calls.at(-1)![0]!
+    const pending = registration.run({ kind: 'open', url: 'https://broken.test/' })
+    emit({ type, conversationId: 'model', registrationId: registration.registrationId, kind: 'page-status', status: 'error', url: 'https://broken.test/', error: 'offline' })
+    await expect(pending).resolves.toMatchObject({ ok: false }); expect(save).not.toHaveBeenCalled()
+  })
+  it('ошибка сохранения видна и повторяется без перезагрузки страницы', async () => {
+    const register = vi.fn<(registration: ReaderHostRegistration | null) => void>()
+    const save = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined)
+    render(<WebReaderFrame platform={platform} conversationId="model" conversationUrl={null} projectUrl={null} onSave={save} onRegisterHost={register} />)
+    const post = vi.spyOn(frameEl().contentWindow!, 'postMessage'); emit(readyMessage)
+    const registration = register.mock.calls.at(-1)![0]!
+    emit({ type, conversationId: 'model', registrationId: registration.registrationId, kind: 'save-url', url: 'https://save.test/' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('адрес не удалось сохранить'); post.mockClear()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить сохранение' }))
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2)); expect(post).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+  it('быстрые сохранения идут последовательно и с исходным callback разговора', async () => {
+    let release!: () => void
+    const save = vi.fn().mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve })).mockResolvedValue(undefined)
+    const register = vi.fn<(registration: ReaderHostRegistration | null) => void>()
+    const props = { platform, conversationId: 'model', conversationUrl: null, projectUrl: null, onSave: save, onRegisterHost: register }
+    const view = render(<WebReaderFrame {...props} />); emit(readyMessage)
+    const registrationId = register.mock.calls.at(-1)![0]!.registrationId
+    emit({ type, conversationId: 'model', registrationId, kind: 'save-url', url: 'https://first.test/' })
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    emit({ type, conversationId: 'model', registrationId, kind: 'save-url', url: 'https://second.test/' })
+    const newer = vi.fn(async () => {}); view.rerender(<WebReaderFrame {...props} onSave={newer} />)
+    expect(save).toHaveBeenCalledTimes(1); release()
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2)); expect(newer).not.toHaveBeenCalled()
+    expect(save.mock.calls.map(call => call[0])).toEqual(['https://first.test/', 'https://second.test/'])
+  })
+})

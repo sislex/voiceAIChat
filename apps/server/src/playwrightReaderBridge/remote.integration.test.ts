@@ -119,7 +119,7 @@ describe.each([
       expect(stop.status).toBe(200)
       expect(await stop.json()).toEqual({ stopped: true })
     }
-    expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ sessionId: conversationId, userKey: 'ann', conversationKey: conversationId }))
+    expect(runner.start).toHaveBeenCalledWith(expect.objectContaining({ sessionId: conversationId, userKey: 'ann', conversationKey: conversationId, profileMode: 'persistent' }))
   })
 
   it('cookie ядра действует в приложении, а мутация требует CSRF при каждом вызове', async () => {
@@ -155,6 +155,9 @@ describe.each([
     expect(read.result.isError).not.toBe(true)
     expect(read.result.content[0]?.text).toContain('Текст страницы из отдельного приложения')
     expect(runner.command).toHaveBeenLastCalledWith(conversationId, expect.objectContaining({ actor: 'assistant', incarnation: 'inc' }))
+    const tabs = await call('tabs')
+    expect(tabs.result.isError).not.toBe(true)
+    expect(runner.command).toHaveBeenLastCalledWith(conversationId, expect.objectContaining({ actor: 'assistant', incarnation: 'inc', command: { type: 'status' } }))
     const shot = await call('screenshot')
     expect(shot.result.isError).not.toBe(true)
     expect(shot.result.content).toContainEqual(expect.objectContaining({ type: 'image', data: Buffer.from('png-bytes').toString('base64') }))

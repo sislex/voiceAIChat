@@ -102,6 +102,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   let pageError: string | undefined
   let approvedUrl: string | null = null
   let disposed = false
+  let navigationGeneration = 0
+  let inspectorMode: boolean | undefined
+  let recordingMode: boolean | undefined
 
   const setStatus = (next: ReaderHostStatus): void => {
     if (status === next) return
@@ -114,14 +117,18 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       pageStatus === 'error' ? 'error' : pageStatus === 'loading' ? 'page-loading' : pageStatus === 'ready' ? 'page-ready' : 'ready'
     )
   }
-  const post = (message: HostMessageBody): void => {
-    if (registration === null) return
-    options.send({
-      type: WEB_RECORDER_MESSAGE_TYPE,
-      conversationId: options.conversationId,
-      registrationId: registration,
-      ...message
-    } as WebRecorderHostMessage)
+  const post = (message: HostMessageBody): boolean => {
+    if (registration === null || disposed) return false
+    try {
+      options.send({ type: WEB_RECORDER_MESSAGE_TYPE, conversationId: options.conversationId, registrationId: registration, ...message } as WebRecorderHostMessage)
+      return true
+    } catch {
+      pageStatus = 'error'
+      pageError = 'Не удалось передать команду в Web Reader.'
+      rejectAll(pageError)
+      syncPageStatus()
+      return false
+    }
   }
   const settle = (requestId: string, outcome: PreviewActionOutcome): void => {
     const entry = pending.get(requestId)
@@ -134,20 +141,20 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
     for (const requestId of [...pending.keys()]) settle(requestId, { ok: false, error })
   }
   const flush = (): void => {
-    if (registration === null || pageStatus !== 'ready') return
+    if (registration === null || disposed) return
     for (const [requestId, entry] of pending) {
-      if (entry.sent) continue
+      if (entry.sent || entry.action.kind !== 'viewport' && pageStatus !== 'ready') continue
       // open резолвится готовностью целевой страницы, в iframe не пересылается.
       if (entry.action.kind === 'open') {
-        settle(requestId, { ok: true, result: { url: entry.action.url } })
+        settle(requestId, { ok: true, result: { url: approvedUrl ?? entry.action.url } })
         continue
       }
       entry.sent = true
-      post({ kind: 'command', requestId, action: entry.action })
+      if (!post({ kind: 'command', requestId, action: entry.action })) break
     }
   }
-  const sendInit = (): void => {
-    post({
+  const sendInit = (): boolean => {
+    return post({
       kind: 'init',
       protocolVersion: WEB_RECORDER_PROTOCOL_VERSION,
       previewUrl: approvedUrl,
@@ -158,19 +165,11 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
   const run: PreviewActionRunner = (action) => {
     if (disposed) return Promise.resolve({ ok: false, error: 'Панель Web Reader закрыта.' })
     if (registration === null) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
-    if (action.kind === 'open') {
-      pageStatus = 'loading'
-      pageError = undefined
-      approvedUrl = action.url
-      syncPageStatus()
-      // Явный reset делает повторный open того же URL детерминированной перезагрузкой.
-      post({ kind: 'set-url', url: null })
-      queueMicrotask(() => post({ kind: 'set-url', url: action.url }))
-    }
-    if (pageStatus === 'empty' && action.kind !== 'open') {
+    if (action.kind === 'open') rejectAll('Открывается другая страница — повтори действие.')
+    if (pageStatus === 'empty' && action.kind !== 'open' && action.kind !== 'viewport') {
       return Promise.resolve({ ok: false, error: 'Панель открыта, но в ней нет страницы — сначала вызови open.' })
     }
-    if (pageStatus === 'error' && action.kind !== 'open') {
+    if (pageStatus === 'error' && action.kind !== 'open' && action.kind !== 'viewport') {
       return Promise.resolve({ ok: false, error: 'Сайт или страница недоступны: ' + (pageError ?? 'ошибка загрузки.') })
     }
     return new Promise((resolve) => {
@@ -182,24 +181,44 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           : 'Клиентский мост Web Reader не ответил на команду при открытой панели.'
       }), timeoutMs)
       pending.set(requestId, { action, sent: false, timer, resolve })
+      if (action.kind === 'open') {
+        const generation = ++navigationGeneration
+        const registered = registration
+        pageStatus = 'loading'
+        pageError = undefined
+        approvedUrl = action.url
+        syncPageStatus()
+        if (!post({ kind: 'set-url', url: null })) return
+        // Микрозадача прежнего open не должна оживлять отменённую навигацию.
+        queueMicrotask(() => {
+          if (disposed || generation !== navigationGeneration || registered !== registration) return
+          post({ kind: 'set-url', url: action.url })
+        })
+      }
       flush()
     })
   }
 
-  const registrationHandle = (): ReaderHostRegistration => ({
-    conversationId: options.conversationId,
-    registrationId: registration!,
-    capabilities: shellCapabilities,
-    run,
-    beginDiagnostics: () => post({ kind: 'diagnostics-start', active: true }),
-    endDiagnostics: () => post({ kind: 'diagnostics-start', active: false })
-  })
+  const registrationHandle = (): ReaderHostRegistration => {
+    const id = registration!
+    const current = (): boolean => !disposed && id === registration
+    return {
+      conversationId: options.conversationId,
+      registrationId: id,
+      capabilities: shellCapabilities,
+      run: action => current() ? run(action) : Promise.resolve({ ok: false, error: 'Регистрация Web Reader устарела — повтори действие.' }),
+      beginDiagnostics: () => { if (current()) post({ kind: 'diagnostics-start', active: true }) },
+      endDiagnostics: () => { if (current()) post({ kind: 'diagnostics-start', active: false }) }
+    }
+  }
 
   return {
     getStatus: () => status,
     registrationId: () => registration,
     setUrl(url) {
       if (disposed) return
+      navigationGeneration++
+      if (url === null || url !== approvedUrl) rejectAll(url ? 'Адрес страницы изменён — повтори действие.' : 'Страница закрыта.')
       approvedUrl = url
       pageStatus = url ? 'loading' : 'empty'
       pageError = undefined
@@ -207,13 +226,14 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       post({ kind: 'set-url', url })
     },
     run,
-    setInspector: (enabled) => post({ kind: 'inspector-state', enabled }),
-    setRecording: (enabled) => post({ kind: 'recording-state', enabled }),
+    setInspector: (enabled) => { inspectorMode = enabled; post({ kind: 'inspector-state', enabled }) },
+    setRecording: (enabled) => { recordingMode = enabled; post({ kind: 'recording-state', enabled }) },
     beginDiagnostics: () => post({ kind: 'diagnostics-start', active: true }),
     endDiagnostics: () => post({ kind: 'diagnostics-start', active: false }),
     receive(message) {
       if (disposed || !isWebRecorderClientMessage(message)) return
       if (message.kind === 'ready') {
+        if (message.conversationId !== null && message.conversationId !== options.conversationId) return
         shellCapabilities = message.capabilities
         if (message.registrationId !== null && message.registrationId === registration) {
           // Повтор handshake той же загрузки (например, remount при HMR) — init идемпотентен.
@@ -222,10 +242,13 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
         }
         // Новый boot Reader: прежняя регистрация мертва вместе со своими pending.
         if (registration !== null) rejectAll('Web Reader перезагружен — повтори действие.')
+        navigationGeneration++
         registration = options.newId()
         pageStatus = approvedUrl ? 'loading' : 'empty'
         pageError = undefined
-        sendInit()
+        if (!sendInit()) return
+        if (inspectorMode !== undefined) post({ kind: 'inspector-state', enabled: inspectorMode })
+        if (recordingMode !== undefined) post({ kind: 'recording-state', enabled: recordingMode })
         syncPageStatus()
         options.onRegistration?.(registrationHandle())
         return
@@ -234,10 +257,18 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
       if (message.conversationId !== options.conversationId || message.registrationId !== registration) return
       switch (message.kind) {
         case 'page-status':
+          // Промежуточный reset open не означает, что пользователь закрыл страницу.
+          if (message.status === 'empty' && approvedUrl !== null && [...pending.values()].some(entry => entry.action.kind === 'open')) return
           pageStatus = message.status
           pageError = message.error
           syncPageStatus()
-          if (message.status === 'ready') flush()
+          if (message.status === 'ready') {
+            const changed = message.url !== approvedUrl
+            approvedUrl = message.url
+            if (changed) options.onSaveUrl?.(message.url)
+            flush()
+          }
+          if (message.status === 'empty' && approvedUrl === null) rejectAll('Страница закрыта.')
           if (message.status === 'error') rejectAll('Сайт или страница недоступны: ' + (message.error ?? 'ошибка загрузки.'))
           return
         case 'result':
@@ -246,6 +277,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
             : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })
           return
         case 'save-url':
+          if (message.url !== approvedUrl) { navigationGeneration++; rejectAll('Адрес страницы изменён пользователем — повтори действие.') }
+          approvedUrl = message.url
+          if (message.url === null) { pageStatus = 'empty'; syncPageStatus(); rejectAll('Страница закрыта.') }
           options.onSaveUrl?.(message.url)
           return
         case 'element-selected':
@@ -261,15 +295,23 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           options.onDiagnosticsProgress?.({ requestId: message.requestId, action: message.action, ok: message.ok, durationMs: message.durationMs })
           return
         case 'diagnostics-complete':
+          return
         case 'disposed':
+          disposed = true
+          navigationGeneration++
+          rejectAll('Панель Web Reader закрыта.')
+          registration = null
+          setStatus('disposed')
+          options.onRegistration?.(null)
           return
       }
     },
     dispose() {
       if (disposed) return
+      rejectAll('Панель Web Reader закрыта.')
       post({ kind: 'dispose' })
       disposed = true
-      rejectAll('Панель Web Reader закрыта.')
+      navigationGeneration++
       registration = null
       setStatus('disposed')
       options.onRegistration?.(null)

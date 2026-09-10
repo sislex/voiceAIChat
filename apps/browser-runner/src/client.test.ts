@@ -3,6 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { BrowserRunnerError, createBrowserRunnerClient } from './client.js'
+import { BROWSER_SCREENSHOT_HEADER } from '@voicechat/shared'
 
 const meta = { id: 's1', conversationId: 'c1', incarnation: 'inc', state: 'ready', activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: null, title: null }
 
@@ -29,6 +30,16 @@ describe('createBrowserRunnerClient', () => {
     const shot = await client.screenshot('c1', { requestId: 'r', incarnation: 'inc', actor: 'user', command: { type: 'screenshot' } })
     expect(shot.mimeType).toBe('image/jpeg')
     expect(shot.buffer.equals(png)).toBe(true)
+  })
+
+  it('метаданные снимка проходят вместе с бинарём; повреждённый заголовок не выдумывает размеры', async () => {
+    const metadata = { page: { url: 'http://example.test/снимок', title: 'Снимок' }, rect: { x: 40, y: 900, width: 160, height: 90 }, scale: 'css' }
+    for (const raw of [Buffer.from(JSON.stringify(metadata)).toString('base64url'), 'broken', Buffer.from('{"rect":{}}').toString('base64url')]) {
+      const client = createBrowserRunnerClient({ baseUrl: 'http://runner', token: 't', fetchImpl: vi.fn(async () => new Response('PNG', { headers: { 'content-type': 'image/png', [BROWSER_SCREENSHOT_HEADER]: raw } })) as unknown as typeof fetch })
+      const shot = await client.screenshot('c1', { requestId: 'r', incarnation: 'inc', actor: 'user', command: { type: 'screenshot' } })
+      expect(shot.buffer.toString()).toBe('PNG')
+      expect(shot.metadata).toEqual(raw === 'broken' || raw === Buffer.from('{"rect":{}}').toString('base64url') ? undefined : metadata)
+    }
   })
 
   it('маппит статусы: 404 → 404, stale (409) → 409, 503 → 503', async () => {

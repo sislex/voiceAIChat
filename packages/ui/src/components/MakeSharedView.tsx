@@ -103,7 +103,7 @@ export function MakeSharedView({ token, api, ensurePreview, onBack }: Props): JS
         <>
           {tab === 'preview' && (
             <div className="make-frame-host make-frame-host--desktop">
-              {previewReady && <iframe className="make-frame" title="Превью проекта (только чтение)" src={`${previewBase}index.html?rev=${state.rev}`} sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin" />}
+              {previewReady && <iframe className="make-frame" title="Превью проекта (только чтение)" src={`${previewBase}index.html?rev=${state.rev}`} sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads" />}
             </div>
           )}
           {tab === 'code' && (
