@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-04 | ⚠ 74 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-04 | ⚠ 88 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-09 | ⚠ 4 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1299 коммит(ов) в areas после сверки: 2f4db9fa fix(reader): improve address and page loading controls (cycle 09/20) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1300 коммит(ов) в areas после сверки: 0a0f4423 fix(reader): replay scenarios one confirmed step at a time (cycle 10/20) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-06 | ⚠ 50 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-08 | ⚠ 15 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-06 | ⚠ 54 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
@@ -36,7 +36,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-09 | ⚠ 3 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-09 | ⚠ 9 коммит(ов) в areas после сверки: e1a9c40c fix(reader): preserve CSS and responsive image URLs (cycle 06/20) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-10 | ⚠ 1 коммит(ов) в areas после сверки: ab93e3a5 fix(reader): keep model actions on the live page (cycle 08/20) |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-09 | ⚠ 5 коммит(ов) в areas после сверки: f4ff5797 Merge main into CHAT-434 (task 9dd9335b-eef6-4afe-9710-b77a7ee95610) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-10 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 195 коммит(ов) в areas после сверки: 4391cd01 fix(reader): restore own-app preview through trusted host aliases … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 5 коммит(ов) в areas после сверки: d4710360 refactor(db): круг 3 — асинхронные порты репозиториев … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-09 | ⚠ 4 коммит(ов) в areas после сверки: 2f4db9fa fix(reader): improve address and page loading controls (cycle 09/20) … |
@@ -64,8 +64,9 @@
 
 ## Журнал сессий
 
-Всего записей: 690. Последние:
+Всего записей: 691. Последние:
 
+- [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-11.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-11.md) — web-reader-cycle-11
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-10.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-10.md) — web-reader-cycle-10
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-09.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-09.md) — web-reader-cycle-09
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-08.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-08.md) — web-reader-cycle-08
@@ -75,7 +76,6 @@
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-04.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-04.md) — web-reader-cycle-04
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-03.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-03.md) — web-reader-cycle-03
 - [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-02.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-02.md) — web-reader-cycle-02
-- [2026-09-10-alexeys-macbook-air-2-web-reader-cycle-01.md](log/2026-09-10-alexeys-macbook-air-2-web-reader-cycle-01.md) — web-reader-cycle-01
 
 ## Исторические планы
 

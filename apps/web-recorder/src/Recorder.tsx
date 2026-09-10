@@ -1,4 +1,6 @@
 import { Button, IconButton } from '@voicechat/ui-kit'
+import { appendWebRecorderStep, normalizeWebRecorderStep } from '@shared/webRecorderScenario'
+import { loadScenario, scenarioKey } from './scenarioStorage'
 import { createScenarioRunner, type ScenarioProgress } from './scenarioRunner'
 import { normalizeReaderAddress } from './readerAddress'
 import { useEffect, useRef, useState } from 'react'
@@ -33,19 +35,6 @@ const EDIT = 'voicechat.preview.edit.v1'
 const CAPTURE = 'voicechat.preview.capture.v1'
 const sameOrigin = window.location.origin
 const validUrl = (value: string): string | null => { try { const url = new URL(value.trim()); return /^https?:$/.test(url.protocol) ? url.toString() : null } catch { return null } }
-/** Ключ сохранённого сценария страницы (localStorage браузера, по origin+path). */
-const scenarioKey = (pageUrl: string): string | null => {
-  try { const url = new URL(pageUrl); return 'voicechat.reader.scenario.v1:' + url.origin + url.pathname } catch { return null }
-}
-const loadScenario = (pageUrl: string | null): Step[] => {
-  if (!pageUrl) return []
-  const key = scenarioKey(pageUrl)
-  if (!key) return []
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) ?? '[]') as Step[]
-    return Array.isArray(parsed) ? parsed.filter((step) => (step.kind === 'click' || step.kind === 'type') && typeof step.selector === 'string') : []
-  } catch { return [] }
-}
 /** Пресеты адаптива: ширина iframe для проверки мобильной/планшетной вёрстки. */
 const VIEWPORTS = [['', 'Адаптив'], ['375', 'iPhone 375'], ['768', 'Планшет 768'], ['1024', 'Ноутбук 1024']] as const
 
@@ -54,6 +43,7 @@ export function Recorder(): JSX.Element {
   const [inspecting, setInspecting] = useState(false); const [editing, setEditing] = useState(false); const [capturing, setCapturing] = useState(false); const [disposed, setDisposed] = useState(false)
   const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
+  const [scenarioUrl, setScenarioUrl] = useState<string | null>(null)
   const [scenarioProgress, setScenarioProgress] = useState<ScenarioProgress | null>(null)
   const scenarioRunner = useRef<ReturnType<typeof createScenarioRunner> | null>(null)
   const scenarioRunning = scenarioProgress?.status === 'running'
@@ -82,6 +72,13 @@ export function Recorder(): JSX.Element {
     if (!ids) return
     window.parent.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, conversationId: ids.conversationId, registrationId: ids.registrationId, ...message }, sameOrigin)
   }
+  const setRecordingMode = (enabled: boolean): void => {
+    // Режим доходит до страницы в обработчике кнопки: passive effect мог
+    // отложиться до следующего paint и потерять первый быстрый ввод.
+    modes.current.recording = enabled
+    frame.current?.contentWindow?.postMessage({ type: RECORD, enabled }, sameOrigin)
+    setRecording(enabled)
+  }
   const applyUrl = (next: string | null): void => {
     loadGeneration.current++
     scenarioRunner.current?.cancel('Открывается другая страница — запуск отменён.')
@@ -92,7 +89,7 @@ export function Recorder(): JSX.Element {
     if (next) setFrameKey((value) => value + 1)
     setUrl(next); setDraft(next ?? ''); setError(null)
     // Сценарий этой страницы сохраняется в браузере — восстанавливаем при открытии.
-    setSteps(loadScenario(next)); setSecretValues({})
+    setScenarioUrl(next); setSteps(loadScenario(next)); setSecretValues({})
     reply({ kind: 'page-status', status: next ? 'loading' : 'empty', url: next })
   }
 
@@ -157,7 +154,7 @@ export function Recorder(): JSX.Element {
         frame.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: message.enabled }, sameOrigin)
         return
       }
-      if (message.kind === 'recording-state') { setRecording(message.enabled); return }
+      if (message.kind === 'recording-state') { setRecordingMode(message.enabled); return }
       if (message.kind === 'diagnostics-start') {
         if (message.active) { diagnosticsMode.current = true; setDiagnostics([]) }
         else {
@@ -196,6 +193,11 @@ export function Recorder(): JSX.Element {
           currentUrl.current = next
           // Это подтверждённая навигация живого iframe: его src менять нельзя.
           setDraft(draft => draft === previous ? next : draft)
+          // Обычная SPA-навигация выбирает сценарий новой страницы. Запись и
+          // воспроизведение сохраняют исходный адрес многостраничного сценария.
+          if (!modes.current.recording && !scenarioRunner.current?.isRunning()) {
+            setScenarioUrl(next); setSteps(loadScenario(next)); setSecretValues({})
+          }
         }
         scenarioRunner.current?.setReady(true)
         pageReady.current = true
@@ -234,13 +236,10 @@ export function Recorder(): JSX.Element {
         return
       }
       if (message?.type === PREVIEW_INSPECTOR_MESSAGE_TYPE) { reply({ kind: 'element-selected', element: message.payload as never }); return }
-      if (message?.type === RECORD && !diagnosticsMode.current && !scenarioRunner.current?.isRunning()) {
-        const raw = message.step as { kind?: unknown; selector?: unknown; text?: unknown; sensitive?: unknown; submit?: unknown } | undefined
-        if (!raw || (raw.kind !== 'click' && raw.kind !== 'type') || typeof raw.selector !== 'string') return
-        const sensitive = raw.sensitive === true
-        // Значение секретного поля не сохраняется и не покидает страницу.
-        const step: Step = { kind: raw.kind, selector: raw.selector, text: sensitive ? '' : typeof raw.text === 'string' ? raw.text : '', sensitive, ...(raw.kind === 'type' && raw.submit === true ? { submit: true } : {}) }
-        setSteps((old) => [...old, step])
+      if (message?.type === RECORD && modes.current.recording && !diagnosticsMode.current && !scenarioRunner.current?.isRunning()) {
+        const step = normalizeWebRecorderStep(message.step)
+        if (!step) return
+        setSteps(old => appendWebRecorderStep(old, step))
         reply({ kind: 'recording-step', step })
       }
     }
@@ -266,15 +265,13 @@ export function Recorder(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (!url) return
-    const key = scenarioKey(url)
+    if (!scenarioUrl) return
+    const key = scenarioKey(scenarioUrl)
     if (!key) return
     try {
-      if (steps.length) localStorage.setItem(key, JSON.stringify(steps))
-      else localStorage.removeItem(key)
+      localStorage.setItem(key, JSON.stringify(steps.map(normalizeWebRecorderStep).filter(Boolean)))
     } catch { /* квота браузера — сценарий просто не сохранится */ }
-  }, [steps, url])
-  useEffect(() => { frame.current?.contentWindow?.postMessage({ type: RECORD, enabled: recording }, sameOrigin) }, [recording, url])
+  }, [steps, scenarioUrl])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: EDIT, enabled: editing }, sameOrigin) }, [editing, url])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: CAPTURE, enabled: capturing }, sameOrigin) }, [capturing, url])
   const closeTools = (): void => { if (toolsMenu.current) toolsMenu.current.open = false }
@@ -335,7 +332,7 @@ export function Recorder(): JSX.Element {
     setError(null)
     // Действия воспроизведения не записываются повторно в собственный сценарий.
     modes.current.recording = false
-    setRecording(false); setInspecting(false); setEditing(false); setCapturing(false)
+    setRecordingMode(false); setInspecting(false); setEditing(false); setCapturing(false)
     void runner.run(steps, secretValues).then(() => { if (scenarioRunner.current === runner) setSecretValues({}) })
   }
   const historyGo = (delta: -1 | 1): void => {
@@ -350,9 +347,20 @@ export function Recorder(): JSX.Element {
       })
       .catch(() => setError('Не удалось сбросить сессии превью.'))
   }
+  const editStepOrder = (index: number, direction: -1 | 1 | 0): void => {
+    if (scenarioRunning) return
+    setSecretValues({})
+    setSteps(all => {
+      if (direction === 0) return all.filter((_, i) => i !== index)
+      const next = [...all], target = index + direction
+      if (target < 0 || target >= next.length) return all
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
   const exportPlaywright = (): void => {
-    if (!url || !steps.length) return
-    const blob = new Blob([scenarioToPlaywright(url, steps)], { type: 'text/typescript' })
+    if (!scenarioUrl || !steps.length) return
+    const blob = new Blob([scenarioToPlaywright(scenarioUrl, steps)], { type: 'text/typescript' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = 'web-reader-scenario.spec.ts'
@@ -377,7 +385,7 @@ export function Recorder(): JSX.Element {
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={() => activateMode(inspecting ? null : 'inspect')}>⌖ Выбор элемента</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => activateMode(editing ? null : 'edit')}>✎ Редактировать</Button>
           <Button variant="secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => activateMode(capturing ? null : 'capture')}>📸 Область</Button>
-          <Button variant="secondary" type="button" disabled={!url} aria-pressed={recording} onClick={() => { setRecording((value) => !value); closeTools() }}>{recording ? 'Остановить запись' : 'Записать сценарий'}</Button>
+          <Button variant="secondary" type="button" disabled={!url} aria-pressed={recording} onClick={() => { setRecordingMode(!modes.current.recording); closeTools() }}>{recording ? 'Остановить запись' : 'Записать сценарий'}</Button>
         </div>
       </details>
     </form>
@@ -398,9 +406,17 @@ export function Recorder(): JSX.Element {
       <Button variant="secondary" type="button" onClick={exportPlaywright}>Экспорт в Playwright</Button>
       <Button variant="secondary" type="button" disabled={scenarioRunning} onClick={() => { setSteps([]); setSecretValues({}); setScenarioProgress(null) }}>Очистить</Button>
       <ol>
-      {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input disabled={scenarioRunning} aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
-        {step.kind === 'type' && !step.sensitive && <input disabled={scenarioRunning} aria-label={'Значение шага ' + (index + 1)} value={step.text} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
-        {step.kind === 'type' && step.sensitive && <input disabled={scenarioRunning} aria-label={'Секретное значение шага ' + (index + 1)} type="password" value={secretValues[index] ?? ''} placeholder="введите для запуска" onChange={(event) => setSecretValues((all) => ({ ...all, [index]: event.target.value }))} />}
+      {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input maxLength={PREVIEW_ACTION_LIMITS.selector} disabled={scenarioRunning} aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
+        {step.kind === 'type' && !step.sensitive && <input maxLength={PREVIEW_ACTION_LIMITS.text} disabled={scenarioRunning} aria-label={'Значение шага ' + (index + 1)} value={step.text} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
+        {step.kind === 'type' && step.sensitive && <input maxLength={PREVIEW_ACTION_LIMITS.text} disabled={scenarioRunning} aria-label={'Секретное значение шага ' + (index + 1)} type="password" value={secretValues[index] ?? ''} placeholder="введите для запуска" onChange={(event) => setSecretValues((all) => ({ ...all, [index]: event.target.value }))} />}
+        {step.kind === 'type' && <label><input type="checkbox" disabled={scenarioRunning} aria-label={'Секрет шага ' + (index + 1)} checked={step.sensitive} onChange={event => {
+          const sensitive = event.target.checked
+          setSecretValues({})
+          setSteps(all => all.map((item, i) => i === index ? { ...item, sensitive, text: '' } : item))
+        }} />Секрет</label>}
+        <IconButton size="sm" disabled={scenarioRunning || index === 0} title="Поднять шаг" aria-label={'Поднять шаг ' + (index + 1)} onClick={() => editStepOrder(index, -1)}>↑</IconButton>
+        <IconButton size="sm" disabled={scenarioRunning || index === steps.length - 1} title="Опустить шаг" aria-label={'Опустить шаг ' + (index + 1)} onClick={() => editStepOrder(index, 1)}>↓</IconButton>
+        <IconButton size="sm" disabled={scenarioRunning} title="Удалить шаг" aria-label={'Удалить шаг ' + (index + 1)} onClick={() => editStepOrder(index, 0)}>×</IconButton>
         {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохраняется</em>}</li>)}
     </ol></section>}
