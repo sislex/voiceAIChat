@@ -10,6 +10,7 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     first: () => self,
     all: async () => [self],
     click: vi.fn(async () => {}),
+    press: vi.fn(async () => {}),
     fill: vi.fn(async () => {}),
     innerText: async () => 'Текст узла',
     isVisible: async () => true,
@@ -155,11 +156,24 @@ describe('загрузка файла (круг 10)', () => {
     )
   })
 
-  it('без типа подставляется нейтральный, пустое содержимое отклоняется', async () => {
+  it('без типа подставляется нейтральный, пустой файл поддерживается', async () => {
     const target = locator()
     await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a.bin', base64: 'AA==' })
     expect(target.setInputFiles).toHaveBeenCalledWith(expect.objectContaining({ mimeType: 'application/octet-stream' }), expect.anything())
-    expect(await runSelectorAction(page(locator()), { kind: 'upload', selector: '#f', name: 'a', base64: '' })).toEqual({ ok: false, error: 'Пустое содержимое файла' })
+    expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a', base64: '' })).toEqual({ ok: true })
+    expect(target.setInputFiles).toHaveBeenLastCalledWith(expect.objectContaining({ buffer: Buffer.alloc(0) }), expect.anything())
+  })
+
+  it.each(['YWJj$', 'A', 'AB==', 'YWJj=', 'Y=Q='])('битый base64 %s отклоняется до выбора файла', async (base64) => {
+    const target = locator()
+    expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a', base64 })).toMatchObject({ ok: false, error: expect.stringMatching(/base64/) })
+    expect(target.setInputFiles).not.toHaveBeenCalled()
+  })
+
+  it('принимает форматирование переносами строк и корректный base64 без padding', async () => {
+    const target = locator()
+    for (const base64 of ['aG\nk=', 'aGk']) expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a', base64 })).toMatchObject({ ok: true })
+    expect(target.setInputFiles).toHaveBeenLastCalledWith(expect.objectContaining({ buffer: Buffer.from('hi') }), expect.anything())
   })
 
   it('слишком большой файл отклоняется до обращения к странице', async () => {

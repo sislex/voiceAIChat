@@ -516,12 +516,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         'upload',
         {
           description:
-            'Загрузить файл в input type=file открытой в превью страницы: содержимое передаётся base64 (до ~1 МБ). ' +
+            'Загрузить файл в input type=file открытой в превью страницы: содержимое передаётся base64 (до 8 МиБ). ' +
             'Диспатчит input/change как при выборе файла пользователем.',
           inputSchema: {
             selector: z.string().max(L.selector).describe('CSS-селектор input type=file'),
             name: z.string().min(1).max(255).describe('Имя файла (например report.csv)'),
-            base64: z.string().min(1).max(L.uploadBase64).describe('Содержимое файла в base64'),
+            base64: z.string().max(L.uploadBase64).describe('Содержимое файла в base64; пустая строка — файл нулевой длины'),
             mimeType: z.string().max(100).optional().describe('MIME-тип (по умолчанию application/octet-stream)')
           }
         },

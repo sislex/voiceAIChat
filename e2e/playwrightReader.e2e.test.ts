@@ -11,6 +11,8 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { previewOriginTarget } from '../apps/browser-runner/src/security.js'
 import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
+import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
+import { BROWSER_UPLOAD_LIMIT_BYTES } from '../packages/shared/src/browserLimits'
 
 const ROOT = resolve(__dirname, '..')
 const PASSWORD = 'reader-audit-local-test-only'
@@ -25,6 +27,7 @@ let base = ''
 let conversationId = ''
 let turn = ''
 let auth = ''
+let forms: Awaited<ReturnType<typeof startReaderFormsFixture>> | undefined
 const chats: Record<string, string> = {}
 
 async function freePort(): Promise<number> {
@@ -68,7 +71,8 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     dataDir = await mkdtemp(join(tmpdir(), 'vc-reader-e2e-'))
     const port = await freePort()
     base = `http://127.0.0.1:${port}`
-    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), idleMs: 0 })
+    forms = await startReaderFormsFixture()
+    runner = await buildBrowserRunner({ token: 'reader-e2e-runner', profilesRoot: join(dataDir, 'profiles'), previewOrigin: previewOriginTarget(base), hostAliases: new Map([['forms.reader.test', new URL(forms.origin).host]]), idleMs: 0 })
     const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
@@ -112,12 +116,15 @@ describe('Playwright Reader: настоящий интерфейс и инстр
 
   afterAll(async () => {
     await browser?.close()
+    // Внутренние страницы держат WS к ядру. Закрываем их до остановки ядра,
+    // чтобы завершение стенда не зависело от ещё работающего клиента.
+    await runner?.close()
     if (server && server.exitCode === null) {
       const stopped = new Promise<void>(resolve => server!.once('exit', () => resolve()))
       server.kill('SIGTERM')
       await stopped
     }
-    await runner?.close()
+    await forms?.close()
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
@@ -184,5 +191,26 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     } finally { await page.unroute(pattern) }
     await expect.poll(() => page.getByText(/Кадр не обновляется/).count(), { timeout: 15_000 }).toBe(0)
     await capture('05-frame-connection-restored')
+  })
+
+  it('модель управляет полями, отдельной прокруткой и файлами через настоящий MCP', async () => {
+    await mcp('open', { url: 'http://forms.reader.test/' })
+    await mcp('click', { selector: '#modifiers', modifiers: ['shift', 'alt'] })
+    const modifiers = JSON.parse(await mcp('read', { selector: '#modifiers-result' })) as { text: string }
+    expect(JSON.parse(modifiers.text)).toMatchObject({ shift: true, alt: true, ctrl: false, meta: false })
+    await mcp('type', { selector: '#other', text: 'Фокус был здесь' })
+    await mcp('press', { selector: '#target', key: 'Enter' })
+    expect(await mcp('read', { selector: '#key-result' })).toContain('target:Enter')
+    await mcp('scroll', { selector: '#scroller', dy: 500 })
+    expect(await mcp('read', { selector: '#scroll-result' })).toContain('inner:500')
+    await mcp('upload', { selector: '#file', name: 'empty.txt', base64: '' })
+    expect(await mcp('read', { selector: '#file-result' })).toContain('file:empty.txt:0')
+    await mcp('upload', { selector: '#file', name: 'eight-mebibytes.bin', base64: Buffer.alloc(BROWSER_UPLOAD_LIMIT_BYTES).toString('base64') })
+    expect(await mcp('read', { selector: '#file-result' })).toContain(`file:eight-mebibytes.bin:${BROWSER_UPLOAD_LIMIT_BYTES}`)
+    await capture('06-model-forms-and-upload')
+    await mcp('click', { selector: '#next' })
+    const text = await mcp('read')
+    expect(text).toContain('http://forms.reader.test/next')
+    expect(text).toContain('Следующая страница')
   })
 })

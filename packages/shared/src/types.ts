@@ -188,6 +188,7 @@ export type BrowserInputAction =
   | { type: 'mouseUp'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
   | { type: 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right'; clickCount?: 1 | 2 }
   | { type: 'wheel'; deltaX: number; deltaY: number }
+  | { type: 'drag'; from: { x: number; y: number }; to: { x: number; y: number } }
   | { type: 'type'; text: string }
   | { type: 'press'; key: string }
   | { type: 'keyDown'; key: string }
@@ -200,7 +201,9 @@ export type BrowserInputAction =
  * один вызов локатора, поэтому разрыв закрывается контрактом, а не обвязкой.
  */
 export type BrowserSelectorAction =
-  | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2 }
+  | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }
+  | { kind: 'press'; selector: string; key: string }
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dy?: number }
   | { kind: 'type'; selector: string; text: string; submit?: boolean }
   | { kind: 'read'; selector?: string; limit?: number }
   | { kind: 'find'; text?: string; selector?: string; limit?: number }
@@ -227,6 +230,8 @@ export type BrowserSelectorAction =
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
   ok: boolean
+  /** После клика/ввода мог произойти переход; модель должна видеть реальную страницу. */
+  page?: { url: string; title: string }
   /** Текст страницы, найденного узла (`read`) или снимок дерева ролей (`a11y`). */
   text?: string
   /** Совпадения для `find`: селектор, видимый текст и признак видимости. */
@@ -294,7 +299,7 @@ export type BrowserCommand =
   | { type: 'back' | 'forward' | 'reload' | 'stop' }
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
-  | { type: 'resize'; viewport: BrowserViewport }
+  | { type: 'resize'; viewport: Pick<BrowserViewport, 'width'> & Partial<Pick<BrowserViewport, 'height' | 'deviceScaleFactor'>> }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
   | { type: 'screenshot'; fullPage?: boolean; selector?: string; format?: 'png' | 'jpeg' | 'webp'; quality?: number }

@@ -36,13 +36,14 @@ describe('перевод действий модели для Playwright Reader'
     })
   })
 
-  it('прокрутка к краям переводится в крупный шаг колеса', () => {
+  it('прокрутка сохраняет край и контейнер вместо фиксированного шага колеса', () => {
     expect(planModelAction({ kind: 'scroll', to: 'bottom' })).toMatchObject({
-      command: { type: 'input', action: { type: 'wheel', deltaY: 10_000 } }
+      command: { type: 'selector', action: { kind: 'scroll', to: 'bottom' } }
     })
     expect(planModelAction({ kind: 'scroll', to: 'top' })).toMatchObject({
-      command: { action: { deltaY: -10_000 } }
+      command: { action: { to: 'top' } }
     })
+    expect(planModelAction({ kind: 'scroll', selector: '#pane', dy: 400 })).toMatchObject({ command: { action: { selector: '#pane', dy: 400 } } })
   })
 
   it('неподдерживаемое действие отклоняется с объяснением, а не выполняется не тем', () => {
@@ -96,12 +97,11 @@ describe('действия, добавленные кругом 9', () => {
     expect(planModelAction({ kind: 'viewport', width: 0 })).toMatchObject({ command: { type: 'resize', viewport: { width: 1280 } } })
   })
 
-  it('drag по селекторам работает, по координатам — честный отказ', () => {
+  it('drag сохраняет как селекторы, так и пару координат', () => {
     expect(planModelAction({ kind: 'drag', from: { selector: '.card' }, to: { selector: '.column' } }))
       .toMatchObject({ command: { type: 'selector', action: { kind: 'drag', from: '.card', to: '.column' } } })
     const byPoint = planModelAction({ kind: 'drag', from: { x: 10, y: 10 }, to: { x: 20, y: 20 } })
-    expect(byPoint.kind).toBe('unsupported')
-    expect(byPoint.kind === 'unsupported' && byPoint.reason).toContain('селекторами')
+    expect(byPoint).toMatchObject({ kind: 'command', command: { type: 'input', action: { type: 'drag', from: { x: 10, y: 10 }, to: { x: 20, y: 20 } } } })
   })
 
   it('единственное неподдержанное действие объясняется по существу', () => {

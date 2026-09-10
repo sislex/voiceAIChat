@@ -9,6 +9,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
   isPlaywrightReaderConversation,
+  BROWSER_COMMAND_BODY_LIMIT,
   machinePreviewUrl,
   type BrowserCommand,
   type BrowserViewport
@@ -68,7 +69,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
     }
   })
 
-  app.post<{ Params: { id: string }; Body: { incarnation?: string; tabId?: string; command?: BrowserCommand } }>('/api/browser/:id/command', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { incarnation?: string; tabId?: string; command?: BrowserCommand } }>('/api/browser/:id/command', { bodyLimit: BROWSER_COMMAND_BODY_LIMIT }, async (req, reply) => {
     try {
       const id = await guard(req, req.params.id)
       const { incarnation, tabId, command } = req.body ?? {}

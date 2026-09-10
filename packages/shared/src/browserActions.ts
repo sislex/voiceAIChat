@@ -49,7 +49,8 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
             ...(action.selector ? { selector: action.selector } : {}),
             ...(action.text ? { text: action.text } : {}),
             ...(action.button === 'right' ? { button: 'right' as const } : {}),
-            ...(action.dblclick ? { clickCount: 2 as const } : {})
+            ...(action.dblclick ? { clickCount: 2 as const } : {}),
+            ...(action.modifiers?.length ? { modifiers: action.modifiers.map((value) => ({ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' } as const)[value]) } : {})
           }
         }
       }
@@ -77,12 +78,13 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         }
       }
     case 'scroll': {
-      // У раннера прокрутка колесом; `to: top|bottom` переводим в крупный шаг.
-      const dy = action.to === 'top' ? -10_000 : action.to === 'bottom' ? 10_000 : action.dy ?? 400
-      return { kind: 'command', command: { type: 'input', action: { type: 'wheel', deltaX: 0, deltaY: dy } } }
+      // Контейнер и край страницы нельзя выразить фиксированным шагом колеса.
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'scroll', ...(action.selector ? { selector: action.selector } : {}), ...(action.to ? { to: action.to } : {}), ...(action.dy !== undefined ? { dy: action.dy } : {}) } } }
     }
     case 'press':
-      return { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key } } }
+      return action.selector
+        ? { kind: 'command', command: { type: 'selector', action: { kind: 'press', selector: action.selector, key: action.key } } }
+        : { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key } } }
     case 'console':
       return {
         kind: 'command',
@@ -141,15 +143,16 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         command: { type: 'selector', action: { kind: 'a11y', ...(action.selector ? { selector: action.selector } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}) } }
       }
     case 'viewport':
-      // У раннера свой вьюпорт: ширину задаёт resize, высоту держим прежней —
-      // модель просит именно ширину, как в превью.
-      return { kind: 'command', command: { type: 'resize', viewport: { ...DEFAULT_VIEWPORT, width: Math.max(320, Math.min(action.width || DEFAULT_VIEWPORT.width, 2560)) } } }
+      // Высота уже выбрана человеком или предыдущей командой; меняется только ширина.
+      return { kind: 'command', command: { type: 'resize', viewport: { width: Math.max(320, Math.min(action.width || DEFAULT_VIEWPORT.width, 2560)) } } }
     case 'drag': {
-      // Раннер тянет локатор к локатору; координатное перетаскивание у него не
-      // выражается, и подменять его «примерно тем же» хуже, чем отказать.
       const from = action.from.selector, to = action.to.selector
-      if (!from || !to) return { kind: 'unsupported', reason: 'Перетаскивание в изолированном Chromium задаётся селекторами: укажи from.selector и to.selector, координаты здесь не применимы.' }
-      return { kind: 'command', command: { type: 'selector', action: { kind: 'drag', from, to } } }
+      if (from && to) return { kind: 'command', command: { type: 'selector', action: { kind: 'drag', from, to } } }
+      const { x: x1, y: y1 } = action.from, { x: x2, y: y2 } = action.to
+      if (!from && !to && [x1, y1, x2, y2].every((value) => typeof value === 'number' && Number.isFinite(value))) {
+        return { kind: 'command', command: { type: 'input', action: { type: 'drag', from: { x: x1!, y: y1! }, to: { x: x2!, y: y2! } } } }
+      }
+      return { kind: 'unsupported', reason: 'Укажи оба края перетаскивания селекторами или оба координатами x/y.' }
     }
     case 'screenshot':
       // Снимок отдаётся картинкой и обрабатывается инструментом отдельно —
