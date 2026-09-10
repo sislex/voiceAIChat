@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
 import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { aliasTargets, applyHostAlias, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
+import { BrowserCommandQueue } from './commandQueue.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
 
@@ -12,6 +13,7 @@ interface Session {
   userKey: string
   conversationKey: string
   incarnation: string
+  queue: BrowserCommandQueue
   context: BrowserContext
   pages: Map<string, Page>
   pageIds: WeakMap<Page, string>
@@ -63,6 +65,7 @@ export interface StartSessionRequest {
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, Promise<Session>>()
+  private readonly stopping = new Map<string, Promise<boolean>>()
 
   private readonly allowedTargets: Set<string>
 
@@ -70,7 +73,7 @@ export class BrowserSessionManager {
     private readonly profilesRoot: string,
     private readonly hostAliases: HostAliases = new Map(),
     /** Доверенный origin сервера (`host:port`) для браузерных проверок задач. */
-    previewOrigin: string | null = null
+    private readonly previewOrigin: string | null = null
   ) {
     this.allowedTargets = aliasTargets(hostAliases)
     if (previewOrigin) {
@@ -80,6 +83,8 @@ export class BrowserSessionManager {
   }
 
   async start(request: StartSessionRequest): Promise<BrowserSessionMetadata> {
+    // Тот же каталог профиля нельзя открывать, пока прежний Chromium его закрывает.
+    await this.stopping.get(request.sessionId)
     let pending = this.sessions.get(request.sessionId)
     if (!pending) {
       pending = this.create(request)
@@ -113,6 +118,7 @@ export class BrowserSessionManager {
       conversationKey: request.conversationKey,
       incarnation: randomUUID(),
       context,
+      queue: new BrowserCommandQueue(),
       pages: new Map(),
       pageIds: new WeakMap(),
       console: [],
@@ -124,7 +130,7 @@ export class BrowserSessionManager {
     }
     await context.route('**/*', async (route) => {
       try {
-        const requested = validatePublicUrl(route.request().url())
+        const requested = validatePublicUrl(route.request().url(), this.allowedTargets)
         // Алиас применяется после проверки: во внутреннюю сеть пускает оператор
         // списком пар, а не пользователь адресом.
         const aliased = applyHostAlias(requested, this.hostAliases)
@@ -192,10 +198,20 @@ export class BrowserSessionManager {
   }
 
   async stop(sessionId: string): Promise<boolean> {
+    const closing = this.stopping.get(sessionId)
+    if (closing) return closing
+    const operation = this.stopSession(sessionId)
+    this.stopping.set(sessionId, operation)
+    try { return await operation } finally { this.stopping.delete(sessionId) }
+  }
+
+  private async stopSession(sessionId: string): Promise<boolean> {
     const pending = this.sessions.get(sessionId)
     if (!pending) return false
     this.sessions.delete(sessionId)
     const session = await pending
+    session.queue.cancel()
+    // Закрытие контекста прерывает и зависшее действие, очередь больше не запускается.
     await session.context.close()
     // Каталог профиля детерминирован от пары ключей, а у QA-рана вторым ключом
     // идёт id прогона — значит, каждый прогон оставлял бы свой каталог навсегда.
@@ -221,7 +237,21 @@ export class BrowserSessionManager {
   async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
-    session.lastActor = request.actor
+    session.lastUsedAt = Date.now()
+    if (request.command.type === 'control' || request.command.type === 'cancel') {
+      if (request.actor !== 'user') throw new Error('human_control: Управление может передать только пользователь')
+      if (request.command.type === 'control') {
+        if (request.command.owner !== 'shared' && request.command.owner !== 'user') throw new Error('invalid_control')
+        session.queue.control(request.command.owner)
+      } else session.queue.cancel()
+      return this.metadata(session)
+    }
+    if (request.command.type === 'status') return this.metadata(session)
+    return session.queue.enqueue(request.actor, () => this.execute(session, request), request.command.type === 'screenshot')
+  }
+
+  private async execute(session: Session, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
+    if (request.command.type !== 'status' && request.command.type !== 'screenshot') session.lastActor = request.actor
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
     // разбор журналов и снимок экрана возвращаются раньше метаданных, а именно
     // из них состоит прогон сценария. Сборщик считал такую сессию брошенной и
@@ -231,7 +261,7 @@ export class BrowserSessionManager {
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
     const command = request.command
-    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
+    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
     else if (command.type === 'back') await page.goBack()
     else if (command.type === 'forward') await page.goForward()
     else if (command.type === 'reload') await page.reload()
@@ -243,7 +273,7 @@ export class BrowserSessionManager {
       // Тот же путь, что у navigate: без подстановки алиаса новая вкладка шла
       // на внешний адрес, до которого контейнер не достаёт, и держалась на нём
       // только благодаря перехватчику маршрутов — то есть по случайности.
-      if (command.url) await created.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString())
+      if (command.url) await created.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString())
     } else if (command.type === 'selectTab') session.activeTabId = command.tabId
     else if (command.type === 'closeTab') await session.pages.get(command.tabId)?.close()
     else if (command.type === 'resize') {
@@ -280,7 +310,19 @@ export class BrowserSessionManager {
    * сценарий не открывается нигде, кроме этого же контейнера.
    */
   private publicUrl(raw: string): string {
-    try { return restoreHostAlias(new URL(raw), this.hostAliases).toString() } catch { return raw }
+    try {
+      const url = new URL(raw), target = url.searchParams.get('url')
+      const address = url.hostname.toLowerCase() + ':' + (url.port || (url.protocol === 'https:' ? '443' : '80'))
+      // Модель получает адрес проекта, а не техническую обёртку его доставки.
+      if (address === this.previewOrigin && url.pathname === '/api/preview' && target) {
+        const logical = new URL(target)
+        if (logical.protocol === 'http:' || logical.protocol === 'https:') {
+          if (url.hash) logical.hash = url.hash
+          return logical.toString()
+        }
+      }
+      return restoreHostAlias(url, this.hostAliases).toString()
+    } catch { return raw }
   }
 
   private hostOf(raw: string): string {
@@ -319,6 +361,7 @@ export class BrowserSessionManager {
       conversationId: session.conversationKey,
       incarnation: session.incarnation,
       state: 'ready',
+      control: session.queue.owner, queuedCommands: session.queue.size,
       activeTabId: session.activeTabId,
       tabs,
       viewport: session.viewport,

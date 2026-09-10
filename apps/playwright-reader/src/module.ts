@@ -67,5 +67,5 @@ export function createPlaywrightReaderModule({ core, runner, runnerFacingBase }:
       }
     }
   }
-  return { service, register: (app) => registerBrowserRoutes(app, { core, runner }) }
+  return { service, register: (app) => registerBrowserRoutes(app, { core, runner, runnerFacingBase }) }
 }

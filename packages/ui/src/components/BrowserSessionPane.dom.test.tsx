@@ -713,3 +713,27 @@ describe('честные предупреждения и прогон до ша�
     expect(clicks).toHaveLength(1)
   })
 })
+
+
+it('передаёт управление человеку и возвращает модели отдельными командами', async () => {
+  const browser = fakeBrowser({ command: vi.fn(async (_id, req) => meta({ control: req.command.type === 'control' ? req.command.owner : 'shared' })) })
+  render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Взять управление' }))
+  expect(await screen.findByText(/Управление у вас/)).toBeInTheDocument()
+  expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'control', owner: 'user' } }))
+  fireEvent.click(screen.getByRole('button', { name: 'Вернуть управление модели' }))
+  await waitFor(() => expect(screen.queryByText(/Управление у вас/)).not.toBeInTheDocument())
+})
+
+it('отмена ожидающих команд не скрывает ещё выполняющийся запрос', async () => {
+  let finish!: (value: BrowserSessionMetadata) => void
+  const browser = fakeBrowser({ command: vi.fn((_id, req) => req.command.type === 'reload' ? new Promise<BrowserSessionMetadata>(resolve => { finish = resolve }) : Promise.resolve(meta())) })
+  render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+  await screen.findByAltText('Кадр Chromium')
+  fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Отменить ожидающие команды' }))
+  await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({ command: { type: 'cancel' } })))
+  expect(screen.getByText('Выполняется…')).toBeInTheDocument()
+  finish(meta())
+  await waitFor(() => expect(screen.queryByText('Выполняется…')).not.toBeInTheDocument())
+})

@@ -3,7 +3,7 @@ import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
 import type { WebRecorderAreaScreenshot, WebRecorderHostMessage } from '@shared/webRecorder'
 import { browserId } from '@shared/browserId'
-import { createReaderHostBridge, type ReaderHostBridge, type ReaderHostRegistration } from './hostBridge'
+import { createReaderHostBridge, type ReaderHostBridge, type ReaderHostRegistration, type PreviewActionOutcome } from './hostBridge'
 
 // Host-адаптер самостоятельного iframe-приложения Web Reader. Владеет только
 // транспортом: iframe /web-recorder/, проверка event.origin/event.source,
@@ -58,10 +58,14 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const retrySave = useRef<(() => void) | null>(null)
+  const retryOpen = useRef<(() => void) | null>(null)
   const gateSequence = useRef(0)
+  const savedByReader = useRef<string | null | undefined>(undefined)
   const url = conversationUrl ?? projectUrl
-  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost })
-  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost }
+  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview })
+  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost, ensurePreview }
 
   // Мост живёт со смонтированным iframe одного разговора и создаётся в эффекте:
   // dispose необратим, а StrictMode в dev прогоняет mount → cleanup → mount —
@@ -69,15 +73,73 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const bridgeRef = useRef<ReaderHostBridge | null>(null)
   const [bridgeGeneration, setBridgeGeneration] = useState(0)
   useEffect(() => {
+    savedByReader.current = undefined
+    let alive = true
+    let modelSequence = 0
+    let openingGate: Promise<boolean> | null = null
+    let saveQueue: Promise<void> = Promise.resolve()
+    let lastSave: { url: string | null; promise: Promise<void> } | undefined
+    const save = (nextUrl: string | null): Promise<void> => {
+      if (lastSave?.url === nextUrl) return lastSave.promise
+      savedByReader.current = nextUrl
+      setSaveError(null)
+      // Callback принадлежит разговору в момент запроса: позднее сохранение
+      // не должно использовать callback уже выбранного другого разговора.
+      const saver = callbacks.current.onSave
+      const promise = saveQueue.catch(() => {}).then(() => saver(nextUrl)).catch(error => {
+        if (alive) {
+          if (savedByReader.current === nextUrl) savedByReader.current = undefined
+          setSaveError('Страница открыта, но её адрес не удалось сохранить.')
+          retrySave.current = () => { void save(nextUrl).catch(() => {}) }
+        }
+        throw error
+      })
+      lastSave = { url: nextUrl, promise }
+      saveQueue = promise
+      void promise.catch(() => { if (lastSave?.promise === promise) lastSave = undefined })
+      return promise
+    }
     const bridge = createReaderHostBridge({
       conversationId,
       newId: browserId,
       send: (message: WebRecorderHostMessage) => {
-        frameRef.current?.contentWindow?.postMessage(message, platform.origin)
+        const target = frameRef.current?.contentWindow
+        if (!target) throw new Error('Reader iframe недоступен')
+        target.postMessage(message, platform.origin)
       },
       capabilities: ['mcp-actions', 'diagnostics', 'inspector', 'recording'],
-      onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration),
-      onSaveUrl: (nextUrl) => void callbacks.current.onSave(nextUrl),
+      onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration ? {
+        ...registration,
+        run: async function runRegistered(action: PreviewAction): Promise<PreviewActionOutcome> {
+          if (action.kind !== 'open') {
+            const sequence = modelSequence
+            if (openingGate && !await openingGate) return { ok: false, error: 'Не удалось подготовить Web Preview.' }
+            if (!alive || sequence !== modelSequence) return { ok: false, error: 'Адрес страницы изменён — повтори действие.' }
+            return registration.run(action)
+          }
+          retryOpen.current = null
+          const sequence = ++modelSequence
+          ++gateSequence.current
+          const ensure = callbacks.current.ensurePreview
+          if (ensure) {
+            setPreviewSession('pending')
+            const gate = Promise.resolve().then(ensure).catch(() => false)
+            openingGate = gate
+            const ok = await gate
+            if (openingGate === gate) openingGate = null
+            if (!alive || sequence !== modelSequence || registration.registrationId !== bridge.registrationId()) return { ok: false, error: 'Открытие страницы отменено.' }
+            if (!ok) { setPreviewSession('failed'); retryOpen.current = () => { void runRegistered(action) }; return { ok: false, error: 'Не удалось подготовить Web Preview.' } }
+          }
+          setPreviewSession('ready')
+          const outcome = await registration.run(action)
+          if (!outcome.ok || !alive || sequence !== modelSequence) return outcome
+          const result = outcome.result as { url?: string } | undefined
+          try { await save(result?.url ?? action.url) }
+          catch { return { ok: false, error: 'Страница открыта, но её адрес не удалось сохранить.' } }
+          return outcome
+        }
+      } : null),
+      onSaveUrl: (nextUrl) => { void save(nextUrl).catch(() => {}) },
       onElement: (element) => callbacks.current.onSelectElement?.(element),
       onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
     })
@@ -88,6 +150,10 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       bridge.receive(event.data)
     })
     return () => {
+      alive = false
+      modelSequence++
+      retrySave.current = null
+      retryOpen.current = null
       unsubscribe()
       bridge.dispose()
       if (bridgeRef.current === bridge) bridgeRef.current = null
@@ -101,6 +167,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     // Первый commit проходит с generation 0 (state моста ещё не применён) —
     // гейт запускается один раз на поколение моста, иначе ensurePreview дублировался бы.
     if (!bridge || bridgeGeneration === 0) return
+    // Эхо сохранённой навигации не должно запускать cookie-гейт и новый iframe.
+    if (url === savedByReader.current && previewSession === 'ready') return
     const sequence = ++gateSequence.current
     if (!url) {
       setPreviewSession('ready')
@@ -128,13 +196,14 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   }, [bridgeGeneration, ensurePreview, url, retryKey])
 
   return <section className="webpreview" aria-label="Web Reader">
+    {saveError && <div className="webpreview-error" role="alert"><span>{saveError}</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retrySave.current?.()}>Повторить сохранение</button></div>}
     {pageError && <div className="webpreview-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}</div>}
     {actions.length > 0 && <section className="webpreview-scenario" aria-label="Действия ассистента">
       <strong>Действия ассистента</strong>
       <ol>{actions.map((item) => <li key={item.id}><span>{previewActionLabel(item.action)}</span>{onRepeatAction && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" onClick={() => onRepeatAction(item.action)}>Повторить</button>}</li>)}</ol>
     </section>}
-    {url && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
-    {url && previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => setRetryKey((value) => value + 1)}>Повторить</button></div>}
+    {previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
+    {previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => retryOpen.current ? retryOpen.current() : setRetryKey((value) => value + 1)}>Повторить</button></div>}
     <iframe key={conversationId} ref={frameRef} className="webpreview-frame" src={src} title="Web Reader" aria-hidden={previewSession !== 'ready'} />
   </section>
 }

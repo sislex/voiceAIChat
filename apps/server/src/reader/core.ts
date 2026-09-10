@@ -3,10 +3,12 @@
 // (действие в панели), реестр ключей Chromium (его проверяет авторизация ядра), список живых
 // feature-preview (канбан ядра или его порт) и кадры браузерной проверки (файл на диске ядра, строка в
 // ленту рана). Локальная реализация — `readerBridge/localCore.ts`, по HTTP — `reader/standalone/httpCore.ts`.
-import type { PreviewAction, PreviewEnvironment } from '@voicechat/shared'
+import type { PreviewAction, PreviewEnvironment, ReaderProjectRequest, ReaderProjectResponse } from '@voicechat/shared'
 import type { PreviewActionOutcome } from '../mcp/previewMcp.js'
 
 export interface ReaderCore {
+  /** Ресурс текущего приложения: путь без адреса транспорта, со своей авторизацией страницы. */
+  projectResource(request: ReaderProjectRequest): Promise<ReaderProjectResponse>
   /** Действие в панели браузера пользователя: уходит WS-клиентам ядра, ответ — первый успех либо все отказы/таймаут. */
   previewAction(userId: string, conversationId: string, action: PreviewAction, timeoutMs?: number): Promise<PreviewActionOutcome>
   /** Ключ, которым изолированный Chromium авторизуется на прокси превью от лица пользователя. */

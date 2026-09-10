@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-09
-checked: c8fcb5e8
+updated: 2026-09-10
+checked: d4bf0c9f
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -134,6 +134,132 @@ XHTML и CSS прокси переписывает URL ресурсов, ссы�
 обработчики. UI-поведение и семантика сценариев — в [ui.md](ui.md#веб-превью), путь
 контракта — в `packages/shared/src/protocol.ts`.
 
+Текущее приложение доступно по `https://app.internal/` без операторского алиаса.
+`ReaderCore.projectResource` доставляет ресурс встроенному Fastify через app.inject
+(`readerBridge/projectResource.ts`), standalone вызывает тот же порт по RPC. Это
+всегда своё ядро: путь не выбирает сетевой хост. Host имеет логическое значение
+app.internal для генерируемых приложением абсолютных ссылок. Авторизация вложенной
+страницы отдельная — только её Bearer/cookies, внешняя сессия не подставляется.
+Бинарное тело сохраняется в base64-контракте, ответ ограничен 5 MiB.
+`previewProjectLoader.ts` обрабатывает до пяти внутренних redirect с cookie/hash,
+сохраняет метод/тело 307/308, ограничивает всю цепочку 10 секундами и прекращает её
+после позднего ответа. Служебные /internal, /mcp и рекурсивные /api/preview закрыты;
+встроенная diagnostics остаётся специальным разрешённым ресурсом. Ответы приложения
+имеют private,no-store. UI канонизирует скопированный собственный URL до доставки;
+сервер также распознаёт точный Host текущего запроса. Проверки: previewProject.test,
+projectResource.test, previewProjectLoader.test, readerRemote.integration и
+webReaderOwnProject/webReaderProject.e2e.test.ts (реальный вход без aliases).
+
+Алиасы Web Reader читаются в `reader/module.ts` непосредственно из
+`process.env.VC_BROWSER_HOST_ALIASES` при создании локального модуля. Передача
+похожего поля через `loadConfig({...})` в тесте не меняет эту среду: in-process
+стенд должен явно задать и затем восстановить переменную, как в
+`e2e/webReaderModel.e2e.test.ts`. Созданный Web Reader-разговор имеет scope
+`web-reader`; чтение `/api/conversations/:id` в таком стенде требует
+`?scope=web-reader`, ответ содержит `{conversation, messages}`.
+
+CSS разбирается PostCSS, значения — postcss-value-parser (`previewStyles.ts`):
+переписываются настоящие url(), строковый @import и строковые источники image-set;
+CSS escapes декодируются до URL. Комментарии и content-строки сохраняются,
+fragment-only SVG-ссылки остаются локальными. Повреждённый CSS возвращается исходным.
+Тот же разбор работает для внешней таблицы, style-блока и атрибута.
+Srcset сканируется по URL/дескрипторам, поэтому запятые в data URL и именах файлов
+не превращаются в разделители; imagesrcset у preload обрабатывается так же.
+Проверки: `previewStyles.test.ts`, `e2e/webReaderStyles.e2e.test.ts`.
+
+HTML разбирается `parse5` в `routes/previewHtml.ts`, правятся диапазоны исходных
+атрибутов: entities декодируются перед разрешением URL, поддерживаются значения
+без кавычек и `formaction`, строки скриптов/комментарии и `data-*` сохраняются.
+Первый `<base href>` задаёт базу ресурсов и fetch/XHR; сами base удаляются, чтобы
+относительные адреса прокси оставались на origin Reader. Якоря `#…` сохраняются,
+`target=_blank|_parent|_top` заменяется на `_self`. Integrity у script/link снимается,
+поскольку тело CSS/модуля меняет прокси; импорты inline `type=module` также
+переписываются. `previewModules.ts` использует AST Acorn для настоящих импортов
+(включая absolute URL, escapes, статические template literals и комментарии),
+реэкспортов и ресурсов `new URL(..., import.meta.url)`. Это относится и к JS
+публичного сайта без machine/alias; текст строк и комментариев сохраняется.
+Явные mappings в inline import map переписываются в те же URL прокси.
+Вставка context/inspector использует позиции настоящих head/body,
+поэтому HTML-строки внутри JavaScript её не сбивают. Регрессии:
+`previewHtml.test.ts`, реальные переходы/ресурсы Chromium —
+`e2e/webReaderHtml.e2e.test.ts` (порт выбирается автоматически, без данных прода).
+
+Cookies сайтов хранит `PreviewCookieStore` (`previewCookies.ts`, tough-cookie 5.1.2):
+отдельный CookieJar пользователя в экземпляре Reader. Host-only, граница Path,
+default-path, приоритет Max-Age над Expires, Secure и префиксы __Host-/__Secure-
+повторяют правила браузера. Общие Domain `machine.internal`/`internal` не принимаются:
+разные окружения машин не должны делить сессии. Повреждённые и больше 4096 символов
+Set-Cookie пропускаются отдельно, регистр имени заголовка не важен. Cookies каждого
+redirect сохраняются до следующего запроса. HTTP reset и MCP clearCookies используют
+один контейнер модуля; закрытие сервера очищает его. Глобальные функции сохранены
+только для старых чистых тестов, рабочие маршруты их не используют. Регрессии:
+`previewCookies.test.ts`, `reader/module.cookies.test.ts`, `webReaderCookies.e2e.test.ts`.
+
+Кэш ресурсов машины принадлежит экземпляру `registerPreviewProxy`, ключ включает
+машину, пользователя и URL. Доступ и online проверяются до чтения/304; браузер
+получает `private, no-cache`, чтобы отзыв прав замечался сразу. JSON не кэшируется.
+`previewCachePolicy.ts` исключает запросы с cookie/Authorization сайта, повторную
+загрузку и Range, а также ответы с private/no-store/no-cache, Vary и Set-Cookie;
+более строгий upstream no-store сохраняется до браузера. Мутации очищают старые
+ресурсы машины. HTTP-регрессии — `previewCache.integration.test.ts`, браузерные —
+`e2e/webReaderCache.e2e.test.ts`.
+
+Текстовый ответ декодирует `previewResponse.ts`: BOM имеет приоритет, затем HTTP
+charset, meta charset/http-equiv HTML, декларация XML или CSS @charset; fallback
+UTF-8. Переписанные HTML/CSS/JS всегда объявляются браузеру как UTF-8. JSON и бинарь
+не проходят текстовое преобразование, в том числе при чтении собственного ядра.
+Gzip/br/deflate распаковываются до переписывания в каждом транспорте; заголовок
+Content-Encoding снимается, лимит 5 MiB проверяется и после распаковки. Повреждённый
+поток, неподдерживаемое сжатие и превышение лимита возвращают понятную ошибку;
+пустой HEAD/204 не отправляется в декомпрессор.
+
+Общая политика redirect сохраняет PUT/HEAD и 307/308 с телом; 301/302 переводят
+в GET только POST, 303 — всё кроме HEAD. После сброса тела удаляются его заголовки,
+при смене origin — авторизация; неявный fragment наследуется, явный пустой сбрасывает
+его. Локальный адрес машины и HTTP app.internal сначала возвращаются к логическому
+origin, чтобы не потерять авторизацию собственного сайта. Не-HTTP redirect закрыт.
+Проверки: `previewResponse.test.ts`, `previewResponse.integration.test.ts`,
+`webReaderEncoding.e2e.test.ts`.
+
+DOM-действия click/type/set используют `previewInteractions.ts`: выбирается
+единственная видимая цель, а неоднозначность возвращает кандидатов вместо первого
+случайного элемента. Учитываются disabled/fieldset, aria-disabled/inert, readonly,
+maxlength, нетекстовые input и отключённые option/optgroup. Ввод проходит отменяемый
+beforeinput и InputEvent; неверное число/дата не стирает прежнее значение. Click
+воспроизводит pointer/mouse-последовательность и фокус. Set проверяет фактическое
+состояние checkbox после отменяемого click; radio нельзя снять как checkbox.
+Проверки: `previewInteractions.test.ts`, `webReaderInteractions.e2e.test.ts`.
+
+`press` в прокси использует `previewKeyboard.ts`: dispatchEvent сам не запускает
+нативные действия клавиши, поэтому после отменяемых keydown/keypress выполняются
+ввод/удаление через beforeinput/input, выделение, Tab-порядок, Enter формы с
+валидацией, Space checkbox и выбор option стрелками. Keyup отправляется и после
+отмены keydown. Сочетания разбираются на key/code/модификаторы, ControlOrMeta
+выбирает платформу; удаление не разрывает Unicode code point. У contenteditable
+удаление не выходит за границы блока. Это ограниченная эмуляция, системные shortcut
+и все действия редакторов она не заменяет; для них доступен полный Chromium.
+Проверки: `previewKeyboard.test.ts`, `webReaderKeyboard.e2e.test.ts`.
+
+Чтение `read/find/a11y` использует `previewReading.ts`: обход видимых текстовых
+узлов исключает script/style, скрытое и инспектор; выбранный корень включается
+в результат. Подписи учитывают aria-labelledby (все ID, включая скрытые ссылки),
+aria-label, связанные label и alt иконок. Дерево доступности исключает aria-hidden
+и inert, сообщает роли и состояния checked/expanded/selected/disabled/readonly/
+required/invalid. Значения чувствительных input/textarea не попадают в read,
+включая текстовое содержимое textarea. Это компактная DOM-модель, не полная
+реализация алгоритма доступного имени браузера. Проверки — `previewReading.test.ts`
+и `webReaderReading.e2e.test.ts`; типы дополнительных полей — `previewActions.ts`.
+
+Контекст хранилищ (`previewStorage.ts`) сохраняет интерфейс Storage: свойства,
+присваивание/delete, Object.keys/JSON, prototype/instanceof, стабильные методы,
+DOMString и обязательные аргументы. Ключи native local/sessionStorage имеют префикс
+логического origin; clear удаляет только его значения. События storage чужого
+origin подавляются, свои получают логические key/url и правильный storageArea.
+IndexedDB.open/deleteDatabase/databases и IDBDatabase.name используют те же
+исходные имена поверх namespace; базы другого сайта не перечисляются. Если getter
+localStorage запрещён браузером, остальные мосты продолжают запуск, а это хранилище
+получает временный in-memory fallback. Chromium-проверки: `webReaderStorage.e2e.test.ts`.
+
 Динамический сетевой трафик страницы тоже не покидает `/api/preview`: context shim
 (`previewContextScript`, вставляется в начало `<head>`) переопределяет `window.fetch`,
 `XMLHttpRequest.prototype.open`, `navigator.sendBeacon` и `history.pushState/replaceState`.
@@ -149,10 +275,34 @@ SPA-навигацию держит перехват History API и сервер
 `Authorization`, выставленный самой страницей, шим переименовывает в
 `x-preview-authorization` (иначе Bearer-гейт ChatAI принял бы его за токен ChatAI и
 ответил 401), а роут возвращает его апстриму как `authorization`. Deep-link:
-фрагмент целевого адреса (`http://…/#/machines`) живёт внутри query `?url=` и в
-`location` iframe-документа не попадает — в конце context-шима он восстанавливается
-(`location.hash = target.hash`, только если у документа hash ещё пуст), поэтому
-hash-роутеры вложенных SPA открывают нужный маршрут.
+фрагмент целевого адреса (`http://…/#/machines`) живёт внутри query `?url=`.
+Context-шim канонизирует его в `location` через нативный `replaceState` до запуска
+приложения, без дополнительного шага истории; после redirect используется конечный
+URL ответа. Обёртки `pushState/replaceState` сохраняют настоящий hash и уведомляют
+мост; hashchange/popstate тоже отправляют ready с логическим адресом (включая
+очищенный hash). `pageInfo` и выбор элемента возвращают этот же адрес. После
+pagehide/pageshow восстанавливается обработчик команд — BFCache не оставляет
+живую страницу с отключённым мостом. Chromium: `webReaderNavigation.e2e.test.ts`.
+
+Ресурсы, созданные JavaScript после загрузки, синхронно переписывает
+`previewResources.ts`: URL-свойства DOM, setAttribute/NS, srcset, inner/outerHTML,
+insertAdjacentHTML и ShadowRoot.innerHTML. MutationObserver здесь опоздал бы:
+запрос начинается до его callback. Getter возвращает URL сайта; document.URL,
+documentURI/baseURI следуют логическому SPA-адресу. SRI снимается с переписываемых
+script/link. CSSOM, document.write и srcdoc этот слой пока не эмулирует.
+Проверка реальной загрузки ресурсов — `e2e/webReaderResources.e2e.test.ts`.
+
+Нативные формы и динамические ссылки обрабатывает `previewNavigation.ts` внутри
+context-шима. GET собирает successful controls через `FormData(form, submitter)`
+и заменяет query исходного action перед оборачиванием, иначе браузер удаляет
+служебный `?url=`. Пустой action использует адрес текущей страницы; учитываются
+formaction/formmethod. POST остаётся нативным (включая multipart и файлы), меняются
+только action/target. Программный `form.submit()` проходит тот же маршрут.
+Обработчики на window пропускают отменённые приложением события и dialog-формы.
+Динамические ссылки, включая Shadow DOM, выбираются через composedPath и
+оборачиваются перед default action. Якоря, download, специальные схемы и
+модифицированные клики сохраняют отдельную нативную семантику. Проверки:
+`previewNavigation.test.ts`, `e2e/webReaderForms.e2e.test.ts`.
 
 Границы прокси-подхода (проверено живьём на instagram.com): SPA с
 **history-роутером** (маршрут из `location.pathname`) через превью не поднимаются —

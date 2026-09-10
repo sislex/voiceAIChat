@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { scenarioToPlaywright } from './playwrightExport'
-
-describe('scenarioToPlaywright', () => {
-  it('генерирует goto/click/fill/press и не встраивает секреты', () => {
-    const spec = scenarioToPlaywright('http://agent-1.machine.internal:5173/', [
-      { kind: 'click', selector: '#login-link', text: 'Войти', sensitive: false },
-      { kind: 'type', selector: '#user', text: "o'hara", sensitive: false },
-      { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true }
-    ])
-    expect(spec).toContain("await page.goto('http://agent-1.machine.internal:5173/')")
-    expect(spec).toContain("await page.click('#login-link')")
-    expect(spec).toContain("await page.fill('#user', 'o\\'hara')")
-    expect(spec).toContain("process.env.SCENARIO_SECRET_1 ?? ''")
-    expect(spec).toContain("await page.press('#password', 'Enter')")
-    expect(spec).not.toContain('hunter')
+describe('экспорт исполняемого сценария', () => {
+  it('сохраняет многострочный текст, слеши, кавычки и Unicode', () => {
+    const text = `строка\n'кавычки' "двойные" \\ \r\t\u2028\u2029`
+    const spec = scenarioToPlaywright('https://example.test/', [{ kind: 'type', selector: '[name="text"]', text, sensitive: false }])
+    expect(() => new Function(spec.replace(/^import.*\n/, ''))).not.toThrow()
+    expect(spec).toContain('\\n'); expect(spec).toContain('\\u2028')
+  })
+  it('проверяет все секреты перед goto и не подставляет пустую строку', () => {
+    const spec = scenarioToPlaywright('https://example.test/', [{ kind: 'type', selector: '#one', text: 'hidden-one', sensitive: true }, { kind: 'type', selector: '#two', text: 'hidden-two', sensitive: true, submit: true }])
+    expect(spec.indexOf('if (!secret2)')).toBeLessThan(spec.indexOf('await page.goto'))
+    expect(spec).not.toContain('hidden-'); expect(spec).not.toContain("?? ''")
+    expect(spec).toContain('await page.fill("#two", secret2)'); expect(spec).toContain("'Enter'")
+    expect(() => new Function(spec.replace(/^import.*\n/, ''))).not.toThrow()
   })
 })

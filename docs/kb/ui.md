@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-10
-checked: b08c8536
+checked: fe2820cd
 areas:
   - packages/admin-app/src
   - packages/app-shell
@@ -63,7 +63,7 @@ Web Reader сохраняет iframe `/api/preview?url=...`; URL разгово�
 
 ### Живые действия и безопасность Web Reader
 
-После успешного `preview.result` серверный `PreviewActionRelay` публикует `reader.changed` с разговором, адресом, заголовком, признаком навигации и исходным `PreviewAction` (контракт — `packages/shared/src/protocol.ts`, реализация — `apps/server/src/mcp/previewMcp.ts`). Remote-мост передаёт кадр в `App`: только активный разговор добавляет подтверждённый шаг в ограниченную последними 20 элементами ленту, а навигационный кадр перемонтирует Reader, чтобы тот перечитал живую страницу. `WebReaderFrame` переводит действия в понятные подписи и позволяет повторить шаг через ту же актуальную host-регистрацию.
+После успешного `preview.result` серверный `PreviewActionRelay` публикует `reader.changed` с разговором, адресом, заголовком, признаком навигации и исходным `PreviewAction` (контракт — `packages/shared/src/protocol.ts`, реализация — `apps/server/src/mcp/previewMcp.ts`). Remote-мост передаёт кадр в `App`: только активный разговор добавляет подтверждённый шаг в ограниченную последними 20 элементами ленту, а навигационный кадр обновляет ленту без перемонтирования Reader: переход уже выполнен в живом документе, повторный mount терял DOM/ввод и делал лишний запрос. `WebReaderFrame` переводит действия в понятные подписи и позволяет повторить шаг через ту же актуальную host-регистрацию.
 
 После каждого успешного действия, кроме самой команды `errors`, host запрашивает накопленные ошибки страницы. Первая ошибка показывается над Reader с кнопкой «Исправить», которая отправляет в активный чат просьбу исправить эту ошибку. При смене разговора лента и ошибка очищаются.
 
@@ -200,7 +200,7 @@ build-time флагом `VITE_REDUX_DEVTOOLS=true`. Перед `init` и `send` 
 
 `ModelPricesPage` в `packages/admin-app/src/pages/ModelPricesPage.tsx` показывает тарифы из `adminStore` с идентификатором провайдера/модели, категориями режима и контекста, четырьмя ставками за 1M токенов, официальным источником и датой действия. Первая строка модели сохраняет действия «Править» и «Удалить» и существующую форму редактирования; дополнительные ценовые категории разворачиваются отдельными строками.
 
-Воспроизводимый Component QA — DOM-сценарий `TC-UI-1` в `packages/admin-app/src/UsersAdmin.dom.test.tsx`: он подаёт синхронизированные OpenAI-строки, проверяет ценовые значения, ссылку на официальный источник и действия, включая передачу точной пары provider/model при удалении. Длинный идентификатор последней модели включён специально как регрессия табличной раскладки; это проверка DOM без запуска реального сервера или базы.
+Воспроизводимый Component QA — DOM-сценарий `TC-UI-1` в `packages/admin-app/src/UsersAdmin.dom.test.tsx`: он подаёт синхронизированные OpenAI-строки, проверяет восемь колонок (включая «Режим / контекст»), базовый режим `Standard / short context`, четыре ценовых значения, ссылку на официальный источник и действия, включая передачу точной пары provider/model при удалении. Длинный идентификатор последней модели включён специально как регрессия табличной раскладки; это проверка DOM без запуска реального сервера или базы.
 
 ## Состояние приложения
 
@@ -1097,6 +1097,15 @@ USD за 1M токенов, источник и дату тарифа; форм�
 
 ## Отдельный режим Web Reader
 
+Адрес текущего приложения внутри Reader — `https://app.internal/`: сохраняются
+обычные пути, query и `#/…`. Кнопка «Текущий проект» находится в инструментах;
+относительный адрес из пустой панели начинает работу с этим origin. Копия URL
+самого host канонизируется без его порта. Вход выполняется внутри вложенной страницы,
+её состояние отделено от внешнего приложения. Хинт browser-инструментов сообщает
+модели этот адрес наряду с machine.internal.
+
+
+
 Маршрут `#/web-reader[/<conversationId>]` использует общий `App`, но работает как полноэкранный workspace, а не как разновидность обычной страницы чата. В `packages/ui/src/App.tsx` признак `inReader` добавляет корню класс `app--web-reader`, полностью исключает из DOM общий `Sidebar` вместе с мобильным backdrop и не передаёт в `ChatColumn` обработчик открытия сайдбара. Переключение Reader-разговоров остаётся в собственной шапке `web-recorder-selector`, поэтому список обычных чатов в этом режиме не нужен.
 
 Список чатов Web Reader — отдельное состояние стора `readerConversations` (`packages/ui/src/store/domains/chatStore.ts`): оно строится из полного ответа `conversations:list` до фильтра сайдбара, поэтому persisted-фильтр проекта обычного чата (`sidebarProjectId`) на него не влияет. Reader-чатом считается разговор с `assistantKind === 'web-recorder'` либо разговор **без** `assistantKind`, но с сохранённым `previewUrl` (старые чаты до введения `assistantKind`) — предикат `isReaderConversation` экспортирован из `chatStore`. Легаси-ветка намеренно ограничена пустым `assistantKind`: иначе разговор другого вида (Playwright Reader), которому кто-то сохранил `previewUrl`, попал бы и в селектор Web Reader. Активный поисковый запрос сайдбара (`conversations:search`) список Web Reader не трогает; удаление чата и смена `previewUrl` синхронизируют его напрямую.
@@ -1107,13 +1116,21 @@ USD за 1M токенов, источник и дату тарифа; форм�
 
 **Ширина колонки чата в сплите.** Панель превью (`.webpreview` / `.playwright-browser-pane`) — `flex: 0 1 var(--preview-width); min-width` (сжимаема), а `.chat-split-chat` держит `min-width: 360px`, чтобы композер и шапка не схлопывались при широком превью. Композер использует **контейнерный запрос**: `.voicebar` объявлен `container: composer / inline-size`, и компакт-режим (скрытая подпись «Полный доступ» у `.mode-menu`, уменьшённые круглые кнопки, узкие поля) включается по `@container composer (max-width: 560px)` — то есть по ширине самой колонки чата, а не вьюпорта; иначе в узкой reader-колонке на широком экране текстовое поле схлопывалось до ~80px. Заголовок шапки `.mtitle` — одна строка с многоточием (`white-space: nowrap; text-overflow: ellipsis`). Тулбар превью веб-рекордера (`apps/web-recorder/src/Recorder.tsx`) собирает инструменты страницы (Сессия, Выбор элемента, Редактировать, Область, Записать сценарий) в свёрнутое `<details className="webpreview-tools">`-меню, а `.webpreview-bar` получил `flex-wrap`, чтобы не переполнять узкую панель. Кнопки инструментов остаются в DOM и в свёрнутом меню — поэтому dom-тесты рекордера их находят без раскрытия.
 
+Полный браузер выбирается в шапке Web Reader через `WebReaderEngineSelect`;
+выбор хранится в разговоре, а не в localStorage. `BrowserSessionPane` получает
+initialUrl/onPageChange и сохраняет навигацию, включая действия модели, через
+chat store. Пока выбор сохраняется, селектор заблокирован; при отказе отображается
+причина и сохраняется прежний движок. В пустом Chromium есть кнопки текущего
+проекта, Gmail и Instagram. Подробности сессии, ограничений и тестов —
+`features/playwright-reader.md`.
+
 ## Отдельный режим Playwright Reader
 
 Рядом с Web Reader живёт второй полноэкранный режим — Playwright Reader (маршруты `#/playwright-reader` и `#/playwright-reader/<conversationId>`). Он устроен по той же схеме: признак `inPlaywrightReader` в `App.tsx` даёт корню класс `app--playwright-reader`, исключает `Sidebar` из DOM тем же условием, что и Reader, не передаёт в `ChatColumn` обработчик сайдбара и рендерит ту же `chat-split` с левой колонкой обычного чата. Пункт меню «Playwright Reader» (иконка `▣`) стоит в `Sidebar` сразу после «Web Reader» и в компактном наборе иконок, но, в отличие от него, открывается в текущей вкладке обычным `navigate('/playwright-reader')`, а не `window.open`. Смысл, состав контрактов и состояние backend-части — в [features/playwright-reader.md](features/playwright-reader.md).
 
 Список этого режима — отдельное состояние `playwrightReaderConversations` в `chatStore`, которое строится из того же полного ответа `conversations:list` и по тем же правилам, что `readerConversations`: фильтр проекта и активный поиск сайдбара на него не влияют, удаление чата вычищает оба списка. Предикат `isPlaywrightReaderConversation` в `chatStore` смотрит только на `assistantKind === 'playwright-reader'` и не принимает легаси-чаты с `previewUrl`, поэтому два reader-списка не пересекаются. Эффект маршрута повторяет reader-логику: найденный по ID чат выбирается через `selectConversation`, иначе адрес заменяется первым чатом из списка, и только при пустом списке создаётся новый — под in-flight флагом `playwrightReaderCreating`, который проверяется и в самом эффекте, чтобы React не создал второй разговор. Имя нового чата — «Playwright Reader N»; общая для обоих видов нумерация теперь ищет **первый свободный** номер по существующим именам (прежний `nextReaderNumber` с максимумом удалён), поэтому после удаления «Web Reader 1» следующий чат снова получит номер 1.
 
-Правая панель Playwright Reader — `BrowserSessionPane` (`packages/ui/src/components/BrowserSessionPane.tsx`) поверх реального изолированного Chromium из `apps/browser-runner` через мост `window.browser` (REST-оркестрация на сервере). Это ключевое отличие от Web Reader, который на своём маршруте монтирует `WebReaderFrame` (iframe поверх `/api/preview`): панель Playwright показывает пиксельные кадры настоящего браузера (поллинг `screenshot` = screencast), навигацию/back/forward/reload и пользовательский ввод (клик по кадру пересчитывается `scaleBrowserCoordinates` в координаты вьюпорта, набор текста — командой `type`). Детали серверной связки — [features/playwright-reader.md](features/playwright-reader.md), раздел «Связка оркестрация + панель». Инструменты модели `mcp__browser__*` вызывают `PlaywrightReaderService` приложения `apps/playwright-reader` через общий MCP `/mcp/preview`; `PreviewActionRelay` обслуживает обычную панель Web Reader. REST `/api/browser/*` тоже принадлежит новому приложению (embedded/remote, как Make); публичный URL и мост `window.browser` сохраняются. Проект Playwright-разговора можно менять в настройках. Панель ищется в DOM/тестах по `aria-label="Browser session"` (не по «Web Reader»). Ранее неиспользованные правила `.playwright-browser-pane`/`.playwright-reader-header` теперь задействованы `BrowserSessionPane` (+ добавлены `.playwright-browser-viewport`/`.playwright-browser-input`). Восстановление после refresh держится на `initialChatId`: `useVoiceStore` получает `routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId`, поэтому чат из адреса становится активным сразу. Split-раскладка общая с Web Reader: тот же стейт вкладок `chatView`, тот же `resizePreview` и ключ `localStorage` `voicechat.previewWidth`. Регрессии — `BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx`.
+Правая панель Playwright Reader — `BrowserSessionPane` (`packages/ui/src/components/BrowserSessionPane.tsx`) поверх реального изолированного Chromium из `apps/browser-runner` через мост `window.browser` (REST-оркестрация на сервере). Эта же панель доступна внутри Web Reader при `previewEngine: chromium`; быстрый режим использует `WebReaderFrame` (iframe поверх `/api/preview`): панель Playwright показывает пиксельные кадры настоящего браузера (поллинг `screenshot` = screencast), навигацию/back/forward/reload и пользовательский ввод (клик по кадру пересчитывается `scaleBrowserCoordinates` в координаты вьюпорта, набор текста — командой `type`). Детали серверной связки — [features/playwright-reader.md](features/playwright-reader.md), раздел «Связка оркестрация + панель». Инструменты модели `mcp__browser__*` вызывают `PlaywrightReaderService` приложения `apps/playwright-reader` через общий MCP `/mcp/preview`; `PreviewActionRelay` обслуживает обычную панель Web Reader. REST `/api/browser/*` тоже принадлежит новому приложению (embedded/remote, как Make); публичный URL и мост `window.browser` сохраняются. Проект Playwright-разговора можно менять в настройках. Панель ищется в DOM/тестах по `aria-label="Browser session"` (не по «Web Reader»). Ранее неиспользованные правила `.playwright-browser-pane`/`.playwright-reader-header` теперь задействованы `BrowserSessionPane` (+ добавлены `.playwright-browser-viewport`/`.playwright-browser-input`). Восстановление после refresh держится на `initialChatId`: `useVoiceStore` получает `routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId`, поэтому чат из адреса становится активным сразу. Split-раскладка общая с Web Reader: тот же стейт вкладок `chatView`, тот же `resizePreview` и ключ `localStorage` `voicechat.previewWidth`. Регрессии — `BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx`.
 
 Обычный сайдбар эти чаты пока не прячет: он фильтрует список условием «не `web-recorder` и без `previewUrl`», под которое Playwright-чаты не попадают, — «Playwright Reader N» видны в общем списке бесед. Привязка Playwright-чата к проекту **разрешена** (прежний серверный запрет в `setConversationProject` снят): смена проекта в настройках сохраняется штатно, а `chatStore.setConversationProject` обновляет запись сразу в `conversations`, `readerConversations` и `playwrightReaderConversations`, чтобы селектор ридера не показывал устаревшее.
 
@@ -2221,7 +2238,7 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 
 ### Независимый Веб-рекордер и контракт хоста
 
-Веб-рекордер собирается и запускается отдельно как workspace `@voicechat/web-recorder` (`apps/web-recorder`, Vite, порт dev `5274`). Его entry `src/main.tsx` монтирует собственный `Recorder`, а состояние открытого URL, записи и редактирования сценария остаётся внутри этого приложения. Для общих токенов и классов рекордер подключает `@voicechat/ui/app.css`; компоненты и store ChatAI он не импортирует.
+Веб-рекордер собирается и запускается отдельно как workspace `@voicechat/web-recorder` (`apps/web-recorder`, Vite, порт dev `5274`). Его entry `src/main.tsx` монтирует собственный `Recorder`, а состояние открытого URL, записи и редактирования сценария остаётся внутри этого приложения. Standalone-документ имеет doctype, `lang=ru` и viewport meta. Для reset, токенов и классов рекордер подключает `@voicechat/ui/styles.css`, `@voicechat/ui/app.css` и локальный `recorder.css`; кнопки — из `@voicechat/ui-kit` (прямая workspace-зависимость также внесена в `scripts/affected-check.mjs`). Компоненты и store ChatAI он не импортирует.
 
 ChatAI показывает только iframe-host `WebReaderFrame` (`packages/web-reader-app/src/WebReaderFrame.tsx`); адрес standalone build — `/web-recorder/`. Весь lifecycle host-стороны живёт в React-free ядре `createReaderHostBridge` (`packages/web-reader-app/src/hostBridge.ts`): автомат `booting → ready → page-loading → page-ready → error → disposed`, очередь DOM-команд до готовности страницы, 10-секундные таймеры pending-запросов и ротация регистрации. Платформа инъецируется: `WebReaderFrame` получает проп `platform` (`origin` + `subscribeMessages`) от host-а и не трогает `window` сам (гейт `npm run frontend:static` запрещает `window.*` в product-пакетах). Перед первой отправкой непустого `conversationUrl ?? projectUrl` host вызывает доступный в web session-мосте `ensurePreview()`, который по текущему Bearer-токену выпускает HttpOnly-cookie `vc_preview_session`. Пока Promise выполняется, recorder shell остаётся смонтированным, но получает только пустой URL, а host показывает статус подключения. `false` и rejection показывают понятную ошибку с кнопкой «Повторить»; retry заново вызывает `ensurePreview()`. Только успешный актуальный async-результат разблокирует target URL; смена URL и размонтирование инвалидируют прежний результат. При пустом URL запрос не выполняется, а в окружениях без `ensurePreview` host сохраняет desktop-совместимость без cookie-гейта.
 
@@ -2233,23 +2250,112 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 
 Ход разговора получает MCP-сервер `browser` (эндпоинт `/mcp/preview`, `apps/server/src/mcp/previewMcp.ts`) с инструментами `open`, `read`, `find`, `click`, `type`: открыть URL в панели превью, прочитать структурированное содержимое страницы (заголовки/ссылки/кнопки/поля + текстовая выжимка), найти элементы по видимому тексту или CSS-селектору, кликнуть, ввести текст (`submit: true` отправляет форму). Протокол, лимиты и валидаторы — `packages/shared/src/previewActions.ts`; хинт модели — `previewToolHint()` (подключают `apps/llm-runner/src/cli/claudeCli.ts` и `codexCli.ts` вместе с `LlmRequest.previewMcpUrl`).
 
-Сервер действий не исполняет: `PreviewActionRelay` транслирует вызов кадром WS `preview.action` всем клиентам пользователя и ждёт `preview.result` — первый успех, все отказы или таймаут 20 с. Токен `?turn=` выдаёт и снимает `turns.ts` (брокер `previewToolBroker`), как у инструментов БЗ. Действия ограничены активной страницей пользователя: обрабатывает их только клиент, у которого совпали `conversationId`, активный чат, зарегистрированный для этого же разговора `WebReaderFrame` и актуальный `registrationId` (localStorage-claim активной вкладки) — `AppBody` в `packages/ui/src/App.tsx`, мост `window.preview` из `packages/ui/src/remote/index.ts`. Регистрацию (`ReaderHostRegistration`: conversationId, registrationId моста, `run`, `beginDiagnostics`/`endDiagnostics`) создаёт сам `WebReaderFrame` после handshake и снимает при dispose; тот же `registrationId` уходит в WS-кадр `preview.result`. Регистрация host-а служит надёжным признаком открытого Web Reader или Playwright Reader и не зависит от краткой рассинхронизации hash-маршрута; остальные вкладки сразу отвечают отказом, поэтому команды и ответы параллельных чатов не смешиваются. `open` сначала сохраняет URL именно этого разговора, переводит host в `loading` и завершается только после `ready` внутренней страницы. Инъецированный `previewProxy.ts`-скрипт сообщает `voicechat.preview.page-ready.v1` после установки DOM-моста и `voicechat.preview.page-loading.v1` на `beforeunload`; recorder переводит это в `page-status`. DOM-команды, пришедшие сразу после `open` или перехода по клику, host (мост `createReaderHostBridge`) держит в очереди до `ready`, затем посылает рекордеру как `command`; рекордер пересылает их своему iframe как `voicechat.preview.action.v1` и возвращает `result` с тем же `requestId` и своими `conversationId`/`registrationId`. Каждое клиентское ожидание имеет 10-секундный таймер; результат, ошибка загрузки, закрытие панели и тайм-аут очищают запись и таймер. Диагностика различает: неоткрытую/неактивную панель; страницу, которая не стала готова за время команды; сетевую/DNS/HTTP-ошибку прокси или страницу без инъецированного моста; молчащий клиентский мост при формально открытой панели. Серверный relay отдельно ограничивает ожидание 20 секундами, удаляет pending-запрос и сообщает именно об отсутствии ответа клиентского моста. Поиск по тексту выбирает глубочайшее совпадение и поднимается до кликабельного предка, `type` ставит значение нативным сеттером с событиями `input`/`change`, `read` не отдаёт значения парольных полей, ссылки возвращаются без прокси-обёртки `/api/preview`.
+Сервер действий не исполняет: `PreviewActionRelay` транслирует вызов кадром WS `preview.action` всем клиентам пользователя и ждёт `preview.result` — первый успех, все отказы или таймаут 20 с. Токен `?turn=` выдаёт и снимает `turns.ts` (брокер `previewToolBroker`), как у инструментов БЗ. Действия ограничены активной страницей пользователя: обрабатывает их только клиент, у которого совпали `conversationId`, активный чат, зарегистрированный для этого же разговора `WebReaderFrame` и актуальный `registrationId` (localStorage-claim активной вкладки) — `AppBody` в `packages/ui/src/App.tsx`, мост `window.preview` из `packages/ui/src/remote/index.ts`. Регистрацию (`ReaderHostRegistration`: conversationId, registrationId моста, `run`, `beginDiagnostics`/`endDiagnostics`) создаёт сам `WebReaderFrame` после handshake и снимает при dispose; тот же `registrationId` уходит в WS-кадр `preview.result`. Регистрация host-а служит надёжным признаком открытого Web Reader или Playwright Reader и не зависит от краткой рассинхронизации hash-маршрута; остальные вкладки сразу отвечают отказом, поэтому команды и ответы параллельных чатов не смешиваются. `open` проходит cookie-гейт в `WebReaderFrame`, затем переводит host в `loading`; после `ready` сохраняется подтверждённый конечный URL, включая redirect. Ошибка загрузки не сохраняет неподтверждённый адрес. Инъецированный `previewProxy.ts`-скрипт сообщает `voicechat.preview.page-ready.v1` после установки DOM-моста и `voicechat.preview.page-loading.v1` на `beforeunload`; recorder переводит это в `page-status`. DOM-команды, пришедшие сразу после `open` или перехода по клику, host (мост `createReaderHostBridge`) держит в очереди до `ready`, затем посылает рекордеру как `command`; рекордер пересылает их своему iframe как `voicechat.preview.action.v1` и возвращает `result` с тем же `requestId` и своими `conversationId`/`registrationId`. Каждое клиентское ожидание имеет 10-секундный таймер; результат, ошибка загрузки, закрытие панели и тайм-аут очищают запись и таймер. Диагностика различает: неоткрытую/неактивную панель; страницу, которая не стала готова за время команды; сетевую/DNS/HTTP-ошибку прокси или страницу без инъецированного моста; молчащий клиентский мост при формально открытой панели. Серверный relay отдельно ограничивает ожидание 20 секундами, удаляет pending-запрос и сообщает именно об отсутствии ответа клиентского моста. Поиск по тексту выбирает глубочайшее совпадение и поднимается до кликабельного предка, `type` ставит значение нативным сеттером с событиями `input`/`change`, `read` не отдаёт значения парольных полей, ссылки возвращаются без прокси-обёртки `/api/preview`.
 
-Проверок в `AppBody` две, и их формулировки различимы (регистрация теперь `ReaderHostRegistration` от `WebReaderFrame`, снятие по-прежнему обнуляет ссылку только своего разговора). Сначала `conversationId` сверяется с активным чатом: чужой чат получает «Этот чат сейчас не открыт на странице Reader — панель превью недоступна». Затем проверяется пара `{ conversationId, runner }` в `previewRunnerRef`: зарегистрированный для активного разговора `WebReaderHost` считается источником истины и выполняет команду даже во время краткой рассинхронизации hash-маршрута и React-состояния. Если регистрации нет, открытый Reader сообщает «Панель превью активного чата не открыта или ещё не подключена», а обычный маршрут сохраняет сообщение о неоткрытом Reader. `registerPreviewRunner` на снятие регистрации обнуляет ссылку только если она принадлежит текущему чату, — иначе размонтирование старого host-а стирало бы регистрацию уже переключённого чата. Тексты самого host-а («Панель Web Reader не открыта или ещё не подключена», «Панель открыта, но в ней нет страницы — сначала вызови open») приходят на шаг позже и означают уже другое: панель найдена, но не готова.
+Запрос модели проверяет `runReaderModelRequest` (`packages/web-reader-app/src/modelRequest.ts`):
+активный разговор, соответствующий ему host и claim активной вкладки. ID ответа
+фиксируется до await, поэтому поздний результат не приписывается новой регистрации.
+Исключение runner превращается в отрицательный результат. Сохранение и cookie-гейт
+open принадлежат адаптеру WebReaderFrame; App не запускает конкурирующее обновление
+URL перед командой. Регрессии — `modelRequest.test.ts` и настоящий relay/WS/App
+в `e2e/webReaderModel.e2e.test.ts`.
 
 Reader hash-маршрут служит источником истины и для монтирования поверхности. Пока асинхронный `selectConversation` не привёл `chat.activeId` к ID из `#/web-reader/:id` или `#/playwright-reader/:id` и выбранный разговор не подтверждён соответствующим типизированным списком, `AppBody` показывает статус «Открываем выбранный Reader-разговор…» и не монтирует старые `ChatColumn`, композер, divider и `WebReaderHost`. Это закрывает гонку, при которой пользователь уже видел новый Reader URL, но успевал отправить сообщение и MCP-ход в предыдущий активный чат. DOM-регрессия задерживает ответ `conversations:get`, проверяет отсутствие интерактивного композера/host-а до согласования и затем подтверждает, что отправленная реплика получает ID Reader-разговора.
 
-Править цепочку нужно в `createReaderHostBridge` (`packages/web-reader-app/src/hostBridge.ts`) и `WebReaderFrame`: это единственная панель, которая монтируется на маршрутах `#/web-reader` и `#/playwright-reader` и регистрирует host через `onRegisterHost`. Прежние `PreviewPane`/`WebPreview` и `WebReaderHost` из `App.tsx` удалены вместе со своими тестами (`WebPreview.dom.test.tsx`); host-логика покрыта `packages/web-reader-app/src/hostBridge.test.ts` и `WebReaderFrame.dom.test.tsx`, Reader-сторона — `apps/web-recorder/src/Recorder.dom.test.tsx`. Живые формулировки ошибок перечислены в `hostBridge.ts` и в `PreviewActionRelay`.
+Править цепочку нужно в `createReaderHostBridge` (`packages/web-reader-app/src/hostBridge.ts`) и `WebReaderFrame`: эта панель монтируется на маршруте `#/web-reader` и регистрирует host через `onRegisterHost`. Playwright Reader имеет собственную поверхность и исполняет действия через серверный browser executor. Прежние `PreviewPane`/`WebPreview` и `WebReaderHost` из `App.tsx` удалены вместе со своими тестами (`WebPreview.dom.test.tsx`); host-логика покрыта `packages/web-reader-app/src/hostBridge.test.ts` и `WebReaderFrame.dom.test.tsx`, Reader-сторона — `apps/web-recorder/src/Recorder.dom.test.tsx`. Живые формулировки ошибок перечислены в `hostBridge.ts` и в `PreviewActionRelay`.
+
+Host-мост не переносит старую очередь на новую явно открытую страницу: следующий
+open, внешний setUrl и ручной save-url отменяют прежние pending. Закрытие адреса
+завершает ожидания сразу. Промежуточный empty от reset open сохраняет loading;
+микрозадача старого open проверяет поколение навигации и регистрацию перед отправкой.
+Viewport исполняет shell без требования page-ready, в том числе на пустой или
+ошибочной странице. Handle регистрации фиксирует свой ID и после ротации больше
+не вызывает run/диагностику. Ready другого разговора отвергается. Ошибка транспорта
+возвращается как результат команды, disposed от shell закрывает регистрацию host.
+Запрошенные host-ом инспектор и запись восстанавливаются после reload shell.
+Регрессии: `hostBridge.test.ts` и десять сквозных сценариев настоящего Recorder
+в `e2e/webReaderHost.e2e.test.ts`.
 
 У рекордера есть собственный гейт готовности (`apps/web-recorder/src/Recorder.tsx`): `command`, пришедшая до `page-ready`, сразу получает отказ «Страница ещё загружается.» — очередь держит только host, рекордер команды не буферизует. Reader принимает host-сообщения только после `init` со своими ID (кроме самого `init`), а `dispose` отвечает `disposed` и переводит панель в состояние «отключена». `set-url` сбрасывает флаг готовности и немедленно отвечает `page-status` (`loading` для адреса, `empty` для `null`). Reader также поддерживает `inspector-state` (пересылает тумблер инспектора внутрь и показывает его в тулбаре) и в режиме диагностики отправляет `diagnostics-progress` по каждой diagnostic-команде и `diagnostics-complete` при `diagnostics-start {active:false}`, показывая прогресс собственной панелью; шаги диагностики не попадают в запись сценария. Ошибку загрузки рекордер определяет по `onLoad` внутреннего iframe без пришедшего ready: он читает same-origin `contentDocument` и, если тело — структурированный ответ прокси `{ error: 'preview_unavailable', message }`, отдаёт host-у именно `message`; иначе сообщает, что сайт вернул страницу без инъецированного моста (HTML без внедрённого скрипта). `onError` iframe даёт отдельную сетевую ошибку. Так host различает недоступный сайт и молчащий мост, не смешивая их с таймаутом.
 
-Готовность страницы приходит от инъецированного скрипта синхронно при его выполнении в конце `<body>` (не по `window.load`) и до того, как скрипт ставит свой `message`-обработчик; доставка `postMessage` асинхронна, поэтому обработчик успевает встать раньше первой команды host-а. При переходе старый документ шлёт `page-loading` на `beforeunload` и снимает обработчики на `pagehide`, новый — свой `page-ready`, поэтому `read` после клика с навигацией ждёт готовности новой страницы, а не отвечает от умершего документа. Каждый `open` явно посылает рекордеру `set-url`, даже если адрес совпадает с текущим prop `url`: повторная самодиагностика действительно перезагружает iframe и получает новый `ready`, а не зависает до тайм-аута. Регресс-покрытие цепочки — `packages/ui/src/WebPreview.dom.test.tsx`, блок `WebReaderHost action lifecycle`: open→read с ожиданием готовности, повторный open того же URL, find→click и read после навигации, ошибка сайта и очистка ожиданий при размонтировании панели.
+Готовность страницы приходит от инъецированного скрипта при его выполнении в
+конце `<body>` после установки обработчика команд (не по `window.load`). При
+навигации старый документ шлёт `page-loading`, новый — `page-ready` с конечным
+логическим URL. Hash/History-навигация тоже сообщает ready. Recorder обновляет
+текущий адрес и неизменённый пользователем draft, сохраняя `src` живого iframe;
+host сохраняет новый URL разговора, а `WebReaderFrame` узнаёт эхо собственного
+сохранения и не запускает cookie-гейт/перезагрузку повторно. Внешнее изменение URL
+по-прежнему проходит гейт. Open возвращает подтверждённый адрес после redirect.
+На ready повторно применяются запись, инспектор, редактор и захват области;
+при возврате документа из BFCache восстанавливается мост. Каждый явный open
+перезагружает даже совпадающий URL. Регрессии: `hostBridge.test.ts`,
+`WebReaderFrame.dom.test.tsx`, `Recorder.dom.test.tsx`; настоящий вход в приложение
+и переход `#/machines` → `#/` без перезагрузки — `e2e/webReaderProject.e2e.test.ts`.
+
+Сохранения адреса в WebReaderFrame идут последовательно и фиксируют callback
+разговора в момент запроса. Одновременные подтверждения одного конечного URL
+используют один Promise. Ошибка сохранения видна с кнопкой «Повторить сохранение»;
+повтор не перезагружает сайт. Неудачная подготовка cookie модели видна даже из
+пустой панели, повторяет тот же open. `readReaderErrors` применяет только успешный
+список ошибок от актуальной регистрации/последнего запроса; отказ или поздний
+ответ не стирает известную ошибку другой страницы. Чистые помощники host-а
+находятся в `packages/ui/src/webReaderModelRequest.ts`: статический импорт из
+barrel `@voicechat/web-reader-app` возвращал весь ленивый экран в основной чанк
+(сторож — `lazyScreens.test.ts`). В reader.changed relay берёт
+адрес/заголовок как из result.url/title, так и из result.page у DOM-команд.
+
+Адресная строка Reader принимает домен без схемы (HTTPS для публичного сайта,
+HTTP для machine.internal/localhost и нестандартного порта), а относительные
+пути, query и hash разрешает от последнего подтверждённого URL. Это помощник
+`readerAddress.ts`; сообщения host-контракта по-прежнему требуют HTTP(S) URL.
+Обновление использует текущий адрес после SPA-перехода. Загрузка видна в панели;
+непрочитанный ответ/таймаут показан с повтором. Отложенные проверки onLoad и
+watchdog очищаются при закрытии; поколение загрузки меняется также на
+page-loading/ready, поэтому старый onLoad не отменяет новый медленный переход.
+
+Инспектор, редактор и захват области взаимоисключаются. Меню закрывается по
+внешнему клику, потере фокуса и Escape; Escape возвращает фокус на summary и
+выключает интерактивные режимы. Выбранная ширина iframe сохраняется даже в узкой
+панели через горизонтальный scroll контейнера; мобильная адресная строка занимает
+свою строку, элементы тулбара имеют высоту не менее 36 px. Регрессии —
+`Recorder.dom.test.tsx`, `readerAddress.test.ts`, `e2e/webReaderUi.e2e.test.ts`.
 
 ### Запись и повторный запуск сценария
 
-`Recorder` в самостоятельном приложении включает запись сообщением `voicechat.preview.record.v1`; инъецированный скрипт iframe в capture-фазе отправляет клики по кликабельной цели, события `input` для `input`, `textarea`, `select` и contenteditable, а также `submit` формы. Enter-сабмит без клика (типичная авторизация) записывается type-шагом с `submit: true` по активному полю формы; сабмит, вызванный кликом по кнопке, дублем не записывается (окно склейки 300 мс от последнего записанного клика), а `e.submitter` при его наличии пишется click-шагом. Скролл страницы шагов не создаёт: слушателей scroll/wheel у записи нет, а воспроизведение находит элементы по селектору независимо от прокрутки. Рекордер принимает сообщения только с origin приложения и от `contentWindow` собственного iframe, добавляет шаги с CSS-селектором к локальному редактируемому списку. Для пароля, autocomplete current/new-password и полей, чьи `name`/`id` похожи на секрет, токен, карту или CVV, значение не передаётся ни в каком сообщении (валидатор `recording-step` это форсит): шаг помечается `sensitive`, отображается маской и не воспроизводится автоматически. Ввод и клики в служебных панелях (`[data-voicechat-inspector]`) и все действия в edit-режиме в сценарий не попадают. Регресс-покрытие записи — `apps/server/src/routes/previewProxy.record.test.ts` (скрипт исполняется в jsdom).
+`Recorder` в самостоятельном приложении включает запись сообщением `voicechat.preview.record.v1`; инъецированный скрипт iframe в capture-фазе отправляет клики по кликабельной цели, события `input` для `input`, `textarea`, `select` и contenteditable, а также `submit` формы. Enter-сабмит без клика (типичная авторизация) записывается type-шагом с `submit: true` по активному полю формы; сабмит, вызванный кликом по кнопке, дублем не записывается (окно склейки 300 мс от последнего записанного клика), а `e.submitter` при его наличии пишется click-шагом. Скролл страницы шагов не создаёт: слушателей scroll/wheel у записи нет, а воспроизведение находит элементы по селектору независимо от прокрутки. Рекордер принимает сообщения только с origin приложения и от `contentWindow` собственного iframe, при включённой записи и вне диагностики/воспроизведения. `setRecordingMode` посылает режим сразу из обработчика, чтобы passive effect не потерял быстрый ввод. Общий нормализатор проверяет шаги, маскирует секреты, ограничивает список и склеивает соседний посимвольный ввод одного поля. Для пароля, autocomplete current/new-password и полей, чьи `name`/`id` похожи на секрет, токен, карту или CVV, значение не передаётся ни в каком сообщении (валидатор `recording-step` это форсит): шаг помечается `sensitive`, отображается маской и не воспроизводится автоматически. Ввод и клики в служебных панелях (`[data-voicechat-inspector]`) и все действия в edit-режиме в сценарий не попадают. Регресс-покрытие записи — `apps/server/src/routes/previewProxy.record.test.ts` (скрипт исполняется в jsdom).
 
-Кнопка «Запустить» последовательно посылает каждый несекретный шаг через `voicechat.preview.action.v1`, то есть использует тот же DOM-исполнитель, что и MCP-действия модели; type-шаг с `submit: true` воспроизводится действием `type` с сабмитом формы. Селекторы и значения обычных полей можно править до запуска. URL, запись и сценарий живут только в состоянии рекордера; ChatAI их не импортирует и не хранит, кроме URL превью разговора, который сохраняется через сообщение `save-url`.
+Доставка record-mode через postMessage остаётся асинхронной. Chromium-тест
+склейки ввода в `webReaderScenarioStorage.e2e.test.ts` сначала ждёт это сообщение
+на целевой странице: иначе CDP может набрать всё слово до фактического включения
+записи. Это ожидание события протокола, а не фиксированная задержка.
+
+Кнопка «Запустить» использует `scenarioRunner.ts`: весь список и все временные
+секреты проверяются до первого действия, затем снимок шагов выполняется через
+тот же `voicechat.preview.action.v1`, что и MCP. Каждый шаг ждёт свой result;
+после клика/submit очередь даёт page-loading дойти и ждёт новый page-ready.
+Ошибка шага останавливает оставшиеся действия. Ожидание результата и страницы
+ограничено 12 секундами; отмена кнопкой, open/reload/dispose очищает ожидания и
+таймеры. Видны число выполненных шагов и причина остановки. Во время запуска
+нельзя менять список, запускать его повторно или смешивать с DOM-командами модели.
+Запись и интерактивные режимы отключаются, локальные результаты не пересылаются
+host-у; временные секреты очищаются после завершения. Селекторы и значения можно
+править до запуска. Регрессии — `scenarioRunner.test.ts`, `Recorder.dom.test.tsx`
+и `e2e/webReaderScenario.e2e.test.ts`. URL, запись и сценарий живут только в состоянии рекордера; ChatAI их не импортирует и не хранит, кроме URL превью разговора, который сохраняется через сообщение `save-url`.
+
+Сценарии хранятся под `voicechat.reader.scenario.v2:<полный URL>`: query и hash
+разделяют страницы SPA. Обычный page-ready новой страницы выбирает её сценарий
+без изменения src iframe; активная запись/воспроизведение сохраняет исходный
+scenarioUrl многостраничного сценария. Legacy origin+path переносится только
+для URL без query/hash; очищенная запись v2 (`[]`) не восстанавливается из legacy.
+Старый ключ удаляется лишь после успешной записи нормализованного списка v2.
+
+Шаги можно удалить и переставить; смена порядка очищает временные секреты, чтобы
+значение не переехало к другому полю. Ручной флаг «Секрет» стирает обычное значение;
+поля редактора ограничены длинами контракта. Экспорт Playwright экранирует строки
+через JSON и проверяет все `SCENARIO_SECRET_N` до goto: отсутствующее значение
+не заменяется пустой строкой и не запускает первые действия. Проверки —
+`webRecorderScenario.test.ts`, `scenarioStorage.test.ts`, `playwrightExport.test.ts`,
+DOM Recorder и `e2e/webReaderScenarioStorage.e2e.test.ts`.
 
 ### Edit-режим: правки страницы в браузере клиента
 
