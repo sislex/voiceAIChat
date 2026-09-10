@@ -1,3 +1,4 @@
+import { previewKeyboardHelpers } from './previewKeyboard.js'
 import { previewReadingHelpers } from './previewReading.js'
 import { previewResourceScript } from './previewResources.js'
 import { READER_PROJECT_ORIGIN, readerProjectUrl, type ReaderProjectRequest, type ReaderProjectResponse } from '@voicechat/shared'
@@ -242,6 +243,7 @@ const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url)
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
 ${previewInteractionHelpers()}
 ${previewReadingHelpers()}
+${previewKeyboardHelpers()}
 const describe=(el)=>{
   const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el)};
   const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
@@ -509,12 +511,9 @@ const run=(action)=>{
     return captureArea(rect,1400).then((dataUrl)=>({page:pageInfo(),rect,dataUrl}))
   }
   if(action.kind==='press'){
-    let el=document.activeElement&&document.activeElement!==document.body?document.activeElement:document.body;
-    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];el.focus&&el.focus()}
-    const opts={key:action.key,bubbles:true,cancelable:true};
-    el.dispatchEvent(new KeyboardEvent('keydown',opts));
-    el.dispatchEvent(new KeyboardEvent('keyup',opts));
-    return {page:pageInfo(),pressed:{key:action.key,selector:el===document.body?'body':uniqueSelector(el)}}
+    const el=action.selector?chooseTarget(action):(document.activeElement||document.body);
+    if(action.selector){actionable(el);el.focus&&el.focus()}
+    return {page:pageInfo(),pressed:performKey(el,action.key)}
   }
   if(action.kind==='read'){
     const scope=readingScope(action);
