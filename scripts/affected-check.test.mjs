@@ -48,32 +48,32 @@ test('selectAffected выбирает пакеты и безопасный fallb
 
   await t.test('Playwright Reader проверяет приложение и ядро, а клиент раннера — обоих потребителей', () => {
     assert.deepEqual(ids(selectAffected(['apps/playwright-reader/src/module.ts'])), ['server', 'playwright-reader-service'])
-    assert.deepEqual(ids(selectAffected(['apps/browser-runner/src/client.ts'])), ['server', 'playwright-reader-service', 'browser-runner'])
+    assert.deepEqual(ids(selectAffected(['apps/browser-runner/src/client.ts'])), ['server', 'browser-runner'])
   })
 
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
   })
 
   await t.test('ядро сессий тянет сервер и UI как потребителей', () => {
     const decision = selectAffected(['packages/sessions-core/src/policy.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
   })
 
-  await t.test('правка UI проверяет standalone Web Recorder как потребителя', () => {
+  await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['ui', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['ui', 'web'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
+      assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -87,7 +87,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['ui-foundation', 'make-app', 'image-studio-app', 'make-contracts', 'shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder', 'browser-contracts', 'playwright-reader-contracts', 'web-reader-contracts', 'web-reader-service'])
   })
 })
 

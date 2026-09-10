@@ -1,0 +1,43 @@
+{
+  "name": "@voicechat/web-reader",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./standalone": "./src/standalone/server.ts",
+    "./config": "./src/standalone/config.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc --noEmit -p tsconfig.json && npm run -w @voicechat/web-recorder build",
+    "test": "vitest run --silent",
+    "dev": "tsx watch src/standalone/index.ts",
+    "start": "tsx src/standalone/index.ts"
+  },
+  "dependencies": {
+    "@voicechat/shared": "*",
+    "@voicechat/web-reader-contracts": "*",
+    "@voicechat/playwright-reader-contracts": "*",
+    "@voicechat/web-recorder": "*",
+    "@fastify/static": "^10.1.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "fastify": "^5.1.0",
+    "zod": "^4.4.3",
+    "parse5": "^7.3.0",
+    "postcss": "8.5.23",
+    "postcss-value-parser": "4.2.0",
+    "tough-cookie": "5.1.2",
+    "@voicechat/browser-contracts": "*",
+    "acorn": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "tsx": "^4.19.2",
+    "jsdom": "^26.1.0",
+    "@types/jsdom": "^30.0.0"
+  }
+}

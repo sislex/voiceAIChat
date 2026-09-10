@@ -27,7 +27,9 @@
         "VC_TTS_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}",
         "VC_LLM_RUNNER_CLAUDE_URL": "http://runner-work:8080",
         "VC_LLM_RUNNER_CODEX_URL": "http://runner-work:8080",
-        "VC_LLM_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}"
+        "VC_LLM_RUNNER_TOKEN": "${VC_RUNNER_TOKEN:?set VC_RUNNER_TOKEN}",
+        "VC_READER_MODE": "remote",
+        "VC_READER_URL": "http://web-reader:8080"
       },
       "volumes": [
         "core-data:/data"
@@ -185,6 +187,17 @@
       "volumes": [
         "web-reader-ui-data:/data"
       ]
+    },
+    "web-reader": {
+      "image": "${VC_IMAGE_WEB_READER:?set immutable digest}",
+      "environment": {
+        "HOST": "0.0.0.0",
+        "PORT": "8080",
+        "VC_CORE_URL": "http://voicechat:8080",
+        "VC_PLAYWRIGHT_READER_URL": "http://playwright-reader:8080",
+        "VC_INTERNAL_TOKEN": "${VC_INTERNAL_TOKEN:?set VC_INTERNAL_TOKEN}",
+        "VC_MCP_SECRET": "${VC_MCP_SECRET:?set VC_MCP_SECRET}"
+      }
     }
   },
   "volumes": {

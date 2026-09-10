@@ -1,0 +1,16 @@
+[
+  {
+    "applicationId": "core",
+    "minVersion": "1.0.0",
+    "maxVersionExclusive": "2.0.0",
+    "minApiVersion": "1.1.0",
+    "maxApiVersionExclusive": "2.0.0"
+  },
+  {
+    "applicationId": "playwright-reader",
+    "minVersion": "1.0.0",
+    "maxVersionExclusive": "2.0.0",
+    "minApiVersion": "1.0.0",
+    "maxApiVersionExclusive": "2.0.0"
+  }
+]

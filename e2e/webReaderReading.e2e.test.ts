@@ -2,7 +2,7 @@ import fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import type { PreviewDomAction, PreviewActionResultMessage, PreviewReadResult, PreviewFindResult, PreviewA11yResult } from '@voicechat/shared'
-import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
+import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
 let app: FastifyInstance, browser: Browser, page: Page, base: string, source = ''
 const inner = () => page.frameLocator('iframe')
 async function open(html: string) { source='<!doctype html><body>'+html+'</body>';await page.goto(base+'/host');await inner().locator('#voicechat-preview-inspector').waitFor({state:'attached'}) }

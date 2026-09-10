@@ -11,12 +11,13 @@ import { chromium, type Browser, type Page } from 'playwright'
 const ROOT = resolve(__dirname, '..')
 const PASSWORD = 'reader-project-fixture-only'
 let server: ChildProcess | undefined
+let readerServer: ChildProcess | undefined
 let browser: Browser | undefined
 let page: Page
 let dataDir = ''
 let base = ''
 
-describe('Reader: вход на собственную страницу проекта', () => {
+describe.each(['embedded', 'remote'] as const)('Reader %s: вход на собственную страницу проекта', (readerMode) => {
   beforeAll(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'vc-reader-project-'))
     const reservation = createServer()
@@ -26,11 +27,22 @@ describe('Reader: вход на собственную страницу прое
     const port = address.port
     await new Promise<void>(resolve => reservation.close(() => resolve()))
     base = `http://127.0.0.1:${port}`
+    const readerReservation = createServer()
+    await new Promise<void>(resolve => readerReservation.listen(0, '127.0.0.1', resolve))
+    const readerPort = (readerReservation.address() as {port:number}).port
+    await new Promise<void>(resolve => readerReservation.close(() => resolve()))
+    if (readerMode === 'remote') {
+      readerServer = spawn(process.execPath, ['--import','tsx','src/standalone/index.ts'], {
+        cwd: join(ROOT, 'apps/web-reader'),
+        env: { ...process.env, HOST:'127.0.0.1', PORT:String(readerPort), VC_CORE_URL:base, VC_INTERNAL_TOKEN:PASSWORD, VC_MCP_SECRET:PASSWORD, VC_DB_URL:'', VC_WEB_RECORDER_DIR:join(ROOT,'apps/web-recorder/dist') }, stdio:'ignore'
+      })
+      await vi.waitFor(async () => { expect(readerServer?.exitCode).toBeNull(); expect((await fetch(`http://127.0.0.1:${readerPort}/v1/health`)).ok).toBe(true) }, {timeout:30_000,interval:200})
+    }
     server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
       env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
         VC_WEB_DIR: join(ROOT, 'apps/web/dist'), VC_WEB_RECORDER_DIR: join(ROOT, 'apps/web-recorder/dist'),
-        VC_ADMIN_PASSWORD: PASSWORD, VC_BROWSER_HOST_ALIASES: '' },
+        VC_ADMIN_PASSWORD: PASSWORD, VC_INTERNAL_TOKEN:PASSWORD, VC_MCP_SECRET:PASSWORD, VC_READER_MODE:readerMode, VC_READER_URL:`http://127.0.0.1:${readerPort}`, VC_BROWSER_HOST_ALIASES: '' },
       stdio: 'ignore'
     })
     await vi.waitFor(async () => {
@@ -57,6 +69,10 @@ describe('Reader: вход на собственную страницу прое
   })
   afterAll(async () => {
     await browser?.close()
+    if (readerServer && readerServer.exitCode === null) {
+      const closed = new Promise<void>(resolve => readerServer!.once('exit', () => resolve()))
+      readerServer.kill('SIGTERM'); await closed
+    }
     if (server && server.exitCode === null) {
       const closed = new Promise<void>(resolve => server!.once('exit', () => resolve()))
       server.kill('SIGTERM'); await closed
@@ -81,7 +97,7 @@ describe('Reader: вход на собственную страницу прое
     expect(await site.locator('html').evaluate(() => performance.timeOrigin)).toBe(originTime)
     if (process.env.VC_VISUAL_ARTIFACTS) {
       await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true })
-      await page.screenshot({ path: join(process.env.VC_VISUAL_ARTIFACTS, 'reader-project-login.png') })
+      await page.screenshot({ path: join(process.env.VC_VISUAL_ARTIFACTS, `reader-project-${readerMode}-login.png`) })
     }
   })
 })

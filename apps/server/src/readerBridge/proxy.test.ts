@@ -6,11 +6,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import Fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
-import { PREVIEW_MCP_PATH } from '../mcp/previewMcp.js'
+import { PREVIEW_MCP_PATH } from '@voicechat/web-reader-contracts'
 import { registerMakeProxy } from '../makeBridge/proxy.js'
 import { READER_PROXY_PREFIXES, registerReaderProxy } from './proxy.js'
 
-const srcDir = join(__dirname, '..')
+const srcDir = join(__dirname, '../../../web-reader/src')
 
 function covered(path: string): boolean {
   return READER_PROXY_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))

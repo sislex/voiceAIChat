@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BrowserRunnerClient } from '@voicechat/browser-runner/client'
+import type { BrowserRunnerClient } from '@voicechat/browser-contracts/client'
 import type { BrowserModelTarget, PlaywrightReaderCore } from './core.js'
 import { createPlaywrightReaderModule } from './module.js'
 

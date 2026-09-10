@@ -23,6 +23,7 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 | `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
 | `apps/make` | `@voicechat/make` | Make (веб-проект с ассистентом): мастерские, REST/превью/публикация, MCP; модуль ядра или отдельный процесс | [AGENTS](apps/make/AGENTS.md) |
 | `apps/playwright-reader` | `@voicechat/playwright-reader` | Playwright Reader: API сессий и действия модели в Chromium; модуль ядра или отдельный процесс | [AGENTS](apps/playwright-reader/AGENTS.md) |
+| `apps/web-reader` | `@voicechat/web-reader` | Web Reader: HTTP-прокси, MCP и отдельный процесс без БД; iframe-рекордер входит в его образ | [AGENTS](apps/web-reader/AGENTS.md) |
 | `apps/image-studio` | `@voicechat/image-studio` | Студия картинок: галереи, REST, публикация; модуль ядра или отдельный процесс | [AGENTS](apps/image-studio/AGENTS.md) |
 | `apps/llm-runner` | `@voicechat/llm-runner` | Исполнитель LLM: единственный, кто делает spawn claude/codex; HTTP `/v1/run` | [AGENTS](apps/llm-runner/AGENTS.md) |
 | `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |

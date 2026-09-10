@@ -17,7 +17,7 @@ import {
 } from '@voicechat/shared'
 import { randomUUID } from 'node:crypto'
 import type { PlaywrightReaderCore } from './core.js'
-import { BrowserRunnerError, type BrowserRunnerClient } from '@voicechat/browser-runner/client'
+import { BrowserRunnerError, type BrowserRunnerClient } from '@voicechat/browser-contracts/client'
 import { previewSessionCookies } from './sessionAccess.js'
 
 const uid = (req: FastifyRequest): string => (req as unknown as { user: { name: string } }).user.name

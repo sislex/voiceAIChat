@@ -27,7 +27,7 @@ describe('граница Playwright Reader ↔ ядро (сторона Playwrig
         const spec = m[1]!
         // Относительный импорт обязан оставаться внутри пакета: `../` из подкаталога — можно, из корня src — нет.
         const escapes = spec.startsWith('.') && !resolve(dirname(join(srcDir, rel)), spec).startsWith(srcDir + '/')
-        const importsBrowserRuntime = spec.startsWith('@voicechat/browser-runner') && spec !== '@voicechat/browser-runner/client'
+        const importsBrowserRuntime = spec.startsWith('@voicechat/browser-runner') && spec !== '@voicechat/browser-contracts/client'
         if (escapes || importsBrowserRuntime || FORBIDDEN.some((f) => spec === f || spec.startsWith(`${f}/`))) offenders.push(`${rel} → ${spec}`)
       }
     }

@@ -3,9 +3,11 @@
 // кадр проверки — тело до нескольких мегабайт, ему тоже нужен долгий вызов.
 import { createRpcClient } from '@voicechat/shared'
 import type { PreviewAction, PreviewEnvironment, ReaderProjectRequest, ReaderProjectResponse } from '@voicechat/shared'
-import { PREVIEW_ACTION_TIMEOUT_MS, type PreviewActionOutcome } from '../../mcp/previewMcp.js'
-import type { ReaderCore } from '../core.js'
-import { INTERNAL_READER_CORE_PATH } from '../internal.js'
+import { PREVIEW_ACTION_TIMEOUT_MS, type PreviewActionOutcome } from './actions.js'
+import type { ReaderCore, ReaderContext } from './core.js'
+import type { PreviewToolEntry } from './turnToken.js'
+import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
+import { INTERNAL_READER_CORE_PATH } from './internal.js'
 
 export interface HttpReaderCoreOptions {
   coreUrl: string
@@ -40,6 +42,11 @@ export class HttpReaderCore implements ReaderCore {
   previewAction(userId: string, conversationId: string, action: PreviewAction, timeoutMs?: number): Promise<PreviewActionOutcome> {
     return this.client((timeoutMs ?? PREVIEW_ACTION_TIMEOUT_MS) + 10_000)<PreviewActionOutcome>('previewAction', userId, conversationId, action, timeoutMs)
   }
+
+  context(entry: PreviewToolEntry): Promise<ReaderContext | null> { return this.fast('context', entry) }
+  canUseMachine(userId: string, agentId: string): Promise<boolean> { return this.fast('canUseMachine', userId, agentId) }
+  machineOnline(agentId: string): Promise<boolean> { return this.fast('machineOnline', agentId) }
+  machineHttp(userId: string, agentId: string, request: AgentHttpRequest): Promise<AgentHttpResponse> { return this.slow('machineHttp', userId, agentId, request) }
 
   projectResource(request: ReaderProjectRequest): Promise<ReaderProjectResponse> {
     return this.fast<ReaderProjectResponse>('projectResource', request)

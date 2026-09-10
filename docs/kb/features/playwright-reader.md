@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-10
-checked: 8c54ade4
+checked: 83b7e546
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -171,7 +171,7 @@ Backend вынесен в workspace `@voicechat/playwright-reader`: `routes.ts` 
 `/mcp/preview`. Встроенный Web Reader вызывает этот порт напрямую; отдельный —
 через `/internal/playwright-reader/service` у приложения, либо у ядра, если
 Playwright Reader встроен. Cookie прокси и преобразование URL `*.machine.internal`
-сохраняются. HTTP-клиент раннера теперь находится в `apps/browser-runner/src/client.ts`
+сохраняются. HTTP-клиент раннера теперь находится в `packages/browser-contracts/src/client.ts`
 и экспортируется как `@voicechat/browser-runner/client`, без загрузки самого Playwright.
 Старый `apps/server/src/browser/runnerClient.ts` — совместимый реэкспорт для CI/QA.
 
@@ -212,7 +212,7 @@ Playwright Reader встроен. Cookie прокси и преобразова�
   Screenshot` и `browserSession` (`protocol.ts`), тип `BrowserCommand` и мост
   `RendererBrowserBridge` (`ipc.ts`, `window.browser`); screenshot вынесен из
   union команды моста (`RendererBrowserCommand`) — у него отдельный роут.
-- **Сервер**: HTTP-клиент `apps/browser-runner/src/client.ts` (Bearer, статусы
+- **Сервер**: HTTP-клиент `packages/browser-contracts/src/client.ts` (Bearer, статусы
   `BrowserRunnerError`, бинарные снимки); `apps/playwright-reader/src/routes.ts`
   проверяет доступ через `PlaywrightReaderCore` и тип разговора. Ключи сессии:
   `sessionId = conversationId`, `userKey = uid`; без раннера — 501. В embedded
@@ -224,7 +224,7 @@ Playwright Reader встроен. Cookie прокси и преобразова�
   `scaleBrowserCoordinates` в координаты вьюпорта, `stop` — на размонтировании.
   Деградация: нет моста или 501 → «Chromium недоступен».
 
-Тесты: `apps/browser-runner/src/client.test.ts`, `apps/playwright-reader/src/routes.test.ts`,
+Тесты: `packages/browser-contracts/src/client.test.ts`, `apps/playwright-reader/src/routes.test.ts`,
 `BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx` (UI).
 Для реального запуска раннеру нужен `npx playwright install chromium`.
 
