@@ -58,6 +58,11 @@ describe('отметка обращения', () => {
 })
 
 describe('nextActiveTab', () => {
+  it('возвращает в живой opener; закрытый opener не воскресает', () => {
+    expect(nextActiveTab(['first', 'parent'], 'popup', 'popup', 'parent')).toBe('parent')
+    expect(nextActiveTab(['first'], 'popup', 'popup', 'parent')).toBe('first')
+    expect(nextActiveTab(['first', 'parent'], 'first', 'popup', 'parent')).toBe('first')
+  })
   it('закрытая вкладка не остаётся активной — иначе каждая команда падает stale_tab', () => {
     expect(nextActiveTab(['b', 'c'], 'a', 'a')).toBe('b')
   })

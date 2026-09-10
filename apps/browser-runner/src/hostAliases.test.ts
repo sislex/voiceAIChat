@@ -12,6 +12,14 @@ describe('parseHostAliases', () => {
     expect(parseHostAliases('без-стрелки,=,a=').size).toBe(0)
     expect(parseHostAliases(undefined).size).toBe(0)
   })
+  it('не принимает URL, credentials, пути, лишнее равенство и неверный порт', () => {
+    for (const value of ['a=http://internal:8787', 'a=user:secret@internal', 'a=internal/path', 'a=internal?x', 'a=internal#hash', 'a=internal:99999', 'a=internal:0', 'a=internal:abc', 'a=internal=other']) {
+      expect(parseHostAliases(value).size, value).toBe(0)
+    }
+  })
+  it('нормализует регистр и числовые порты', () => {
+    expect(parseHostAliases('SITE.EXAMPLE:080=INTERNAL:08787').get('site.example:80')).toBe('internal:8787')
+  })
 })
 
 describe('applyHostAlias', () => {
@@ -41,11 +49,15 @@ describe('applyHostAlias', () => {
 })
 
 describe('aliasTargets', () => {
-  it('целями считаются и «host:port», и просто host', () => {
+  it('разрешает только указанный порт внутреннего хоста', () => {
     const targets = aliasTargets(parseHostAliases('89.125.68.35:8787=voicechat:8787'))
     expect(targets.has('voicechat:8787')).toBe(true)
-    expect(targets.has('voicechat')).toBe(true)
+    expect(targets.has('voicechat')).toBe(false)
+    expect(targets.has('voicechat:9000')).toBe(false)
     expect(targets.has('89.125.68.35:8787')).toBe(false)
+  })
+  it('без порта разрешает стандартные HTTP/HTTPS порты, но не соседние сервисы', () => {
+    expect([...aliasTargets(parseHostAliases('site.example=internal'))]).toEqual(['internal:80', 'internal:443'])
   })
   it('пустая карта не разрешает ничего — гейт остаётся закрытым', () => {
     expect(aliasTargets(parseHostAliases('')).size).toBe(0)
@@ -72,5 +84,14 @@ describe('restoreHostAlias', () => {
   it('подстановка и обратная подстановка возвращают исходный адрес', () => {
     const original = new URL('http://89.125.68.35:8787/#/board')
     expect(restoreHostAlias(applyHostAlias(original, aliases), aliases).toString()).toBe(original.toString())
+  })
+  it('IPv6 сохраняет адрес, порт, query и hash в обе стороны', () => {
+    const ipv6 = parseHostAliases('site.example:8787=[::1]:8799,[2001:4860:4860::8888]:8080=[::1]:8800')
+    for (const original of ['http://site.example:8787/app?q=1#/task/2', 'http://[2001:4860:4860::8888]:8080/app#/make']) {
+      const mapped = applyHostAlias(new URL(original), ipv6)
+      expect(mapped.hostname).toBe('[::1]')
+      expect(restoreHostAlias(mapped, ipv6).toString()).toBe(original)
+    }
+    expect([...aliasTargets(ipv6)]).toEqual(['[::1]:8799', '[::1]:8800'])
   })
 })

@@ -465,7 +465,7 @@ export function MakeProjectComponents({ projectId, api, ensurePreview, onOpenTas
                 className="mpc-frame"
                 title="Стори компонента"
                 src={frameUrl}
-                sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
+                sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin allow-downloads"
               />
             ) : (
               <EmptyState

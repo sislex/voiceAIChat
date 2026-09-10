@@ -202,3 +202,23 @@ describe('шаг, который нельзя проверить', () => {
     expect(outcome.screenshotUrl).toBe('/shot')
   })
 })
+
+it('неподтверждённый стартовый переход блокирует QA до выполнения сценария', async () => {
+  const client = browser({ command: vi.fn(async () => ({ ok: false, error: 'Адрес недоступен' })) })
+  const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+  const outcome = await runner.run({ runId: 'broken-start', userId: 'alice', signal: new AbortController().signal,
+    scenario: scenario([{ id: 's', title: 'Нажать', action: { kind: 'click', selector: '#create' } }]) })
+  expect(outcome.blocked).toBe('Стартовый адрес не открылся: Адрес недоступен')
+  expect(outcome.steps).toEqual([])
+  expect(client.command).toHaveBeenCalledTimes(1)
+  expect(client.stop).toHaveBeenLastCalledWith('qa-broken-start')
+})
+
+it('ошибка чтения в отрицательном ожидании считается непроверенным сценарием', async () => {
+  const client = browser({ command: vi.fn(async (_id, request) => request.command.type === 'selector' && request.command.action.kind === 'read' ? { ok: false, error: 'Нет документа' } : { ok: true }) })
+  const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+  const outcome = await runner.run({ runId: 'broken-read', userId: 'alice', signal: new AbortController().signal,
+    scenario: scenario([{ id: 's', title: 'Нажать', action: { kind: 'click', selector: '#create' }, expectAbsentText: 'Ошибка' }]) })
+  expect(outcome.blocked).toContain('проверить нельзя')
+  expect(outcome.steps[0].status).toBe('failed')
+})

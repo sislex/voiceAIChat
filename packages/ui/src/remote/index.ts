@@ -497,8 +497,13 @@ export function makeBrowserBridge(httpBase: string): RendererBrowserBridge {
     command: (conversationId, req) => post(REST.browserSessionCommand(conversationId), req),
     screenshot: (conversationId, req) => post(REST.browserSessionScreenshot(conversationId), req),
     stop: async (conversationId) => {
-      const t = getToken()
-      await credentialedFetch(httpBase + REST.browserSession(conversationId), { method: 'DELETE', headers: t ? { authorization: `Bearer ${t}` } : {} })
+      // После переноса Bearer в cookie остановка тоже требует CSRF. Иначе
+      // перезапуск получал прежнюю incarnation, скрывая отказ DELETE.
+      const res = await credentialedFetch(httpBase + REST.browserSession(conversationId), { method: 'DELETE', headers: sessionHeaders() })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { message?: string; error?: string }
+        throw new Error(body.message ?? body.error ?? `Browser Runner: ${res.status}`)
+      }
     }
   }
 }

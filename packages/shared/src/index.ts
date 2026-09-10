@@ -1,7 +1,12 @@
+export * from './browserEvaluation'
+export * from './browserDiagnostics'
+export * from './browserDownloads'
 // @voicechat/shared — общие типы, контракт протокола и чистая логика,
 // переиспользуемые desktop/server/web.
 
 export * from './types'
+export * from './browserLimits'
+export * from './browserWaiting'
 export * from './protocol'
 export * from './stateMachine'
 export * from './sentences'
@@ -94,6 +99,9 @@ export * from './storyParse'
 export * from './playwrightReader'
 export * from './imageStudioInternal'
 
+export * from './browserFrames'
+export * from './browserProfile'
+export * from './browserDialogs'
 export * from './webRecorderScenario'
 
 export * from './previewProject'

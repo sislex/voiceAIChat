@@ -15,7 +15,7 @@ const setup = async (engine = 'chromium', missing = false) => {
 describe('Chromium внутри Web Reader', () => {
   it('выбранный движок получает собственную сессию и cookie прокси', async () => {
     const { app, runner } = await setup(); expect((await app.inject({ method: 'POST', url: '/api/browser/c/start', payload: {} })).statusCode).toBe(200)
-    expect(runner.start).toHaveBeenCalledWith({ sessionId: 'c', userKey: 'alice', conversationKey: 'c', cookies: [{ name: PREVIEW_RUN_COOKIE, value: 'fixture-key', url: 'http://core:8799/api/preview' }] })
+    expect(runner.start).toHaveBeenCalledWith({ sessionId: 'c', userKey: 'alice', conversationKey: 'c', profileMode: 'persistent', cookies: [{ name: PREVIEW_RUN_COOKIE, value: 'fixture-key', url: 'http://core:8799/api/preview' }] })
   })
   it('быстрый режим не получает команды Chromium', async () => {
     const { app, runner } = await setup('proxy'); expect((await app.inject({ method: 'POST', url: '/api/browser/c/start', payload: {} })).statusCode).toBe(403); expect(runner.start).not.toHaveBeenCalled()

@@ -148,7 +148,178 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'console', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'hover', 'network', 'open', 'press', 'read', 'reset-session', 'screenshot', 'scroll', 'set', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'cancel-download', 'click', 'close-tab', 'console', 'delete-download', 'dialogs', 'downloads', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'frames', 'handle-dialog', 'hover', 'network', 'new-tab', 'open', 'press', 'read', 'read-download', 'reload', 'reset-session', 'screenshot', 'scroll', 'select-tab', 'set', 'stop-loading', 'styles', 'tabs', 'test-users', 'type', 'upload', 'viewport', 'wait'])
+  })
+
+  it.each([
+    ['open', { url: 'https://example.test/' }], ['read', {}], ['find', { text: 'Письмо' }],
+    ['click', { selector: '#button' }], ['type', { selector: '#field', text: 'Запись' }],
+    ['hover', { selector: '#menu' }], ['scroll', { to: 'bottom' }], ['scroll', { dx: 250, selector: '#pane' }], ['press', { selector: '#field', key: 'Enter' }],
+    ['wait', { selector: '#ready' }], ['set', { selector: '#check', checked: true }],
+    ['upload', { selector: '#file', name: 'empty.txt', base64: '' }], ['a11y', {}],
+    ['drag', { from: { selector: '#from' }, to: { selector: '#to' } }],
+    ['evaluate', { code: 'document.title' }], ['styles', { selector: '#field', properties: ['color'] }]
+  ])('%s сохраняет цепочку frame до исполнителя Chromium', async (name, args) => {
+    await app.close()
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true } }))
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call(name as string, { ...args, frame: ['#preview', '#child'] })).isError).not.toBe(true)
+    expect(execute).toHaveBeenCalledWith(U, CONV, { kind: name, ...args, frame: ['#preview', '#child'] })
+  })
+
+  it('frame не уходит в relay Web Reader и неверная цепочка не выполняется', async () => {
+    await makeApp()
+    const observed = vi.fn()
+    client = observed
+    expect(await call('read', { frame: '#preview' })).toMatchObject({ isError: true, text: expect.stringContaining('Playwright Reader') })
+    expect(await call('read', { frame: [] })).toMatchObject({ isError: true })
+    expect(observed).not.toHaveBeenCalled()
+  })
+
+  it('снимок передаёт frame и сообщает усечение в тексте модели', async () => {
+    await app.close()
+    const screenshot = vi.fn(async () => ({ ok: true, result: { dataUrl: 'data:image/png;base64,AA==', frame: { path: ['#preview'], url: 'https://child.test/', title: 'Документ' }, clipped: true } }))
+    await makeApp(undefined, { browserScreenshot: screenshot })
+    const result = await call('screenshot', { frame: ['#preview'], selector: 'body' })
+    expect(result.isError).not.toBe(true)
+    expect(result.text).toContain('https://child.test/')
+    expect(result.text).toContain('только видимая часть')
+    expect(screenshot).toHaveBeenCalledWith(U, CONV, { frame: ['#preview'], selector: 'body' })
+  })
+
+  it.each([
+    ['read', { selector: 'main', limit: 100, offset: 4000 }],
+    ['find', { selector: 'button', limit: 1, visibleOnly: true }]
+  ])('%s передаёт параметры чтения и поиска в Chromium', async (name, args) => {
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true, text: 'Прочитано' } }))
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call(name as string, args as Record<string, unknown>)).isError).not.toBe(true)
+    expect(execute).toHaveBeenCalledWith(U, CONV, { kind: name, ...args as Record<string, unknown> })
+  })
+
+  it.each([
+    { selector: '#status', text: 'Готово' }, { selector: '#spinner', state: 'hidden' },
+    { selector: '#send', enabled: true }, { selector: '#field', editable: true },
+    { selector: '#check', checked: false }, { selector: '#field', value: '' },
+    { selector: '.row', count: 0 }, { url: '**/ready' },
+    { loadState: 'load' }, { predicate: 'window.appReady' }
+  ])('условие ожидания %j передаётся в Chromium', async (options) => {
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true, waitedMs: 12 } }))
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call('wait', { ...options, timeoutMs: 30000 })).isError).not.toBe(true)
+    expect(execute).toHaveBeenCalledWith(U, CONV, { kind: 'wait', ...options, timeoutMs: 30000 })
+  })
+
+  it('расширенный wait не превращается в прежний поиск iframe', async () => {
+    const forwarded = vi.fn()
+    await makeApp(undefined, { browserExecutor: async () => null })
+    client = forwarded
+    const result = await call('wait', { selector: '#spinner', state: 'hidden' })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('Playwright Reader')
+    expect(forwarded).not.toHaveBeenCalled()
+  })
+
+  it('wait отклоняет противоречивые условия без вызова браузера', async () => {
+    const execute = vi.fn(async () => null)
+    await makeApp(undefined, { browserExecutor: execute })
+    expect((await call('wait', { selector: '.row', count: 0, state: 'visible' })).isError).toBe(true)
+    expect(execute).not.toHaveBeenCalled()
+  })
+
+  it('predicate не обходит проектную политику evaluate', async () => {
+    const execute = vi.fn(async () => ({ ok: true, result: { ok: true, waitedMs: 1 } }))
+    const gate = vi.fn(async (_entry: unknown, code: string) => ({ allowed: code === 'window.appReady', needsConfirmation: code !== 'window.appReady' }))
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], gateEvaluate: gate }, { browserExecutor: execute })
+    expect((await call('wait', { predicate: 'document.body.remove()' })).isError).toBe(true)
+    expect(execute).not.toHaveBeenCalled()
+    expect((await call('wait', { predicate: 'window.appReady' })).isError).not.toBe(true)
+    expect(gate).toHaveBeenLastCalledWith(expect.objectContaining({ userId: U, conversationId: CONV }), 'window.appReady', false)
+  })
+
+  it.each([
+    ['frames', {}, { type: 'frames' }],
+    ['tabs', {}, { type: 'status' }],
+    ['new-tab', { url: 'https://example.com/' }, { type: 'newTab', url: 'https://example.com/' }],
+    ['select-tab', { tabId: 't2' }, { type: 'selectTab', tabId: 't2' }],
+    ['close-tab', { tabId: 't2' }, { type: 'closeTab', tabId: 't2' }],
+    ['reload', {}, { type: 'reload' }],
+    ['stop-loading', {}, { type: 'stop' }]
+  ])('%s управляет Chromium от имени текущего разговора', async (name, args, command) => {
+    const control = vi.fn(async () => ({ ok: true, result: { id: CONV, conversationId: CONV, incarnation: 'inc', state: 'ready' as const, tabs: [], activeTabId: 't2', viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: null, title: null } }))
+    await makeApp(undefined, { browserControl: control })
+    const result = await call(name as string, args as Record<string, unknown>)
+    expect(result.isError).not.toBe(true)
+    expect(result.text).toContain('t2')
+    expect(control).toHaveBeenCalledWith(U, CONV, command)
+  })
+
+  it('evaluate передаёт deadline и сохраняет формат сложного результата', async () => {
+    const executor = vi.fn(async () => ({ ok: true, result: { ok: true, value: { $type: 'bigint', value: '123' }, valueFormat: 'preview' as const, valueType: 'bigint', elapsedMs: 5 } }))
+    await makeApp(undefined, { browserExecutor: executor })
+    const result = await call('evaluate', { code: '123n', timeoutMs: 500 })
+    expect(result.isError).not.toBe(true)
+    expect(JSON.parse(result.text).valueFormat).toBe('preview')
+    expect(executor).toHaveBeenCalledWith(U, CONV, { kind: 'evaluate', code: '123n', timeoutMs: 500 })
+  })
+  it('deadline evaluate не теряется в fallback и старом раннере', async () => {
+    const executor = vi.fn(async () => null as any)
+    await makeApp(undefined, { browserExecutor: executor })
+    const forwarded = vi.fn(); client = forwarded
+    expect(await call('evaluate', { code: '1+2', timeoutMs: 500 })).toMatchObject({ isError: true, text: expect.stringContaining('Chromium') })
+    expect(forwarded).not.toHaveBeenCalled()
+    executor.mockResolvedValue({ ok: true, result: { ok: true, value: 3 } })
+    expect(await call('evaluate', { code: '1+2', timeoutMs: 500 })).toMatchObject({ isError: true, text: expect.stringContaining('не подтвердил') })
+  })
+  it.each([{ code: ' ' }, { code: '1+2', timeoutMs: -1 }, { code: '1+2', timeoutMs: 15001 }])('невалидный evaluate не исполняется: %j', async args => {
+    const executor = vi.fn(async () => null)
+    await makeApp(undefined, { browserExecutor: executor })
+    expect((await call('evaluate', args)).isError).toBe(true)
+    expect(executor).not.toHaveBeenCalled()
+  })
+
+  it('диагностика передаёт вкладку и курсор в Chromium', async () => {
+    const executor = vi.fn(async () => ({ ok: true, result: { ok: true, console: [], cursor: 17, total: 0 } }))
+    await makeApp(undefined, { browserExecutor: executor })
+    expect((await call('console', { tabId: 't2', since: 4, before: 20, pattern: '[x]', clear: true, limit: 3 })).isError).not.toBe(true)
+    expect(executor).toHaveBeenCalledWith(U, CONV, { kind: 'console', tabId: 't2', since: 4, before: 20, pattern: '[x]', clear: true, limit: 3 })
+  })
+  it('устаревший раннер не подтверждает чтение по курсору', async () => {
+    await makeApp(undefined, { browserExecutor: async () => ({ ok: true, result: { ok: true, console: [] } }) })
+    expect(await call('console', { since: 1 })).toMatchObject({ isError: true, text: expect.stringContaining('не подтвердил') })
+  })
+  it.each([['console', { since: 1 }], ['network', { failedOnly: true }], ['console', { allTabs: true }]])('расширенный %s не теряет параметры в fallback', async (name, args) => {
+    await makeApp()
+    const forwarded = vi.fn(); client = forwarded
+    expect(await call(name as string, args as Record<string, unknown>)).toMatchObject({ isError: true, text: expect.stringContaining('Chromium') })
+    expect(forwarded).not.toHaveBeenCalled()
+  })
+  it.each([{ allTabs: true, tabId: 't' }, { since: 4, before: 2 }, { limit: 1.5 }])('невалидный запрос журналов не исполняется: %j', async args => {
+    const executor = vi.fn(async () => null)
+    await makeApp(undefined, { browserExecutor: executor })
+    expect((await call('console', args)).isError).toBe(true)
+    expect(executor).not.toHaveBeenCalled()
+  })
+
+  it('управление вкладками не уходит в iframe и не вызывается без токена хода', async () => {
+    const control = vi.fn(async () => null)
+    const forwarded = vi.fn()
+    await makeApp(undefined, { browserControl: control })
+    client = forwarded
+    expect((await call('tabs', {}, `?k=${SECRET}&turn=invalid`)).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
+    expect(await call('tabs')).toMatchObject({ isError: true, text: expect.stringContaining('Playwright Reader') })
+    expect(forwarded).not.toHaveBeenCalled()
+  })
+
+  it('новая вкладка применяет доступный machine.internal и отвергает неверные URL', async () => {
+    const control = vi.fn(async () => ({ ok: true }))
+    await makeApp({ machineOf: async () => 'agent-7', testUsersOf: async () => [] }, { browserControl: control })
+    expect((await call('new-tab', { url: 'http://machine.internal:5173/#/make' })).isError).not.toBe(true)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'newTab', url: 'http://agent-7.machine.internal:5173/#/make' })
+    control.mockClear()
+    expect((await call('new-tab', { url: 'file:///tmp/data' })).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
   })
 
   it('errors, wait, back и edits доходят до клиента как действия', async () => {
@@ -183,6 +354,100 @@ describe('previewMcp — инструменты browser', () => {
     const reset = await call('reset-session', { host: 'agent-1.machine.internal' })
     expect(reset.text).toContain('Сброшено cookie: 2')
     expect(clears).toEqual(['agent-1.machine.internal'])
+  })
+
+  it('каталог и чтение файла маршрутизируются по подписанному разговору', async () => {
+    const download = { id: 'd', tabId: 't', filename: 'file.txt', url: 'https://site.test/export', state: 'completed' as const, bytes: 3, startedAt: 1 }
+    const control = vi.fn().mockResolvedValueOnce({ ok: true, result: { ok: true, downloads: [download], total: 1, offset: 0 } }).mockResolvedValueOnce({ ok: true, result: { ok: true, download, encoding: 'text', text: 'abc', offset: 0, total: 3 } })
+    await makeApp(undefined, { browserControl: control })
+    expect(JSON.parse((await call('downloads', { tabId: 't', offset: 0 })).text).downloads[0]).toEqual(download)
+    expect(control).toHaveBeenLastCalledWith(U, CONV, { type: 'downloads', tabId: 't', offset: 0 })
+    expect(JSON.parse((await call('read-download', { downloadId: 'd', encoding: 'text', offset: 0 })).text).text).toBe('abc')
+    expect(control).toHaveBeenLastCalledWith(U, CONV, { type: 'readDownload', downloadId: 'd', encoding: 'text', offset: 0 })
+  })
+
+  it.each(['downloads', 'read-download', 'cancel-download', 'delete-download'])('старый ready не подтверждает %s', async name => {
+    await makeApp(undefined, { browserControl: vi.fn(async () => ({ ok: true, result: { state: 'ready' } })) as never })
+    expect((await call(name, name === 'downloads' ? {} : { downloadId: 'd' })).isError).toBe(true)
+  })
+
+  it('порция бинарного файла для модели ограничивается до вызова раннера', async () => {
+    const control = vi.fn(async () => null)
+    await makeApp(undefined, { browserControl: control })
+    expect((await call('read-download', { downloadId: 'd', encoding: 'base64', limit: 8193 })).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
+  })
+
+  it.each(['cancel-download', 'delete-download'])('%s требует подтверждения конкретного файла', async name => {
+    const download = { id: 'd', tabId: 't', filename: 'file.txt', url: '', state: 'canceled' as const, startedAt: 1 }
+    const result = name === 'cancel-download' ? { ok: true, download } : { ok: true, deletedDownloadId: 'd' }
+    const control = vi.fn().mockResolvedValueOnce({ ok: true, result }).mockResolvedValueOnce({ ok: true, result: { ...result, download: { ...download, id: 'wrong' }, deletedDownloadId: 'wrong' } })
+    await makeApp(undefined, { browserControl: control })
+    expect((await call(name, { downloadId: 'd' })).isError).not.toBe(true)
+    expect((await call(name, { downloadId: 'd' })).isError).toBe(true)
+  })
+
+  it('dialogs возвращает диалог конкретной вкладки без контекста прокси', async () => {
+    const result = { ok: true as const, dialogs: [{ id: 'd', tabId: 't', type: 'prompt' as const, message: 'Имя', defaultValue: 'Черновик', openedAt: 1 }], total: 1 }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    await makeApp(undefined, { browserControl: control })
+    expect(JSON.parse((await call('dialogs', { tabId: 't' })).text)).toEqual(result)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'dialogs', tabId: 't' })
+  })
+
+  it.each([true, false])('handle-dialog передаёт явный ответ %s', async accept => {
+    const result = { id: 'c', conversationId: 'c', currentUrl: null, title: null, incarnation: 'i', state: 'ready' as const, activeTabId: '', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, dialogs: [] }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    await makeApp(undefined, { browserControl: control })
+    const args = { dialogId: 'd', accept, ...(accept ? { promptText: '' } : {}) }
+    expect((await call('handle-dialog', args)).isError).not.toBe(true)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'handleDialog', ...args })
+  })
+
+  it.each(['dialogs', 'handle-dialog'])('старый раннер не подтверждает %s общим ready', async name => {
+    await makeApp(undefined, { browserControl: vi.fn(async () => ({ ok: true, result: { state: 'ready' } })) as never })
+    expect((await call(name, name === 'dialogs' ? {} : { dialogId: 'd', accept: true })).isError).toBe(true)
+  })
+
+  it.each([{ dialogId: 'd', accept: false, promptText: 'ignored' }, { dialogId: 'd' }, { dialogId: '', accept: true }, { dialogId: 'd', accept: 'true' }, { dialogId: 'd', accept: true, promptText: 'x'.repeat(20001) }])('невалидный ответ не отправляется в браузер', async args => {
+    const control = vi.fn(async () => null)
+    await makeApp(undefined, { browserControl: control })
+    expect((await call('handle-dialog', args)).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
+  })
+
+  it('reset-session очищает Chromium и jar прокси после подтверждённого успеха', async () => {
+    const result = { ok: true, clearedCookies: 3, clearedOrigins: ['https://mail.example.com'] }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    const clearCookies = vi.fn(() => 2)
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], clearCookies }, { browserControl: control })
+    expect((await call('reset-session', { host: 'MAIL.EXAMPLE.COM' })).isError).not.toBe(true)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'clearSiteData', scope: 'all', host: 'mail.example.com' })
+    expect(clearCookies).toHaveBeenCalledWith(expect.objectContaining({ userId: U, conversationId: CONV }), 'mail.example.com')
+  })
+
+  it('reset-session доступен нативному Reader без контекста Web Reader', async () => {
+    const result = { ok: true, clearedCookies: 0, clearedOrigins: [] }
+    const control = vi.fn(async () => ({ ok: true, result }))
+    await makeApp(undefined, { browserControl: control })
+    expect(JSON.parse((await call('reset-session')).text)).toEqual(result)
+    expect(control).toHaveBeenCalledWith(U, CONV, { type: 'clearSiteData', scope: 'all' })
+  })
+
+  it.each([{ ok: false, error: 'CDP недоступен' }, { ok: true, result: { state: 'ready' } }])('ошибка нативной очистки не выдаётся за успех jar: %j', async outcome => {
+    const clearCookies = vi.fn(() => 2)
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], clearCookies }, { browserControl: vi.fn(async () => outcome) as never })
+    expect((await call('reset-session')).isError).toBe(true)
+    expect(clearCookies).not.toHaveBeenCalled()
+  })
+
+  it('ошибочный host не вызывает очистку ни в Chromium, ни в jar', async () => {
+    const clearCookies = vi.fn(() => 2)
+    const control = vi.fn(async () => null)
+    await makeApp({ machineOf: async () => null, testUsersOf: async () => [], clearCookies }, { browserControl: control })
+    expect((await call('reset-session', { host: 'https://mail.example.com' })).isError).toBe(true)
+    expect(control).not.toHaveBeenCalled()
+    expect(clearCookies).not.toHaveBeenCalled()
   })
 
   it('environment без окружений объясняет, как их поднять', async () => {
@@ -439,6 +704,41 @@ describe('previewMcp — снимок из изолированного Chromium
 
   afterEach(async () => { await app.close() })
 
+  it.each([
+    { rect: { x: 40, y: 900, width: 160, height: 90 } },
+    { fullPage: true },
+    { animations: 'disabled' },
+    { timeoutMs: 100 }
+  ])('параметры снимка %j доходят до Chromium без потерь', async (args) => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    const capture = vi.fn(async () => ({ ok: true, result: { dataUrl: `data:image/png;base64,${PNG}` } }))
+    registerPreviewMcp(app, { secret: SECRET, relay, browserScreenshot: capture })
+    await app.ready()
+    expect((await call('screenshot', args)).isError).not.toBe(true)
+    expect(capture).toHaveBeenCalledWith(U, CONV, args)
+  })
+
+  it('конфликт selector/rect возвращает ошибку вместо другого снимка', async () => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    const capture = vi.fn(async () => ({ ok: true, result: { dataUrl: `data:image/png;base64,${PNG}` } }))
+    registerPreviewMcp(app, { secret: SECRET, relay, browserScreenshot: capture })
+    await app.ready()
+    expect((await call('screenshot', { selector: '.card', rect: { x: 0, y: 0, width: 20, height: 20 } })).isError).toBe(true)
+    expect(capture).not.toHaveBeenCalled()
+  })
+
+  it('режим fullPage не подменяется обычным снимком iframe', async () => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    const forward = vi.spyOn(relay, 'request')
+    registerPreviewMcp(app, { secret: SECRET, relay, browserScreenshot: async () => null })
+    await app.ready()
+    expect(await call('screenshot', { fullPage: true })).toMatchObject({ isError: true, text: expect.stringContaining('Playwright Reader') })
+    expect(forward).not.toHaveBeenCalled()
+  })
+
   it('снимок берётся у раннера, а не у браузера пользователя', async () => {
     app = Fastify({ logger: false })
     relay = new PreviewActionRelay()
@@ -450,6 +750,8 @@ describe('previewMcp — снимок из изолированного Chromium
     await app.ready()
     const result = await call('screenshot')
     expect(result.image?.data).toBe(PNG)
+    expect(result.text).toContain('http://x')
+    expect(result.text).toContain('X')
     expect(relaySpy).not.toHaveBeenCalled()
   })
 

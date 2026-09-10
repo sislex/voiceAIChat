@@ -99,7 +99,9 @@ describe('Web Reader: единый разговор в полном Chromium', (
     const before = await command({ type: 'inspect', action: { kind: 'evaluate', code: 'window.marker' } })
     await mcp('click', { selector: '#next' })
     await expect.poll(async () => (await api('/api/conversations/' + id + '?scope=web-reader')).conversation.previewUrl, { timeout: 6000 }).toBe(target + '?step=2#/next')
-    expect(await command({ type: 'inspect', action: { kind: 'evaluate', code: 'window.marker' } })).toEqual(before)
+    expect(before).toMatchObject({ ok: true, valueType: 'number' })
+    // Время выполнения каждого evaluate различается; перезагрузку выявляет marker.
+    expect(await command({ type: 'inspect', action: { kind: 'evaluate', code: 'window.marker' } })).toMatchObject({ ok: true, value: before.value, valueType: 'number' })
   })
   it('обновление кадра не стирает редактируемый адрес', async () => {
     await start(); await mcp('open', { url: target }); const input = page.getByRole('textbox', { name: 'Адрес страницы' })

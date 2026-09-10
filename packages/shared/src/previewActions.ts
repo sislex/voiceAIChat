@@ -1,3 +1,5 @@
+import { BROWSER_EVALUATE_CODE_LIMIT, normalizeBrowserEvaluateOptions, type BrowserEvaluateOptions } from './browserEvaluation'
+import { normalizeBrowserDiagnosticOptions, type BrowserConsoleOptions, type BrowserNetworkOptions } from './browserDiagnostics'
 // Управление открытым сайтом в панели превью и чтение его DOM из хода модели.
 //
 // Три берега одного протокола:
@@ -10,7 +12,10 @@
 // Здесь — типы действий, лимиты и runtime-валидаторы конвертов. Чистые функции:
 // без DOM и сети, чтобы обе стороны (сервер и UI) проверяли одно и то же.
 
+import { isBrowserFramePath, type BrowserFrameTarget } from './browserFrames'
 import type { BrowserActionOutcome } from './playwrightReader'
+import { BROWSER_UPLOAD_LIMIT_BYTES } from './browserLimits'
+import { isBrowserWaitOptions, type BrowserWaitOptions } from './browserWaiting'
 
 export const PREVIEW_ACTION_COMMAND_TYPE = 'voicechat.preview.action.v1' as const
 export const PREVIEW_ACTION_RESULT_TYPE = 'voicechat.preview.action-result.v1' as const
@@ -39,10 +44,10 @@ export const PREVIEW_ACTION_LIMITS = {
   /** Отдельный кап результата со снимком (dataUrl не влезает в resultJson). */
   screenshotJson: 2_000_000,
   /** Код evaluate и сериализованное значение его результата. */
-  evaluateCode: 4_000,
+  evaluateCode: BROWSER_EVALUATE_CODE_LIMIT,
   evaluateValue: 8_000,
-  /** Файл upload: base64-содержимое (~1 МБ бинарных данных). */
-  uploadBase64: 1_500_000,
+  /** Файл upload: до 8 МиБ бинарных данных с учётом увеличения в base64. */
+  uploadBase64: Math.ceil(BROWSER_UPLOAD_LIMIT_BYTES / 3) * 4,
   /** Журналы network/console: сколько записей отдаётся за раз. */
   logDefault: 50,
   logMax: 100,
@@ -62,18 +67,18 @@ export interface PreviewDragPoint {
 }
 
 /** Действие браузера, запрошенное моделью. `open` выполняет сам UI (без iframe). */
-export type PreviewAction =
+export type PreviewAction = BrowserFrameTarget & (
   | { kind: 'open'; url: string; diagnostic?: boolean }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number; diagnostic?: boolean }
+  | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean; diagnostic?: boolean }
   /** Клик: обычный, двойной (dblclick), правый (button: right) и с модификаторами. */
   | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; dblclick?: boolean; modifiers?: PreviewClickModifier[]; diagnostic?: boolean }
   | { kind: 'type'; selector: string; text: string; submit?: boolean; diagnostic?: boolean }
-  | { kind: 'read'; selector?: string; diagnostic?: boolean }
+  | { kind: 'read'; selector?: string; limit?: number; offset?: number; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   | { kind: 'hover'; selector?: string; text?: string; diagnostic?: boolean }
   /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
-  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dy?: number; diagnostic?: boolean }
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
   | { kind: 'press'; key: string; selector?: string; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
@@ -81,7 +86,7 @@ export type PreviewAction =
   /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
   | { kind: 'errors'; clear?: boolean; diagnostic?: boolean }
   /** Дождаться появления элемента (selector или видимый text) с таймаутом. */
-  | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number; diagnostic?: boolean }
+  | ({ kind: 'wait'; diagnostic?: boolean } & BrowserWaitOptions)
   /** Назад по истории внутренней страницы (переход подтверждается page-ready). */
   | { kind: 'back'; diagnostic?: boolean }
   /** Вперёд по истории внутренней страницы (симметрично back). */
@@ -89,11 +94,11 @@ export type PreviewAction =
   /** Сохранённые правки edit-режима текущей страницы (перенести «как поправил» в код). */
   | { kind: 'edits'; diagnostic?: boolean }
   /** Журнал сетевых запросов страницы (fetch/XHR/beacon): фильтр по подстроке URL. */
-  | { kind: 'network'; filter?: string; clear?: boolean; limit?: number; diagnostic?: boolean }
+  | ({ kind: 'network'; diagnostic?: boolean } & BrowserNetworkOptions)
   /** Журнал console.log/info/warn/error страницы: фильтр по подстроке и уровню. */
-  | { kind: 'console'; pattern?: string; level?: 'log' | 'info' | 'warn' | 'error'; clear?: boolean; limit?: number; diagnostic?: boolean }
+  | ({ kind: 'console'; diagnostic?: boolean } & Omit<BrowserConsoleOptions, 'regex'>)
   /** Выполнить JS в контексте страницы; результат сериализуется JSON (кап evaluateValue). */
-  | { kind: 'evaluate'; code: string; diagnostic?: boolean }
+  | ({ kind: 'evaluate'; diagnostic?: boolean } & BrowserEvaluateOptions)
   /** Перетаскивание pointer-событиями (или HTML5 DnD у draggable) от from к to. */
   | { kind: 'drag'; from: PreviewDragPoint; to: PreviewDragPoint; diagnostic?: boolean }
   /** Установить значение сложного контрола: select (по value или подписи option), checkbox/radio (checked), date/range (value). */
@@ -104,6 +109,7 @@ export type PreviewAction =
   | { kind: 'viewport'; width: number; diagnostic?: boolean }
   /** Дерево доступности страницы: роли и имена как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number; diagnostic?: boolean }
+)
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
 export type PreviewDomAction = Exclude<PreviewAction, { kind: 'open' }>
@@ -158,6 +164,10 @@ export interface PreviewReadResult {
   inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; expanded?: boolean; selected?: boolean; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean }[]
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
+  total?: number
+  offset?: number
+  nextOffset?: number
+  truncated?: boolean
 }
 
 export interface PreviewOpenResult {
@@ -179,7 +189,7 @@ export interface PreviewScrollResult {
   page: PreviewPageInfo
   /** Что прокручено: окно или контейнер по селектору. */
   target: string
-  scrolled: { top: number; left: number; maxTop: number }
+  scrolled: { top: number; left: number; maxTop: number; maxLeft?: number }
 }
 
 export interface PreviewPressResult {
@@ -379,6 +389,7 @@ function optBounded(value: unknown, max: number): boolean {
 /** Валидатор действия (вход инструмента уже проверил zod — это проверка КОНВЕРТА). */
 export function isPreviewAction(value: unknown): value is PreviewAction {
   if (!record(value)) return false
+  if (value.frame !== undefined && !isBrowserFramePath(value.frame)) return false
   const L = PREVIEW_ACTION_LIMITS
   switch (value.kind) {
     case 'open':
@@ -388,6 +399,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.text, L.text) &&
         optBounded(value.selector, L.selector) &&
         (value.limit === undefined || (typeof value.limit === 'number' && Number.isFinite(value.limit))) &&
+        (value.visibleOnly === undefined || typeof value.visibleOnly === 'boolean') &&
         (value.text !== undefined || value.selector !== undefined)
       )
     case 'click':
@@ -403,7 +415,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return bounded(value.selector, L.selector) && bounded(value.text, L.text) &&
         (value.submit === undefined || typeof value.submit === 'boolean')
     case 'read':
-      return optBounded(value.selector, L.selector)
+      return optBounded(value.selector, L.selector) &&
+        (value.limit === undefined || (typeof value.limit === 'number' && Number.isInteger(value.limit) && value.limit >= 100 && value.limit <= 20_000)) &&
+        (value.offset === undefined || (typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0))
     case 'styles':
       return bounded(value.selector, L.selector) &&
         (value.properties === undefined || (Array.isArray(value.properties) && value.properties.length <= 32 && value.properties.every((item) => bounded(item, 100))))
@@ -418,7 +432,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.selector, L.selector) &&
         (value.to === undefined || value.to === 'top' || value.to === 'bottom') &&
         (value.dy === undefined || (typeof value.dy === 'number' && Number.isFinite(value.dy) && Math.abs(value.dy) <= 100_000)) &&
-        (value.to !== undefined || value.dy !== undefined)
+        (value.dx === undefined || (typeof value.dx === 'number' && Number.isFinite(value.dx) && Math.abs(value.dx) <= 100_000)) &&
+        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined)
       )
     case 'press':
       return (
@@ -436,31 +451,31 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'errors':
       return value.clear === undefined || typeof value.clear === 'boolean'
     case 'wait':
-      return (
-        optBounded(value.selector, L.selector) &&
-        optBounded(value.text, L.text) &&
-        (value.selector !== undefined || value.text !== undefined) &&
-        (value.timeoutMs === undefined || (typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs) && value.timeoutMs > 0 && value.timeoutMs <= 8_000))
-      )
+      return isBrowserWaitOptions(value)
     case 'back':
     case 'forward':
     case 'edits':
       return true
     case 'network':
       return (
+        validDiagnosticOptions(value) &&
+        (value.state === undefined || ['pending', 'response', 'completed', 'failed'].includes(value.state as string)) &&
+        optBounded(value.resourceType, 100) &&
+        (value.failedOnly === undefined || typeof value.failedOnly === 'boolean') &&
         optBounded(value.filter, 300) &&
         (value.clear === undefined || typeof value.clear === 'boolean') &&
         logLimit(value.limit)
       )
     case 'console':
       return (
+        validDiagnosticOptions(value) &&
         optBounded(value.pattern, 300) &&
         (value.level === undefined || value.level === 'log' || value.level === 'info' || value.level === 'warn' || value.level === 'error') &&
         (value.clear === undefined || typeof value.clear === 'boolean') &&
         logLimit(value.limit)
       )
     case 'evaluate':
-      return bounded(value.code, L.evaluateCode)
+      try { normalizeBrowserEvaluateOptions(value as unknown as BrowserEvaluateOptions); return true } catch { return false }
     case 'drag':
       return isDragPoint(value.from) && isDragPoint(value.to)
     case 'set':
@@ -475,7 +490,7 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         bounded(value.selector, L.selector) &&
         bounded(value.name, 255) && value.name.length > 0 &&
         optBounded(value.mimeType, 100) &&
-        bounded(value.base64, L.uploadBase64) && value.base64.length > 0
+        bounded(value.base64, L.uploadBase64)
       )
     case 'viewport':
       return typeof value.width === 'number' && Number.isFinite(value.width) && value.width >= 0 && value.width <= 10_000
@@ -484,6 +499,10 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     default:
       return false
   }
+}
+
+function validDiagnosticOptions(value: Record<string, unknown>): boolean {
+  try { normalizeBrowserDiagnosticOptions(value); return true } catch { return false }
 }
 
 function logLimit(value: unknown): boolean {
@@ -572,17 +591,33 @@ export function previewToolHint(surface: 'panel' | 'chromium' = 'panel'): string
     : 'Рядом с чатом у пользователя открыта панель веб-превью. Управляй ею инструментами mcp__browser__*: '
   return (
     opening +
-    'open {url} — открыть сайт в превью; read {selector?} — структурированное содержимое страницы ' +
-    '(заголовки, ссылки, кнопки, поля ввода); find {text|selector, limit?} — найти элементы; ' +
+    'open {url} — открыть сайт в превью; read {selector?, limit?, offset?} — структурированное содержимое страницы ' +
+    '(заголовки, ссылки, кнопки, поля ввода); nextOffset продолжает длинный текст. find {text|selector, limit?, visibleOnly?} — найти элементы; ' +
+    'В Chromium read включает открытый Shadow DOM и слоты; закрытые roots недоступны. ' +
+    'Селекторы из read/find передавай в следующее действие целиком, включая >> nth; после изменения DOM повтори поиск. ' +
+    'В Chromium selector вместе с text ограничивает click, hover и find текстом внутри селектора. ' +
     'click {selector|text} — клик по элементу; type {selector, text, submit?} — ввести текст в поле. ' +
     'Действия выполняются только на странице, открытой в превью активного чата пользователя. ' +
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +
     'После open или click, ведущего к переходу, страница загружается заново — перечитай её read перед следующим действием. ' +
     'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom | dy, selector?} — ' +
     'прокрутить окно или контейнер (ленивые ленты); press {key, selector?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…); ' +
-    'screenshot {selector? | rect?} — картинка элемента, области или видимой части страницы, когда важен внешний вид, а не текст; ' +
+    'screenshot {selector? | rect? | fullPage?, animations?, timeoutMs?} — картинка элемента, области или видимой части страницы. ' +
+    'В Chromium fullPage снимает всю страницу, animations: disabled стабилизирует кадр; timeoutMs ограничивает ожидание, по умолчанию 10000 мс. ' +
+    'Координаты снимка Chromium и действий — CSS px; rect задаётся в координатах документа; ' +
     'errors {clear?} — накопленные ошибки страницы (JS-исключения, console.error, упавшие запросы) — проверяй их после действий при тестировании; ' +
-    'wait {selector|text, timeoutMs?} — дождаться появления элемента (асинхронные SPA); back/forward — по истории страницы; ' +
+    'wait {selector|text, timeoutMs?} — дождаться появления элемента; в Chromium selector вместе с text ждёт текст внутри элемента. ' +
+    'Дополнительные условия wait в Chromium: state (attached/detached/visible/hidden), enabled, editable, checked, value, count, url (шаблон с *), loadState (domcontentloaded/load), predicate (синхронное JS-условие). ' +
+    'Условия делят один timeoutMs до 30000 мс; count включает скрытые узлы, по умолчанию видимость проверяется только без count. Для SPA жди нужное содержимое или predicate, один load не означает готовность приложения. ' +
+    'back/forward — по истории страницы; ' +
+    'В Chromium frames перечисляет живые iframe: передавай path как frame в read/find/click/type/hover/scroll/wait/set/upload/a11y/evaluate/styles/open/screenshot. ' +
+    'frame — селектор iframe или цепочка до восьми уровней, работает и для документов другого origin; без него действие адресуется верхней странице. Селекторы read/find относительны выбранному frame. ' +
+    'open с frame меняет только вложенный документ. press с frame требует selector, drag — два селектора. ' +
+    'Снимок frame показывает видимую область; selector ограничивает её элементом, clipped сообщает усечение. fullPage и rect используются без frame. ' +
+    'styles {selector, properties?, frame?} — вычисленные CSS-свойства. ' +
+    'В Playwright Reader и Chromium-проверке также доступны tabs — список вкладок с id; new-tab {url?}; ' +
+    'select-tab {tabId}; close-tab {tabId}; reload — перезагрузка; stop-loading — остановка загрузки без закрытия сессии. ' +
+    'После открытия popup вызови tabs, найди его по openerTabId и выбери select-tab перед чтением или вводом. ' +
     'edits — правки, сделанные пользователем в режиме «Редактировать» (перенеси их в код, если просят «сделай как я поправил»); ' +
     'network {filter?, clear?} — журнал fetch/XHR-запросов страницы (метод, реальный URL, статус, длительность); ' +
     'console {pattern?, level?, clear?} — журнал console.log/info/warn/error; ' +

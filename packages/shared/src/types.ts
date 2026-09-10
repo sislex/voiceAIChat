@@ -1,5 +1,12 @@
+import type { BrowserEvaluateOptions, BrowserEvaluationSummary } from './browserEvaluation'
+import type { BrowserConsoleOptions, BrowserDiagnosticValue, BrowserLogContext, BrowserLogSummary, BrowserNetworkOptions, BrowserNetworkState } from './browserDiagnostics'
+import type { BrowserDownloadCommand, BrowserDownloadInfo } from './browserDownloads'
+import type { BrowserDialogAnswer, BrowserDialogInfo } from './browserDialogs'
+import type { BrowserProfileMode, BrowserSiteDataResetOptions } from './browserProfile'
 // Общие типы, разделяемые между main, preload и renderer.
 
+import type { BrowserFrameContext, BrowserFrameTarget } from './browserFrames'
+import type { BrowserWaitOptions } from './browserWaiting'
 import type { PreviewElementPayload } from './previewInspector'
 
 /** Состояния голосового пайплайна. */
@@ -136,10 +143,13 @@ export interface BrowserViewport {
 }
 
 export interface BrowserTab {
+  dialogId?: string
   id: string
   url: string
   title: string
   active: boolean
+  /** Вкладка, открывшая popup; нужна модели для продолжения после входа. */
+  openerTabId?: string
 }
 
 export interface BrowserError {
@@ -150,6 +160,11 @@ export interface BrowserError {
 }
 
 export interface BrowserSessionMetadata {
+  downloads?: BrowserDownloadInfo[]
+  downloadCount?: number
+  dialogs?: BrowserDialogInfo[]
+  dialogCount?: number
+  profileMode?: BrowserProfileMode
   id: string
   conversationId: string
   incarnation: string
@@ -189,8 +204,9 @@ export type BrowserInputAction =
   | { type: 'mouseMove'; x: number; y: number }
   | { type: 'mouseDown'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
   | { type: 'mouseUp'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
-  | { type: 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right'; clickCount?: 1 | 2 }
-  | { type: 'wheel'; deltaX: number; deltaY: number }
+  | { type: 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'>; detail?: 1 | 2 }
+  | { type: 'wheel'; deltaX: number; deltaY: number; x?: number; y?: number }
+  | { type: 'drag'; from: { x: number; y: number }; to: { x: number; y: number } }
   | { type: 'type'; text: string }
   | { type: 'press'; key: string }
   | { type: 'keyDown'; key: string }
@@ -203,11 +219,13 @@ export type BrowserInputAction =
  * один вызов локатора, поэтому разрыв закрывается контрактом, а не обвязкой.
  */
 export type BrowserSelectorAction =
-  | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2 }
+  | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2; modifiers?: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> }
+  | { kind: 'press'; selector: string; key: string }
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number }
   | { kind: 'type'; selector: string; text: string; submit?: boolean }
-  | { kind: 'read'; selector?: string; limit?: number }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number }
-  | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number }
+  | { kind: 'read'; selector?: string; limit?: number; offset?: number }
+  | { kind: 'find'; text?: string; selector?: string; limit?: number; visibleOnly?: boolean }
+  | ({ kind: 'wait' } & BrowserWaitOptions)
   /** Наведение курсора: выпадающие меню и тултипы иначе не открыть. */
   | { kind: 'hover'; selector?: string; text?: string }
   /** Сложный контрол: select по значению или подписи, checkbox/radio, date/range. */
@@ -230,10 +248,27 @@ export type BrowserSelectorAction =
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
   ok: boolean
+  frame?: BrowserFrameContext
+  /** После клика/ввода мог произойти переход; модель должна видеть реальную страницу. */
+  page?: { url: string; title: string }
   /** Текст страницы, найденного узла (`read`) или снимок дерева ролей (`a11y`). */
   text?: string
   /** Совпадения для `find`: селектор, видимый текст и признак видимости. */
   matches?: Array<{ selector: string; text: string; visible: boolean }>
+  /** Число символов read или совпадений find до применения лимита. */
+  total?: number
+  offset?: number
+  nextOffset?: number
+  scrolled?: { top: number; left: number; maxTop: number; maxLeft: number }
+  waitedMs?: number
+  headings?: Array<{ level: number; text: string }>
+  links?: Array<{ text: string; href: string }>
+  buttons?: string[]
+  inputs?: Array<{ selector: string; type: string; name: string; placeholder: string; value: string; label?: string; disabled?: boolean; checked?: boolean }>
+  tables?: Array<{ selector: string; caption: string; rows: string[][]; totalRows: number; totalColumns: number; truncated?: boolean }>
+  frames?: Array<{ selector: string; src: string; title: string; name: string }>
+  /** Структура ограничивается отдельно от порции текста, не ломая JSON ответа. */
+  structureTruncated?: boolean
   /** Описание элемента под точкой (`describe`). */
   element?: BrowserElementDescription
   /**
@@ -247,6 +282,8 @@ export interface BrowserSelectorResult {
 
 /** Элемент кадра, пригодный для шага сценария и для разбора вёрстки. */
 export interface BrowserElementDescription {
+  /** Документы от верхнего к выбранному: селектор элемента относителен последнему. */
+  frame?: string[]
   /** Устойчивый селектор: data-testid → id → aria-label → роль → путь по тегам. */
   selector: string
   /** Насколько селектор надёжен: по testid переживает правки вёрстки, по пути — нет. */
@@ -265,21 +302,43 @@ export interface BrowserElementDescription {
  * текст, но не знает об ошибках страницы и упавших запросах.
  */
 export type BrowserInspectAction =
-  | { kind: 'console'; level?: 'log' | 'info' | 'warn' | 'error'; pattern?: string; limit?: number; clear?: boolean }
-  | { kind: 'network'; filter?: string; limit?: number; clear?: boolean }
+  | ({ kind: 'console' } & BrowserConsoleOptions)
+  | ({ kind: 'network' } & BrowserNetworkOptions)
   | { kind: 'styles'; selector: string; properties?: string[] }
   /**
    * Выполнить JS в контексте страницы. Гейт (политика проекта и подтверждение
    * опасного кода) стоит на уровне MCP-инструмента, до выбора транспорта, и
    * действует на этот путь так же, как на превью пользователя.
    */
-  | { kind: 'evaluate'; code: string }
+  | ({ kind: 'evaluate' } & BrowserEvaluateOptions)
 
-export interface BrowserConsoleEntry { level: string; text: string; at: number }
-export interface BrowserNetworkEntry { method: string; url: string; status: number; ok: boolean; at: number }
+export interface BrowserConsoleEntry extends BrowserLogContext {
+  level: string; text: string; at: number
+  sourceType?: string
+  textTruncated?: boolean
+  source?: { url: string; line?: number; column?: number }
+  args?: BrowserDiagnosticValue[]
+  argsPending?: boolean
+  argsTruncated?: boolean
+  argsUnavailable?: boolean
+  stack?: string
+  stackTruncated?: boolean
+}
+export interface BrowserNetworkEntry extends BrowserLogContext {
+  method: string; url: string; status: number; ok: boolean; at: number
+  state?: BrowserNetworkState
+  resourceType?: string
+  durationMs?: number
+  error?: string
+  download?: boolean
+  redirectedFrom?: string
+  redirectedTo?: string
+}
 
-export interface BrowserInspectResult {
+export interface BrowserInspectResult extends BrowserLogSummary, BrowserEvaluationSummary {
   ok: boolean
+  page?: { url: string; title: string }
+  frame?: BrowserFrameContext
   /** JSON-сериализованный результат `evaluate`. */
   value?: unknown
   console?: BrowserConsoleEntry[]
@@ -288,10 +347,40 @@ export interface BrowserInspectResult {
   error?: string
 }
 
-export type BrowserCommand =
-  /** Метаданные без изменения страницы и автора последнего действия. */
+export interface BrowserScreenshotRect { x: number; y: number; width: number; height: number }
+
+export interface BrowserScreenshotOptions extends BrowserFrameTarget {
+  fullPage?: boolean
+  selector?: string
+  rect?: BrowserScreenshotRect
+  format?: 'png' | 'jpeg' | 'webp'
+  quality?: number
+  scale?: 'css' | 'device'
+  animations?: 'allow' | 'disabled'
+  timeoutMs?: number
+}
+
+/** Координаты документа в CSS px, снятые у той же страницы, что изображение. */
+export interface BrowserScreenshotMetadata {
+  frame?: BrowserFrameContext
+  /** Элемент выходит за границу iframe; снята только видимая часть. */
+  clipped?: boolean
+  page: { url: string; title: string }
+  rect: BrowserScreenshotRect
+  scale: 'css' | 'device'
+}
+
+export const BROWSER_SCREENSHOT_HEADER = 'x-vc-browser-screenshot'
+
+export type BrowserCommand = BrowserFrameTarget & (
+  /** Пассивное наблюдение: адрес и вкладки обновляются и после действий модели. */
   | { type: 'status' }
-  /** Управление и отмена очереди доступны только человеку. Текущее действие завершается. */
+  | { type: 'frames' }
+  | BrowserDownloadCommand
+  | { type: 'dialogs'; tabId?: string }
+  | ({ type: 'handleDialog' } & BrowserDialogAnswer)
+  | ({ type: 'clearSiteData' } & BrowserSiteDataResetOptions)
+  /** Передача управления и отмена очереди доступны только человеку. */
   | { type: 'control'; owner: 'shared' | 'user' }
   | { type: 'cancel' }
   | { type: 'navigate'; url: string }
@@ -300,10 +389,11 @@ export type BrowserCommand =
   | { type: 'back' | 'forward' | 'reload' | 'stop' }
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
-  | { type: 'resize'; viewport: BrowserViewport }
+  | { type: 'resize'; viewport: Pick<BrowserViewport, 'width'> & Partial<Pick<BrowserViewport, 'height' | 'deviceScaleFactor'>> }
   | { type: 'input'; action: BrowserInputAction }
   /** Снимок: всей страницы, вьюпорта или узла по селектору. */
-  | { type: 'screenshot'; fullPage?: boolean; selector?: string; format?: 'png' | 'jpeg' | 'webp'; quality?: number }
+  | ({ type: 'screenshot' } & BrowserScreenshotOptions)
+)
 
 export interface BrowserCommandRequest {
   requestId: string
