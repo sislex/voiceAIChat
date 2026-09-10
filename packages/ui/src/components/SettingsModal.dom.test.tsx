@@ -196,14 +196,14 @@ describe('SettingsModal — модели Codex', () => {
     renderModal('admin', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex' }, onChange })
     const select = screen.getByLabelText('Модель Codex')
     const opts = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
-    expect(opts).toEqual(['gpt-5.6-sol', 'gpt-6-astra', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'])
-    await userEvent.selectOptions(select, 'gpt-6-astra')
-    expect(onChange).toHaveBeenCalledWith({ codexModel: 'gpt-6-astra' })
+    expect(opts).toEqual(['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5'])
+    await userEvent.selectOptions(select, 'gpt-5.5')
+    expect(onChange).toHaveBeenCalledWith({ codexModel: 'gpt-5.5' })
   })
 
   // @testCase TC-UI-2
   it('персональный запрет скрывает только gpt-6-astra', () => {
-    renderModal('developer', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex' }, llmAccess: [{ provider: 'codex', modelId: 'gpt-6-astra' }] })
+    renderModal('developer', { settings: { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' }, llmAccess: [{ provider: 'codex', modelId: 'gpt-6-astra' }] })
     const values = within(screen.getByLabelText('Модель Codex')).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)
     expect(values).not.toContain('gpt-6-astra')
     expect(values).toContain('gpt-5.6-sol')

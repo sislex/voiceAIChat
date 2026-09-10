@@ -117,13 +117,13 @@ INSERT OR IGNORE INTO model_prices (provider, model, input_per_million, cached_i
   ('codex','gpt-5.6-sol',4,0.4,5,20,'[{"mode":"standard","context":"long","inputPerMillion":8,"cachedInputPerMillion":0.8,"cacheWritePerMillion":10,"outputPerMillion":30}]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
   ('codex','gpt-5.6-terra',2,0.2,2.5,12,'[{"mode":"standard","context":"long","inputPerMillion":4,"cachedInputPerMillion":0.4,"cacheWritePerMillion":5,"outputPerMillion":18}]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
   ('codex','gpt-5.6-luna',0.2,0.02,0.25,1.2,'[{"mode":"standard","context":"long","inputPerMillion":0.4,"cachedInputPerMillion":0.04,"cacheWritePerMillion":0.5,"outputPerMillion":1.8}]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
-  ('codex','gpt-5.5',5,0.5,0,30,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
-  ('codex','gpt-5.5-pro',30,0,0,180,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
-  ('codex','gpt-5.4',2.5,0.25,0,15,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
-  ('codex','gpt-5.4-mini',0.75,0.075,0,4.5,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
-  ('codex','gpt-5.4-nano',0.2,0.02,0,1.25,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
-  ('codex','gpt-5.4-pro',30,0,0,180,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000),
-  ('codex','gpt-5.3-codex',1.75,0.175,0,14,'[]','https://developers.openai.com/api/docs/pricing',1788825600000,1788825600000);
+  ('codex','gpt-5.5',5,0.5,0,30,'[]','https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.5-pro',30,0,0,180,'[]','https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4',2.5,0.25,0,15,'[]','https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4-mini',0.75,0.075,0,4.5,'[]','https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4-nano',0.2,0.02,0,1.25,'[]','https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.4-pro',30,0,0,180,'[]','https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000),
+  ('codex','gpt-5.3-codex',1.75,0.175,0,14,'[]','https://developers.openai.com/api/docs/pricing',1785801600000,1785801600000);
 
 -- Состояние бэкфилла FTS-индексов. Живёт отдельно от settings: это внутренняя
 -- служебная запись движка, а не настройка пользователя.

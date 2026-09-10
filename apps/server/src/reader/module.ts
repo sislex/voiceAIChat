@@ -4,6 +4,7 @@
 // в `ReaderDeps` — состояние процесса ядра только через порт `ReaderCore`, остальное (база,
 // машины) отдельный процесс ридера поднимает сам. Chromium — через PlaywrightReaderService.
 import type { FastifyInstance } from 'fastify'
+import { parseHostAliases } from '@voicechat/browser-runner/security'
 import { evaluateCommandLayers } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { MachinesService } from '../machines/service.js'
@@ -34,6 +35,7 @@ export function createReaderModule(deps: ReaderDeps): void {
   const { app, db, core, browser } = deps
 
   registerPreviewProxy(app, {
+    hostAliases: parseHostAliases(process.env.VC_BROWSER_HOST_ALIASES),
     machines: {
       bridge: deps.machines,
       canUse: async (userId, agentId) => await db.machines.canUseAgentForPreview(userId, agentId)

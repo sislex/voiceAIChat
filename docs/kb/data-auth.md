@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-09
-checked: 1b78b0b6
+checked: fdf0b086
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -142,6 +142,11 @@ SQL-комментариях внутри него **нельзя обратны
 | `session_revocations` | SHA-256 отозванного Bearer-токена и время отзыва; deny-list переживает рестарт сервера |
 | `llm_engines` | реестр HTTP-исполнителей LLM для админки: `name`, `kind` (`claude`/`codex`), `base_url`, открытый `token`, `enabled`, `allowed_roles` (JSON-массив ролей), `is_default`, `created_at` |
 | `model_prices` | поддерживаемые тарифы Codex/OpenAI: USD за 1M обычных, кэшированных, записанных в кэш и выходных токенов; базовые колонки означают Standard/short context, а `tiers_json` хранит дополнительные сочетания Standard/Batch/Flex/Fast mode и short/long context с nullable-ставками; источник и даты тарифа/обновления; стартовые строки обновляются только через `INSERT OR IGNORE` |
+
+**Фиксированный каталог Codex/OpenAI.** Источник продуктового порядка — `CODEX_MODELS` в `packages/shared/src/types.ts`: `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`. `DEFAULT_CODEX_MODEL` всегда берётся из первого элемента, поэтому модель по умолчанию — `gpt-6-astra`; неизвестная сохранённая модель остаётся отдельным пунктом UI, но не становится частью каталога. При смене движка в настройках CI выбирается первая разрешённая ролью модель, а при отсутствии разрешённой — первый каталоговый Codex-пресет.
+
+**Начальные тарифы OpenAI на 08.09.2026.** Точные Standard/short-context ставки и официальный URL хранятся в seed-блоке `apps/server/src/db/schema.ts`; для `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` это соответственно `10/1/12.5/50`, `4/0.4/5/20`, `2/0.2/2.5/12`, `0.2/0.02/0.25/1.2` USD за 1M токенов в порядке input/cached input/cache write/output. `INSERT OR IGNORE` делает повторное применение схемы идемпотентным: ручная цена не перезаписывается, а удалённая seed-строка восстанавливается. Контракт новой базы закреплён сценариями `TC-INT-1` и `TC-INT-2` в `apps/server/src/db/database.test.ts`.
+
 | `kb_usage_queries` | обращение к базе знаний: `seq` (монотонный курсор внутри разговора — по нему клиент отсекает устаревшие кадры `kb.usage`), `source` (`auto`/`tool_*`), `status`, `chars`/`est_tokens`, `prompt_chars`, `project_id` — СНИМОК проекта на момент обращения, `ci_run_id`/`ci_step_id` — ран и шаг CI-раннера, если обращение случилось в его ходе (NULL — обычный чат); каскад по разговору |
 | `kb_usage_sections` | разделы одного обращения (`document_id`+`anchor`, символы и оценка токенов), каскад по обращению |
 | `kb_documents` | статьи базы знаний, которые ведут пользователь и модель: `scope` (`usage`/`user`/`project`), `owner_id` для персональных, `project_id` для проектных (каскад по проекту); файловые темы `docs/kb/*.md` сюда не попадают |

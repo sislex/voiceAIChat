@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
 import { createHash } from 'node:crypto'
 import { uid } from '../users/auth.js'
+import { applyHostAlias, type HostAliases } from '@voicechat/browser-runner/security'
 import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../util/publicHost.js'
 import { MachineResponseCache, isCacheableMachineResponse } from './machineCache.js'
 
@@ -90,6 +91,8 @@ export interface PreviewMachineBridge {
 }
 
 export interface PreviewProxyDeps {
+  /** Разрешённые оператором пары VC_BROWSER_HOST_ALIASES; пользователь их не задаёт. */
+  hostAliases?: HostAliases
   machines?: {
     bridge: PreviewMachineBridge
     /** Доступ пользователя к машине (владелец или share проекта). */
@@ -827,7 +830,7 @@ addEventListener('message',message);addEventListener('pagehide',()=>{disable();d
 })();<\/script>`
 }
 
-export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffer {
+export function rewritePreviewBody(body: Buffer, type: string, base: URL, rewriteModules = isMachinePreviewHost(base.hostname)): Buffer {
   let text = body.toString('utf8')
   const rewriteCssUrls = (css: string): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
@@ -849,9 +852,9 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffe
   if (/text\/css/i.test(type)) text = rewriteCssUrls(text)
   // ESM-модули dev-сервера на машине. Их импорты браузер резолвит сам: `/@vite/client`
   // ушёл бы на origin ChatAI (404), а `./chunk.js` — относительно `/api/preview`.
-  // Поэтому спецификаторы переписываем так же, как ссылки в HTML. Только для машин:
-  // внешние сайты Reader этого не ждали, и трогать их поведение незачем.
-  if (isMachinePreviewHost(base.hostname) && /javascript|ecmascript/i.test(type)) text = rewriteModuleSpecifiers(text, base)
+  // Поэтому спецификаторы переписываем так же, как ссылки в HTML. Это нужно и
+  // приложению через операторский алиас: его собранные chunks тоже используют ESM.
+  if (rewriteModules && /javascript|ecmascript/i.test(type)) text = rewriteModuleSpecifiers(text, base)
   return Buffer.from(text)
 }
 
@@ -896,11 +899,15 @@ export function upstreamRequestHeaders(incoming: NodeJS.Dict<string | string[]>)
   return headers
 }
 
-async function get(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function get(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map()): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+  // Проверяем исходный адрес на каждом редиректе. Только операторский алиас
+  // разрешает внутренний транспорт; прямое обращение к его цели остаётся закрытым.
   await assertPublicHost(url.hostname)
+  const target = applyHostAlias(url, hostAliases)
+  const aliased = target.host !== url.host
   return new Promise((resolve, reject) => {
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
-    const request = transport(url, {
+    const request = transport(target, {
       method,
       headers: { 'user-agent': 'voiceAIChat-preview/1.0', accept: '*/*', ...headers, ...(requestCookieHeader(userId, url) ? { cookie: requestCookieHeader(userId, url) } : {}), ...(body === undefined ? {} : { 'content-length': String(Buffer.byteLength(body)) }) },
       timeout: TIMEOUT_MS,
@@ -908,7 +915,8 @@ async function get(url: URL, userId: string, method = 'GET', body?: string | Buf
         void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
           let result: ResolvedAddress | ResolvedAddress[]
           try {
-            result = publicLookupResult(addresses, options.all === true)
+            result = aliased ? (options.all ? addresses : addresses[0]!) : publicLookupResult(addresses, options.all === true)
+            if (!result || (Array.isArray(result) && !result.length)) throw new PreviewProxyError(502, 'Адрес сайта не найден')
           } catch (err) {
             return callback(err as Error, options.all ? [] : '', 4)
           }
@@ -923,13 +931,13 @@ async function get(url: URL, userId: string, method = 'GET', body?: string | Buf
   })
 }
 
-async function load(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}): Promise<{ response: IncomingMessage; finalUrl: URL }> {
+async function load(url: URL, userId: string, method = 'GET', body?: string | Buffer, headers: Record<string, string | string[]> = {}, hostAliases: HostAliases = new Map()): Promise<{ response: IncomingMessage; finalUrl: URL }> {
   let current = url
   let currentMethod = method
   let currentBody = body
   let currentHeaders = headers
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-    const result = await get(current, userId, currentMethod, currentBody, currentHeaders)
+    const result = await get(current, userId, currentMethod, currentBody, currentHeaders, hostAliases)
     const location = result.response.headers.location
     if (!location || ![301, 302, 303, 307, 308].includes(result.response.statusCode ?? 0)) return result
     result.response.resume()
@@ -1070,7 +1078,7 @@ const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-p
 /** Человеческая страница вместо JSON-ошибки: она открывается прямо в кадре. */
 export function previewErrorPage(message: string): string {
   const safe = message.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch] ?? ch)
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Кадр не загрузился</title>
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Сайт не загрузился</title>
 <style>
   :root { color-scheme: light dark }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 14px/1.5 system-ui, sans-serif; padding: 24px; text-align: center }
@@ -1078,9 +1086,9 @@ export function previewErrorPage(message: string): string {
   p { margin: 0 0 16px; max-width: 46ch; opacity: .8 }
   button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid currentColor; background: transparent; cursor: pointer }
 </style></head>
-<body><div><h1>Кадр не загрузился</h1><p>${safe}</p>
-<p>Storybook на машине отвечает медленно или перестал работать. Проверьте состояние в шапке панели и повторите.</p>
-<button type="button" onclick="location.reload()">Повторить</button></div></body></html>`
+<body><div><h1>Сайт не загрузился</h1><p>${safe}</p>
+<p>Не удалось загрузить сайт по текущему адресу. Повторите попытку, когда он снова станет доступен.</p>
+<button type="button" onclick="this.disabled=true;this.textContent='Загрузка…';document.querySelector('h1').textContent='Загрузка сайта…';document.querySelectorAll('p').forEach(p=>p.hidden=true);document.querySelector('div').setAttribute('role','status');requestAnimationFrame(()=>setTimeout(()=>location.reload(),0))">Повторить</button></div></body></html>`
 }
 
 export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
@@ -1162,11 +1170,14 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           reply.header('content-length', String(machineBody.length))
           return reply.send(machineBody)
         }
-        const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers))
+        const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers), deps.hostAliases)
         storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
         const responseType = response.headers['content-type'] ?? 'application/octet-stream'
         const responseBody = await readLimited(response)
-        const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) ? rewritePreviewBody(responseBody, responseType, finalUrl) : responseBody
+        const aliased = deps.hostAliases ? applyHostAlias(finalUrl, deps.hostAliases).host !== finalUrl.host : false
+        const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) || aliased && /javascript|ecmascript/i.test(responseType)
+          ? rewritePreviewBody(responseBody, responseType, finalUrl, aliased)
+          : responseBody
         reply.code(response.statusCode ?? 502)
         for (const [name, value] of Object.entries(response.headers)) {
           if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) continue

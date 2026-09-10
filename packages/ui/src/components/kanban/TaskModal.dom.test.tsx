@@ -1680,6 +1680,62 @@ describe('TaskModal — встроенный AI-чат', () => {
     window.api = originalApi; window.claude = originalClaude
   })
 
+  // @testCase TC-UI-TASK-CHAT-COMPOSER-STATES
+  it('сохраняет docked-композер при загрузке, пустой истории и отправке', async () => {
+    const originalApi = window.api
+    const originalClaude = window.claude
+    let resolveHistory: ((value: { conversation: { id: string }; messages: never[] }) => void) | undefined
+    const history = new Promise<{ conversation: { id: string }; messages: never[] }>((resolve) => { resolveHistory = resolve })
+    window.api = {
+      ...originalApi,
+      'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)),
+      'conversations:get': vi.fn(() => history) as never,
+      'messages:add': vi.fn(async () => message('new', 'u1', 'Текст'))
+    }
+    window.claude = { ...originalClaude, send: vi.fn(), cancel: vi.fn(), onDone: () => () => {}, onError: () => () => {} }
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'AI-чат' }))
+
+    expect(await screen.findByRole('textbox', { name: 'Поле ввода сообщения' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Прикрепить файл' })).toBeInTheDocument()
+
+    act(() => resolveHistory?.({ conversation: { id: 'chat-1' }, messages: [] }))
+    await waitFor(() => expect(screen.getByTestId('task-chat-surface')).toHaveAttribute('data-testid', 'task-chat-surface'))
+    expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeInTheDocument()
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Поле ввода сообщения' }), 'Текст')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить сообщение' }))
+    expect(screen.getByRole('button', { name: 'Остановить ответ' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Прикрепить файл' })).toBeInTheDocument()
+    window.api = originalApi; window.claude = originalClaude
+  })
+
+  // @testCase TC-UI-TASK-CHAT-SETTINGS
+  it('открывает настройки связанного task-разговора', async () => {
+    const originalApi = window.api
+    const onOpenConversationSettings = vi.fn()
+    window.api = {
+      ...originalApi,
+      'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)),
+      'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [] })) as never
+    }
+    render(<TaskModal {...props({ onOpenConversationSettings })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'AI-чат' }))
+    await screen.findByRole('textbox', { name: 'Поле ввода сообщения' })
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки разговора' }))
+    expect(onOpenConversationSettings).toHaveBeenCalledWith('chat-1', 'p1')
+    window.api = originalApi
+  })
+
+  // @testCase TC-REG-TASK-CHAT-LEGACY-NEW
+  it('рендерит task-chat surface с docked-композером в legacy-карточке', async () => {
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'AI-чат' }))
+    expect(await screen.findByTestId('task-chat-surface')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeInTheDocument()
+  })
+
   // @testCase TC-NEG-TASK-CHAT-ERROR
   it('показывает ошибку загрузки и позволяет повторить', async () => {
     const originalApi = window.api
