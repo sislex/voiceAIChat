@@ -1,5 +1,5 @@
 import { PREVIEW_RUN_COOKIE } from '@voicechat/shared'
-import type { BrowserStartInput } from '@voicechat/browser-runner/client'
+import type { BrowserStartInput } from '@voicechat/browser-contracts/client'
 import type { PlaywrightReaderCore } from './core.js'
 
 /** Ручная панель и модель открывают одну страницу с одинаковым доступом к прокси. */

@@ -160,7 +160,7 @@ export function planApplicationChecks(
             ? 'make'
             : e2e[1] === 'playwrightReader'
               ? 'playwright-reader'
-              : 'web'
+              : 'web-reader'
         add(
           catalog.find((item) => item.id === id),
           file

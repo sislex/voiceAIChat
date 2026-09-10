@@ -141,6 +141,8 @@ export function compatibilityCompose(candidate, baselines) {
           VC_TTS_RUNNER_TOKEN: token,
           VC_BROWSER_RUNNER_TOKEN: token,
           VC_AUTOMATION_RUNNER_TOKEN: token,
+          ...(releases.some((item) => item.applicationId === 'web-reader')
+            ? { VC_READER_MODE: 'remote', VC_READER_URL: 'http://web-reader:8080' } : {}),
           ...(releases.some((item) => item.applicationId === 'make')
             ? { VC_MAKE_MODE: 'remote', VC_MAKE_URL: 'http://make:8080' }
             : {}),

@@ -1,4 +1,6 @@
-// Ядро в режиме `VC_READER_MODE=remote` и отдельный процесс Web Reader на общей базе. Проверяем: пути
+import { loadWebReaderConfig } from '@voicechat/web-reader/config'
+import { vi } from 'vitest'
+// Ядро в режиме `VC_READER_MODE=remote` и отдельный процесс Web Reader без общей базы. Проверяем: пути
 // превью идут через прокси ядра с его авторизацией и перепроверкой whoami у ридера; dev-сервер машины
 // открывается через мост машин ридера; MCP «browser» принимает подписанный токен хода из любого процесса;
 // действие в панель уходит по RPC в relay ядра и доезжает до WS-сессии ядра; внутренние пути без токена закрыты.
@@ -10,16 +12,16 @@ import type { FastifyInstance } from 'fastify'
 import { WebSocket } from 'ws'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AgentHttpRequest, ServerMessage } from '@voicechat/shared'
-import type { LlmClient } from '../../claude/types.js'
-import { loadConfig } from '../../config.js'
-import { VoiceChatDb } from '../../db/database.js'
-import { buildServer } from '../../server.js'
-import { signToken } from '../../users/accounts.js'
-import { AgentRegistry } from '../../agents/registry.js'
-import { PREVIEW_MCP_PATH } from '../../mcp/previewMcp.js'
-import { createPreviewTurnTokens } from '../turnToken.js'
-import { INTERNAL_READER_CORE_PATH, READER_HEALTH_PATH } from '../internal.js'
-import { buildReaderServer, type ReaderServer } from './server.js'
+import type { LlmClient } from '../claude/types.js'
+import { loadConfig } from '../config.js'
+import { VoiceChatDb } from '../db/database.js'
+import { buildServer } from '../server.js'
+import { signToken } from '../users/accounts.js'
+import { AgentRegistry } from '../agents/registry.js'
+import { PREVIEW_MCP_PATH } from '@voicechat/web-reader-contracts'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
+import { INTERNAL_READER_CORE_PATH, READER_HEALTH_PATH } from '@voicechat/web-reader-contracts'
+import { buildReaderServer, type ReaderServer } from '@voicechat/web-reader/standalone'
 
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'
@@ -63,21 +65,18 @@ beforeAll(async () => {
       PORT: String(corePort), VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
       VC_READER_MODE: 'remote', VC_READER_URL: readerUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP
     }),
-    db, sessionSecret: SECRET, claude: fakeLlm, codex: fakeLlm, agentRegistry: new AgentRegistry({ offlineGraceMs: 0 })
-  })
-  await core.listen({ host: '127.0.0.1', port: corePort })
-  reader = await buildReaderServer({
-    config: loadConfig({ PORT: String(readerPort), VC_DATA_DIR: dataDir, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_MCP_PUBLIC_BASE: coreUrl }),
-    coreUrl, db, version: 'test',
-    // Мост машин: «dev-сервер» отвечает страницей без сети — проверяем доставку через ридер, а не агента.
-    machines: {
-      isOnline: (id) => id === agentId,
-      http: async (_id, request) => {
+    db, sessionSecret: SECRET, claude: fakeLlm, codex: fakeLlm, agentRegistry: (() => {
+      const registry = new AgentRegistry({ offlineGraceMs: 0 })
+      vi.spyOn(registry, 'isOnline').mockImplementation((id) => id === agentId)
+      vi.spyOn(registry, 'http').mockImplementation(async (_id, request) => {
         machineRequests.push(request)
         return { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' }, bodyBase64: Buffer.from('<h1>Dev server via reader</h1>').toString('base64') }
-      }
-    }
+      })
+      return registry
+    })()
   })
+  await core.listen({ host: '127.0.0.1', port: corePort })
+  reader = await buildReaderServer({ config: loadWebReaderConfig({ PORT: String(readerPort), VC_CORE_URL: coreUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_RELEASE_VERSION: 'test' }) })
   await reader.app.listen({ host: '127.0.0.1', port: readerPort })
 }, 60_000)
 
@@ -115,7 +114,7 @@ describe('ядро (reader remote) + отдельный процесс Web Reade
   })
 
   it('здоровье; внутренний RPC ядра без токена закрыт; превью без сессии — 401 у ядра и у ридера', async () => {
-    expect(await (await fetch(`${readerUrl}${READER_HEALTH_PATH}`)).json()).toEqual({ ok: true, service: 'reader', version: 'test', engine: db.engine })
+    expect(await (await fetch(`${readerUrl}${READER_HEALTH_PATH}`)).json()).toMatchObject({ ok: true, service: 'web-reader', version: 'test', application: { applicationId: 'web-reader' } })
     expect((await fetch(`${coreUrl}${INTERNAL_READER_CORE_PATH}`, { method: 'POST', headers: json, body: '{}' })).status).toBe(401)
     expect((await fetch(`${coreUrl}/api/preview?url=https%3A%2F%2Fexample.com%2F`)).status).toBe(401)
     expect((await fetch(`${readerUrl}/api/preview?url=https%3A%2F%2Fexample.com%2F`)).status).toBe(401)
@@ -127,11 +126,21 @@ describe('ядро (reader remote) + отдельный процесс Web Reade
     expect(res.headers.get('content-type')).toContain('text/html')
     expect(await res.text()).toContain('Dev server via reader')
     expect(machineRequests.at(-1)).toMatchObject({ method: 'GET', port: 5173, path: '/' })
-    // Чужая машина — 403 у ридера (гейт по общей базе), даже при действительной сессии.
+    // Чужая машина — 403 у ридера (гейт через API ядра), даже при действительной сессии.
     const other = (await db.machines.createAgent('admin', 'Not mine')).id
     expect((await fetch(`${coreUrl}/api/preview?url=${encodeURIComponent(`http://${other}.machine.internal:5173/`)}`, { headers: annAuth })).status).toBe(403)
     // Сброс cookie-контейнера — тоже у ридера.
     expect((await fetch(`${coreUrl}/api/preview/reset-cookies`, { method: 'POST', headers: { ...annAuth, ...json }, body: '{}' })).status).toBe(200)
+  })
+
+  it('контекст и прямой machineHttp не дают прав чужого пользователя', async () => {
+    const rpc = (method: string, args: unknown[]) => fetch(coreUrl + INTERNAL_READER_CORE_PATH, {method:'POST',headers:{...json,authorization:`Bearer ${INTERNAL}`},body:JSON.stringify({method,args})})
+    expect(await (await rpc('context',[{userId:'ann',conversationId}])).json()).toMatchObject({result:{testUsers:[]}})
+    expect(await (await rpc('context',[{userId:'stranger',conversationId}])).json()).toEqual({result:null})
+    const count=machineRequests.length
+    const denied=await rpc('machineHttp',['stranger',agentId,{method:'GET',port:5173,path:'/'}])
+    expect(denied.status).toBe(403)
+    expect(machineRequests.length).toBe(count)
   })
 
   it('MCP «browser»: подписанный токен из другого процесса принят; действие в панель уходит по RPC в relay ядра и доезжает до WS-сессии', async () => {

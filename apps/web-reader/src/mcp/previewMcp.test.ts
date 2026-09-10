@@ -10,7 +10,7 @@ import {
   PreviewActionRelay,
   registerPreviewMcp
 } from './previewMcp.js'
-import { createPreviewTurnTokens } from '../reader/turnToken.js'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 
 const SECRET = 'test-secret'
 const U = 'admin'

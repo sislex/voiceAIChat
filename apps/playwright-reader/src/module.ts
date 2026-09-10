@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { machinePreviewUrl, planModelAction } from '@voicechat/shared'
-import type { BrowserRunnerClient } from '@voicechat/browser-runner/client'
+import type { BrowserRunnerClient } from '@voicechat/browser-contracts/client'
 import type { PlaywrightReaderCore } from './core.js'
 import type { PlaywrightReaderService } from './service.js'
 import { registerBrowserRoutes } from './routes.js'

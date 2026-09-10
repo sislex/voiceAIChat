@@ -48,11 +48,11 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 `kanbanBridge/` (сторона ядра: `localCore.ts` — `KanbanCore` поверх `AgentRegistry`, `remote.ts` — `KanbanService` для
 режима `VC_KANBAN_MODE=remote`, `proxy.ts` — прокси путей канбана, `internal.ts` — RPC-диспетчер порта),
 `frameHub.ts` (шина кадров ядра для WS-сессий: команды машин, watchdog, снимки проверки),
-`reader/` (сборка Web Reader `createReaderModule(deps)`: прокси превью `routes/previewProxy.ts` + MCP «browser» `mcp/previewMcp.ts` +
-контекст изолированного Chromium; порт `core.ts` — что ридер берёт у процесса ядра; подписанные токены ходов `turnToken.ts`;
-гейт границы `boundary.test.ts`; контракт `internal.ts`, отдельный процесс `standalone/` с `HttpReaderCore`; `mcpBase.ts` — адрес MCP
-превью для ходов ядра и канбана), `readerBridge/` (сторона ядра: `localCore.ts` — `ReaderCore` поверх relay, ключей Chromium,
-канбана и шины кадров; `proxy.ts` — прокси путей превью для `VC_READER_MODE=remote`),
+`reader/mcpBase.ts` (адрес MCP превью для ходов ядра и канбана),
+`readerBridge/` (локальный `ReaderCore`: данные/права, машины, WS relay, ключи Chromium,
+канбан и кадры; прокси `/api/preview*`, `/mcp/preview`, `/web-recorder*` в remote).
+Реализация Web Reader — `@voicechat/web-reader`, порты и токены —
+`@voicechat/web-reader-contracts`; приложение не открывает БД ядра.
 `playwrightReaderBridge/` (Playwright Reader живёт в `@voicechat/playwright-reader`: здесь порт данных ядра,
 прокси `/api/browser/*` и проверки границы; MCP Web Reader получает `PlaywrightReaderService`,
 выдача кадров CI остаётся в `routes/browserShots.ts`; HTTP-клиент Chromium — публичный экспорт

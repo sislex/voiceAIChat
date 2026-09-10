@@ -1,7 +1,7 @@
 import fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { clearPreviewCookies, registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
+import { clearPreviewCookies, registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
 
 let app: FastifyInstance
 let browser: Browser

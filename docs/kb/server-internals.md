@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: d4bf0c9f
+checked: 83b7e546
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -495,45 +495,51 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 `kanbanBridge/kanbanRemote.integration.test.ts`. Кадры самого ядра в этом режиме, как и во встроенном,
 идут через `UserFrameHub`.
 
-## Web Reader: модуль `reader/module.ts` и порт `ReaderCore` (2026-09-08)
+## Web Reader: самостоятельное приложение (2026-09-10)
 
-Прокси превью (`routes/previewProxy.ts`: `/api/preview`, `/api/preview/reset-cookies`, `/api/preview/diagnostics`)
-и MCP «browser» (`mcp/previewMcp.ts`: `/mcp/preview`, инструменты `mcp__browser__*`) вместе с контекстом
-инструментов браузера (`browserExecutor`/`browserScreenshot`, машина разговора, тестовые пользователи, окружения,
-политика `evaluate`) собираются одной функцией `createReaderModule(deps)` (`apps/server/src/reader/module.ts`).
-Состояние процесса ядра ридер берёт портом `ReaderCore` (`reader/core.ts`): `previewAction` (relay действий в
-WS-клиенты пользователя — сокеты живут у ядра), `issuePreviewRunKey` (ключ Chromium к прокси превью; проверяет его
-авторизация ядра в `previewRunUser`), `listPreviews` (feature-preview канбана) и `logBrowserShot` (кадр проверки —
-файл в `dataDir/ci-browser-shots` ядра и строка в ленту рана). Остальное — из базы (`db.chat`, `db.projects`,
-`db.ci`, `canUseAgentForPreview`) и машин (`isOnline`, `http` порта `MachinesService`). Встроенная реализация порта —
-`readerBridge/localCore.ts`; снимок ключей `ReaderDeps` держит `reader/boundary.test.ts`. Ядру от ридера не нужно
-ничего, кроме адреса MCP превью для ходов — порта `ReaderService` нет.
+`apps/web-reader` владеет прокси `/api/preview*`, переписыванием HTML/CSS/JS,
+контейнером cookie и MCP `/mcp/preview`. `createReaderModule` собирает эти части;
+ядро подключает его через публичный `@voicechat/web-reader` только в embedded.
+`apps/web-recorder` — iframe-документ того же продукта: собирается внутрь образа
+Web Reader и раздаётся под `/web-recorder/`. React-панель хоста остаётся отдельным
+артефактом `web-reader-ui` (`packages/web-reader-app`).
 
-Исполнение Chromium вынесено из `reader/module.ts` в `apps/playwright-reader`:
-`ReaderDeps.browser` — `PlaywrightReaderService`, а не клиент browser-runner.
-Сервис собирается `createPlaywrightReaderModule` у ядра или вызывается по HTTP при
-`VC_PLAYWRIGHT_READER_MODE=remote`; самостоятельный Web Reader использует тот же порт
-у приложения либо у ядра. REST `/api/browser/*` тоже принадлежит приложению,
-`routes/browserShots.ts` в ядре оставляет только файлы кадров CI. Порт данных приложения —
-`playwrightReaderBridge/localCore.ts`, контракт RPC — `packages/shared/src/playwrightReader.ts`.
-Подробности — [features/playwright-reader.md](features/playwright-reader.md).
+`ReaderCore`, HTTP-клиент, RPC whitelist и подписанные токены вынесены в
+`packages/web-reader-contracts`. Приложение не открывает БД и не импортирует
+`apps/server`. `context` возвращает доступные машину, тестовых пользователей,
+feature-preview окружения и проектную политику. `canUseMachine`, `machineOnline`
+и `machineHttp` обращаются к реестру ядра; сам `machineHttp` повторно проверяет
+доступ, поэтому прямой RPC не обходит разрешения. Контекст чужого разговора —
+`null`. `projectResource` доставляет ресурсы `app.internal`, сохраняя отдельную
+авторизацию вложенной страницы. `previewAction` обращается к WS relay ядра;
+ключи Chromium, кадры CI и старые методы порта также остаются у владельца данных.
+Локальная реализация — `apps/server/src/readerBridge/localCore.ts`.
 
-**Токены ходов превью подписаны** (`reader/turnToken.ts`, `createPreviewTurnTokens(mcpSecret)`): `?turn=` — это
-`base64url({u, c, e}).HMAC-SHA256`, живёт сутки и проверяется в любом процессе без состояния. Раньше это был
-in-memory брокер ядра, и ход CI из отдельного процесса канбана регистрировал токен там, где `/mcp/preview` его
-не видел. `turns.ts` и `ci/modelHooks.ts` только выдают токен (`previewTurns.issue`), снимать нечего; без
-`?k=<секрет>` токен бесполезен.
+Standalone `apps/web-reader/src/standalone/index.ts` слушает 8795. Ему нужны
+`VC_CORE_URL`, `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` и адрес Playwright API
+`VC_PLAYWRIGHT_READER_URL` (по умолчанию embedded API ядра). `VC_DB_URL` и общий том
+ядра не нужны. Авторизация каждого API-запроса пересылается в `/internal/whoami`
+с cookie/Bearer/CSRF без кэша прав. Ядро с `VC_READER_MODE=remote` и `VC_READER_URL`
+проксирует `/api/preview*`, `/mcp/preview` и `/web-recorder*`; конкретные маршруты
+Make сохраняют приоритет. `VC_READER_MCP_PUBLIC_BASE` переопределяет адрес MCP для
+LLM; helper `reader/mcpBase.ts` общий для ядра и канбана. Cookie сайтов остаются
+в памяти Reader, поэтому перезапуск сервиса сбрасывает входы в HTTP-прокси.
 
-**Отдельный процесс** (`VC_READER_MODE=remote` + `VC_READER_URL`, опционально `VC_READER_MCP_PUBLIC_BASE`):
-`reader/standalone/server.ts` (`buildReaderServer`) — тот же модуль на общей базе Postgres, авторизация
-пересылкой в ядро (`internal/forwardedAuth.ts`: cookie превью и ключ Chromium разбирает ядро в `whoami`), машины —
-`HttpMachines` к `VC_MACHINES_URL` или к ядру, порт ядра — `HttpReaderCore` по RPC `/internal/reader/core`
-(контракт `reader/internal.ts`, тело до 16 МБ ради кадра PNG). Ядро в `remote` регистрирует прокси
-`readerBridge/proxy.ts` (`/api/preview`, `/api/preview/*`, `/mcp/preview`; роуты Make `/api/preview/make*`
-конкретнее и выигрывают — `readerBridge/proxy.test.ts`), а `previewMcpBaseUrl` ходов ядра и процесса канбана
-считает общий helper `reader/mcpBase.ts` (адрес ридера). Cookie-контейнер превью — память процесса ридера.
-Точка входа `reader/standalone/index.ts` (порт 8795), образ `reader-runtime`, compose-профиль `reader`.
-Интеграционный тест — `reader/standalone/readerRemote.integration.test.ts`.
+Chromium исполняет `PlaywrightReaderService` из `packages/playwright-reader-contracts`:
+Web Reader вызывает приложение Playwright по HTTP, не включает его реализацию.
+`packages/browser-contracts` содержит лёгкий клиент раннера и валидацию адресов;
+ни один API-образ Reader не содержит движок Chromium или драйверы БД.
+Токены `createPreviewTurnTokens(mcpSecret)` живут сутки, подписаны HMAC и работают
+между процессами без регистрации в памяти. WS `PreviewActionRelay` создаёт ядро;
+перенос библиотеки контрактов не переносит владение его подключениями.
+
+Web Reader требует API ядра >=1.1.0; старое ядро без `context`/`machineHttp`
+отвергается при проверке манифеста. Изолированный гейт — `gate:app -- web-reader`,
+Playwright — `gate:app -- playwright-reader`; проверки UI-панелей имеют суффикс
+`-ui`. Тесты `readerBridge/readerRemote.integration.test.ts` и
+`playwrightReaderBridge/remote.integration.test.ts` проверяют HTTP-границы без общей
+БД. `e2e/webReaderProject.e2e.test.ts` проверяет вход и deep link собственного
+проекта в embedded и отдельном процессе Reader.
 
 ## Машины: модуль `machines/module.ts` и порт `MachinesService` (2026-09-07)
 

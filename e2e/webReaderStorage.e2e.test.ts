@@ -1,7 +1,7 @@
 import fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page, type FrameLocator } from 'playwright'
-import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
+import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
 let app: FastifyInstance, browser: Browser, page: Page, base: string
 const site = 'http://storage-cycle.machine.internal:5173'
 const a = () => page.frameLocator('iframe[title=a]'), peer = () => page.frameLocator('iframe[title=peer]'), b = () => page.frameLocator('iframe[title=b]')

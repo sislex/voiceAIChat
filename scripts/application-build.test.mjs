@@ -74,3 +74,13 @@ test('baseline ядра имеет собственный полный SHA и н
     false
   )
 })
+
+test('Reader API собираются без ядра и реализации Chromium', () => {
+  for (const id of ['web-reader','playwright-reader']) {
+    const paths = applicationBuildPaths(id)
+    assert.ok(paths.includes('packages/browser-contracts'))
+    for (const forbidden of ['apps/server','apps/browser-runner','apps/web','packages/ui']) assert.ok(!paths.includes(forbidden), `${id}: ${forbidden}`)
+    assert.equal(paths.includes('apps/web-recorder'), id === 'web-reader')
+    if (id === 'web-reader') assert.ok(!paths.includes('apps/playwright-reader'))
+  }
+})

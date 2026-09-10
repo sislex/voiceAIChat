@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import fastify from 'fastify'
 import type { Conversation } from '@voicechat/shared'
 import { registerBrowserRoutes } from './routes.js'
-import { BrowserRunnerError, type BrowserRunnerClient } from '@voicechat/browser-runner/client'
+import { BrowserRunnerError, type BrowserRunnerClient } from '@voicechat/browser-contracts/client'
 const meta = { id: 'c1', conversationId: 'c1', incarnation: 'inc', state: 'ready' as const, activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: 'https://a.b', title: null }
 
 function conversation(overrides: Partial<Conversation> = {}): Conversation {

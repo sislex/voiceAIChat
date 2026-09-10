@@ -170,3 +170,11 @@ test('полный fallback сохраняет реальные браузерн
   assert.ok(p.e2eFiles.includes('e2e/applicationFrontend.e2e.test.ts'))
   assert.ok(p.e2eFiles.includes('e2e/applicationReleases.e2e.test.ts'))
 })
+
+test('изменение Reader не запускает наборы core и других приложений', () => {
+  for (const file of ['apps/web-reader/src/routes/previewCookies.ts','apps/web-recorder/src/scenarioRunner.ts','apps/playwright-reader/src/routes.ts']) {
+    const plan = planApplicationChecks([file])
+    assert.equal(plan.full, false)
+    assert.deepEqual(plan.applications.map(app=>app.id), [file.includes('playwright-reader') ? 'playwright-reader' : 'web-reader'])
+  }
+})

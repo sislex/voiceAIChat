@@ -11,4 +11,4 @@ const num = (value: string | undefined, fallback: number): number => {
 }
 const RECORDER_PORT = num(process.env.VC_RECORDER_PORT, 5274)
 const API_PORT = num(process.env.VC_API_PORT, 8787)
-export default defineConfig({ base: '/web-recorder/', plugins:[react()], resolve:{ alias:[{find:'@voicechat/ui/styles.css',replacement:abs('../../packages/ui/src/styles/global.css')},{find:'@voicechat/ui/app.css',replacement:abs('../../packages/ui/src/styles/app.css')},{find:'@voicechat/ui',replacement:abs('../../packages/ui/src/index.ts')},{find:/^@shared\//,replacement:abs('../../packages/shared/src/')},{find:'@voicechat/shared',replacement:abs('../../packages/shared/src/index.ts')}] }, server:{host:'127.0.0.1',port:RECORDER_PORT,proxy:{'/api':{target:`http://127.0.0.1:${API_PORT}`,changeOrigin:true}}} })
+export default defineConfig({ base: '/web-recorder/', plugins:[react()], resolve:{ alias:[{find:/^@shared\//,replacement:abs('../../packages/shared/src/')},{find:'@voicechat/shared',replacement:abs('../../packages/shared/src/index.ts')}] }, server:{host:'127.0.0.1',port:RECORDER_PORT,proxy:{'/api':{target:`http://127.0.0.1:${API_PORT}`,changeOrigin:true}}} })

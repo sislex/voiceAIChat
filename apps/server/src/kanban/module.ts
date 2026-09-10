@@ -47,7 +47,7 @@ import { RemoteLlmClient } from '../llm/remoteClient.js'
 import type { LlmClient } from '../claude/types.js'
 import { type KbUsageTracker } from '../kb/usage.js'
 import { kbToolBroker } from '../kb/kbMcp.js'
-import { createPreviewTurnTokens } from '../reader/turnToken.js'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { type BrowserRunnerClient } from '../browser/runnerClient.js'
 import { taskPreparationModel, taskPreparationFailure, parseQaPreparationResponse } from './preparation.js'
 

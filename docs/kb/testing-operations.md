@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-09-10
-checked: 7b2c3283
+checked: 83b7e546
 areas:
   - package.json
   - scripts
@@ -131,7 +131,17 @@ Server запускает исходники через tsx. Основной We
 
 `npm run verify` выполняет полный набор. Для локального шага предпочтителен узкий гейт затронутых пакетов, затем полный verify перед релизом/крупным merge.
 
-`affected-check` считает `apps/web-recorder` отдельным workspace: изменения `packages/shared` включают его как потребителя, а изменения `packages/ui` добавляют его явно. Поэтому affected-ран выполняет его `typecheck` и `test`. Дорогой `frontend:build-gates` запускается при затронутых UI/Web/Desktop пакетах, но эта команда собирает основной Web, bundle gate, Storybook и Desktop renderer и не включает production build Web Recorder. После клиентских изменений, затрагивающих standalone recorder, его production-сборку нужно проверять отдельно: `npm run -w @voicechat/web-recorder build`.
+Каталог приложений относит `apps/web-reader` и `apps/web-recorder` к одному продукту
+`web-reader`: `npm run gate:app -- web-reader` проверяет оба workspace, сборку
+iframe, контракты core-моста и браузерный набор Reader. Рекордер использует только
+UI kit и собственные стили, поэтому правка `packages/ui` больше не включает его
+как сборочного потребителя. Реализации Playwright API и Chromium связаны через
+`packages/browser-contracts`; внутренние правки одного API не запускают тесты
+чужих приложений. Изменение общего контракта либо корневой сборки расширяет гейт.
+`gate:all` собирает также `@voicechat/web-recorder` до E2E: старый index/набор
+хешированных assets нельзя пересобирать после старта fixture-сервера, который
+регистрирует static-маршруты при запуске. Иначе iframe может получить пустой
+документ вместо текущей сборки.
 
 ### Fast-stage затронутых тестов
 

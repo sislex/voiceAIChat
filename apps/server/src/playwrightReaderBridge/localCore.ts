@@ -1,5 +1,5 @@
 import { DEFAULT_CI_BROWSER_CHECK, isChromiumReaderConversation } from '@voicechat/shared'
-import type { PlaywrightReaderCore } from '@voicechat/playwright-reader'
+import type { PlaywrightReaderCore } from '@voicechat/playwright-reader-contracts'
 import type { VoiceChatDb } from '../db/database.js'
 import { browserCheckTarget } from '../browser/checkTarget.js'
 

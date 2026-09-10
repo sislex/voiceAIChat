@@ -14,6 +14,7 @@ import {
   APPLICATION_CATALOG,
   applicationForPath,
   validateApplicationCatalog,
+  validateCatalogRelease,
 } from "./applicationCatalog";
 const manifest = (
   id: string,
@@ -296,3 +297,15 @@ it("UI-выпуск фиксирует требования и к оболочк
   panel.requires.push(requirement);
   expect(validateCatalogRelease(panel).id).toBe("make-ui");
 });
+
+describe('минимальная версия ядра Web Reader', () => {
+  const reader = (api: string) => manifest('web-reader', { requires: [
+    {...requirement, minApiVersion: api},
+    {...requirement, applicationId:'playwright-reader'}
+  ] })
+  it('старый API не содержит context/machineHttp, его нельзя обещать в манифесте', () => {
+    expect(() => validateCatalogRelease(reader('1.0.0'))).toThrow('не ниже 1.1.0')
+    expect(() => validateCatalogRelease(reader('1.1.0'))).not.toThrow()
+    expect(applicationCompatibility(environment(manifest('core', {apiVersion:'1.0.0'}), manifest('playwright-reader')), [reader('1.1.0')])).toEqual(expect.arrayContaining([expect.objectContaining({code:'api'})]))
+  })
+})

@@ -5,6 +5,6 @@
 export const INTERNAL_READER_CORE_PATH = '/internal/reader/core'
 export const READER_HEALTH_PATH = '/v1/health'
 /** Методы `ReaderCore`, которые ядро отдаёт по RPC. */
-export const READER_CORE_RPC_METHODS = ['projectResource', 'previewAction', 'issuePreviewRunKey', 'listPreviews', 'logBrowserShot'] as const
+export const READER_CORE_RPC_METHODS = ['context', 'canUseMachine', 'machineOnline', 'machineHttp', 'projectResource', 'previewAction', 'issuePreviewRunKey', 'listPreviews', 'logBrowserShot'] as const
 /** Кадр PNG в base64 может быть на несколько мегабайт — лимит тела RPC выше умолчания Fastify (1 МБ). */
 export const READER_RPC_BODY_LIMIT = 16 * 1024 * 1024

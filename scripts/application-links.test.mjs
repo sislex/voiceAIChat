@@ -73,3 +73,11 @@ test('frontend проверяет именно карту раздачи ядр�
   assert.equal(checks[0].mapEnv, 'VC_APPLICATION_FRONTENDS')
   assert.equal(checks[0].mapKey, 'make-ui')
 })
+
+test('Web Reader использует VC_READER_URL ядра и проверяет оба своих порта', () => {
+  const reader = release('web-reader', [{applicationId:'core'}, {applicationId:'playwright-reader'}])
+  const checks = applicationLinkChecks({applications:[core,reader,release('playwright-reader')].map(manifest=>({manifest}))})
+  assert.ok(checks.some(check=>check.service==='voicechat' && check.urlEnv==='VC_READER_URL' && check.modeEnv==='VC_READER_MODE'))
+  assert.ok(checks.some(check=>check.service==='web-reader' && check.urlEnv==='VC_CORE_URL' && check.contract.body.method==='context'))
+  assert.ok(checks.some(check=>check.service==='web-reader' && check.urlEnv==='VC_PLAYWRIGHT_READER_URL' && check.contract.body.method==='control'))
+})

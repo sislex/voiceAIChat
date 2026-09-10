@@ -1,7 +1,7 @@
 import fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { registerPreviewProxy } from '../apps/server/src/routes/previewProxy.js'
+import { registerPreviewProxy } from '../apps/web-reader/src/routes/previewProxy.js'
 
 // Только тестовые домены имеют фиксированный публичный DNS; транспорт идёт по
 // явным operator aliases к локальному стенду. Реальные сайты не запрашиваются.

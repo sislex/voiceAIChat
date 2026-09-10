@@ -115,12 +115,12 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
   it('генерирует с референсом, правит новым файлом и переименовывает разговор через ядро', async () => {
     const generated = await post(api('generate'), { prompt: 'синий кот', references: ['renamed.png'], name: 'cat.png' })
     expect(generated.status).toBe(200)
-    expect((await generated.json()).file.path).toBe('cat.png')
+    expect(((await generated.json()) as {file:{path:string}}).file.path).toBe('cat.png')
     expect(requests.at(-1)?.attachments?.[0]?.dataBase64.length).toBe(16 * 1024 * 1024)
     expect((await db.chat.getConversation('ann', conv))?.title).toBe('Картинки: синий кот')
     const edited = await post(api('edit'), { path: 'cat.png', prompt: 'добавь шляпу' })
     expect(edited.status).toBe(200)
-    expect((await edited.json()).file).toMatchObject({ path: 'cat-2.png', source: 'cat.png' })
+    expect(((await edited.json()) as {file:unknown}).file).toMatchObject({ path: 'cat-2.png', source: 'cat.png' })
     expect(requests.at(-1)?.attachments?.[0]?.dataBase64).toBe(PNG.toString('base64'))
   })
 

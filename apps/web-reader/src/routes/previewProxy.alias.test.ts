@@ -3,7 +3,7 @@ import { createServer, request } from 'node:http'
 import { EventEmitter } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import fastify from 'fastify'
-import { parseHostAliases } from '@voicechat/browser-runner/security'
+import { parseHostAliases } from '@voicechat/browser-contracts/security'
 import { registerPreviewProxy } from './previewProxy.js'
 
 // Воспроизводим недоступный публичный порт из Docker, не отправляя тесты в прод.
