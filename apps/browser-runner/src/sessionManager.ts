@@ -1,4 +1,5 @@
-import { runEvaluation } from './evaluation.js'
+import { BrowserCommandQueue } from './commandQueue.js'
+import { runEvaluation, isEvaluating } from './evaluation.js'
 import { BrowserDiagnostics } from './diagnostics.js'
 import { BrowserDownloads } from './downloads.js'
 import { browserDownloadList, type BrowserDownloadResult } from '@voicechat/shared'
@@ -22,6 +23,7 @@ import { runInspectAction } from './inspectActions.js'
 import { capturePage, type BrowserCapture } from './screenshots.js'
 
 interface Session {
+  queue: BrowserCommandQueue
   diagnostics: BrowserDiagnostics
   downloads: BrowserDownloads
   downloadsPath: string
@@ -97,7 +99,7 @@ export class BrowserSessionManager {
     private readonly profilesRoot: string,
     private readonly hostAliases: HostAliases = new Map(),
     /** Доверенный origin сервера (`host:port`) для браузерных проверок задач. */
-    previewOrigin: string | null = null
+    private readonly previewOrigin: string | null = null
   ) {
     this.allowedTargets = aliasTargets(hostAliases)
     if (previewOrigin) {
@@ -153,6 +155,7 @@ export class BrowserSessionManager {
       }
       const diagnostics = new BrowserDiagnostics(url => this.publicUrl(url))
       const session: Session = {
+        queue: new BrowserCommandQueue(),
         diagnostics,
         dialogs: new BrowserDialogs(),
         downloads: new BrowserDownloads(url => this.publicUrl(url)),
@@ -264,6 +267,7 @@ export class BrowserSessionManager {
     const task = (async () => {
       const session = await pending.catch(() => null)
       if (!session) return false
+      session.queue.cancel()
       let saveError: unknown
       if (session.profileMode === 'persistent') {
         try { await writeReaderProfile(session.profileDir, { cookies: await session.context.cookies(), origins: [...session.origins], viewport: session.viewport, url: this.publicUrl(session.pages.get(session.activeTabId)?.url() ?? 'about:blank') }) }
@@ -301,6 +305,21 @@ export class BrowserSessionManager {
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastUsedAt = Date.now()
     const command = request.command
+    if (command.type === 'control' || command.type === 'cancel') {
+      if (command.frame !== undefined) throw new Error('Управление очередью не поддерживает frame')
+      if (request.actor !== 'user') throw new Error('human_control: Управление может передать только пользователь')
+      if (command.type === 'control') {
+        if (command.owner !== 'shared' && command.owner !== 'user') throw new Error('invalid_control')
+        session.queue.control(command.owner)
+      } else session.queue.cancel()
+      return this.metadata(session)
+    }
+    const observing = command.type === 'status' || command.type === 'screenshot' || command.type === 'dialogs' || command.type === 'downloads' || command.type === 'readDownload' || (command.type === 'inspect' && ['console', 'network'].includes(command.action.kind))
+    if (!observing && request.actor === 'assistant' && session.queue.owner === 'user') throw new Error('human_control: Управление у пользователя. Дождитесь возврата управления модели.')
+    if (command.type === 'inspect' && command.action.kind === 'evaluate') {
+      const target = session.pages.get(request.tabId ?? session.activeTabId)
+      if (target && isEvaluating(target)) return { ok: false, error: 'Во вкладке уже выполняется evaluate' }
+    }
     if (command.type === 'inspect' && (command.action.kind === 'console' || command.action.kind === 'network')) {
       if (command.frame !== undefined) throw new Error('Журнал не поддерживает frame; используйте frameUrl и source для вложенных документов')
       const action = command.action
@@ -323,10 +342,16 @@ export class BrowserSessionManager {
       return boundedBrowserDialogs(session.dialogs.list(command.tabId), session.activeTabId)
     }
     if (command.type === 'handleDialog') { await session.dialogs.handle(command); session.lastActor = request.actor; return this.metadata(session) }
-    if (command.type === 'status' || command.type === 'selectTab') return this.executeCommand(sessionId, request)
-    const targetId = command.type === 'closeTab' ? command.tabId : request.tabId ?? session.activeTabId
-    const page = command.type === 'newTab' ? undefined : session.pages.get(targetId)
-    return session.dialogs.run(page, () => this.executeCommand(sessionId, request), command.type === 'closeTab')
+    if (command.type === 'status') return this.executeCommand(sessionId, request)
+    // Ответ диалогу и status идут выше очереди: иначе ожидающий prompt заблокирует собственный ответ.
+    // Вкладка определяется при начале операции, после предшествующего selectTab/newTab.
+    return session.queue.enqueue(request.actor, () => {
+      // Открытый диалог прежней вкладки не мешает выбрать другое окно.
+      if (command.type === 'selectTab') return this.executeCommand(sessionId, request)
+      const targetId = command.type === 'closeTab' ? command.tabId : request.tabId ?? session.activeTabId
+      const page = command.type === 'newTab' ? undefined : session.pages.get(targetId)
+      return session.dialogs.run(page, () => this.executeCommand(sessionId, request), command.type === 'closeTab')
+    }, command.type === 'screenshot')
   }
 
   private async executeCommand(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | BrowserCapture | BrowserSelectorResult | BrowserInspectResult | BrowserFramesResult | BrowserSiteDataResetResult> {
@@ -420,7 +445,19 @@ export class BrowserSessionManager {
    * сценарий не открывается нигде, кроме этого же контейнера.
    */
   private publicUrl(raw: string): string {
-    try { return restoreHostAlias(new URL(raw), this.hostAliases).toString() } catch { return raw }
+    try {
+      const url = new URL(raw), target = url.searchParams.get('url')
+      const address = url.hostname.toLowerCase() + ':' + (url.port || (url.protocol === 'https:' ? '443' : '80'))
+      // Модель получает адрес проекта, а не техническую обёртку его доставки.
+      if (address === this.previewOrigin && url.pathname === '/api/preview' && target) {
+        const logical = new URL(target)
+        if (logical.protocol === 'http:' || logical.protocol === 'https:') {
+          if (url.hash) logical.hash = url.hash
+          return logical.toString()
+        }
+      }
+      return restoreHostAlias(url, this.hostAliases).toString()
+    } catch { return raw }
   }
 
   private hostOf(raw: string): string {
@@ -471,6 +508,7 @@ export class BrowserSessionManager {
       conversationId: session.conversationKey,
       incarnation: session.incarnation,
       state: 'ready',
+      control: session.queue.owner, queuedCommands: session.queue.size,
       activeTabId: session.activeTabId,
       tabs,
       viewport: session.viewport,

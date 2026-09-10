@@ -12,6 +12,7 @@ interface EvaluationHolder {
   cancel(): void
 }
 const active = new WeakSet<Page>()
+export const isEvaluating = (page: Page): boolean => active.has(page)
 // Сначала создаём holder и только затем вызываем run. Иначе синхронный цикл
 // не даст получить ссылку, через которую можно завершить ожидающий RPC.
 const factory = new Function(

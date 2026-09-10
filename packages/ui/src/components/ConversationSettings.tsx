@@ -3,6 +3,8 @@ import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
 import type { ChatInstruction, ContextPreset, Conversation, KbContextMode, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { ChatStorageView, MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
+import type { LlmEngineOption } from '@shared/admin'
+import type { UserLlmAccess } from '@shared/llmAccess'
 import { ChatStorageCard } from './ChatStorageCard'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
@@ -12,6 +14,7 @@ import { useConfirm } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { SettingsPage } from './SettingsPage'
 import { ContextInspector } from './ContextInspector'
+import { LlmSettingsEditor } from './LlmSettingsEditor'
 
 export interface ConversationSettingsProps {
   conversation: Conversation
@@ -19,7 +22,9 @@ export interface ConversationSettingsProps {
   machineOps?: MachineOps
   /** Роль пользователя определяет безопасный режим разговора без машины. */
   role: UserRole
-  settings: Pick<Settings, 'permissionMode'>
+  settings: Pick<Settings, 'permissionMode' | 'llmEngineId' | 'llmProvider' | 'model' | 'codexModel'>
+  llmEngines?: LlmEngineOption[]
+  llmAccess?: UserLlmAccess[]
   /** Машина по умолчанию — предвыбирается в новых разговорах и помечается в списке. */
   defaultAgentId?: string | null
   /** Проекты пользователя — для привязки чата к проекту. */
@@ -47,6 +52,9 @@ export interface ConversationSettingsProps {
     permissionMode: PermissionMode | null
     kbContextMode: KbContextMode
     projectId: string | null
+    llmEngineId: string | null
+    llmProvider: 'claude' | 'codex' | null
+    llmModel: string | null
   }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
   /** Другие разговоры — источник для копирования контекста в инспекторе. */
@@ -89,18 +97,23 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, settings, projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, embedded = false, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, settings, llmEngines, llmAccess, projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, otherConversations, contextPresets, onSavePresets, defaultPresetId, onSetDefaultPreset, draftAttachments, chatInstructions, onSaveInstruction, onAddInstruction, onOpenInstructionSettings, onCopyContextTo, onOpenKbUsage, embedded = false, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
-  const contextRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/context`
-  const [activeTab, setActiveTab] = useState<'general' | 'context'>(() => window.location.hash.startsWith(contextRoutePrefix) ? 'context' : 'general')
+  const settingsRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/settings/`
+  const tabFromHash = (): 'general' | 'context' => window.location.hash === `${settingsRoutePrefix}context` || window.location.hash.startsWith(`#/chat/${encodeURIComponent(conversation.id)}/context`) ? 'context' : 'general'
+  const [activeTab, setActiveTab] = useState<'general' | 'context'>(tabFromHash)
   const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
   // '' — «как в общих настройках» (в БД хранится null).
   const [permissionMode, setPermissionMode] = useState<PermissionMode | ''>(conversation.permissionMode ?? '')
   const [kbContextMode, setKbContextMode] = useState<KbContextMode>(conversation.kbContextMode ?? 'auto')
+  const [llmEngineId, setLlmEngineId] = useState<string | null>(conversation.llmEngineId ?? null)
+  const [llmProvider, setLlmProvider] = useState<'claude' | 'codex'>(conversation.llmProvider ?? settings.llmProvider)
+  const [llmModel, setLlmModel] = useState(conversation.llmModel ?? (settings.llmProvider === 'codex' ? settings.codexModel : settings.model))
+  const [llmOverridden, setLlmOverridden] = useState(Boolean(conversation.llmEngineId || conversation.llmProvider || conversation.llmModel))
   const [cwd, setCwd] = useState('')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [loadingDir, setLoadingDir] = useState(false)
@@ -116,17 +129,13 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
   const [storagePath, setStoragePath] = useState('')
   const [storageView, setStorageView] = useState<ChatStorageView | null>(null)
   useEffect(() => {
-    const syncContextRoute = (): void => {
-      if (window.location.hash.startsWith(contextRoutePrefix)) setActiveTab('context')
-    }
-    window.addEventListener('hashchange', syncContextRoute)
-    return () => window.removeEventListener('hashchange', syncContextRoute)
-  }, [contextRoutePrefix])
+    const syncSettingsRoute = (): void => setActiveTab(tabFromHash())
+    window.addEventListener('hashchange', syncSettingsRoute)
+    return () => window.removeEventListener('hashchange', syncSettingsRoute)
+  }, [settingsRoutePrefix])
   const selectTab = (tab: 'general' | 'context'): void => {
-    if (window.location.hash.startsWith(contextRoutePrefix)) {
-      window.location.hash = `/chat/${encodeURIComponent(conversation.id)}`
-    }
     setActiveTab(tab)
+    window.location.hash = `/chat/${encodeURIComponent(conversation.id)}/settings/${tab}`
   }
   // Список машин выбранного проекта (для фильтра и подстановки папок).
   useEffect(() => {
@@ -273,7 +282,10 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         skillNames: execTarget ? skillNames : [],
         permissionMode: permissionMode || null,
         kbContextMode,
-        projectId
+        projectId,
+        llmEngineId: llmOverridden ? llmEngineId : null,
+        llmProvider: llmOverridden ? llmProvider : null,
+        llmModel: llmOverridden ? llmModel : null
       })
       if (selectedAgent && storageId) {
         await window.api['conversations:setStorage']({ id: conversation.id, machineId: selectedAgent.id, storageId, ...(storagePath.trim() ? { relativePath: storagePath.trim() } : {}) })
@@ -317,13 +329,13 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
         ariaLabel="Разделы настроек чата"
         activeTab={activeTab}
         onTabChange={selectTab}
-        tabs={[{ id: 'general', label: 'Общее' }, { id: 'context', label: 'Контекст и инструкции'}]}
+        tabs={[{ id: 'general', label: 'Общие' }, { id: 'context', label: 'Контекст'}]}
       />
       <main className={`convsettings-body convsettings-tab-${activeTab}`}>
         {activeTab === 'context' && <ContextInspector
           conversationId={conversation.id}
-          provider={conversation.llmProvider ?? 'claude'}
-          model={conversation.llmModel ?? 'default'}
+          provider={llmProvider}
+          model={llmModel || 'default'}
           permissionMode={effectiveMode}
           kbMode={kbContextMode}
           agent={selectedAgent}
@@ -351,6 +363,21 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
             if (patch.permissionMode !== undefined) setPermissionMode(patch.permissionMode ?? '')
           }}
         />}
+        {activeTab === 'general' && <>
+        <section className="convsettings-card" aria-label="LLM разговора">
+          <div className="convsettings-sectionhead"><div><h2>LLM</h2><p>Переопределение действует только для этого разговора.</p></div></div>
+          <LlmSettingsEditor
+            value={{ engineId: llmEngineId, provider: llmProvider, model: llmModel }}
+            inherited={{ engineId: settings.llmEngineId, provider: settings.llmProvider, model: settings.llmProvider === 'codex' ? settings.codexModel : settings.model }}
+            overridden={llmOverridden}
+            engines={llmEngines}
+            llmAccess={llmAccess}
+            showEngine
+            labels={{ engine: 'Исполнитель разговора', provider: 'Провайдер разговора', model: 'Модель разговора' }}
+            onChange={(next) => { setLlmOverridden(true); setLlmEngineId(next.engineId ?? null); setLlmProvider(next.provider); setLlmModel(next.model) }}
+            onReset={() => { setLlmOverridden(false); setLlmEngineId(null); setLlmProvider(settings.llmProvider); setLlmModel(settings.llmProvider === 'codex' ? settings.codexModel : settings.model) }}
+          />
+        </section>
         {webReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Web Reader">
           <div className="convsettings-sectionhead"><div><h2>Web Reader</h2><p>Проверяет cookie, proxy, загрузку, DOM-мост, события, навигацию, очередь и requestId на внутренней странице. Полный перечень и результаты появятся в чате.</p></div><Button onClick={webReaderDiagnostics.onRun} disabled={webReaderDiagnostics.running}>{webReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
         </section>}
@@ -476,6 +503,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, s
           </section>
         </>}
         {error && <p className="convsettings-error" role="alert">{error}</p>}
+        </>}
       </main>
       <footer className="convsettings-footer"><Button onClick={onClose}>Отмена</Button><Button variant="primary" loading={saving} onClick={() => void save()}>{saving ? 'Сохранение…' : 'Сохранить'}</Button></footer>
     </>

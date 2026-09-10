@@ -68,8 +68,8 @@ it('найденный буквальный текст с >> можно испо
 })
 
 it('поиск сообщает число совпадений до усечения', async () => {
-  expect(await runSelectorAction(page, { kind: 'find', selector: '.choice', limit: 1 })).toMatchObject({ total: 3, truncated: true, matches: [expect.anything()] })
-  expect((await runSelectorAction(page, { kind: 'find', selector: '.choice', limit: 5 })).truncated).toBeUndefined()
+  expect(await runSelectorAction(page, { kind: 'find', selector: '.choice', limit: 1, visibleOnly: false })).toMatchObject({ total: 3, truncated: true, matches: [expect.anything()] })
+  expect((await runSelectorAction(page, { kind: 'find', selector: '.choice', limit: 5, visibleOnly: false })).truncated).toBeUndefined()
 })
 
 it('visibleOnly удаляет скрытые копии до применения лимита', async () => {
@@ -113,4 +113,21 @@ it('пустой видимый документ не заменяется ис�
   await page.setContent('<body><script>window.readerInvisibleSource="служебный исходник"</script><style>body{color:red}</style></body>')
   const result = await runSelectorAction(page, { kind: 'read' })
   expect(result).toMatchObject({ ok: true, text: '', total: 0 })
+})
+
+
+it('find по умолчанию исключает скрытые копии до лимита', async () => {
+  const result = await runSelectorAction(page, { kind: 'find', selector: '.choice', limit: 1 })
+  expect(result).toMatchObject({ total: 2, truncated: true, matches: [{ text: 'Видимо', visible: true }] })
+})
+
+it('find сохраняет узел после вставки соседа и отвергает DOM-копию найденного узла', async () => {
+  await page.setContent('<button>Первый</button><button>Второй</button>')
+  const found = await runSelectorAction(page, { kind: 'find', selector: 'button' })
+  const selector = found.matches![1].selector
+  await page.evaluate('const next = document.createElement("button"); next.textContent = "Новый"; document.body.prepend(next)')
+  expect(await page.locator(selector).textContent()).toBe('Второй')
+  expect(await runSelectorAction(page, { kind: 'click', selector })).toMatchObject({ ok: true })
+  await page.locator(selector).evaluate(node => node.replaceWith(node.cloneNode(true)))
+  expect((await runSelectorAction(page, { kind: 'click', selector })).error).toContain('stale_element_ref')
 })

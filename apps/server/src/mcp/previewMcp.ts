@@ -132,9 +132,9 @@ export class PreviewActionRelay {
     if (!entry || entry.userId !== userId || (conversationId !== undefined && entry.conversationId !== conversationId)) return
     const error = typeof outcome.error === 'string' ? outcome.error.slice(0, 2_000) : undefined
     if (outcome.ok) {
-      const result = outcome.result as { url?: unknown; title?: unknown; navigated?: unknown } | undefined
-      const address = typeof result?.url === 'string' ? result.url : entry.action.kind === 'open' ? entry.action.url : null
-      const title = typeof result?.title === 'string' ? result.title : null
+      const result = outcome.result as { url?: unknown; title?: unknown; navigated?: unknown; page?: { url?: unknown; title?: unknown } } | undefined
+      const address = typeof result?.url === 'string' ? result.url : typeof result?.page?.url === 'string' ? result.page.url : entry.action.kind === 'open' ? entry.action.url : null
+      const title = typeof result?.title === 'string' ? result.title : typeof result?.page?.title === 'string' ? result.page.title : null
       const changed: ServerMessage = {
         t: 'reader.changed', conversationId: entry.conversationId, address, title,
         navigated: entry.action.kind === 'open' || entry.action.kind === 'back' || entry.action.kind === 'forward' || result?.navigated === true,
@@ -365,6 +365,7 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата. ' +
             'Только HTTP/HTTPS. Тестовое окружение на машине этого разговора открывается адресом ' +
+            'https://app.internal/ — текущее приложение с любым путём или #/маршрутом; ' +
             'http://machine.internal:<порт>/ — запрос уйдёт на 127.0.0.1:<порт> машины.',
           inputSchema: { frame: frameSchema, url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
         },

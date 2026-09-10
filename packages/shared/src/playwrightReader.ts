@@ -1,6 +1,7 @@
 import type { BrowserDownloadCommand, BrowserDownloadResult } from './browserDownloads'
 import type { BrowserDialogAnswer, BrowserDialogListResult } from './browserDialogs'
 import type { BrowserSiteDataResetOptions, BrowserSiteDataResetResult } from './browserProfile'
+import { READER_PROJECT_ORIGIN } from './previewProject'
 // Граница приложения Playwright Reader: пользовательский REST остаётся /api/browser,
 // а ядро и отдельный процесс обмениваются только этими RPC и результатами действий.
 import type { BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserScreenshotMetadata, BrowserScreenshotOptions } from './types'
@@ -43,6 +44,8 @@ export function isMachinePreviewUrl(raw: string): boolean {
 }
 
 export function machinePreviewUrl(runnerFacingBase: string, raw: string): string {
-  if (!isMachinePreviewUrl(raw)) return raw
+  let project = false
+  try { project = new URL(raw).origin === READER_PROJECT_ORIGIN } catch { /* не URL */ }
+  if (!project && !isMachinePreviewUrl(raw)) return raw
   return `${runnerFacingBase.replace(/\/+$/, '')}/api/preview?url=${encodeURIComponent(raw)}`
 }

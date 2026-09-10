@@ -201,3 +201,18 @@ it('Map-ссылка указывает в возвращённый entries, а 
   const result = await evaluate('(()=>{const x={name:"map"};return new Map([["first",x],["again",x]])})()')
   expect((result.value as any).entries[1][1].$ref).toBe('/value/entries/0/1')
 })
+
+
+it('ручное управление отменяет очередь, пока evaluate ещё выполняется, и сохраняет status', async () => {
+  const pending = evaluate('new Promise(()=>{})', 400)
+  await expect.poll(async () => ((await send({ type: 'status' })) as BrowserSessionMetadata).queuedCommands).toBe(1)
+  const navigation = send({ type: 'navigate', url: 'http://eval.reader.test/cancelled' }).then(() => 'unexpected', error => String(error))
+  await manager.command(meta.id, { requestId: randomUUID(), incarnation: meta.incarnation, actor: 'user', command: { type: 'control', owner: 'user' } })
+  expect(((await send({ type: 'status' })) as BrowserSessionMetadata).control).toBe('user')
+  expect((await pending).timedOut).toBe(true)
+  expect(await navigation).toContain('command_cancelled')
+  await expect(send({ type: 'navigate', url: 'http://eval.reader.test/forbidden' })).rejects.toThrow('human_control')
+  expect(((await send({ type: 'status' })) as BrowserSessionMetadata).currentUrl).toBe('http://eval.reader.test/')
+  await manager.command(meta.id, { requestId: randomUUID(), incarnation: meta.incarnation, actor: 'user', command: { type: 'control', owner: 'shared' } })
+  expect((await evaluate('1+2')).value).toBe(3)
+})

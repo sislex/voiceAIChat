@@ -45,6 +45,28 @@ describe('TaskCardContainer — новая карточка', () => {
     expect(await screen.findByText('Этапов пока нет')).toBeInTheDocument()
   })
 
+  // @testCase TC-REG-TASK-CHAT-LEGACY-NEW
+  it('рендерит task-chat surface с docked-композером в новой карточке', async () => {
+    window.api = {
+      ...api,
+      'tasks:openChat': vi.fn(async () => ({ id: 'chat-1' } as never)),
+      'conversations:get': vi.fn(async () => ({ conversation: { id: 'chat-1' }, messages: [] })) as never
+    }
+    render(<TaskCardContainer {...props()} />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'AI-чат' }))
+    expect(await screen.findByTestId('task-chat-surface')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Поле ввода сообщения' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Прикрепить файл' })).toBeInTheDocument()
+  })
+
+  // @testCase TC-REG-NON-TASK-SURFACES
+  it('оставляет вкладку настроек задач отдельной от task-чата', async () => {
+    render(<TaskCardContainer {...props()} />)
+    fireEvent.click(await screen.findByRole('tab', { name: /Настройки/ }))
+    expect(await screen.findByLabelText('Машина выполнения')).toBeInTheDocument()
+    expect(screen.queryByTestId('task-chat-surface')).not.toBeInTheDocument()
+  })
+
   it('сохраняет черновик доработки, показывает его во вкладке и отправляет', async () => {
     const create = vi.spyOn(api, 'tasks:createReworkDraft')
     const submit = vi.spyOn(api, 'tasks:submitReworkDraft')

@@ -1,3 +1,5 @@
+import { WebReaderEngineSelect } from './components/WebReaderEngineSelect'
+import { runReaderModelRequest, readReaderErrors } from './webReaderModelRequest'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
@@ -17,7 +19,7 @@ import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantComma
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { PreviewAction } from '@shared/previewActions'
-import type { PreviewActionOutcome, ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
+import type { ReaderHostRegistration, WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { parseUserAgent } from '@voicechat/sessions-core'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
@@ -308,7 +310,7 @@ export default function App(props: AppProps = {}): JSX.Element {
 /** Чат из адреса на момент монтирования: его bootstrap откроет первым. */
 function initialChatIdFromPath(path: string, segments: string[]): string | null {
   const chatRoute = parseChatRoute(path)
-  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') return chatRoute.conversationId
+  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context') return chatRoute.conversationId
   if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader' || segments[0] === 'make') {
     return segments[1] ?? null
   }
@@ -395,7 +397,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
   const chatRoute = parseChatRoute(path)
-  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab' ? chatRoute.conversationId : routeTaskChatId
+  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context' ? chatRoute.conversationId : routeTaskChatId
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
@@ -594,7 +596,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Хранение её вместе с conversationId не даёт переключившемуся чату обратиться
   // к host, который ещё размонтируется, и держит Reader-маршруты источником истины.
   const previewRunnerRef = useRef<ReaderHostRegistration | null>(null)
-  const [readerRevision, setReaderRevision] = useState(0)
+  const readerErrorSequence = useRef(0)
   const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null }>>([])
   const [readerPageError, setReaderPageError] = useState<string | null>(null)
   // Платформенная привязка WebReaderFrame: пакет Reader не трогает window сам.
@@ -631,12 +633,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     return bridge.onChanged((message) => {
       if (message.conversationId !== chat.activeId) return
       setReaderActions((items) => [...items, { id: globalThis.crypto.randomUUID(), action: message.action, address: message.address, title: message.title }].slice(-20))
-      if (message.navigated) setReaderRevision((value) => value + 1)
       if (message.action.kind !== 'errors') {
-        void previewRunnerRef.current?.run({ kind: 'errors' }).then((outcome) => {
-          const result = outcome.result as { errors?: Array<{ message?: string; text?: string }> } | undefined
-          const first = result?.errors?.[0]
-          setReaderPageError(first?.message ?? first?.text ?? null)
+        const registration = previewRunnerRef.current
+        const sequence = ++readerErrorSequence.current
+        void readReaderErrors(registration, () => previewRunnerRef.current === registration && sequence === readerErrorSequence.current).then(error => {
+          if (error !== undefined) setReaderPageError(error)
         })
       }
     })
@@ -646,33 +647,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const bridge = window.preview
     if (!bridge) return
     return bridge.onAction(({ conversationId, requestId, action }) => {
-      void (async (): Promise<PreviewActionOutcome> => {
-        // Активный чат остаётся первым рубежом изоляции. Зарегистрированный
-        // host — источник истины для Reader-панели: флаг hash-маршрута может на один
-        // render отставать от уже подключённой панели.
-        if (chat.activeId !== conversationId) {
-          return { ok: false, error: 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.' }
-        }
-        const registration = previewRunnerRef.current
-        if (!registration || registration.conversationId !== conversationId || globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) !== registration.registrationId) {
-          return {
-            ok: false,
-            error: inReader || inPlaywrightReader
-              ? 'Панель превью активного чата не открыта или ещё не подключена.'
-              : 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.'
-          }
-        }
-        if (action.kind === 'open') {
-          try {
-            await chatActions.setConversationPreviewUrl(conversationId, action.url)
-            setPreviewElement(null)
-            return registration.run(action)
-          } catch {
-            return { ok: false, error: 'Не удалось сохранить адрес превью.' }
-          }
-        }
-        return registration.run(action)
-      })().then((outcome) => bridge.result({ conversationId, registrationId: previewRunnerRef.current?.registrationId, requestId, ...outcome }))
+      if (action.kind === 'open') setPreviewElement(null)
+      void runReaderModelRequest({
+        conversationId, activeConversationId: chat.activeId,
+        registration: previewRunnerRef.current,
+        activeRegistrationId: globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null,
+        readerRoute: inReader || inPlaywrightReader, action
+      }).then(outcome => bridge.result({ conversationId, requestId, ...outcome }))
     })
   }, [chat.activeId, chatActions, inReader, inPlaywrightReader])
   useEffect(() => {
@@ -998,7 +979,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [compactChat, sidebarOpen])
-  const [conversationSettingsTarget, setConversationSettingsTarget] = useState<{ id: string; conversation: Conversation | null } | null>(null)
+  const [conversationSettingsTarget, setConversationSettingsTarget] = useState<{ id: string; conversation: Conversation | null; allowInactive?: boolean } | null>(null)
   const conversationSettingsRequest = useRef(0)
   const contextSettingsRouteAttempt = useRef<string | null>(null)
   const [createChatOpen, setCreateChatOpen] = useState(false)
@@ -1701,19 +1682,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     conversationSettingsRequest.current++
     setConversationSettingsTarget(null)
   }, [])
-  const openConversationSettings = useCallback(async (id: string): Promise<void> => {
+  const openConversationSettings = useCallback(async (id: string, taskProjectId?: string): Promise<void> => {
     const request = ++conversationSettingsRequest.current
-    setConversationSettingsTarget({ id, conversation: null })
+    const allowInactive = Boolean(taskProjectId)
+    setConversationSettingsTarget({ id, conversation: null, allowInactive })
     void projectsActions.refreshProjects()
     try {
       const known = chat.activeConversation?.id === id ? chat.activeConversation : chat.conversations.find((entry) => entry.id === id)
-      const result = await api['conversations:get']({
-        id,
-        scope: known?.scope ?? 'chat',
-        ...(known?.scope === 'kanban' && known.projectId ? { projectId: known.projectId } : {})
-      })
+      const scope = taskProjectId ? 'kanban' : known?.scope ?? 'chat'
+      const projectId = taskProjectId ?? (known?.scope === 'kanban' ? known.projectId : undefined)
+      const result = await api['conversations:get']({ id, scope, ...(scope === 'kanban' && projectId ? { projectId } : {}) })
       if (request !== conversationSettingsRequest.current) return
-      if (activeConversationIdRef.current !== id || !result || result.conversation.id !== id) {
+      if ((!allowInactive && activeConversationIdRef.current !== id) || !result || result.conversation.id !== id) {
         setConversationSettingsTarget(null)
         if (!result) toast.error('Настройки недоступны: разговор удалён или недоступен.')
         return
@@ -1726,19 +1706,29 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
   }, [api, chat.activeConversation, chat.conversations, projectsActions, toast])
   useEffect(() => {
-    if (chatRoute?.kind !== 'context-item' && chatRoute?.kind !== 'context-tab') {
+    if (chatRoute?.kind !== 'settings' && chatRoute?.kind !== 'legacy-context') {
       contextSettingsRouteAttempt.current = null
       return
     }
-    if (chat.activeId !== chatRoute.conversationId) return
-    const routeAttempt = `${chatRoute.kind}:${chatRoute.conversationId}`
+    if (chatRoute.kind === 'legacy-context') {
+      navigate(`/chat/${encodeURIComponent(chatRoute.conversationId)}/settings/context`, { replace: true })
+      return
+    }
+    const routeAttempt = `${chatRoute.kind}:${chatRoute.conversationId}:${chatRoute.tab}`
+    if (chat.activeId !== chatRoute.conversationId) {
+      if (chat.conversations.length > 0 && !chat.conversations.some((conversation) => conversation.id === chatRoute.conversationId) && contextSettingsRouteAttempt.current !== routeAttempt) {
+        contextSettingsRouteAttempt.current = routeAttempt
+        toast.error('Настройки недоступны: разговор удалён или недоступен.')
+      }
+      return
+    }
     if (contextSettingsRouteAttempt.current === routeAttempt || conversationSettingsTarget?.id === chatRoute.conversationId) return
     contextSettingsRouteAttempt.current = routeAttempt
     void openConversationSettings(chatRoute.conversationId)
   }, [chat.activeId, chatRoute, conversationSettingsTarget?.id, openConversationSettings])
   useEffect(() => {
     if (conversationSettingsTarget?.conversation || !conversationSettingsTarget) return
-    if (chat.activeId !== conversationSettingsTarget.id) closeConversationSettings()
+    if (!conversationSettingsTarget.allowInactive && chat.activeId !== conversationSettingsTarget.id) closeConversationSettings()
   }, [chat.activeId, closeConversationSettings, conversationSettingsTarget])
   // Каталог результатов активного чата — для чипа в шапке; обновляется при смене чата, закрытии настроек и после хода.
   const [activeStorage, setActiveStorage] = useState<ChatStorageView | null>(null)
@@ -2616,7 +2606,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inImageStudio && <header className="web-recorder-selector workshop-selector"><strong>Студия</strong><label><span className="vc-sr-only">Чат студии картинок</span><select aria-label="Чат студии картинок" value={imageStudioActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/images/${event.target.value}`) }}>{!imageStudioActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.imageStudioConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createImageStudioChat()}>+ Новый</button></header>}
       {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist" aria-label={inWorkshop ? 'Панели мастерской' : undefined}><button id={inWorkshop ? 'workshop-chat-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'chat'} aria-controls={inWorkshop ? 'workshop-chat-pane' : undefined} onClick={() => setChatView('chat')}>Чат</button><button id={inWorkshop ? 'workshop-side-tab' : undefined} type="button" role="tab" aria-selected={chatView === 'preview'} aria-controls={inWorkshop ? 'workshop-side-pane' : undefined} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : inImageStudio ? 'Галерея' : 'Сайт'}</button></div></nav>}
       <div id={inWorkshop ? 'workshop-chat-pane' : undefined} role={inWorkshop ? 'tabpanel' : undefined} aria-labelledby={inWorkshop ? 'workshop-chat-tab' : undefined} className="chat-split-chat">
-      {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
+      {inReader && <header className="web-recorder-selector">{activeConversation?.assistantKind === 'web-recorder' && <WebReaderEngineSelect key={activeConversation.id} value={activeConversation.previewEngine ?? 'proxy'} onChange={engine => chatActions.setConversationPreviewUrl(activeConversation.id, activeConversation.previewUrl ?? null, engine)} />}<label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
       {inMake && <header className="web-recorder-selector make-selector"><strong>Make</strong><label><span className="vc-sr-only">Проект Make</span><select aria-label="Проект Make" value={makeActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/make/${event.target.value}`) }}>{!makeActiveListed && <option value="" disabled>Проект не выбран</option>}{chat.makeConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createMakeChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
@@ -2631,11 +2621,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         {...(activeConversation?.projectId && chat.activeId
           ? { onOpenGit: () => setGitChatPanel({ projectId: activeConversation.projectId!, conversationId: chat.activeId! }) }
           : {})}
-        // Бейдж «контекст изменён» ведёт сразу на вкладку контекста: вкладку
-        // выбирает маршрут `#/chat/:id/context/`, поэтому достаточно адреса.
         disabledContextCount={activeConversation?.disabledContext?.length ?? 0}
         onOpenContextSettings={() => {
-          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context`
+          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/settings/context`
           if (chat.activeId) void openConversationSettings(chat.activeId)
         }}
         permissionMode={activePermissionMode}
@@ -2833,7 +2821,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inWorkshop && <div className="workshop-drag-shield" aria-hidden="true" onPointerUp={stopWorkshopResize} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} projectId={activeConversation?.projectId ?? null} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
       {inImageStudio && readerSurfaceReady && chat.activeId && window.api && <div id="workshop-side-pane" role="tabpanel" aria-labelledby="workshop-side-tab" className="workshop-side-host"><Suspense fallback={<div className="image-studio" role="status">Загрузка студии картинок…</div>}><ImageStudioPane key={chat.activeId} conversationId={chat.activeId} api={window.api} turnActive={voice.voice === 'thinking'} onAttachToChat={(file) => void chatActions.addAttachment(file)} otherChats={chat.imageStudioConversations.filter((c) => c.id !== chat.activeId).map((c) => ({ id: c.id, title: c.title }))} /></Suspense></div>}
-      {inReader && readerSurfaceReady && chat.activeId && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
+      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine === 'chromium' && <Suspense fallback={<div role="status">Запуск полного браузера…</div>}><BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} initialUrl={activeConversation.previewUrl ?? null} onPageChange={url => chatActions.setConversationPreviewUrl(chat.activeId!, url)} /></Suspense>}
+      {inReader && readerSurfaceReady && chat.activeId && activeConversation?.previewEngine !== 'chromium' && <Suspense fallback={<div role="status">Загрузка поверхности Reader…</div>}><WebReaderFrame key={chat.activeId} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} /></Suspense>}
       </div>
       )}
 
@@ -3009,6 +2998,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onOpenChat={(taskId) => void projectsActions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
               onOpenMake={(conversationId) => navigate(`/make/${conversationId}`)}
               onEnsureChat={(taskId) => void projectsActions.ensureTaskChat(taskId)}
+              onOpenConversationSettings={(conversationId, projectId) => void openConversationSettings(conversationId, projectId)}
               ciSummaries={projects.ciSummaries}
               onStartCi={async (taskId) => { if (routeProjectId) { const run = await projectsActions.startCiRun(routeProjectId, taskId); if (run) projectsActions.openCiRun(run.id) } }}
               onStartCiParallel={async (taskId) => { if (routeProjectId) { const run = await projectsActions.startCiRun(routeProjectId, taskId, { launch: 'parallel' }); if (run) projectsActions.openCiRun(run.id) } }}
@@ -3325,11 +3315,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           title="Настройки разговора"
           onClose={closeConversationSettings}
           onEscape={() => {
-            const prefix = `#/chat/${encodeURIComponent(conversationSettingsTarget.id)}/context/`
-            if (window.location.hash.startsWith(prefix)) {
-              window.location.hash = `/chat/${encodeURIComponent(conversationSettingsTarget.id)}/context`
-              return
-            }
             closeConversationSettings()
           }}
           testId="conversation-settings-overlay"
@@ -3380,6 +3365,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           machineOps={machineOps}
           role={session.currentUser?.role ?? 'admin'}
           settings={settingsState.settings}
+          llmEngines={settingsState.llmEngines}
+          llmAccess={settingsState.llmAccess}
           defaultAgentId={settingsState.settings.defaultAgentId}
           projects={projects.projects}
           webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
@@ -3390,13 +3377,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
           onOpenExplorer={(agentId, path) => { closeConversationSettings(); operationsActions.openUtility('explorer', agentId, path) }}
-          onSave={async ({ title, execTarget, workdir, skillNames, permissionMode, kbContextMode, projectId }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, permissionMode, kbContextMode, projectId, llmEngineId, llmProvider, llmModel }) => {
             await chatActions.renameConversation(conversationSettingsTarget.id, title)
             await chatActions.setConversationProject(conversationSettingsTarget.id, projectId)
-            // Существующие legacy-переопределения не меняем: форма разговора их
-            // больше не редактирует и не должна случайно очищать при сохранении.
-            const conversation = conversationSettingsTarget.conversation!
-            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, conversation.llmProvider, conversation.llmModel, permissionMode, kbContextMode, conversation.llmEngineId)
+            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = operations.agents.find((item) => item.id === agentId)
@@ -3409,7 +3393,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           }}
           onClose={() => {
             closeConversationSettings()
-            if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') navigate(`/chat/${conversationSettingsTarget.id}`)
+            if (chatRoute?.kind === 'settings') navigate(`/chat/${conversationSettingsTarget.id}`)
           }}
         /> : <>
           <header className="convsettings-head">

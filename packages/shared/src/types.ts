@@ -179,6 +179,9 @@ export interface BrowserSessionMetadata {
    * делят страницу — без этого непонятно, кто её только что увёл.
    */
   lastActor?: 'user' | 'assistant'
+  /** Ручной режим запрещает модели менять страницу до возврата управления. */
+  control?: 'shared' | 'user'
+  queuedCommands?: number
   /**
    * Внутренний адрес, с которого страница пришла на самом деле, если оператор
    * настроил алиас. Сам `currentUrl` при этом остаётся тем, который назвал
@@ -285,7 +288,7 @@ export interface BrowserElementDescription {
   selector: string
   /** Насколько селектор надёжен: по testid переживает правки вёрстки, по пути — нет. */
   stability: 'testid' | 'id' | 'label' | 'role' | 'path'
-  /** Сколько узлов страницы отвечает этому селектору; больше одного — шаг кликнет по первому. */
+  /** Сколько узлов страницы отвечает этому селектору; больше одного — модель должна уточнить цель. */
   matches?: number
   tag: string
   text: string
@@ -377,6 +380,9 @@ export type BrowserCommand = BrowserFrameTarget & (
   | { type: 'dialogs'; tabId?: string }
   | ({ type: 'handleDialog' } & BrowserDialogAnswer)
   | ({ type: 'clearSiteData' } & BrowserSiteDataResetOptions)
+  /** Передача управления и отмена очереди доступны только человеку. */
+  | { type: 'control'; owner: 'shared' | 'user' }
+  | { type: 'cancel' }
   | { type: 'navigate'; url: string }
   | { type: 'selector'; action: BrowserSelectorAction }
   | { type: 'inspect'; action: BrowserInspectAction }
@@ -399,6 +405,11 @@ export interface BrowserCommandRequest {
 
 export function isPlaywrightReaderConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
   return value.assistantKind === PLAYWRIGHT_READER_KIND
+}
+
+/** Chromium может быть выбран внутри Web Reader без смены разговора и истории модели. */
+export function isChromiumReaderConversation(value: Pick<Conversation, 'assistantKind' | 'previewEngine'>): boolean {
+  return isPlaywrightReaderConversation(value) || value.assistantKind === 'web-recorder' && value.previewEngine === 'chromium'
 }
 
 /** Разговор инструмента Make (веб-проект с ассистентом). */
@@ -469,6 +480,8 @@ export interface Conversation {
    * через подтверждение пользователя. Дефолт `auto`.
    */
   assistantAutonomy?: import('./widgetAssistant').WidgetAssistantAutonomy
+  /** Движок Web Reader сохраняется с разговором, чтобы refresh не менял рабочую сессию. */
+  previewEngine?: 'proxy' | 'chromium'
   /** URL веб-превью только этого разговора; null — наследовать у проекта. */
   previewUrl?: string | null
   /** URL проекта для превью; сервер отдаёт рядом, чтобы чат не зависел от загрузки списка проектов. */

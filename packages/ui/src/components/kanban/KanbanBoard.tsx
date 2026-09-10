@@ -229,6 +229,8 @@ export interface KanbanBoardProps {
   onOpenMake?: (conversationId: string) => void
   /** Создать связанный чат при первом открытии карточки, не уходя с доски. */
   onEnsureChat?: (taskId: string) => void
+  /** Открыть настройки связанного task-разговора, не меняя активный обычный чат. */
+  onOpenConversationSettings?: (conversationId: string, projectId: string) => void
   /** Сводки CI-ранов по taskId. */
   ciSummaries?: Record<string, CiRunSummary>
   /** Запустить CI-воркфлоу для задачи (в общую очередь). */
@@ -1839,6 +1841,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onOpenChat={props.onOpenChat}
           onOpenMake={props.onOpenMake}
           onEnsureChat={props.onEnsureChat}
+          onOpenConversationSettings={props.onOpenConversationSettings}
           ciSummary={props.ciSummaries?.[openTask.id]}
           onStartCi={props.onStartCi}
           onStartPreparation={props.onStartPreparation}

@@ -130,3 +130,17 @@ it('отказ остановки не выдаётся за успешный п
   expect(browser.start).toHaveBeenCalledTimes(2)
   expect(screen.getByAltText('Кадр Chromium')).toBeVisible()
 })
+
+it('после Enter фокус возвращается кадру, а последующий переход модели обновляет адрес', async () => {
+  let current = state()
+  const browser = bridge({ command: vi.fn(async () => current) })
+  await mount(browser)
+  const address = screen.getByLabelText('Адрес страницы')
+  address.focus()
+  fireEvent.change(address, { target: { value: 'https://project.test/' } })
+  await act(async () => { fireEvent.keyDown(address, { key: 'Enter' }) })
+  expect(screen.getByAltText('Кадр Chromium')).toHaveFocus()
+  current = state({ currentUrl: 'https://project.test/next' })
+  await tick(1200)
+  expect(address).toHaveValue(current.currentUrl)
+})

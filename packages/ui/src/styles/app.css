@@ -7524,10 +7524,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-tab-panel { flex: 1 1 100%; min-width: 0; overflow: auto; padding: 4px; }
 /* Встроенный AI-чат — самостоятельная flex-колонка: скролл остаётся у .scroll
    из ChatColumn, а docked VoiceBar не уезжает вместе с историей карточки. */
-.task-chat-tab { display: flex; min-height: 0; overflow: hidden; padding: 0; }
+.task-chat-tab { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 0; }
 .task-chat-panel--surface { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-.task-chat-panel--surface > .main { flex: 1 1 auto; min-height: 0; }
+.task-chat-panel--surface > .main { flex: 1 1 auto; height: auto; min-height: 0; }
 .task-chat-panel--surface .scroll { min-height: 0; overscroll-behavior: contain; }
+.task-chat-panel--surface .voicebar { flex: none; }
 .task-tab-empty { padding: 18px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-dim); }
 .task-tab-warning { padding: 10px; border-radius: 8px; background: var(--warning-soft); }
 @media (max-width: 720px) {
