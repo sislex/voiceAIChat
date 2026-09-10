@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-10
-checked: 1a5c4422
+checked: 11105f5c
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -14,6 +14,11 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## Схема
+
+В `conversations` добавлен `preview_engine TEXT NOT NULL DEFAULT 'proxy'`:
+миграция сохраняет прежние разговоры в быстром режиме. Выбор Chromium принимается
+REST preview-url только для собственного web-recorder; обычный URL-save сохраняет
+движок через COALESCE. Создание и чтение Conversation возвращают его явно.
 
 `apps/server/src/db/schema.ts` — единая строка DDL, идемпотентная (`IF NOT EXISTS`),
 выполняется при каждом старте. Изменение старых схем по-прежнему делает

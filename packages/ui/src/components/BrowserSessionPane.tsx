@@ -45,6 +45,8 @@ const STATE_LABELS: Record<string, string> = {
 
 export interface BrowserSessionPaneProps {
   conversationId: string
+  initialUrl?: string | null
+  onPageChange?: (url: string) => void | Promise<void>
   browser?: RendererBrowserBridge
   /** Приложить кадр к сообщению чата: панель отдаёт data-URL, хост решает, что с ним делать. */
   onAttachFrame?: (dataUrl: string) => void
@@ -81,7 +83,7 @@ export function withScheme(raw: string): string {
   return `${hasExplicitPort ? 'http' : 'https'}://${value}`
 }
 
-export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios }: BrowserSessionPaneProps): JSX.Element {
+export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios, initialUrl, onPageChange }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
@@ -134,41 +136,72 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // Флаг актуальности: смена разговора или размонтирование отменяет поздние ответы.
   const alive = useRef(0)
 
+  const openingUrl = useRef(initialUrl), pageCallback = useRef(onPageChange)
+  openingUrl.current = initialUrl; pageCallback.current = onPageChange
+  const savedPage = useRef<string | null>(initialUrl ?? null), addressFocused = useRef(false)
+  const saveQueue = useRef(Promise.resolve()), frameInFlight = useRef<number | null>(null)
+  const missedFrames = useRef(0)
+  const observePage = useCallback((page: { url: string; title: string }): void => {
+    let url = page.url
+    try { const value = new URL(url); if (value.pathname === '/api/preview' && value.searchParams.has('url')) url = value.searchParams.get('url')! } catch { return }
+    if (!/^https?:\/\//.test(url)) return
+    if (!origin.current || origin.current === 'about:blank') origin.current = url
+    setMeta(current => current ? { ...current, currentUrl: url, title: page.title, tabs: current.tabs.map(tab => tab.id === current.activeTabId ? { ...tab, url, title: page.title } : tab) } : current)
+    setHistory(current => pushHistory(current, url))
+    if (!addressFocused.current) setAddress(url)
+    if (savedPage.current === url) return
+    savedPage.current = url
+    const save = pageCallback.current, generation = alive.current
+    saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
+      try { await save?.(url) } catch {
+        if (generation === alive.current) { if (savedPage.current === url) savedPage.current = null; setMessage('Не удалось сохранить адрес. Повторю при следующем обновлении страницы.') }
+      }
+    })
+  }, [])
+
   const refreshFrame = useCallback(async (): Promise<void> => {
     if (!browser || !incarnation.current) return
     const generation = alive.current
+    if (frameInFlight.current === generation) return
+    frameInFlight.current = generation
     try {
       // Качество 60 мылило мелкий текст, а панель нужна именно для разбора
       // вёрстки; 82 заметно читаемее, а кадр остаётся лёгким.
       const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, format: 'jpeg', quality: 82 })
-      if (generation === alive.current) setFrame(shot.dataUrl)
-    } catch { /* один пропущенный кадр не роняет панель */ }
-  }, [browser, conversationId])
+      if (generation === alive.current) {
+        setFrame(shot.dataUrl)
+        if (missedFrames.current >= 3) setMessage('')
+        missedFrames.current = 0
+        if (shot.page) observePage(shot.page)
+      }
+    } catch {
+      if (generation === alive.current && ++missedFrames.current >= 3) setMessage('Кадр браузера не обновляется. Проверяю соединение…')
+    } finally { if (frameInFlight.current === generation) frameInFlight.current = null }
+  }, [browser, conversationId, observePage])
 
   // Старт сессии на монтирование/смену разговора; stop — на уходе.
   useEffect(() => {
     const generation = ++alive.current
     incarnation.current = null
     setPhase('starting'); setFrame(null); setMeta(null); setMessage('')
-    if (!browser) { setPhase('unavailable'); setMessage('Изолированный Chromium недоступен: browser-runner не настроен на сервере. Используйте Web Reader для доступных через прокси страниц или попросите администратора задать VC_BROWSER_RUNNER_URL и VC_BROWSER_RUNNER_TOKEN.'); return }
-    void browser.start(conversationId, VIEWPORT).then(
-      (started) => {
+    if (!browser) { setPhase('unavailable'); setMessage('Полный браузер недоступен на сервере. В Web Reader можно выбрать быстрый просмотр; для полного браузера требуется настройка администратором.'); return }
+    void browser.start(conversationId, VIEWPORT).then(async started => {
+      if (generation !== alive.current) return
+      incarnation.current = started.incarnation
+      if ((!started.currentUrl || started.currentUrl === 'about:blank') && openingUrl.current) {
+        const next = await browser.command(conversationId, { incarnation: started.incarnation, command: { type: 'navigate', url: openingUrl.current } })
         if (generation !== alive.current) return
-        incarnation.current = started.incarnation
-        applyMeta(started); setPhase('ready')
-        void refreshFrame()
-      },
-      (err: unknown) => {
-        if (generation !== alive.current) return
-        const text = err instanceof Error ? err.message : 'Не удалось запустить Chromium'
-        // 501 от сервера означает «раннер не настроен» — это недоступность, не сбой.
-        setPhase(/не настроен|недоступен/i.test(text) ? 'unavailable' : 'error')
-        setMessage(text)
+        if (isBrowserSessionMetadata(next)) started = next
       }
-    )
+      applyMeta(started); setPhase('ready'); void refreshFrame()
+    }).catch((err: unknown) => {
+      if (generation !== alive.current) return
+      const text = err instanceof Error ? err.message : 'Не удалось запустить Chromium'
+      setPhase(/не настроен|недоступен/i.test(text) ? 'unavailable' : 'error'); setMessage(text)
+    })
     return () => {
       alive.current++
-      if (browser && incarnation.current) void browser.stop(conversationId)
+      if (browser && incarnation.current) void browser.stop(conversationId).catch(() => {})
       incarnation.current = null
     }
   }, [browser, conversationId, refreshFrame])
@@ -195,6 +228,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const applyMeta = (next: BrowserSessionMetadata): void => {
     incarnation.current = next.incarnation
     setMeta(next); setAddress(next.currentUrl ?? '')
+    if (next.currentUrl) observePage({ url: next.currentUrl, title: next.title ?? '' })
     setHistory((current) => pushHistory(current, next.currentUrl))
     if (!origin.current && next.currentUrl) origin.current = next.currentUrl
   }
@@ -288,7 +322,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     const generation = ++alive.current
     incarnation.current = null
     setPhase('starting'); setFrame(null); setMeta(null); setMessage(''); setRetryable(false)
-    void browser.stop(conversationId)
+    void browser.stop(conversationId).catch(() => {})
       .catch(() => {})
       // Выбранный размер окна переживает перезапуск: иначе проверка мобильной
       // вёрстки сбрасывалась на десктоп при каждом «Перезапустить».
@@ -465,6 +499,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         aria-label="Адрес страницы"
         placeholder="https://…"
         value={address}
+        onFocus={() => { addressFocused.current = true }}
+        onBlur={() => { addressFocused.current = false }}
         disabled={phase !== 'ready'}
         onChange={(event) => setAddress(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter') submitAddress() }}
@@ -497,6 +533,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       )}
       {meta?.title && <span className="playwright-reader-title" title={meta.title}>{meta.title}</span>}
       {/* Сессия одна на разговор: без этого непонятно, кто увёл страницу. */}
+      {phase === 'ready' && (!meta?.currentUrl || meta.currentUrl === 'about:blank') && <span className="playwright-reader-quick-sites">
+        <Button size="sm" variant="ghost" onClick={() => void run({ type: 'navigate', url: 'https://app.internal/' })}>Текущий проект</Button>
+        <Button size="sm" variant="ghost" onClick={() => void run({ type: 'navigate', url: 'https://mail.google.com/' })}>Gmail</Button>
+        <Button size="sm" variant="ghost" onClick={() => void run({ type: 'navigate', url: 'https://www.instagram.com/' })}>Instagram</Button>
+      </span>}
       {meta?.lastActor && (
         <span className="playwright-reader-actor" data-actor={meta.lastActor}>
           {meta.lastActor === 'assistant' ? 'последнее действие — модели' : 'последнее действие — ваше'}

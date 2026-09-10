@@ -37,3 +37,8 @@ Caddy отправляет `/api/browser/*` напрямую, ядро такж�
 `npm run gate:fast`. Unit-тесты рядом с исходниками; проверки ядра и приложений на
 реальных HTTP-портах — `apps/server/src/playwrightReaderBridge/remote.integration.test.ts`.
 Реальный Chromium в этих тестах не запускается.
+
+Web Reader с `previewEngine: chromium` использует тот же порт и сессию. Проверяй
+`isChromiumReaderConversation`, а не только assistantKind. Start выпускает cookie
+preview; app.internal/machine.internal проходят через runnerFacingBase. Screenshot
+добавляет логический page.url/title командой status, не меняющей lastActor.

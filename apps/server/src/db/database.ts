@@ -376,6 +376,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'assistant_autonomy')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN assistant_autonomy TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'preview_engine')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN preview_engine TEXT NOT NULL DEFAULT 'proxy'`)
+    }
     if (!convCols.some((c) => c.name === 'preview_url')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN preview_url TEXT`)
     }
