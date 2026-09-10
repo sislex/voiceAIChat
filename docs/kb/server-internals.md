@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: 30588c23
+checked: 21382334
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -212,6 +212,16 @@ beforeinput и InputEvent; неверное число/дата не стира�
 воспроизводит pointer/mouse-последовательность и фокус. Set проверяет фактическое
 состояние checkbox после отменяемого click; radio нельзя снять как checkbox.
 Проверки: `previewInteractions.test.ts`, `webReaderInteractions.e2e.test.ts`.
+
+Чтение `read/find/a11y` использует `previewReading.ts`: обход видимых текстовых
+узлов исключает script/style, скрытое и инспектор; выбранный корень включается
+в результат. Подписи учитывают aria-labelledby (все ID, включая скрытые ссылки),
+aria-label, связанные label и alt иконок. Дерево доступности исключает aria-hidden
+и inert, сообщает роли и состояния checked/expanded/selected/disabled/readonly/
+required/invalid. Значения чувствительных input/textarea не попадают в read,
+включая текстовое содержимое textarea. Это компактная DOM-модель, не полная
+реализация алгоритма доступного имени браузера. Проверки — `previewReading.test.ts`
+и `webReaderReading.e2e.test.ts`; типы дополнительных полей — `previewActions.ts`.
 
 Контекст хранилищ (`previewStorage.ts`) сохраняет интерфейс Storage: свойства,
 присваивание/delete, Object.keys/JSON, prototype/instanceof, стабильные методы,

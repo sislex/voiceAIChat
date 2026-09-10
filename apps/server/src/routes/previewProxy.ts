@@ -1,3 +1,4 @@
+import { previewReadingHelpers } from './previewReading.js'
 import { previewResourceScript } from './previewResources.js'
 import { READER_PROJECT_ORIGIN, readerProjectUrl, type ReaderProjectRequest, type ReaderProjectResponse } from '@voicechat/shared'
 import { loadPreviewProject, ProjectPreviewError } from './previewProjectLoader.js'
@@ -240,11 +241,12 @@ const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==
 const pageInfo=()=>{let url=unproxy(location.href);try{const target=new URL(url);target.hash=location.hash;url=target.toString()}catch{}return {url,title:document.title||''}};
 const textOf=(el)=>(el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();
 ${previewInteractionHelpers()}
+${previewReadingHelpers()}
 const describe=(el)=>{
-  const d={selector:uniqueSelector(el),tag:el.localName,text:textOf(el).slice(0,EL_TEXT)};
+  const d={selector:uniqueSelector(el),tag:el.localName,text:accessibleName(el)};
   const href=el.localName==='a'&&el.getAttribute('href');if(href)d.href=unproxy(href);
   const role=el.getAttribute('role')||(el.localName==='input'?(el.type||'text'):'');if(role)d.role=role;
-  if(el.disabled===true)d.disabled=true;
+  Object.assign(d,controlState(el));
   return d
 };
 const bySelector=(selector)=>{let list;try{list=document.querySelectorAll(selector)}catch{throw new Error('Некорректный CSS-селектор: '+selector)}return [...list].filter(el=>!el.closest('[data-voicechat-inspector]'))};
@@ -254,7 +256,7 @@ const byText=(text)=>{
   const all=[];
   for(const el of document.querySelectorAll('body *')){
     if(el.closest('[data-voicechat-inspector]')||el.id==='${PREVIEW_INSPECTOR_SCRIPT_ID}'||!actionVisible(el))continue;
-    const t=textOf(el);
+    const t=accessibleName(el)||textOf(el);
     if(!t||t.length>300||!t.toLowerCase().includes(q))continue;
     all.push(el)
   }
@@ -263,7 +265,7 @@ const byText=(text)=>{
   const clickable=(el)=>el.matches(CLICKABLE)||el.closest(CLICKABLE)?0:1;
   return deepest.sort((a,b)=>(exact(a)-exact(b))||(clickable(a)-clickable(b)))
 };
-const findTargets=(action)=>action.selector?bySelector(action.selector):byText(action.text||'');
+const findTargets=(action)=>(action.selector?bySelector(action.selector):byText(action.text||'')).filter(action.kind==='find'?readingVisible:actionVisible);
 const clickTarget=(el)=>{const host=el.matches(CLICKABLE)?el:(el.closest(CLICKABLE)||el);return host};
 const setNativeValue=(el,value)=>{
   const proto=el.localName==='textarea'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
@@ -475,57 +477,15 @@ const run=(action)=>{
     return {page:pageInfo(),uploaded:{selector:uniqueSelector(el),name:action.name,size:bytes.length}}
   }
   if(action.kind==='a11y'){
-    let scope=document.body||document.documentElement;
-    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
-    const roleOf=(el)=>{
-      const explicit=el.getAttribute('role');if(explicit)return explicit;
-      const tag=el.localName;
-      if(tag==='a'&&el.hasAttribute('href'))return 'link';
-      if(tag==='button')return 'button';
-      if(tag==='select')return 'combobox';
-      if(tag==='textarea')return 'textbox';
-      if(tag==='img')return 'img';
-      if(tag==='nav')return 'navigation';
-      if(tag==='main')return 'main';
-      if(tag==='header')return 'banner';
-      if(tag==='footer')return 'contentinfo';
-      if(tag==='form')return 'form';
-      if(tag==='table')return 'table';
-      if(tag==='li')return 'listitem';
-      if(tag==='ul'||tag==='ol')return 'list';
-      if(/^h[1-6]$/.test(tag))return 'heading';
-      if(tag==='input'){const t=el.type||'text';if(t==='checkbox'||t==='radio')return t;if(t==='submit'||t==='button')return 'button';if(t==='range')return 'slider';if(t==='hidden')return '';return 'textbox'}
-      return ''
-    };
-    const nameOf=(el)=>{
-      const aria=el.getAttribute('aria-label');if(aria)return aria;
-      const labelledBy=el.getAttribute('aria-labelledby');
-      if(labelledBy){const ref=document.getElementById(labelledBy.split(/\\s+/)[0]);if(ref)return textOf(ref)}
-      if(el.localName==='img')return el.getAttribute('alt')||'';
-      if(el.localName==='input'||el.localName==='select'||el.localName==='textarea'){
-        if(el.labels&&el.labels.length)return textOf(el.labels[0]);
-        return el.getAttribute('placeholder')||el.name||''
-      }
-      return textOf(el)
-    };
-    const visible=(el)=>typeof el.checkVisibility==='function'?el.checkVisibility():true;
-    const limit=Math.max(1,Math.min(200,typeof action.limit==='number'?Math.floor(action.limit):200));
+    const scope=readingScope(action),limit=Math.max(1,Math.min(200,typeof action.limit==='number'?Math.floor(action.limit):200));
     const nodes=[];let total=0;
     const walk=(el,level)=>{
-      for(const child of el.children){
-        if(child.closest('[data-voicechat-inspector]')||child.localName==='script'||child.localName==='style')continue;
-        const role=roleOf(child);
-        let next=level;
-        if(role&&visible(child)){
-          total++;
-          if(nodes.length<limit)nodes.push({role,name:nameOf(child).slice(0,EL_TEXT),selector:uniqueSelector(child),level});
-          next=level+1
-        }
-        walk(child,next)
-      }
+      if(!accessibleVisible(el))return;
+      const role=accessibleRole(el);let next=level;
+      if(role){total++;if(nodes.length<limit)nodes.push({role,name:accessibleName(el),selector:uniqueSelector(el),level,...controlState(el)});next++}
+      for(const child of el.children)walk(child,next)
     };
-    walk(scope,0);
-    return {page:pageInfo(),nodes,total}
+    walk(scope,0);return {page:pageInfo(),nodes,total}
   }
   if(action.kind==='edits'){
     const edits=loadEdits();
@@ -557,30 +517,19 @@ const run=(action)=>{
     return {page:pageInfo(),pressed:{key:action.key,selector:el===document.body?'body':uniqueSelector(el)}}
   }
   if(action.kind==='read'){
-    let scope=document.body||document.documentElement;
-    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
-    const headings=[...scope.querySelectorAll('h1,h2,h3,h4,h5,h6')].slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:textOf(h).slice(0,EL_TEXT)}));
-    const links=[];const seen=new Set();
-    for(const a of scope.querySelectorAll('a[href]')){
-      if(links.length>=LINKS)break;
-      const t=textOf(a).slice(0,EL_TEXT);const href=unproxy(a.getAttribute('href'));
-      if(!t||seen.has(t+'|'+href))continue;seen.add(t+'|'+href);links.push({text:t,href})
-    }
-    const buttons=[...scope.querySelectorAll('button,[role=button],input[type=submit],input[type=button]')].map(b=>textOf(b).slice(0,EL_TEXT)||(b.value||'').slice(0,EL_TEXT)).filter(Boolean).slice(0,BUTTONS);
-    const inputs=[...scope.querySelectorAll('input,textarea,select')].slice(0,INPUTS).map(i=>({
-      selector:uniqueSelector(i),
-      type:i.localName==='input'?(i.type||'text'):i.localName,
-      name:i.name||'',
-      placeholder:i.getAttribute('placeholder')||'',
-      value:i.type==='password'?'':String(i.value||'').slice(0,EL_TEXT)
-    }));
-    return {page:pageInfo(),headings,links,buttons,inputs,text:textOf(scope).slice(0,SNIPPET)}
+    const scope=readingScope(action);
+    const headings=scopeElements(scope,'h1,h2,h3,h4,h5,h6').slice(0,HEADINGS).map(h=>({level:Number(h.localName[1]),text:readableText(h,EL_TEXT)}));
+    const links=[],seen=new Set();
+    for(const a of scopeElements(scope,'a[href]')){if(links.length>=LINKS)break;const text=accessibleName(a),href=unproxy(a.getAttribute('href'));if(!text||seen.has(text+'|'+href))continue;seen.add(text+'|'+href);links.push({text,href})}
+    const buttons=scopeElements(scope,'button,[role=button],input[type=submit],input[type=button],input[type=reset],input[type=image]').map(el=>accessibleName(el)).filter(Boolean).slice(0,BUTTONS);
+    const inputs=scopeElements(scope,'input:not([type=hidden]),textarea,select').slice(0,INPUTS).map(el=>({selector:uniqueSelector(el),type:el.localName==='input'?(el.type||'text'):el.localName,name:el.name||'',label:accessibleName(el),placeholder:el.getAttribute('placeholder')||'',value:sensitive(el)?'':String(el.value||'').slice(0,EL_TEXT),...controlState(el)}));
+    return {page:pageInfo(),headings,links,buttons,inputs,text:readableText(scope)}
   }
   throw new Error('Неизвестное действие')
 };
 const reply=(requestId,ok,payload)=>parent.postMessage(ok?{type:RESULT,requestId,ok:true,result:payload}:{type:RESULT,requestId,ok:false,error:String(payload).slice(0,2000)},location.origin);
 let recording=false,diagnosticRunning=false,lastRecordedClickAt=0;
-const sensitive=(el)=>el.localName==='input'&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
+const sensitive=(el)=>['input','textarea'].includes(el.localName)&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
 const record=(step)=>{if(recording&&!diagnosticRunning&&!editActive)parent.postMessage({type:RECORD,step},location.origin)};
 const recordClick=(e)=>{const el=e.target instanceof Element?clickTarget(e.target):null;if(el&&!el.closest('[data-voicechat-inspector]')){lastRecordedClickAt=Date.now();record({kind:'click',selector:uniqueSelector(el),text:textOf(el).slice(0,EL_TEXT)})}};
 const recordInput=(e)=>{const el=e.target instanceof Element?e.target:null;if(!el||el.closest('[data-voicechat-inspector]')||!el.matches('input,textarea,select,[contenteditable=true]'))return;record({kind:'type',selector:uniqueSelector(el),text:sensitive(el)?'':String(el.value===undefined?el.textContent||'':el.value).slice(0,2000),sensitive:sensitive(el)})};
