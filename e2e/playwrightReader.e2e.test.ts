@@ -14,6 +14,7 @@ import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
 import { startReaderFramesFixture } from '../apps/browser-runner/src/test/readerFrames.js'
 import { startReaderFormsFixture } from '../apps/browser-runner/src/test/readerForms.js'
 import { BROWSER_UPLOAD_LIMIT_BYTES } from '../packages/shared/src/browserLimits'
+import { runScenarioStep, type ScenarioSend } from '../packages/shared/src/scenarioStep'
 import type { BrowserSelectorResult } from '../packages/shared/src/types'
 
 const ROOT = resolve(__dirname, '..')
@@ -389,6 +390,62 @@ describe('Playwright Reader: настоящий интерфейс и инстр
     await mcp('scroll', { dy: 500 })
     expect((await shot({}, '12-model-scrolled-viewport')).text).toContain('y=500')
     await capture('13-reader-after-model-screenshots')
+  })
+
+  it('сценарий модели дочитывает длинное превью Make через MCP и находит ошибку в конце', async () => {
+    const text = 'Длинная страница проекта. '.repeat(1500)
+    await api(`/api/make/${chats.make}/file`, 'PUT', { path: 'index.html', content: `<!doctype html><title>Длинная проверка Make</title><h1>Проверка отчёта</h1><p>${text}</p><p id="result">Задача создана. Ошибка в подвале</p>` })
+    await mcp('open', { url: `${base}/#/make/${chats.make}` })
+    await mcp('wait', { selector: '.make-frame' })
+    let frame: string[] = []
+    await expect.poll(async () => {
+      const result = JSON.parse(await mcp('frames')) as { frames: Array<{ path: string[]; url: string }> }
+      frame = result.frames.find(item => item.url.includes(`/api/preview/make/${chats.make}/`))?.path ?? []
+      return frame.length
+    }).toBeGreaterThan(0)
+    await mcp('wait', { frame, selector: '#result' })
+    const send: ScenarioSend = async command => {
+      if (command.type !== 'selector') throw new Error('Ожидалась DOM-команда')
+      const { kind, ...args } = command.action
+      return JSON.parse(await mcp(kind, { ...args, ...(command.frame ? { frame: command.frame } : {}) }))
+    }
+    const step = { id: 'long', title: 'Подвал отчёта', action: { kind: 'wait' as const, frame, loadState: 'load' as const } }
+    const positive = await runScenarioStep({ ...step, expectText: 'Задача создана' }, send, { expectTimeoutMs: 0 })
+    const negative = await runScenarioStep({ ...step, expectAbsentText: 'Ошибка в подвале' }, send, { expectTimeoutMs: 0 })
+    expect(positive).toMatchObject({ ok: true })
+    expect(negative).toMatchObject({ ok: false, failure: 'expectation', detail: expect.stringContaining('недопустимый текст') })
+    await mcp('scroll', { frame, to: 'bottom' })
+    if (artifacts) await writeFile(join(artifacts, '20-scenario-mcp-results.json'), JSON.stringify({ positive, negative }, null, 2))
+    await capture('20-scenario-make-footer')
+  })
+
+  it('панель исполняет проверку первого перехода и останавливается при недоступном стартовом адресе', async () => {
+    await mcp('open', { url: 'http://forms.reader.test/next' })
+    await expect.poll(() => page.getByRole('textbox', { name: 'Адрес страницы', exact: true }).inputValue(), { timeout: 10_000 }).toBe('http://forms.reader.test/next')
+    await page.getByRole('button', { name: 'Записать сценарий', exact: true }).click()
+    await page.getByLabel('Ожидаемый текст', { exact: true }).fill('Переход завершён')
+    await page.getByRole('button', { name: 'Ждать текст', exact: true }).click()
+    await page.getByRole('button', { name: 'Прогнать сценарий', exact: true }).click()
+    await page.getByText('прогон: ок', { exact: true }).waitFor()
+    await capture('21-scenario-first-expectation')
+    const pattern = '**/api/browser/*/command'
+    let checks = 0
+    await page.route(pattern, async route => {
+      const body = route.request().postDataJSON()
+      if (body.command?.type === 'navigate') {
+        // Настоящий отказ политики раннера вместо поддельного успешного ответа.
+        return route.continue({ postData: JSON.stringify({ ...body, command: { type: 'navigate', url: 'http://127.0.0.1:1/' } }) })
+      }
+      if (body.command?.type === 'selector') checks++
+      return route.continue()
+    })
+    try {
+      await page.getByRole('button', { name: 'Прогнать сценарий', exact: true }).click()
+      await page.getByText(/Стартовый адрес не открылся/).waitFor()
+      expect(checks).toBe(0)
+      expect(await page.getByText('прогон: ок', { exact: true }).count()).toBe(0)
+      await capture('22-scenario-blocked-navigation')
+    } finally { await page.unroute(pattern); await page.getByLabel('Очистить запись', { exact: true }).click() }
   })
 
 })

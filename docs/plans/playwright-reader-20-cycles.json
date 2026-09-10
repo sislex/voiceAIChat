@@ -1855,13 +1855,229 @@
         }
       },
       "endedAt": "2026-09-10T03:19:40.067330+00:00",
-      "durationSeconds": 2205
+      "durationSeconds": 2205,
+      "commit": "a5b4fde6"
     },
     {
       "number": 10,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T03:20:14.689236+00:00",
+      "items": [
+        {
+          "id": "10-01",
+          "title": "Действие без подтверждённого ответа не считается успешным",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-02",
+          "title": "Ошибка чтения не подтверждает отсутствие текста",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-03",
+          "title": "Ожидание на длинной странице и на границе порций текста",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-04",
+          "title": "Неполное чтение не даёт зелёную проверку отсутствия",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-05",
+          "title": "Опрос ожидания не выходит за свой бюджет дополнительным сном и чтением",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-06",
+          "title": "Ожидание первого перехода сохраняется и исполняется",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-07",
+          "title": "Прокрутка не стирает промежуточную проверку и чужой scope",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-08",
+          "title": "Идентификаторы записи остаются уникальными после загрузки и редактирования",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-09",
+          "title": "Некорректное действие отклоняется до сохранения и исполнения",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        },
+        {
+          "id": "10-10",
+          "title": "Отказ стартового перехода останавливает прогон в панели и QA",
+          "status": "validated",
+          "group": "scenario-integrity",
+          "implementationStartedAt": "2026-09-10T03:20:14.689236+00:00",
+          "implementationEndedAt": "2026-09-10T03:23:51.843182+00:00",
+          "sharedGroupDurationSeconds": 217,
+          "validation": "46 shared, 100 UI/recording, 13 QA, 5 native Chromium, 15 E2E; оба гейта exit 0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T02:59:46.914255+00:00",
+        "preparedAt": "2026-09-10T03:17:31.760428+00:00",
+        "items": [
+          "Действие без подтверждённого ответа не считается успешным",
+          "Ошибка чтения не подтверждает отсутствие текста",
+          "Ожидание на длинной странице и на границе порций текста",
+          "Неполное чтение не даёт зелёную проверку отсутствия",
+          "Опрос ожидания не выходит за свой бюджет дополнительным сном и чтением",
+          "Ожидание первого перехода сохраняется и исполняется",
+          "Прокрутка не стирает промежуточную проверку и чужой scope",
+          "Идентификаторы записи остаются уникальными после загрузки и редактирования",
+          "Некорректное действие отклоняется до сохранения и исполнения",
+          "Отказ стартового перехода останавливает прогон в панели и QA"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-10-baseline.json",
+        "evidence": [
+          "9 воспроизведённых сбоев общих функций; отказ старта панели подтверждён по коду run/replay, DOM-регрессия подготовлена",
+          "26/26 тестов прототипа (634 мс)",
+          "5/5 настоящих Chromium-проверок длинных страниц, включая iframe"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-10-draft",
+        "limitations": [
+          "Подготовка вне checkout во время гейтов 09; интервалы пересекаются",
+          "Полное чтение ограничено 200000 символов; за пределом вердикт unverifiable",
+          "URL/размер проверяются между порциями, атомарность изменяемого DOM не заявляется",
+          "expectTimeoutMs ограничивает повторные попытки; отдельная команда ограничивается транспортом/раннером",
+          "Пакетная интеграция, UI-браузер, fast/full gate ещё не выполнены"
+        ],
+        "preparedBeforeCycleCommit": {
+          "startedAt": "2026-09-10T02:59:46.914255+00:00",
+          "endedAt": "2026-09-10T03:20:14.689236+00:00",
+          "detail": "Прототипы вне checkout параллельно гейтам 09; интервалы пересекаются."
+        }
+      },
+      "validation": {
+        "focused": {
+          "sharedPassed": 46,
+          "sharedDurationMs": 976,
+          "uiPassed": 100,
+          "uiDurationMs": 3470,
+          "qaPassed": 13,
+          "qaDurationMs": 11810,
+          "nativePassed": 5,
+          "nativeDurationMs": 3020,
+          "typecheckAllExitCode": 0,
+          "logs": [
+            "/tmp/voicechat-reader-cycle-10-shared.log",
+            "/tmp/voicechat-reader-cycle-10-ui.log",
+            "/tmp/voicechat-reader-cycle-10-server.log",
+            "/tmp/voicechat-reader-cycle-10-native.log",
+            "/tmp/voicechat-reader-cycle-10-typecheck.log"
+          ]
+        },
+        "baseline": {
+          "logic": "/tmp/voicechat-reader-cycle-10-baseline.json",
+          "uiFailed": 1,
+          "uiDurationMs": 7850,
+          "uiLog": "/tmp/voicechat-reader-cycle-10-ui-baseline.log"
+        },
+        "webBuild": {
+          "exitCode": 0,
+          "durationMs": 35450
+        },
+        "browserE2E": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:25:06.536045+00:00",
+          "endedAt": "2026-09-10T03:25:28.607724+00:00",
+          "durationMs": 22071,
+          "status": "passed",
+          "passed": 15,
+          "vitestDurationMs": 21840,
+          "log": "/tmp/voicechat-reader-cycle-10-e2e-3.log",
+          "artifacts": "/tmp/voicechat-reader-audit/cycle-10",
+          "visuallyInspected": [
+            "20-scenario-make-footer.png",
+            "21-scenario-first-expectation.png",
+            "22-scenario-blocked-navigation.png"
+          ],
+          "initialCorrections": [
+            {
+              "passed": 14,
+              "failed": 1,
+              "log": "/tmp/voicechat-reader-cycle-10-e2e.log",
+              "reason": "Новый тест ожидал status панели 1000 мс, меньше интервала опроса; стенд исправлен на timeout 10000 мс."
+            },
+            "Вторая попытка ожидала title «Следующая страница» вместо текста body «Переход завершён». Панель правильно показала провал; исправлено ожидание нового теста."
+          ]
+        },
+        "fastGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:26:10.487366+00:00",
+          "endedAt": "2026-09-10T03:33:29.867021+00:00",
+          "durationMs": 439375,
+          "status": "passed",
+          "passed": 7436,
+          "skipped": 45,
+          "failed": 0,
+          "log": "/tmp/voicechat-reader-cycle-10-fast.log"
+        },
+        "fullGate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T03:34:54.512136+00:00",
+          "endedAt": "2026-09-10T03:45:52.094689+00:00",
+          "durationMs": 657557,
+          "status": "passed",
+          "passed": 7767,
+          "webBuild": true,
+          "storybookBuild": true,
+          "log": "/tmp/voicechat-reader-cycle-10-gate.log"
+        }
+      },
+      "endedAt": "2026-09-10T03:47:08.286840+00:00",
+      "durationSeconds": 1614
     },
     {
       "number": 11,

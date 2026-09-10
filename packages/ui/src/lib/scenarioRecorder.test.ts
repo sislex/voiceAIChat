@@ -84,10 +84,10 @@ describe('проверки в сценарии (круг 14)', () => {
     expect(expectOnLastStep([], 'что-то')).toEqual([])
   })
 
-  it('удаление шага перенумеровывает остальные', () => {
+  it('удаление шага сохраняет идентификаторы остальных', () => {
     const steps = recordClick(recordClick(recordClick([], element()), element({ selector: '#b' })), element({ selector: '#c' }))
     const left = removeStep(steps, 'step-2')
-    expect(left.map((s) => s.id)).toEqual(['step-1', 'step-2'])
+    expect(left.map((s) => s.id)).toEqual(['step-1', 'step-3'])
     expect(left.map((s) => ('selector' in s.action ? s.action.selector : ''))).toEqual(['[data-testid="create"]', '#c'])
   })
 
