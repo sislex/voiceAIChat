@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-10
-checked: ad19ca64
+checked: 544ecfc5
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -187,6 +187,16 @@ redirect сохраняются до следующего запроса. HTTP r
 более строгий upstream no-store сохраняется до браузера. Мутации очищают старые
 ресурсы машины. HTTP-регрессии — `previewCache.integration.test.ts`, браузерные —
 `e2e/webReaderCache.e2e.test.ts`.
+
+Контекст хранилищ (`previewStorage.ts`) сохраняет интерфейс Storage: свойства,
+присваивание/delete, Object.keys/JSON, prototype/instanceof, стабильные методы,
+DOMString и обязательные аргументы. Ключи native local/sessionStorage имеют префикс
+логического origin; clear удаляет только его значения. События storage чужого
+origin подавляются, свои получают логические key/url и правильный storageArea.
+IndexedDB.open/deleteDatabase/databases и IDBDatabase.name используют те же
+исходные имена поверх namespace; базы другого сайта не перечисляются. Если getter
+localStorage запрещён браузером, остальные мосты продолжают запуск, а это хранилище
+получает временный in-memory fallback. Chromium-проверки: `webReaderStorage.e2e.test.ts`.
 
 Динамический сетевой трафик страницы тоже не покидает `/api/preview`: context shim
 (`previewContextScript`, вставляется в начало `<head>`) переопределяет `window.fetch`,

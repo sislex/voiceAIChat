@@ -1,3 +1,4 @@
+import { previewStorageScript } from './previewStorage.js'
 import { PreviewCookieStore, responseSetCookies } from './previewCookies.js'
 import { rewritePreviewCss } from './previewStyles.js'
 import { previewNavigationScript } from './previewNavigation.js'
@@ -104,12 +105,9 @@ export const PREVIEW_INSPECTOR_SCRIPT_ID = 'voicechat-preview-inspector'
 /** Emulates a browser origin while the rendered document safely stays on ChatAI origin. */
 export function previewContextScript(base: string, documentBase = base): string {
   const baseUrl = new URL(base)
-  const key = JSON.stringify(`voicechat.preview.context.v1:${baseUrl.origin}:`)
+  const key = `voicechat.preview.context.v1:${baseUrl.origin}:`
   const fallbackBase = JSON.stringify(baseUrl.toString())
-  return `<script>(()=>{const p=${key},nativeLocal=window.localStorage,nativeSession=window.sessionStorage;
-const storage=(native)=>({get length(){return Object.keys(native).filter(k=>k.startsWith(p)).length},key(i){return Object.keys(native).filter(k=>k.startsWith(p))[i]?.slice(p.length)??null},getItem(k){return native.getItem(p+String(k))},setItem(k,v){native.setItem(p+String(k),String(v))},removeItem(k){native.removeItem(p+String(k))},clear(){Object.keys(native).filter(k=>k.startsWith(p)).forEach(k=>native.removeItem(k))}});
-for(const [name,native] of [['localStorage',nativeLocal],['sessionStorage',nativeSession]])try{Object.defineProperty(window,name,{configurable:true,value:storage(native)})}catch{}
-const nativeIdb=window.indexedDB;if(nativeIdb)try{Object.defineProperty(window,'indexedDB',{configurable:true,value:new Proxy(nativeIdb,{get(target,key){const value=Reflect.get(target,key,target);if(key==='open'||key==='deleteDatabase')return (name,...args)=>value.call(target,p+String(name),...args);return typeof value==='function'?value.bind(target):value}})})}catch{}
+  return `<script>(()=>{${previewStorageScript(key)}
 const fallbackBase=${fallbackBase};
 // URL ответа может отличаться после redirect; runtime должен видеть ту же базу,
 // что и переписанные HTML-ресурсы. replaceState не добавляет пустой шаг назад.
