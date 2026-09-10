@@ -308,7 +308,7 @@ export default function App(props: AppProps = {}): JSX.Element {
 /** Чат из адреса на момент монтирования: его bootstrap откроет первым. */
 function initialChatIdFromPath(path: string, segments: string[]): string | null {
   const chatRoute = parseChatRoute(path)
-  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') return chatRoute.conversationId
+  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context') return chatRoute.conversationId
   if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader' || segments[0] === 'make') {
     return segments[1] ?? null
   }
@@ -395,7 +395,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
   const chatRoute = parseChatRoute(path)
-  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab' ? chatRoute.conversationId : routeTaskChatId
+  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'settings' || chatRoute?.kind === 'legacy-context' ? chatRoute.conversationId : routeTaskChatId
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
@@ -1726,12 +1726,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
   }, [api, chat.activeConversation, chat.conversations, projectsActions, toast])
   useEffect(() => {
-    if (chatRoute?.kind !== 'context-item' && chatRoute?.kind !== 'context-tab') {
+    if (chatRoute?.kind !== 'settings' && chatRoute?.kind !== 'legacy-context') {
       contextSettingsRouteAttempt.current = null
       return
     }
-    if (chat.activeId !== chatRoute.conversationId) return
-    const routeAttempt = `${chatRoute.kind}:${chatRoute.conversationId}`
+    if (chatRoute.kind === 'legacy-context') {
+      navigate(`/chat/${encodeURIComponent(chatRoute.conversationId)}/settings/context`, { replace: true })
+      return
+    }
+    const routeAttempt = `${chatRoute.kind}:${chatRoute.conversationId}:${chatRoute.tab}`
+    if (chat.activeId !== chatRoute.conversationId) {
+      if (chat.conversations.length > 0 && !chat.conversations.some((conversation) => conversation.id === chatRoute.conversationId) && contextSettingsRouteAttempt.current !== routeAttempt) {
+        contextSettingsRouteAttempt.current = routeAttempt
+        toast.error('Настройки недоступны: разговор удалён или недоступен.')
+      }
+      return
+    }
     if (contextSettingsRouteAttempt.current === routeAttempt || conversationSettingsTarget?.id === chatRoute.conversationId) return
     contextSettingsRouteAttempt.current = routeAttempt
     void openConversationSettings(chatRoute.conversationId)
@@ -2631,11 +2641,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         {...(activeConversation?.projectId && chat.activeId
           ? { onOpenGit: () => setGitChatPanel({ projectId: activeConversation.projectId!, conversationId: chat.activeId! }) }
           : {})}
-        // Бейдж «контекст изменён» ведёт сразу на вкладку контекста: вкладку
-        // выбирает маршрут `#/chat/:id/context/`, поэтому достаточно адреса.
         disabledContextCount={activeConversation?.disabledContext?.length ?? 0}
         onOpenContextSettings={() => {
-          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context`
+          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/settings/context`
           if (chat.activeId) void openConversationSettings(chat.activeId)
         }}
         permissionMode={activePermissionMode}
@@ -3325,11 +3333,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           title="Настройки разговора"
           onClose={closeConversationSettings}
           onEscape={() => {
-            const prefix = `#/chat/${encodeURIComponent(conversationSettingsTarget.id)}/context/`
-            if (window.location.hash.startsWith(prefix)) {
-              window.location.hash = `/chat/${encodeURIComponent(conversationSettingsTarget.id)}/context`
-              return
-            }
             closeConversationSettings()
           }}
           testId="conversation-settings-overlay"
@@ -3380,6 +3383,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           machineOps={machineOps}
           role={session.currentUser?.role ?? 'admin'}
           settings={settingsState.settings}
+          llmEngines={settingsState.llmEngines}
+          llmAccess={settingsState.llmAccess}
           defaultAgentId={settingsState.settings.defaultAgentId}
           projects={projects.projects}
           webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
@@ -3390,13 +3395,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
           onOpenExplorer={(agentId, path) => { closeConversationSettings(); operationsActions.openUtility('explorer', agentId, path) }}
-          onSave={async ({ title, execTarget, workdir, skillNames, permissionMode, kbContextMode, projectId }) => {
+          onSave={async ({ title, execTarget, workdir, skillNames, permissionMode, kbContextMode, projectId, llmEngineId, llmProvider, llmModel }) => {
             await chatActions.renameConversation(conversationSettingsTarget.id, title)
             await chatActions.setConversationProject(conversationSettingsTarget.id, projectId)
-            // Существующие legacy-переопределения не меняем: форма разговора их
-            // больше не редактирует и не должна случайно очищать при сохранении.
-            const conversation = conversationSettingsTarget.conversation!
-            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, conversation.llmProvider, conversation.llmModel, permissionMode, kbContextMode, conversation.llmEngineId)
+            await chatActions.setConversationExecTarget(conversationSettingsTarget.id, execTarget, workdir, skillNames, llmProvider, llmModel, permissionMode, kbContextMode, llmEngineId)
           }}
           onAddSkill={async (agentId, skill) => {
             const agent = operations.agents.find((item) => item.id === agentId)
@@ -3409,7 +3411,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           }}
           onClose={() => {
             closeConversationSettings()
-            if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') navigate(`/chat/${conversationSettingsTarget.id}`)
+            if (chatRoute?.kind === 'settings') navigate(`/chat/${conversationSettingsTarget.id}`)
           }}
         /> : <>
           <header className="convsettings-head">
