@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-09
-checked: 41e07830
+updated: 2026-09-10
+checked: 11105f5c
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -32,11 +32,43 @@ areas:
 
 Playwright Reader — отдельный продуктовый режим: слева обычный чат ChatAI, справа
 работает изолированный Chromium под управлением Playwright.
-Существующий Web Reader (`assistantKind: 'web-recorder'`, iframe поверх
-`/api/preview`, `postMessage`-контракт рекордера) остаётся рабочим и не
-затрагивается: см. [ui.md](../ui.md#web-reader--отдельная-страница). Они используют общий
+Web Reader (`assistantKind: 'web-recorder'`) выбирает движок в том же разговоре:
+быстрый просмотр — iframe поверх `/api/preview`, полный браузер — эта же
+`BrowserSessionPane` с изолированным Chromium: см. [ui.md](../ui.md#web-reader--отдельная-страница). Они используют общий
 MCP-вход `/mcp/preview`, компоненты чата и split-раскладку. Проект разговора может
 давать машине и инструментам контекст; выбор Chromium не зависит от наличия проекта.
+
+## Полный Chromium внутри Web Reader (2026-09-10)
+
+`Conversation.previewEngine` сохраняется в `conversations.preview_engine` (по
+умолчанию proxy). Переключение использует существующий `conversations:setPreviewUrl`
+и REST preview-url: Chromium разрешён только собственному web-recorder, обычное
+сохранение URL не сбрасывает движок. `isChromiumReaderConversation` объединяет
+Playwright Reader и выбранный Chromium в Web Reader; localCore передаёт этот
+признак и отдельному приложению. MCP и пользовательский ввод работают с одним
+sessionId разговора. История чата при смене движка не переносится и не теряется.
+
+Селектор движка блокируется до сохранения; отказ оставляет прежнюю панель. При
+первом старте Chromium открывает сохранённый URL, живую сессию не уводит назад.
+Screenshot возвращает page.url/title через команду status; status/screenshot
+не меняют lastActor. Панель обновляет адрес, подпись вкладки и историю после
+действия модели/SPA, сохраняет URL по очереди и бережёт черновик адресной строки.
+Поллинг не запускает пересекающиеся запросы кадров и сообщает повторяющиеся сбои.
+Первый переход с about:blank не считается уходом с исходного сайта.
+
+REST start устанавливает cookie ключа preview; navigate преобразует app.internal
+и machine.internal через VC_BROWSER_PREVIEW_BASE. Literal loopback принимается
+только для точного host:port, разрешённого оператором; произвольная приватная сеть
+по-прежнему закрыта. Для реального Chromium нужны настроенный browser-runner и
+установленный браузер; без него видна недоступность и можно выбрать быстрый режим.
+Сессия и профиль Chromium остаются временными: stop/выход из панели их удаляют.
+Переключение движка не переносит cookie между прокси и Chromium.
+
+`e2e/webReaderNative.e2e.test.ts` проверяет настоящий App + API + раннер + MCP,
+включая сайт с frame-ancestors none. 10 сентября проверены реальные страницы входа
+Gmail и Instagram: навигация, чтение модельным selector-действием и снимки; вход
+в аккаунты не выполнялся. Instagram потребовал дождаться JavaScript после заставки.
+Это не проверка авторизованных сценариев или прохождения антибот-защиты.
 
 ## Приложение `apps/playwright-reader` (2026-09-09)
 
@@ -89,7 +121,7 @@ Playwright Reader встроен. Cookie прокси и преобразова�
 Панель Playwright Reader подключена к реальному browser-runner. На маршруте
 `#/playwright-reader` `App.tsx` монтирует не `WebReaderFrame` (iframe поверх
 `/api/preview`), а `BrowserSessionPane` (`packages/ui/src/components`) поверх
-изолированного Chromium; `WebReaderFrame` остался только у Web Reader. Живой
+изолированного Chromium; `WebReaderFrame` используется в быстром режиме Web Reader. Живой
 прогон 2026-08-25: instagram.com (который прокси не поднимает) открылся в панели,
 клик по кадру закрыл cookie-баннер Meta.
 
@@ -115,7 +147,7 @@ Playwright Reader встроен. Cookie прокси и преобразова�
 Для реального запуска раннеру нужен `npx playwright install chromium`.
 
 Инструменты модели `mcp__browser__*` подключены к изолированному Chromium через
-`PlaywrightReaderService`; панель пользователя используется только Web Reader.
+`PlaywrightReaderService`; relay панели пользователя используется только быстрым режимом Web Reader.
 
 Механика привязки одна на оба Reader-режима и живёт в `AppBody`
 (`packages/ui/src/App.tsx`): `previewRunnerRef` хранит не голый runner, а пару

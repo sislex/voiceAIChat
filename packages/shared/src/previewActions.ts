@@ -155,7 +155,7 @@ export interface PreviewReadResult {
   headings: { level: number; text: string }[]
   links: { text: string; href: string }[]
   buttons: string[]
-  inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean }[]
+  inputs: { selector: string; type: string; name: string; placeholder: string; value: string; label?: string; expanded?: boolean; selected?: boolean; disabled?: boolean; readOnly?: boolean; checked?: boolean | 'mixed'; required?: boolean; invalid?: boolean }[]
   /** Видимый текст (обрезан лимитом) — на случай страниц без семантики. */
   text: string
 }

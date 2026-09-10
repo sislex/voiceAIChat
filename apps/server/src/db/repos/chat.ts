@@ -23,6 +23,7 @@ interface ConversationRow {
   kb_context_mode: string | null
   disabled_context_json: string | null
   project_id: string | null
+  preview_engine: 'proxy' | 'chromium'
   preview_url: string | null
   task_id: string | null
   assistant_kind: string | null
@@ -238,7 +239,7 @@ export class ChatRepo extends BaseRepo {
     if (disabledContext.length) {
       await this.sql.run(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), id, userId])
     }
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -564,8 +565,8 @@ export class ChatRepo extends BaseRepo {
     return rows.map((row) => ({ at: row.at, actor: row.actor, itemId: row.item_id, enabled: row.enabled === 1, ...(row.value === null ? {} : { value: row.value }) }))
   }
 
-  async setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null): Promise<Conversation | null> {
-    await this.sql.run(`UPDATE conversations SET preview_url = ?, updated_at = ? WHERE id = ? AND user_id = ?`, [previewUrl, this.now(), id, userId])
+  async setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null, previewEngine?: 'proxy' | 'chromium'): Promise<Conversation | null> {
+    await this.sql.run(`UPDATE conversations SET preview_url = ?, preview_engine = COALESCE(?, preview_engine), updated_at = ? WHERE id = ? AND user_id = ?`, [previewUrl, previewEngine ?? null, this.now(), id, userId])
     return await this.getConversation(userId, id)
   }
 
@@ -1334,6 +1335,7 @@ export class ChatRepo extends BaseRepo {
       assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' || row.assistant_kind === 'make' || row.assistant_kind === 'images' ? row.assistant_kind : null,
       // Дефолт — полная автономия: ассистент задуман действующим, а не советующим.
       assistantAutonomy: row.assistant_autonomy === 'confirm' ? 'confirm' : 'auto',
+      previewEngine: row.preview_engine === 'chromium' ? 'chromium' : 'proxy',
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? (((await this.sql.get(`SELECT preview_url FROM projects WHERE id = ?`, [row.project_id])) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,

@@ -1,6 +1,6 @@
 // REST-оркестрация Playwright Reader: сервер держит изолированную Chromium-сессию
 // разговора в browser-runner. Доступ строго свой — сессия привязана к разговору
-// (владение проверяется по БД), и только к разговорам типа playwright-reader.
+// (владение проверяется по БД), и только при выбранном движке Chromium.
 // Ключи изоляции раннера: sessionId = conversationId, userKey = uid.
 //
 // Без сконфигурированного раннера роуты отвечают 501 — UI показывает «Chromium
@@ -8,7 +8,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
-  isPlaywrightReaderConversation,
+  isBrowserSessionMetadata, isChromiumReaderConversation, machinePreviewUrl, PREVIEW_RUN_COOKIE,
   type BrowserCommand,
   type BrowserViewport
 } from '@voicechat/shared'
@@ -21,6 +21,7 @@ const uid = (req: FastifyRequest): string => (req as unknown as { user: { name: 
 export interface BrowserRoutesDeps {
   core: PlaywrightReaderCore
   runner?: BrowserRunnerClient
+  runnerFacingBase?: string
 }
 
 /** Разумные границы вьюпорта: панель не должна просить у Chromium гигантский кадр. */
@@ -41,12 +42,12 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
   const { core, runner } = deps
 
   // Общая проверка: разговор существует, принадлежит пользователю и это
-  // Playwright Reader; иначе ни сессии, ни команд к чужому Chromium.
-  const guard = async (req: FastifyRequest, id: string): Promise<string> => {
+  // Reader с Chromium; иначе ни сессии, ни команд к чужому браузеру.
+  const guard = async (req: FastifyRequest, id: string, stopping = false): Promise<string> => {
     if (!runner) throw new BrowserRunnerError(501, 'Browser Runner не настроен на этом сервере')
     const conversation = await core.conversation(uid(req), id)
     if (!conversation) throw new BrowserRunnerError(404, 'Разговор не найден')
-    if (!isPlaywrightReaderConversation(conversation)) throw new BrowserRunnerError(403, 'Изолированный Chromium доступен только в Playwright Reader-разговоре')
+    if (!isChromiumReaderConversation(conversation) && !(stopping && conversation.assistantKind === 'web-recorder')) throw new BrowserRunnerError(403, 'Для этого разговора не выбран Chromium')
     return id
   }
 
@@ -59,7 +60,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
     try {
       const id = await guard(req, req.params.id)
       const viewport = normalizeViewport(req.body?.viewport)
-      return await runner!.start({ sessionId: id, userKey: uid(req), conversationKey: id, ...(viewport ? { viewport } : {}) })
+      return await runner!.start({ sessionId: id, userKey: uid(req), conversationKey: id, ...(viewport ? { viewport } : {}), ...(deps.runnerFacingBase ? { cookies: [{ name: PREVIEW_RUN_COOKIE, value: await core.issuePreviewRunKey(uid(req)), url: deps.runnerFacingBase.replace(/\/+$/, '') + '/api/preview' }] } : {}) })
     } catch (err) {
       return fail(reply, err)
     }
@@ -77,7 +78,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
       if (command.type === 'selector' && !command.action) {
         throw new BrowserRunnerError(400, 'Селекторной команде нужен action')
       }
-      return await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command })
+      return await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command: command.type === 'navigate' && deps.runnerFacingBase ? { ...command, url: machinePreviewUrl(deps.runnerFacingBase, command.url) } : command })
     } catch (err) {
       return fail(reply, err)
     }
@@ -95,7 +96,13 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
         actor: 'user',
         command: { type: 'screenshot', ...(fullPage ? { fullPage } : {}), ...(format ? { format } : {}), ...(typeof quality === 'number' ? { quality } : {}) }
       })
-      return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}` }
+      // Адрес может измениться действием модели или самой страницы между пользовательскими командами.
+      let page: { url: string; title: string } | undefined
+      try {
+        const metadata = await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command: { type: 'status' } })
+        if (isBrowserSessionMetadata(metadata) && metadata.currentUrl) page = { url: metadata.currentUrl, title: metadata.title ?? '' }
+      } catch { /* Кадр остаётся полезным, если чтение метаданных попало на навигацию. */ }
+      return { dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`, ...(page ? { page } : {}) }
     } catch (err) {
       return fail(reply, err)
     }
@@ -103,7 +110,7 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
 
   app.delete<{ Params: { id: string } }>('/api/browser/:id', async (req, reply) => {
     try {
-      const id = await guard(req, req.params.id)
+      const id = await guard(req, req.params.id, true)
       return { stopped: await runner!.stop(id) }
     } catch (err) {
       return fail(reply, err)

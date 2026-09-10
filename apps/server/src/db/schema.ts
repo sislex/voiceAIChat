@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   disabled_context_json TEXT NOT NULL DEFAULT '[]',
   project_id        TEXT,
   preview_url       TEXT,
+  preview_engine    TEXT NOT NULL DEFAULT 'proxy',
   task_id           TEXT,
   assistant_kind    TEXT,
   scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')),

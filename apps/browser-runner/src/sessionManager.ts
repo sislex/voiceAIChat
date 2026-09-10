@@ -70,7 +70,7 @@ export class BrowserSessionManager {
     private readonly profilesRoot: string,
     private readonly hostAliases: HostAliases = new Map(),
     /** Доверенный origin сервера (`host:port`) для браузерных проверок задач. */
-    previewOrigin: string | null = null
+    private readonly previewOrigin: string | null = null
   ) {
     this.allowedTargets = aliasTargets(hostAliases)
     if (previewOrigin) {
@@ -124,7 +124,7 @@ export class BrowserSessionManager {
     }
     await context.route('**/*', async (route) => {
       try {
-        const requested = validatePublicUrl(route.request().url())
+        const requested = validatePublicUrl(route.request().url(), this.allowedTargets)
         // Алиас применяется после проверки: во внутреннюю сеть пускает оператор
         // списком пар, а не пользователь адресом.
         const aliased = applyHostAlias(requested, this.hostAliases)
@@ -221,7 +221,7 @@ export class BrowserSessionManager {
   async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
-    session.lastActor = request.actor
+    if (request.command.type !== 'status' && request.command.type !== 'screenshot') session.lastActor = request.actor
     // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
     // разбор журналов и снимок экрана возвращаются раньше метаданных, а именно
     // из них состоит прогон сценария. Сборщик считал такую сессию брошенной и
@@ -231,7 +231,7 @@ export class BrowserSessionManager {
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
     const command = request.command
-    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
+    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
     else if (command.type === 'back') await page.goBack()
     else if (command.type === 'forward') await page.goForward()
     else if (command.type === 'reload') await page.reload()
@@ -243,7 +243,7 @@ export class BrowserSessionManager {
       // Тот же путь, что у navigate: без подстановки алиаса новая вкладка шла
       // на внешний адрес, до которого контейнер не достаёт, и держалась на нём
       // только благодаря перехватчику маршрутов — то есть по случайности.
-      if (command.url) await created.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString())
+      if (command.url) await created.goto(applyHostAlias(validatePublicUrl(command.url, this.allowedTargets), this.hostAliases).toString())
     } else if (command.type === 'selectTab') session.activeTabId = command.tabId
     else if (command.type === 'closeTab') await session.pages.get(command.tabId)?.close()
     else if (command.type === 'resize') {
@@ -280,7 +280,19 @@ export class BrowserSessionManager {
    * сценарий не открывается нигде, кроме этого же контейнера.
    */
   private publicUrl(raw: string): string {
-    try { return restoreHostAlias(new URL(raw), this.hostAliases).toString() } catch { return raw }
+    try {
+      const url = new URL(raw), target = url.searchParams.get('url')
+      const address = url.hostname.toLowerCase() + ':' + (url.port || (url.protocol === 'https:' ? '443' : '80'))
+      // Модель получает адрес проекта, а не техническую обёртку его доставки.
+      if (address === this.previewOrigin && url.pathname === '/api/preview' && target) {
+        const logical = new URL(target)
+        if (logical.protocol === 'http:' || logical.protocol === 'https:') {
+          if (url.hash) logical.hash = url.hash
+          return logical.toString()
+        }
+      }
+      return restoreHostAlias(url, this.hostAliases).toString()
+    } catch { return raw }
   }
 
   private hostOf(raw: string): string {
