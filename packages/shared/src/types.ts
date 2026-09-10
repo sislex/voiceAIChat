@@ -164,6 +164,9 @@ export interface BrowserSessionMetadata {
    * делят страницу — без этого непонятно, кто её только что увёл.
    */
   lastActor?: 'user' | 'assistant'
+  /** Ручной режим запрещает модели менять страницу до возврата управления. */
+  control?: 'shared' | 'user'
+  queuedCommands?: number
   /**
    * Внутренний адрес, с которого страница пришла на самом деле, если оператор
    * настроил алиас. Сам `currentUrl` при этом остаётся тем, который назвал
@@ -248,7 +251,7 @@ export interface BrowserElementDescription {
   selector: string
   /** Насколько селектор надёжен: по testid переживает правки вёрстки, по пути — нет. */
   stability: 'testid' | 'id' | 'label' | 'role' | 'path'
-  /** Сколько узлов страницы отвечает этому селектору; больше одного — шаг кликнет по первому. */
+  /** Сколько узлов страницы отвечает этому селектору; больше одного — модель должна уточнить цель. */
   matches?: number
   tag: string
   text: string
@@ -288,6 +291,9 @@ export interface BrowserInspectResult {
 export type BrowserCommand =
   /** Метаданные без изменения страницы и автора последнего действия. */
   | { type: 'status' }
+  /** Управление и отмена очереди доступны только человеку. Текущее действие завершается. */
+  | { type: 'control'; owner: 'shared' | 'user' }
+  | { type: 'cancel' }
   | { type: 'navigate'; url: string }
   | { type: 'selector'; action: BrowserSelectorAction }
   | { type: 'inspect'; action: BrowserInspectAction }

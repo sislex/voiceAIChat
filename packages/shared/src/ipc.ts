@@ -1082,7 +1082,7 @@ export interface RendererBrowserBridge {
    */
   command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult>
   /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
-  screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string; page?: { url: string; title: string } }>
+  screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string; page?: { url: string; title: string }; control?: 'shared' | 'user'; queuedCommands?: number }>
   /** Закрывает Chromium-сессию разговора. */
   stop(conversationId: string): Promise<void>
 }

@@ -1,6 +1,6 @@
 // Настоящий App, сервер, MCP и отдельный Chromium раннера; внешние аккаунты не нужны.
 import { createServer } from 'node:net'
-import { mkdtemp, rm, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
@@ -14,6 +14,7 @@ import type { BrowserCommand, BrowserSessionMetadata } from '../packages/shared/
 
 let app: FastifyInstance, runner: FastifyInstance, site: FastifyInstance, browser: Browser, page: Page
 let base: string, token: string, id: string, data: string, native: BrowserSessionMetadata
+let browserFailures: string[] = []
 const secret = 'reader-native-fixture-secret', target = 'http://93.184.216.34:8080/page'
 const api = async (path: string, method = 'GET', body?: unknown) => {
   const response = await fetch(base + path, { method, headers: { authorization: 'Bearer ' + token, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
@@ -51,12 +52,24 @@ describe('Web Reader: единый разговор в полном Chromium', (
   })
   beforeEach(async () => {
     const created = await api('/api/conversations', 'POST', { title: 'Native Reader QA', assistantKind: 'web-recorder' }); id = created.id ?? created.conversation.id
+    browserFailures = []
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(12_000)
-    await page.addInitScript(token => localStorage.setItem('vc.session.token', token), token)
+    page.on('pageerror', error => browserFailures.push(error.message))
+    page.on('response', response => { if (response.url().includes('/api/browser/') && response.status() >= 400) void response.text().then(text => browserFailures.push(response.status() + ' ' + new URL(response.url()).pathname + ' ' + text)).catch(() => {}) })
+    // Сессия как после входа: initScript возвращал удалённый legacy-токен при
+    // каждом reload и провоцировал повторную миграцию с ротацией CSRF.
+    const session = await page.request.post(base + '/api/session/cookie', { headers: { authorization: 'Bearer ' + token } })
+    expect(session.ok()).toBe(true)
     await page.goto(base + '/#/web-reader/' + id)
     await page.getByRole('combobox', { name: 'Движок Web Reader' }).waitFor()
   })
-  afterEach(async () => { await page?.close(); if (id) await fetch(base + '/api/browser/' + id, { method: 'DELETE', headers: { authorization: 'Bearer ' + token } }) })
+  afterEach(async context => {
+    if (context.task.result?.state === 'fail' && page && !page.isClosed()) {
+      const report = { test: context.task.name, errors: browserFailures, body: (await page.locator('body').innerText()).slice(0, 6000) }
+      const directory = process.env.VC_VISUAL_ARTIFACTS || '/tmp/reader-cycle-artifacts'
+      await mkdir(directory, { recursive: true }); await writeFile(join(directory, 'failure.json'), JSON.stringify(report, null, 2)); await page.screenshot({ path: join(directory, 'failure.png') })
+    }
+    await page?.close(); if (id) await fetch(base + '/api/browser/' + id, { method: 'DELETE', headers: { authorization: 'Bearer ' + token } }) })
   afterAll(async () => { await browser?.close(); await app?.close(); await runner?.close(); await site?.close(); if (data) await rm(data, { recursive: true, force: true }) })
   it('пользователь переключает движок и выбор остаётся в разговоре', async () => {
     await start(); expect((await api('/api/conversations/' + id + '?scope=web-reader')).conversation).toMatchObject({ assistantKind: 'web-recorder', previewEngine: 'chromium' })
@@ -101,6 +114,55 @@ describe('Web Reader: единый разговор в полном Chromium', (
     await expect.poll(() => page.getByAltText('Кадр Chromium').getAttribute('src'), { timeout: 6000 }).not.toBe(previousFrame)
     await page.getByAltText('Кадр Chromium').evaluate(el => (el as HTMLImageElement).decode())
     if (process.env.VC_VISUAL_ARTIFACTS) { await mcp('wait', { selector: 'input[type=password]', timeoutMs: 6000 }); await page.waitForResponse(response => response.url().endsWith('/screenshot') && response.request().method() === 'POST'); await page.waitForResponse(response => response.url().endsWith('/screenshot') && response.request().method() === 'POST'); await page.getByAltText('Кадр Chromium').evaluate(el => (el as HTMLImageElement).decode()); await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true }); await page.screenshot({ path: join(process.env.VC_VISUAL_ARTIFACTS, 'reader-native.png') }) }
+  })
+  it('Chromium пропускает скрытую копию и отклоняет две видимые цели без клика', async () => {
+    await start(); await mcp('open', { url: target })
+    expect(await command({ type: 'inspect', action: { kind: 'evaluate', code: `document.body.insertAdjacentHTML('afterbegin', '<input class="strict-input" style="display:none"><input class="strict-input"><button class="duplicate" onclick="window.badClick=true">Копия</button><button class="duplicate" onclick="window.badClick=true">Копия</button>'); document.querySelectorAll('.strict-input')[1].oninput = event => document.querySelector('output').textContent = event.target.value` } })).toMatchObject({ ok: true })
+    await mcp('type', { selector: '.strict-input', text: 'Только видимое поле' })
+    expect(await mcp('read', { selector: 'output' })).toMatchObject({ text: 'Только видимое поле' })
+    expect(await command({ type: 'selector', action: { kind: 'click', selector: '.duplicate' } })).toMatchObject({ ok: false, error: expect.stringContaining('несколько') })
+    expect(await command({ type: 'inspect', action: { kind: 'evaluate', code: 'Boolean(window.badClick)' } })).toMatchObject({ value: false })
+  })
+  it('ссылка find сохраняет узел после перестановки и отклоняет его DOM-копию', async () => {
+    await start(); await mcp('open', { url: target })
+    const found = await mcp('find', { selector: 'button' })
+    const selector = found.matches[0].selector
+    expect(selector).toContain('data-voicechat-reader-ref')
+    await command({ type: 'inspect', action: { kind: 'evaluate', code: `document.body.prepend(document.createElement('button')); document.body.append(document.querySelector('#next'))` } })
+    await mcp('click', { selector })
+    expect(await command({ type: 'status' })).toMatchObject({ currentUrl: target + '?step=2#/next' })
+    await command({ type: 'inspect', action: { kind: 'evaluate', code: `const el=document.querySelector('#next'); el.replaceWith(el.cloneNode(true))` } })
+    expect(await command({ type: 'selector', action: { kind: 'click', selector } })).toMatchObject({ ok: false, error: expect.stringContaining('stale_element_ref') })
+  })
+  it('ручное управление блокирует запись модели и возвращается кнопкой панели', async () => {
+    await start(); await mcp('open', { url: target })
+    await page.getByRole('button', { name: 'Взять управление', exact: true }).click()
+    await page.getByText('Управление у вас.', { exact: false }).waitFor()
+    const turn = createPreviewTurnTokens(secret).issue({ userId: 'admin', conversationId: id })
+    const response = await fetch(base + '/mcp/preview?k=' + secret + '&turn=' + turn, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'type', arguments: { selector: '#name', text: 'Запрещённый ввод' } } }) })
+    const result = (await response.json()).result
+    expect(result.isError).toBe(true); expect(JSON.stringify(result)).toContain('human_control')
+    expect(await command({ type: 'selector', action: { kind: 'read', selector: 'output' } })).toMatchObject({ text: 'initial' })
+    await page.getByRole('button', { name: 'Вернуть управление модели' }).click()
+    await expect.poll(async () => (await command({ type: 'status' })).control).toBe('shared')
+    await mcp('type', { selector: '#name', text: 'После возврата' })
+    expect(await mcp('read', { selector: 'output' })).toMatchObject({ text: 'После возврата' })
+    if (process.env.VC_VISUAL_ARTIFACTS) { await page.getByRole('button', { name: 'Взять управление', exact: true }).click(); await page.getByText('Управление у вас.', { exact: false }).waitFor(); await page.waitForResponse(response => response.url().endsWith('/screenshot') && response.ok()); await page.waitForResponse(response => response.url().endsWith('/screenshot') && response.ok()); await page.getByAltText('Кадр Chromium').evaluate(el => (el as HTMLImageElement).decode()); await mkdir(process.env.VC_VISUAL_ARTIFACTS, { recursive: true }); await page.screenshot({ path: join(process.env.VC_VISUAL_ARTIFACTS, 'reader-control.png') }) }
+  })
+  it('одновременные команды выполняются по очереди, отмена не выпускает поздний ввод', async () => {
+    await start(); await mcp('open', { url: target })
+    await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')) })
+    await expect.poll(async () => (await command({ type: 'status' })).queuedCommands).toBe(0)
+    const active = command({ type: 'inspect', action: { kind: 'evaluate', code: `new Promise(resolve => setTimeout(() => { document.querySelector('output').textContent='active'; resolve('done') }, 800))` } })
+    await expect.poll(async () => (await command({ type: 'status' })).queuedCommands).toBeGreaterThan(0)
+    const pending = fetch(base + '/api/browser/' + id + '/command', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ incarnation: native.incarnation, command: { type: 'selector', action: { kind: 'type', selector: '#name', text: 'Нельзя выполнить' } } }) })
+    await expect.poll(async () => (await command({ type: 'status' })).queuedCommands).toBeGreaterThan(1)
+    await command({ type: 'control', owner: 'user' })
+    const user = command({ type: 'selector', action: { kind: 'type', selector: '#name', text: 'Ручной ввод' } })
+    const cancelled = await pending
+    expect(cancelled.ok).toBe(false); expect(await cancelled.text()).toContain('command_cancelled')
+    await active; await user
+    expect(await command({ type: 'selector', action: { kind: 'read', selector: 'output' } })).toMatchObject({ text: 'Ручной ввод' })
   })
   it('ошибка сохранения движка оставляет рабочий быстрый просмотр', async () => {
     await page.route(base + '/api/conversations/' + id + '/preview-url', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"fixture_unavailable"}' }))

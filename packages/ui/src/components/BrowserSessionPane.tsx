@@ -88,7 +88,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
   // идёт работа или страница просто такая.
-  const [busy, setBusy] = useState(false)
+  const [pendingCommands, setPendingCommands] = useState(0)
+  const busy = pendingCommands > 0
   // Момент последнего действия и счётчик перезапуска таймера: после команды
   // опрос ускоряется, через ACTIVE_WINDOW_MS возвращается к спокойному.
   const lastAction = useRef(0)
@@ -170,6 +171,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, format: 'jpeg', quality: 82 })
       if (generation === alive.current) {
         setFrame(shot.dataUrl)
+        if (shot.control) setMeta(current => current ? { ...current, control: shot.control, queuedCommands: shot.queuedCommands } : current)
         if (missedFrames.current >= 3) setMessage('')
         missedFrames.current = 0
         if (shot.page) observePage(shot.page)
@@ -182,6 +184,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // Старт сессии на монтирование/смену разговора; stop — на уходе.
   useEffect(() => {
     const generation = ++alive.current
+    setPendingCommands(0)
     incarnation.current = null
     setPhase('starting'); setFrame(null); setMeta(null); setMessage('')
     if (!browser) { setPhase('unavailable'); setMessage('Полный браузер недоступен на сервере. В Web Reader можно выбрать быстрый просмотр; для полного браузера требуется настройка администратором.'); return }
@@ -236,7 +239,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const run = useCallback(async (command: Parameters<RendererBrowserBridge['command']>[1]['command']): Promise<unknown> => {
     if (!browser || !incarnation.current) return
     const generation = alive.current
-    setBusy(true)
+    setPendingCommands(count => count + 1)
     setMessage(''); setRetryable(false)
     lastCommand.current = command
     lastAction.current = Date.now()
@@ -247,7 +250,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       // Метаданные приходят не на всякую команду: `selector` отдаёт чтение,
       // `inspect` — журналы. Обновляем состояние только по метаданным.
       if (isBrowserSessionMetadata(next)) applyMeta(next)
-      await refreshFrame()
+      if (command.type !== 'cancel' && command.type !== 'control') await refreshFrame()
       return next
     } catch (err) {
       if (generation === alive.current) {
@@ -259,7 +262,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         setRetryable(retry === true || code === 'timeout' || code === 'not_ready')
       }
     } finally {
-      if (generation === alive.current) setBusy(false)
+      if (generation === alive.current) setPendingCommands(count => Math.max(0, count - 1))
     }
   }, [browser, conversationId, refreshFrame])
 
@@ -320,6 +323,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const restartSession = (): void => {
     if (!browser) return
     const generation = ++alive.current
+    setPendingCommands(0)
     incarnation.current = null
     setPhase('starting'); setFrame(null); setMeta(null); setMessage(''); setRetryable(false)
     void browser.stop(conversationId).catch(() => {})
@@ -342,14 +346,14 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const attachFullPage = async (): Promise<void> => {
     if (!browser || !incarnation.current || !onAttachFrame) return
     const generation = alive.current
-    setBusy(true)
+    setPendingCommands(count => count + 1)
     try {
       const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, fullPage: true, format: 'png' })
       if (generation === alive.current) onAttachFrame(shot.dataUrl)
     } catch (err) {
       if (generation === alive.current) setMessage(err instanceof Error ? err.message : 'Снимок не получился')
     } finally {
-      if (generation === alive.current) setBusy(false)
+      if (generation === alive.current) setPendingCommands(count => Math.max(0, count - 1))
     }
   }
 
@@ -591,9 +595,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           <Button key={key} size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key } })}>{key}</Button>
         ))}
       </span>
-      {/* Долгая навигация ничем не отличалась от зависшей: прервать её было
-          нечем, оставался только перезапуск всей сессии. */}
-      {busy && <Button size="sm" variant="ghost" onClick={() => void run({ type: 'stop' })}>Прервать</Button>}
+      <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'control', owner: meta?.control === 'user' ? 'shared' : 'user' })}>
+        {meta?.control === 'user' ? 'Вернуть управление модели' : 'Взять управление'}
+      </Button>
+      {meta?.control === 'user' && <span role="status">Управление у вас. Действия модели приостановлены.</span>}
+      {busy && <Button size="sm" variant="ghost" onClick={() => void run({ type: 'cancel' })}>Отменить ожидающие команды</Button>}
       {/* Зависшую страницу иначе не выкинуть: stop звался только при уходе с экрана. */}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={restartSession}>Перезапустить</Button>
     </div>

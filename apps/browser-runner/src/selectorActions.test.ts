@@ -8,7 +8,9 @@ import { runSelectorAction, type SelectorLocator, type SelectorPage } from './se
 function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
   const self: SelectorLocator = {
     first: () => self,
+    filter: () => self,
     all: async () => [self],
+    count: async () => (await self.all()).length,
     click: vi.fn(async () => {}),
     fill: vi.fn(async () => {}),
     innerText: async () => 'Текст узла',
@@ -20,7 +22,7 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     uncheck: vi.fn(async () => {}),
     dragTo: vi.fn(async () => {}),
     ariaSnapshot: async () => '- button "Создать"',
-    evaluate: async () => null,
+    evaluate: async () => '[data-voicechat-reader-ref="test"]',
     setInputFiles: vi.fn(async () => {}),
     ...over
   }
@@ -183,9 +185,37 @@ describe('описание элемента и прокрутка (круг 12)'
       .toEqual({ ok: false, error: 'В этой точке нет элемента' })
   })
 
-  it('scrollTo сообщает, что элемента нет, а не молчит', async () => {
-    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => true) }), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
-    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => false) }), { kind: 'scrollTo', selector: '#нет' }))
-      .toEqual({ ok: false, error: 'Элемент #нет не найден' })
+  it('scrollTo прокручивает однозначный узел', async () => {
+    const target = locator({ evaluate: vi.fn(async () => undefined) })
+    expect(await runSelectorAction(page(target), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
+    expect(target.evaluate).toHaveBeenCalledWith(expect.any(Function))
+  })
+})
+
+
+describe('однозначные цели', () => {
+  it('не нажимает ни одну из двух видимых кнопок', async () => {
+    const a = locator(), b = locator()
+    const result = await runSelectorAction(page(locator({ all: async () => [a, b] })), { kind: 'click', selector: 'button' })
+    expect(result.error).toContain('несколько')
+    expect(a.click).not.toHaveBeenCalled()
+    expect(b.click).not.toHaveBeenCalled()
+  })
+  it('пропускает скрытую копию поля', async () => {
+    const hidden = locator({ isVisible: async () => false }), visible = locator()
+    expect(await runSelectorAction(page(locator({ all: async () => [hidden, visible], filter: () => visible })), { kind: 'type', selector: 'input', text: 'ok' })).toEqual({ ok: true })
+    expect(hidden.fill).not.toHaveBeenCalled()
+    expect(visible.fill).toHaveBeenCalledWith('ok', expect.anything())
+  })
+  it('лимит find применяется после исключения скрытых элементов', async () => {
+    const hidden = locator({ isVisible: async () => false }), visible = locator()
+    const result = await runSelectorAction(page(locator({ all: async () => [hidden, visible] })), { kind: 'find', selector: 'button', limit: 1 })
+    expect(result.matches).toEqual([{ selector: '[data-voicechat-reader-ref="test"]', text: 'Текст узла', visible: true }])
+  })
+  it('скрытый file input допустим, неоднозначный upload запрещён', async () => {
+    const a = locator({ isVisible: async () => false }), b = locator()
+    const action = { kind: 'upload' as const, selector: 'input', name: 'a', base64: 'YQ==' }
+    expect(await runSelectorAction(page(a), action)).toEqual({ ok: true })
+    expect((await runSelectorAction(page(locator({ all: async () => [a, b] })), action)).error).toContain('несколько')
   })
 })
