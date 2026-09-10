@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createTestStore, type TestStore } from '../test/appHarness'
-import { createFakeApi } from '../test/fakeApi'
+import { createFakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import type { RendererKbBridge } from '../remote/kbBridge'
-import { makeKbProjectUsageReport, makeKbQuery, makeKbUsageReport } from '../test/fixtures'
+import { makeKbProjectUsageReport, makeKbQuery, makeKbUsageReport } from '../test/fixtures/index'
 
 function makeStore(kb?: RendererKbBridge): TestStore {
   return createTestStore({ api: createFakeApi(), kb, now: () => 1_700_000_000_000 })

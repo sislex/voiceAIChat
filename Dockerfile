@@ -20,6 +20,8 @@ RUN apt-get update \
 
 COPY . .
 RUN npm ci
+ARG VC_APPLICATION_COMMIT
+RUN VC_APPLICATION_COMMIT="$VC_APPLICATION_COMMIT" npm run build:frontends
 RUN npm run -w @voicechat/web build
 RUN npm run -w @voicechat/web-recorder build
 
@@ -52,6 +54,19 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # ---- Runtime сервера -----------------------------------------------------
 FROM runtime-base AS server-runtime
+# Только явный baseline получает проверенную идентичность ядра. При обычном
+# локальном docker compose версия остаётся неизвестной.
+ARG VC_APPLICATION_METADATA=null
+ARG VC_APPLICATION_VERSION
+ARG VC_APPLICATION_API_VERSION
+ARG VC_APPLICATION_DATA_VERSION
+ARG VC_APPLICATION_COMMIT
+LABEL com.voicechat.release=$VC_APPLICATION_METADATA
+ENV VC_APPLICATION_ID=core \
+    VC_APPLICATION_VERSION=$VC_APPLICATION_VERSION \
+    VC_APPLICATION_API_VERSION=$VC_APPLICATION_API_VERSION \
+    VC_APPLICATION_DATA_VERSION=$VC_APPLICATION_DATA_VERSION \
+    VC_APPLICATION_COMMIT=$VC_APPLICATION_COMMIT
 ENV PORT=8787 \
     VC_WEB_DIR=/app/apps/web/dist \
     VC_WEB_RECORDER_DIR=/app/apps/web-recorder/dist

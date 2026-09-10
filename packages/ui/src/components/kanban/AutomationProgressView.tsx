@@ -1,5 +1,5 @@
 import { useState, type JSX } from 'react'
-import { usePolling } from '../../lib/usePolling'
+import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 import type { AutomationProgress } from '@shared/ci'
 import { fmtDuration } from '../ci/ciFormat'
 

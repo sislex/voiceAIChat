@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { CopyCommand } from './CopyCommand'
-import { copyText } from '../../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 
-vi.mock('../../lib/clipboard', () => ({ copyText: vi.fn() }))
+vi.mock('@voicechat/ui-foundation/lib/clipboard', () => ({ copyText: vi.fn() }))
 const copy = vi.mocked(copyText)
 
 afterEach(() => {

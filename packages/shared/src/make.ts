@@ -293,6 +293,7 @@ export const makeStackLabel = (stack: MakeStack, uiKit: MakeUiKit): string => `$
 export const MAKE_BOOTSTRAP_CSS_URL = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css'
 export const MAKE_BOOTSTRAP_JS_URL = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js'
 export const MAKE_ANGULAR_IMPORT_MAP: Record<string, string> = {
+  'zone.js': 'https://esm.sh/zone.js@0.14.10',
   '@angular/compiler': 'https://esm.sh/@angular/compiler@18.2.13',
   '@angular/core': 'https://esm.sh/@angular/core@18.2.13',
   '@angular/platform-browser': 'https://esm.sh/@angular/platform-browser@18.2.13',
@@ -742,7 +743,8 @@ export const WithoutTitle = { args: { title: undefined } }
 <body><make-root>Загрузка…</make-root><script type="module" src="src/main.ts"></script></body></html>
 `,
       'styles.css': MAKE_SCAFFOLD['styles.css']!,
-      'src/main.ts': `import '@angular/compiler'
+      'src/main.ts': `import 'zone.js'
+import '@angular/compiler'
 import { Component } from '@angular/core'
 import { bootstrapApplication } from '@angular/platform-browser'
 

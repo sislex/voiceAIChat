@@ -23,7 +23,7 @@ it('без ядра закрывает приватный API, но оставл
   const response = await app.inject({ url: '/api/image-studio/x/files' })
   expect(response.statusCode).toBe(503)
   expect(response.json()).toEqual({ error: 'core_unavailable' })
-  expect((await app.inject('/v1/health')).json()).toEqual({ ok: true, service: 'image-studio', version: null })
+  expect((await app.inject('/v1/health')).json()).toMatchObject({ ok: true, service: 'image-studio', version: null, application: { applicationId: 'image-studio', version: null } })
   expect((await app.inject('/g/missing/')).statusCode).toBe(404)
   const badMethod = await app.inject({ method: 'POST', url: INTERNAL_IMAGE_STUDIO_SERVICE_PATH,
     headers: { authorization: 'Bearer internal' }, payload: { method: 'constructor', args: [] } })

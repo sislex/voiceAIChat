@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../../test/uiRender'
-import { createFakeCi } from '../../test/fakeApi'
+import { createFakeCi } from '@voicechat/ui-foundation/test/fakeApi'
 import { TaskRunFeed } from './TaskRunFeed'
 import '../../styles/app.css'
 import type { CiRun, CiRunDetail, CiTaskReport } from '@shared/ci'
-import { makeRunReport, makeTaskReport } from '../../test/fixtures'
+import { makeRunReport, makeTaskReport } from '../../test/fixtures/index'
 
 function run(id: string, status: CiRun['status'] = 'success'): CiRun {
   return {

@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { fn } from '@storybook/test'
 import { TaskChatHeader } from './TaskChatHeader'
-import { makeTaskChatContext } from '../../test/fixtures'
+import { makeTaskChatContext } from '../../test/fixtures/index'
 
 const NOW = 1_000 + 12 * 60 * 1000
 

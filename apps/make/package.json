@@ -21,7 +21,8 @@
     "@voicechat/shared": "*",
     "esbuild": "^0.21.5",
     "fastify": "^5.1.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@voicechat/make-contracts": "*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

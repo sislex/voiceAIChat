@@ -6,7 +6,7 @@
 // баннер последней ошибки.
 
 import { createStoreCore, type Store } from '../createStore'
-import { SIDEBAR_COLLAPSED_KEY } from '../contracts'
+import { SIDEBAR_COLLAPSED_KEY } from '@voicechat/ui-foundation/persistence'
 
 /**
  * Уведомление для тоста. Стор их только копит: показывает App (useToast), потому

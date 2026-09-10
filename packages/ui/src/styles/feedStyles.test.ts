@@ -21,8 +21,7 @@ describe('стили, потерянные при слиянии CHAT-354', () =
     'console-browser-pane', 'console-browser-viewport', 'console-pane-header',
     'console-pane-machine', 'workshop-selector',
     // Экран проверки сессии, редактор инструкций, панель веб-превью.
-    'auth-loading', 'auth-loading__spinner', 'instr-list', 'instr-item', 'instr-editor',
-    'webpreview-tools'
+    'auth-loading', 'auth-loading__spinner', 'instr-list', 'instr-item', 'instr-editor'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
   })

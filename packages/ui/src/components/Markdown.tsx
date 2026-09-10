@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import 'highlight.js/styles/github-dark.css'
-import { copyText } from '../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 
 // Рендер markdown-ответов Claude. react-markdown по умолчанию не выполняет raw
 // HTML (безопасно). Ссылки открываем во внешнем браузере (target=_blank →

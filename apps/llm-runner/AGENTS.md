@@ -59,4 +59,4 @@
 `listen` + `fetch` с построчным чтением (только так видно, что строки не
 буферизуются). `spawn` — фейковый процесс на `PassThrough`.
 
-Гейт: `npm run -w @voicechat/llm-runner typecheck && npm run -w @voicechat/llm-runner test`.
+Гейт: `npm run gate:app -- llm-runner`; в разработке — `npm run gate:fast`.

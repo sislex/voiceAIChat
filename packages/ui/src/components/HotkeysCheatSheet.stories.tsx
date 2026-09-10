@@ -3,7 +3,7 @@
 // набор команд с объявленными комбинациями.
 import type { Meta, StoryObj } from '@storybook/react'
 import { HotkeysCheatSheet } from './HotkeysCheatSheet'
-import type { Command, CommandSection } from '../lib/commands'
+import type { Command, CommandSection } from '@voicechat/ui-foundation/runtime'
 
 function cmd(id: string, title: string, section: CommandSection, hotkey: string, note?: string): Command {
   return { id, title, section, hotkey, ...(note ? { hotkeyNote: note } : {}), run: () => {} }

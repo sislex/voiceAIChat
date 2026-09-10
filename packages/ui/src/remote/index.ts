@@ -1,3 +1,4 @@
+import { configureApplicationHost } from '../runtime/applicationHost'
 // Установка мостов window.* поверх REST+WS сервера — удалённый режим.
 // Используется веб-клиентом (same-origin/VITE_SERVER_URL) и десктопом в роли
 // тонкого клиента (URL сервера задаётся пользователем). Формы совпадают с
@@ -647,6 +648,7 @@ async function migrateLegacyToken(httpBase: string): Promise<void> {
 export function installRemoteBridges(serverHttp: string, localAgentId: string | null = null): void {
   if (ws) return
   const httpBase = serverHttp.replace(/\/$/, '')
+  configureApplicationHost(httpBase)
   const wsBase = toWsBase(httpBase)
   // WS дозванивается только при наличии токена сессии (getToken) — до логина ждём.
   // Провайдер отдаёт Bearer или маркер 'cookie' (п.5): при cookie-сессии браузер сам отправит vc_session на upgrade.

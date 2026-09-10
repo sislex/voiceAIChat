@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Dialog } from '@voicechat/ui-kit'
 import type { MessageRole, TurnMeta } from '@shared/types'
 import { estimateKbTokens } from '@shared/kb'
-import { formatLiveUsage, messageCost } from '../lib/view'
+import { formatLiveUsage, messageCost } from '@voicechat/ui-foundation/lib/view'
 
 /** Человекочитаемая роль сообщения контекста. */
 function roleLabel(role: MessageRole): string {

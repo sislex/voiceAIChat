@@ -3,7 +3,7 @@
 // До круга 11 подставлялся `https://` всему подряд: набранный `89.125.68.35:8787`
 // (наш стенд по http) превращался в адрес, который не открывается.
 import { describe, expect, it } from 'vitest'
-import { withScheme } from './BrowserSessionPane'
+import { withScheme } from '@voicechat/playwright-reader-app/components/BrowserSessionPane'
 
 describe('withScheme', () => {
   it('готовый адрес не трогает', () => {

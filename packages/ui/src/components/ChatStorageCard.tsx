@@ -3,7 +3,7 @@
 // чтобы пользователь не гадал, где искать сохранённые файлы (см. machines-roadmap п.7).
 import { useState } from 'react'
 import type { ChatStorageView } from '@shared/projects'
-import { copyText } from '../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 
 export interface ChatStorageCardProps {
   storage: ChatStorageView | null | undefined

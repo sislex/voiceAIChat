@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
-import { clarificationNotification, longClarificationNotification } from '../test/fixtures'
+import { clarificationNotification, longClarificationNotification } from '../test/fixtures/index'
 import { ClarificationNotification } from './ClarificationNotification'
 
 const meta: Meta<typeof ClarificationNotification> = {

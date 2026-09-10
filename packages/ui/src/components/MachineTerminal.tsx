@@ -4,10 +4,10 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { RendererPtyBridge } from '@shared/ipc'
-import { ToolFrame } from './ToolFrame'
+import { ToolFrame } from '@voicechat/ui-foundation/components/ToolFrame'
 import { MachineUtilityHeader } from './MachineUtilityHeader'
 import { EmptyState } from '@voicechat/ui-kit'
-import type { PtySessionStore, PtySessionTab, SwitchUtility, UtilityVariant } from './machine'
+import type { PtySessionStore, PtySessionTab, SwitchUtility, UtilityVariant } from '@voicechat/ui-foundation/components/machine'
 import { ptySessionStore } from '../store/ptySessions'
 
 export interface MachineTerminalProps {

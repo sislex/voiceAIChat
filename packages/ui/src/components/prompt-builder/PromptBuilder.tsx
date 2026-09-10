@@ -7,7 +7,7 @@ import { Skeleton } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
-import { copyText } from '../../lib/clipboard'
+import { copyText } from '@voicechat/ui-foundation/lib/clipboard'
 import { WandIcon } from '../icons'
 import type { ModifierPrompt } from '@shared/types'
 

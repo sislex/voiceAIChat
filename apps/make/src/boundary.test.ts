@@ -34,7 +34,7 @@ describe('граница Make ↔ ядро (сторона Make)', () => {
   })
 
   it('порт MakeCore остаётся узким: не больше пятнадцати методов', () => {
-    const src = readFileSync(join(srcDir, 'core.ts'), 'utf8')
+    const src = readFileSync(join(srcDir, '../../../packages/make-contracts/src/core.ts'), 'utf8')
     const body = src.slice(src.indexOf('export interface MakeCore {'))
     expect([...body.matchAll(/^  (\w+)\(/gm)].length).toBeLessThanOrEqual(15)
   })

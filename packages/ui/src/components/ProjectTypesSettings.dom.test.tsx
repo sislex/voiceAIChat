@@ -3,7 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { ProjectTypesSettings, flattenTypeTree } from './ProjectTypesSettings'
-import { expectNoViolations } from '../test/a11y'
+import { expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, type ProjectTypeNode } from '@shared/projectTypes'
 
 const builtin: ProjectTypeNode[] = BUILTIN_PROJECT_TYPES.map((node) => ({

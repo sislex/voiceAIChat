@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": "1.0.0",
+  "dataVersion": "1.0.0",
+  "capabilities": [],
+  "host": {
+    "minVersion": "1.0.0",
+    "maxVersionExclusive": "2.0.0"
+  }
+}

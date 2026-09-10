@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MessageTimeline } from './MessageTimeline'
 import type { ClaudeLogEntry } from '@shared/types'
-import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures'
+import { ACTIVITY_LEGACY, makeActivity } from '../test/fixtures/index'
 
 describe('MessageTimeline', () => {
   it('minimal: только текст, без действий', () => {

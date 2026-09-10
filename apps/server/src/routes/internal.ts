@@ -12,7 +12,7 @@ import {
   INTERNAL_MAKE_CORE_PATH, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_MAKE_SERVICE_PATH, INTERNAL_WHOAMI_PATH, RpcError,
   createCoreRpcDispatcher, createServiceRpcDispatcher,
   type MakeCore, type MakeEventsRequest, type MakeHub, type MakeService, type RpcRequest, type WhoamiRequest, type WhoamiResponse
-} from '@voicechat/make'
+} from '@voicechat/make-contracts'
 import type { AuthenticateFn } from '../users/auth.js'
 import type { SessionHub } from '../users/sessionHub.js'
 import type { DeployTrigger } from './admin.js'

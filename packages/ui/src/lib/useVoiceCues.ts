@@ -4,7 +4,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { VoiceState } from '@shared/types'
-import { playStartCue, playStopCue, playThinkingCue } from './cues'
+import { playStartCue, playStopCue, playThinkingCue } from '@voicechat/ui-foundation/lib/cues'
 
 export function useVoiceCues(voice: VoiceState): void {
   const prev = useRef<VoiceState>(voice)

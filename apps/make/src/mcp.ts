@@ -15,7 +15,8 @@ import type { MakeHub } from './hub.js'
 import type { MakeCore } from './core.js'
 import { verifyTaskScope, type MakeTaskScope } from './taskScope.js'
 
-export const MAKE_MCP_PATH = '/mcp/make'
+import { MAKE_MCP_PATH } from '@voicechat/make-contracts'
+export { MAKE_MCP_PATH }
 
 export interface MakeMcpDeps {
   workspaces: MakeWorkspaces

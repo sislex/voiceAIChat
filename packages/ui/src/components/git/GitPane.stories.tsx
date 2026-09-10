@@ -4,7 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { userEvent, within } from '@storybook/test'
 import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
-import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '../../test/fixtures/git'
+import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '@voicechat/ui-foundation/test/fixtures/git'
 import { GitPane, type GitPaneApi } from './GitPane'
 
 const api = (status: GitWorkspaceStatus, over: Partial<GitPaneApi> = {}): GitPaneApi => ({

@@ -1,7 +1,7 @@
 // Витрина точки входа в раздел «Код»: какие рабочие копии бывают и как читается
 // строка, когда машина офлайн или каталог занят раном.
 import type { Meta, StoryObj } from '@storybook/react'
-import { makeGitWorkspace } from '../../test/fixtures/git'
+import { makeGitWorkspace } from '@voicechat/ui-foundation/test/fixtures/git'
 import { GitWorkspaceList } from './GitWorkspaceList'
 
 const meta: Meta<typeof GitWorkspaceList> = {

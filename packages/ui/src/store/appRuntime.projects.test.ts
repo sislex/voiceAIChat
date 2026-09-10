@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createTestStore, type TestStore } from '../test/appHarness'
-import { createFakeApi, type FakeApi } from '../test/fakeApi'
+import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import type { Message } from '@shared/types'
 

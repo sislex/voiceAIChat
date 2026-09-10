@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { KbUsagePanel } from './KbUsagePanel'
 import { emptyKbUsageCache } from '../../lib/kbUsage'
-import { makeKbProjectCache, makeKbQuery, makeKbStatus, makeKbUsageCache } from '../../test/fixtures'
+import { makeKbProjectCache, makeKbQuery, makeKbStatus, makeKbUsageCache } from '../../test/fixtures/index'
 
 afterEach(cleanup)
 

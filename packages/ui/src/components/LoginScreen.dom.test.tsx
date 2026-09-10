@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LoginScreen, ResetPasswordScreen } from './LoginScreen'
-import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 
 describe('LoginScreen', () => {
   it('кнопка «Войти» отключена без имени и активна с именем', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { composeStories, setProjectAnnotations } from '@storybook/react'
 import previewAnnotations from '../../.storybook/preview'
-import { expectNoCriticalViolations } from './a11y'
+import { expectNoCriticalViolations } from '@voicechat/ui-foundation/test/a11y'
 
 // Декораторы и globals витрины — те же, что в браузере. Вызывается один раз на
 // процесс; шарды живут в разных файлах, значит в разных воркерах.

@@ -1,10 +1,11 @@
+import './test/applicationPanels'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
-import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from '@voicechat/ui-foundation/test/a11y'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
-import { createFakeApi, type FakeApi } from './test/fakeApi'
+import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { PreviewAction } from '@shared/previewActions'
 import type { RendererPreviewBridge } from '@shared/ipc'
@@ -224,7 +225,11 @@ describe('App — действия модели в веб-превью (мост
       const view = render(<App api={api} delays={SLOW} />)
       const frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
       const { post, ids } = await handshakeReader(frame)
-      fromReader(frame, { ...ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+      // Завершаем passive effects первого mount до имитации навигации iframe:
+      // отложенная синхронизация начального URL не должна обогнать page-status.
+      await act(async () => {})
+      await act(async () => { fromReader(frame, { ...ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' }) })
+      await waitFor(() => expect(api._state.conversations.find(item => item.id === chat.id)?.previewUrl).toBe('https://shop.example/'))
       const change = { conversationId: chat.id, address: 'https://shop.example/', title: 'Shop', navigated: false }
       act(() => {
         bridge.changed({ ...change, conversationId: 'other', action: { kind: 'click', text: 'Чужая кнопка' } })

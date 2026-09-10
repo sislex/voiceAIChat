@@ -1,8 +1,9 @@
+import { ApplicationReleaseCenter } from './ApplicationReleaseCenter'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatDateTime, isoDate } from '../../lib/dateFormat'
 import { compareReleaseBranches, DEFAULT_RELEASE_TIMEOUTS, releaseFailureSummary, type ProjectRelease, type ProjectReleaseSummary, type ReleaseBranch, type ReleaseMachine, type ReleaseStep, type ReleaseTimeouts } from '@voicechat/shared'
 import type { RendererApi } from '@shared/ipc'
-import { loadView, type LoadStatus } from '../../lib/loadState'
+import { loadView, type LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import { useConfirm, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
 
 interface Props { projectId:string; baseBranch:string; owner:boolean; releaseTimeouts?:ReleaseTimeouts; api?:RendererApi }
@@ -56,7 +57,7 @@ function ReleaseDetail({release,onBack}:{release:ProjectRelease;onBack:()=>void}
   </section>
 }
 
-export function ReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT_RELEASE_TIMEOUTS,api=window.api}:Props):JSX.Element {
+function LegacyReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAULT_RELEASE_TIMEOUTS,api=window.api}:Props):JSX.Element {
   const [tab,setTab]=useState<Tab>('releases')
   const [branches,setBranches]=useState<ReleaseBranch[]>([])
   const [releaseItems,setReleaseItems]=useState<ProjectReleaseSummary[]>([])
@@ -180,4 +181,9 @@ export function ReleaseCenter({projectId,baseBranch,owner,releaseTimeouts=DEFAUL
       <div className="release-table-wrap" aria-busy={releaseStatus==='loading'}>{deploymentView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:deploymentView.state==='error'?<ErrorState message="Не удалось загрузить деплои" detail={releaseError} onRetry={()=>void refreshReleases()}/>:deploymentView.state==='empty'?<EmptyState title="Деплоев пока нет" description="Выберите готовый релиз и опубликуйте его в production."/>:<table className="release-table"><thead><tr><th>Релиз</th><th>Дата</th><th>Длительность</th><th>Статус</th></tr></thead><tbody>{deployments.map(release=><tr key={release.id} tabIndex={0} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter')void openDetail(release.id)}}><td>{release.branch}</td><td>{formatDateTime(release.createdAt)}</td><td>{fmtDuration(release.durationMs)}</td><td>{statusLabels[release.status]??release.status}</td></tr>)}</tbody></table>}</div>
     </div>}
   </section>
+}
+
+export function ReleaseCenter(props:Props):JSX.Element {
+  const [mode,setMode]=useState<'legacy'|'applications'>('legacy')
+  return <div><nav className="application-release-controls" aria-label="Вид выпуска"><button className="vc-btn vc-btn--secondary" aria-pressed={mode==='legacy'} onClick={()=>setMode('legacy')}>Весь проект</button><button className="vc-btn vc-btn--secondary" aria-pressed={mode==='applications'} onClick={()=>setMode('applications')}>Приложения</button></nav>{mode==='legacy'?<LegacyReleaseCenter {...props}/>:<ApplicationReleaseCenter {...props} api={props.api??window.api}/>}</div>
 }

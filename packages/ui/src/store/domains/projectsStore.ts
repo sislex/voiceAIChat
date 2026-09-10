@@ -7,7 +7,7 @@
 // Chat разговаривает только через порт, который выдаёт AppRuntime.
 
 import type { Board, BoardStatuses, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
-import type { LoadStatus } from '../../lib/loadState'
+import type { LoadStatus } from '@voicechat/ui-foundation/lib/loadState'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { ProjectInvitation, ProjectInvitationForUser } from '@shared/projects'
 import type {
@@ -28,7 +28,7 @@ import type {
   CiWorkspaceReportItem
 } from '@shared/ci'
 import { isTerminalCiStatus } from '@shared/ci'
-import { BOARD_COMPLETED_KEY } from '../contracts'
+import { BOARD_COMPLETED_KEY } from '@voicechat/ui-foundation/persistence'
 import { applyTaskStatuses, DEFAULT_BOARD_VIEW, type BoardView } from '@shared/projects'
 import type { ProjectsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'

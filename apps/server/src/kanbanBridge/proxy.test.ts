@@ -11,7 +11,7 @@ import { KANBAN_PROXY_PREFIXES } from './proxy.js'
 
 const srcDir = join(__dirname, '..')
 const CLUSTER_DIRS = ['ci', 'merge', 'orchestration', 'releases', 'preview', 'projects', 'kanban']
-const CLUSTER_FILES = ['routes/projects.ts', 'routes/ci.ts', 'routes/qa.ts', 'routes/releases.ts', 'routes/featurePreview.ts', 'routes/projectTypes.ts', 'routes/invitations.ts', 'mcp/kanbanMcp.ts']
+const CLUSTER_FILES = ['routes/projects.ts', 'routes/ci.ts', 'routes/qa.ts', 'routes/releases.ts', 'routes/applicationReleases.ts', 'routes/featurePreview.ts', 'routes/projectTypes.ts', 'routes/invitations.ts', 'mcp/kanbanMcp.ts']
 
 function listTs(dir: string): string[] {
   const out: string[] = []

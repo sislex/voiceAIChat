@@ -12,7 +12,7 @@
 
 import { useEffect } from 'react'
 import type { QaRunStage } from '@shared/qa'
-import { usePolling } from '../../lib/usePolling'
+import { usePolling } from '@voicechat/ui-foundation/lib/usePolling'
 
 /** Серия событий одного рана схлопывается в один запрос снимка. */
 const DEBOUNCE_MS = 400

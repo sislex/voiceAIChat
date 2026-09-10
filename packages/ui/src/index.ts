@@ -5,7 +5,7 @@ export { default } from './App'
 export { default as App } from './App'
 
 // Установка мостов window.* для удалённого режима (REST+WS) — web и desktop-клиент.
-export { installRemoteBridges } from './remote'
+export { installRemoteBridges } from './remote/index'
 export { createApplication } from './createApplication.js'
 export type { CreateApplicationOptions } from './createApplication.js'
 export { createModuleRegistry } from './moduleRegistry.js'

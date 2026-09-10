@@ -96,7 +96,7 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
     if (mode === 'remote') {
       expect((await fetch(`${studioUrl}/api/image-studio/${conv}/files`)).status).toBe(401)
       expect((await post(`${studioUrl}${INTERNAL_IMAGE_STUDIO_SERVICE_PATH}`)).status).toBe(401)
-      expect(await (await fetch(`${studioUrl}/v1/health`)).json()).toEqual({ ok: true, service: 'image-studio', version: 'test' })
+      expect(await (await fetch(`${studioUrl}/v1/health`)).json()).toMatchObject({ ok: true, service: 'image-studio', version: 'test', application: { applicationId: 'image-studio', version: null } })
     }
   })
 

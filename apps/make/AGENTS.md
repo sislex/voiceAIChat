@@ -27,8 +27,7 @@
   пользователей живут у ядра, контракт WS не меняется.
 - **Две дороги к Make в `remote`:** Caddy направляет пути Make в `make:8788` напрямую, а при заходе
   портом ядра (8787, так ходят на прод) их переправляет само ядро — `apps/server/src/makeBridge/proxy.ts`.
-- Не компилируется в JS: `tsx`, относительные импорты с `.js`. `@voicechat/shared` — единственная
-  внутренняя зависимость.
+- Не компилируется в JS: `tsx`, относительные импорты с `.js`. `@voicechat/shared` и `@voicechat/make-contracts` — внутренние зависимости.
 
 ## Раскладка
 
@@ -50,4 +49,12 @@
 `MakeCore` (local vs http) и интеграция «ядро + Make на двух портах» — в
 `apps/server/src/makeBridge/*.test.ts`, потому что им нужна настоящая БД.
 
-Гейт: `npm run -w @voicechat/make typecheck && npm run -w @voicechat/make test`.
+Гейт: `npm run gate:app -- make`; в разработке — `npm run gate:fast`.
+Публичные порты, HTTP-клиент, RPC, события и scope-токены принадлежат
+`packages/make-contracts`; прежние пути Make — совместимые реэкспорты.
+Удалённое ядро импортирует контрактный пакет, runtime Make остаётся только у
+embedded-композиции. Внутренняя правка мастерской не запускает общий server/UI test.
+`build:app -- make --version x.y.z --image registry/repository` формирует Docker-контекст
+по npm-замыканию Make, без ядра/web/Storybook. Требования к ядру задаются снимком
+`--requires <json>` и входят в метаданные образа; опубликованный выпуск требует
+чистого checkout, digest и матрицы совместимости.

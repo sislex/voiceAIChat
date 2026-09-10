@@ -1,3 +1,4 @@
+import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // Сборка Fastify-приложения (HTTP + WebSocket). Экспортируется отдельно от запуска,
 // чтобы тестировать через fastify.inject / ws-клиент.
 
@@ -6,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { applicationRuntimeMetadata, ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -365,6 +366,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const { authenticate } = await registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
+    application: applicationRuntimeMetadata('core', process.env),
     ok: true,
     version: VERSION,
     releasedAt: RELEASED_AT,
@@ -1313,6 +1315,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   })
 
+  registerApplicationFrontends(app, opts.config.applicationFrontends)
+
   // Два независимых frontend build раздаются тем же сервером и используют общий
   // backend. Recorder регистрируется первым под собственным prefix, чтобы его index
   // и assets никогда не попадали в SPA-fallback основного ChatAI.
@@ -1341,7 +1345,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         !url.startsWith('/api') &&
         !url.startsWith('/ws') &&
         !url.startsWith('/agent') &&
-        !url.startsWith('/web-recorder')
+        !url.startsWith('/web-recorder') &&
+        !url.startsWith('/applications/')
       ) {
         return reply.type('text/html').sendFile('index.html')
       }

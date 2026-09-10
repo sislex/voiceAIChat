@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ClaudeLogEntry } from '@shared/types'
-import { ACTIVITY_KIND_LABEL as KIND_LABEL } from '../lib/view'
+import { ACTIVITY_KIND_LABEL as KIND_LABEL } from '@voicechat/ui-foundation/lib/view'
 
 export interface ConsolePanelProps {
   /** Записи активности агента (в порядке поступления). */

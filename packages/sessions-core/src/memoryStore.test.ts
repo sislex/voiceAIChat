@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { InMemorySessionStore } from './memoryStore'
-import { createContractClock, sessionStoreContract } from './testing'
+import { createContractClock, sessionStoreContract } from './testing/index'
 
 // Эталон контракта: если референс-реализация его не проходит, значит сам
 // контракт описан неверно — чинить надо до того, как его прогонят на SQLite.

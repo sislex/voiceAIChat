@@ -1,10 +1,11 @@
+import './test/applicationPanels'
 // Палитра и шпаргалка в собранном приложении: клавиши доходят до окна, реестр
 // наполнен данными стора, а команда действительно переключает экран.
 import { describe, it, expect, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
-import { createFakeApi, type FakeApi } from './test/fakeApi'
+import { createFakeApi, type FakeApi } from '@voicechat/ui-foundation/test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }

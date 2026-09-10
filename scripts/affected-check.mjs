@@ -19,6 +19,10 @@ import { pathToFileURL } from 'node:url'
  * правке фронта, потому что путь не распознавался.
  */
 export const PACKAGES = [
+  { id: 'ui-foundation', path: 'packages/ui-foundation', workspace: '@voicechat/ui-foundation', dependsOn: ['shared', 'ui-kit'] },
+  { id: 'make-app', path: 'packages/make-app', workspace: '@voicechat/make-app', dependsOn: ['shared', 'ui-kit', 'ui-foundation'] },
+  { id: 'image-studio-app', path: 'packages/image-studio-app', workspace: '@voicechat/image-studio-app', dependsOn: ['shared', 'ui-kit', 'ui-foundation'] },
+  { id: 'make-contracts', path: 'packages/make-contracts', workspace: '@voicechat/make-contracts', dependsOn: ['shared'] },
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared', dependsOn: ['sessions-core'] },
   { id: 'sessions-core', path: 'packages/sessions-core', workspace: '@voicechat/sessions-core', dependsOn: [] },
   { id: 'ui-kit', path: 'packages/ui-kit', workspace: '@voicechat/ui-kit', dependsOn: [] },
@@ -29,12 +33,12 @@ export const PACKAGES = [
   { id: 'projects-app', path: 'packages/projects-app', workspace: '@voicechat/projects-app', dependsOn: ['shared', 'ui-kit'] },
   { id: 'operations-app', path: 'packages/operations-app', workspace: '@voicechat/operations-app', dependsOn: ['shared', 'ui-kit'] },
   { id: 'admin-app', path: 'packages/admin-app', workspace: '@voicechat/admin-app', dependsOn: ['profile-app', 'sessions-app', 'shared', 'ui-kit'] },
-  { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app', dependsOn: ['chat-app', 'shared', 'ui-kit'] },
-  { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app', dependsOn: ['chat-app', 'shared', 'ui-kit'] },
-  { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui', dependsOn: ['admin-app', 'app-shell', 'chat-app', 'operations-app', 'playwright-reader', 'projects-app', 'sessions-app', 'sessions-core', 'shared', 'ui-kit', 'web-reader'] },
-  { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['browser-runner', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'sessions-core', 'shared'] },
+  { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app', dependsOn: ['ui-foundation', 'chat-app', 'shared', 'ui-kit'] },
+  { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app', dependsOn: ['ui-foundation', 'chat-app', 'shared', 'ui-kit'] },
+  { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui', dependsOn: ['ui-foundation', 'make-app', 'image-studio-app', 'admin-app', 'app-shell', 'chat-app', 'operations-app', 'playwright-reader', 'projects-app', 'sessions-app', 'sessions-core', 'shared', 'ui-kit', 'web-reader'] },
+  { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['make-contracts', 'browser-runner', 'image-studio', 'make', 'playwright-reader-service', 'runner', 'sessions-core', 'shared'] },
   { id: 'image-studio', path: 'apps/image-studio', workspace: '@voicechat/image-studio', dependsOn: ['shared'] },
-  { id: 'make', path: 'apps/make', workspace: '@voicechat/make', dependsOn: ['shared'] },
+  { id: 'make', path: 'apps/make', workspace: '@voicechat/make', dependsOn: ['shared', 'make-contracts'] },
   { id: 'playwright-reader-service', path: 'apps/playwright-reader', workspace: '@voicechat/playwright-reader', dependsOn: ['browser-runner', 'shared'] },
   { id: 'runner', path: 'apps/llm-runner', workspace: '@voicechat/llm-runner', dependsOn: ['shared'] },
   { id: 'tts-runner', path: 'apps/tts-runner', workspace: '@voicechat/tts-runner', dependsOn: ['shared'] },
