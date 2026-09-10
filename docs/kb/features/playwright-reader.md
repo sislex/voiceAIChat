@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-09-10
-checked: 11105f5c
+checked: fe2820cd
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -169,10 +169,34 @@ routePlaywrightReaderChatId`, поэтому `#/playwright-reader/<id>` сраз
 
 Реализовано связкой выше: серверная оркестрация сессий (REST, проверка владения,
 service-токен), screencast (поллинг кадров) и пользовательский ввод в Chromium.
-Ещё не реализованы: WS-транспорт кадров вместо поллинга, инструменты модели
-`mcp__browser__*` поверх раннера, DOM/accessibility snapshot Chromium, highlight,
-confirmation gates опасных действий, метрики и настоящий health-probe,
-idle-timeout и retention профилей.
+Инструменты модели, accessibility snapshot, загрузка файла по селектору,
+health-probe с реальным запуском и уборка idle-сессий уже реализованы; прежний
+список отсутствующих функций относился к первому прототипу. Кадры пока идут
+поллингом (400 мс после действия, затем 1200 мс). Долговременное хранение
+пользовательского профиля и потоковый транспорт кадров остаются отдельной работой.
+
+Сверка оставшихся ограничений по коду 10 сентября 2026 (без нового браузерного
+воспроизведения): `selectorActions.ts` выполняет click/type/set через `.first()`,
+поэтому неоднозначная цель не отклоняется. `BrowserSessionManager.command` не
+сериализует команды сессии; ввод человека и модели может пересекаться. В панели
+`onFrameKeyDown` передаёт ограниченный набор клавиш без модификаторов (например,
+Shift+Tab становится Tab); полноценного пути paste/IME там нет. Это следующие
+кандидаты на адресные регрессионные тесты и исправления.
+
+`reset-session` в `previewMcp.ts` напрямую вызывает `context.clearCookies`,
+который `reader/module.ts` подключает к PreviewCookieStore: cookie Chromium
+этим путём не очищаются. Остановка панели, наоборот, вызывает stop раннера и
+удаляет весь профиль. Для пользовательских аккаунтов нужны отдельные операции
+отключения панели, хранения профиля и явного выхода с выбранного сайта.
+
+Новые страницы регистрируются через `context.on('page')`, но кадр REST возвращает
+только page.url/title, а observePage обновляет только уже известную активную
+вкладку: изменения полного списка вкладок не доставляются этим поллингом.
+Отдельные команды dialog/filechooser и явная адресация frame отсутствуют в контракте;
+upload по input-селектору уже есть, downloads отключены acceptDownloads=false.
+При расширении проверок нужны popup-вход, iframe, загрузки/скачивания и полный
+набор маршрутов проекта с ролями: 202 проверки Reader не равны проверке каждой
+страницы приложения или авторизованных сценариев Gmail/Instagram.
 
 ## Тип разговора, scope и legacy-миграция
 
@@ -183,8 +207,8 @@ Playwright Reader использует `assistantKind: 'playwright-reader'` и �
 ## Shared-контракты браузерной сессии
 
 Формы лежат в `packages/shared/src/types.ts` и уже экспортируются наружу
-(`packages/shared/src/index.ts` реэкспортирует весь `types`), но пока их
-использует только browser-runner: `BrowserSessionState` (`idle | starting | ready
+(`packages/shared/src/index.ts` реэкспортирует весь `types`); их используют
+browser-runner, REST и UI: `BrowserSessionState` (`idle | starting | ready
 | reconnecting | stopping | stopped | failed`), `BrowserViewport`, `BrowserTab`,
 `BrowserError` с фиксированным набором кодов, `BrowserSessionMetadata`
 (с `incarnation`), `BrowserFrameMetadata` (incarnation + tabId + sequence + mime +
@@ -207,16 +231,17 @@ newTab/selectTab/closeTab/resize/input/screenshot).
 `fastify` и `playwright` (в lock-файле 1.62.1); после появления воркспейса нужен
 `npm install`, а для реального запуска — установленные бинарники Chromium, иначе
 даже `npm run -w @voicechat/browser-runner typecheck` падает на отсутствующем
-модуле `playwright`. Пакетные детали — `apps/browser-runner/AGENTS.md`.
+модуле `playwright`. Запуск процесса — `apps/browser-runner/src/index.ts`.
 
 `buildBrowserRunner()` (`src/server.ts`) отделён от `listen()` (`src/index.ts`) и
 принимает готовый `BrowserSessionManager`, поэтому в тестах подменяется фейком.
 Весь префикс `/v1/*` закрыт одним service-токеном (`VC_BROWSER_RUNNER_TOKEN`,
 сравнение `timingSafeEqual` в `src/security.ts`); без токена процесс не стартует.
 Роуты: `GET /v1/health`, `POST /v1/sessions` (идемпотентный старт),
-`POST /v1/sessions/:id/commands`, `DELETE /v1/sessions/:id`. Health сейчас
-формальный — `browser.present` и `launch.ok` захардкожены, реально считается
-только число живых сессий.
+`POST /v1/sessions/:id/commands`, `DELETE /v1/sessions/:id`. Health проверяет наличие исполняемого файла и запускает/закрывает Chromium;
+успешный результат кэшируется, неуспешный повторяется и возвращает 503.
+По умолчанию каждые 5 минут sweepIdle закрывает сессии без обращений 30 минут
+и удаляет их профили; screenshot/status также обновляют lastUsedAt.
 
 Живой прогон 2026-08-25 (macOS): раннеру достаточно `npx playwright install
 chromium` — качается только Chrome Headless Shell (~95 МБ), полный Chromium для
@@ -258,21 +283,19 @@ base64url, шардирование по первым двум символам,
 Команды исполняет `BrowserSessionManager.command`: сначала сверяется `incarnation`
 (иначе `stale_incarnation`), потом вкладка (`stale_tab`), дальше прямой вызов
 Playwright. `server.ts` переводит эти строки в статусы 404 / 409 / 422. Ответ на
-любую команду, кроме скриншота, — актуальная `BrowserSessionMetadata`; скриншот
+навигационную команду — актуальная `BrowserSessionMetadata`; selector/inspect
+возвращают собственные результаты действий, скриншот
 возвращается сырыми байтами и всегда с заголовком `image/png`, независимо от
-запрошенного формата. В метаданных `state` пока всегда `'ready'`, а `title`
-вкладок и страницы — пустые: раннер их не читает.
+запрошенного формата. В метаданных `state` пока всегда `'ready'`; актуальные URL и title вкладок
+читаются из Page, а технический адрес прокси разворачивается в логический.
 
 ## Маршрут и UI
 
 UI-поверхность описана в [ui.md](../ui.md#отдельный-режим-playwright-reader):
 hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт меню в `Sidebar`,
-собственный список чатов в сторе и общая с Web Reader правая панель
-`WebReaderHost` (её подпись в DOM — «Web Reader», проектный URL в этом режиме не
-передаётся). Разметки-заглушки Chromium в приложении больше нет; её CSS-правила
-`.playwright-browser-pane` и `.playwright-reader-header` остались в
-`packages/ui/src/styles/app.css` мёртвыми и пригодятся, когда появится настоящая
-панель раннера.
+собственный список чатов в сторе и `BrowserSessionPane` с подписью «Browser session».
+Ту же панель использует Chromium-движок Web Reader. Классы
+`.playwright-browser-pane` и `.playwright-reader-header` используются панелью.
 
 ## Панель пользуется всем, что умеет контракт (круг 1, 29.08.2026)
 

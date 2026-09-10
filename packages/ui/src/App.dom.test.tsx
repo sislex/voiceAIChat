@@ -434,7 +434,7 @@ describe('App — интеграция UI со стором и IPC', () => {
     window.location.hash = `#/chat/${chat.id}/context`
     fireEvent(window, new HashChangeEvent('hashchange'))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки разговора' })
-    expect(within(dialog).getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(dialog).getByRole('tab', { name: 'Контекст' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('dialog', { name: 'Настройки' })).not.toBeInTheDocument()
   })
 
