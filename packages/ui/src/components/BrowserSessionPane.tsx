@@ -1,7 +1,8 @@
+import { frameKeyAction, frameWheelDelta, remainingTypedDraft } from '../lib/browserInput'
 import { isBrowserSiteDataResetResult } from '@shared/browserProfile'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, loadScenario, needsWaitHint, recordPointerClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, isWebAddress, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
@@ -97,6 +98,9 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   // Момент последнего действия и счётчик перезапуска таймера: после команды
   // опрос ускоряется, через ACTIVE_WINDOW_MS возвращается к спокойному.
   const lastAction = useRef(0)
+  const inputQueue = useRef<{ generation: number; promise: Promise<unknown> } | null>(null)
+  const typingSubmission = useRef<number | null>(null)
+  const busyRequests = useRef({ generation: 0, count: 0 })
   const [pollTick, setPollTick] = useState(0)
   const [retryable, setRetryable] = useState(false)
   const lastCommand = useRef<Parameters<RendererBrowserBridge['command']>[1]['command'] | null>(null)
@@ -252,13 +256,25 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     if (!browser || !incarnation.current) return
     const generation = alive.current
     frameRevision.current++
+    if (busyRequests.current.generation !== generation) busyRequests.current = { generation, count: 0 }
+    busyRequests.current.count++
     setBusy(true)
     setMessage(''); setRetryable(false)
     lastCommand.current = command
     lastAction.current = Date.now()
     setPollTick((v) => v + 1)
     try {
-      const next = await browser.command(conversationId, { incarnation: incarnation.current, command })
+      const request = { incarnation: incarnation.current, command }
+      let next: unknown
+      if (command.type === 'input') {
+        const preceding = inputQueue.current?.generation === generation ? inputQueue.current.promise : Promise.resolve()
+        const pending = preceding.catch(() => undefined).then(() => {
+          if (generation !== alive.current) throw new Error('Сессия изменилась до выполнения ввода')
+          return browser.command(conversationId, request)
+        })
+        inputQueue.current = { generation, promise: pending }
+        next = await pending
+      } else next = await browser.command(conversationId, request)
       if (generation !== alive.current) return
       // Метаданные приходят не на всякую команду: `selector` отдаёт чтение,
       // `inspect` — журналы. Обновляем состояние только по метаданным.
@@ -276,7 +292,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
       }
       return { ok: false, error: err instanceof Error ? err.message : 'Команда не выполнена' }
     } finally {
-      if (generation === alive.current) setBusy(false)
+      if (generation === alive.current) { busyRequests.current.count--; setBusy(busyRequests.current.count > 0) }
     }
   }, [browser, conversationId, refreshFrame, applyMeta])
 
@@ -292,6 +308,13 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const clickAt = (event: ReactMouseEvent<HTMLImageElement>, button: 'left' | 'right', clickCount: 1 | 2): void => {
     const point = pointFromEvent(event)
     if (!point) return
+    const modifiers: Array<'Shift' | 'Control' | 'Alt' | 'Meta'> = []
+    const recordedModifiers: Array<'shift' | 'ctrl' | 'alt' | 'meta'> = []
+    if (event.shiftKey) { modifiers.push('Shift'); recordedModifiers.push('shift') }
+    if (event.ctrlKey) { modifiers.push('Control'); recordedModifiers.push('ctrl') }
+    if (event.altKey) { modifiers.push('Alt'); recordedModifiers.push('alt') }
+    if (event.metaKey) { modifiers.push('Meta'); recordedModifiers.push('meta') }
+    const detail = button === 'left' && event.detail === 2 ? 2 : undefined
     void (async () => {
       // В режиме записи сначала спрашиваем, что под курсором: шаг сценария
       // обязан быть селекторным, координатная запись рассыплется от сдвига
@@ -301,10 +324,10 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
         if (described?.element) {
           lastElement.current = described.element
           const kind: ClickKind = button === 'right' ? 'right' : clickCount === 2 ? 'double' : 'left'
-          setSteps((current) => withPause(recordClick(current, described.element!, kind)))
+          setSteps((current) => withPause(recordPointerClick(current, described.element!, kind, recordedModifiers, detail)))
         }
       }
-      await run({ type: 'input', action: { type: 'click', x: point.x, y: point.y, button, clickCount } })
+      await run({ type: 'input', action: { type: 'click', x: point.x, y: point.y, button, clickCount, ...(modifiers.length ? { modifiers } : {}), ...(detail ? { detail } : {}) } })
     })()
   }
 
@@ -312,25 +335,19 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const onFrameWheel = (event: ReactWheelEvent<HTMLImageElement>): void => {
     if (phase !== 'ready') return
     event.preventDefault()
-    // Длинная страница без прокрутки не проверяется, поэтому она тоже шаг —
-    // слитый, а не по одному на каждый щелчок колеса.
-    if (recording) setSteps((current) => recordScroll(current, Math.round(event.deltaY)))
-    void run({ type: 'input', action: { type: 'wheel', deltaX: Math.round(event.deltaX), deltaY: Math.round(event.deltaY) } })
+    const point = pointFromEvent(event)
+    if (!point) return
+    const delta = frameWheelDelta(event, meta?.viewport ?? VIEWPORT)
+    if (recording) setSteps((current) => recordScroll(current, delta.deltaY, delta.deltaX))
+    void run({ type: 'input', action: { type: 'wheel', ...point, ...delta } })
   }
 
-  // Клавиатура прямо в кадр: раньше требовалось отдельное поле и подсказка
-  // «сначала кликните по нему».
   const onFrameKeyDown = (event: ReactKeyboardEvent<HTMLImageElement>): void => {
     if (phase !== 'ready') return
-    if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      event.preventDefault()
-      void run({ type: 'input', action: { type: 'type', text: event.key } })
-      return
-    }
-    if (['Enter', 'Backspace', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
-      event.preventDefault()
-      void run({ type: 'input', action: { type: 'press', key: event.key } })
-    }
+    const action = frameKeyAction({ ...event, isComposing: event.nativeEvent.isComposing })
+    if (!action) return
+    event.preventDefault()
+    void run({ type: 'input', action })
   }
 
   /** Перезапуск сессии: останавливаем текущую и стартуем заново на том же разговоре. */
@@ -360,6 +377,8 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   const attachFullPage = async (): Promise<void> => {
     if (!browser || !incarnation.current || !onAttachFrame) return
     const generation = alive.current
+    if (busyRequests.current.generation !== generation) busyRequests.current = { generation, count: 0 }
+    busyRequests.current.count++
     setBusy(true)
     try {
       const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, fullPage: true, format: 'png' })
@@ -367,7 +386,7 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
     } catch (err) {
       if (generation === alive.current) setMessage(err instanceof Error ? err.message : 'Снимок не получился')
     } finally {
-      if (generation === alive.current) setBusy(false)
+      if (generation === alive.current) { busyRequests.current.count--; setBusy(busyRequests.current.count > 0) }
     }
   }
 
@@ -403,13 +422,17 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
   }
 
   const submitTyping = (): void => {
-    if (!typing) return
+    const generation = alive.current
+    if (!typing || typingSubmission.current === generation) return
+    const submitted = typing
+    typingSubmission.current = generation
     void (async () => {
-      // Ввод тоже обязан попадать в сценарий: без этого в записи остаётся клик
-      // по полю и пустое поле — прогон такого шага ничего не проверит.
-      if (recording && lastElement.current) setSteps((current) => withPause(recordType(current, lastElement.current!, typing)))
-      await run({ type: 'input', action: { type: 'type', text: typing } })
-      setTyping('')
+      try {
+        const result = await run({ type: 'input', action: { type: 'type', text: submitted } })
+        if (generation !== alive.current || scenarioCommandError(result)) return
+        if (recording && lastElement.current) setSteps((current) => withPause(recordType(current, lastElement.current!, submitted)))
+        setTyping(current => remainingTypedDraft(current, submitted))
+      } finally { if (typingSubmission.current === generation) typingSubmission.current = null }
     })()
   }
 
@@ -648,10 +671,16 @@ function BrowserSessionPaneSession({ conversationId, browser, onAttachFrame, tes
             role="application"
             aria-label="Страница в Chromium: клик, прокрутка и клавиатура работают прямо здесь"
             onClick={(event) => clickAt(event, 'left', 1)}
-            onDoubleClick={(event) => clickAt(event, 'left', 2)}
             onContextMenu={(event) => { event.preventDefault(); clickAt(event, 'right', 1) }}
             onWheel={onFrameWheel}
             onKeyDown={onFrameKeyDown}
+            onPaste={(event) => {
+              if (phase !== 'ready') return
+              const text = event.clipboardData.getData('text/plain')
+              if (!text) return
+              event.preventDefault()
+              void run({ type: 'input', action: { type: 'type', text } })
+            }}
             style={{ width: '100%', display: 'block', cursor: 'pointer' }}
           />
         : phase === 'ready' && tabs.length === 0

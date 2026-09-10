@@ -154,7 +154,7 @@ describe('previewMcp — инструменты browser', () => {
   it.each([
     ['open', { url: 'https://example.test/' }], ['read', {}], ['find', { text: 'Письмо' }],
     ['click', { selector: '#button' }], ['type', { selector: '#field', text: 'Запись' }],
-    ['hover', { selector: '#menu' }], ['scroll', { to: 'bottom' }], ['press', { selector: '#field', key: 'Enter' }],
+    ['hover', { selector: '#menu' }], ['scroll', { to: 'bottom' }], ['scroll', { dx: 250, selector: '#pane' }], ['press', { selector: '#field', key: 'Enter' }],
     ['wait', { selector: '#ready' }], ['set', { selector: '#check', checked: true }],
     ['upload', { selector: '#file', name: 'empty.txt', base64: '' }], ['a11y', {}],
     ['drag', { from: { selector: '#from' }, to: { selector: '#to' } }],

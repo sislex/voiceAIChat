@@ -70,20 +70,20 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       // document.scrollingElement и вложенный контейнер имеют разные позиции.
       // Ждём два кадра, чтобы scroll-событие уже увидели обработчики страницы.
       const target = page.locator(action.selector || 'body').first()
-      await target.evaluate((element, value) => {
+      const scrolled = await target.evaluate((element, value) => {
         const scope = globalThis as unknown as {
           document: { body: unknown; documentElement: unknown; scrollingElement: unknown }
           requestAnimationFrame(callback: () => void): void
         }
         const node = (element === scope.document.body || element === scope.document.documentElement ? scope.document.scrollingElement : element) as {
-          scrollTop: number; scrollHeight: number; scrollTo(options: { top: number; behavior: string }): void
+          scrollTop: number; scrollLeft: number; scrollHeight: number; scrollWidth: number; clientWidth: number; clientHeight: number; scrollTo(options: { top: number; left: number; behavior: string }): void
         }
-        const options = value as { to?: 'top' | 'bottom'; dy: number }
+        const options = value as { to?: 'top' | 'bottom'; dy: number; dx: number }
         const top = options.to === 'top' ? 0 : options.to === 'bottom' ? node.scrollHeight : node.scrollTop + options.dy
-        node.scrollTo({ top, behavior: 'instant' })
-        return new Promise<void>(resolve => scope.requestAnimationFrame(() => scope.requestAnimationFrame(resolve)))
-      }, { to: action.to, dy: action.dy ?? 400 }, { timeout })
-      return { ok: true }
+        node.scrollTo({ top, left: node.scrollLeft + options.dx, behavior: 'instant' })
+        return new Promise(resolve => scope.requestAnimationFrame(() => scope.requestAnimationFrame(() => resolve({ top: node.scrollTop, left: node.scrollLeft, maxTop: Math.max(0, node.scrollHeight - node.clientHeight), maxLeft: Math.max(0, node.scrollWidth - node.clientWidth) }))))
+      }, { to: action.to, dy: action.dy ?? (action.dx === undefined ? 400 : 0), dx: action.dx ?? 0 }, { timeout })
+      return { ok: true, scrolled: scrolled as BrowserSelectorResult['scrolled'] }
     }
     if (action.kind === 'type') {
       await page.locator(action.selector).first().fill(action.text, { timeout })

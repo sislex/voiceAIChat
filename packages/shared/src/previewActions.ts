@@ -76,7 +76,7 @@ export type PreviewAction = BrowserFrameTarget & (
   /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
   | { kind: 'hover'; selector?: string; text?: string; diagnostic?: boolean }
   /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
-  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dy?: number; diagnostic?: boolean }
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dx?: number; dy?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
   | { kind: 'press'; key: string; selector?: string; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
@@ -181,7 +181,7 @@ export interface PreviewScrollResult {
   page: PreviewPageInfo
   /** Что прокручено: окно или контейнер по селектору. */
   target: string
-  scrolled: { top: number; left: number; maxTop: number }
+  scrolled: { top: number; left: number; maxTop: number; maxLeft?: number }
 }
 
 export interface PreviewPressResult {
@@ -417,7 +417,8 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         optBounded(value.selector, L.selector) &&
         (value.to === undefined || value.to === 'top' || value.to === 'bottom') &&
         (value.dy === undefined || (typeof value.dy === 'number' && Number.isFinite(value.dy) && Math.abs(value.dy) <= 100_000)) &&
-        (value.to !== undefined || value.dy !== undefined)
+        (value.dx === undefined || (typeof value.dx === 'number' && Number.isFinite(value.dx) && Math.abs(value.dx) <= 100_000)) &&
+        (value.to !== undefined || value.dy !== undefined || value.dx !== undefined)
       )
     case 'press':
       return (

@@ -1,3 +1,4 @@
+import { runBrowserInput } from './inputActions.js'
 import { normalizeBrowserProfileMode, type BrowserProfileMode, type BrowserSiteDataResetResult } from '@voicechat/shared'
 import { clearSiteData, httpOrigin } from './siteData.js'
 import { readReaderProfile, writeReaderProfile } from './profileState.js'
@@ -355,22 +356,7 @@ export class BrowserSessionManager {
       session.viewport = { ...session.viewport, ...command.viewport }
       await Promise.all([...session.pages.values()].map((item) => item.setViewportSize(session.viewport)))
     } else if (command.type === 'input') {
-      const action = command.action
-      if (action.type === 'mouseMove') await page.mouse.move(action.x, action.y)
-      else if (action.type === 'mouseDown') await page.mouse.down({ button: action.button })
-      else if (action.type === 'mouseUp') await page.mouse.up({ button: action.button })
-      else if (action.type === 'click') await page.mouse.click(action.x, action.y, { button: action.button, clickCount: action.clickCount })
-      else if (action.type === 'wheel') await page.mouse.wheel(action.deltaX, action.deltaY)
-      else if (action.type === 'drag') {
-        await page.mouse.move(action.from.x, action.from.y)
-        await page.mouse.down()
-        try { await page.mouse.move(action.to.x, action.to.y, { steps: 10 }) }
-        finally { await page.mouse.up() }
-      }
-      else if (action.type === 'type') await page.keyboard.type(action.text)
-      else if (action.type === 'press') await page.keyboard.press(action.key)
-      else if (action.type === 'keyDown') await page.keyboard.down(action.key)
-      else await page.keyboard.up(action.key)
+      await runBrowserInput(page, command.action)
     } else if (command.type === 'selector') {
       const result = command.action.kind === 'describe' ? await describeFramePoint(page, command.action.x, command.action.y) : await runSelectorAction(page, command.action, raw => this.publicUrl(raw))
       if (result.links) result.links = result.links.map(link => ({ ...link, href: this.publicUrl(link.href) }))

@@ -2340,13 +2340,221 @@
       },
       "implementationEndedAt": "2026-09-10T04:09:53.950582+00:00",
       "sharedImplementationDurationSeconds": 1315,
-      "endedAt": "2026-09-10T04:25:31.032514+00:00"
+      "endedAt": "2026-09-10T04:25:31.032514+00:00",
+      "commit": "13ac0bd2"
     },
     {
       "number": 12,
-      "status": "pending",
-      "startedAt": null,
-      "items": []
+      "status": "complete",
+      "startedAt": "2026-09-10T04:26:23.601110+00:00",
+      "items": [
+        {
+          "id": "12-01",
+          "title": "Колесо прокручивает контейнер под текущим курсором",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-02",
+          "title": "Единицы wheel line/page переводятся в пиксели",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-03",
+          "title": "Модель прокручивает горизонтально страницы и контейнеры",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-04",
+          "title": "mouseDown/mouseUp используют переданные координаты",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-05",
+          "title": "Модификаторы клика сохраняются в Chromium",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-06",
+          "title": "Двойной клик панели даёт два click и один dblclick",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-07",
+          "title": "Комбинации клавиш и Delete/Home/End/PageUp/PageDown доступны в кадре",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-08",
+          "title": "Вставка текста из буфера работает в сфокусированном поле Chromium",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-09",
+          "title": "Неудачный ввод и новый текст не теряются из черновика панели",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        },
+        {
+          "id": "12-10",
+          "title": "Параллельные события ввода выполняются последовательно без смешивания модификаторов",
+          "status": "validated",
+          "group": "browser-input",
+          "implementationStartedAt": "2026-09-10T04:26:23.601110+00:00",
+          "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+          "sharedGroupDurationSeconds": 670,
+          "validation": "42 runner (9 Chromium),114 UI/recording+2 bridge,51 shared,104 MCP/proxy,E2E20; fast7507/full7838, оба exit0"
+        }
+      ],
+      "research": {
+        "researchedAt": "2026-09-10T04:12:58.199031+00:00",
+        "items": [
+          "Колесо прокручивает контейнер под текущим курсором",
+          "Единицы wheel line/page переводятся в пиксели",
+          "Модель прокручивает горизонтально страницы и контейнеры",
+          "mouseDown/mouseUp используют переданные координаты",
+          "Модификаторы клика сохраняются в Chromium",
+          "Двойной клик панели даёт два click и один dblclick",
+          "Комбинации клавиш и Delete/Home/End/PageUp/PageDown доступны в кадре",
+          "Вставка текста из буфера работает в сфокусированном поле Chromium",
+          "Неудачный ввод и новый текст не теряются из черновика панели",
+          "Параллельные события ввода выполняются последовательно без смешивания модификаторов"
+        ],
+        "baseline": "/tmp/voicechat-reader-cycle-12-baseline.json",
+        "evidence": [
+          "wheel0 вместо180; horizontal0 вместо250; mousedown0,0 вместо100,10; shiftfalse; двойной клик4click+1dblclick",
+          "Код панели теряет ctrl/meta/shift у клавиш, не имеет onPaste, безусловно очищает typing после await"
+        ],
+        "draft": "/tmp/voicechat-reader-cycle-12-draft",
+        "notes": [
+          "Подготовка вне checkout во время гейтов11; интервалы пересекаются.",
+          "Горизонтальный scroll требует shared PreviewAction/валидатор/mapper/MCP/runner и честный WebReaderfallback.",
+          "Сохранение фактического текста в сценарии, IME и scoped scroll recording — следующие циклы, не заявлены здесь.",
+          "Для UI двойного клика второй физический click передаётся detail2 через mouse.down/up; native clickCount2 по-прежнему полный двойной клик модели."
+        ],
+        "draftValidation": {
+          "native": "/tmp/voicechat-reader-cycle-12-fixed-partial.json",
+          "uiBaseline": "/tmp/voicechat-reader-cycle-12-ui-baseline-2.log",
+          "uiFixed": "/tmp/voicechat-reader-cycle-12-ui-fixed.log",
+          "uiResult": "8/8 regressions red ->8/8 green,1.07s",
+          "helpers": "14/14,731ms",
+          "notIntegrated": [
+            "Shared contracts and raw input typing/validation",
+            "MCP dx+WebReader scroll",
+            "Recorder doubleclick/modifiers consistency",
+            "Native serialization tests and full E2E",
+            "All package typechecks and gates"
+          ],
+          "nativeResult": "9/9 native Chromium,6.14s; cursor/horizontal/down/up/modifiers/doubleclick/Unicode+ordering",
+          "compat": "Первичный совместимый UI-набор60/62; две synthetic doubleClick-проверки исправляются на настоящую последовательность click1,click2,dblclick. Результат последнего прогона см.log."
+        },
+        "preparedAt": "2026-09-10T04:25:31.034227+00:00"
+      },
+      "implementationEndedAt": "2026-09-10T04:37:33.166984+00:00",
+      "sharedImplementationDurationSeconds": 670,
+      "validation": {
+        "nativeTests": 9,
+        "runnerTargetedTests": 42,
+        "runnerDurationMs": 3310,
+        "uiTests": 114,
+        "bridgeTests": 2,
+        "sharedTests": 51,
+        "mcpTests": 104,
+        "e2eTests": 20,
+        "e2e": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:35:15.111335+00:00",
+          "endedAt": "2026-09-10T04:35:40.438461+00:00",
+          "durationMs": 25327
+        },
+        "e2eFirstAttempt": {
+          "exitCode": 1,
+          "startedAt": "2026-09-10T04:30:05.244830+00:00",
+          "endedAt": "2026-09-10T04:32:27.247674+00:00",
+          "durationMs": 142001
+        },
+        "typecheckExitCode": 0,
+        "webBuildExitCode": 0,
+        "visual": [
+          "26-keyboard-paste-doubleclick.png",
+          "27-horizontal-scroll.png"
+        ],
+        "artifacts": "/tmp/voicechat-reader-audit/cycle-12",
+        "corrections": [
+          "Синтаксическая опечатка в новом shared-тесте и Playwright exact в Testing Library исправлены; shared51 и root typecheck3 exit0.",
+          "Две прежние synthetic doubleClick-проверки теперь отправляют реальную DOM-последовательность click1,click2,dblclick; текущие62 UI-регрессии прошли.",
+          "Первый E2E15/20: отказ403 при reload привёл к каскаду. Убрана искусственная повторная миграция legacy Bearer при каждом reload; диагностика пишет ошибочные browser-ответы.",
+          "Сопутствующий подтверждённый баг REST: stop не передавал CSRF и игнорировал HTTP-ошибки. Два теста красные до исправления, зелёные после; E2E теперь проверяет смену incarnation.",
+          "Учёт занятости полной страницы согласован с числом pending-команд."
+        ],
+        "limitations": [
+          "Сырые input сериализуются; selector/evaluate других клиентов не блокируются этой очередью.",
+          "IME intermediate keydown пропускается, полноценный composition не реализован.",
+          "Paste тестируется clipboardData-событием в реальном UI; системный буфер пользователя не изменялся.",
+          "Запись прокрутки вложенного контейнера и фактического appended текста — отдельный остающийся пробел, не заявлен исправленным здесь."
+        ],
+        "fast": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:37:34.179068+00:00",
+          "endedAt": "2026-09-10T04:41:15.942534+00:00",
+          "durationMs": 221761
+        },
+        "fastTests": {
+          "passed": 7507,
+          "skipped": 45
+        },
+        "gate": {
+          "exitCode": 0,
+          "startedAt": "2026-09-10T04:42:00.489105+00:00",
+          "endedAt": "2026-09-10T04:47:30.539205+00:00",
+          "durationMs": 330054
+        },
+        "gateTests": 7838
+      },
+      "endedAt": "2026-09-10T04:48:26.620412+00:00"
     },
     {
       "number": 13,

@@ -85,7 +85,7 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     }
     case 'scroll': {
       // Контейнер и край страницы нельзя выразить фиксированным шагом колеса.
-      return { kind: 'command', command: { type: 'selector', action: { kind: 'scroll', ...(action.selector ? { selector: action.selector } : {}), ...(action.to ? { to: action.to } : {}), ...(action.dy !== undefined ? { dy: action.dy } : {}) } } }
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'scroll', ...(action.selector ? { selector: action.selector } : {}), ...(action.to ? { to: action.to } : {}), ...(action.dy !== undefined ? { dy: action.dy } : {}), ...(action.dx !== undefined ? { dx: action.dx } : {}) } } }
     }
     case 'press':
       return action.selector
