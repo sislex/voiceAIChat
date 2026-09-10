@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-09
-checked: 41e07830
+updated: 2026-09-10
+checked: ffd7b6cf
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -32,11 +32,43 @@ areas:
 
 Playwright Reader — отдельный продуктовый режим: слева обычный чат ChatAI, справа
 работает изолированный Chromium под управлением Playwright.
-Существующий Web Reader (`assistantKind: 'web-recorder'`, iframe поверх
-`/api/preview`, `postMessage`-контракт рекордера) остаётся рабочим и не
-затрагивается: см. [ui.md](../ui.md#web-reader--отдельная-страница). Они используют общий
+Web Reader (`assistantKind: 'web-recorder'`) выбирает движок в том же разговоре:
+быстрый просмотр — iframe поверх `/api/preview`, полный браузер — эта же
+`BrowserSessionPane` с изолированным Chromium: см. [ui.md](../ui.md#web-reader--отдельная-страница). Они используют общий
 MCP-вход `/mcp/preview`, компоненты чата и split-раскладку. Проект разговора может
 давать машине и инструментам контекст; выбор Chromium не зависит от наличия проекта.
+
+## Полный Chromium внутри Web Reader (2026-09-10)
+
+`Conversation.previewEngine` сохраняется в `conversations.preview_engine` (по
+умолчанию proxy). Переключение использует существующий `conversations:setPreviewUrl`
+и REST preview-url: Chromium разрешён только собственному web-recorder, обычное
+сохранение URL не сбрасывает движок. `isChromiumReaderConversation` объединяет
+Playwright Reader и выбранный Chromium в Web Reader; localCore передаёт этот
+признак и отдельному приложению. MCP и пользовательский ввод работают с одним
+sessionId разговора. История чата при смене движка не переносится и не теряется.
+
+Селектор движка блокируется до сохранения; отказ оставляет прежнюю панель. При
+первом старте Chromium открывает сохранённый URL, живую сессию не уводит назад.
+Screenshot возвращает page.url/title через команду status; status/screenshot
+не меняют lastActor. Панель обновляет адрес, подпись вкладки и историю после
+действия модели/SPA, сохраняет URL по очереди и бережёт черновик адресной строки.
+Поллинг не запускает пересекающиеся запросы кадров и сообщает повторяющиеся сбои.
+Первый переход с about:blank не считается уходом с исходного сайта.
+
+REST start устанавливает cookie ключа preview; navigate преобразует app.internal
+и machine.internal через VC_BROWSER_PREVIEW_BASE. Literal loopback принимается
+только для точного host:port, разрешённого оператором; произвольная приватная сеть
+по-прежнему закрыта. Для реального Chromium нужны настроенный browser-runner и
+установленный браузер; без него видна недоступность и можно выбрать быстрый режим.
+Сессия и профиль Chromium остаются временными: stop/выход из панели их удаляют.
+Переключение движка не переносит cookie между прокси и Chromium.
+
+`e2e/webReaderNative.e2e.test.ts` проверяет настоящий App + API + раннер + MCP,
+включая сайт с frame-ancestors none. 10 сентября проверены реальные страницы входа
+Gmail и Instagram: навигация, чтение модельным selector-действием и снимки; вход
+в аккаунты не выполнялся. Instagram потребовал дождаться JavaScript после заставки.
+Это не проверка авторизованных сценариев или прохождения антибот-защиты.
 
 ## Приложение `apps/playwright-reader` (2026-09-09)
 
@@ -89,7 +121,7 @@ Playwright Reader встроен. Cookie прокси и преобразова�
 Панель Playwright Reader подключена к реальному browser-runner. На маршруте
 `#/playwright-reader` `App.tsx` монтирует не `WebReaderFrame` (iframe поверх
 `/api/preview`), а `BrowserSessionPane` (`packages/ui/src/components`) поверх
-изолированного Chromium; `WebReaderFrame` остался только у Web Reader. Живой
+изолированного Chromium; `WebReaderFrame` используется в быстром режиме Web Reader. Живой
 прогон 2026-08-25: instagram.com (который прокси не поднимает) открылся в панели,
 клик по кадру закрыл cookie-баннер Meta.
 
@@ -115,7 +147,7 @@ Playwright Reader встроен. Cookie прокси и преобразова�
 Для реального запуска раннеру нужен `npx playwright install chromium`.
 
 Инструменты модели `mcp__browser__*` подключены к изолированному Chromium через
-`PlaywrightReaderService`; панель пользователя используется только Web Reader.
+`PlaywrightReaderService`; relay панели пользователя используется только быстрым режимом Web Reader.
 
 Механика привязки одна на оба Reader-режима и живёт в `AppBody`
 (`packages/ui/src/App.tsx`): `previewRunnerRef` хранит не голый runner, а пару
@@ -137,10 +169,58 @@ routePlaywrightReaderChatId`, поэтому `#/playwright-reader/<id>` сраз
 
 Реализовано связкой выше: серверная оркестрация сессий (REST, проверка владения,
 service-токен), screencast (поллинг кадров) и пользовательский ввод в Chromium.
-Ещё не реализованы: WS-транспорт кадров вместо поллинга, инструменты модели
-`mcp__browser__*` поверх раннера, DOM/accessibility snapshot Chromium, highlight,
-confirmation gates опасных действий, метрики и настоящий health-probe,
-idle-timeout и retention профилей.
+Инструменты модели, accessibility snapshot, загрузка файла по селектору,
+health-probe с реальным запуском и уборка idle-сессий уже реализованы; прежний
+список отсутствующих функций относился к первому прототипу. Кадры пока идут
+поллингом (400 мс после действия, затем 1200 мс). Долговременное хранение
+пользовательского профиля и потоковый транспорт кадров остаются отдельной работой.
+
+С 10 сентября 2026 `selectorActions.ts` отклоняет несколько видимых целей,
+пропускает скрытые копии и сохраняет строгий локатор до самого действия.
+`find` возвращает ссылки `data-voicechat-reader-ref`, связанные с узлом через
+WeakMap документа: перестановка соседей их не меняет, DOM-копия отклоняется с
+`stale_element_ref`. После навигации/замены узла нужен новый find. Для upload
+скрытый file input допустим, но он также должен быть единственным. scrollTo,
+read/a11y, wait, hover, set и drag используют ту же проверку однозначности.
+
+`BrowserSessionManager.command` выполняет действия последовательно в очереди
+сессии (лимит 128 ожидающих/выполняющихся запросов). `status`, `control`, `cancel`
+обходят очередь. Команды control/cancel разрешены только actor=user: модель не
+может вернуть себе управление. `control: user` отменяет ожидающие команды и
+блокирует дальнейшие действия модели; текущая команда заканчивается перед
+следующей. Метаданные и screenshot остаются доступны. `control: shared`
+возвращает модель к работе; `cancel` отменяет только ожидающие команды.
+Перезапуск закрывает контекст и тем самым прерывает также зависшую команду.
+Повторный start ждёт завершения stop, чтобы два Chromium не открывали один
+каталог профиля одновременно.
+UI показывает ручной режим, отменяет очередь и считает все выполняющиеся
+запросы, поэтому быстрый ответ на cancel не скрывает оставшийся долгий запрос.
+Состояние управления передаётся и с ответом screenshot для второй открытой панели.
+
+В `e2e/webReaderNative.e2e.test.ts` сессия стенда создаётся через настоящий
+`POST /api/session/cookie` в контексте Playwright. Нельзя восстанавливать
+legacy-токен initScript-ом на каждом reload: приложение удаляет его после
+миграции, а повторное восстановление запускает новую ротацию CSRF параллельно
+с `/me`. Диагностика такого стенда показала 403 csrf при старте Reader.
+
+Остаются ограничения клавиатуры: `onFrameKeyDown` передаёт ограниченный набор
+клавиш без модификаторов (Shift+Tab становится Tab), полноценного paste/IME нет.
+Они не входят в текущий цикл: пользователь попросил после него остановиться.
+
+`reset-session` в `previewMcp.ts` напрямую вызывает `context.clearCookies`,
+который `reader/module.ts` подключает к PreviewCookieStore: cookie Chromium
+этим путём не очищаются. Остановка панели, наоборот, вызывает stop раннера и
+удаляет весь профиль. Для пользовательских аккаунтов нужны отдельные операции
+отключения панели, хранения профиля и явного выхода с выбранного сайта.
+
+Новые страницы регистрируются через `context.on('page')`, но кадр REST возвращает
+только page.url/title, а observePage обновляет только уже известную активную
+вкладку: изменения полного списка вкладок не доставляются этим поллингом.
+Отдельные команды dialog/filechooser и явная адресация frame отсутствуют в контракте;
+upload по input-селектору уже есть, downloads отключены acceptDownloads=false.
+При расширении проверок нужны popup-вход, iframe, загрузки/скачивания и полный
+набор маршрутов проекта с ролями: 202 проверки Reader не равны проверке каждой
+страницы приложения или авторизованных сценариев Gmail/Instagram.
 
 ## Тип разговора, scope и legacy-миграция
 
@@ -151,8 +231,8 @@ Playwright Reader использует `assistantKind: 'playwright-reader'` и �
 ## Shared-контракты браузерной сессии
 
 Формы лежат в `packages/shared/src/types.ts` и уже экспортируются наружу
-(`packages/shared/src/index.ts` реэкспортирует весь `types`), но пока их
-использует только browser-runner: `BrowserSessionState` (`idle | starting | ready
+(`packages/shared/src/index.ts` реэкспортирует весь `types`); их используют
+browser-runner, REST и UI: `BrowserSessionState` (`idle | starting | ready
 | reconnecting | stopping | stopped | failed`), `BrowserViewport`, `BrowserTab`,
 `BrowserError` с фиксированным набором кодов, `BrowserSessionMetadata`
 (с `incarnation`), `BrowserFrameMetadata` (incarnation + tabId + sequence + mime +
@@ -175,16 +255,17 @@ newTab/selectTab/closeTab/resize/input/screenshot).
 `fastify` и `playwright` (в lock-файле 1.62.1); после появления воркспейса нужен
 `npm install`, а для реального запуска — установленные бинарники Chromium, иначе
 даже `npm run -w @voicechat/browser-runner typecheck` падает на отсутствующем
-модуле `playwright`. Пакетные детали — `apps/browser-runner/AGENTS.md`.
+модуле `playwright`. Запуск процесса — `apps/browser-runner/src/index.ts`.
 
 `buildBrowserRunner()` (`src/server.ts`) отделён от `listen()` (`src/index.ts`) и
 принимает готовый `BrowserSessionManager`, поэтому в тестах подменяется фейком.
 Весь префикс `/v1/*` закрыт одним service-токеном (`VC_BROWSER_RUNNER_TOKEN`,
 сравнение `timingSafeEqual` в `src/security.ts`); без токена процесс не стартует.
 Роуты: `GET /v1/health`, `POST /v1/sessions` (идемпотентный старт),
-`POST /v1/sessions/:id/commands`, `DELETE /v1/sessions/:id`. Health сейчас
-формальный — `browser.present` и `launch.ok` захардкожены, реально считается
-только число живых сессий.
+`POST /v1/sessions/:id/commands`, `DELETE /v1/sessions/:id`. Health проверяет наличие исполняемого файла и запускает/закрывает Chromium;
+успешный результат кэшируется, неуспешный повторяется и возвращает 503.
+По умолчанию каждые 5 минут sweepIdle закрывает сессии без обращений 30 минут
+и удаляет их профили; screenshot/status также обновляют lastUsedAt.
 
 Живой прогон 2026-08-25 (macOS): раннеру достаточно `npx playwright install
 chromium` — качается только Chrome Headless Shell (~95 МБ), полный Chromium для
@@ -226,21 +307,19 @@ base64url, шардирование по первым двум символам,
 Команды исполняет `BrowserSessionManager.command`: сначала сверяется `incarnation`
 (иначе `stale_incarnation`), потом вкладка (`stale_tab`), дальше прямой вызов
 Playwright. `server.ts` переводит эти строки в статусы 404 / 409 / 422. Ответ на
-любую команду, кроме скриншота, — актуальная `BrowserSessionMetadata`; скриншот
+навигационную команду — актуальная `BrowserSessionMetadata`; selector/inspect
+возвращают собственные результаты действий, скриншот
 возвращается сырыми байтами и всегда с заголовком `image/png`, независимо от
-запрошенного формата. В метаданных `state` пока всегда `'ready'`, а `title`
-вкладок и страницы — пустые: раннер их не читает.
+запрошенного формата. В метаданных `state` пока всегда `'ready'`; актуальные URL и title вкладок
+читаются из Page, а технический адрес прокси разворачивается в логический.
 
 ## Маршрут и UI
 
 UI-поверхность описана в [ui.md](../ui.md#отдельный-режим-playwright-reader):
 hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт меню в `Sidebar`,
-собственный список чатов в сторе и общая с Web Reader правая панель
-`WebReaderHost` (её подпись в DOM — «Web Reader», проектный URL в этом режиме не
-передаётся). Разметки-заглушки Chromium в приложении больше нет; её CSS-правила
-`.playwright-browser-pane` и `.playwright-reader-header` остались в
-`packages/ui/src/styles/app.css` мёртвыми и пригодятся, когда появится настоящая
-панель раннера.
+собственный список чатов в сторе и `BrowserSessionPane` с подписью «Browser session».
+Ту же панель использует Chromium-движок Web Reader. Классы
+`.playwright-browser-pane` и `.playwright-reader-header` используются панелью.
 
 ## Панель пользуется всем, что умеет контракт (круг 1, 29.08.2026)
 

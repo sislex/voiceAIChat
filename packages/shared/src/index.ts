@@ -93,3 +93,7 @@ export * from './storyParse'
 
 export * from './playwrightReader'
 export * from './imageStudioInternal'
+
+export * from './webRecorderScenario'
+
+export * from './previewProject'

@@ -485,3 +485,13 @@ describe('previewMcp — снимок из изолированного Chromium
     expect(result.text).not.toContain('вьюпорт')
   })
 })
+
+it('reader.changed берёт адрес и заголовок из result.page у DOM-команды', async () => {
+  const relay = new PreviewActionRelay(), messages: ServerMessage[] = []
+  relay.subscribe(U, message => messages.push(message))
+  const pending = relay.request(U, CONV, { kind: 'read' }, 1000)
+  const request = messages[0]; if (request.t !== 'preview.action') throw Error('Нет команды')
+  relay.resolve(U, request.requestId, { ok: true, result: { page: { url: 'https://example.test/current#tab', title: 'Текущая страница' }, headings: [], links: [], buttons: [], inputs: [], text: '' } })
+  await expect(pending).resolves.toMatchObject({ ok: true })
+  expect(messages.find(message => message.t === 'reader.changed')).toMatchObject({ address: 'https://example.test/current#tab', title: 'Текущая страница' })
+})

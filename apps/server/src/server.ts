@@ -1123,7 +1123,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Web Reader: прокси превью и MCP «browser» — модулем с портом к ядру (docs/plans/web-reader-service.md).
   // Порт ядра нужен и в `remote`: его отдаёт `/internal/reader/core` отдельному процессу ридера.
   const readerCore = createLocalReaderCore({
-    db, relay: previewRelay, runKeys: previewRunKeys, shotsRoot: browserShotsRoot,
+    app, db, relay: previewRelay, runKeys: previewRunKeys, shotsRoot: browserShotsRoot,
     publish: (message, userId) => frames.publish(message, userId),
     previews: () => kanban.service.previews.list()
   })

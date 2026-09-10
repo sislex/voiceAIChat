@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE } from '@shared/previewInspector'
 import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
@@ -139,7 +139,9 @@ describe('Recorder inspector и запись', () => {
     const post = vi.spyOn(window, 'postMessage')
     render(<Recorder />)
     fromHost(init)
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#buy', text: 'Купить' } })
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#password', text: 'hunter2', sensitive: true } })
     const steps = sent(post).filter((message) => message.kind === 'recording-step')
     expect(steps[0]).toMatchObject({ step: { kind: 'click', selector: '#buy', text: 'Купить', sensitive: false } })
@@ -160,6 +162,7 @@ describe('Recorder диагностика', () => {
     fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fromHost({ type, ...ids, kind: 'diagnostics-start', active: true })
     fromHost({ type, ...ids, kind: 'command', requestId: 'diag-1', action: { kind: 'read', diagnostic: true } })
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#diag', text: 'x' } })
     fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'diag-1', ok: true, result: { text: 'ok' } })
     const progress = sent(post).find((message) => message.kind === 'diagnostics-progress')!
@@ -230,31 +233,36 @@ describe('Recorder submit-шаги', () => {
     const post = vi.spyOn(window, 'postMessage')
     render(<Recorder />)
     fromHost(init)
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })
     expect(screen.getByText('⏎ submit')).toBeTruthy()
     const step = sent(post).find((message) => message.kind === 'recording-step')!
     expect(step).toMatchObject({ step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })
   })
 
-  it('воспроизведение submit-шага отправляет type-действие с submit', () => {
+  it('воспроизведение submit-шага отправляет type-действие с submit', async () => {
     render(<Recorder />)
     fromHost(init)
     fireEvent.change(screen.getByPlaceholderText('https://example.com'), { target: { value: 'http://example.test' } })
     fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
     const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
     const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
     fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#q', text: 'ноутбук', submit: true } })
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(inner.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
     const action = inner.mock.calls.map(([message]) => message as { type?: string; action?: { kind?: string; submit?: boolean; sensitive?: unknown } }).find((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE)!
     expect(action.action).toEqual({ kind: 'type', selector: '#q', text: 'ноутбук', submit: true })
   })
 })
 
 describe('Recorder scenario', () => {
-  it('запускает каждый шаг с уникальным локальным requestId без randomUUID', () => {
+  it('запускает каждый шаг с уникальным локальным requestId без randomUUID', async () => {
     let byte = 0
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => { bytes.fill(++byte); return bytes } })
     render(<Recorder />)
+    fromHost(init)
     fireEvent.change(screen.getByPlaceholderText('https://example.com'), { target: { value: 'http://example.test' } })
     fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
     const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
@@ -263,9 +271,15 @@ describe('Recorder scenario', () => {
       { kind: 'click', selector: '#buy', text: '' },
       { kind: 'type', selector: '#search', text: 'shoes' }
     ]) {
-      fromPage({ type: 'voicechat.preview.record.v1', step })
+      fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    fromPage({ type: 'voicechat.preview.record.v1', step })
     }
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(postMessage.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
+    const first = postMessage.mock.calls.find(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)![0]
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: first.requestId, ok: true })
+    await waitFor(() => expect(postMessage.mock.calls.filter(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toHaveLength(2))
     const commands = postMessage.mock.calls
       .map(([message]) => message as { type?: string; requestId?: string })
       .filter((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE)
@@ -289,5 +303,266 @@ describe('Recorder viewport-команда', () => {
     fromHost({ type, ...ids, kind: 'command', requestId: 'v2', action: { kind: 'viewport', width: 0 } })
     expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'v2')).toMatchObject({ ok: true, result: { width: 0 } })
     expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).style.width).toBe('')
+  })
+})
+
+describe('Recorder: подтверждённый адрес навигации', () => {
+  it('обновляет адрес без замены или перезагрузки живого iframe', () => {
+    render(<Recorder />); fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const src = frame.src
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next#/tab' })
+    expect((screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement).value).toBe('https://shop.example/next#/tab')
+    expect(screen.getByTitle('Предпросмотр сайта')).toBe(frame)
+    expect(frame.src).toBe(src)
+  })
+  it('не затирает незавершённый ввод адреса приходящим ready', () => {
+    render(<Recorder />); fromHost(init)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Адрес превью' }), { target: { value: 'https://draft.example/' } })
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next' })
+    expect((screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement).value).toBe('https://draft.example/')
+  })
+  it('принимает старый ready с URL прокси как логический адрес сайта', () => {
+    render(<Recorder />); fromHost(init)
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: window.location.origin + '/api/preview?url=' + encodeURIComponent('https://shop.example/new') + '#section' })
+    expect((screen.getByRole('textbox', { name: 'Адрес превью' }) as HTMLInputElement).value).toBe('https://shop.example/new#section')
+  })
+  it('восстанавливает режимы записи и инспектора после новой загрузки', () => {
+    render(<Recorder />); fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    fromHost({ type, ...ids, kind: 'inspector-state', enabled: true })
+    post.mockClear()
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next' })
+    expect(post).toHaveBeenCalledWith({ type: 'voicechat.preview.record.v1', enabled: true }, window.location.origin)
+    expect(post).toHaveBeenCalledWith({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled: true }, window.location.origin)
+  })
+  it('не сохраняет не-HTTP адрес от страницы', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />); fromHost(init); post.mockClear()
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'javascript:alert(1)' })
+    expect(sent(post).find(message => message.kind === 'page-status')).toMatchObject({ url: 'https://shop.example/' })
+  })
+})
+
+describe('Reader: адрес и состояния загрузки', () => {
+  it('адрес без схемы открывается и сохраняется как HTTPS', () => {
+    const post = vi.spyOn(window, 'postMessage'); render(<Recorder />); fromHost({ ...init, previewUrl: null })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Адрес превью' }), { target: { value: 'gmail.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(sent(post)).toContainEqual(expect.objectContaining({ kind: 'save-url', url: 'https://gmail.com/' }))
+  })
+  it('относительный путь разрешается от текущей подтверждённой страницы', () => {
+    render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/catalog/page' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Адрес превью' }), { target: { value: '../next' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).getAttribute('src')).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/next'))
+  })
+  it('обновление использует живой адрес после SPA-перехода', () => {
+    render(<Recorder />); fromHost(init); const old = screen.getByTitle('Предпросмотр сайта')
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/new#/tab' })
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить страницу' }))
+    const next = screen.getByTitle('Предпросмотр сайта'); expect(next).not.toBe(old)
+    expect(next.getAttribute('src')).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/new#/tab'))
+  })
+  it('индикатор загрузки исчезает после ready', () => {
+    render(<Recorder />); fromHost(init); expect(screen.getByRole('status').textContent).toContain('Загружаем')
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE }); expect(screen.queryByText('Загружаем страницу…')).toBeNull()
+  })
+  it('ошибка ответа видна пользователю и host; повтор создаёт новую загрузку', async () => {
+    const post = vi.spyOn(window, 'postMessage'); render(<Recorder />); fromHost(init)
+    const old = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const document = old.contentDocument!; document.open(); document.write('{"message":"Сайт не ответил"}'); document.close(); fireEvent.load(old)
+    expect((await screen.findByRole('alert')).textContent).toContain('Сайт не ответил')
+    expect(sent(post)).toContainEqual(expect.objectContaining({ kind: 'page-status', status: 'error' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку' }))
+    expect(screen.getByTitle('Предпросмотр сайта')).not.toBe(old); expect(screen.queryByRole('alert')).toBeNull()
+  })
+  it('зависшая загрузка завершается сообщением, таймеры очищаются при unmount', () => {
+    vi.useFakeTimers()
+    try {
+      const view = render(<Recorder />); fromHost(init)
+      act(() => { vi.advanceTimersByTime(12_000) })
+      expect(screen.getByRole('alert').textContent).toContain('время ожидания')
+      view.unmount(); act(() => { vi.advanceTimersByTime(10) }); expect(vi.getTimerCount()).toBe(0)
+      const next = render(<Recorder />); fromHost(init); next.unmount(); act(() => { vi.advanceTimersByTime(10) }); expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.useRealTimers() }
+  })
+  it('отложенный onLoad старого iframe не сообщает ошибку нового адреса', () => {
+    vi.useFakeTimers()
+    try {
+      render(<Recorder />); fromHost(init); fireEvent.load(screen.getByTitle('Предпросмотр сайта'))
+      fromHost({ type, ...ids, kind: 'set-url', url: 'https://new.example/' })
+      act(() => { vi.advanceTimersByTime(100) }); expect(screen.queryByRole('alert')).toBeNull()
+    } finally { vi.useRealTimers() }
+  })
+})
+describe('Reader: инструменты и viewport', () => {
+  it('редактирование, выбор и захват не остаются активными одновременно', () => {
+    render(<Recorder />); fromHost(init)
+    const inspect = screen.getByRole('button', { name: '⌖ Выбор элемента', hidden: true }), edit = screen.getByRole('button', { name: '✎ Редактировать', hidden: true }), capture = screen.getByRole('button', { name: '📸 Область', hidden: true })
+    fireEvent.click(inspect); expect(inspect.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(edit); expect(inspect.getAttribute('aria-pressed')).toBe('false'); expect(edit.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(capture); expect(edit.getAttribute('aria-pressed')).toBe('false'); expect(capture.getAttribute('aria-pressed')).toBe('true')
+  })
+  it('Escape закрывает меню, возвращает фокус и выключает интерактивный режим', () => {
+    render(<Recorder />); fromHost(init)
+    const summary = screen.getByLabelText('Инструменты страницы', { selector: 'summary' }), details = summary.parentElement as HTMLDetailsElement
+    fromHost({ type, ...ids, kind: 'inspector-state', enabled: true }); details.open = true
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(details.open).toBe(false); expect(document.activeElement).toBe(summary)
+    expect(screen.getByRole('button', { name: '⌖ Выбор элемента', hidden: true }).getAttribute('aria-pressed')).toBe('false')
+  })
+  it('клик за пределами меню закрывает его', () => {
+    render(<Recorder />); const details = document.querySelector('details')!; details.open = true
+    fireEvent.pointerDown(screen.getByRole('textbox', { name: 'Адрес превью' })); expect(details.open).toBe(false)
+  })
+  it('широкий viewport не получает max-width, сжимающий тестовую страницу', () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'command', requestId: 'wide', action: { kind: 'viewport', width: 1024 } })
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    expect(frame.style.width).toBe('1024px'); expect(frame.style.minWidth).toBe('1024px'); expect(frame.style.maxWidth).toBe('')
+    expect(frame.parentElement?.className).toBe('webpreview-viewport')
+  })
+})
+
+
+describe('Recorder управляемое воспроизведение', () => {
+  const seed = () => {
+    localStorage.setItem('voicechat.reader.scenario.v1:https://shop.example/', JSON.stringify([
+      { kind: 'click', selector: '#one', text: '', sensitive: false },
+      { kind: 'type', selector: '#two', text: '', sensitive: true }
+    ]))
+    render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+    return vi.spyOn((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).contentWindow as Window, 'postMessage')
+  }
+  it('проверяет последний секрет до выполнения первого шага', async () => {
+    const inner = seed(); fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await screen.findByText(/Шаг 2: введите секретное/)
+    expect(inner.mock.calls.filter(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toHaveLength(0)
+  })
+  it('блокирует повторный запуск и редактирование, но даёт остановить', async () => {
+    const inner = seed(); fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(inner.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
+    expect((screen.getByRole('button', { name: 'Запустить' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Остановить сценарий' }))
+    await screen.findByText(/Сценарий остановлен/)
+    expect((screen.getByLabelText('Секретное значение шага 2') as HTMLInputElement).value).toBe('')
+  })
+  it('показывает ошибку шага и не отправляет следующий', async () => {
+    const inner = seed(); fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    await waitFor(() => expect(inner.mock.calls.some(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toBe(true))
+    const command = inner.mock.calls.find(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)![0]
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: command.requestId, ok: false, error: 'missing' })
+    await screen.findByText(/Шаг 1: missing/)
+    expect(inner.mock.calls.filter(([m]) => m.type === PREVIEW_ACTION_COMMAND_TYPE)).toHaveLength(1)
+  })
+  it('отмена при set-url не ждёт таймаута', async () => {
+    seed(); fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    fromHost({ type, ...ids, kind: 'set-url', url: null })
+    await screen.findByText(/Открывается другая страница/)
+  })
+  it('воспроизведение не записывает само себя и не смешивает команды модели', async () => {
+    const host = vi.spyOn(window, 'postMessage'); seed()
+    fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#self', text: '', sensitive: false } })
+    expect(screen.queryByLabelText('Селектор шага 3')).toBeNull()
+    fromHost({ type, ...ids, kind: 'command', requestId: 'model-during-run', action: { kind: 'click', selector: '#other' } })
+    expect(sent(host)).toContainEqual(expect.objectContaining({ kind: 'result', requestId: 'model-during-run', ok: false }))
+  })
+})
+
+
+it('старый onLoad не объявляет ошибкой новый медленный переход', async () => {
+  vi.useFakeTimers()
+  render(<Recorder />); fromHost(init)
+  fireEvent.load(screen.getByTitle('Предпросмотр сайта'))
+  fromPage({ type: 'voicechat.preview.page-loading.v1' })
+  await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/next' })
+  cleanup(); vi.useRealTimers()
+})
+
+
+describe('Recorder управление записанным сценарием', () => {
+  const step = { kind: 'type', selector: '#field', text: 'value', sensitive: false }
+  const record = (value: object) => fromPage({ type: 'voicechat.preview.record.v1', step: value })
+  it('игнорирует запись при выключенном режиме', () => {
+    render(<Recorder />); fromHost(init); record(step)
+    expect(screen.queryByLabelText('Селектор шага 1')).toBeNull()
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: true }); record(step)
+    expect(screen.getByLabelText('Селектор шага 1')).toBeTruthy()
+    fromHost({ type, ...ids, kind: 'recording-state', enabled: false }); record({ ...step, selector: '#other' })
+    expect(screen.queryByLabelText('Селектор шага 2')).toBeNull()
+  })
+  it('склеивает посимвольный ввод одного поля', () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    for (const text of ['А', 'Ан', 'Анна']) record({ ...step, text })
+    expect(screen.queryByLabelText('Селектор шага 2')).toBeNull()
+    expect((screen.getByLabelText('Значение шага 1') as HTMLInputElement).value).toBe('Анна')
+  })
+  it('ручная отметка секрета очищает исходный текст в состоянии и storage', async () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'recording-state', enabled: true }); record({ ...step, text: 'manually-secret' })
+    fireEvent.click(screen.getByLabelText('Секрет шага 1'))
+    expect(screen.queryByLabelText('Значение шага 1')).toBeNull()
+    expect((screen.getByLabelText('Секретное значение шага 1') as HTMLInputElement).value).toBe('')
+    await waitFor(() => expect(Object.values(localStorage).join('')).not.toContain('manually-secret'))
+  })
+  it('удаляет и переставляет шаги без переноса секретов к другим полям', () => {
+    render(<Recorder />); fromHost(init); fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+    record(step); record({ ...step, selector: '#secret', sensitive: true })
+    fireEvent.change(screen.getByLabelText('Секретное значение шага 2'), { target: { value: 'temporary' } })
+    fireEvent.click(screen.getByLabelText('Поднять шаг 2'))
+    expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#secret')
+    expect((screen.getByLabelText('Секретное значение шага 1') as HTMLInputElement).value).toBe('')
+    fireEvent.click(screen.getByLabelText('Удалить шаг 1'))
+    expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#field')
+    expect(screen.queryByLabelText('Селектор шага 2')).toBeNull()
+  })
+  it('очищенный перенесённый сценарий не восстанавливается из legacy', () => {
+    localStorage.setItem('voicechat.reader.scenario.v1:https://shop.example/', JSON.stringify([step]))
+    const view = render(<Recorder />); fromHost(init)
+    fireEvent.click(screen.getByRole('button', { name: 'Очистить' })); view.unmount()
+    render(<Recorder />); fromHost(init)
+    expect(screen.queryByLabelText('Селектор шага 1')).toBeNull()
+  })
+})
+
+
+it('SPA-навигация выбирает сценарий нового hash без reload iframe', () => {
+  localStorage.setItem('voicechat.reader.scenario.v2:https://shop.example/#/next', JSON.stringify([{ kind: 'click', selector: '#next', text: '', sensitive: false }]))
+  render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+  const frame = screen.getByTitle('Предпросмотр сайта')
+  fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/#/next' })
+  expect(screen.getByTitle('Предпросмотр сайта')).toBe(frame)
+  expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#next')
+})
+it('запись сохраняет исходный адрес сценария при переходе', () => {
+  render(<Recorder />); fromHost(init); fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+  fromHost({ type, ...ids, kind: 'recording-state', enabled: true })
+  fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#go', text: '', sensitive: false } })
+  fromPage({ type: PREVIEW_PAGE_READY_TYPE, url: 'https://shop.example/#/next' })
+  expect((screen.getByLabelText('Селектор шага 1') as HTMLInputElement).value).toBe('#go')
+  expect(localStorage.getItem('voicechat.reader.scenario.v2:https://shop.example/')).toContain('#go')
+  expect(localStorage.getItem('voicechat.reader.scenario.v2:https://shop.example/#/next')).toBeNull()
+})
+
+
+describe('текущее приложение в Reader', () => {
+  it('кнопка проекта работает из пустой панели', () => {
+    render(<Recorder />); fromHost({ ...init, previewUrl: null })
+    fireEvent.click(screen.getByRole('button', { name: 'Текущий проект' }))
+    expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).src).toContain(encodeURIComponent('https://app.internal/'))
+  })
+  it('адрес host из команды сохраняет deep link на постоянном origin', () => {
+    render(<Recorder />); fromHost({ ...init, previewUrl: window.location.origin + '/#/machines' })
+    expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).src).toContain(encodeURIComponent('https://app.internal/#/machines'))
   })
 })

@@ -46,11 +46,12 @@ export function isBlockedAddress(address: string): boolean {
   return isPrivateNetworkHost(normalized)
 }
 
-export function validatePublicUrl(raw: string): URL {
+export function validatePublicUrl(raw: string, allowedTargets: ReadonlySet<string> = new Set()): URL {
   const url = new URL(raw)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('only http/https navigation is allowed')
   const host = url.hostname.toLowerCase()
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || isBlockedAddress(host)) {
+  const approved = allowedTargets.has(host + ':' + (url.port || (url.protocol === 'https:' ? '443' : '80')))
+  if (!approved && (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || isBlockedAddress(host))) {
     throw new Error('private network targets are blocked')
   }
   url.username = ''

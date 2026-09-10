@@ -283,8 +283,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'conversations:setProject': ({ id, projectId }) =>
       req(REST.conversationProject(id), { method: 'POST', body: JSON.stringify({ projectId }) }),
-    'conversations:setPreviewUrl': ({ id, previewUrl }) =>
-      req(`/api/conversations/${encodeURIComponent(id)}/preview-url`, { method: 'POST', body: JSON.stringify({ previewUrl }) }),
+    'conversations:setPreviewUrl': ({ id, previewUrl, previewEngine }) =>
+      req(`/api/conversations/${encodeURIComponent(id)}/preview-url`, { method: 'POST', body: JSON.stringify({ previewUrl, ...(previewEngine ? { previewEngine } : {}) }) }),
     'conversations:taskContext': ({ id }) => req(REST.conversationTaskContext(id)),
     'conversations:taskChats': (arg) => req(REST.conversationTaskChats(arg?.withRuns)),
     'conversations:setStatus': ({ id, status }) =>

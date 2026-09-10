@@ -1,5 +1,7 @@
 // `ReaderCore` во встроенном режиме: ридер живёт в процессе ядра и берёт relay, ключи Chromium,
 // канбан и шину кадров напрямую. Это единственное место, где ядро знает, что нужно ридеру.
+import type { FastifyInstance } from 'fastify'
+import { readerProjectResource } from './projectResource.js'
 import type { PreviewEnvironment, ServerMessage } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { PreviewActionRelay } from '../mcp/previewMcp.js'
@@ -8,6 +10,7 @@ import { saveBrowserShot } from '../browser/checkShots.js'
 import type { ReaderCore } from '../reader/core.js'
 
 export interface LocalReaderCoreDeps {
+  app: FastifyInstance
   db: VoiceChatDb
   relay: Pick<PreviewActionRelay, 'request'>
   runKeys: Pick<PreviewRunKeys, 'issue'>
@@ -20,6 +23,7 @@ export interface LocalReaderCoreDeps {
 
 export function createLocalReaderCore(deps: LocalReaderCoreDeps): ReaderCore {
   return {
+    projectResource: (request) => readerProjectResource(deps.app, request),
     previewAction: (userId, conversationId, action, timeoutMs) => deps.relay.request(userId, conversationId, action, timeoutMs),
     issuePreviewRunKey: (userId) => deps.runKeys.issue(userId),
     listPreviews: () => deps.previews(),

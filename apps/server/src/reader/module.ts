@@ -9,8 +9,9 @@ import { evaluateCommandLayers } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { MachinesService } from '../machines/service.js'
 import type { PlaywrightReaderService } from '@voicechat/playwright-reader'
-import { clearPreviewCookies, registerPreviewProxy } from '../routes/previewProxy.js'
+import { registerPreviewProxy } from '../routes/previewProxy.js'
 import { registerPreviewMcp, type PreviewTurnContext } from '../mcp/previewMcp.js'
+import { PreviewCookieStore } from '../routes/previewCookies.js'
 import type { ReaderCore } from './core.js'
 
 /**
@@ -34,7 +35,10 @@ export interface ReaderDeps {
 export function createReaderModule(deps: ReaderDeps): void {
   const { app, db, core, browser } = deps
 
+  const cookies = new PreviewCookieStore()
   registerPreviewProxy(app, {
+    cookies,
+    projectResource: (request) => core.projectResource(request),
     hostAliases: parseHostAliases(process.env.VC_BROWSER_HOST_ALIASES),
     machines: {
       bridge: deps.machines,
@@ -78,7 +82,7 @@ export function createReaderModule(deps: ReaderDeps): void {
           storybookUrl: toMachineUrl(env.agentId, env.storybookUrl)
         }))
     },
-    clearCookies: ({ userId }, host) => clearPreviewCookies(userId, host),
+    clearCookies: ({ userId }, host) => cookies.clear(userId, host),
     gateEvaluate: async ({ userId, conversationId }, code, confirmed) => {
       const conversation = await db.chat.getConversation(userId, conversationId)
       const project = conversation?.projectId ? await db.projects.getProject(userId, conversation.projectId) : null

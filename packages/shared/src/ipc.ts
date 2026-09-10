@@ -287,7 +287,7 @@ export interface IpcInvokeMap {
   'conversations:rename': { arg: { id: string; title: string }; result: void }
   /** Привязать/отвязать чат к проекту; сервер применяет настройки проекта. */
   'conversations:setProject': { arg: { id: string; projectId: string | null }; result: Conversation }
-  'conversations:setPreviewUrl': { arg: { id: string; previewUrl: string | null }; result: Conversation }
+  'conversations:setPreviewUrl': { arg: { id: string; previewUrl: string | null; previewEngine?: 'proxy' | 'chromium' }; result: Conversation }
   /** Контекст задачи для шапки связанного чата; null — чат не привязан к задаче. */
   'conversations:taskContext': { arg: { id: string }; result: TaskChatContext | null }
   /** Метки чатов задач для списка бесед: ключ, тип и последний ран. */
@@ -1082,7 +1082,7 @@ export interface RendererBrowserBridge {
    */
   command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult>
   /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
-  screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string }>
+  screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string; page?: { url: string; title: string }; control?: 'shared' | 'user'; queuedCommands?: number }>
   /** Закрывает Chromium-сессию разговора. */
   stop(conversationId: string): Promise<void>
 }
