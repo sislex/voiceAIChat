@@ -1,3 +1,4 @@
+import { loadWebReaderConfig } from '@voicechat/web-reader/config'
 // Реальные HTTP-границы: ядро, приложение Playwright Reader и, в одном из режимов, Web Reader.
 // Фейком остаётся только Chromium: проверяем именно доставку, авторизацию и сохранность результатов.
 import { createServer } from 'node:net'
@@ -13,8 +14,8 @@ import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { buildServer } from '../server.js'
 import { signToken } from '../users/accounts.js'
-import { createPreviewTurnTokens } from '../reader/turnToken.js'
-import { buildReaderServer } from '../reader/standalone/server.js'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
+import { buildReaderServer } from '@voicechat/web-reader/standalone'
 
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'
@@ -84,9 +85,8 @@ describe.each([
     }
     if (webMode === 'remote') {
       webReader = (await buildReaderServer({
-        config: loadConfig({ PORT: String(readerPort), VC_DATA_DIR: dataDir, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP,
-          VC_PLAYWRIGHT_READER_MODE: playwrightMode, VC_PLAYWRIGHT_READER_URL: browserUrl }),
-        db, coreUrl, machines: { isOnline: () => false, http: async () => { throw new Error('машины не используются') } }
+        config: loadWebReaderConfig({ PORT: String(readerPort), VC_CORE_URL: coreUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP,
+          VC_PLAYWRIGHT_READER_URL: playwrightMode === 'remote' ? browserUrl : coreUrl })
       })).app
       await webReader.listen({ host: '127.0.0.1', port: readerPort })
     }

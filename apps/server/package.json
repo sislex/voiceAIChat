@@ -22,18 +22,16 @@
     "@voicechat/playwright-reader": "*",
     "@voicechat/sessions-core": "*",
     "@voicechat/shared": "*",
-    "acorn": "^8.18.0",
     "better-sqlite3": "^11.10.0",
     "esbuild": "^0.21.5",
     "fastify": "^5.1.0",
-    "parse5": "^7.3.0",
     "pg": "^8.23.0",
-    "postcss": "8.5.23",
-    "postcss-value-parser": "4.2.0",
     "sharp": "^0.34.5",
     "zod": "^4.4.3",
-    "tough-cookie": "5.1.2",
-    "@voicechat/make-contracts": "*"
+    "@voicechat/make-contracts": "*",
+    "@voicechat/web-reader": "*",
+    "@voicechat/web-reader-contracts": "*",
+    "@voicechat/playwright-reader-contracts": "*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

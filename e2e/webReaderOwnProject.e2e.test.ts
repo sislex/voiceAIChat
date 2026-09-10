@@ -1,7 +1,7 @@
 import fastify, {type FastifyInstance} from 'fastify'
 import {afterAll,afterEach,beforeAll,beforeEach,describe,expect,it} from 'vitest'
 import {chromium,type Browser,type Page} from 'playwright'
-import {registerPreviewProxy} from '../apps/server/src/routes/previewProxy.js'
+import {registerPreviewProxy} from '../apps/web-reader/src/routes/previewProxy.js'
 import {readerProjectResource} from '../apps/server/src/readerBridge/projectResource.js'
 let project:FastifyInstance,reader:FastifyInstance,browser:Browser,page:Page,base:string
 const doc=(text:string)=>'<!doctype html><meta charset="utf-8"><body>'+text+'</body>'

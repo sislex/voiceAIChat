@@ -25,8 +25,8 @@ import {
 } from '../kanban/internal.js'
 import { serveExecStream, type ExecStreamRequest } from '../internal/execStream.js'
 import { createRpcDispatcher } from '@voicechat/shared'
-import type { ReaderCore } from '../reader/core.js'
-import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIMIT } from '../reader/internal.js'
+import type { ReaderCore } from '@voicechat/web-reader-contracts'
+import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIMIT } from '@voicechat/web-reader-contracts'
 
 export interface InternalRoutesDeps {
   token: string

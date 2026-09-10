@@ -7,7 +7,7 @@ import { chromium, type Browser, type Page } from 'playwright'
 import type { FastifyInstance } from 'fastify'
 import { loadConfig } from '../apps/server/src/config.js'
 import { buildServer } from '../apps/server/src/server.js'
-import { PreviewActionRelay } from '../apps/server/src/mcp/previewMcp.js'
+import { PreviewActionRelay } from '@voicechat/web-reader-contracts'
 import type { PreviewAction, ServerMessage } from '@voicechat/shared/index'
 
 let app: FastifyInstance, browser: Browser, page: Page, base: string, dataDir: string, token: string, conversationId: string

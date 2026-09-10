@@ -9,7 +9,7 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { buildBrowserRunner } from '../apps/browser-runner/src/server.js'
 import { buildServer } from '../apps/server/src/server.js'
 import { loadConfig } from '../apps/server/src/config.js'
-import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import type { BrowserCommand, BrowserSessionMetadata } from '@voicechat/shared/types'
 
 let app: FastifyInstance, runner: FastifyInstance, site: FastifyInstance, browser: Browser, page: Page
@@ -65,7 +65,7 @@ describe('Web Reader: единый разговор в полном Chromium', (
   })
   afterEach(async context => {
     if (context.task.result?.state === 'fail' && page && !page.isClosed()) {
-      const report = { test: context.task.name, errors: browserFailures, body: (await page.locator('body').innerText()).slice(0, 6000) }
+      const report = { test: context.task.name, errors: browserFailures, body: (await page.locator('body').innerText()).slice(0, 6000), frames: await Promise.all(page.frames().map(async frame => ({url:frame.url(), html:(await frame.content().catch(()=>'' )).slice(0,20000)}))), surfaces:await page.locator('iframe, .webpreview, [role=status], [role=alert]').evaluateAll(elements=>elements.map(el=>({html:el.outerHTML,rect:el.getBoundingClientRect().toJSON(),display:getComputedStyle(el).display}))) }
       const directory = process.env.VC_VISUAL_ARTIFACTS || '/tmp/reader-cycle-artifacts'
       await mkdir(directory, { recursive: true }); await writeFile(join(directory, 'failure.json'), JSON.stringify(report, null, 2)); await page.screenshot({ path: join(directory, 'failure.png') })
     }

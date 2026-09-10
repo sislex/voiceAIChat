@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 const srcDir = join(__dirname, '..')
 /** Композиция процессов (ядра и отдельного Web Reader) и внутренний API для соседних сервисов — им положено знать обе стороны. */
-const COMPOSITION = new Set(['server.ts', 'routes/internal.ts', 'reader/standalone/server.ts'])
+const COMPOSITION = new Set(['server.ts', 'routes/internal.ts'])
 
 function walk(dir: string): string[] {
   const out: string[] = []
@@ -27,7 +27,7 @@ describe('граница Playwright Reader ↔ ядро (сторона ядра
     const offenders: string[] = []
     for (const rel of coreFiles) {
       const src = readFileSync(join(srcDir, rel), 'utf8')
-      for (const m of src.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s*from '@voicechat\/playwright-reader[^']*'/gm)) {
+      for (const m of src.matchAll(/^import\s+(type\s+)?\{[^}]*\}\s*from '@voicechat\/playwright-reader(?:\/[^']*)?'/gm)) {
         if (!m[1]) offenders.push(`${rel}: ${m[0].slice(0, 80)}`)
       }
     }
@@ -36,7 +36,7 @@ describe('граница Playwright Reader ↔ ядро (сторона ядра
 
   it('REST Chromium и его модельные команды принадлежат приложению', () => {
     expect(coreFiles).not.toContain('routes/browser.ts')
-    const reader = readFileSync(join(srcDir, 'reader/module.ts'), 'utf8')
+    const reader = readFileSync(join(srcDir, '../../web-reader/src/module.ts'), 'utf8')
     expect(reader).not.toMatch(/browserRunner|planModelAction|PREVIEW_RUN_COOKIE/)
   })
 })

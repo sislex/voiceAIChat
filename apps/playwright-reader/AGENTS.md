@@ -5,7 +5,7 @@ REST `/api/browser/:id/{start,command,screenshot}`, остановка сесс�
 по той же схеме, что `apps/make`. UI — `packages/playwright-reader-app`, Chromium
 и его профили — `apps/browser-runner`; приложение само браузер не запускает.
 
-- `PlaywrightReaderCore` (`src/core.ts`) — доступный разговор, цель модели,
+- `PlaywrightReaderCore` (`packages/playwright-reader-contracts/src/core.ts`) — доступный разговор, цель модели,
   ключ к прокси машины и запись кадра проверки. Локальная реализация —
   `apps/server/src/playwrightReaderBridge/localCore.ts`, HTTP — `src/standalone/httpCore.ts`.
   Своей БД, пользовательской авторизации и файлового тома у приложения нет.
@@ -16,7 +16,7 @@ REST `/api/browser/:id/{start,command,screenshot}`, остановка сесс�
 - В standalone cookie/Bearer/CSRF каждого запроса перепроверяются ядром через
   `/internal/whoami`; внутренние RPC закрыты общим `VC_INTERNAL_TOKEN`.
   Контракт маршрутов RPC и результатов — `packages/shared/src/playwrightReader.ts`.
-- HTTP-клиент раннера импортируется только из `@voicechat/browser-runner/client`:
+- HTTP-клиент раннера импортируется только из `@voicechat/browser-contracts/client`:
   этот экспорт не загружает Playwright и ничего не запускает.
 - Относительные импорты с `.js`, запуск через `tsx`, комментарии по-русски.
   Граница с ядром проверяется `src/boundary.test.ts` и тестом в `playwrightReaderBridge/`.
@@ -43,3 +43,9 @@ Web Reader с `previewEngine: chromium` использует тот же пор�
 preview; app.internal/machine.internal проходят через runnerFacingBase. Screenshot
 добавляет логический page.url/title из метаданных кадра (для старого раннера —
 через status), а состояние управления — через status, не меняющий lastActor.
+
+Контракты `PlaywrightReaderCore`/`Service` и оба HTTP-клиента —
+`packages/playwright-reader-contracts`. `src/core.ts`/`service.ts`/`remote.ts`
+сохраняют совместимые реэкспорты. В образе API нет `apps/browser-runner` и Playwright;
+Chromium ставится только в образ раннера. `release.json` и `compatibility.mjs`
+участвуют в независимом выпуске `playwright-reader`; UI — `playwright-reader-ui`.

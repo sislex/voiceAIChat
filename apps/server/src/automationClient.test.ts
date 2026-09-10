@@ -5,7 +5,7 @@ const request:AutomationJobRequest={protocolVersion:AUTOMATION_PROTOCOL_VERSION,
 describe('AutomationClient',()=>{
   it('sends bearer auth and immutable request',async()=>{
     let captured:{url:string;init:RequestInit}|undefined
-    const fetchImpl=vi.fn(async(url:URL|RequestInfo,init?:RequestInit)=>{captured={url:String(url),init:init??{}};return new Response(JSON.stringify({id:'job'}),{status:202,headers:{'content-type':'application/json'}})})
+    const fetchImpl=vi.fn(async(url:Parameters<typeof fetch>[0],init?:RequestInit)=>{captured={url:String(url),init:init??{}};return new Response(JSON.stringify({id:'job'}),{status:202,headers:{'content-type':'application/json'}})})
     const client=new AutomationClient('http://runner:8800','token',fetchImpl as typeof fetch)
     expect(await client.create(request)).toEqual({id:'job'})
     expect(captured?.url).toBe('http://runner:8800/v1/jobs')

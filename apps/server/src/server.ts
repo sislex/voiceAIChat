@@ -132,9 +132,9 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
-import { PreviewActionRelay } from './mcp/previewMcp.js'
-import { createPreviewTurnTokens } from './reader/turnToken.js'
-import { createReaderModule } from './reader/module.js'
+import { PreviewActionRelay } from '@voicechat/web-reader-contracts'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
+import { createReaderModule } from '@voicechat/web-reader'
 import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
 import { registerReaderProxy } from './readerBridge/proxy.js'
@@ -1125,6 +1125,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Web Reader: прокси превью и MCP «browser» — модулем с портом к ядру (docs/plans/web-reader-service.md).
   // Порт ядра нужен и в `remote`: его отдаёт `/internal/reader/core` отдельному процессу ридера.
   const readerCore = createLocalReaderCore({
+    machines: agentRegistry,
     app, db, relay: previewRelay, runKeys: previewRunKeys, shotsRoot: browserShotsRoot,
     publish: (message, userId) => frames.publish(message, userId),
     previews: () => kanban.service.previews.list()
@@ -1144,7 +1145,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     playwrightReader = module.service
   }
   if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl! })
-  else createReaderModule({ app, db, core: readerCore, machines: agentRegistry, mcpSecret, browser: playwrightReader })
+  else createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
   // Внутренний API для соседних сервисов — только при заданном токене (compose); в dev/desktop его нет.
   if (opts.config.internalToken) {
     registerInternalRoutes(app, {
@@ -1327,7 +1328,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         ? opts.config.webRecorderDir
         : null
     const { default: fastifyStatic } = await import('@fastify/static')
-    if (recorderDir) {
+    if (recorderDir && opts.config.readerMode !== 'remote') {
       await app.register(fastifyStatic, {
         root: recorderDir,
         prefix: '/web-recorder/',

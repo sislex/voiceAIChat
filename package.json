@@ -17,7 +17,8 @@
     "apps/server",
     "apps/web",
     "apps/web-recorder",
-    "apps/agent"
+    "apps/agent",
+    "apps/web-reader"
   ],
   "scripts": {
     "dev:web": "bash scripts/dev-web.sh",
@@ -70,7 +71,7 @@
     "browser-runner:stop": "bash scripts/browser-runner-local.sh down",
     "reader:probe": "tsx scripts/reader-probe.mjs",
     "qa-stage:check": "tsx scripts/qa-stage-check.mjs",
-    "gate:all": "npm run typecheck && npm run test && npm run build:frontends && npm run -w @voicechat/web build && npm run build:storybook",
+    "gate:all": "npm run typecheck && npm run test && npm run build:frontends && npm run -w @voicechat/web-recorder build && npm run -w @voicechat/web build && npm run build:storybook",
     "gate:app": "node --import tsx scripts/application-gate.mjs",
     "gate:changed": "node --import tsx scripts/application-gate.mjs",
     "build:app": "node --import tsx scripts/application-build.mjs",

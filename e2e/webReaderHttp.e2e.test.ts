@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { buildServer } from '../apps/server/src/server.js'
 import { loadConfig } from '../apps/server/src/config.js'
-import { createPreviewTurnTokens } from '../apps/server/src/reader/turnToken.js'
+import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 
 let app: FastifyInstance, browser: Browser, base: string, data: string, token: string
 const secret = 'reader-http-fixture-secret'

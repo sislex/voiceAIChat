@@ -1,7 +1,7 @@
 import fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
 import { readerProjectResource } from './projectResource.js'
-import { HttpReaderCore } from '../reader/standalone/httpCore.js'
+import { HttpReaderCore } from '@voicechat/web-reader-contracts'
 const decode = (body: string) => Buffer.from(body, 'base64').toString()
 describe('текущее приложение без сетевого loopback', () => {
   it('передаёт сырое тело и авторизацию самой страницы, сохраняя ответ и Set-Cookie', async () => {

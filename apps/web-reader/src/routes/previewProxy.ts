@@ -17,9 +17,10 @@ import type { IncomingMessage } from 'node:http'
 import type { FastifyInstance } from 'fastify'
 import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
 import { createHash } from 'node:crypto'
-import { uid } from '../users/auth.js'
-import { applyHostAlias, type HostAliases } from '@voicechat/browser-runner/security'
-import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../util/publicHost.js'
+import type { FastifyRequest } from 'fastify'
+const uid = (req: FastifyRequest): string => (req as unknown as { user: { name: string } }).user.name
+import { applyHostAlias, type HostAliases } from '@voicechat/browser-contracts/security'
+import { assertPublicHost as assertPublicHostUtil, isPublicAddress, PublicHostError } from '../publicHost.js'
 import { rewritePreviewModules, rewritePreviewImportMap } from './previewModules.js'
 import { rewritePreviewHtml } from './previewHtml.js'
 import { canReadPreviewCache, canStorePreviewCache } from './previewCachePolicy.js'
@@ -58,8 +59,8 @@ export function machineAgentIdOf(hostname: string): string | null {
 
 /** Мост к машинам для превью (реализует AgentRegistry). */
 export interface PreviewMachineBridge {
-  isOnline(agentId: string): boolean
-  http(agentId: string, request: AgentHttpRequest): Promise<AgentHttpResponse>
+  isOnline(agentId: string): boolean | Promise<boolean>
+  http(agentId: string, request: AgentHttpRequest, userId: string): Promise<AgentHttpResponse>
 }
 
 export interface PreviewProxyDeps {
@@ -82,7 +83,7 @@ function headerValue(headers: Record<string, string | string[]>, name: string): 
 }
 
 /** Гард публичных адресов общий с импортом Make (`util/publicHost.ts`); здесь — только перевод в ответ 403. */
-export { isPublicAddress } from '../util/publicHost.js'
+export { isPublicAddress } from '../publicHost.js'
 
 type ResolvedAddress = LookupAddress
 
@@ -927,7 +928,7 @@ async function loadViaMachine(
     const agentId = machineAgentIdOf(current.hostname)
     if (!agentId) throw new PreviewProxyError(502, 'Тестовое окружение перенаправило наружу — открой внешний адрес напрямую')
     if (!(await deps.canUse(userId, agentId))) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
-    if (!deps.bridge.isOnline(agentId)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
+    if (!await deps.bridge.isOnline(agentId)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
     const secure = current.protocol === 'https:'
     const port = current.port ? Number(current.port) : secure ? 443 : 80
     const cookie = cookies.header(userId, current)
@@ -940,7 +941,7 @@ async function loadViaMachine(
         path: current.pathname + current.search,
         headers: { ...headers, ...(cookie ? { cookie } : {}) },
         ...(currentBody === undefined ? {} : { bodyBase64: Buffer.from(currentBody).toString('base64') })
-      })
+      }, userId)
     } catch (err) {
       throw new PreviewProxyError(502, err instanceof Error ? err.message : 'Тестовое окружение недоступно')
     }
@@ -1049,7 +1050,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
           if (!deps.machines) throw new PreviewProxyError(502, 'Мост машин недоступен на этом сервере')
           // Проверка нужна и на cache hit: доступ могли отозвать после первой загрузки.
           if (!(await deps.machines.canUse(userId, machineAgent))) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
-          if (!deps.machines.bridge.isOnline(machineAgent)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
+          if (!await deps.machines.bridge.isOnline(machineAgent)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
           if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) machineCache.dropAgent(machineAgent)
           const cacheUrl = url.toString()
           const cacheAllowed = canReadPreviewCache(req.method, req.headers, Boolean(cookies.header(userId, url)))
